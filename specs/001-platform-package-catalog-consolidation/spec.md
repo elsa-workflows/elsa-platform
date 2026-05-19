@@ -8,6 +8,14 @@
 
 **Input**: User description: "Reimagine the current `elsa-package-catalog` repository as Elsa Platform subsystems, move toward the ideal package layout under `elsa-platform`, deprecate the old repository, improve architecture where useful, incorporate merged PR #36 Runtime Builder backend foundations, and use Spec Kit for implementation."
 
+## Clarifications
+
+### Session 2026-05-19
+
+- Q: Which catalog repository baseline should be imported? -> A: Import `elsa-package-catalog` at PR #36 merge commit `e321965a09cdcf63bb6ad3144badd9a203c10da8` or newer.
+- Q: Which Spec Kit state wins when repositories conflict? -> A: Keep `elsa-platform` Spec Kit infrastructure active and import catalog specs without overwriting `.specify/feature.json`.
+- Q: When may the old repository be archived? -> A: Only after platform import, package/catalog normalization, Runtime Builder extraction, and unresolved issue/spec triage are complete.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Establish Platform Home (Priority: P1)
@@ -126,7 +134,7 @@ Elsa deployment planning can consume package catalog capabilities for package re
 
 - **FR-001**: The platform plan MUST define Package Catalog as a sibling subsystem to Deployment, not a child of Deployment.
 - **FR-002**: The target source layout MUST include `Elsa.Platform.PackageCatalog.*`, `Elsa.Platform.PackageManifests`, and `Elsa.Platform.PackageManifest.Generator*` projects.
-- **FR-003**: The migration MUST attempt to preserve `elsa-package-catalog` git history unless a documented blocker makes a non-history import necessary.
+- **FR-003**: The migration MUST attempt to preserve `elsa-package-catalog` git history from PR #36 merge commit `e321965a09cdcf63bb6ad3144badd9a203c10da8` or newer unless a documented blocker makes a non-history import necessary.
 - **FR-004**: The first migration increment MUST preserve current catalog behavior before architectural cleanup begins.
 - **FR-005**: Mechanical moves and renames SHOULD be committed separately from behavioral or architectural changes.
 - **FR-006**: The platform package manifest contract MUST remain dependency-light and independent from catalog persistence, deployment engine internals, runtime installation internals, and generated code.
@@ -143,6 +151,8 @@ Elsa deployment planning can consume package catalog capabilities for package re
 - **FR-017**: Runtime Builder backend capabilities introduced by `elsa-package-catalog#36` MUST be mapped to a dedicated `Elsa.Platform.RuntimeBuilder.*` subsystem during architecture normalization.
 - **FR-018**: Runtime Builder MUST consume Package Catalog data through abstractions or client contracts and MUST NOT depend on catalog persistence internals.
 - **FR-019**: Deployment template generation MUST remain distinct from live deployment reconciliation.
+- **FR-020**: Importing catalog Spec Kit files MUST NOT overwrite the active `elsa-platform` `.specify/feature.json` or platform Spec Kit installation.
+- **FR-021**: The old `elsa-package-catalog` repository MUST NOT be archived until platform import, package/catalog normalization, Runtime Builder extraction, and unresolved issue/spec triage are complete.
 
 ### Key Entities *(include if feature involves data)*
 
