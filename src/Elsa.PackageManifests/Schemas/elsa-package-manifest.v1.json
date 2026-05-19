@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://elsa-workflows.io/schemas/elsa-package-manifest.v1.json",
+  "type": "object",
+  "required": ["schemaVersion", "package", "displayName"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "package": {
+      "type": "object",
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "displayName": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "features": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/feature" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "feature": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "typeName": { "type": "string" },
+        "displayName": { "type": "string" },
+        "infrastructure": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/infrastructureRequirement" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "infrastructureRequirement": {
+      "type": "object",
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "optional": { "type": "boolean" },
+        "reason": { "type": "string" },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "providers": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "configurationKeys": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "extensions": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

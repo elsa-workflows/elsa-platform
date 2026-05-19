@@ -1,0 +1,15 @@
+{
+  "image": {
+    "slug": "elsa-pro-combined",
+    "tag": "latest",
+    "hostPort": 8080,
+    "envOverrides": {}
+  },
+  "packages": [],
+  "packageSources": [],
+  "infrastructure": [],
+  "localPackages": {
+    "enabled": true,
+    "directoryPath": "packages"
+  }
+}

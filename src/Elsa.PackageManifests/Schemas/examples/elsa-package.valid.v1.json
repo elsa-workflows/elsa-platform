@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "1.0",
+  "package": {
+    "id": "Elsa.Email",
+    "version": "1.0.0"
+  },
+  "displayName": "Email",
+  "description": "Adds email features to an Elsa runtime.",
+  "tags": [ "email", "communication" ],
+  "compatibility": {
+    "elsaVersionRange": "[3.0.0,4.0.0)",
+    "dockerImageVersionRange": ">=3.0.0"
+  },
+  "features": [
+    {
+      "id": "email",
+      "typeName": "Elsa.Email.EmailFeature",
+      "displayName": "Email",
+      "category": "Communication",
+      "settings": [
+        {
+          "name": "smtpHost",
+          "clrType": "System.String",
+          "jsonType": "string",
+          "required": true,
+          "displayName": "SMTP host"
+        }
+      ]
+    }
+  ],
+  "documentation": {
+    "url": "https://docs.elsaworkflows.io/"
+  }
+}

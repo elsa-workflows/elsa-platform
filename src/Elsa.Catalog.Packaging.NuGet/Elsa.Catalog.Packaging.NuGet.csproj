@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Elsa.Catalog.Core\Elsa.Catalog.Core.csproj" />
+    <ProjectReference Include="..\Elsa.PackageManifests\Elsa.PackageManifests.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="NuGet.Protocol" />
+  </ItemGroup>
+</Project>

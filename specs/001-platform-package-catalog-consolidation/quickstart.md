@@ -32,6 +32,14 @@ Expected:
 - Existing catalog tests pass or failures are documented as pre-existing.
 - PR #36 Runtime Builder tests are included in the baseline result.
 
+Phase 4 verification log, 2026-05-19:
+
+- Old repository baseline at `e321965a09cdcf63bb6ad3144badd9a203c10da8`: `dotnet test Elsa.PackageCatalog.sln` passed. The run reported the existing `Microsoft.Build.Utilities.Core` NU1903 advisory warnings.
+- Old repository admin UI baseline: `npm install --prefix src/Elsa.Catalog.AdminUi && npm test --prefix src/Elsa.Catalog.AdminUi -- --run` passed with 11 files and 64 tests. `npm install` reported 5 moderate vulnerabilities and React Router v7 future-flag warnings during tests.
+- Platform import verification: `dotnet test Elsa.PackageCatalog.sln` passed from `elsa-platform`, including PR #36 builder/runtime tests. The same NU1903 advisory warnings were present.
+- Platform admin UI verification: `npm install --prefix src/Elsa.Catalog.AdminUi && npm test --prefix src/Elsa.Catalog.AdminUi -- --run` passed with 11 files and 64 tests. The same npm audit and React Router warnings were present.
+- Merge conflicts were limited to expected repository bootstrap files. `elsa-platform` Spec Kit state, `AGENTS.md`, `README.md`, and `LICENSE` were kept as authoritative.
+
 ## History-Preserving Import Candidate
 
 Preferred import path:

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Elsa.PackageManifests\Elsa.PackageManifests.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Catalog.Core\Elsa.Catalog.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Fixtures\BuilderBundles\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

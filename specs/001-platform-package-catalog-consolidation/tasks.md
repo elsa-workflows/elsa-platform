@@ -62,18 +62,18 @@
 
 ### Tests
 
-- [ ] T018 [P] [US2] Run baseline `dotnet test Elsa.PackageCatalog.sln` in old repo and record results in `specs/001-platform-package-catalog-consolidation/quickstart.md`
-- [ ] T019 [P] [US2] Run baseline admin UI tests in old repo and record results in `specs/001-platform-package-catalog-consolidation/quickstart.md`
+- [x] T018 [P] [US2] Run baseline `dotnet test Elsa.PackageCatalog.sln` in old repo and record results in `specs/001-platform-package-catalog-consolidation/quickstart.md`
+- [x] T019 [P] [US2] Run baseline admin UI tests in old repo and record results in `specs/001-platform-package-catalog-consolidation/quickstart.md`
 
 ### Implementation
 
-- [ ] T020 [US2] Import `elsa-package-catalog` into `elsa-platform` preserving git history if practical
-- [ ] T021 [US2] Resolve path, solution, and Spec Kit file conflicts after import
-- [ ] T022 [US2] Restore imported .NET projects from `elsa-platform`
-- [ ] T023 [US2] Run imported .NET test suites from `elsa-platform`
-- [ ] T024 [US2] Run imported admin UI unit tests from `elsa-platform`
-- [ ] T025 [US2] Document any pre-existing or migration-caused test failures in `specs/001-platform-package-catalog-consolidation/quickstart.md`
-- [ ] T026 [US2] Verify PR #36 Runtime Builder specs `009` through `016` and tests are included in the import
+- [x] T020 [US2] Import `elsa-package-catalog` into `elsa-platform` preserving git history if practical
+- [x] T021 [US2] Resolve path, solution, and Spec Kit file conflicts after import
+- [x] T022 [US2] Restore imported .NET projects from `elsa-platform`
+- [x] T023 [US2] Run imported .NET test suites from `elsa-platform`
+- [x] T024 [US2] Run imported admin UI unit tests from `elsa-platform`
+- [x] T025 [US2] Document any pre-existing or migration-caused test failures in `specs/001-platform-package-catalog-consolidation/quickstart.md`
+- [x] T026 [US2] Verify PR #36 Runtime Builder specs `009` through `016` and tests are included in the import
 
 **Checkpoint**: Current catalog behavior is preserved in the platform repository.
 
