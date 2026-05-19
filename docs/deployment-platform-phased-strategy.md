@@ -52,12 +52,22 @@ elsa-platform/
     Elsa.Platform.Deployment.Engine/
     Elsa.Platform.Deployment.Cli/
     Elsa.Platform.Deployment.Api/
+    Elsa.Platform.PackageCatalog.Abstractions/
+    Elsa.Platform.PackageCatalog.Core/
+    Elsa.Platform.PackageCatalog.Api/
+    Elsa.Platform.PackageCatalog.AdminUi/
+    Elsa.Platform.PackageCatalog.Sources.NuGet/
+    Elsa.Platform.PackageManifests/
+    Elsa.Platform.PackageManifest.Generator/
   tests/
     Elsa.Platform.Deployment.Manifest.Tests/
     Elsa.Platform.Deployment.Artifacts.Tests/
     Elsa.Platform.Deployment.Engine.Tests/
     Elsa.Platform.Deployment.Cli.Tests/
     Elsa.Platform.Deployment.Api.Tests/
+    Elsa.Platform.PackageCatalog.*.Tests/
+    Elsa.Platform.PackageManifests.Tests/
+    Elsa.Platform.PackageManifest.Generator.*.Tests/
   samples/
     basic-workflow-deployment/
     ci-dry-run/
@@ -91,8 +101,11 @@ src/
 - Manifest schema and parsing.
 - Artifact creation, inspection, and immutability rules.
 - Deployment planning, validation orchestration, diffing, dry-run, apply, and history.
+- Package catalog, package manifest contracts, package manifest generation, package approval, and package compatibility metadata.
 - CLI, API, operator, GitOps, OCI, signing, approvals, overlays, governance, and platform documentation.
 - Resource handler abstractions and default handlers that can operate through public Elsa runtime APIs.
+
+Package Catalog is a sibling platform subsystem, not a child of Deployment. Deployment should consume package catalog capabilities through abstractions or client contracts for package descriptor validation, approval state, and compatibility checks.
 
 ## 4. Package And Module Boundaries
 
