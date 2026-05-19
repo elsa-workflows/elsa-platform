@@ -2,7 +2,7 @@ using System.Net;
 using Elsa.Platform.PackageCatalog.Api.Authentication;
 using Elsa.Platform.PackageCatalog.Api.Public.Builder;
 using Elsa.Platform.PackageCatalog.Api.Workspace;
-using Elsa.Platform.PackageCatalog.Core.Builder;
+using Elsa.Platform.RuntimeBuilder.Abstractions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 

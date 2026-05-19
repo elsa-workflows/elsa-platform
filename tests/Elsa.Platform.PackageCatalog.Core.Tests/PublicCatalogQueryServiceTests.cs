@@ -1,3 +1,4 @@
+using Elsa.Platform.PackageCatalog.Abstractions.Catalog;
 using Elsa.Platform.PackageCatalog.Core.Packages;
 using FluentAssertions;
 using Microsoft.Extensions.Caching.Memory;

@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Elsa.Platform.PackageCatalog.Core.Builder;
+using Elsa.Platform.RuntimeBuilder.Abstractions;
 using Elsa.Platform.PackageCatalog.Core.Packages;
 
 namespace Elsa.Platform.PackageCatalog.Testing;

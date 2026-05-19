@@ -5,7 +5,7 @@ using Elsa.Platform.PackageManifests;
 
 namespace Elsa.Platform.PackageCatalog.Core.Compatibility;
 
-public sealed class CompatibilityCheckService(ICompatibilityQueries queries, VersionRangeEvaluator ranges)
+public sealed class CompatibilityCheckService(ICompatibilityQueries queries, VersionRangeEvaluator ranges) : IPackageCompatibilityService
 {
     public async Task<CompatibilityCheckResult> CheckAsync(CompatibilityCheckRequest request, CancellationToken cancellationToken = default)
     {

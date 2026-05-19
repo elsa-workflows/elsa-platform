@@ -107,3 +107,18 @@ Observed state after platform naming normalization:
 - `Elsa.Platform.PackageCatalog.Sources.NuGet` still references catalog Core because source-provider ports and entities have not yet been split into a source-provider abstraction.
 - Runtime Builder services remain in Package Catalog projects until Phase 6. This is a tracked temporary state, not the final boundary.
 - No Deployment projects exist yet, so deployment-to-catalog boundary checks become enforceable in Phase 8.
+
+## Phase 6 Boundary Inspection
+
+Inspection date: 2026-05-19.
+
+Observed state after Runtime Builder extraction:
+
+- `Elsa.Platform.RuntimeBuilder.Core` references `Elsa.Platform.RuntimeBuilder.Abstractions`, `Elsa.Platform.RuntimeBuilder.DeploymentTemplates`, and `Elsa.Platform.PackageCatalog.Abstractions`.
+- `Elsa.Platform.RuntimeBuilder.Core` has no project reference to Package Catalog Core, Package Catalog API, Package Catalog EF persistence, migrations, source providers, or Admin UI.
+- Runtime Builder reads catalog package projections through `IPublicCatalogQueries` from Package Catalog abstractions.
+- Runtime Builder checks selected package compatibility through `IPackageCompatibilityService` from Package Catalog abstractions.
+- Runtime configuration models and the `IRuntimeConfigurationStore` seam live in Runtime Builder abstractions.
+- The current EF implementation of runtime configuration storage still lives in `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore` because the imported service currently uses the catalog database context. This is a host adapter detail, not a Runtime Builder Core dependency.
+- Runtime Builder HTTP endpoints are still hosted by `Elsa.Platform.PackageCatalog.Api` pending a later `Elsa.Platform.RuntimeBuilder.Api` packaging decision.
+- BYOC deployment targets, managed hosting, runtime operations, and fleet concerns remain deferred.

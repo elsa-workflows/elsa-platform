@@ -1,7 +1,7 @@
 using Elsa.Platform.PackageCatalog.Core.Manifests;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Elsa.Platform.PackageCatalog.Core.Packages;
-using Elsa.Platform.PackageCatalog.Core.RuntimeConfigurations;
+using Elsa.Platform.RuntimeBuilder.Abstractions.RuntimeConfigurations;
 using Elsa.Platform.PackageCatalog.Core.Sync;
 using Microsoft.EntityFrameworkCore;
 

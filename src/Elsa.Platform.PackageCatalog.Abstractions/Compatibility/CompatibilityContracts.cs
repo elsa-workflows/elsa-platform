@@ -1,5 +1,10 @@
 namespace Elsa.Platform.PackageCatalog.Abstractions.Compatibility;
 
+public interface IPackageCompatibilityService
+{
+    Task<CompatibilityCheckResult> CheckAsync(CompatibilityCheckRequest request, CancellationToken cancellationToken = default);
+}
+
 public sealed record CompatibilityCheckRequest(
     string? ElsaVersion,
     string? DockerImageVersion,

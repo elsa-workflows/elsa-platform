@@ -1,4 +1,4 @@
-using Elsa.Platform.PackageCatalog.Core.RuntimeConfigurations;
+using Elsa.Platform.RuntimeBuilder.Abstractions.RuntimeConfigurations;
 using Microsoft.EntityFrameworkCore;
 
 namespace Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;

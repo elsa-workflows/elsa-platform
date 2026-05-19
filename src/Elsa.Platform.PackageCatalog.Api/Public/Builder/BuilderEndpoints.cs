@@ -2,10 +2,12 @@ using Elsa.Platform.PackageCatalog.Abstractions.Compatibility;
 using Elsa.Platform.PackageCatalog.Api.Authentication;
 using Elsa.Platform.PackageCatalog.Api.Public.Compatibility;
 using Elsa.Platform.PackageCatalog.Api.Public.Packages;
-using Elsa.Platform.PackageCatalog.Core.Builder;
-using Elsa.Platform.PackageCatalog.Core.Builder.Planner;
+using Elsa.Platform.RuntimeBuilder.Abstractions;
+using Elsa.Platform.RuntimeBuilder.Abstractions.Planner;
 using Elsa.Platform.PackageCatalog.Core.Compatibility;
 using Elsa.Platform.PackageCatalog.Core.Packages;
+using Elsa.Platform.RuntimeBuilder.Core.Builder;
+using Elsa.Platform.RuntimeBuilder.Core.Builder.Planner;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Elsa.Platform.PackageCatalog.Api.Public.Builder;

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Elsa.Platform.PackageCatalog.Abstractions.Catalog;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Elsa.Platform.PackageCatalog.Core.Packages;
 using Elsa.Platform.PackageCatalog.Core.Sources;

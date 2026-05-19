@@ -1,6 +1,6 @@
 using Elsa.Platform.PackageCatalog.Api.Public.Packages;
 using Elsa.Platform.PackageCatalog.Api.Public.Compatibility;
-using Elsa.Platform.PackageCatalog.Core.Builder;
+using Elsa.Platform.RuntimeBuilder.Abstractions;
 using System.Text.Json;
 
 namespace Elsa.Platform.PackageCatalog.Api.Public.Builder;

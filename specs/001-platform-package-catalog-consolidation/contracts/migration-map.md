@@ -18,12 +18,12 @@
 | `Elsa.Platform.PackageManifest.Generator` | `Elsa.Platform.PackageManifest.Generator` |
 | `Elsa.Platform.PackageManifest.Generator.Core` | `Elsa.Platform.PackageManifest.Generator.Core` |
 | `Elsa.Platform.PackageManifest.Generator.MSBuild` | `Elsa.Platform.PackageManifest.Generator.MSBuild` |
-| `Elsa.Platform.PackageCatalog.Core/Builder/*` | `Elsa.Platform.RuntimeBuilder.Core` |
+| `Elsa.Platform.PackageCatalog.Core/Builder/*` | `Elsa.Platform.RuntimeBuilder.Core` and `Elsa.Platform.RuntimeBuilder.Abstractions` |
 | `Elsa.Platform.PackageCatalog.Core/DeploymentTemplates/*` | `Elsa.Platform.RuntimeBuilder.DeploymentTemplates` |
-| `Elsa.Platform.PackageCatalog.Core/RuntimeConfigurations/*` | `Elsa.Platform.RuntimeBuilder.Core` or `Elsa.Platform.RuntimeBuilder.Abstractions` by contract role |
-| `Elsa.Platform.PackageCatalog.Api/Public/Builder/*` | `Elsa.Platform.RuntimeBuilder.Api` |
-| `Elsa.Platform.PackageCatalog.Api/Workspace/*RuntimeConfiguration*` | `Elsa.Platform.RuntimeBuilder.Api` |
-| `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/RuntimeConfigurationStore.cs` | `Elsa.Platform.RuntimeBuilder.Persistence.EntityFrameworkCore` |
+| `Elsa.Platform.PackageCatalog.Core/RuntimeConfigurations/*` | `Elsa.Platform.RuntimeBuilder.Core` and `Elsa.Platform.RuntimeBuilder.Abstractions` |
+| `Elsa.Platform.PackageCatalog.Api/Public/Builder/*` | Hosted in `Elsa.Platform.PackageCatalog.Api` until `Elsa.Platform.RuntimeBuilder.Api` packaging is justified |
+| `Elsa.Platform.PackageCatalog.Api/Workspace/*RuntimeConfiguration*` | Hosted in `Elsa.Platform.PackageCatalog.Api` until `Elsa.Platform.RuntimeBuilder.Api` packaging is justified |
+| `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/RuntimeConfigurationStore.cs` | Current catalog EF adapter for `Elsa.Platform.RuntimeBuilder.Abstractions.RuntimeConfigurations.IRuntimeConfigurationStore` |
 
 ## Compatibility Review
 

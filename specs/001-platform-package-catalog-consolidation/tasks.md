@@ -114,17 +114,17 @@
 
 ### Tests
 
-- [ ] T038 [P] [US4] Add or preserve bundle generation tests under `tests/Elsa.Platform.RuntimeBuilder.*.Tests/`
-- [ ] T039 [P] [US4] Add or preserve planner, runtime image, deployment template, and runtime configuration tests under Runtime Builder test projects
+- [x] T038 [P] [US4] Add or preserve bundle generation tests under `tests/Elsa.Platform.RuntimeBuilder.*.Tests/`
+- [x] T039 [P] [US4] Add or preserve planner, runtime image, deployment template, and runtime configuration tests under Runtime Builder test projects
 
 ### Implementation
 
-- [ ] T040 [US4] Move `Builder` services/models/renderers toward `src/Elsa.Platform.RuntimeBuilder.Core/`
-- [ ] T041 [US4] Move `DeploymentTemplates` renderers toward `src/Elsa.Platform.RuntimeBuilder.DeploymentTemplates/`
-- [ ] T042 [US4] Move runtime image metadata contracts toward `src/Elsa.Platform.RuntimeBuilder.Abstractions/`
-- [ ] T043 [US4] Move saved runtime configuration contracts and persistence seams toward Runtime Builder projects
-- [ ] T044 [US4] Ensure Runtime Builder depends on Package Catalog abstractions/client contracts, not catalog EF persistence
-- [ ] T045 [US4] Keep BYOC deployment targets, managed hosting, and runtime operations as deferred platform/deployment phases
+- [x] T040 [US4] Move `Builder` services/models/renderers toward `src/Elsa.Platform.RuntimeBuilder.Core/`
+- [x] T041 [US4] Move `DeploymentTemplates` renderers toward `src/Elsa.Platform.RuntimeBuilder.DeploymentTemplates/`
+- [x] T042 [US4] Move runtime image metadata contracts toward `src/Elsa.Platform.RuntimeBuilder.Abstractions/`
+- [x] T043 [US4] Move saved runtime configuration contracts and persistence seams toward Runtime Builder projects
+- [x] T044 [US4] Ensure Runtime Builder depends on Package Catalog abstractions/client contracts, not catalog EF persistence
+- [x] T045 [US4] Keep BYOC deployment targets, managed hosting, and runtime operations as deferred platform/deployment phases
 
 **Checkpoint**: Runtime Builder has an explicit platform home and boundary.
 

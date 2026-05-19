@@ -512,7 +512,7 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.ToTable("PackageVersions");
                 });
 
-            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.RuntimeConfigurations.RuntimeConfiguration", b =>
+            modelBuilder.Entity("Elsa.Platform.RuntimeBuilder.Core.RuntimeConfigurations.RuntimeConfiguration", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -550,7 +550,7 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.ToTable("RuntimeConfigurations");
                 });
 
-            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.RuntimeConfigurations.RuntimeConfigurationVersion", b =>
+            modelBuilder.Entity("Elsa.Platform.RuntimeBuilder.Core.RuntimeConfigurations.RuntimeConfigurationVersion", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -826,7 +826,7 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Navigation("Package");
                 });
 
-            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.RuntimeConfigurations.RuntimeConfiguration", b =>
+            modelBuilder.Entity("Elsa.Platform.RuntimeBuilder.Core.RuntimeConfigurations.RuntimeConfiguration", b =>
                 {
                     b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Workspace", null)
                         .WithMany()
@@ -835,9 +835,9 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.RuntimeConfigurations.RuntimeConfigurationVersion", b =>
+            modelBuilder.Entity("Elsa.Platform.RuntimeBuilder.Core.RuntimeConfigurations.RuntimeConfigurationVersion", b =>
                 {
-                    b.HasOne("Elsa.Platform.PackageCatalog.Core.RuntimeConfigurations.RuntimeConfiguration", "RuntimeConfiguration")
+                    b.HasOne("Elsa.Platform.RuntimeBuilder.Core.RuntimeConfigurations.RuntimeConfiguration", "RuntimeConfiguration")
                         .WithMany("Versions")
                         .HasForeignKey("RuntimeConfigurationId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -909,7 +909,7 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Navigation("Features");
                 });
 
-            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.RuntimeConfigurations.RuntimeConfiguration", b =>
+            modelBuilder.Entity("Elsa.Platform.RuntimeBuilder.Core.RuntimeConfigurations.RuntimeConfiguration", b =>
                 {
                     b.Navigation("Versions");
                 });

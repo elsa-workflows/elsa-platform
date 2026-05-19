@@ -95,6 +95,19 @@ Phase 5 verification log, 2026-05-19:
 - `npm test --prefix src/Elsa.Platform.PackageCatalog.AdminUi -- --run` passed with 11 files and 64 tests. React Router v7 future-flag warnings remain pre-existing.
 - Runtime Builder code from PR #36 still lives under Package Catalog projects in this phase and is intentionally scheduled for Phase 6 extraction.
 
+Phase 6 verification log, 2026-05-19:
+
+- Added `Elsa.Platform.RuntimeBuilder.Abstractions`, `Elsa.Platform.RuntimeBuilder.Core`, and `Elsa.Platform.RuntimeBuilder.DeploymentTemplates`.
+- Moved runtime builder intent, bundle, runtime image, planner, deployment template, and runtime configuration contracts out of Package Catalog Core.
+- Moved Runtime Builder core services and file renderers into `Elsa.Platform.RuntimeBuilder.Core`.
+- Moved deployment template renderers into `Elsa.Platform.RuntimeBuilder.DeploymentTemplates`.
+- Added catalog-facing query and compatibility contracts to `Elsa.Platform.PackageCatalog.Abstractions` so Runtime Builder Core references catalog abstractions, not catalog core, API, or EF persistence.
+- Kept the current HTTP endpoints hosted by `Elsa.Platform.PackageCatalog.Api` for now; extracting `Elsa.Platform.RuntimeBuilder.Api` remains a later API packaging step.
+- Kept EF runtime-configuration storage in the catalog EF project as the current host database adapter, while moving runtime configuration models and store interface to Runtime Builder abstractions.
+- `dotnet build Elsa.Platform.sln` passed. The run still reports the existing `Microsoft.Build.Utilities.Core` NU1903 advisory warnings.
+- `dotnet test Elsa.Platform.sln` passed. Runtime Builder tests now run under `tests/Elsa.Platform.RuntimeBuilder.Core.Tests` with 27 tests.
+- `npm test --prefix src/Elsa.Platform.PackageCatalog.AdminUi -- --run` passed with 11 files and 64 tests. React Router v7 future-flag warnings remain pre-existing.
+
 ## 4. Admin UI Validation
 
 After UI path moves:

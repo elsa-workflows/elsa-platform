@@ -1,6 +1,7 @@
 using Elsa.Platform.PackageCatalog.Core.Accounts;
-using Elsa.Platform.PackageCatalog.Core.Builder;
-using Elsa.Platform.PackageCatalog.Core.RuntimeConfigurations;
+using Elsa.Platform.RuntimeBuilder.Abstractions;
+using Elsa.Platform.RuntimeBuilder.Abstractions.RuntimeConfigurations;
+using Elsa.Platform.RuntimeBuilder.Core.RuntimeConfigurations;
 using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;

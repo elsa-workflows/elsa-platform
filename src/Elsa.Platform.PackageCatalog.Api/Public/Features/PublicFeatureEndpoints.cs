@@ -1,4 +1,5 @@
 using Elsa.Platform.PackageCatalog.Api.Public;
+using Elsa.Platform.PackageCatalog.Abstractions.Catalog;
 using Elsa.Platform.PackageCatalog.Core.Packages;
 
 namespace Elsa.Platform.PackageCatalog.Api.Public.Features;

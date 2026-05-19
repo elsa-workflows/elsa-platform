@@ -16,6 +16,7 @@
     <ProjectReference Include="..\..\src\Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore\Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\..\src\Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations\Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.csproj" />
     <ProjectReference Include="..\..\src\Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations\Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Platform.RuntimeBuilder.Core\Elsa.Platform.RuntimeBuilder.Core.csproj" />
     <ProjectReference Include="..\Elsa.Platform.PackageCatalog.Testing\Elsa.Platform.PackageCatalog.Testing.csproj" />
   </ItemGroup>
 
