@@ -155,3 +155,24 @@ Phase 7 verification log, 2026-05-19:
 - `gh pr list --repo elsa-workflows/elsa-package-catalog --state open --limit 100` returned `[]`.
 - Old repository README deprecation notice was committed and pushed to `elsa-workflows/elsa-package-catalog` main as `cf7411d`.
 - Archive is deferred until the platform consolidation branch is merged and maintainers confirm no private/internal consumers still depend on the old repository receiving direct updates.
+
+## 7. Deployment Integration Contract Validation
+
+```bash
+dotnet test Elsa.Platform.sln
+```
+
+Expected:
+
+- `Elsa.Platform.PackageCatalog.Abstractions` exposes deployment-facing package requirement validation contracts.
+- Deployment package projects, when present, can reference catalog abstractions without referencing catalog API, Admin UI, persistence, migrations, source-provider internals, or AppHost.
+- Package requirement validation result shape keeps discovery, manifest validity, approval, trust, suspicious-change, compatibility, feature, and conflict findings distinct.
+
+Phase 8 verification log, 2026-05-19:
+
+- Added `IDeploymentPackageCatalog` and package requirement validation DTOs under `Elsa.Platform.PackageCatalog.Abstractions.Deployment`.
+- Added `tests/Elsa.Platform.PackageCatalog.Abstractions.Tests`.
+- Added a boundary test that scans `src/Elsa.Platform.Deployment.*` project references and fails if future Deployment projects reference catalog internals.
+- Added contract tests proving approval, trust, suspicious-change, and compatibility states remain distinct.
+- Updated `docs/deployment-platform-phased-strategy.md` to state that Deployment consumes deployment-specific manifests/artifacts and catalog validation contracts, not Runtime Builder intent directly.
+- `dotnet test Elsa.Platform.sln` passed. The existing `Microsoft.Build.Utilities.Core` NU1903 advisory warnings remain.

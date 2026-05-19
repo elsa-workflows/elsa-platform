@@ -122,3 +122,21 @@ Observed state after Runtime Builder extraction:
 - The current EF implementation of runtime configuration storage still lives in `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore` because the imported service currently uses the catalog database context. This is a host adapter detail, not a Runtime Builder Core dependency.
 - Runtime Builder HTTP endpoints are still hosted by `Elsa.Platform.PackageCatalog.Api` pending a later `Elsa.Platform.RuntimeBuilder.Api` packaging decision.
 - BYOC deployment targets, managed hosting, runtime operations, and fleet concerns remain deferred.
+
+## Phase 8 Deployment Integration Boundary
+
+Inspection date: 2026-05-19.
+
+Deployment-facing package requirement validation now starts at `Elsa.Platform.PackageCatalog.Abstractions.Deployment.IDeploymentPackageCatalog`.
+
+Required boundary:
+
+- Deployment may reference `Elsa.Platform.PackageCatalog.Abstractions`.
+- Deployment may not reference `Elsa.Platform.PackageCatalog.Api`, `Elsa.Platform.PackageCatalog.AdminUi`, `Elsa.Platform.PackageCatalog.Persistence.*`, `Elsa.Platform.PackageCatalog.Sources.*`, `Elsa.Platform.PackageCatalog.AppHost`, or catalog migration projects.
+- Deployment may validate package requirements through catalog abstractions or a future transport-specific client adapter.
+- Deployment should consume deployment-specific manifests and artifacts. Runtime Builder intent or generated bundles may become artifact-build inputs later, but must not bypass deployment validation, diff, dry-run, apply, or history.
+
+Enforcement:
+
+- `tests/Elsa.Platform.PackageCatalog.Abstractions.Tests/DeploymentBoundaryTests.cs` scans future `src/Elsa.Platform.Deployment.*` project references for forbidden catalog internals.
+- `tests/Elsa.Platform.PackageCatalog.Abstractions.Tests/DeploymentPackageContractsTests.cs` verifies the package requirement validation result shape keeps manifest, approval, trust, suspicious, and compatibility states separate.

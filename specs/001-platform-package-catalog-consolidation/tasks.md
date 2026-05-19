@@ -153,16 +153,16 @@
 
 ### Tests
 
-- [ ] T050 [P] [US6] Add dependency boundary check showing Deployment does not reference catalog API/UI/persistence projects
-- [ ] T051 [P] [US6] Add contract tests for package requirement validation result shape
+- [x] T050 [P] [US6] Add dependency boundary check showing Deployment does not reference catalog API/UI/persistence projects
+- [x] T051 [P] [US6] Add contract tests for package requirement validation result shape
 
 ### Implementation
 
-- [ ] T052 [US6] Define package lookup and compatibility contracts in `src/Elsa.Platform.PackageCatalog.Abstractions/`
-- [ ] T053 [US6] Add deployment-facing catalog client or adapter contract without referencing catalog internals
-- [ ] T054 [US6] Update deployment phased strategy to describe catalog-backed package descriptor validation
-- [ ] T055 [US6] Verify package validity, approval, trust, suspicious, and compatibility remain distinct in the contract
-- [ ] T056 [US6] Define whether Deployment consumes Runtime Builder generated artifacts, builder intent, or only deployment-specific artifacts
+- [x] T052 [US6] Define package lookup and compatibility contracts in `src/Elsa.Platform.PackageCatalog.Abstractions/`
+- [x] T053 [US6] Add deployment-facing catalog client or adapter contract without referencing catalog internals
+- [x] T054 [US6] Update deployment phased strategy to describe catalog-backed package descriptor validation
+- [x] T055 [US6] Verify package validity, approval, trust, suspicious, and compatibility remain distinct in the contract
+- [x] T056 [US6] Define whether Deployment consumes Runtime Builder generated artifacts, builder intent, or only deployment-specific artifacts
 
 **Checkpoint**: Deployment integration path is ready for Deployment Phase 1 package descriptors.
 
