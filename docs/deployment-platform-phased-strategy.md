@@ -57,6 +57,10 @@ elsa-platform/
     Elsa.Platform.PackageCatalog.Api/
     Elsa.Platform.PackageCatalog.AdminUi/
     Elsa.Platform.PackageCatalog.Sources.NuGet/
+    Elsa.Platform.RuntimeBuilder.Abstractions/
+    Elsa.Platform.RuntimeBuilder.Core/
+    Elsa.Platform.RuntimeBuilder.Api/
+    Elsa.Platform.RuntimeBuilder.DeploymentTemplates/
     Elsa.Platform.PackageManifests/
     Elsa.Platform.PackageManifest.Generator/
   tests/
@@ -66,6 +70,7 @@ elsa-platform/
     Elsa.Platform.Deployment.Cli.Tests/
     Elsa.Platform.Deployment.Api.Tests/
     Elsa.Platform.PackageCatalog.*.Tests/
+    Elsa.Platform.RuntimeBuilder.*.Tests/
     Elsa.Platform.PackageManifests.Tests/
     Elsa.Platform.PackageManifest.Generator.*.Tests/
   samples/
@@ -102,10 +107,11 @@ src/
 - Artifact creation, inspection, and immutability rules.
 - Deployment planning, validation orchestration, diffing, dry-run, apply, and history.
 - Package catalog, package manifest contracts, package manifest generation, package approval, and package compatibility metadata.
+- Runtime Builder planning, runtime image metadata, server-side bundle generation, deployment template generation, and saved runtime configuration intent.
 - CLI, API, operator, GitOps, OCI, signing, approvals, overlays, governance, and platform documentation.
 - Resource handler abstractions and default handlers that can operate through public Elsa runtime APIs.
 
-Package Catalog is a sibling platform subsystem, not a child of Deployment. Deployment should consume package catalog capabilities through abstractions or client contracts for package descriptor validation, approval state, and compatibility checks.
+Package Catalog and Runtime Builder are sibling platform subsystems, not children of Deployment. Deployment should consume package catalog capabilities through abstractions or client contracts for package descriptor validation, approval state, and compatibility checks. Runtime Builder should own builder intent, runtime image metadata, server-side planning, generated bundles, and deployment template output that may later feed deployment artifacts.
 
 ## 4. Package And Module Boundaries
 

@@ -61,6 +61,28 @@ Validation rules:
 - NuGet provider must inspect package files and manifests without loading arbitrary assemblies.
 - Source provider failures must be recorded as item-level sync diagnostics where possible.
 
+## Runtime Builder Subsystem
+
+Represents platform-owned runtime composition and bundle generation capabilities.
+
+Fields:
+
+- `BuilderIntent`
+- `RuntimeImageMetadata`
+- `RuntimePlan`
+- `BundleFiles`
+- `BundleFindings`
+- `DeploymentTemplateTarget`
+- `SavedRuntimeConfiguration`
+- `RuntimeConfigurationVersion`
+
+Validation rules:
+
+- Runtime Builder may consume Package Catalog abstractions or client contracts.
+- Runtime Builder must not depend on catalog EF persistence.
+- Generated deployment templates are files/previews, not live deployment reconciliation.
+- Bundle output must not expose raw secrets.
+
 ## Compatibility Contract
 
 Represents catalog data needed by deployment validation and builder clients.

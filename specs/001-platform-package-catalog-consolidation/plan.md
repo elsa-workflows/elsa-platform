@@ -8,12 +8,15 @@
 
 Move the existing `elsa-package-catalog` work into `elsa-platform` as a first-class Platform Package Catalog subsystem. The migration is phased: initialize Spec Kit and planning artifacts, import the existing repository behavior with history if practical, normalize project names and package boundaries, improve architecture where the move exposes clear seams, integrate deployment-facing catalog contracts, then deprecate the old repository.
 
+Merged PR `elsa-workflows/elsa-package-catalog#36` adds Runtime Builder backend foundations to the catalog repository. The consolidation plan now treats that work as a separate target platform subsystem named `Elsa.Platform.RuntimeBuilder.*`, because server-side builder planning, runtime image metadata, bundle generation, deployment templates, and saved runtime configurations are adjacent to Package Catalog but not catalog core responsibilities.
+
 The target package family is:
 
 ```text
 src/
   Elsa.Platform.Deployment.*
   Elsa.Platform.PackageCatalog.*
+  Elsa.Platform.RuntimeBuilder.*
   Elsa.Platform.PackageManifests
   Elsa.Platform.PackageManifest.Generator
   Elsa.Platform.PackageManifest.Generator.Core
@@ -91,6 +94,11 @@ src/
   Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/
   Elsa.Platform.PackageCatalog.AppHost/
   Elsa.Platform.PackageCatalog.ServiceDefaults/
+  Elsa.Platform.RuntimeBuilder.Abstractions/
+  Elsa.Platform.RuntimeBuilder.Core/
+  Elsa.Platform.RuntimeBuilder.Api/
+  Elsa.Platform.RuntimeBuilder.DeploymentTemplates/
+  Elsa.Platform.RuntimeBuilder.Persistence.EntityFrameworkCore/
 
   Elsa.Platform.PackageManifests/
   Elsa.Platform.PackageManifest.Generator/
@@ -99,11 +107,12 @@ src/
 
 tests/
   Elsa.Platform.PackageCatalog.*.Tests/
+  Elsa.Platform.RuntimeBuilder.*.Tests/
   Elsa.Platform.PackageManifests.Tests/
   Elsa.Platform.PackageManifest.Generator.*.Tests/
 ```
 
-**Structure Decision**: Use one platform repository with sibling subsystems. Package Catalog is not nested under Deployment. Deployment consumes catalog only through abstractions or a client package.
+**Structure Decision**: Use one platform repository with sibling subsystems. Package Catalog and Runtime Builder are not nested under Deployment. Deployment consumes catalog and builder capabilities only through abstractions, artifacts, or client contracts.
 
 ## Phase Plan
 
@@ -140,6 +149,7 @@ Outcome:
 - Rename projects and namespaces toward `Elsa.Platform.PackageCatalog.*`, `Elsa.Platform.PackageManifests`, and `Elsa.Platform.PackageManifest.Generator*`.
 - Extract `Elsa.Platform.PackageCatalog.Abstractions`.
 - Move NuGet-specific source sync to `Elsa.Platform.PackageCatalog.Sources.NuGet`.
+- Extract Runtime Builder backend areas toward `Elsa.Platform.RuntimeBuilder.*`.
 - Keep manifest contracts dependency-light.
 
 Exit gate:
@@ -154,11 +164,13 @@ Outcome:
 
 - Separate API, core, source providers, persistence, UI, and app host concerns cleanly.
 - Add catalog-facing contracts for deployment package descriptor validation.
+- Add Runtime Builder contracts for runtime intent, planning, bundle output, deployment templates, and saved runtime configurations.
 - Preserve approval, validity, trust, compatibility, source visibility, and sync state as separate states.
 
 Exit gate:
 
 - Deployment packages can reference only catalog abstractions/client contracts.
+- Runtime Builder packages can reference Package Catalog abstractions or clients but not catalog persistence.
 - No deployment project references catalog API, UI, or persistence.
 
 ### Phase 4: Old Repository Deprecation

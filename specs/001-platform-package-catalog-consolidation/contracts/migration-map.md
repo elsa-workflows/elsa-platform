@@ -18,6 +18,12 @@
 | `Elsa.PackageManifest.Generator` | `Elsa.Platform.PackageManifest.Generator` |
 | `Elsa.PackageManifest.Generator.Core` | `Elsa.Platform.PackageManifest.Generator.Core` |
 | `Elsa.PackageManifest.Generator.MSBuild` | `Elsa.Platform.PackageManifest.Generator.MSBuild` |
+| `Elsa.Catalog.Core/Builder/*` | `Elsa.Platform.RuntimeBuilder.Core` |
+| `Elsa.Catalog.Core/DeploymentTemplates/*` | `Elsa.Platform.RuntimeBuilder.DeploymentTemplates` |
+| `Elsa.Catalog.Core/RuntimeConfigurations/*` | `Elsa.Platform.RuntimeBuilder.Core` or `Elsa.Platform.RuntimeBuilder.Abstractions` by contract role |
+| `Elsa.Catalog.Api/Public/Builder/*` | `Elsa.Platform.RuntimeBuilder.Api` |
+| `Elsa.Catalog.Api/Workspace/*RuntimeConfiguration*` | `Elsa.Platform.RuntimeBuilder.Api` |
+| `Elsa.Catalog.Persistence.EntityFrameworkCore/RuntimeConfigurationStore.cs` | `Elsa.Platform.RuntimeBuilder.Persistence.EntityFrameworkCore` |
 
 ## Compatibility Review
 
@@ -39,3 +45,14 @@ Existing catalog specs should be imported under one of these strategies:
 - Preserve as historical specs under `specs/catalog-archive/`.
 - Rename into platform specs if implementation will continue from them.
 - Link to old repo issue/spec references where history preservation is sufficient.
+
+New specs from PR #36 must be imported and triaged:
+
+- `009-server-bundle-generation`
+- `010-runtime-image-metadata-api`
+- `011-saved-runtime-configurations`
+- `012-server-side-planning`
+- `013-deployment-template-expansion`
+- `014-byoc-deployment-targets`
+- `015-managed-hosting-control-plane`
+- `016-runtime-operations`

@@ -29,7 +29,7 @@
 
 **Purpose**: Prepare for a behavior-preserving repository import.
 
-- [x] T009 Capture current `elsa-package-catalog` HEAD SHA and repository inventory in `specs/001-platform-package-catalog-consolidation/research.md`
+- [x] T009 Capture current `elsa-package-catalog` HEAD SHA, PR #36 merge SHA, and repository inventory in `specs/001-platform-package-catalog-consolidation/research.md`
 - [x] T010 Decide history-preserving import mechanism and document command sequence in `specs/001-platform-package-catalog-consolidation/quickstart.md`
 - [x] T011 Identify Spec Kit file conflicts between old repo and platform repo in `specs/001-platform-package-catalog-consolidation/research.md`
 - [x] T012 Identify package ID compatibility status for `Elsa.PackageManifests` and `Elsa.PackageManifest.Generator` in `specs/001-platform-package-catalog-consolidation/research.md`
@@ -73,6 +73,7 @@
 - [ ] T023 [US2] Run imported .NET test suites from `elsa-platform`
 - [ ] T024 [US2] Run imported admin UI unit tests from `elsa-platform`
 - [ ] T025 [US2] Document any pre-existing or migration-caused test failures in `specs/001-platform-package-catalog-consolidation/quickstart.md`
+- [ ] T026 [US2] Verify PR #36 Runtime Builder specs `009` through `016` and tests are included in the import
 
 **Checkpoint**: Current catalog behavior is preserved in the platform repository.
 
@@ -86,41 +87,65 @@
 
 ### Tests
 
-- [ ] T026 [P] [US3] Add or update manifest contract tests for renamed `Elsa.Platform.PackageManifests`
-- [ ] T027 [P] [US3] Add dependency boundary inspection notes to `specs/001-platform-package-catalog-consolidation/contracts/dependency-boundaries.md`
+- [ ] T027 [P] [US3] Add or update manifest contract tests for renamed `Elsa.Platform.PackageManifests`
+- [ ] T028 [P] [US3] Add dependency boundary inspection notes to `specs/001-platform-package-catalog-consolidation/contracts/dependency-boundaries.md`
 
 ### Implementation
 
-- [ ] T028 [US3] Rename `Elsa.Catalog.Core` to `Elsa.Platform.PackageCatalog.Core`
-- [ ] T029 [US3] Extract `Elsa.Platform.PackageCatalog.Abstractions` from catalog core contracts
-- [ ] T030 [US3] Rename `Elsa.Catalog.Packaging.NuGet` to `Elsa.Platform.PackageCatalog.Sources.NuGet`
-- [ ] T031 [US3] Rename catalog API, AppHost, ServiceDefaults, AdminUi, persistence, and migration projects to `Elsa.Platform.PackageCatalog.*`
-- [ ] T032 [US3] Rename `Elsa.PackageManifests` source project to `Elsa.Platform.PackageManifests`
-- [ ] T033 [US3] Rename generator projects to `Elsa.Platform.PackageManifest.Generator*`
-- [ ] T034 [US3] Update namespaces, project references, solution files, test project references, package metadata, and docs after project renames
-- [ ] T035 [US3] Run .NET restore/build/test after renames
-- [ ] T036 [US3] Run admin UI tests after path and package updates
+- [ ] T029 [US3] Rename `Elsa.Catalog.Core` to `Elsa.Platform.PackageCatalog.Core`
+- [ ] T030 [US3] Extract `Elsa.Platform.PackageCatalog.Abstractions` from catalog core contracts
+- [ ] T031 [US3] Rename `Elsa.Catalog.Packaging.NuGet` to `Elsa.Platform.PackageCatalog.Sources.NuGet`
+- [ ] T032 [US3] Rename catalog API, AppHost, ServiceDefaults, AdminUi, persistence, and migration projects to `Elsa.Platform.PackageCatalog.*`
+- [ ] T033 [US3] Rename `Elsa.PackageManifests` source project to `Elsa.Platform.PackageManifests`
+- [ ] T034 [US3] Rename generator projects to `Elsa.Platform.PackageManifest.Generator*`
+- [ ] T035 [US3] Update namespaces, project references, solution files, test project references, package metadata, and docs after project renames
+- [ ] T036 [US3] Run .NET restore/build/test after renames
+- [ ] T037 [US3] Run admin UI tests after path and package updates
 
 **Checkpoint**: Platform package architecture is in place and verified.
 
 ---
 
-## Phase 6: User Story 4 - Deprecate Old Repository Safely (Priority: P2)
+## Phase 6: User Story 4 - Classify Runtime Builder Backend (Priority: P2)
+
+**Goal**: Extract PR #36 Runtime Builder backend foundations into a dedicated platform subsystem.
+
+**Independent Test**: Runtime Builder projects build and tests pass without depending on catalog persistence internals.
+
+### Tests
+
+- [ ] T038 [P] [US4] Add or preserve bundle generation tests under `tests/Elsa.Platform.RuntimeBuilder.*.Tests/`
+- [ ] T039 [P] [US4] Add or preserve planner, runtime image, deployment template, and runtime configuration tests under Runtime Builder test projects
+
+### Implementation
+
+- [ ] T040 [US4] Move `Builder` services/models/renderers toward `src/Elsa.Platform.RuntimeBuilder.Core/`
+- [ ] T041 [US4] Move `DeploymentTemplates` renderers toward `src/Elsa.Platform.RuntimeBuilder.DeploymentTemplates/`
+- [ ] T042 [US4] Move runtime image metadata contracts toward `src/Elsa.Platform.RuntimeBuilder.Abstractions/`
+- [ ] T043 [US4] Move saved runtime configuration contracts and persistence seams toward Runtime Builder projects
+- [ ] T044 [US4] Ensure Runtime Builder depends on Package Catalog abstractions/client contracts, not catalog EF persistence
+- [ ] T045 [US4] Keep BYOC deployment targets, managed hosting, and runtime operations as deferred platform/deployment phases
+
+**Checkpoint**: Runtime Builder has an explicit platform home and boundary.
+
+---
+
+## Phase 7: User Story 5 - Deprecate Old Repository Safely (Priority: P2)
 
 **Goal**: Make `elsa-platform` the source of truth and retire active work in `elsa-package-catalog`.
 
 **Independent Test**: Old repo points to `elsa-platform` and has no untriaged open work.
 
-- [ ] T037 [US4] Inventory open issues and PRs in `elsa-workflows/elsa-package-catalog`
-- [ ] T038 [US4] Migrate, link, or close old repo issues/specs with rationale
-- [ ] T039 [US4] Update old repo README to mark repository deprecated and link to `elsa-platform`
-- [ ] T040 [US4] Decide archive timing and document it in `specs/001-platform-package-catalog-consolidation/research.md`
+- [ ] T046 [US5] Inventory open issues and PRs in `elsa-workflows/elsa-package-catalog`
+- [ ] T047 [US5] Migrate, link, or close old repo issues/specs with rationale
+- [ ] T048 [US5] Update old repo README to mark repository deprecated and link to `elsa-platform`
+- [ ] T049 [US5] Decide archive timing and document it in `specs/001-platform-package-catalog-consolidation/research.md`
 
 **Checkpoint**: Old repository is deprecated or ready to archive.
 
 ---
 
-## Phase 7: User Story 5 - Enable Deployment Integration (Priority: P3)
+## Phase 8: User Story 6 - Enable Deployment Integration (Priority: P3)
 
 **Goal**: Prepare package catalog contracts for deployment package descriptor validation.
 
@@ -128,15 +153,16 @@
 
 ### Tests
 
-- [ ] T041 [P] [US5] Add dependency boundary check showing Deployment does not reference catalog API/UI/persistence projects
-- [ ] T042 [P] [US5] Add contract tests for package requirement validation result shape
+- [ ] T050 [P] [US6] Add dependency boundary check showing Deployment does not reference catalog API/UI/persistence projects
+- [ ] T051 [P] [US6] Add contract tests for package requirement validation result shape
 
 ### Implementation
 
-- [ ] T043 [US5] Define package lookup and compatibility contracts in `src/Elsa.Platform.PackageCatalog.Abstractions/`
-- [ ] T044 [US5] Add deployment-facing catalog client or adapter contract without referencing catalog internals
-- [ ] T045 [US5] Update deployment phased strategy to describe catalog-backed package descriptor validation
-- [ ] T046 [US5] Verify package validity, approval, trust, suspicious, and compatibility remain distinct in the contract
+- [ ] T052 [US6] Define package lookup and compatibility contracts in `src/Elsa.Platform.PackageCatalog.Abstractions/`
+- [ ] T053 [US6] Add deployment-facing catalog client or adapter contract without referencing catalog internals
+- [ ] T054 [US6] Update deployment phased strategy to describe catalog-backed package descriptor validation
+- [ ] T055 [US6] Verify package validity, approval, trust, suspicious, and compatibility remain distinct in the contract
+- [ ] T056 [US6] Define whether Deployment consumes Runtime Builder generated artifacts, builder intent, or only deployment-specific artifacts
 
 **Checkpoint**: Deployment integration path is ready for Deployment Phase 1 package descriptors.
 
@@ -144,11 +170,11 @@
 
 ## Final Phase: Polish And Release Readiness
 
-- [ ] T047 Run full .NET test suite from `elsa-platform`
-- [ ] T048 Run relevant UI test suites from `elsa-platform`
-- [ ] T049 Review docs for old names and update remaining references
-- [ ] T050 Add or update ADRs for package identity compatibility and repository deprecation
-- [ ] T051 Confirm `tasks.md` checkboxes and blocker notes reflect actual progress
+- [ ] T057 Run full .NET test suite from `elsa-platform`
+- [ ] T058 Run relevant UI test suites from `elsa-platform`
+- [ ] T059 Review docs for old names and update remaining references
+- [ ] T060 Add or update ADRs for package identity compatibility and repository deprecation
+- [ ] T061 Confirm `tasks.md` checkboxes and blocker notes reflect actual progress
 
 ---
 
@@ -158,14 +184,16 @@
 - Phase 2 blocks import work.
 - Phase 3 can proceed before code import but should be completed before renaming.
 - Phase 4 must complete before Phase 5 architecture cleanup.
-- Phase 5 must complete before Deployment integration in Phase 7.
-- Phase 6 can start after Phase 4 but should not archive the old repo until Phase 5 is stable.
+- Phase 5 must complete before Runtime Builder extraction in Phase 6.
+- Phase 6 must complete before Deployment integration in Phase 8.
+- Phase 7 can start after Phase 4 but should not archive the old repo until Phase 5 and Phase 6 are stable.
 
 ## Parallel Opportunities
 
 - T009 through T012 can be researched in parallel.
 - Baseline old-repo tests T018 and T019 can run in parallel.
 - Rename tasks should be staged carefully, but test additions and dependency-boundary docs can happen in parallel.
+- Runtime Builder test preservation T038 and T039 can happen in parallel.
 - Old repository issue inventory can happen in parallel with architecture cleanup after import is stable.
 
 ## MVP First

@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Reimagine the current `elsa-package-catalog` repository as an Elsa Platform subsystem, move toward the ideal package layout under `elsa-platform`, deprecate the old repository, improve architecture where useful, and use Spec Kit for implementation."
+**Input**: User description: "Reimagine the current `elsa-package-catalog` repository as Elsa Platform subsystems, move toward the ideal package layout under `elsa-platform`, deprecate the old repository, improve architecture where useful, incorporate merged PR #36 Runtime Builder backend foundations, and use Spec Kit for implementation."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -59,7 +59,23 @@ Elsa maintainers can evolve the imported catalog into platform package names and
 
 ---
 
-### User Story 4 - Deprecate Old Repository Safely (Priority: P2)
+### User Story 4 - Classify Runtime Builder Backend (Priority: P2)
+
+Elsa maintainers can move Runtime Builder backend foundations from the catalog repository into a dedicated platform subsystem instead of leaving builder planning, bundle generation, runtime image metadata, deployment templates, and saved runtime configurations inside Package Catalog core.
+
+**Why this priority**: PR #36 added substantial Runtime Builder backend functionality. It depends on catalog data, but it is a separate product capability and the bridge between package selection, generated deployment files, and future deployment workflows.
+
+**Independent Test**: Review the migration map and dependency contracts and verify Runtime Builder has a target subsystem, ownership boundaries, and extraction tasks.
+
+**Acceptance Scenarios**:
+
+1. **Given** imported catalog code contains `Builder`, `DeploymentTemplates`, and `RuntimeConfigurations` areas, **When** package boundaries are normalized, **Then** those areas move toward `Elsa.Platform.RuntimeBuilder.*` projects.
+2. **Given** Runtime Builder needs package metadata and compatibility, **When** dependencies are reviewed, **Then** it consumes Package Catalog abstractions or client contracts instead of persistence internals.
+3. **Given** Deployment may later consume generated artifacts or runtime intent, **When** contracts are defined, **Then** Deployment integrates through Runtime Builder contracts rather than reimplementing builder planning.
+
+---
+
+### User Story 5 - Deprecate Old Repository Safely (Priority: P2)
 
 Elsa maintainers and contributors know that active package catalog development has moved to `elsa-platform`, and the old `elsa-package-catalog` repository remains useful only as historical reference or an archived redirect.
 
@@ -75,7 +91,7 @@ Elsa maintainers and contributors know that active package catalog development h
 
 ---
 
-### User Story 5 - Enable Deployment Integration (Priority: P3)
+### User Story 6 - Enable Deployment Integration (Priority: P3)
 
 Elsa deployment planning can consume package catalog capabilities for package requirement validation without coupling deployment to catalog internals.
 
@@ -101,6 +117,8 @@ Elsa deployment planning can consume package catalog capabilities for package re
 - Old repository issues or specs describe work that is already superseded by the platform roadmap.
 - Package manifest generator package identity changes would break package authors.
 - Deployment integration tries to reference catalog persistence directly.
+- Runtime Builder backend code remains in Package Catalog core and blurs catalog versus builder ownership.
+- Deployment template generation is mistaken for live deployment reconciliation.
 
 ## Requirements *(mandatory)*
 
@@ -122,11 +140,15 @@ Elsa deployment planning can consume package catalog capabilities for package re
 - **FR-014**: Open catalog specs/issues MUST be migrated, linked, or explicitly closed before old repository archival.
 - **FR-015**: Spec Kit `tasks.md` MUST be used as the progress tracker for the migration.
 - **FR-016**: Phase gates MUST define what must be true before moving from import, to rename, to cleanup, to old-repository deprecation.
+- **FR-017**: Runtime Builder backend capabilities introduced by `elsa-package-catalog#36` MUST be mapped to a dedicated `Elsa.Platform.RuntimeBuilder.*` subsystem during architecture normalization.
+- **FR-018**: Runtime Builder MUST consume Package Catalog data through abstractions or client contracts and MUST NOT depend on catalog persistence internals.
+- **FR-019**: Deployment template generation MUST remain distinct from live deployment reconciliation.
 
 ### Key Entities *(include if feature involves data)*
 
 - **Platform Subsystem**: A bounded area within `elsa-platform`, such as Deployment or Package Catalog, with source projects, tests, specs, and ownership rules.
 - **Package Manifest Contract**: The dependency-light wire contract used by generator, catalog ingestion, deployment validation, and builder clients.
+- **Runtime Builder Subsystem**: Platform subsystem that owns builder intent, runtime image metadata, server-side planning, generated bundles, deployment templates, and saved runtime configurations.
 - **Catalog Source Provider**: A source-specific ingestion adapter, initially NuGet, that discovers package metadata and manifests.
 - **Compatibility Contract**: A contract that expresses package validity, approval, trust, and compatibility results without leaking catalog persistence.
 - **Migration Phase**: A tracked implementation phase with entry criteria, tasks, verification, and exit criteria.
@@ -142,6 +164,7 @@ Elsa deployment planning can consume package catalog capabilities for package re
 - **SC-004**: Package manifest contract tests continue to pass after namespace/project moves.
 - **SC-005**: The old repository deprecation checklist has no unchecked migration blockers before archival is proposed.
 - **SC-006**: The `tasks.md` checklist shows phase-level progress and can be used to resume work without rereading the whole conversation.
+- **SC-007**: Runtime Builder backend code has a target subsystem and does not remain architecturally owned by Package Catalog after normalization.
 
 ## Assumptions
 

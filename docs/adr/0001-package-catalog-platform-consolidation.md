@@ -6,7 +6,7 @@ Date: 2026-05-19
 
 ## Context
 
-`elsa-package-catalog` contains package manifest contracts, manifest generation, package source synchronization, package approval, compatibility validation, catalog APIs, admin UI, persistence, migrations, Azure deployment assets, tests, and Spec Kit specs.
+`elsa-package-catalog` contains package manifest contracts, manifest generation, package source synchronization, package approval, compatibility validation, catalog APIs, admin UI, persistence, migrations, Runtime Builder backend foundations, deployment template generation, Azure deployment assets, tests, and Spec Kit specs.
 
 The Elsa Deployment Platform roadmap needs package descriptor validation, package compatibility metadata, approval/trust signals, and package manifest contracts. Keeping these capabilities in a separate long-term repository would create avoidable drift between deployment, catalog, Runtime Builder, and package publishing workflows.
 
@@ -20,13 +20,16 @@ Target package family:
 src/
   Elsa.Platform.Deployment.*
   Elsa.Platform.PackageCatalog.*
+  Elsa.Platform.RuntimeBuilder.*
   Elsa.Platform.PackageManifests
   Elsa.Platform.PackageManifest.Generator
   Elsa.Platform.PackageManifest.Generator.Core
   Elsa.Platform.PackageManifest.Generator.MSBuild
 ```
 
-Package Catalog must not be nested under Deployment. Deployment may consume catalog abstractions or client contracts, but not catalog API, UI, EF persistence, migrations, AppHost, or source-provider internals.
+Package Catalog and Runtime Builder must not be nested under Deployment. Deployment may consume catalog abstractions, Runtime Builder contracts, or client contracts, but not catalog API, UI, EF persistence, migrations, AppHost, or source-provider internals.
+
+Runtime Builder should be extracted as its own platform subsystem when normalizing the imported catalog code. It owns builder intent, runtime image metadata, bundle generation, server-side planning, deployment template rendering, and saved runtime configurations.
 
 ## Consequences
 
@@ -35,6 +38,7 @@ Positive:
 - One platform repository owns deployment and package governance.
 - Package descriptor validation can share catalog compatibility and approval semantics.
 - Package manifests remain a shared platform contract.
+- Runtime Builder backend capabilities get a clear home instead of remaining mixed into catalog core.
 - The old catalog repository can be deprecated once the platform subsystem is usable.
 
 Tradeoffs:

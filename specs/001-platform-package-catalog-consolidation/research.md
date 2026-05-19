@@ -65,7 +65,11 @@
 
 Repository: `https://github.com/elsa-workflows/elsa-package-catalog`
 
-Inspected HEAD: `7817031f9ff8049fe45d9a2915c39af2b35aaf40`
+Inspected HEAD before PR #36 review: `7817031f9ff8049fe45d9a2915c39af2b35aaf40`
+
+Updated inspected HEAD after merged PR #36: `e321965a09cdcf63bb6ad3144badd9a203c10da8`
+
+Merged PR reviewed: [elsa-workflows/elsa-package-catalog#36](https://github.com/elsa-workflows/elsa-package-catalog/pull/36), "Add platform Runtime Builder backend foundations", merged 2026-05-19.
 
 Current source projects:
 
@@ -107,6 +111,43 @@ Current specs:
 - `006-package-details-page`
 - `007-source-scoped-catalog`
 - `008-account-custom-feeds`
+- `009-server-bundle-generation`
+- `010-runtime-image-metadata-api`
+- `011-saved-runtime-configurations`
+- `012-server-side-planning`
+- `013-deployment-template-expansion`
+- `014-byoc-deployment-targets`
+- `015-managed-hosting-control-plane`
+- `016-runtime-operations`
+
+## PR #36 Impact Review
+
+PR #36 adds backend Runtime Builder foundations:
+
+- Server-side bundle generation.
+- Runtime image metadata API.
+- Saved runtime configurations and snapshots.
+- Server-side builder planning.
+- Deployment template selection for Docker Compose, Azure Container Apps, and Kubernetes/Helm.
+- Deferred specs for BYOC deployment targets, managed hosting, and runtime operations.
+
+Architectural decision:
+
+- Treat these capabilities as `Elsa.Platform.RuntimeBuilder.*`, not as Package Catalog core.
+
+Rationale:
+
+- Runtime Builder consumes package catalog data, but owns builder intent, runtime image metadata, generated bundles, server-side planning, deployment templates, and saved runtime configurations.
+- Deployment may later consume Runtime Builder artifacts or contracts, but live reconciliation remains in `Elsa.Platform.Deployment.*`.
+- BYOC deployment targets, managed hosting, and runtime operations should be later platform/deployment phases, not part of the initial catalog import.
+
+Migration implications:
+
+- Import PR #36 specs `009` through `016`; do not let old `.specify/feature.json` override the platform active feature.
+- Map `src/Elsa.Catalog.Core/Builder/*` to `Elsa.Platform.RuntimeBuilder.Core`.
+- Map `src/Elsa.Catalog.Core/DeploymentTemplates/*` to `Elsa.Platform.RuntimeBuilder.DeploymentTemplates`.
+- Map `src/Elsa.Catalog.Core/RuntimeConfigurations/*` and persistence stores to Runtime Builder contracts/persistence unless implementation feedback shows they should remain catalog-owned.
+- Keep deployment template generation distinct from deployment apply/reconciliation.
 
 ## Spec Kit Conflict Notes
 

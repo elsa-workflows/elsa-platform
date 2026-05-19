@@ -30,6 +30,7 @@ Expected:
 
 - Current catalog projects restore.
 - Existing catalog tests pass or failures are documented as pre-existing.
+- PR #36 Runtime Builder tests are included in the baseline result.
 
 ## History-Preserving Import Candidate
 
@@ -54,6 +55,12 @@ The migration should not overwrite:
 - `docs/deployment-platform-phased-strategy.md`
 - `specs/001-platform-package-catalog-consolidation/`
 
+PR #36 import note:
+
+- Import from `e321965a09cdcf63bb6ad3144badd9a203c10da8` or newer.
+- Keep specs `009` through `016`; they are relevant to Runtime Builder and later platform phases.
+- Do not preserve old `.specify/feature.json` as the platform active feature pointer.
+
 ## 3. Rename Validation
 
 After platform package renaming:
@@ -68,6 +75,7 @@ Expected:
 - Renamed project references resolve.
 - Manifest contract tests pass.
 - Catalog API/core/persistence tests pass.
+- Runtime Builder bundle, planner, runtime image, deployment template, and runtime configuration tests pass.
 
 ## 4. Admin UI Validation
 
