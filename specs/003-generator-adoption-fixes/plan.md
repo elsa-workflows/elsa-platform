@@ -6,7 +6,7 @@
 
 ## Summary
 
-Harden `Elsa.PackageManifest.Generator` for broad Elsa Core module adoption by
+Harden `Elsa.Platform.PackageManifest.Generator` for broad Elsa Core module adoption by
 fixing three build-package behaviors discovered during preview rollout: warning
 severity must not make the MSBuild task return failure when only warnings are
 logged, delegate-shaped shell-feature properties must be treated as
@@ -30,7 +30,7 @@ cases.
 deterministic builds.
 
 **Primary Dependencies**: Existing MSBuild task APIs, System.Reflection metadata
-inspection, System.Text.Json, Elsa.PackageManifests validation, xUnit,
+inspection, System.Text.Json, Elsa.Platform.PackageManifests validation, xUnit,
 FluentAssertions, and existing generator test helpers.
 
 **Storage**: File artifacts only. Inputs are compiled assemblies, XML docs,
@@ -72,7 +72,7 @@ contract.
 - **No arbitrary code execution**: PASS. Delegate filtering and setting
   discovery remain metadata-only; no constructors, getters, factories, or
   callbacks are invoked.
-- **Stable contracts**: PASS. No `Elsa.PackageManifests` wire-contract change is
+- **Stable contracts**: PASS. No `Elsa.Platform.PackageManifests` wire-contract change is
   planned.
 - **Schema evolution**: PASS. No schema version change is needed because the
   feature excludes non-configurable code hooks rather than adding new manifest
@@ -117,11 +117,11 @@ specs/003-generator-adoption-fixes/
 
 ```text
 src/
-├── Elsa.PackageManifest.Generator/
+├── Elsa.Platform.PackageManifest.Generator/
 │   └── build/
-│       ├── Elsa.PackageManifest.Generator.props
-│       └── Elsa.PackageManifest.Generator.targets
-├── Elsa.PackageManifest.Generator.Core/
+│       ├── Elsa.Platform.PackageManifest.Generator.props
+│       └── Elsa.Platform.PackageManifest.Generator.targets
+├── Elsa.Platform.PackageManifest.Generator.Core/
 │   ├── AssemblyInspection/
 │   ├── Generation/
 │   │   ├── ManifestGenerator.cs
@@ -132,15 +132,15 @@ src/
 │   └── Validation/
 │       ├── GenerationDiagnostics.cs
 │       └── ValidationSeverityPolicy.cs
-└── Elsa.PackageManifest.Generator.MSBuild/
+└── Elsa.Platform.PackageManifest.Generator.MSBuild/
     ├── GenerateElsaPackageManifestTask.cs
     └── Packaging/
 
 tests/
-├── Elsa.PackageManifest.Generator.Core.Tests/
-├── Elsa.PackageManifest.Generator.MSBuild.Tests/
-├── Elsa.PackageManifest.Generator.IntegrationTests/
-└── Elsa.PackageManifest.Generator.Testing/
+├── Elsa.Platform.PackageManifest.Generator.Core.Tests/
+├── Elsa.Platform.PackageManifest.Generator.MSBuild.Tests/
+├── Elsa.Platform.PackageManifest.Generator.IntegrationTests/
+└── Elsa.Platform.PackageManifest.Generator.Testing/
 ```
 
 **Structure Decision**: Extend the existing generator core/MSBuild/package

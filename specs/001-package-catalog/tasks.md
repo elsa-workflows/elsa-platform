@@ -18,18 +18,18 @@
 
 **Purpose**: Create the .NET solution, onion-style project structure, package references, shared build settings, and test projects.
 
-- [X] T001 Create solution file and source/test directories in `Elsa.PackageCatalog.sln`
-- [X] T002 Create manifest contract project in `src/Elsa.PackageManifests/Elsa.PackageManifests.csproj`
-- [X] T003 Create catalog core project in `src/Elsa.Catalog.Core/Elsa.Catalog.Core.csproj`
-- [X] T004 Create API project in `src/Elsa.Catalog.Api/Elsa.Catalog.Api.csproj`
-- [X] T005 Create EF Core persistence project in `src/Elsa.Catalog.Persistence.EntityFrameworkCore/Elsa.Catalog.Persistence.EntityFrameworkCore.csproj`
-- [X] T006 Create NuGet packaging adapter project in `src/Elsa.Catalog.Packaging.NuGet/Elsa.Catalog.Packaging.NuGet.csproj`
-- [X] T007 Create manifest contract test project in `tests/Elsa.PackageManifests.Tests/Elsa.PackageManifests.Tests.csproj`
-- [X] T008 Create core test project in `tests/Elsa.Catalog.Core.Tests/Elsa.Catalog.Core.Tests.csproj`
-- [X] T009 Create API integration test project in `tests/Elsa.Catalog.Api.Tests/Elsa.Catalog.Api.Tests.csproj`
-- [X] T010 Create EF Core persistence test project in `tests/Elsa.Catalog.Persistence.EntityFrameworkCore.Tests/Elsa.Catalog.Persistence.EntityFrameworkCore.Tests.csproj`
-- [X] T011 Create NuGet packaging test project in `tests/Elsa.Catalog.Packaging.NuGet.Tests/Elsa.Catalog.Packaging.NuGet.Tests.csproj`
-- [X] T012 Create shared test helper project in `tests/Elsa.Catalog.Testing/Elsa.Catalog.Testing.csproj`
+- [X] T001 Create solution file and source/test directories in `Elsa.Platform.sln`
+- [X] T002 Create manifest contract project in `src/Elsa.Platform.PackageManifests/Elsa.Platform.PackageManifests.csproj`
+- [X] T003 Create catalog core project in `src/Elsa.Platform.PackageCatalog.Core/Elsa.Platform.PackageCatalog.Core.csproj`
+- [X] T004 Create API project in `src/Elsa.Platform.PackageCatalog.Api/Elsa.Platform.PackageCatalog.Api.csproj`
+- [X] T005 Create EF Core persistence project in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.csproj`
+- [X] T006 Create NuGet packaging adapter project in `src/Elsa.Platform.PackageCatalog.Sources.NuGet/Elsa.Platform.PackageCatalog.Sources.NuGet.csproj`
+- [X] T007 Create manifest contract test project in `tests/Elsa.Platform.PackageManifests.Tests/Elsa.Platform.PackageManifests.Tests.csproj`
+- [X] T008 Create core test project in `tests/Elsa.Platform.PackageCatalog.Core.Tests/Elsa.Platform.PackageCatalog.Core.Tests.csproj`
+- [X] T009 Create API integration test project in `tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj`
+- [X] T010 Create EF Core persistence test project in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj`
+- [X] T011 Create NuGet packaging test project in `tests/Elsa.Platform.PackageCatalog.Sources.NuGet.Tests/Elsa.Platform.PackageCatalog.Sources.NuGet.Tests.csproj`
+- [X] T012 Create shared test helper project in `tests/Elsa.Platform.PackageCatalog.Testing/Elsa.Platform.PackageCatalog.Testing.csproj`
 - [X] T013 Configure nullable reference types, implicit usings, analyzers, and deterministic builds in `Directory.Build.props`
 - [X] T014 Add solution-wide package version management for ASP.NET Core, EF Core SQLite, NuGet.Protocol, JSON Schema validation, xUnit, FluentAssertions, and WebApplicationFactory in `Directory.Packages.props`
 
@@ -41,43 +41,43 @@
 
 ### Tests
 
-- [X] T015 [P] Add manifest serialization and extension data test skeletons in `tests/Elsa.PackageManifests.Tests/ManifestSerializationTests.cs`
-- [X] T016 [P] Add manifest schema validation test skeletons for valid, invalid, unsupported, and oversized manifests in `tests/Elsa.PackageManifests.Tests/ManifestSchemaValidationTests.cs`
-- [X] T017 [P] Add public visibility rule tests for valid, approved, listed, rejected, invalid, unlisted, and suspicious versions in `tests/Elsa.Catalog.Core.Tests/PublicCatalogVisibilityTests.cs`
-- [X] T018 [P] Add immutable package-version behavior tests in `tests/Elsa.Catalog.Core.Tests/PackageVersionImmutabilityTests.cs`
-- [X] T019 [P] Add API key authentication tests in `tests/Elsa.Catalog.Api.Tests/AdminApiAuthenticationTests.cs`
-- [X] T020 [P] Add SQLite persistence mapping smoke tests in `tests/Elsa.Catalog.Persistence.EntityFrameworkCore.Tests/CatalogDbContextMappingTests.cs`
-- [X] T021 [P] Add package archive safety tests proving assemblies are not loaded or executed in `tests/Elsa.Catalog.Packaging.NuGet.Tests/PackageArchiveManifestReaderSafetyTests.cs`
+- [X] T015 [P] Add manifest serialization and extension data test skeletons in `tests/Elsa.Platform.PackageManifests.Tests/ManifestSerializationTests.cs`
+- [X] T016 [P] Add manifest schema validation test skeletons for valid, invalid, unsupported, and oversized manifests in `tests/Elsa.Platform.PackageManifests.Tests/ManifestSchemaValidationTests.cs`
+- [X] T017 [P] Add public visibility rule tests for valid, approved, listed, rejected, invalid, unlisted, and suspicious versions in `tests/Elsa.Platform.PackageCatalog.Core.Tests/PublicCatalogVisibilityTests.cs`
+- [X] T018 [P] Add immutable package-version behavior tests in `tests/Elsa.Platform.PackageCatalog.Core.Tests/PackageVersionImmutabilityTests.cs`
+- [X] T019 [P] Add API key authentication tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminApiAuthenticationTests.cs`
+- [X] T020 [P] Add SQLite persistence mapping smoke tests in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/CatalogDbContextMappingTests.cs`
+- [X] T021 [P] Add package archive safety tests proving assemblies are not loaded or executed in `tests/Elsa.Platform.PackageCatalog.Sources.NuGet.Tests/PackageArchiveManifestReaderSafetyTests.cs`
 
 ### Implementation
 
-- [X] T022 [P] Implement manifest schema version constants in `src/Elsa.PackageManifests/ManifestSchemaVersions.cs`
-- [X] T023 [P] Implement shared extension data base model in `src/Elsa.PackageManifests/ExtensibleManifestObject.cs`
-- [X] T024 [P] Implement `ElsaPackageManifest` DTO in `src/Elsa.PackageManifests/ElsaPackageManifest.cs`
-- [X] T025 [P] Implement feature and setting manifest DTOs in `src/Elsa.PackageManifests/FeatureManifest.cs` and `src/Elsa.PackageManifests/FeatureSettingManifest.cs`
-- [X] T026 [P] Implement compatibility, dependency, conflict, license, and documentation manifest DTOs in `src/Elsa.PackageManifests/Compatibility/CompatibilityManifest.cs`
-- [X] T027 [P] Implement validation result DTOs in `src/Elsa.PackageManifests/Validation/ManifestValidationResult.cs`
-- [X] T028 [P] Add embedded v1 JSON Schema resource in `src/Elsa.PackageManifests/Schemas/elsa-package-manifest.v1.json`
-- [X] T029 Implement manifest JSON serialization options in `src/Elsa.PackageManifests/ManifestJsonSerializerOptions.cs`
-- [X] T030 Implement manifest validation service with schema lookup, 1 MB size check, version-range checks, and extension support in `src/Elsa.PackageManifests/Validation/ManifestValidator.cs`
-- [X] T031 [P] Implement core enums and value objects in `src/Elsa.Catalog.Core/Packages/PackageCatalogEnums.cs`
-- [X] T032 [P] Implement `PackageSource`, `Package`, and `PackageVersion` core models in `src/Elsa.Catalog.Core/Packages/PackageModels.cs`
-- [X] T033 [P] Implement `FeatureRecord` and `FeatureSettingRecord` core models in `src/Elsa.Catalog.Core/Manifests/FeatureProjectionModels.cs`
-- [X] T034 [P] Implement `ManifestValidationResultRecord`, `ApprovalRecord`, `SyncRun`, and `SyncRunItem` core models in `src/Elsa.Catalog.Core/Sync/SyncModels.cs`
-- [X] T035 Implement public visibility policy in `src/Elsa.Catalog.Core/Packages/PublicCatalogVisibilityPolicy.cs`
-- [X] T036 Implement immutable package-version update policy and suspicious hash detection in `src/Elsa.Catalog.Core/Packages/PackageVersionPolicy.cs`
-- [X] T037 Implement EF Core `CatalogDbContext` and DbSet declarations in `src/Elsa.Catalog.Persistence.EntityFrameworkCore/CatalogDbContext.cs`
-- [X] T038 Implement EF Core entity mappings and relational constraints in `src/Elsa.Catalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
-- [X] T039 Add initial EF Core migration for package sources, packages, versions, feature projections, validation results, approval records, sync runs, and sync run items in `src/Elsa.Catalog.Persistence.EntityFrameworkCore/Migrations/InitialCatalogCreate.cs`
-- [X] T040 Implement repository/query abstractions used by API and sync flows in `src/Elsa.Catalog.Core/Persistence/CatalogStoreContracts.cs`
-- [X] T041 Implement EF Core catalog store in `src/Elsa.Catalog.Persistence.EntityFrameworkCore/EfCoreCatalogStore.cs`
-- [X] T042 Implement API host composition, service registration, problem details, OpenAPI, and health endpoint in `src/Elsa.Catalog.Api/Program.cs`
-- [X] T043 Implement API key authentication handler in `src/Elsa.Catalog.Api/Authentication/ApiKeyAuthenticationHandler.cs`
-- [X] T044 Implement admin authorization policy registration in `src/Elsa.Catalog.Api/Authentication/AdminAuthorization.cs`
-- [X] T045 Implement sync diagnostics logger abstractions in `src/Elsa.Catalog.Core/Sync/SyncDiagnostics.cs`
-- [X] T046 Add controlled manifest and package fixture builders in `tests/Elsa.Catalog.Testing/ManifestFixtureBuilder.cs`
-- [X] T047 Add controlled NuGet archive fixture builder that creates `.nupkg` files without loading assemblies in `tests/Elsa.Catalog.Testing/NuGetPackageFixtureBuilder.cs`
-- [X] T048 Verify foundational tests fail for missing implementation or pass after implementation with `dotnet test` in `Elsa.PackageCatalog.sln`
+- [X] T022 [P] Implement manifest schema version constants in `src/Elsa.Platform.PackageManifests/ManifestSchemaVersions.cs`
+- [X] T023 [P] Implement shared extension data base model in `src/Elsa.Platform.PackageManifests/ExtensibleManifestObject.cs`
+- [X] T024 [P] Implement `ElsaPackageManifest` DTO in `src/Elsa.Platform.PackageManifests/ElsaPackageManifest.cs`
+- [X] T025 [P] Implement feature and setting manifest DTOs in `src/Elsa.Platform.PackageManifests/FeatureManifest.cs` and `src/Elsa.Platform.PackageManifests/FeatureSettingManifest.cs`
+- [X] T026 [P] Implement compatibility, dependency, conflict, license, and documentation manifest DTOs in `src/Elsa.Platform.PackageManifests/Compatibility/CompatibilityManifest.cs`
+- [X] T027 [P] Implement validation result DTOs in `src/Elsa.Platform.PackageManifests/Validation/ManifestValidationResult.cs`
+- [X] T028 [P] Add embedded v1 JSON Schema resource in `src/Elsa.Platform.PackageManifests/Schemas/elsa-package-manifest.v1.json`
+- [X] T029 Implement manifest JSON serialization options in `src/Elsa.Platform.PackageManifests/ManifestJsonSerializerOptions.cs`
+- [X] T030 Implement manifest validation service with schema lookup, 1 MB size check, version-range checks, and extension support in `src/Elsa.Platform.PackageManifests/Validation/ManifestValidator.cs`
+- [X] T031 [P] Implement core enums and value objects in `src/Elsa.Platform.PackageCatalog.Core/Packages/PackageCatalogEnums.cs`
+- [X] T032 [P] Implement `PackageSource`, `Package`, and `PackageVersion` core models in `src/Elsa.Platform.PackageCatalog.Core/Packages/PackageModels.cs`
+- [X] T033 [P] Implement `FeatureRecord` and `FeatureSettingRecord` core models in `src/Elsa.Platform.PackageCatalog.Core/Manifests/FeatureProjectionModels.cs`
+- [X] T034 [P] Implement `ManifestValidationResultRecord`, `ApprovalRecord`, `SyncRun`, and `SyncRunItem` core models in `src/Elsa.Platform.PackageCatalog.Core/Sync/SyncModels.cs`
+- [X] T035 Implement public visibility policy in `src/Elsa.Platform.PackageCatalog.Core/Packages/PublicCatalogVisibilityPolicy.cs`
+- [X] T036 Implement immutable package-version update policy and suspicious hash detection in `src/Elsa.Platform.PackageCatalog.Core/Packages/PackageVersionPolicy.cs`
+- [X] T037 Implement EF Core `CatalogDbContext` and DbSet declarations in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/CatalogDbContext.cs`
+- [X] T038 Implement EF Core entity mappings and relational constraints in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
+- [X] T039 Add initial EF Core migration for package sources, packages, versions, feature projections, validation results, approval records, sync runs, and sync run items in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Migrations/InitialCatalogCreate.cs`
+- [X] T040 Implement repository/query abstractions used by API and sync flows in `src/Elsa.Platform.PackageCatalog.Core/Persistence/CatalogStoreContracts.cs`
+- [X] T041 Implement EF Core catalog store in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/EfCoreCatalogStore.cs`
+- [X] T042 Implement API host composition, service registration, problem details, OpenAPI, and health endpoint in `src/Elsa.Platform.PackageCatalog.Api/Program.cs`
+- [X] T043 Implement API key authentication handler in `src/Elsa.Platform.PackageCatalog.Api/Authentication/ApiKeyAuthenticationHandler.cs`
+- [X] T044 Implement admin authorization policy registration in `src/Elsa.Platform.PackageCatalog.Api/Authentication/AdminAuthorization.cs`
+- [X] T045 Implement sync diagnostics logger abstractions in `src/Elsa.Platform.PackageCatalog.Core/Sync/SyncDiagnostics.cs`
+- [X] T046 Add controlled manifest and package fixture builders in `tests/Elsa.Platform.PackageCatalog.Testing/ManifestFixtureBuilder.cs`
+- [X] T047 Add controlled NuGet archive fixture builder that creates `.nupkg` files without loading assemblies in `tests/Elsa.Platform.PackageCatalog.Testing/NuGetPackageFixtureBuilder.cs`
+- [X] T048 Verify foundational tests fail for missing implementation or pass after implementation with `dotnet test` in `Elsa.Platform.sln`
 
 **Checkpoint**: Shared contracts, core models, persistence, auth, safety checks, and diagnostics are ready.
 
@@ -89,23 +89,23 @@
 
 ### Tests
 
-- [X] T049 [P] [US1] Add public package listing contract tests for `GET /api/packages` in `tests/Elsa.Catalog.Api.Tests/PublicPackagesApiTests.cs`
-- [X] T050 [P] [US1] Add public package details and versions contract tests for `GET /api/packages/{packageId}` and `GET /api/packages/{packageId}/versions` in `tests/Elsa.Catalog.Api.Tests/PublicPackageDetailsApiTests.cs`
-- [X] T051 [P] [US1] Add public package version details contract tests for `GET /api/packages/{packageId}/versions/{version}` in `tests/Elsa.Catalog.Api.Tests/PublicPackageVersionApiTests.cs`
-- [X] T052 [P] [US1] Add public feature listing and details contract tests for `GET /api/features` and `GET /api/features/{featureId}` in `tests/Elsa.Catalog.Api.Tests/PublicFeaturesApiTests.cs`
-- [X] T053 [P] [US1] Add query projection tests for package, version, feature, and setting summaries in `tests/Elsa.Catalog.Core.Tests/PublicCatalogQueryServiceTests.cs`
+- [X] T049 [P] [US1] Add public package listing contract tests for `GET /api/packages` in `tests/Elsa.Platform.PackageCatalog.Api.Tests/PublicPackagesApiTests.cs`
+- [X] T050 [P] [US1] Add public package details and versions contract tests for `GET /api/packages/{packageId}` and `GET /api/packages/{packageId}/versions` in `tests/Elsa.Platform.PackageCatalog.Api.Tests/PublicPackageDetailsApiTests.cs`
+- [X] T051 [P] [US1] Add public package version details contract tests for `GET /api/packages/{packageId}/versions/{version}` in `tests/Elsa.Platform.PackageCatalog.Api.Tests/PublicPackageVersionApiTests.cs`
+- [X] T052 [P] [US1] Add public feature listing and details contract tests for `GET /api/features` and `GET /api/features/{featureId}` in `tests/Elsa.Platform.PackageCatalog.Api.Tests/PublicFeaturesApiTests.cs`
+- [X] T053 [P] [US1] Add query projection tests for package, version, feature, and setting summaries in `tests/Elsa.Platform.PackageCatalog.Core.Tests/PublicCatalogQueryServiceTests.cs`
 
 ### Implementation
 
-- [X] T054 [P] [US1] Implement public package response models in `src/Elsa.Catalog.Api/Public/Packages/PublicPackageContracts.cs`
-- [X] T055 [P] [US1] Implement public feature response models in `src/Elsa.Catalog.Api/Public/Features/PublicFeatureContracts.cs`
-- [X] T056 [US1] Implement public catalog query service in `src/Elsa.Catalog.Core/Packages/PublicCatalogQueryService.cs`
-- [X] T057 [US1] Implement package projection queries in `src/Elsa.Catalog.Persistence.EntityFrameworkCore/PublicCatalogQueries.cs`
-- [X] T058 [US1] Implement public package endpoints in `src/Elsa.Catalog.Api/Public/Packages/PublicPackageEndpoints.cs`
-- [X] T059 [US1] Implement public feature endpoints in `src/Elsa.Catalog.Api/Public/Features/PublicFeatureEndpoints.cs`
-- [X] T060 [US1] Register public endpoint modules in `src/Elsa.Catalog.Api/Program.cs`
-- [X] T061 [US1] Add public API seed helpers for visible and hidden package states in `tests/Elsa.Catalog.Testing/PublicCatalogSeedData.cs`
-- [X] T062 [US1] Verify US1 public discovery tests with `dotnet test --filter Public` in `Elsa.PackageCatalog.sln`
+- [X] T054 [P] [US1] Implement public package response models in `src/Elsa.Platform.PackageCatalog.Api/Public/Packages/PublicPackageContracts.cs`
+- [X] T055 [P] [US1] Implement public feature response models in `src/Elsa.Platform.PackageCatalog.Api/Public/Features/PublicFeatureContracts.cs`
+- [X] T056 [US1] Implement public catalog query service in `src/Elsa.Platform.PackageCatalog.Core/Packages/PublicCatalogQueryService.cs`
+- [X] T057 [US1] Implement package projection queries in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/PublicCatalogQueries.cs`
+- [X] T058 [US1] Implement public package endpoints in `src/Elsa.Platform.PackageCatalog.Api/Public/Packages/PublicPackageEndpoints.cs`
+- [X] T059 [US1] Implement public feature endpoints in `src/Elsa.Platform.PackageCatalog.Api/Public/Features/PublicFeatureEndpoints.cs`
+- [X] T060 [US1] Register public endpoint modules in `src/Elsa.Platform.PackageCatalog.Api/Program.cs`
+- [X] T061 [US1] Add public API seed helpers for visible and hidden package states in `tests/Elsa.Platform.PackageCatalog.Testing/PublicCatalogSeedData.cs`
+- [X] T062 [US1] Verify US1 public discovery tests with `dotnet test --filter Public` in `Elsa.Platform.sln`
 
 **Checkpoint**: Public package and feature discovery works independently with seeded catalog data.
 
@@ -117,21 +117,21 @@
 
 ### Tests
 
-- [X] T063 [P] [US2] Add admin package source contract tests for `GET /api/admin/sources` and `POST /api/admin/sources` in `tests/Elsa.Catalog.Api.Tests/AdminSourcesApiTests.cs`
-- [X] T064 [P] [US2] Add admin source update and delete contract tests for `PUT /api/admin/sources/{id}` and `DELETE /api/admin/sources/{id}` in `tests/Elsa.Catalog.Api.Tests/AdminSourceMutationApiTests.cs`
-- [X] T065 [P] [US2] Add source validation tests for URL, required include patterns, approval policy, and unauthenticated-only feeds in `tests/Elsa.Catalog.Core.Tests/PackageSourceValidationTests.cs`
-- [X] T066 [P] [US2] Add case-insensitive glob matching tests with exclude precedence in `tests/Elsa.Catalog.Core.Tests/PackageSourcePatternMatcherTests.cs`
+- [X] T063 [P] [US2] Add admin package source contract tests for `GET /api/admin/sources` and `POST /api/admin/sources` in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminSourcesApiTests.cs`
+- [X] T064 [P] [US2] Add admin source update and delete contract tests for `PUT /api/admin/sources/{id}` and `DELETE /api/admin/sources/{id}` in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminSourceMutationApiTests.cs`
+- [X] T065 [P] [US2] Add source validation tests for URL, required include patterns, approval policy, and unauthenticated-only feeds in `tests/Elsa.Platform.PackageCatalog.Core.Tests/PackageSourceValidationTests.cs`
+- [X] T066 [P] [US2] Add case-insensitive glob matching tests with exclude precedence in `tests/Elsa.Platform.PackageCatalog.Core.Tests/PackageSourcePatternMatcherTests.cs`
 
 ### Implementation
 
-- [X] T067 [P] [US2] Implement admin source request and response contracts in `src/Elsa.Catalog.Api/Admin/Sources/AdminSourceContracts.cs`
-- [X] T068 [US2] Implement package source validation rules in `src/Elsa.Catalog.Core/Sources/PackageSourceValidator.cs`
-- [X] T069 [US2] Implement case-insensitive glob matcher with exclude precedence in `src/Elsa.Catalog.Core/Sources/PackageSourcePatternMatcher.cs`
-- [X] T070 [US2] Implement source management service in `src/Elsa.Catalog.Core/Sources/PackageSourceService.cs`
-- [X] T071 [US2] Implement EF Core source repository methods in `src/Elsa.Catalog.Persistence.EntityFrameworkCore/PackageSourceStore.cs`
-- [X] T072 [US2] Implement admin source endpoints in `src/Elsa.Catalog.Api/Admin/Sources/AdminSourceEndpoints.cs`
-- [X] T073 [US2] Register admin source endpoints in `src/Elsa.Catalog.Api/Program.cs`
-- [X] T074 [US2] Verify US2 source management tests with `dotnet test --filter Sources` in `Elsa.PackageCatalog.sln`
+- [X] T067 [P] [US2] Implement admin source request and response contracts in `src/Elsa.Platform.PackageCatalog.Api/Admin/Sources/AdminSourceContracts.cs`
+- [X] T068 [US2] Implement package source validation rules in `src/Elsa.Platform.PackageCatalog.Core/Sources/PackageSourceValidator.cs`
+- [X] T069 [US2] Implement case-insensitive glob matcher with exclude precedence in `src/Elsa.Platform.PackageCatalog.Core/Sources/PackageSourcePatternMatcher.cs`
+- [X] T070 [US2] Implement source management service in `src/Elsa.Platform.PackageCatalog.Core/Sources/PackageSourceService.cs`
+- [X] T071 [US2] Implement EF Core source repository methods in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/PackageSourceStore.cs`
+- [X] T072 [US2] Implement admin source endpoints in `src/Elsa.Platform.PackageCatalog.Api/Admin/Sources/AdminSourceEndpoints.cs`
+- [X] T073 [US2] Register admin source endpoints in `src/Elsa.Platform.PackageCatalog.Api/Program.cs`
+- [X] T074 [US2] Verify US2 source management tests with `dotnet test --filter Sources` in `Elsa.Platform.sln`
 
 **Checkpoint**: Admin source management works independently and source scope is explicit.
 
@@ -143,37 +143,37 @@
 
 ### Tests
 
-- [X] T075 [P] [US3] Add package archive manifest extraction tests for root and fallback manifest paths in `tests/Elsa.Catalog.Packaging.NuGet.Tests/PackageArchiveManifestReaderTests.cs`
-- [X] T076 [P] [US3] Add missing, multiple, oversized, malformed, and identity-mismatch manifest tests in `tests/Elsa.Catalog.Packaging.NuGet.Tests/PackageArchiveManifestValidationTests.cs`
-- [X] T077 [P] [US3] Add NuGet source version discovery tests with include/exclude filtering in `tests/Elsa.Catalog.Packaging.NuGet.Tests/NuGetPackageSourceClientTests.cs`
-- [X] T078 [P] [US3] Add sync orchestration tests for valid, invalid, failed, unchanged, and suspicious items in `tests/Elsa.Catalog.Core.Tests/PackageSyncServiceTests.cs`
-- [X] T079 [P] [US3] Add admin sync trigger and sync history API tests in `tests/Elsa.Catalog.Api.Tests/AdminSyncApiTests.cs`
-- [X] T080 [P] [US3] Add persistence tests for immutable version records and sync run item diagnostics in `tests/Elsa.Catalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs`
+- [X] T075 [P] [US3] Add package archive manifest extraction tests for root and fallback manifest paths in `tests/Elsa.Platform.PackageCatalog.Sources.NuGet.Tests/PackageArchiveManifestReaderTests.cs`
+- [X] T076 [P] [US3] Add missing, multiple, oversized, malformed, and identity-mismatch manifest tests in `tests/Elsa.Platform.PackageCatalog.Sources.NuGet.Tests/PackageArchiveManifestValidationTests.cs`
+- [X] T077 [P] [US3] Add NuGet source version discovery tests with include/exclude filtering in `tests/Elsa.Platform.PackageCatalog.Sources.NuGet.Tests/NuGetPackageSourceClientTests.cs`
+- [X] T078 [P] [US3] Add sync orchestration tests for valid, invalid, failed, unchanged, and suspicious items in `tests/Elsa.Platform.PackageCatalog.Core.Tests/PackageSyncServiceTests.cs`
+- [X] T079 [P] [US3] Add admin sync trigger and sync history API tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminSyncApiTests.cs`
+- [X] T080 [P] [US3] Add persistence tests for immutable version records and sync run item diagnostics in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs`
 
 ### Implementation
 
-- [X] T081 [P] [US3] Implement package archive manifest reader without assembly loading in `src/Elsa.Catalog.Packaging.NuGet/PackageArchiveManifestReader.cs`
-- [X] T082 [P] [US3] Implement NuGet feed version discovery client in `src/Elsa.Catalog.Packaging.NuGet/NuGetPackageSourceClient.cs`
-- [X] T083 [P] [US3] Implement NuGet package downloader for new versions only in `src/Elsa.Catalog.Packaging.NuGet/NuGetSyncPackageDownloader.cs`
-- [X] T084 [US3] Implement manifest ingestion and projection mapper in `src/Elsa.Catalog.Core/Manifests/ManifestIngestionService.cs`
-- [X] T085 [US3] Implement package sync service with item-level error isolation and summary counters in `src/Elsa.Catalog.Core/Sync/PackageSyncService.cs`
-- [X] T086 [US3] Implement sync run concurrency guard for source/package scopes in `src/Elsa.Catalog.Core/Sync/SyncConcurrencyGuard.cs`
-- [X] T087 [US3] Implement scheduled sync hosted service in `src/Elsa.Catalog.Api/Admin/Sync/ScheduledSyncHostedService.cs`
-- [X] T088 [US3] Implement manual sync request contracts in `src/Elsa.Catalog.Api/Admin/Sync/AdminSyncContracts.cs`
-- [X] T089 [US3] Implement admin sync trigger and sync-run endpoints in `src/Elsa.Catalog.Api/Admin/Sync/AdminSyncEndpoints.cs`
-- [X] T090 [US3] Implement EF Core sync run and sync item persistence methods in `src/Elsa.Catalog.Persistence.EntityFrameworkCore/SyncRunStore.cs`
-- [X] T091 [US3] Register NuGet packaging and sync services in `src/Elsa.Catalog.Api/Program.cs`
-- [X] T092 [US3] Verify US3 sync tests with `dotnet test --filter Sync` in `Elsa.PackageCatalog.sln`
+- [X] T081 [P] [US3] Implement package archive manifest reader without assembly loading in `src/Elsa.Platform.PackageCatalog.Sources.NuGet/PackageArchiveManifestReader.cs`
+- [X] T082 [P] [US3] Implement NuGet feed version discovery client in `src/Elsa.Platform.PackageCatalog.Sources.NuGet/NuGetPackageSourceClient.cs`
+- [X] T083 [P] [US3] Implement NuGet package downloader for new versions only in `src/Elsa.Platform.PackageCatalog.Sources.NuGet/NuGetSyncPackageDownloader.cs`
+- [X] T084 [US3] Implement manifest ingestion and projection mapper in `src/Elsa.Platform.PackageCatalog.Core/Manifests/ManifestIngestionService.cs`
+- [X] T085 [US3] Implement package sync service with item-level error isolation and summary counters in `src/Elsa.Platform.PackageCatalog.Core/Sync/PackageSyncService.cs`
+- [X] T086 [US3] Implement sync run concurrency guard for source/package scopes in `src/Elsa.Platform.PackageCatalog.Core/Sync/SyncConcurrencyGuard.cs`
+- [X] T087 [US3] Implement scheduled sync hosted service in `src/Elsa.Platform.PackageCatalog.Api/Admin/Sync/ScheduledSyncHostedService.cs`
+- [X] T088 [US3] Implement manual sync request contracts in `src/Elsa.Platform.PackageCatalog.Api/Admin/Sync/AdminSyncContracts.cs`
+- [X] T089 [US3] Implement admin sync trigger and sync-run endpoints in `src/Elsa.Platform.PackageCatalog.Api/Admin/Sync/AdminSyncEndpoints.cs`
+- [X] T090 [US3] Implement EF Core sync run and sync item persistence methods in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/SyncRunStore.cs`
+- [X] T091 [US3] Register NuGet packaging and sync services in `src/Elsa.Platform.PackageCatalog.Api/Program.cs`
+- [X] T092 [US3] Verify US3 sync tests with `dotnet test --filter Sync` in `Elsa.Platform.sln`
 
 **Checkpoint**: Sync can ingest manifests safely and produce durable diagnostics.
 
 ### Follow-up: Feed Sync Hardening
 
-- [X] T092a [US3] Add latest-preview-only version discovery tests in `tests/Elsa.Catalog.Packaging.NuGet.Tests/NuGetPackageSourceClientTests.cs`
-- [X] T092b [US3] Implement latest-preview-only source policy in `src/Elsa.Catalog.Packaging.NuGet/NuGetPackageSourceClient.cs`
-- [X] T092c [US3] Expose latest-preview-only source policy through admin source API/UI contracts in `src/Elsa.Catalog.Api/Admin/Sources/AdminSourceContracts.cs` and `src/Elsa.Catalog.AdminUi/src/features/sources/sourceModels.ts`
-- [X] T092d [US3] Add background manual sync trigger tests in `tests/Elsa.Catalog.Api.Tests/AdminSyncApiTests.cs`
-- [X] T092e [US3] Implement queued background manual sync execution in `src/Elsa.Catalog.Api/Admin/Sync` so admin requests are not tied to package download cancellation.
+- [X] T092a [US3] Add latest-preview-only version discovery tests in `tests/Elsa.Platform.PackageCatalog.Sources.NuGet.Tests/NuGetPackageSourceClientTests.cs`
+- [X] T092b [US3] Implement latest-preview-only source policy in `src/Elsa.Platform.PackageCatalog.Sources.NuGet/NuGetPackageSourceClient.cs`
+- [X] T092c [US3] Expose latest-preview-only source policy through admin source API/UI contracts in `src/Elsa.Platform.PackageCatalog.Api/Admin/Sources/AdminSourceContracts.cs` and `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/sources/sourceModels.ts`
+- [X] T092d [US3] Add background manual sync trigger tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminSyncApiTests.cs`
+- [X] T092e [US3] Implement queued background manual sync execution in `src/Elsa.Platform.PackageCatalog.Api/Admin/Sync` so admin requests are not tied to package download cancellation.
 
 ## Phase 6: User Story 4 - Approve Catalog Entries (Priority: P2)
 
@@ -183,22 +183,22 @@
 
 ### Tests
 
-- [X] T093 [P] [US4] Add approval policy tests for manual and auto-approve sources in `tests/Elsa.Catalog.Core.Tests/ApprovalPolicyTests.cs`
-- [X] T094 [P] [US4] Add admin package review API tests for `GET /api/admin/packages` and `GET /api/admin/packages/{packageId}` in `tests/Elsa.Catalog.Api.Tests/AdminPackagesApiTests.cs`
-- [X] T095 [P] [US4] Add package and version approve/reject API tests in `tests/Elsa.Catalog.Api.Tests/AdminApprovalApiTests.cs`
-- [X] T096 [P] [US4] Add admin validation details API tests for `GET /api/admin/packages/{packageId}/versions/{version}/validation` in `tests/Elsa.Catalog.Api.Tests/AdminValidationApiTests.cs`
+- [X] T093 [P] [US4] Add approval policy tests for manual and auto-approve sources in `tests/Elsa.Platform.PackageCatalog.Core.Tests/ApprovalPolicyTests.cs`
+- [X] T094 [P] [US4] Add admin package review API tests for `GET /api/admin/packages` and `GET /api/admin/packages/{packageId}` in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminPackagesApiTests.cs`
+- [X] T095 [P] [US4] Add package and version approve/reject API tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminApprovalApiTests.cs`
+- [X] T096 [P] [US4] Add admin validation details API tests for `GET /api/admin/packages/{packageId}/versions/{version}/validation` in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminValidationApiTests.cs`
 
 ### Implementation
 
-- [X] T097 [P] [US4] Implement approval request and admin package response contracts in `src/Elsa.Catalog.Api/Admin/Packages/AdminPackageContracts.cs`
-- [X] T098 [US4] Implement approval service for package-level and version-level decisions in `src/Elsa.Catalog.Core/Approvals/ApprovalService.cs`
-- [X] T099 [US4] Implement manual-source new-version pending behavior in `src/Elsa.Catalog.Core/Approvals/ApprovalPolicy.cs`
-- [X] T100 [US4] Implement EF Core approval record persistence and current-state queries in `src/Elsa.Catalog.Persistence.EntityFrameworkCore/ApprovalStore.cs`
-- [X] T101 [US4] Implement admin package review endpoints in `src/Elsa.Catalog.Api/Admin/Packages/AdminPackageEndpoints.cs`
-- [X] T102 [US4] Implement admin approval and rejection endpoints in `src/Elsa.Catalog.Api/Admin/Packages/AdminApprovalEndpoints.cs`
-- [X] T103 [US4] Implement admin validation details endpoint in `src/Elsa.Catalog.Api/Admin/Packages/AdminValidationEndpoints.cs`
-- [X] T104 [US4] Register admin package endpoints in `src/Elsa.Catalog.Api/Program.cs`
-- [X] T105 [US4] Verify US4 approval tests with `dotnet test --filter Approval` in `Elsa.PackageCatalog.sln`
+- [X] T097 [P] [US4] Implement approval request and admin package response contracts in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminPackageContracts.cs`
+- [X] T098 [US4] Implement approval service for package-level and version-level decisions in `src/Elsa.Platform.PackageCatalog.Core/Approvals/ApprovalService.cs`
+- [X] T099 [US4] Implement manual-source new-version pending behavior in `src/Elsa.Platform.PackageCatalog.Core/Approvals/ApprovalPolicy.cs`
+- [X] T100 [US4] Implement EF Core approval record persistence and current-state queries in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/ApprovalStore.cs`
+- [X] T101 [US4] Implement admin package review endpoints in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminPackageEndpoints.cs`
+- [X] T102 [US4] Implement admin approval and rejection endpoints in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminApprovalEndpoints.cs`
+- [X] T103 [US4] Implement admin validation details endpoint in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminValidationEndpoints.cs`
+- [X] T104 [US4] Register admin package endpoints in `src/Elsa.Platform.PackageCatalog.Api/Program.cs`
+- [X] T105 [US4] Verify US4 approval tests with `dotnet test --filter Approval` in `Elsa.Platform.sln`
 
 **Checkpoint**: Admin review and approval workflows work independently from manifest validity.
 
@@ -210,20 +210,20 @@
 
 ### Tests
 
-- [X] T106 [P] [US5] Add compatibility service tests for missing, unapproved, invalid, unlisted, and suspicious package versions in `tests/Elsa.Catalog.Core.Tests/CompatibilityCheckServiceTests.cs`
-- [X] T107 [P] [US5] Add version range compatibility tests for Elsa and Docker image versions in `tests/Elsa.Catalog.Core.Tests/CompatibilityRangeTests.cs`
-- [X] T108 [P] [US5] Add direct package and feature conflict tests in `tests/Elsa.Catalog.Core.Tests/CompatibilityConflictTests.cs`
-- [X] T109 [P] [US5] Add public compatibility API contract tests for `POST /api/compatibility/check` in `tests/Elsa.Catalog.Api.Tests/PublicCompatibilityApiTests.cs`
+- [X] T106 [P] [US5] Add compatibility service tests for missing, unapproved, invalid, unlisted, and suspicious package versions in `tests/Elsa.Platform.PackageCatalog.Core.Tests/CompatibilityCheckServiceTests.cs`
+- [X] T107 [P] [US5] Add version range compatibility tests for Elsa and Docker image versions in `tests/Elsa.Platform.PackageCatalog.Core.Tests/CompatibilityRangeTests.cs`
+- [X] T108 [P] [US5] Add direct package and feature conflict tests in `tests/Elsa.Platform.PackageCatalog.Core.Tests/CompatibilityConflictTests.cs`
+- [X] T109 [P] [US5] Add public compatibility API contract tests for `POST /api/compatibility/check` in `tests/Elsa.Platform.PackageCatalog.Api.Tests/PublicCompatibilityApiTests.cs`
 
 ### Implementation
 
-- [X] T110 [P] [US5] Implement compatibility request and response contracts in `src/Elsa.Catalog.Api/Public/Compatibility/CompatibilityContracts.cs`
-- [X] T111 [US5] Implement version range evaluator for Elsa and Docker image ranges in `src/Elsa.Catalog.Core/Compatibility/VersionRangeEvaluator.cs`
-- [X] T112 [US5] Implement compatibility check service with package existence, approval, listing, validity, warning, and conflict findings in `src/Elsa.Catalog.Core/Compatibility/CompatibilityCheckService.cs`
-- [X] T113 [US5] Implement EF Core compatibility read queries in `src/Elsa.Catalog.Persistence.EntityFrameworkCore/CompatibilityQueries.cs`
-- [X] T114 [US5] Implement public compatibility endpoint in `src/Elsa.Catalog.Api/Public/Compatibility/CompatibilityEndpoints.cs`
-- [X] T115 [US5] Register compatibility endpoint in `src/Elsa.Catalog.Api/Program.cs`
-- [X] T116 [US5] Verify US5 compatibility tests with `dotnet test --filter Compatibility` in `Elsa.PackageCatalog.sln`
+- [X] T110 [P] [US5] Implement compatibility request and response contracts in `src/Elsa.Platform.PackageCatalog.Api/Public/Compatibility/CompatibilityContracts.cs`
+- [X] T111 [US5] Implement version range evaluator for Elsa and Docker image ranges in `src/Elsa.Platform.PackageCatalog.Core/Compatibility/VersionRangeEvaluator.cs`
+- [X] T112 [US5] Implement compatibility check service with package existence, approval, listing, validity, warning, and conflict findings in `src/Elsa.Platform.PackageCatalog.Core/Compatibility/CompatibilityCheckService.cs`
+- [X] T113 [US5] Implement EF Core compatibility read queries in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/CompatibilityQueries.cs`
+- [X] T114 [US5] Implement public compatibility endpoint in `src/Elsa.Platform.PackageCatalog.Api/Public/Compatibility/CompatibilityEndpoints.cs`
+- [X] T115 [US5] Register compatibility endpoint in `src/Elsa.Platform.PackageCatalog.Api/Program.cs`
+- [X] T116 [US5] Verify US5 compatibility tests with `dotnet test --filter Compatibility` in `Elsa.Platform.sln`
 
 **Checkpoint**: Compatibility checks return actionable findings without full dependency resolution.
 
@@ -235,20 +235,20 @@
 
 ### Tests
 
-- [X] T117 [P] [US6] Add public DTO API shape tests for all manifest contract types in `tests/Elsa.PackageManifests.Tests/ManifestContractShapeTests.cs`
-- [X] T118 [P] [US6] Add extension metadata round-trip tests at package, feature, setting, compatibility, license, documentation, dependency, conflict, and validation levels in `tests/Elsa.PackageManifests.Tests/ExtensionDataRoundTripTests.cs`
-- [X] T119 [P] [US6] Add schema resource discovery tests for `schemas/elsa-package-manifest.v1.json` in `tests/Elsa.PackageManifests.Tests/EmbeddedSchemaResourceTests.cs`
-- [X] T120 [P] [US6] Add dependency boundary tests ensuring `Elsa.PackageManifests` does not reference catalog persistence or runtime internals in `tests/Elsa.PackageManifests.Tests/ManifestPackageDependencyTests.cs`
+- [X] T117 [P] [US6] Add public DTO API shape tests for all manifest contract types in `tests/Elsa.Platform.PackageManifests.Tests/ManifestContractShapeTests.cs`
+- [X] T118 [P] [US6] Add extension metadata round-trip tests at package, feature, setting, compatibility, license, documentation, dependency, conflict, and validation levels in `tests/Elsa.Platform.PackageManifests.Tests/ExtensionDataRoundTripTests.cs`
+- [X] T119 [P] [US6] Add schema resource discovery tests for `schemas/elsa-package-manifest.v1.json` in `tests/Elsa.Platform.PackageManifests.Tests/EmbeddedSchemaResourceTests.cs`
+- [X] T120 [P] [US6] Add dependency boundary tests ensuring `Elsa.Platform.PackageManifests` does not reference catalog persistence or runtime internals in `tests/Elsa.Platform.PackageManifests.Tests/ManifestPackageDependencyTests.cs`
 
 ### Implementation
 
-- [X] T121 [US6] Refine all manifest DTO XML documentation and examples in `src/Elsa.PackageManifests/ElsaPackageManifest.cs`
-- [X] T122 [US6] Refine feature and setting DTO XML documentation and examples in `src/Elsa.PackageManifests/FeatureManifest.cs`
-- [X] T123 [US6] Refine compatibility, dependency, conflict, license, and documentation DTO XML documentation in `src/Elsa.PackageManifests/Compatibility/CompatibilityManifest.cs`
-- [X] T124 [US6] Add representative valid manifest sample in `src/Elsa.PackageManifests/Schemas/examples/elsa-package.valid.v1.json`
-- [X] T125 [US6] Add representative invalid manifest sample in `src/Elsa.PackageManifests/Schemas/examples/elsa-package.invalid.v1.json`
-- [X] T126 [US6] Add package README with schema versioning and extension metadata guidance in `src/Elsa.PackageManifests/README.md`
-- [X] T127 [US6] Verify US6 manifest contract tests with `dotnet test --filter Manifest` in `Elsa.PackageCatalog.sln`
+- [X] T121 [US6] Refine all manifest DTO XML documentation and examples in `src/Elsa.Platform.PackageManifests/ElsaPackageManifest.cs`
+- [X] T122 [US6] Refine feature and setting DTO XML documentation and examples in `src/Elsa.Platform.PackageManifests/FeatureManifest.cs`
+- [X] T123 [US6] Refine compatibility, dependency, conflict, license, and documentation DTO XML documentation in `src/Elsa.Platform.PackageManifests/Compatibility/CompatibilityManifest.cs`
+- [X] T124 [US6] Add representative valid manifest sample in `src/Elsa.Platform.PackageManifests/Schemas/examples/elsa-package.valid.v1.json`
+- [X] T125 [US6] Add representative invalid manifest sample in `src/Elsa.Platform.PackageManifests/Schemas/examples/elsa-package.invalid.v1.json`
+- [X] T126 [US6] Add package README with schema versioning and extension metadata guidance in `src/Elsa.Platform.PackageManifests/README.md`
+- [X] T127 [US6] Verify US6 manifest contract tests with `dotnet test --filter Manifest` in `Elsa.Platform.sln`
 
 **Checkpoint**: The shared manifest contract package is stable, documented, dependency-light, and independently testable.
 
@@ -257,15 +257,15 @@
 **Purpose**: Complete documentation, operational checks, quickstart validation, and whole-solution verification.
 
 - [X] T128 [P] Update project README with overview, local development, sync safety, and API key instructions in `README.md`
-- [X] T129 [P] Add appsettings template for SQLite, API key auth, and sync scheduling in `src/Elsa.Catalog.Api/appsettings.Development.json`
-- [X] T130 [P] Add structured logging configuration for sync, validation, approval, and suspicious changes in `src/Elsa.Catalog.Api/appsettings.json`
-- [X] T131 Add startup database migration or initialization behavior in `src/Elsa.Catalog.Api/Program.cs`
+- [X] T129 [P] Add appsettings template for SQLite, API key auth, and sync scheduling in `src/Elsa.Platform.PackageCatalog.Api/appsettings.Development.json`
+- [X] T130 [P] Add structured logging configuration for sync, validation, approval, and suspicious changes in `src/Elsa.Platform.PackageCatalog.Api/appsettings.json`
+- [X] T131 Add startup database migration or initialization behavior in `src/Elsa.Platform.PackageCatalog.Api/Program.cs`
 - [X] T132 Add quickstart validation script for build, test, run, source creation, sync, approval, public discovery, and compatibility check in `scripts/quickstart-verify.sh`
-- [X] T133 Verify no package-processing code loads assemblies by reviewing `src/Elsa.Catalog.Packaging.NuGet/PackageArchiveManifestReader.cs` and test coverage in `tests/Elsa.Catalog.Packaging.NuGet.Tests/PackageArchiveManifestReaderSafetyTests.cs`
-- [X] T134 Verify public APIs hide invalid, unapproved, rejected, suspicious, and unlisted records with `dotnet test --filter Public` in `Elsa.PackageCatalog.sln`
-- [X] T135 Verify manifest schema versioning, extension metadata, and 1 MB limit with `dotnet test --filter Manifest` in `Elsa.PackageCatalog.sln`
-- [X] T136 Verify admin diagnostics expose sync runs, validation errors, approval decisions, and suspicious changes with `dotnet test --filter Admin` in `Elsa.PackageCatalog.sln`
-- [X] T137 Run full solution verification with `dotnet test` in `Elsa.PackageCatalog.sln`
+- [X] T133 Verify no package-processing code loads assemblies by reviewing `src/Elsa.Platform.PackageCatalog.Sources.NuGet/PackageArchiveManifestReader.cs` and test coverage in `tests/Elsa.Platform.PackageCatalog.Sources.NuGet.Tests/PackageArchiveManifestReaderSafetyTests.cs`
+- [X] T134 Verify public APIs hide invalid, unapproved, rejected, suspicious, and unlisted records with `dotnet test --filter Public` in `Elsa.Platform.sln`
+- [X] T135 Verify manifest schema versioning, extension metadata, and 1 MB limit with `dotnet test --filter Manifest` in `Elsa.Platform.sln`
+- [X] T136 Verify admin diagnostics expose sync runs, validation errors, approval decisions, and suspicious changes with `dotnet test --filter Admin` in `Elsa.Platform.sln`
+- [X] T137 Run full solution verification with `dotnet test` in `Elsa.Platform.sln`
 - [X] T138 Run quickstart verification script in `scripts/quickstart-verify.sh`
 
 ## Dependencies & Execution Order
@@ -315,22 +315,22 @@
 ## Parallel Example: User Story 1
 
 ```bash
-Task: "T049 [P] [US1] Add public package listing contract tests in tests/Elsa.Catalog.Api.Tests/PublicPackagesApiTests.cs"
-Task: "T050 [P] [US1] Add public package details and versions contract tests in tests/Elsa.Catalog.Api.Tests/PublicPackageDetailsApiTests.cs"
-Task: "T051 [P] [US1] Add public package version details contract tests in tests/Elsa.Catalog.Api.Tests/PublicPackageVersionApiTests.cs"
-Task: "T052 [P] [US1] Add public feature listing and details contract tests in tests/Elsa.Catalog.Api.Tests/PublicFeaturesApiTests.cs"
-Task: "T053 [P] [US1] Add query projection tests in tests/Elsa.Catalog.Core.Tests/PublicCatalogQueryServiceTests.cs"
+Task: "T049 [P] [US1] Add public package listing contract tests in tests/Elsa.Platform.PackageCatalog.Api.Tests/PublicPackagesApiTests.cs"
+Task: "T050 [P] [US1] Add public package details and versions contract tests in tests/Elsa.Platform.PackageCatalog.Api.Tests/PublicPackageDetailsApiTests.cs"
+Task: "T051 [P] [US1] Add public package version details contract tests in tests/Elsa.Platform.PackageCatalog.Api.Tests/PublicPackageVersionApiTests.cs"
+Task: "T052 [P] [US1] Add public feature listing and details contract tests in tests/Elsa.Platform.PackageCatalog.Api.Tests/PublicFeaturesApiTests.cs"
+Task: "T053 [P] [US1] Add query projection tests in tests/Elsa.Platform.PackageCatalog.Core.Tests/PublicCatalogQueryServiceTests.cs"
 ```
 
 ## Parallel Example: User Story 3
 
 ```bash
-Task: "T075 [P] [US3] Add package archive manifest extraction tests in tests/Elsa.Catalog.Packaging.NuGet.Tests/PackageArchiveManifestReaderTests.cs"
-Task: "T076 [P] [US3] Add missing, multiple, oversized, malformed, and identity-mismatch manifest tests in tests/Elsa.Catalog.Packaging.NuGet.Tests/PackageArchiveManifestValidationTests.cs"
-Task: "T077 [P] [US3] Add NuGet source version discovery tests in tests/Elsa.Catalog.Packaging.NuGet.Tests/NuGetPackageSourceClientTests.cs"
-Task: "T078 [P] [US3] Add sync orchestration tests in tests/Elsa.Catalog.Core.Tests/PackageSyncServiceTests.cs"
-Task: "T079 [P] [US3] Add admin sync API tests in tests/Elsa.Catalog.Api.Tests/AdminSyncApiTests.cs"
-Task: "T080 [P] [US3] Add persistence diagnostics tests in tests/Elsa.Catalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs"
+Task: "T075 [P] [US3] Add package archive manifest extraction tests in tests/Elsa.Platform.PackageCatalog.Sources.NuGet.Tests/PackageArchiveManifestReaderTests.cs"
+Task: "T076 [P] [US3] Add missing, multiple, oversized, malformed, and identity-mismatch manifest tests in tests/Elsa.Platform.PackageCatalog.Sources.NuGet.Tests/PackageArchiveManifestValidationTests.cs"
+Task: "T077 [P] [US3] Add NuGet source version discovery tests in tests/Elsa.Platform.PackageCatalog.Sources.NuGet.Tests/NuGetPackageSourceClientTests.cs"
+Task: "T078 [P] [US3] Add sync orchestration tests in tests/Elsa.Platform.PackageCatalog.Core.Tests/PackageSyncServiceTests.cs"
+Task: "T079 [P] [US3] Add admin sync API tests in tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminSyncApiTests.cs"
+Task: "T080 [P] [US3] Add persistence diagnostics tests in tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs"
 ```
 
 ## Implementation Strategy
@@ -354,7 +354,7 @@ Task: "T080 [P] [US3] Add persistence diagnostics tests in tests/Elsa.Catalog.Pe
 
 ### Constitution Gates
 
-- Manifest metadata remains explicit and versioned through `Elsa.PackageManifests`.
+- Manifest metadata remains explicit and versioned through `Elsa.Platform.PackageManifests`.
 - NuGet package processing inspects archives only and never loads assemblies.
 - Package version immutability and suspicious hash detection are verified before public exposure.
 - Public APIs expose only valid, approved, listed, non-suspicious versions.
@@ -363,9 +363,9 @@ Task: "T080 [P] [US3] Add persistence diagnostics tests in tests/Elsa.Catalog.Pe
 
 ## Runtime Builder Infrastructure Addendum
 
-- [X] T136 [US1] Expose source/feed provenance and builder-grade feature metadata in `src/Elsa.Catalog.Core/Packages/PublicCatalogQueryService.cs`
-- [X] T137 [US1] Project manifest infrastructure requirements into feature records in `src/Elsa.Catalog.Core/Manifests/FeatureProjectionModels.cs`
-- [X] T138 [US1] Add Runtime Builder catalog and infrastructure provider endpoints in `src/Elsa.Catalog.Api/Public/Builder/BuilderEndpoints.cs`
-- [X] T139 [US5] Extend compatibility checks to validate selected feature dependencies and conflicts in `src/Elsa.Catalog.Core/Compatibility/CompatibilityCheckService.cs`
-- [X] T140 [US1] Add SQLite and SQL Server migrations for feature infrastructure projection in `src/Elsa.Catalog.Persistence.SqliteMigrations/Migrations/` and `src/Elsa.Catalog.Persistence.SqlServerMigrations/Migrations/`
-- [X] T141 [P] [US1] Add builder API and infrastructure projection tests in `tests/Elsa.Catalog.Api.Tests/PublicBuilderApiTests.cs` and `tests/Elsa.Catalog.Core.Tests/ManifestIngestionServiceTests.cs`
+- [X] T136 [US1] Expose source/feed provenance and builder-grade feature metadata in `src/Elsa.Platform.PackageCatalog.Core/Packages/PublicCatalogQueryService.cs`
+- [X] T137 [US1] Project manifest infrastructure requirements into feature records in `src/Elsa.Platform.PackageCatalog.Core/Manifests/FeatureProjectionModels.cs`
+- [X] T138 [US1] Add Runtime Builder catalog and infrastructure provider endpoints in `src/Elsa.Platform.PackageCatalog.Api/Public/Builder/BuilderEndpoints.cs`
+- [X] T139 [US5] Extend compatibility checks to validate selected feature dependencies and conflicts in `src/Elsa.Platform.PackageCatalog.Core/Compatibility/CompatibilityCheckService.cs`
+- [X] T140 [US1] Add SQLite and SQL Server migrations for feature infrastructure projection in `src/Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/Migrations/` and `src/Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
+- [X] T141 [P] [US1] Add builder API and infrastructure projection tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/PublicBuilderApiTests.cs` and `tests/Elsa.Platform.PackageCatalog.Core.Tests/ManifestIngestionServiceTests.cs`

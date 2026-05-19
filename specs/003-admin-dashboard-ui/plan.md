@@ -27,7 +27,7 @@ version detail for manifest/validation/visibility explanation screens.
 
 **Primary Dependencies**: React, React Router, TanStack Query, TailwindCSS,
 shadcn/ui-style component composition, existing Catalog Admin REST APIs, existing
-`Elsa.PackageManifests` manifest JSON contract.
+`Elsa.Platform.PackageManifests` manifest JSON contract.
 
 **Storage**: No frontend-owned durable storage. The dashboard may keep transient
 UI state in memory and URL query parameters. Durable source, package, approval,
@@ -72,7 +72,7 @@ workflow platform.
 - **No arbitrary code execution**: PASS. The dashboard consumes admin API JSON
   and never loads package assemblies or executes package code.
 - **Stable contracts**: PASS. No changes are planned for
-  `Elsa.PackageManifests`; UI contracts consume existing manifest JSON and
+  `Elsa.Platform.PackageManifests`; UI contracts consume existing manifest JSON and
   validation DTOs.
 - **Schema evolution**: PASS. Manifest schema versions are displayed as catalog
   data. The UI does not define schema evolution rules.
@@ -121,7 +121,7 @@ specs/003-admin-dashboard-ui/
 
 ```text
 src/
-├── Elsa.Catalog.AdminUi/
+├── Elsa.Platform.PackageCatalog.AdminUi/
 │   ├── src/
 │   │   ├── app/
 │   │   ├── components/
@@ -138,22 +138,22 @@ src/
 │   ├── package.json
 │   ├── vite.config.ts
 │   └── tailwind.config.ts
-├── Elsa.Catalog.Api/
+├── Elsa.Platform.PackageCatalog.Api/
 │   └── Admin/
 └── existing catalog projects unchanged unless admin API contract deltas require
     small source, approval, validation, or sync endpoint updates
 
 tests/
-├── Elsa.Catalog.Api.Tests/
-└── Elsa.Catalog.AdminUi.E2E/
+├── Elsa.Platform.PackageCatalog.Api.Tests/
+└── Elsa.Platform.PackageCatalog.AdminUi.E2E/
 ```
 
 **Structure Decision**: Add one dedicated frontend project under
-`src/Elsa.Catalog.AdminUi` so the UI can evolve independently from the ASP.NET
+`src/Elsa.Platform.PackageCatalog.AdminUi` so the UI can evolve independently from the ASP.NET
 Core API while still living inside the same repository and release workflow.
 Shared frontend code is organized by operational feature area and a thin `lib/api`
-adapter layer. Backend changes remain in the existing `Elsa.Catalog.Api`,
-`Elsa.Catalog.Core`, and persistence test projects only when needed to satisfy
+adapter layer. Backend changes remain in the existing `Elsa.Platform.PackageCatalog.Api`,
+`Elsa.Platform.PackageCatalog.Core`, and persistence test projects only when needed to satisfy
 the UI contract.
 
 ## Complexity Tracking

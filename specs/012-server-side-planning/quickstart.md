@@ -21,8 +21,8 @@ Expected: bundle findings and infrastructure match planner output.
 ## Validation Commands
 
 ```bash
-dotnet build Elsa.PackageCatalog.sln --no-restore
-dotnet test Elsa.PackageCatalog.sln --no-build
+dotnet build Elsa.Platform.sln --no-restore
+dotnet test Elsa.Platform.sln --no-build
 ```
 
 ## Frontend Migration Notes

@@ -32,7 +32,7 @@ Move deployment-affecting Elsa Docker runtime image metadata into the Catalog AP
 
 - **Manifest-first**: Pass. Image metadata is separate from package manifests and does not infer package behavior.
 - **No arbitrary code execution**: Pass. No package code or Docker images are executed.
-- **Stable contracts**: Pass. Adds builder-facing image DTOs without changing `Elsa.PackageManifests`.
+- **Stable contracts**: Pass. Adds builder-facing image DTOs without changing `Elsa.Platform.PackageManifests`.
 - **Schema evolution**: Pass. Image DTO evolution is feature-contract scoped; manifest schemas unchanged.
 - **Immutable versions**: Pass. Package version handling unchanged.
 - **Approval separation**: Pass. Image metadata does not change package approval/listing.
@@ -63,20 +63,20 @@ specs/010-runtime-image-metadata-api/
 
 ```text
 src/
-├── Elsa.Catalog.Core/
+├── Elsa.Platform.PackageCatalog.Core/
 │   └── Builder/
 │       ├── RuntimeImageCatalog.cs
 │       ├── RuntimeImageModels.cs
 │       └── RuntimeImageValidator.cs
-└── Elsa.Catalog.Api/
+└── Elsa.Platform.PackageCatalog.Api/
     └── Public/Builder/
         ├── BuilderContracts.cs
         └── BuilderEndpoints.cs
 
 tests/
-├── Elsa.Catalog.Core.Tests/
+├── Elsa.Platform.PackageCatalog.Core.Tests/
 │   └── RuntimeImageCatalogTests.cs
-└── Elsa.Catalog.Api.Tests/
+└── Elsa.Platform.PackageCatalog.Api.Tests/
     └── RuntimeImageApiTests.cs
 ```
 

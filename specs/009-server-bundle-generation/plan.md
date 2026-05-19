@@ -34,7 +34,7 @@ Add a protected Runtime Builder bundle-generation capability to the existing Cat
 
 - **Manifest-first**: Pass. Bundle inputs and selected package metadata use indexed manifest data and existing catalog query services.
 - **No arbitrary code execution**: Pass. Bundle generation renders text artifacts from request data and stored manifests; it does not load or execute package assemblies.
-- **Stable contracts**: Pass. The feature adds builder bundle API contracts without changing `Elsa.PackageManifests`.
+- **Stable contracts**: Pass. The feature adds builder bundle API contracts without changing `Elsa.Platform.PackageManifests`.
 - **Schema evolution**: Pass. No manifest schema changes are required; bundle DTO evolution is documented in this feature contract.
 - **Immutable versions**: Pass. Selected package versions are read from existing immutable catalog records; no package content mutation occurs.
 - **Approval separation**: Pass. Existing valid/approved/listed visibility and compatibility checks remain separate from bundle rendering.
@@ -64,7 +64,7 @@ specs/009-server-bundle-generation/
 
 ```text
 src/
-├── Elsa.Catalog.Core/
+├── Elsa.Platform.PackageCatalog.Core/
 │   ├── Builder/
 │   │   ├── BundleGenerationService.cs
 │   │   ├── BundleGenerationModels.cs
@@ -72,7 +72,7 @@ src/
 │   │   └── Renderers/
 │   ├── Compatibility/
 │   └── Packages/
-└── Elsa.Catalog.Api/
+└── Elsa.Platform.PackageCatalog.Api/
     ├── Public/Builder/
     │   ├── BuilderContracts.cs
     │   └── BuilderEndpoints.cs
@@ -80,14 +80,14 @@ src/
         └── WorkspaceBuilderEndpoints.cs
 
 tests/
-├── Elsa.Catalog.Core.Tests/
+├── Elsa.Platform.PackageCatalog.Core.Tests/
 │   └── BuilderBundleGenerationTests.cs
-└── Elsa.Catalog.Api.Tests/
+└── Elsa.Platform.PackageCatalog.Api.Tests/
     ├── PublicBuilderBundleApiTests.cs
     └── WorkspaceBuilderBundleApiTests.cs
 ```
 
-**Structure Decision**: Keep bundle generation in `Elsa.Catalog.Core/Builder` so rendering, validation, and findings are reusable by public, workspace, future CLI, and saved-configuration entry points. Keep HTTP request/response records in the existing builder API namespaces. No persistence project changes are planned because generated files are ephemeral.
+**Structure Decision**: Keep bundle generation in `Elsa.Platform.PackageCatalog.Core/Builder` so rendering, validation, and findings are reusable by public, workspace, future CLI, and saved-configuration entry points. Keep HTTP request/response records in the existing builder API namespaces. No persistence project changes are planned because generated files are ephemeral.
 
 ## Complexity Tracking
 

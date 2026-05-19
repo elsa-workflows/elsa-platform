@@ -55,14 +55,14 @@ specs/011-saved-runtime-configurations/
 
 ```text
 src/
-├── Elsa.Catalog.Core/RuntimeConfigurations/
-├── Elsa.Catalog.Api/Workspace/WorkspaceRuntimeConfigurationEndpoints.cs
-└── Elsa.Catalog.Persistence.EntityFrameworkCore/
+├── Elsa.Platform.PackageCatalog.Core/RuntimeConfigurations/
+├── Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceRuntimeConfigurationEndpoints.cs
+└── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
 
 tests/
-├── Elsa.Catalog.Core.Tests/
-├── Elsa.Catalog.Api.Tests/
-└── Elsa.Catalog.Persistence.EntityFrameworkCore.Tests/
+├── Elsa.Platform.PackageCatalog.Core.Tests/
+├── Elsa.Platform.PackageCatalog.Api.Tests/
+└── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
 ```
 
 ## Complexity Tracking

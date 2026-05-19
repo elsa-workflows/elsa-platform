@@ -34,7 +34,7 @@ Add the account/workspace foundation required for paid custom package feeds. The
 
 - **Manifest-first**: Pass. Package metadata remains manifest-derived; account/source ownership only controls visibility and indexing scope.
 - **No arbitrary code execution**: Pass. Custom feed indexing continues to use existing NuGet/package inspection paths and does not execute package assemblies.
-- **Stable contracts**: Pass. No `Elsa.PackageManifests` changes are required.
+- **Stable contracts**: Pass. No `Elsa.Platform.PackageManifests` changes are required.
 - **Schema evolution**: Pass. Persistence and HTTP API contracts evolve separately from manifest schemas and are documented in this feature.
 - **Immutable versions**: Pass. Package version immutability and suspicious-change checks remain unchanged.
 - **Approval separation**: Pass. Workspace-owned packages still have package approval, version approval, listing, and validation state as separate concerns.
@@ -64,29 +64,29 @@ specs/008-account-custom-feeds/
 
 ```text
 src/
-├── Elsa.Catalog.Core/
+├── Elsa.Platform.PackageCatalog.Core/
 │   ├── Accounts/
 │   ├── Packages/
 │   └── Sources/
-├── Elsa.Catalog.Persistence.EntityFrameworkCore/
+├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
 │   ├── AccountWorkspaceStore.cs
 │   ├── PublicCatalogQueries.cs
 │   ├── PublicSourceQueries.cs
 │   └── Models/CatalogModelConfiguration.cs
-├── Elsa.Catalog.Persistence.SqliteMigrations/
-├── Elsa.Catalog.Persistence.SqlServerMigrations/
-└── Elsa.Catalog.Api/
+├── Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/
+├── Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/
+└── Elsa.Platform.PackageCatalog.Api/
     ├── Authentication/
     ├── Admin/Workspaces/
     └── Workspace/
 
 tests/
-├── Elsa.Catalog.Core.Tests/
-├── Elsa.Catalog.Persistence.EntityFrameworkCore.Tests/
-└── Elsa.Catalog.Api.Tests/
+├── Elsa.Platform.PackageCatalog.Core.Tests/
+├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+└── Elsa.Platform.PackageCatalog.Api.Tests/
 ```
 
-**Structure Decision**: Keep account/workspace domain concepts in `Elsa.Catalog.Core/Accounts`, EF Core persistence in the existing persistence project, and HTTP endpoints under new workspace/admin route groups in `Elsa.Catalog.Api`. Extend existing public catalog query services with an explicit optional workspace visibility context rather than creating a separate duplicate package-query stack.
+**Structure Decision**: Keep account/workspace domain concepts in `Elsa.Platform.PackageCatalog.Core/Accounts`, EF Core persistence in the existing persistence project, and HTTP endpoints under new workspace/admin route groups in `Elsa.Platform.PackageCatalog.Api`. Extend existing public catalog query services with an explicit optional workspace visibility context rather than creating a separate duplicate package-query stack.
 
 ## Complexity Tracking
 

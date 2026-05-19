@@ -6,10 +6,10 @@
 
 ## Summary
 
-Build `Elsa.PackageManifest.Generator` as a NuGet build package for Elsa
+Build `Elsa.Platform.PackageManifest.Generator` as a NuGet build package for Elsa
 professional extension libraries. The package adds MSBuild targets and a safe
 metadata-inspection task that runs after compilation and before pack, generates
-one deterministic `elsa-package.json`, validates it with `Elsa.PackageManifests`,
+one deterministic `elsa-package.json`, validates it with `Elsa.Platform.PackageManifests`,
 and includes it at the NuGet package root.
 
 The implementation stays deliberately small: CShells metadata discovery, a tiny
@@ -26,7 +26,7 @@ deterministic builds.
 
 **Primary Dependencies**: MSBuild task APIs, System.Reflection.Metadata,
 MetadataLoadContext where useful for metadata-only inspection, System.Xml.Linq,
-System.Text.Json, JsonSchema.Net, Elsa.PackageManifests, NuGet.Versioning,
+System.Text.Json, JsonSchema.Net, Elsa.Platform.PackageManifests, NuGet.Versioning,
 xUnit, FluentAssertions.
 
 **Storage**: File artifacts only. Inputs are compiled assemblies, XML
@@ -67,15 +67,15 @@ Recursive object schema generation and Roslyn analyzers are out of scope.
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 - **Manifest-first**: PASS. The generator emits the explicit
-  `elsa-package.json` distribution contract and uses `Elsa.PackageManifests`.
+  `elsa-package.json` distribution contract and uses `Elsa.Platform.PackageManifests`.
 - **No arbitrary code execution**: PASS. Discovery uses metadata inspection of
   assemblies, XML docs, and JSON files only; constructors/getters are forbidden.
 - **Stable contracts**: PASS. Generated JSON is based on
-  `Elsa.PackageManifests`; CShells metadata and manifest hints are generator
+  `Elsa.Platform.PackageManifests`; CShells metadata and manifest hints are generator
   inputs only.
 - **Schema evolution**: PASS. The plan standardizes on versioned manifest schema
   validation and Draft 2020-12 JSON Schema resources owned by
-  `Elsa.PackageManifests`.
+  `Elsa.Platform.PackageManifests`.
 - **Immutable versions**: N/A. This feature generates package artifacts and does
   not index package versions.
 - **Approval separation**: N/A. Approval is catalog behavior, not generator
@@ -120,39 +120,39 @@ specs/002-package-manifest-generator/
 
 ```text
 src/
-├── Elsa.PackageManifests/
+├── Elsa.Platform.PackageManifests/
 │   ├── Schemas/
 │   └── Validation/
-├── Elsa.PackageManifest.Generator/
+├── Elsa.Platform.PackageManifest.Generator/
 │   ├── build/
 │   ├── buildTransitive/
 │   ├── src/
-│   │   └── Elsa.PackageManifest.Generator.Hints/
-│   └── Elsa.PackageManifest.Generator.csproj
-├── Elsa.PackageManifest.Generator.Core/
+│   │   └── Elsa.Platform.PackageManifest.Generator.Hints/
+│   └── Elsa.Platform.PackageManifest.Generator.csproj
+├── Elsa.Platform.PackageManifest.Generator.Core/
 │   ├── AssemblyInspection/
 │   ├── Documentation/
 │   ├── Generation/
 │   ├── Overrides/
 │   ├── SchemaGeneration/
 │   └── Validation/
-└── Elsa.PackageManifest.Generator.MSBuild/
+└── Elsa.Platform.PackageManifest.Generator.MSBuild/
     ├── GenerateElsaPackageManifestTask.cs
     └── Packaging/
 
 tests/
-├── Elsa.PackageManifest.Generator.Core.Tests/
-├── Elsa.PackageManifest.Generator.MSBuild.Tests/
-├── Elsa.PackageManifest.Generator.IntegrationTests/
-└── Elsa.PackageManifest.Generator.Testing/
+├── Elsa.Platform.PackageManifest.Generator.Core.Tests/
+├── Elsa.Platform.PackageManifest.Generator.MSBuild.Tests/
+├── Elsa.Platform.PackageManifest.Generator.IntegrationTests/
+└── Elsa.Platform.PackageManifest.Generator.Testing/
 ```
 
 **Structure Decision**: Use a small package facade plus separate core and
-MSBuild projects. `Elsa.PackageManifest.Generator` is the NuGet package authors
+MSBuild projects. `Elsa.Platform.PackageManifest.Generator` is the NuGet package authors
 reference; it carries targets, props, task binaries, and optional source-only
 manifest hints. `Core` owns deterministic generation and validation
 orchestration. `MSBuild` owns task binding and pack item integration. The existing
-`Elsa.PackageManifests` package remains the wire contract and schema owner.
+`Elsa.Platform.PackageManifests` package remains the wire contract and schema owner.
 
 ## Complexity Tracking
 

@@ -14,7 +14,7 @@ are implemented.
 From the repository root:
 
 ```bash
-dotnet run --project src/Elsa.Catalog.Api
+dotnet run --project src/Elsa.Platform.PackageCatalog.Api
 ```
 
 Use the existing admin API key configuration for authenticated admin requests.
@@ -24,7 +24,7 @@ Use the existing admin API key configuration for authenticated admin requests.
 From the admin UI project:
 
 ```bash
-cd src/Elsa.Catalog.AdminUi
+cd src/Elsa.Platform.PackageCatalog.AdminUi
 npm install
 npm run dev
 ```
@@ -100,7 +100,7 @@ Expected implementation commands:
 
 ```bash
 dotnet test
-cd src/Elsa.Catalog.AdminUi
+cd src/Elsa.Platform.PackageCatalog.AdminUi
 npm test
 npm run build
 npm run e2e

@@ -35,11 +35,11 @@ Add a backend planner that turns builder intent into resolved runtime state and 
 ## Project Structure
 
 ```text
-src/Elsa.Catalog.Core/Builder/Planner/
-src/Elsa.Catalog.Api/Public/Builder/
-src/Elsa.Catalog.Api/Workspace/
-tests/Elsa.Catalog.Core.Tests/
-tests/Elsa.Catalog.Api.Tests/
+src/Elsa.Platform.PackageCatalog.Core/Builder/Planner/
+src/Elsa.Platform.PackageCatalog.Api/Public/Builder/
+src/Elsa.Platform.PackageCatalog.Api/Workspace/
+tests/Elsa.Platform.PackageCatalog.Core.Tests/
+tests/Elsa.Platform.PackageCatalog.Api.Tests/
 ```
 
 ## Complexity Tracking

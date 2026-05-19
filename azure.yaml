@@ -1,7 +1,7 @@
 name: elsa-package-catalog
 services:
   api:
-    project: src/Elsa.Catalog.AppHost/Elsa.Catalog.AppHost.csproj
+    project: src/Elsa.Platform.PackageCatalog.AppHost/Elsa.Platform.PackageCatalog.AppHost.csproj
     # For Aspire AppHost deployments, azd discovers the real Azure target from
     # AppHost.cs. AddAzureAppServiceEnvironment keeps this deployment on App Service.
     host: containerapp

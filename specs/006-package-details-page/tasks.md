@@ -18,11 +18,11 @@
 
 **Purpose**: Prepare shared package-details fixtures, query keys, and route placeholders used across stories.
 
-- [X] T001 Add package details fixture data with multiple versions, source summary, visibility blockers, compatibility metadata, version state tokens, features, settings, validation findings, empty-version package data, and manifest content in `src/Elsa.Catalog.AdminUi/src/test/fixtures.ts`
-- [X] T002 [P] Add package details request handlers for package, validation, manifest, approval, and rejection responses in `src/Elsa.Catalog.AdminUi/src/test/adminApiHandlers.ts`
-- [X] T003 [P] Add Package Details page test scaffold and render helper in `src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx`
-- [X] T004 [P] Add API seed helper methods for multi-version package details, feature settings, suspicious hashes, and validation payloads in `tests/Elsa.Catalog.Testing/PublicCatalogSeedData.cs`
-- [X] T005 Add package details query keys for package, validation, and manifest resources in `src/Elsa.Catalog.AdminUi/src/lib/query/queryClient.tsx`
+- [X] T001 Add package details fixture data with multiple versions, source summary, visibility blockers, compatibility metadata, version state tokens, features, settings, validation findings, empty-version package data, and manifest content in `src/Elsa.Platform.PackageCatalog.AdminUi/src/test/fixtures.ts`
+- [X] T002 [P] Add package details request handlers for package, validation, manifest, approval, and rejection responses in `src/Elsa.Platform.PackageCatalog.AdminUi/src/test/adminApiHandlers.ts`
+- [X] T003 [P] Add Package Details page test scaffold and render helper in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx`
+- [X] T004 [P] Add API seed helper methods for multi-version package details, feature settings, suspicious hashes, and validation payloads in `tests/Elsa.Platform.PackageCatalog.Testing/PublicCatalogSeedData.cs`
+- [X] T005 Add package details query keys for package, validation, and manifest resources in `src/Elsa.Platform.PackageCatalog.AdminUi/src/lib/query/queryClient.tsx`
 
 ---
 
@@ -32,13 +32,13 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [X] T006 [P] Expand admin package details response records for source summary, version details, version state token, compatibility metadata, visibility reasons, feature records, settings, and manifest metadata in `src/Elsa.Catalog.Api/Admin/Packages/AdminPackageContracts.cs`
-- [X] T007 [P] Add TypeScript package details, compatibility metadata, visibility reason, validation finding, feature, setting, manifest, version state token, and version action types in `src/Elsa.Catalog.AdminUi/src/features/packages/packageModels.ts`
-- [X] T008 [P] Add package details API client functions for details, validation, manifest, approve, and reject calls in `src/Elsa.Catalog.AdminUi/src/features/packages/packageApi.ts`
-- [X] T009 Add visibility reason projection helper covering approval, rejection, validation, listing, suspicious, source, manifest, and ingestion reasons in `src/Elsa.Catalog.Api/Admin/Packages/AdminPackageEndpoints.cs`
-- [X] T010 Add validation JSON normalization helper for admin findings in `src/Elsa.Catalog.Api/Admin/Packages/AdminValidationEndpoints.cs`
-- [X] T011 Add frontend model helpers for selected version resolution, route section parsing, visibility grouping, version state token comparison, and stale action detection in `src/Elsa.Catalog.AdminUi/src/features/packages/packageModels.ts`
-- [X] T012 [P] Add unit tests for selected latest indexed version, canonical casing display, visibility grouping, section parsing, compatibility filtering, and version state token stale action helper behavior in `src/Elsa.Catalog.AdminUi/src/features/packages/packageModels.test.ts`
+- [X] T006 [P] Expand admin package details response records for source summary, version details, version state token, compatibility metadata, visibility reasons, feature records, settings, and manifest metadata in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminPackageContracts.cs`
+- [X] T007 [P] Add TypeScript package details, compatibility metadata, visibility reason, validation finding, feature, setting, manifest, version state token, and version action types in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/packageModels.ts`
+- [X] T008 [P] Add package details API client functions for details, validation, manifest, approve, and reject calls in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/packageApi.ts`
+- [X] T009 Add visibility reason projection helper covering approval, rejection, validation, listing, suspicious, source, manifest, and ingestion reasons in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminPackageEndpoints.cs`
+- [X] T010 Add validation JSON normalization helper for admin findings in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminValidationEndpoints.cs`
+- [X] T011 Add frontend model helpers for selected version resolution, route section parsing, visibility grouping, version state token comparison, and stale action detection in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/packageModels.ts`
+- [X] T012 [P] Add unit tests for selected latest indexed version, canonical casing display, visibility grouping, section parsing, compatibility filtering, and version state token stale action helper behavior in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/packageModels.test.ts`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin.
 
@@ -52,16 +52,16 @@
 
 ### Tests for User Story 1
 
-- [X] T013 [P] [US1] Add admin API tests for package details summary, source summary, canonical casing, latest indexed default data, no-versions package data, and not-found behavior in `tests/Elsa.Catalog.Api.Tests/AdminPackagesApiTests.cs`
-- [X] T014 [P] [US1] Add Package Details UI tests for summary rendering, latest indexed default selection, visibility reasons, canonical casing, no-versions empty state, access-denied stale data clearing, and not-found state in `src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx`
+- [X] T013 [P] [US1] Add admin API tests for package details summary, source summary, canonical casing, latest indexed default data, no-versions package data, and not-found behavior in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminPackagesApiTests.cs`
+- [X] T014 [P] [US1] Add Package Details UI tests for summary rendering, latest indexed default selection, visibility reasons, canonical casing, no-versions empty state, access-denied stale data clearing, and not-found state in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx`
 
 ### Implementation for User Story 1
 
-- [X] T015 [US1] Update admin package details endpoint to load source, all versions, feature counts, manifest metadata, version state tokens, canonical casing, no-versions responses, and visibility reasons in `src/Elsa.Catalog.Api/Admin/Packages/AdminPackageEndpoints.cs`
-- [X] T016 [US1] Update EF Core admin package lookup to include source, versions, features, and settings with case-insensitive package ID matching in `src/Elsa.Catalog.Persistence.EntityFrameworkCore/ApprovalStore.cs`
-- [X] T017 [US1] Implement Package Details page shell with summary, source panel, status badges, visibility reasons, loading, no-versions, not-found, access-denied stale data clearing, and unexpected-error states in `src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
-- [X] T018 [US1] Wire package details route to replace placeholder package routes in `src/Elsa.Catalog.AdminUi/src/app/routes.tsx`
-- [X] T019 [US1] Update packages list links to preserve canonical package ID route encoding in `src/Elsa.Catalog.AdminUi/src/features/packages/PackagesPage.tsx`
+- [X] T015 [US1] Update admin package details endpoint to load source, all versions, feature counts, manifest metadata, version state tokens, canonical casing, no-versions responses, and visibility reasons in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminPackageEndpoints.cs`
+- [X] T016 [US1] Update EF Core admin package lookup to include source, versions, features, and settings with case-insensitive package ID matching in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/ApprovalStore.cs`
+- [X] T017 [US1] Implement Package Details page shell with summary, source panel, status badges, visibility reasons, loading, no-versions, not-found, access-denied stale data clearing, and unexpected-error states in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
+- [X] T018 [US1] Wire package details route to replace placeholder package routes in `src/Elsa.Platform.PackageCatalog.AdminUi/src/app/routes.tsx`
+- [X] T019 [US1] Update packages list links to preserve canonical package ID route encoding in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackagesPage.tsx`
 
 **Checkpoint**: User Story 1 is independently usable as the MVP package details page.
 
@@ -75,15 +75,15 @@
 
 ### Tests for User Story 2
 
-- [X] T020 [P] [US2] Add UI tests for version list badges, version switching, missing version recovery, and version-plus-section deep links in `src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx`
-- [X] T021 [P] [US2] Add E2E smoke test for package details route, version route, and section route navigation in `tests/Elsa.Catalog.AdminUi.E2E/package-details.spec.ts`
+- [X] T020 [P] [US2] Add UI tests for version list badges, version switching, missing version recovery, and version-plus-section deep links in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx`
+- [X] T021 [P] [US2] Add E2E smoke test for package details route, version route, and section route navigation in `tests/Elsa.Platform.PackageCatalog.AdminUi.E2E/package-details.spec.ts`
 
 ### Implementation for User Story 2
 
-- [X] T022 [US2] Implement version selector/list with approval, validation, listed, suspicious, and indexed timestamp display in `src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
-- [X] T023 [US2] Implement URL synchronization for package-level default version, explicit version routes, and major section routes in `src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
-- [X] T024 [US2] Add recoverable version-not-found and unavailable section states in `src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
-- [X] T025 [US2] Update route definitions for `/admin/packages/:packageId/versions/:version` and `/admin/packages/:packageId/versions/:version/:section` in `src/Elsa.Catalog.AdminUi/src/app/routes.tsx`
+- [X] T022 [US2] Implement version selector/list with approval, validation, listed, suspicious, and indexed timestamp display in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
+- [X] T023 [US2] Implement URL synchronization for package-level default version, explicit version routes, and major section routes in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
+- [X] T024 [US2] Add recoverable version-not-found and unavailable section states in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
+- [X] T025 [US2] Update route definitions for `/admin/packages/:packageId/versions/:version` and `/admin/packages/:packageId/versions/:version/:section` in `src/Elsa.Platform.PackageCatalog.AdminUi/src/app/routes.tsx`
 
 **Checkpoint**: User Story 2 works independently with direct links and version switching.
 
@@ -97,15 +97,15 @@
 
 ### Tests for User Story 3
 
-- [X] T026 [P] [US3] Add admin API tests for normalized validation findings with errors, warnings, missing code/path, no findings, and package/version not found in `tests/Elsa.Catalog.Api.Tests/AdminValidationApiTests.cs`
-- [X] T027 [P] [US3] Add UI tests for validation grouping, valid empty state, suspicious hash evidence, multiple blocker groups, and validation-load failure state in `src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx`
+- [X] T026 [P] [US3] Add admin API tests for normalized validation findings with errors, warnings, missing code/path, no findings, and package/version not found in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminValidationApiTests.cs`
+- [X] T027 [P] [US3] Add UI tests for validation grouping, valid empty state, suspicious hash evidence, multiple blocker groups, and validation-load failure state in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx`
 
 ### Implementation for User Story 3
 
-- [X] T028 [US3] Update admin validation endpoint to return normalized `findings` with severity, code, message, path, blocking impact, validated timestamp, and validator version in `src/Elsa.Catalog.Api/Admin/Packages/AdminValidationEndpoints.cs`
-- [X] T029 [US3] Add validation findings API response types and normalization for historic result payload shapes in `src/Elsa.Catalog.AdminUi/src/features/packages/packageModels.ts`
-- [X] T030 [US3] Implement validation and visibility sections with grouped blockers, valid state, suspicious hash evidence, and scoped validation failure state in `src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
-- [X] T031 [US3] Add validation and visibility search/filter helpers for severity, blocking state, code, path, and message in `src/Elsa.Catalog.AdminUi/src/features/packages/packageModels.ts`
+- [X] T028 [US3] Update admin validation endpoint to return normalized `findings` with severity, code, message, path, blocking impact, validated timestamp, and validator version in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminValidationEndpoints.cs`
+- [X] T029 [US3] Add validation findings API response types and normalization for historic result payload shapes in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/packageModels.ts`
+- [X] T030 [US3] Implement validation and visibility sections with grouped blockers, valid state, suspicious hash evidence, and scoped validation failure state in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
+- [X] T031 [US3] Add validation and visibility search/filter helpers for severity, blocking state, code, path, and message in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/packageModels.ts`
 
 **Checkpoint**: User Story 3 supports independent troubleshooting for validation and visibility.
 
@@ -119,15 +119,15 @@
 
 ### Tests for User Story 4
 
-- [X] T032 [P] [US4] Add admin API tests for feature, setting, dependency, conflict, infrastructure, compatibility metadata, and empty feature projections in `tests/Elsa.Catalog.Api.Tests/AdminPackagesApiTests.cs`
-- [X] T033 [P] [US4] Add UI tests for features, settings, dependencies, conflicts, compatibility metadata, empty states, seeded large-list scenarios, and in-page filters in `src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx`
+- [X] T032 [P] [US4] Add admin API tests for feature, setting, dependency, conflict, infrastructure, compatibility metadata, and empty feature projections in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminPackagesApiTests.cs`
+- [X] T033 [P] [US4] Add UI tests for features, settings, dependencies, conflicts, compatibility metadata, empty states, seeded large-list scenarios, and in-page filters in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx`
 
 ### Implementation for User Story 4
 
-- [X] T034 [US4] Extend admin package details projection to include compatibility metadata plus feature settings and JSON-backed dependency, conflict, infrastructure, validation, UI, and extension fields in `src/Elsa.Catalog.Api/Admin/Packages/AdminPackageEndpoints.cs`
-- [X] T035 [US4] Add feature, setting, dependency, conflict, infrastructure, compatibility metadata, and large-list filter helpers in `src/Elsa.Catalog.AdminUi/src/features/packages/packageModels.ts`
-- [X] T036 [US4] Implement feature and settings inspection UI with compact rows, expandable details, badges, and empty states in `src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
-- [X] T037 [US4] Implement dependencies, conflicts, infrastructure, and compatibility sections with search/filter controls in `src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
+- [X] T034 [US4] Extend admin package details projection to include compatibility metadata plus feature settings and JSON-backed dependency, conflict, infrastructure, validation, UI, and extension fields in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminPackageEndpoints.cs`
+- [X] T035 [US4] Add feature, setting, dependency, conflict, infrastructure, compatibility metadata, and large-list filter helpers in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/packageModels.ts`
+- [X] T036 [US4] Implement feature and settings inspection UI with compact rows, expandable details, badges, and empty states in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
+- [X] T037 [US4] Implement dependencies, conflicts, infrastructure, and compatibility sections with search/filter controls in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
 
 **Checkpoint**: User Story 4 gives administrators an inspectable functional surface for the selected version.
 
@@ -141,18 +141,18 @@
 
 ### Tests for User Story 5
 
-- [X] T038 [P] [US5] Add admin API tests for manifest metadata/content availability, approval success, rejection reason validation, stale `expectedStateToken` conflicts, and version not found behavior in `tests/Elsa.Catalog.Api.Tests/AdminPackagesApiTests.cs`
-- [X] T039 [P] [US5] Add admin approval API tests for blank rejection reason rejection, version state token mismatch rejection, and version-scoped approve/reject behavior in `tests/Elsa.Catalog.Api.Tests/AdminApprovalApiTests.cs`
-- [X] T040 [P] [US5] Add UI tests for manifest viewer, manifest search, approve confirmation, reject reason requirement, version state token stale action block, conflict refresh prompt, and unsupported action display in `src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx`
+- [X] T038 [P] [US5] Add admin API tests for manifest metadata/content availability, approval success, rejection reason validation, stale `expectedStateToken` conflicts, and version not found behavior in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminPackagesApiTests.cs`
+- [X] T039 [P] [US5] Add admin approval API tests for blank rejection reason rejection, version state token mismatch rejection, and version-scoped approve/reject behavior in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminApprovalApiTests.cs`
+- [X] T040 [P] [US5] Add UI tests for manifest viewer, manifest search, approve confirmation, reject reason requirement, version state token stale action block, conflict refresh prompt, and unsupported action display in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx`
 
 ### Implementation for User Story 5
 
-- [X] T041 [US5] Include manifest availability, schema version, stored hash, suspicious hash, version state token inputs, and raw manifest content in admin package details responses in `src/Elsa.Catalog.Api/Admin/Packages/AdminPackageEndpoints.cs`
-- [X] T042 [US5] Enforce non-empty version rejection reasons, require matching `expectedStateToken`, return conflict on stale state, and preserve version-scoped approval/rejection behavior in `src/Elsa.Catalog.Api/Admin/Packages/AdminApprovalEndpoints.cs`
-- [X] T043 [US5] Add manifest search, formatting, and availability helpers in `src/Elsa.Catalog.AdminUi/src/features/packages/packageModels.ts`
-- [X] T044 [US5] Implement read-only manifest section with metadata, formatted content, search/jump support, and missing/malformed states in `src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
-- [X] T045 [US5] Implement version action panel with approve/reject confirmations, rejection reason requirement, unavailable optional actions, version state token stale action block, conflict refresh prompt, success refresh, and failure preservation in `src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
-- [X] T046 [US5] Update package action API client to send `expectedStateToken` and surface conflict, validation, not-found, access, and unexpected failures to the page in `src/Elsa.Catalog.AdminUi/src/features/packages/packageApi.ts`
+- [X] T041 [US5] Include manifest availability, schema version, stored hash, suspicious hash, version state token inputs, and raw manifest content in admin package details responses in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminPackageEndpoints.cs`
+- [X] T042 [US5] Enforce non-empty version rejection reasons, require matching `expectedStateToken`, return conflict on stale state, and preserve version-scoped approval/rejection behavior in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminApprovalEndpoints.cs`
+- [X] T043 [US5] Add manifest search, formatting, and availability helpers in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/packageModels.ts`
+- [X] T044 [US5] Implement read-only manifest section with metadata, formatted content, search/jump support, and missing/malformed states in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
+- [X] T045 [US5] Implement version action panel with approve/reject confirmations, rejection reason requirement, unavailable optional actions, version state token stale action block, conflict refresh prompt, success refresh, and failure preservation in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.tsx`
+- [X] T046 [US5] Update package action API client to send `expectedStateToken` and surface conflict, validation, not-found, access, and unexpected failures to the page in `src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/packageApi.ts`
 
 **Checkpoint**: User Story 5 completes manifest review and version-scoped actions.
 
@@ -162,7 +162,7 @@
 
 **Purpose**: Final verification, documentation alignment, and quality cleanup across all stories.
 
-- [X] T047 [P] Update admin dashboard package details documentation and verification notes in `src/Elsa.Catalog.AdminUi/README.md`
+- [X] T047 [P] Update admin dashboard package details documentation and verification notes in `src/Elsa.Platform.PackageCatalog.AdminUi/README.md`
 - [X] T048 [P] Update package details quickstart learnings after implementation in `specs/006-package-details-page/quickstart.md`
 - [X] T049 Run API regression tests from quickstart and record any command adjustments in `specs/006-package-details-page/quickstart.md`
 - [X] T050 Run admin UI unit tests, seeded large-list inspection checks, and Playwright package details smoke test from quickstart, then record any command adjustments in `specs/006-package-details-page/quickstart.md`
@@ -214,23 +214,23 @@
 ## Parallel Example: User Story 1
 
 ```text
-Task: "T013 [P] [US1] Add admin API tests for package details summary, source summary, canonical casing, latest indexed default data, and not-found behavior in tests/Elsa.Catalog.Api.Tests/AdminPackagesApiTests.cs"
-Task: "T014 [P] [US1] Add Package Details UI tests for summary rendering, latest indexed default selection, visibility reasons, canonical casing, and not-found state in src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx"
+Task: "T013 [P] [US1] Add admin API tests for package details summary, source summary, canonical casing, latest indexed default data, and not-found behavior in tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminPackagesApiTests.cs"
+Task: "T014 [P] [US1] Add Package Details UI tests for summary rendering, latest indexed default selection, visibility reasons, canonical casing, and not-found state in src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx"
 ```
 
 ## Parallel Example: User Story 3
 
 ```text
-Task: "T026 [P] [US3] Add admin API tests for normalized validation findings with errors, warnings, missing code/path, no findings, and package/version not found in tests/Elsa.Catalog.Api.Tests/AdminValidationApiTests.cs"
-Task: "T027 [P] [US3] Add UI tests for validation grouping, valid empty state, suspicious hash evidence, multiple blocker groups, and validation-load failure state in src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx"
+Task: "T026 [P] [US3] Add admin API tests for normalized validation findings with errors, warnings, missing code/path, no findings, and package/version not found in tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminValidationApiTests.cs"
+Task: "T027 [P] [US3] Add UI tests for validation grouping, valid empty state, suspicious hash evidence, multiple blocker groups, and validation-load failure state in src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx"
 ```
 
 ## Parallel Example: User Story 5
 
 ```text
-Task: "T038 [P] [US5] Add admin API tests for manifest metadata/content availability, approval success, rejection reason validation, stale expectedStateToken conflicts, and version not found behavior in tests/Elsa.Catalog.Api.Tests/AdminPackagesApiTests.cs"
-Task: "T039 [P] [US5] Add admin approval API tests for blank rejection reason rejection, version state token mismatch rejection, and version-scoped approve/reject behavior in tests/Elsa.Catalog.Api.Tests/AdminApprovalApiTests.cs"
-Task: "T040 [P] [US5] Add UI tests for manifest viewer, manifest search, approve confirmation, reject reason requirement, version state token stale action block, conflict refresh prompt, and unsupported action display in src/Elsa.Catalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx"
+Task: "T038 [P] [US5] Add admin API tests for manifest metadata/content availability, approval success, rejection reason validation, stale expectedStateToken conflicts, and version not found behavior in tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminPackagesApiTests.cs"
+Task: "T039 [P] [US5] Add admin approval API tests for blank rejection reason rejection, version state token mismatch rejection, and version-scoped approve/reject behavior in tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminApprovalApiTests.cs"
+Task: "T040 [P] [US5] Add UI tests for manifest viewer, manifest search, approve confirmation, reject reason requirement, version state token stale action block, conflict refresh prompt, and unsupported action display in src/Elsa.Platform.PackageCatalog.AdminUi/src/features/packages/PackageDetailsPage.test.tsx"
 ```
 
 ---

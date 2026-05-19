@@ -32,7 +32,7 @@
 - [x] T009 Capture current `elsa-package-catalog` HEAD SHA, PR #36 merge SHA, and repository inventory in `specs/001-platform-package-catalog-consolidation/research.md`
 - [x] T010 Decide history-preserving import mechanism and document command sequence in `specs/001-platform-package-catalog-consolidation/quickstart.md`
 - [x] T011 Identify Spec Kit file conflicts between old repo and platform repo in `specs/001-platform-package-catalog-consolidation/research.md`
-- [x] T012 Identify package ID compatibility status for `Elsa.PackageManifests` and `Elsa.PackageManifest.Generator` in `specs/001-platform-package-catalog-consolidation/research.md`
+- [x] T012 Identify package ID compatibility status for `Elsa.Platform.PackageManifests` and `Elsa.Platform.PackageManifest.Generator` in `specs/001-platform-package-catalog-consolidation/research.md`
 - [x] T013 Create ADR for package catalog consolidation under `docs/adr/`
 
 **Checkpoint**: Import approach and compatibility assumptions are documented.
@@ -62,7 +62,7 @@
 
 ### Tests
 
-- [x] T018 [P] [US2] Run baseline `dotnet test Elsa.PackageCatalog.sln` in old repo and record results in `specs/001-platform-package-catalog-consolidation/quickstart.md`
+- [x] T018 [P] [US2] Run baseline `dotnet test Elsa.Platform.sln` in old repo and record results in `specs/001-platform-package-catalog-consolidation/quickstart.md`
 - [x] T019 [P] [US2] Run baseline admin UI tests in old repo and record results in `specs/001-platform-package-catalog-consolidation/quickstart.md`
 
 ### Implementation
@@ -87,20 +87,20 @@
 
 ### Tests
 
-- [ ] T027 [P] [US3] Add or update manifest contract tests for renamed `Elsa.Platform.PackageManifests`
-- [ ] T028 [P] [US3] Add dependency boundary inspection notes to `specs/001-platform-package-catalog-consolidation/contracts/dependency-boundaries.md`
+- [x] T027 [P] [US3] Add or update manifest contract tests for renamed `Elsa.Platform.PackageManifests`
+- [x] T028 [P] [US3] Add dependency boundary inspection notes to `specs/001-platform-package-catalog-consolidation/contracts/dependency-boundaries.md`
 
 ### Implementation
 
-- [ ] T029 [US3] Rename `Elsa.Catalog.Core` to `Elsa.Platform.PackageCatalog.Core`
-- [ ] T030 [US3] Extract `Elsa.Platform.PackageCatalog.Abstractions` from catalog core contracts
-- [ ] T031 [US3] Rename `Elsa.Catalog.Packaging.NuGet` to `Elsa.Platform.PackageCatalog.Sources.NuGet`
-- [ ] T032 [US3] Rename catalog API, AppHost, ServiceDefaults, AdminUi, persistence, and migration projects to `Elsa.Platform.PackageCatalog.*`
-- [ ] T033 [US3] Rename `Elsa.PackageManifests` source project to `Elsa.Platform.PackageManifests`
-- [ ] T034 [US3] Rename generator projects to `Elsa.Platform.PackageManifest.Generator*`
-- [ ] T035 [US3] Update namespaces, project references, solution files, test project references, package metadata, and docs after project renames
-- [ ] T036 [US3] Run .NET restore/build/test after renames
-- [ ] T037 [US3] Run admin UI tests after path and package updates
+- [x] T029 [US3] Rename `Elsa.Platform.PackageCatalog.Core` to `Elsa.Platform.PackageCatalog.Core`
+- [x] T030 [US3] Extract `Elsa.Platform.PackageCatalog.Abstractions` from catalog core contracts
+- [x] T031 [US3] Rename `Elsa.Platform.PackageCatalog.Sources.NuGet` to `Elsa.Platform.PackageCatalog.Sources.NuGet`
+- [x] T032 [US3] Rename catalog API, AppHost, ServiceDefaults, AdminUi, persistence, and migration projects to `Elsa.Platform.PackageCatalog.*`
+- [x] T033 [US3] Rename `Elsa.Platform.PackageManifests` source project to `Elsa.Platform.PackageManifests`
+- [x] T034 [US3] Rename generator projects to `Elsa.Platform.PackageManifest.Generator*`
+- [x] T035 [US3] Update namespaces, project references, solution files, test project references, package metadata, and docs after project renames
+- [x] T036 [US3] Run .NET restore/build/test after renames
+- [x] T037 [US3] Run admin UI tests after path and package updates
 
 **Checkpoint**: Platform package architecture is in place and verified.
 

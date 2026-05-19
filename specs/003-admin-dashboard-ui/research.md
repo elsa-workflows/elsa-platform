@@ -4,13 +4,13 @@
 
 **Rationale**: The repository currently has ASP.NET Core API, core, persistence,
 packaging, and manifest generator projects but no browser UI. A dedicated
-`src/Elsa.Catalog.AdminUi` project keeps React/TypeScript build tooling,
+`src/Elsa.Platform.PackageCatalog.AdminUi` project keeps React/TypeScript build tooling,
 components, route definitions, and UI tests separate from API concerns while
 remaining in the same monorepo and local development flow.
 
 **Alternatives considered**:
 
-- Embed UI files directly in `Elsa.Catalog.Api`: rejected because it mixes
+- Embed UI files directly in `Elsa.Platform.PackageCatalog.Api`: rejected because it mixes
   frontend build concerns with API endpoints and makes UI testing/dependencies
   noisier.
 - Create an external repository: rejected because this is an internal operator

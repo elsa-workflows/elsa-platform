@@ -18,7 +18,7 @@ Use a representative Elsa shell-feature package project:
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Elsa.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
+    <PackageReference Include="Elsa.Platform.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
   </ItemGroup>
 </Project>
 ```
@@ -118,13 +118,13 @@ Expected result:
 Run focused tests while implementing:
 
 ```bash
-dotnet test tests/Elsa.PackageManifest.Generator.Core.Tests/Elsa.PackageManifest.Generator.Core.Tests.csproj
-dotnet test tests/Elsa.PackageManifest.Generator.MSBuild.Tests/Elsa.PackageManifest.Generator.MSBuild.Tests.csproj
-dotnet test tests/Elsa.PackageManifest.Generator.IntegrationTests/Elsa.PackageManifest.Generator.IntegrationTests.csproj
+dotnet test tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/Elsa.Platform.PackageManifest.Generator.Core.Tests.csproj
+dotnet test tests/Elsa.Platform.PackageManifest.Generator.MSBuild.Tests/Elsa.Platform.PackageManifest.Generator.MSBuild.Tests.csproj
+dotnet test tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/Elsa.Platform.PackageManifest.Generator.IntegrationTests.csproj
 ```
 
 Run the full solution before completion:
 
 ```bash
-dotnet test Elsa.PackageCatalog.sln
+dotnet test Elsa.Platform.sln
 ```

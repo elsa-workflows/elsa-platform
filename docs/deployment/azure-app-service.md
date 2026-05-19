@@ -47,13 +47,13 @@ under `/admin`, push it to ACR, and update the existing App Service site
 container:
 
 ```bash
-docker build --file src/Elsa.Catalog.Api/Dockerfile --tag <acr>/<repo>:<sha> .
+docker build --file src/Elsa.Platform.PackageCatalog.Api/Dockerfile --tag <acr>/<repo>:<sha> .
 docker push <acr>/<repo>:<sha>
 az webapp sitecontainers update ...
 ```
 
-The Dockerfile uses a Node build stage for `src/Elsa.Catalog.AdminUi` and copies
-the Vite `dist` output into `src/Elsa.Catalog.Api/wwwroot/admin` before
+The Dockerfile uses a Node build stage for `src/Elsa.Platform.PackageCatalog.AdminUi` and copies
+the Vite `dist` output into `src/Elsa.Platform.PackageCatalog.Api/wwwroot/admin` before
 `dotnet publish`. ASP.NET Core serves `/admin` as the dashboard SPA and keeps the
 admin API endpoints under `/api/admin`.
 
@@ -184,8 +184,8 @@ injects `ConnectionStrings__Catalog`, and sets `Database__Provider=SqlServer`.
 
 Each provider has its own EF Core migration assembly:
 
-- SQLite: `Elsa.Catalog.Persistence.SqliteMigrations`
-- SQL Server/Azure SQL: `Elsa.Catalog.Persistence.SqlServerMigrations`
+- SQLite: `Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations`
+- SQL Server/Azure SQL: `Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations`
 
 The API selects the matching migration assembly with the provider and applies
 migrations at startup outside the `Testing` environment.

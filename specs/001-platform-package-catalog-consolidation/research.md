@@ -73,32 +73,32 @@ Merged PR reviewed: [elsa-workflows/elsa-package-catalog#36](https://github.com/
 
 Current source projects:
 
-- `Elsa.Catalog.Api`
-- `Elsa.Catalog.AppHost`
-- `Elsa.Catalog.Core`
-- `Elsa.Catalog.Packaging.NuGet`
-- `Elsa.Catalog.Persistence.EntityFrameworkCore`
-- `Elsa.Catalog.Persistence.SqlServerMigrations`
-- `Elsa.Catalog.Persistence.SqliteMigrations`
-- `Elsa.Catalog.ServiceDefaults`
-- `Elsa.PackageManifest.Generator`
-- `Elsa.PackageManifest.Generator.Core`
-- `Elsa.PackageManifest.Generator.MSBuild`
-- `Elsa.PackageManifests`
+- `Elsa.Platform.PackageCatalog.Api`
+- `Elsa.Platform.PackageCatalog.AppHost`
+- `Elsa.Platform.PackageCatalog.Core`
+- `Elsa.Platform.PackageCatalog.Sources.NuGet`
+- `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`
+- `Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations`
+- `Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations`
+- `Elsa.Platform.PackageCatalog.ServiceDefaults`
+- `Elsa.Platform.PackageManifest.Generator`
+- `Elsa.Platform.PackageManifest.Generator.Core`
+- `Elsa.Platform.PackageManifest.Generator.MSBuild`
+- `Elsa.Platform.PackageManifests`
 
 Current test projects and UI test packages:
 
-- `Elsa.Catalog.Api.Tests`
-- `Elsa.Catalog.Core.Tests`
-- `Elsa.Catalog.Packaging.NuGet.Tests`
-- `Elsa.Catalog.Persistence.EntityFrameworkCore.Tests`
-- `Elsa.Catalog.Testing`
-- `Elsa.PackageManifest.Generator.Core.Tests`
-- `Elsa.PackageManifest.Generator.IntegrationTests`
-- `Elsa.PackageManifest.Generator.MSBuild.Tests`
-- `Elsa.PackageManifest.Generator.Testing`
-- `Elsa.PackageManifests.Tests`
-- `Elsa.Catalog.AdminUi.E2E`
+- `Elsa.Platform.PackageCatalog.Api.Tests`
+- `Elsa.Platform.PackageCatalog.Core.Tests`
+- `Elsa.Platform.PackageCatalog.Sources.NuGet.Tests`
+- `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests`
+- `Elsa.Platform.PackageCatalog.Testing`
+- `Elsa.Platform.PackageManifest.Generator.Core.Tests`
+- `Elsa.Platform.PackageManifest.Generator.IntegrationTests`
+- `Elsa.Platform.PackageManifest.Generator.MSBuild.Tests`
+- `Elsa.Platform.PackageManifest.Generator.Testing`
+- `Elsa.Platform.PackageManifests.Tests`
+- `Elsa.Platform.PackageCatalog.AdminUi.E2E`
 
 Current specs:
 
@@ -144,9 +144,9 @@ Rationale:
 Migration implications:
 
 - Import PR #36 specs `009` through `016`; do not let old `.specify/feature.json` override the platform active feature.
-- Map `src/Elsa.Catalog.Core/Builder/*` to `Elsa.Platform.RuntimeBuilder.Core`.
-- Map `src/Elsa.Catalog.Core/DeploymentTemplates/*` to `Elsa.Platform.RuntimeBuilder.DeploymentTemplates`.
-- Map `src/Elsa.Catalog.Core/RuntimeConfigurations/*` and persistence stores to Runtime Builder contracts/persistence unless implementation feedback shows they should remain catalog-owned.
+- Map `src/Elsa.Platform.PackageCatalog.Core/Builder/*` to `Elsa.Platform.RuntimeBuilder.Core`.
+- Map `src/Elsa.Platform.PackageCatalog.Core/DeploymentTemplates/*` to `Elsa.Platform.RuntimeBuilder.DeploymentTemplates`.
+- Map `src/Elsa.Platform.PackageCatalog.Core/RuntimeConfigurations/*` and persistence stores to Runtime Builder contracts/persistence unless implementation feedback shows they should remain catalog-owned.
 - Keep deployment template generation distinct from deployment apply/reconciliation.
 
 ## Spec Kit Conflict Notes
@@ -164,8 +164,8 @@ Decision:
 
 NuGet flat-container checks on 2026-05-19 returned 404 for:
 
-- `Elsa.PackageManifests`
-- `Elsa.PackageManifest.Generator`
+- `Elsa.Platform.PackageManifests`
+- `Elsa.Platform.PackageManifest.Generator`
 
 Working assumption:
 

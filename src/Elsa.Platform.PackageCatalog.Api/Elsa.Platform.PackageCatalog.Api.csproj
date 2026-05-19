@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\Elsa.Platform.PackageCatalog.Abstractions\Elsa.Platform.PackageCatalog.Abstractions.csproj" />
+    <ProjectReference Include="..\Elsa.Platform.PackageManifests\Elsa.Platform.PackageManifests.csproj" />
+    <ProjectReference Include="..\Elsa.Platform.PackageCatalog.Core\Elsa.Platform.PackageCatalog.Core.csproj" />
+    <ProjectReference Include="..\Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore\Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations\Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.csproj" />
+    <ProjectReference Include="..\Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations\Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.csproj" />
+    <ProjectReference Include="..\Elsa.Platform.PackageCatalog.Sources.NuGet\Elsa.Platform.PackageCatalog.Sources.NuGet.csproj" />
+    <ProjectReference Include="..\Elsa.Platform.PackageCatalog.ServiceDefaults\Elsa.Platform.PackageCatalog.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="JetBrains.Annotations" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+  </ItemGroup>
+</Project>

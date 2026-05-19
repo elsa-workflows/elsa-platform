@@ -87,3 +87,23 @@ Runtime Builder does not own:
 - Package source sync and approval.
 - Live deployment reconciliation.
 - Managed runtime lifecycle operations before the managed-hosting phase.
+
+## Phase 5 Boundary Inspection
+
+Inspection date: 2026-05-19.
+
+Command:
+
+```bash
+rg -n "<ProjectReference" src tests --glob '!**/bin/**' --glob '!**/obj/**'
+```
+
+Observed state after platform naming normalization:
+
+- `Elsa.Platform.PackageCatalog.Abstractions` exists and currently owns compatibility validation request/result contracts only.
+- `Elsa.Platform.PackageCatalog.Core` references `Elsa.Platform.PackageCatalog.Abstractions` and `Elsa.Platform.PackageManifests`.
+- `Elsa.Platform.PackageCatalog.Api` references abstractions directly because endpoint code maps public API requests into compatibility contracts.
+- `Elsa.Platform.PackageManifests` has no project references to catalog, deployment, persistence, hosting, API, or generator implementation projects.
+- `Elsa.Platform.PackageCatalog.Sources.NuGet` still references catalog Core because source-provider ports and entities have not yet been split into a source-provider abstraction.
+- Runtime Builder services remain in Package Catalog projects until Phase 6. This is a tracked temporary state, not the final boundary.
+- No Deployment projects exist yet, so deployment-to-catalog boundary checks become enforceable in Phase 8.

@@ -35,10 +35,10 @@ Extend the bundle generation service with target-specific renderers while keepin
 ## Project Structure
 
 ```text
-src/Elsa.Catalog.Core/Builder/Renderers/
-src/Elsa.Catalog.Core/DeploymentTemplates/
-tests/Elsa.Catalog.Core.Tests/
-tests/Elsa.Catalog.Api.Tests/
+src/Elsa.Platform.PackageCatalog.Core/Builder/Renderers/
+src/Elsa.Platform.PackageCatalog.Core/DeploymentTemplates/
+tests/Elsa.Platform.PackageCatalog.Core.Tests/
+tests/Elsa.Platform.PackageCatalog.Api.Tests/
 ```
 
 ## Complexity Tracking

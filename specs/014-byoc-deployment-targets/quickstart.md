@@ -13,6 +13,6 @@ Expected:
 - Credentials are never returned.
 
 ```bash
-dotnet build Elsa.PackageCatalog.sln --no-restore
-dotnet test Elsa.PackageCatalog.sln --no-build
+dotnet build Elsa.Platform.sln --no-restore
+dotnet test Elsa.Platform.sln --no-build
 ```

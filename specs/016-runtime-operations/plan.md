@@ -33,11 +33,11 @@ Add operational visibility and lifecycle safety for managed runtimes after manag
 ## Project Structure
 
 ```text
-src/Elsa.Catalog.Core/RuntimeOperations/
-src/Elsa.Catalog.Api/Workspace/WorkspaceRuntimeOperationsEndpoints.cs
-src/Elsa.Catalog.Persistence.EntityFrameworkCore/
-tests/Elsa.Catalog.Core.Tests/
-tests/Elsa.Catalog.Api.Tests/
+src/Elsa.Platform.PackageCatalog.Core/RuntimeOperations/
+src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceRuntimeOperationsEndpoints.cs
+src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
+tests/Elsa.Platform.PackageCatalog.Core.Tests/
+tests/Elsa.Platform.PackageCatalog.Api.Tests/
 ```
 
 ## Complexity Tracking

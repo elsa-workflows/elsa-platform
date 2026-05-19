@@ -37,12 +37,12 @@ Alternatives considered:
 
 Rationale: Some manifest fields, such as UI hints or secret/sensitive flags, are
 catalog concerns rather than CShells runtime concerns. Optional source-only
-hints in `Elsa.PackageManifest.Generator.Hints` can cover these narrow cases
-without adding runtime dependencies or replacing `Elsa.PackageManifests`.
+hints in `Elsa.Platform.PackageManifest.Generator.Hints` can cover these narrow cases
+without adding runtime dependencies or replacing `Elsa.Platform.PackageManifests`.
 
 Alternatives considered:
 
-- Put hints in `Elsa.PackageManifests`: blurs generator input metadata with
+- Put hints in `Elsa.Platform.PackageManifests`: blurs generator input metadata with
   manifest DTOs.
 - Add a separate abstractions package: clean, but adds a second package to
   manage for the MVP.

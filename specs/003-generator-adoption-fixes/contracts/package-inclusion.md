@@ -10,7 +10,7 @@ single-target and multi-target consuming projects.
 Consumers use only:
 
 ```xml
-<PackageReference Include="Elsa.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
+<PackageReference Include="Elsa.Platform.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
 ```
 
 No custom manifest item, custom pack target, or

@@ -21,7 +21,7 @@
 Run:
 
 ```sh
-dotnet test tests/Elsa.Catalog.Api.Tests/Elsa.Catalog.Api.Tests.csproj
+dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj
 ```
 
 Expected coverage includes:

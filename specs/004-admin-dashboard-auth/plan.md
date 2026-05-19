@@ -38,7 +38,7 @@ The plan MUST answer these gates:
 
 - **Manifest-first**: Not impacted. This feature only changes dashboard/admin API access control.
 - **No arbitrary code execution**: Not impacted. No package processing paths change.
-- **Stable contracts**: Not impacted. No `Elsa.PackageManifests` contracts change.
+- **Stable contracts**: Not impacted. No `Elsa.Platform.PackageManifests` contracts change.
 - **Schema evolution**: Not impacted. No manifest schema changes.
 - **Immutable versions**: Not impacted. Package-version handling is unchanged.
 - **Approval separation**: Preserved. This feature gates existing admin workflows without merging validation, approval, or listing concerns.
@@ -68,15 +68,15 @@ specs/004-admin-dashboard-auth/
 
 ```text
 src/
-├── Elsa.Catalog.Api/
+├── Elsa.Platform.PackageCatalog.Api/
 │   ├── Authentication/
 │   ├── Admin/
 │   └── Program.cs
-└── Elsa.Catalog.AdminUi/
+└── Elsa.Platform.PackageCatalog.AdminUi/
     └── src/
 
 tests/
-└── Elsa.Catalog.Api.Tests/
+└── Elsa.Platform.PackageCatalog.Api.Tests/
     └── AdminDashboardAuthenticationTests.cs
 ```
 

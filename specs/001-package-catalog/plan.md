@@ -7,7 +7,7 @@
 ## Summary
 
 Build Elsa Package Catalog as an ASP.NET Core modular monolith plus a shared
-`Elsa.PackageManifests` contract package. The catalog indexes explicitly
+`Elsa.Platform.PackageManifests` contract package. The catalog indexes explicitly
 configured NuGet feeds, extracts versioned `elsa-package.json` manifests without
 loading package assemblies, validates and stores manifests with immutable
 package-version records, separates validation from approval and listing, and
@@ -57,10 +57,10 @@ deployment bundle generation remain out of scope.
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 - **Manifest-first**: PASS. Package metadata flows through explicit
-  `elsa-package.json` manifests and the `Elsa.PackageManifests` contract.
+  `elsa-package.json` manifests and the `Elsa.Platform.PackageManifests` contract.
 - **No arbitrary code execution**: PASS. NuGet packages are handled as archives;
   only package files, nuspec metadata, and manifest JSON are inspected.
-- **Stable contracts**: PASS. `Elsa.PackageManifests` is a dependency-light wire
+- **Stable contracts**: PASS. `Elsa.Platform.PackageManifests` is a dependency-light wire
   contract package separate from catalog persistence and runtime internals.
 - **Schema evolution**: PASS. Versioned JSON Schema resources, extension metadata
   preservation, unsupported-version validation failures, and breaking-change
@@ -105,13 +105,13 @@ specs/001-package-catalog/
 
 ```text
 src/
-├── Elsa.PackageManifests/
+├── Elsa.Platform.PackageManifests/
 │   ├── Compatibility/
 │   ├── Documentation/
 │   ├── Licensing/
 │   ├── Schemas/
 │   └── Validation/
-├── Elsa.Catalog.Core/
+├── Elsa.Platform.PackageCatalog.Core/
 │   ├── Approvals/
 │   ├── Compatibility/
 │   ├── Manifests/
@@ -119,33 +119,33 @@ src/
 │   ├── Sources/
 │   ├── Sync/
 │   └── Validation/
-├── Elsa.Catalog.Api/
+├── Elsa.Platform.PackageCatalog.Api/
 │   ├── Admin/
 │   ├── Public/
 │   ├── Authentication/
 │   └── Program.cs
-├── Elsa.Catalog.Persistence.EntityFrameworkCore/
+├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
 │   ├── Migrations/
 │   ├── Models/
 │   └── CatalogDbContext.cs
-└── Elsa.Catalog.Packaging.NuGet/
+└── Elsa.Platform.PackageCatalog.Sources.NuGet/
     ├── PackageArchiveManifestReader.cs
     ├── NuGetPackageSourceClient.cs
     └── NuGetSyncPackageDownloader.cs
 
 tests/
-├── Elsa.PackageManifests.Tests/
-├── Elsa.Catalog.Core.Tests/
-├── Elsa.Catalog.Api.Tests/
-├── Elsa.Catalog.Persistence.EntityFrameworkCore.Tests/
-├── Elsa.Catalog.Packaging.NuGet.Tests/
-└── Elsa.Catalog.Testing/
+├── Elsa.Platform.PackageManifests.Tests/
+├── Elsa.Platform.PackageCatalog.Core.Tests/
+├── Elsa.Platform.PackageCatalog.Api.Tests/
+├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+├── Elsa.Platform.PackageCatalog.Sources.NuGet.Tests/
+└── Elsa.Platform.PackageCatalog.Testing/
 ```
 
-**Structure Decision**: Use an onion-style modular monolith. `Elsa.Catalog.Core`
-is the inner catalog model and workflow layer. `Elsa.Catalog.Api` is the delivery
-edge. `Elsa.Catalog.Persistence.EntityFrameworkCore` and
-`Elsa.Catalog.Packaging.NuGet` are outer adapters. The shared manifest package
+**Structure Decision**: Use an onion-style modular monolith. `Elsa.Platform.PackageCatalog.Core`
+is the inner catalog model and workflow layer. `Elsa.Platform.PackageCatalog.Api` is the delivery
+edge. `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore` and
+`Elsa.Platform.PackageCatalog.Sources.NuGet` are outer adapters. The shared manifest package
 remains independent.
 
 ## Complexity Tracking

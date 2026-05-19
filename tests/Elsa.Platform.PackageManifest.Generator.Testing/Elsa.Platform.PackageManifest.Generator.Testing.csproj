@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Elsa.Platform.PackageManifest.Generator.Core\Elsa.Platform.PackageManifest.Generator.Core.csproj" />
+  </ItemGroup>
+</Project>

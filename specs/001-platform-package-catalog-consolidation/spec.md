@@ -142,7 +142,7 @@ Elsa deployment planning can consume package catalog capabilities for package re
 - **FR-008**: NuGet-specific source synchronization MUST live behind a source-provider boundary.
 - **FR-009**: Catalog core MUST keep package validity, approval, trust, compatibility, source visibility, and sync state as distinct concepts.
 - **FR-010**: Deployment integration MUST depend on package catalog abstractions or client contracts rather than catalog API, UI, or persistence projects.
-- **FR-011**: The plan MUST define compatibility handling for existing `Elsa.PackageManifests` and `Elsa.PackageManifest.Generator` package identities before renaming published package IDs.
+- **FR-011**: The plan MUST define compatibility handling for existing `Elsa.Platform.PackageManifests` and `Elsa.Platform.PackageManifest.Generator` package identities before renaming published package IDs.
 - **FR-012**: The plan MUST identify EF migration, API route, UI, Azure deployment, and test impacts of project renames.
 - **FR-013**: The old `elsa-package-catalog` repository MUST get a deprecation README update after the platform subsystem is usable.
 - **FR-014**: Open catalog specs/issues MUST be migrated, linked, or explicitly closed before old repository archival.
