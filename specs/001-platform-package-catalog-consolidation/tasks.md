@@ -136,10 +136,10 @@
 
 **Independent Test**: Old repo points to `elsa-platform` and has no untriaged open work.
 
-- [ ] T046 [US5] Inventory open issues and PRs in `elsa-workflows/elsa-package-catalog`
-- [ ] T047 [US5] Migrate, link, or close old repo issues/specs with rationale
-- [ ] T048 [US5] Update old repo README to mark repository deprecated and link to `elsa-platform`
-- [ ] T049 [US5] Decide archive timing and document it in `specs/001-platform-package-catalog-consolidation/research.md`
+- [x] T046 [US5] Inventory open issues and PRs in `elsa-workflows/elsa-package-catalog`
+- [x] T047 [US5] Migrate, link, or close old repo issues/specs with rationale
+- [x] T048 [US5] Update old repo README to mark repository deprecated and link to `elsa-platform`
+- [x] T049 [US5] Decide archive timing and document it in `specs/001-platform-package-catalog-consolidation/research.md`
 
 **Checkpoint**: Old repository is deprecated or ready to archive.
 

@@ -148,3 +148,10 @@ Expected:
 
 - Open work is migrated, linked, or closed with rationale.
 - README points to `elsa-platform`.
+
+Phase 7 verification log, 2026-05-19:
+
+- `gh issue list --repo elsa-workflows/elsa-package-catalog --state open --limit 100` returned `[]`.
+- `gh pr list --repo elsa-workflows/elsa-package-catalog --state open --limit 100` returned `[]`.
+- Old repository README deprecation notice was committed and pushed to `elsa-workflows/elsa-package-catalog` main as `cf7411d`.
+- Archive is deferred until the platform consolidation branch is merged and maintainers confirm no private/internal consumers still depend on the old repository receiving direct updates.

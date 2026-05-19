@@ -176,3 +176,17 @@ Required verification before publishing:
 - Re-check nuget.org.
 - Check internal/private feeds if any are used.
 - Search downstream repositories for package references.
+
+## Old Repository Deprecation Status
+
+Checked on 2026-05-19:
+
+- `gh issue list --repo elsa-workflows/elsa-package-catalog --state open --limit 100` returned no open issues.
+- `gh pr list --repo elsa-workflows/elsa-package-catalog --state open --limit 100` returned no open PRs.
+- No issue migration was required because there was no open issue backlog at the time of deprecation.
+- The old repository README was updated on `main` in commit `cf7411d` to mark active development as moved to `https://github.com/elsa-workflows/elsa-platform`.
+
+Archive timing decision:
+
+- The old repository is deprecated and ready to archive after maintainers confirm no private/internal consumers still expect direct pushes to `elsa-package-catalog`.
+- Do not archive before the platform consolidation branch is merged and the deployment integration contracts in Phase 8 are stable enough for downstream issue references.
