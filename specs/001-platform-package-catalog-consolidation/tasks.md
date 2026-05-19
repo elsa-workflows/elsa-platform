@@ -170,11 +170,11 @@
 
 ## Final Phase: Polish And Release Readiness
 
-- [ ] T057 Run full .NET test suite from `elsa-platform`
-- [ ] T058 Run relevant UI test suites from `elsa-platform`
-- [ ] T059 Review docs for old names and update remaining references
-- [ ] T060 Add or update ADRs for package identity compatibility and repository deprecation
-- [ ] T061 Confirm `tasks.md` checkboxes and blocker notes reflect actual progress
+- [x] T057 Run full .NET test suite from `elsa-platform`
+- [x] T058 Run relevant UI test suites from `elsa-platform`
+- [x] T059 Review docs for old names and update remaining references
+- [x] T060 Add or update ADRs for package identity compatibility and repository deprecation
+- [x] T061 Confirm `tasks.md` checkboxes and blocker notes reflect actual progress
 
 ---
 
