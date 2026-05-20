@@ -33,5 +33,5 @@ Run:
 dotnet test tests/Elsa.Platform.PackageCatalog.Core.Tests/Elsa.Platform.PackageCatalog.Core.Tests.csproj --filter SyncRunCleanup
 dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter SyncPersistence
 dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter AdminSync
-cd src/Elsa.Platform.PackageCatalog.AdminUi && npm test -- --run src/features/sync-runs/SyncRunsPage.test.tsx
+cd src/Elsa.Platform.AdminUi && npm test -- --run src/features/sync-runs/SyncRunsPage.test.tsx
 ```

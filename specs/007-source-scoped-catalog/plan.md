@@ -86,7 +86,7 @@ src/
 │       ├── Sources/
 │       ├── Packages/
 │       └── Builder/
-└── Elsa.Platform.PackageCatalog.AdminUi/
+└── Elsa.Platform.AdminUi/
     └── src/features/sources/       # admin/operator source flags if needed
 
 tests/

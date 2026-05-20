@@ -111,7 +111,7 @@
 - [X] T025 Run `dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj`
 - [X] T026 Run smoke checks from `specs/004-admin-dashboard-auth/quickstart.md`
 - [X] T027 Review new auth helpers against simplicity and no-new-durable-storage constraints in `src/Elsa.Platform.PackageCatalog.Api/Authentication/`
-- [X] T028 Confirm generated frontend assets and browser-readable storage do not contain the admin API key in `src/Elsa.Platform.PackageCatalog.AdminUi/`
+- [X] T028 Confirm generated frontend assets and browser-readable storage do not contain the admin API key in `src/Elsa.Platform.AdminUi/`
 
 ---
 

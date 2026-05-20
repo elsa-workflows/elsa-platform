@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppShell } from "@/app/AppShell";
+import { OverviewPage } from "@/app/OverviewPage";
 import { RequestStateView } from "@/components/states/RequestStateViews";
 import { NewSourcePage, EditSourcePage } from "@/features/sources/SourceFormPage";
 import { SourceDetailsPage } from "@/features/sources/SourceDetailsPage";
@@ -12,7 +13,7 @@ import { SyncRunsPage } from "@/features/sync-runs/SyncRunsPage";
 function PlaceholderPage({ title }: { title: string }) {
   return (
     <section className="space-y-2">
-      <h1 className="text-xl font-semibold">{title}</h1>
+      <h1 className="font-display text-xl font-semibold">{title}</h1>
       <p className="text-sm text-muted-foreground">This operational view is ready for feature implementation.</p>
     </section>
   );
@@ -29,7 +30,7 @@ export const router = createBrowserRouter([
     errorElement: <RequestStateView state="unexpected" title="The admin dashboard could not load." />,
     children: [
       { index: true, element: <Navigate to="/admin/overview" replace /> },
-      { path: "overview", element: <PlaceholderPage title="Overview" /> },
+      { path: "overview", element: <OverviewPage /> },
       { path: "sources", element: <SourcesPage /> },
       { path: "sources/new", element: <NewSourcePage /> },
       { path: "sources/:sourceId", element: <SourceDetailsPage /> },
@@ -39,7 +40,14 @@ export const router = createBrowserRouter([
       { path: "packages/:packageId/versions/:version", element: <PackageDetailsPage /> },
       { path: "packages/:packageId/versions/:version/:section", element: <PackageDetailsPage /> },
       { path: "sync-runs", element: <SyncRunsPage /> },
-      { path: "sync-runs/:runId", element: <SyncRunDetailsPage /> }
+      { path: "sync-runs/:runId", element: <SyncRunDetailsPage /> },
+      { path: "deployments", element: <PlaceholderPage title="Deployments" /> },
+      { path: "artifacts", element: <PlaceholderPage title="Artifacts" /> },
+      { path: "runtime-builder", element: <PlaceholderPage title="Runtime Builder" /> },
+      { path: "targets", element: <PlaceholderPage title="Targets" /> },
+      { path: "runtimes", element: <PlaceholderPage title="Managed Runtimes" /> },
+      { path: "operations", element: <PlaceholderPage title="Runtime Operations" /> },
+      { path: "audit", element: <PlaceholderPage title="Audit" /> }
     ]
   }
 ]);

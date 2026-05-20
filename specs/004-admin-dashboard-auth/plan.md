@@ -72,7 +72,7 @@ src/
 │   ├── Authentication/
 │   ├── Admin/
 │   └── Program.cs
-└── Elsa.Platform.PackageCatalog.AdminUi/
+└── Elsa.Platform.AdminUi/
     └── src/
 
 tests/

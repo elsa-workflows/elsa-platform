@@ -121,7 +121,7 @@ specs/003-admin-dashboard-ui/
 
 ```text
 src/
-├── Elsa.Platform.PackageCatalog.AdminUi/
+├── Elsa.Platform.AdminUi/
 │   ├── src/
 │   │   ├── app/
 │   │   ├── components/
@@ -145,11 +145,11 @@ src/
 
 tests/
 ├── Elsa.Platform.PackageCatalog.Api.Tests/
-└── Elsa.Platform.PackageCatalog.AdminUi.E2E/
+└── Elsa.Platform.AdminUi.E2E/
 ```
 
 **Structure Decision**: Add one dedicated frontend project under
-`src/Elsa.Platform.PackageCatalog.AdminUi` so the UI can evolve independently from the ASP.NET
+`src/Elsa.Platform.AdminUi` so the UI can evolve independently from the ASP.NET
 Core API while still living inside the same repository and release workflow.
 Shared frontend code is organized by operational feature area and a thin `lib/api`
 adapter layer. Backend changes remain in the existing `Elsa.Platform.PackageCatalog.Api`,

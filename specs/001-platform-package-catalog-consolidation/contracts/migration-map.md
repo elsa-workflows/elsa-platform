@@ -13,7 +13,7 @@
 | `Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations` | `Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations` |
 | `Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations` | `Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations` |
 | `Elsa.Platform.PackageCatalog.ServiceDefaults` | `Elsa.Platform.PackageCatalog.ServiceDefaults` |
-| `Elsa.Platform.PackageCatalog.AdminUi` | `Elsa.Platform.PackageCatalog.AdminUi` |
+| `Elsa.Platform.AdminUi` | `Elsa.Platform.AdminUi` |
 | `Elsa.Platform.PackageManifests` | `Elsa.Platform.PackageManifests` |
 | `Elsa.Platform.PackageManifest.Generator` | `Elsa.Platform.PackageManifest.Generator` |
 | `Elsa.Platform.PackageManifest.Generator.Core` | `Elsa.Platform.PackageManifest.Generator.Core` |

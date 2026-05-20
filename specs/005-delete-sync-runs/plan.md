@@ -92,7 +92,7 @@ src/
 │       └── Sync/
 │           ├── AdminSyncContracts.cs
 │           └── AdminSyncEndpoints.cs
-└── Elsa.Platform.PackageCatalog.AdminUi/
+└── Elsa.Platform.AdminUi/
     └── src/
         └── features/
             └── sync-runs/
@@ -104,7 +104,7 @@ tests/
 │   └── SyncPersistenceTests.cs
 ├── Elsa.Platform.PackageCatalog.Api.Tests/
 │   └── AdminSyncApiTests.cs
-└── Elsa.Platform.PackageCatalog.AdminUi/
+└── Elsa.Platform.AdminUi/
     └── src/
         └── features/
             └── sync-runs/

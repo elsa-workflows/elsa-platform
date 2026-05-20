@@ -24,7 +24,7 @@ Use the existing admin API key configuration for authenticated admin requests.
 From the admin UI project:
 
 ```bash
-cd src/Elsa.Platform.PackageCatalog.AdminUi
+cd src/Elsa.Platform.AdminUi
 npm install
 npm run dev
 ```
@@ -100,7 +100,7 @@ Expected implementation commands:
 
 ```bash
 dotnet test
-cd src/Elsa.Platform.PackageCatalog.AdminUi
+cd src/Elsa.Platform.AdminUi
 npm test
 npm run build
 npm run e2e
