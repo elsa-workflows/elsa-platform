@@ -58,6 +58,60 @@ public class ManifestReaderTests
     }
 
     [Fact]
+    public void MultipleYamlDocumentsReturnParseDiagnostic()
+    {
+        var result = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: sales-staging
+            resources: {}
+            ---
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: sales-production
+            resources: {}
+            """, ManifestFormat.Yaml);
+
+        result.Manifest.Should().BeNull();
+        result.Diagnostics.Should().ContainSingle(x =>
+            x.Code == ManifestDiagnosticCodes.Parse &&
+            x.Message == "Manifest YAML must contain exactly one document.");
+    }
+
+    [Theory]
+    [InlineData(ManifestFormat.Yaml, """
+        apiVersion: platform.elsa.io/v1alpha1
+        kind: EnvironmentManifest
+        metadata:
+          name: sales-staging
+          labels: null
+          annotations: null
+        resources: {}
+        """)]
+    [InlineData(ManifestFormat.Json, """
+        {
+          "apiVersion": "platform.elsa.io/v1alpha1",
+          "kind": "EnvironmentManifest",
+          "metadata": {
+            "name": "sales-staging",
+            "labels": null,
+            "annotations": null
+          },
+          "resources": {}
+        }
+        """)]
+    public void ExplicitNullMetadataDictionariesAreTreatedAsEmpty(ManifestFormat format, string text)
+    {
+        var result = _reader.Read(text, format);
+
+        result.Diagnostics.Should().BeEmpty();
+        result.Manifest!.Metadata.Labels.Should().BeEmpty();
+        result.Manifest.Metadata.Annotations.Should().BeEmpty();
+    }
+
+    [Fact]
     public void JsonReaderPreservesExplicitStringVariableValues()
     {
         var result = _reader.Read("""

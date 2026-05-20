@@ -43,6 +43,7 @@ public sealed class ManifestReader : IManifestReader
 
             manifest = manifest with
             {
+                Metadata = NormalizeMetadata(manifest.Metadata),
                 Resources = manifest.Resources with
                 {
                     Extensions = ReadExtensions(resourcesNode)
@@ -83,7 +84,19 @@ public sealed class ManifestReader : IManifestReader
         using var reader = new StringReader(text);
         var yaml = new YamlStream();
         yaml.Load(reader);
+        if (yaml.Documents.Count > 1)
+            throw new InvalidOperationException("Manifest YAML must contain exactly one document.");
         return yaml.Documents.Count == 0 ? null : ConvertYamlNode(yaml.Documents[0].RootNode);
+    }
+
+    private static ManifestMetadata NormalizeMetadata(ManifestMetadata? metadata)
+    {
+        metadata ??= new ManifestMetadata();
+        return metadata with
+        {
+            Labels = metadata.Labels ?? ManifestEmpty.StringDictionary,
+            Annotations = metadata.Annotations ?? ManifestEmpty.StringDictionary
+        };
     }
 
     private static JsonNode? ConvertYamlNode(YamlNode node)
