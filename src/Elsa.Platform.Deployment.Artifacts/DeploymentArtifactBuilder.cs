@@ -24,10 +24,6 @@ public sealed class DeploymentArtifactBuilder(
         CancellationToken cancellationToken = default)
     {
         var diagnostics = new List<DeploymentDiagnostic>();
-        var build = await PrepareBuildAsync(options, diagnostics, cancellationToken);
-        if (build is null)
-            return Failed(options.OutputPath, diagnostics);
-
         var outputPath = Path.GetFullPath(options.OutputPath);
         var outputParent = Path.GetDirectoryName(outputPath) ?? Directory.GetCurrentDirectory();
         Directory.CreateDirectory(outputParent);
@@ -36,6 +32,10 @@ public sealed class DeploymentArtifactBuilder(
         var backupPath = Path.Combine(outputParent, $".{outputName}.bak-{Guid.NewGuid():N}");
         try
         {
+            var build = await PrepareBuildAsync(options, diagnostics, cancellationToken);
+            if (build is null)
+                return Failed(outputPath, diagnostics);
+
             Directory.CreateDirectory(tempPath);
             await WriteFolderContentsAsync(tempPath, options, build, cancellationToken);
 
