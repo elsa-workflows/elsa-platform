@@ -11,7 +11,9 @@ public class ManifestDiagnosticTests
     [Fact]
     public void UnsupportedApiVersionReturnsDiagnostic()
     {
-        var result = _reader.Read(ManifestReaderTests.SampleYaml.Replace(DeploymentManifestConstants.ApiVersion, "platform.elsa.io/v2"), ManifestFormat.Yaml);
+        var manifest = _reader.Read(ManifestReaderTests.SampleYaml.Replace(DeploymentManifestConstants.ApiVersion, "platform.elsa.io/v2"), ManifestFormat.Yaml).Manifest!;
+
+        var result = _normalizer.Normalize(manifest);
 
         result.Diagnostics.Should().ContainSingle(x =>
             x.Code == ManifestDiagnosticCodes.ApiVersionUnsupported && x.Severity == DeploymentDiagnosticSeverity.Error);
@@ -20,7 +22,9 @@ public class ManifestDiagnosticTests
     [Fact]
     public void UnsupportedKindReturnsDiagnostic()
     {
-        var result = _reader.Read(ManifestReaderTests.SampleYaml.Replace(DeploymentManifestConstants.Kind, "WorkflowManifest"), ManifestFormat.Yaml);
+        var manifest = _reader.Read(ManifestReaderTests.SampleYaml.Replace(DeploymentManifestConstants.Kind, "WorkflowManifest"), ManifestFormat.Yaml).Manifest!;
+
+        var result = _normalizer.Normalize(manifest);
 
         result.Diagnostics.Should().ContainSingle(x =>
             x.Code == ManifestDiagnosticCodes.KindUnsupported && x.Severity == DeploymentDiagnosticSeverity.Error);
@@ -83,6 +87,7 @@ public class ManifestDiagnosticTests
         var normalized = _normalizer.Normalize(manifest);
 
         normalized.Diagnostics.Should().ContainSingle(x => x.Code == ManifestDiagnosticCodes.ResourcePathInvalid);
+        normalized.Resources.Should().BeEmpty();
     }
 
     [Theory]

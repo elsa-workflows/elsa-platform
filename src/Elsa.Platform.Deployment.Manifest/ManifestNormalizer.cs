@@ -36,7 +36,10 @@ public sealed class ManifestNormalizer : IManifestNormalizer
             var id = new DeploymentResourceId(DeploymentManifestConstants.WorkflowDefinitionResourceType, entry.Id);
             var pathDiagnostic = ManifestPathValidator.Validate(entry.Path, id);
             if (pathDiagnostic is not null)
+            {
                 diagnostics.Add(pathDiagnostic);
+                continue;
+            }
 
             resources.Add(new DeploymentResource(
                 id,
@@ -145,9 +148,9 @@ public sealed class ManifestNormalizer : IManifestNormalizer
         EnvironmentManifest manifest,
         ManifestResourceMapperRegistry? mapperRegistry,
         ICollection<DeploymentResource> resources,
-        ICollection<DeploymentDiagnostic> diagnostics)
+        List<DeploymentDiagnostic> diagnostics)
     {
-        var context = new ManifestNormalizationContext(manifest, (IList<DeploymentDiagnostic>)diagnostics);
+        var context = new ManifestNormalizationContext(manifest, diagnostics);
         foreach (var section in manifest.Resources.Extensions)
         {
             if (mapperRegistry?.TryGet(section.Key, out var mapper) == true)

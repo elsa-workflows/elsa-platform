@@ -42,6 +42,40 @@ public class ManifestReaderTests
             x.Code == ManifestDiagnosticCodes.Parse && x.Severity == DeploymentDiagnosticSeverity.Error);
     }
 
+    [Fact]
+    public void JsonReaderPreservesExplicitStringVariableValues()
+    {
+        var result = _reader.Read("""
+            {
+              "apiVersion": "platform.elsa.io/v1alpha1",
+              "kind": "EnvironmentManifest",
+              "metadata": { "name": "sales-staging" },
+              "resources": {
+                "variables": [
+                  { "key": "code", "value": "0001" },
+                  { "key": "flagText", "value": "true" }
+                ]
+              }
+            }
+            """, ManifestFormat.Json);
+
+        result.Manifest!.Resources.Variables[0].Value!.ToJsonString().Should().Be("\"0001\"");
+        result.Manifest.Resources.Variables[1].Value!.ToJsonString().Should().Be("\"true\"");
+    }
+
+    [Fact]
+    public void ReaderDoesNotDuplicateHeaderValidationDiagnosticsOwnedByNormalizer()
+    {
+        var result = _reader.Read("""
+            apiVersion: platform.elsa.io/v2
+            kind: WorkflowManifest
+            metadata: {}
+            """, ManifestFormat.Yaml);
+
+        result.Diagnostics.Should().BeEmpty();
+        result.Manifest.Should().NotBeNull();
+    }
+
     public const string SampleYaml = """
         apiVersion: platform.elsa.io/v1alpha1
         kind: EnvironmentManifest

@@ -39,7 +39,9 @@ public sealed class ManifestReader : IManifestReader
             if (manifest is null)
                 return Failed("Manifest could not be deserialized.");
 
-            manifest = Normalize(manifest);
+            if (format == ManifestFormat.Yaml)
+                manifest = NormalizeYaml(manifest);
+
             manifest = manifest with
             {
                 Resources = manifest.Resources with
@@ -48,7 +50,7 @@ public sealed class ManifestReader : IManifestReader
                 }
             };
 
-            return new ManifestParseResult(manifest, ManifestValidator.ValidateManifestHeader(manifest).ToArray());
+            return new ManifestParseResult(manifest, []);
         }
         catch (Exception ex) when (ex is JsonException or YamlDotNet.Core.YamlException or InvalidOperationException)
         {
@@ -77,7 +79,7 @@ public sealed class ManifestReader : IManifestReader
             .ToDictionary(x => x.Key, x => x.Value?.DeepClone(), StringComparer.OrdinalIgnoreCase);
     }
 
-    private static EnvironmentManifest Normalize(EnvironmentManifest manifest)
+    private static EnvironmentManifest NormalizeYaml(EnvironmentManifest manifest)
     {
         return manifest with
         {
