@@ -409,7 +409,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
         IReadOnlyCollection<DeploymentResourceResult> resourceResults,
         IReadOnlyCollection<DeploymentDiagnostic> diagnostics)
     {
-        var applyableResults = resourceResults.Where(result => IsApplyable(result.Action)).ToArray();
+        var applyableResults = resourceResults.Where(result => result.Status != DeploymentChangeStatus.Skipped && IsApplyable(result.Action)).ToArray();
         if (applyableResults.Length == 0)
             return HasErrors(diagnostics) ? DeploymentStatus.Failed : DeploymentStatus.NoOp;
 

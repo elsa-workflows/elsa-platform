@@ -47,6 +47,21 @@ public class DeploymentEngineApplyTests
     }
 
     [Fact]
+    public async Task ApplyAsyncReturnsNoOpWhenEveryChangeIsSkipped()
+    {
+        var resource = DeploymentEngineTestFixtures.Resource();
+        var change = new DeploymentChange(resource.Id, DeploymentChangeAction.Delete, DeploymentChangeStatus.Blocked, resource: resource);
+        var plan = new DeploymentPlan("plan-1", DeploymentEngineTestFixtures.Artifact, DeploymentEngineTestFixtures.TargetDescriptor, [change]);
+        var engine = CreateEngine();
+
+        var result = await engine.ApplyAsync(plan, _target);
+
+        result.Status.Should().Be(DeploymentStatus.NoOp);
+        result.ResourceResults.Should().ContainSingle().Which.Status.Should().Be(DeploymentChangeStatus.Skipped);
+        _handler.ApplyChanges.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ApplyAsyncRepresentsPartialFailures()
     {
         var success = DeploymentEngineTestFixtures.Resource(logicalId: "success");
