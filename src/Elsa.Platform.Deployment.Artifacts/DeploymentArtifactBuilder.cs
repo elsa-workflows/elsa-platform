@@ -26,12 +26,12 @@ public sealed class DeploymentArtifactBuilder(
         var diagnostics = new List<DeploymentDiagnostic>();
         var outputPath = Path.GetFullPath(options.OutputPath);
         var outputParent = Path.GetDirectoryName(outputPath) ?? Directory.GetCurrentDirectory();
-        Directory.CreateDirectory(outputParent);
         var outputName = Path.GetFileName(outputPath);
         var tempPath = Path.Combine(outputParent, $".{outputName}.tmp-{Guid.NewGuid():N}");
         var backupPath = Path.Combine(outputParent, $".{outputName}.bak-{Guid.NewGuid():N}");
         try
         {
+            Directory.CreateDirectory(outputParent);
             var build = await PrepareBuildAsync(options, diagnostics, cancellationToken);
             if (build is null)
                 return Failed(outputPath, diagnostics);
@@ -87,7 +87,6 @@ public sealed class DeploymentArtifactBuilder(
     {
         var outputPath = Path.GetFullPath(options.OutputPath);
         var outputParent = Path.GetDirectoryName(outputPath) ?? Directory.GetCurrentDirectory();
-        Directory.CreateDirectory(outputParent);
         var outputName = Path.GetFileName(outputPath);
         var folderPath = Path.Combine(outputParent, $".{outputName}.folder-{Guid.NewGuid():N}");
         var tempZipPath = Path.Combine(outputParent, $".{outputName}.tmp-{Guid.NewGuid():N}");
@@ -99,6 +98,7 @@ public sealed class DeploymentArtifactBuilder(
 
         try
         {
+            Directory.CreateDirectory(outputParent);
             if (Directory.Exists(outputPath))
                 return Failed(outputPath, [Error(ArtifactDiagnosticCodes.BuildFailed, $"Output path '{outputPath}' exists and is not a file.")]);
 
