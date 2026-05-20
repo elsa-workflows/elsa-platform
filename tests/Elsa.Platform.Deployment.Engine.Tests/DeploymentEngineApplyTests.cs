@@ -3,6 +3,7 @@ using Elsa.Platform.Deployment.Abstractions.Diagnostics;
 using Elsa.Platform.Deployment.Abstractions.History;
 using Elsa.Platform.Deployment.Abstractions.Plans;
 using Elsa.Platform.Deployment.Abstractions.Resources;
+using Elsa.Platform.Deployment.Abstractions.Targets;
 using FluentAssertions;
 
 namespace Elsa.Platform.Deployment.Engine.Tests;
@@ -115,6 +116,38 @@ public class DeploymentEngineApplyTests
             x.ResourceId == resource.Id);
     }
 
+    [Fact]
+    public async Task ApplyAsyncReportsSuccessfulApplyWithHistoryFailureAsWarningStatus()
+    {
+        var resource = DeploymentEngineTestFixtures.Resource();
+        var history = new FailingDeploymentHistoryStore();
+        var engine = new DeploymentEngine([_handler], history, DeploymentEngineTestFixtures.StableOptions());
+        var plan = await engine.DiffAsync(new TestArtifactReader(resource), _target);
+
+        var result = await engine.ApplyAsync(plan, _target);
+
+        result.Status.Should().Be(DeploymentStatus.CompletedWithWarnings);
+        result.ResourceResults.Should().ContainSingle().Which.Status.Should().Be(DeploymentChangeStatus.Completed);
+        result.Diagnostics.Should().ContainSingle(x => x.Code == DeploymentEngineDiagnosticCodes.HistoryFailed);
+    }
+
     private DeploymentEngine CreateEngine() =>
         new([_handler], _history, DeploymentEngineTestFixtures.StableOptions());
+
+    private sealed class FailingDeploymentHistoryStore : IDeploymentHistoryStore
+    {
+        public ValueTask RecordAsync(DeploymentHistoryRecord record, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("History failed.");
+
+        public ValueTask<DeploymentHistoryRecord?> FindAsync(string deploymentId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<DeploymentHistoryRecord?>(null);
+
+        public async IAsyncEnumerable<DeploymentHistoryRecord> ListAsync(
+            DeploymentTargetDescriptor target,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
 }
