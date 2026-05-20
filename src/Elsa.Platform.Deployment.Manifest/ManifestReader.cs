@@ -31,7 +31,9 @@ public sealed class ManifestReader : IManifestReader
             if (root is not JsonObject document)
                 return Failed("Manifest root must be an object.");
 
-            var resourcesNode = document["resources"]?.DeepClone() as JsonObject;
+            var resourcesNode = document
+                .FirstOrDefault(x => x.Key.Equals("resources", StringComparison.OrdinalIgnoreCase))
+                .Value?.DeepClone() as JsonObject;
             var manifest = document.Deserialize<EnvironmentManifest>(JsonOptions);
             if (manifest is null)
                 return Failed("Manifest could not be deserialized.");

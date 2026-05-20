@@ -51,6 +51,26 @@ public class ManifestExtensionTests
     }
 
     [Fact]
+    public void ExtensionSectionsAreDiscoveredWithCaseInsensitiveResourcesKey()
+    {
+        var manifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: custom
+            Resources:
+              dashboards:
+                - id: sales
+            """, ManifestFormat.Yaml).Manifest!;
+        var registry = new ManifestResourceMapperRegistry().Add(new DashboardMapper());
+
+        var normalized = _normalizer.Normalize(manifest, registry);
+
+        normalized.Diagnostics.Should().BeEmpty();
+        normalized.Resources.Should().ContainSingle().Which.Id.Should().Be(new DeploymentResourceId("dashboard", "sales"));
+    }
+
+    [Fact]
     public void ResourceMapperDiagnosticsAreAppendOnly()
     {
         var manifest = _reader.Read("""
