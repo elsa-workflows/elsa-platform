@@ -47,6 +47,23 @@ public class DeploymentEnginePlanningTests
     }
 
     [Fact]
+    public async Task DiffAsyncPreservesHandlerDiagnosticsWhenPruneBlocksDelete()
+    {
+        var resource = DeploymentEngineTestFixtures.Resource();
+        var diagnostic = new DeploymentDiagnostic("handler.warning", DeploymentDiagnosticSeverity.Warning, "Dependent resources exist.", resource.Id);
+        _handler.DiffFactory = (desired, _) => new DeploymentChange(
+            desired.Id,
+            DeploymentChangeAction.Delete,
+            DeploymentChangeStatus.Ready,
+            diagnostics: [diagnostic]);
+        var engine = CreateEngine();
+
+        var plan = await engine.DiffAsync(new TestArtifactReader(resource), _target);
+
+        plan.Changes.Should().ContainSingle().Which.Diagnostics.Should().Contain(diagnostic);
+    }
+
+    [Fact]
     public async Task DiffAsyncOrdersChangesDeterministicallyByResourceIdentity()
     {
         var second = DeploymentEngineTestFixtures.Resource(logicalId: "b");
@@ -111,6 +128,21 @@ public class DeploymentEnginePlanningTests
         result.ResourceResults.Should().ContainSingle().Which.Status.Should().Be(DeploymentChangeStatus.Skipped);
         _handler.DryRunChanges.Should().BeEmpty();
         _handler.ApplyChanges.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DryRunAsyncReturnsNoOpWhenEveryChangeIsSkipped()
+    {
+        var resource = DeploymentEngineTestFixtures.Resource();
+        var change = new DeploymentChange(resource.Id, DeploymentChangeAction.Delete, DeploymentChangeStatus.Blocked, resource: resource);
+        var plan = new DeploymentPlan("plan-1", DeploymentEngineTestFixtures.Artifact, DeploymentEngineTestFixtures.TargetDescriptor, [change]);
+        var engine = CreateEngine();
+
+        var result = await engine.DryRunAsync(plan, _target);
+
+        result.Status.Should().Be(DeploymentStatus.NoOp);
+        result.ResourceResults.Should().ContainSingle().Which.Status.Should().Be(DeploymentChangeStatus.Skipped);
+        _handler.DryRunChanges.Should().BeEmpty();
     }
 
     [Fact]

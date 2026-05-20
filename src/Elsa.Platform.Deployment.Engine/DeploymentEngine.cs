@@ -189,7 +189,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
         }
 
         var status = HasErrors(diagnostics) ? DeploymentStatus.ValidationFailed :
-            resourceResults.Any(result => IsApplyable(result.Action)) ? DeploymentStatus.DryRunCompleted : DeploymentStatus.NoOp;
+            resourceResults.Any(result => result.Status != DeploymentChangeStatus.Skipped && IsApplyable(result.Action)) ? DeploymentStatus.DryRunCompleted : DeploymentStatus.NoOp;
         return CreateResult(
             DeploymentOperationMode.DryRun,
             status,
@@ -340,7 +340,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
                 DeploymentDiagnosticSeverity.Error,
                 $"Delete change for resource '{change.ResourceId}' requires pruning to be enabled.",
                 change.ResourceId);
-            return new DeploymentChange(change.ResourceId, change.Action, DeploymentChangeStatus.Blocked, diagnostic.Message, [diagnostic], resource);
+            return new DeploymentChange(change.ResourceId, change.Action, DeploymentChangeStatus.Blocked, diagnostic.Message, [diagnostic, ..change.Diagnostics], resource);
         }
 
         return new DeploymentChange(
