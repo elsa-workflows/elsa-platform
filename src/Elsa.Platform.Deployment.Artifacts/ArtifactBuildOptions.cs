@@ -36,7 +36,7 @@ public sealed record DeploymentArtifactBuildOptions
 
     public DateTimeOffset? BuiltAt { get; }
 
-    public string? Builder { get; init; }
+    public string? Builder { get; }
 
-    public string? Source { get; init; }
+    public string? Source { get; }
 }

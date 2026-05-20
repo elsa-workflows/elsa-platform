@@ -136,7 +136,7 @@ public sealed class DeploymentArtifactBuilder(
             }
 
             TryDeleteFileBackup(backupPath, diagnostics);
-            return result with { OutputPath = outputPath };
+            return result with { OutputPath = outputPath, Diagnostics = diagnostics };
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
