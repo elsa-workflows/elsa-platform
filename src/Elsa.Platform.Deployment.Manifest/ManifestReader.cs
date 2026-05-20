@@ -38,6 +38,9 @@ public sealed class ManifestReader : IManifestReader
             if (manifest is null)
                 return Failed("Manifest could not be deserialized.");
 
+            if (manifest.Resources is null)
+                return Failed("Manifest 'resources' must be an object, not null.");
+
             manifest = manifest with
             {
                 Resources = manifest.Resources with

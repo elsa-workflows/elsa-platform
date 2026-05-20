@@ -18,7 +18,7 @@ public static class ManifestValidator
         else if (!string.Equals(manifest.Kind, DeploymentManifestConstants.Kind, StringComparison.Ordinal))
             diagnostics.Add(Error(ManifestDiagnosticCodes.KindUnsupported, $"Manifest kind '{manifest.Kind}' is not supported."));
 
-        if (string.IsNullOrWhiteSpace(manifest.Metadata.Name))
+        if (manifest.Metadata is null || string.IsNullOrWhiteSpace(manifest.Metadata.Name))
             diagnostics.Add(Error(ManifestDiagnosticCodes.MetadataNameRequired, "Manifest metadata.name is required."));
 
         return diagnostics;

@@ -52,6 +52,22 @@ public class ManifestDiagnosticTests
     }
 
     [Fact]
+    public void NullMetadataReturnsNameRequiredDiagnostic()
+    {
+        var manifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata: null
+            resources: {}
+            """, ManifestFormat.Yaml).Manifest!;
+
+        var normalize = () => _normalizer.Normalize(manifest);
+
+        var normalized = normalize.Should().NotThrow().Subject;
+        normalized.Diagnostics.Should().ContainSingle(x => x.Code == ManifestDiagnosticCodes.MetadataNameRequired);
+    }
+
+    [Fact]
     public void DuplicateResourceIdentityReturnsDiagnostic()
     {
         var manifest = _reader.Read("""

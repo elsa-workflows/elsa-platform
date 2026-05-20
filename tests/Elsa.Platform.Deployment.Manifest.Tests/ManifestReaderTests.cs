@@ -43,6 +43,20 @@ public class ManifestReaderTests
             x.Code == ManifestDiagnosticCodes.Parse && x.Severity == DeploymentDiagnosticSeverity.Error);
     }
 
+    [Theory]
+    [InlineData(ManifestFormat.Yaml, "resources: null")]
+    [InlineData(ManifestFormat.Json, """{ "resources": null }""")]
+    public void NullResourcesReturnsParseDiagnostic(ManifestFormat format, string text)
+    {
+        var read = () => _reader.Read(text, format);
+
+        var result = read.Should().NotThrow().Subject;
+        result.Manifest.Should().BeNull();
+        result.Diagnostics.Should().ContainSingle(x =>
+            x.Code == ManifestDiagnosticCodes.Parse &&
+            x.Message == "Manifest 'resources' must be an object, not null.");
+    }
+
     [Fact]
     public void JsonReaderPreservesExplicitStringVariableValues()
     {
