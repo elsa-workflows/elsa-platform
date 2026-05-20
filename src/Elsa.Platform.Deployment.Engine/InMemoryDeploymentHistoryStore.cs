@@ -21,7 +21,7 @@ public sealed class InMemoryDeploymentHistoryStore : IDeploymentHistoryStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         lock (_lock)
-            return ValueTask.FromResult(_records.LastOrDefault(record => record.DeploymentId == deploymentId));
+            return ValueTask.FromResult(_records.FirstOrDefault(record => record.DeploymentId == deploymentId));
     }
 
     public async IAsyncEnumerable<DeploymentHistoryRecord> ListAsync(
@@ -32,6 +32,7 @@ public sealed class InMemoryDeploymentHistoryStore : IDeploymentHistoryStore
         lock (_lock)
             snapshot = _records.Where(record => record.Target.Id == target.Id).ToArray();
 
+        await Task.CompletedTask;
         foreach (var record in snapshot)
         {
             cancellationToken.ThrowIfCancellationRequested();

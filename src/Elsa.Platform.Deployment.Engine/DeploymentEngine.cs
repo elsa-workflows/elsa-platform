@@ -91,6 +91,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
             if (!_handlers.TryGetHandler(resource.Id.Type, out var handler))
             {
                 var diagnostic = HandlerMissing(resource.Id);
+                diagnostics.Add(diagnostic);
                 changes.Add(new DeploymentChange(resource.Id, DeploymentChangeAction.Unsupported, DeploymentChangeStatus.Blocked, diagnostic.Message, [diagnostic], resource));
                 continue;
             }
@@ -306,16 +307,29 @@ public sealed class DeploymentEngine : IDeploymentEngine
 
     private async ValueTask<ArtifactSnapshot> ReadArtifactAsync(IArtifactReader artifact, CancellationToken cancellationToken)
     {
+        DeploymentArtifactIdentity identity;
         try
         {
             var metadata = await artifact.ReadMetadataAsync(cancellationToken);
-            var resources = await artifact.ReadResourcesAsync(cancellationToken);
-            return new ArtifactSnapshot(metadata.Identity, resources ?? [], []);
+            identity = metadata.Identity;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return new ArtifactSnapshot(
                 UnknownArtifact,
+                [],
+                [new DeploymentDiagnostic(DeploymentEngineDiagnosticCodes.ArtifactInvalid, DeploymentDiagnosticSeverity.Error, ex.Message)]);
+        }
+
+        try
+        {
+            var resources = await artifact.ReadResourcesAsync(cancellationToken);
+            return new ArtifactSnapshot(identity, resources ?? [], []);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new ArtifactSnapshot(
+                identity,
                 [],
                 [new DeploymentDiagnostic(DeploymentEngineDiagnosticCodes.ArtifactInvalid, DeploymentDiagnosticSeverity.Error, ex.Message)]);
         }

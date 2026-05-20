@@ -98,6 +98,38 @@ public class DeploymentEnginePlanningTests
     }
 
     [Fact]
+    public async Task DiffAsyncAddsMissingHandlersToPlanDiagnostics()
+    {
+        var resource = DeploymentEngineTestFixtures.Resource("recipe", "seed");
+        var engine = CreateEngine();
+
+        var plan = await engine.DiffAsync(new TestArtifactReader(resource), _target);
+        var result = await engine.ApplyAsync(plan, _target);
+
+        plan.Diagnostics.Should().ContainSingle(x =>
+            x.Code == DeploymentEngineDiagnosticCodes.HandlerMissing &&
+            x.ResourceId == resource.Id);
+        plan.Changes.Should().ContainSingle().Which.Status.Should().Be(DeploymentChangeStatus.Blocked);
+        result.Status.Should().Be(DeploymentStatus.Failed);
+        _handler.ApplyChanges.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DiffAsyncPreservesArtifactIdentityWhenResourceReadFails()
+    {
+        var artifact = new TestArtifactReader
+        {
+            ResourcesReadException = new InvalidOperationException("Resource read failed.")
+        };
+        var engine = CreateEngine();
+
+        var plan = await engine.DiffAsync(artifact, _target);
+
+        plan.Artifact.Should().Be(DeploymentEngineTestFixtures.Artifact);
+        plan.Diagnostics.Should().ContainSingle(x => x.Code == DeploymentEngineDiagnosticCodes.ArtifactInvalid);
+    }
+
+    [Fact]
     public async Task DryRunAsyncDoesNotApplyResourcesOrRecordHistory()
     {
         var resource = DeploymentEngineTestFixtures.Resource();

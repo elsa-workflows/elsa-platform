@@ -39,18 +39,22 @@ internal sealed class TestArtifactReader(params DeploymentResource[] resources) 
 {
     public Exception? ReadException { get; init; }
 
+    public Exception? MetadataReadException { get; init; }
+
+    public Exception? ResourcesReadException { get; init; }
+
     public ValueTask<DeploymentArtifactMetadata> ReadMetadataAsync(CancellationToken cancellationToken = default)
     {
-        if (ReadException is not null)
-            throw ReadException;
+        if ((MetadataReadException ?? ReadException) is { } exception)
+            throw exception;
 
         return ValueTask.FromResult(new DeploymentArtifactMetadata(DeploymentEngineTestFixtures.Artifact, DateTimeOffset.UtcNow));
     }
 
     public ValueTask<IReadOnlyCollection<DeploymentResource>> ReadResourcesAsync(CancellationToken cancellationToken = default)
     {
-        if (ReadException is not null)
-            throw ReadException;
+        if ((ResourcesReadException ?? ReadException) is { } exception)
+            throw exception;
 
         return ValueTask.FromResult<IReadOnlyCollection<DeploymentResource>>(resources);
     }
