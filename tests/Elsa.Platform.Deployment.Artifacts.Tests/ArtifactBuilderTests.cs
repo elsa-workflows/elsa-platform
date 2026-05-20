@@ -20,6 +20,9 @@ public class ArtifactBuilderTests : IAsyncDisposable
         File.Exists(Path.Combine(_workspace.OutputFolder, "manifest", "manifest.yaml")).Should().BeTrue();
         File.Exists(Path.Combine(_workspace.OutputFolder, "payload", "workflows", "order-approval.json")).Should().BeTrue();
         File.Exists(Path.Combine(_workspace.OutputFolder, "payload", "recipes", "initialize-sales.yaml")).Should().BeTrue();
+        File.ReadAllText(Path.Combine(_workspace.OutputFolder, ArtifactLayoutConstants.ChecksumInventoryPath))
+            .Should().Contain("\"kind\": \"Manifest\"")
+            .And.Contain("\"kind\": \"Payload\"");
         result.Metadata!.Resources.Should().HaveCount(2);
     }
 

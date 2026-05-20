@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Elsa.Platform.Deployment.Artifacts;
 
 public enum DeploymentArtifactFormat
@@ -6,6 +8,7 @@ public enum DeploymentArtifactFormat
     Zip
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DeploymentArtifactEntryKind
 {
     Metadata,
