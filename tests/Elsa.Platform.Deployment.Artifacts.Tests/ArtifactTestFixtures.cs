@@ -44,10 +44,10 @@ internal sealed class ArtifactTestWorkspace : IAsyncDisposable
 
     public static DateTimeOffset BuiltAt { get; } = new(2026, 5, 20, 12, 0, 0, TimeSpan.Zero);
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         if (Directory.Exists(Root))
             Directory.Delete(Root, recursive: true);
-        await ValueTask.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 }

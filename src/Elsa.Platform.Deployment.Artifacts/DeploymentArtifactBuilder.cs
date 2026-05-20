@@ -255,8 +255,7 @@ public sealed class DeploymentArtifactBuilder(
 
     private static Elsa.Platform.Deployment.Abstractions.Artifacts.ArtifactDigest ComputeTextDigest(string text)
     {
-        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(text));
-        var hash = System.Security.Cryptography.SHA256.HashData(stream);
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text));
         return new(ArtifactLayoutConstants.ChecksumAlgorithm, Convert.ToHexString(hash).ToLowerInvariant());
     }
 

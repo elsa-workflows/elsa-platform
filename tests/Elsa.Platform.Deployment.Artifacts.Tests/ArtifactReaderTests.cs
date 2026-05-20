@@ -32,6 +32,7 @@ public class ArtifactReaderTests : IAsyncDisposable
         var result = await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
         result.Succeeded.Should().BeFalse();
+        result.ArtifactId.Should().BeNull();
         result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumMismatch);
     }
 

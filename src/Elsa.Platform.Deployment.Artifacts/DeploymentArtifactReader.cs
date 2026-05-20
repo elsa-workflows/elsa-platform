@@ -119,7 +119,7 @@ public sealed class DeploymentArtifactReader(
         var succeeded = diagnostics.All(x => x.Severity < DeploymentDiagnosticSeverity.Error);
         return new DeploymentArtifactInspectionResult(
             succeeded,
-            succeeded ? metadata?.ArtifactId : metadata?.ArtifactId,
+            succeeded ? metadata?.ArtifactId : null,
             metadata,
             manifest,
             normalized,
