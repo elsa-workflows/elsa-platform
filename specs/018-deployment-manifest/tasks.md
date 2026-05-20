@@ -12,11 +12,11 @@
 
 **Purpose**: Add manifest source and test projects to the solution.
 
-- [ ] T001 Create manifest source project in `src/Elsa.Platform.Deployment.Manifest/Elsa.Platform.Deployment.Manifest.csproj`
-- [ ] T002 Create manifest test project in `tests/Elsa.Platform.Deployment.Manifest.Tests/Elsa.Platform.Deployment.Manifest.Tests.csproj`
-- [ ] T003 Add source and test projects to `Elsa.Platform.sln`
-- [ ] T004 Add required package versions to `Directory.Packages.props`
-- [ ] T005 Add source folders under `src/Elsa.Platform.Deployment.Manifest/`
+- [x] T001 Create manifest source project in `src/Elsa.Platform.Deployment.Manifest/Elsa.Platform.Deployment.Manifest.csproj`
+- [x] T002 Create manifest test project in `tests/Elsa.Platform.Deployment.Manifest.Tests/Elsa.Platform.Deployment.Manifest.Tests.csproj`
+- [x] T003 Add source and test projects to `Elsa.Platform.sln`
+- [x] T004 Add required package versions to `Directory.Packages.props`
+- [x] T005 Add source folders under `src/Elsa.Platform.Deployment.Manifest/`
 
 ---
 
