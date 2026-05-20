@@ -112,8 +112,6 @@ public sealed class DeploymentArtifactBuilder(
                 return Failed(outputPath, diagnostics);
             }
 
-            ZipFile.CreateFromDirectory(folderPath, tempZipPath, CompressionLevel.Optimal, includeBaseDirectory: false);
-
             if (File.Exists(outputPath))
             {
                 if (!options.Overwrite)
@@ -123,6 +121,8 @@ public sealed class DeploymentArtifactBuilder(
                 }
                 File.Move(outputPath, backupPath);
             }
+
+            ZipFile.CreateFromDirectory(folderPath, tempZipPath, CompressionLevel.Optimal, includeBaseDirectory: false);
 
             try
             {
