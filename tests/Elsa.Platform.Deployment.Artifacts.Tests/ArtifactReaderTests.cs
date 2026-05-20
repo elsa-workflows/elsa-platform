@@ -216,6 +216,30 @@ public class ArtifactReaderTests : IAsyncDisposable
         result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumMissing);
     }
 
+    [Fact]
+    public async Task NullMetadataDigestFieldsReturnDiagnostic()
+    {
+        await _builder.BuildFolderAsync(_workspace.FolderOptions());
+        await File.WriteAllTextAsync(Path.Combine(_workspace.OutputFolder, ArtifactLayoutConstants.MetadataPath), """
+            {
+              "layoutVersion": "platform.elsa.io/deployment-artifact/v1alpha1",
+              "artifactId": "sha256:invalid",
+              "contentDigest": {
+                "algorithm": null,
+                "value": "invalid"
+              },
+              "createdAt": "2026-05-20T00:00:00+00:00",
+              "resources": []
+            }
+            """);
+
+        var inspect = async () => await _reader.InspectFolderAsync(_workspace.OutputFolder);
+
+        var result = await inspect.Should().NotThrowAsync();
+        result.Subject.Succeeded.Should().BeFalse();
+        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.MetadataRequired);
+    }
+
     public async ValueTask DisposeAsync() => await _workspace.DisposeAsync();
 
     private static void AddFile(ZipArchive archive, string file, string entryName)

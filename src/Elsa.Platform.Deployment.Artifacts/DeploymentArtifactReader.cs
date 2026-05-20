@@ -157,7 +157,7 @@ public sealed class DeploymentArtifactReader(
             await using var stream = store.OpenRead(path);
             return await JsonSerializer.DeserializeAsync<T>(stream, JsonOptions, cancellationToken);
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is JsonException or ArgumentException)
         {
             diagnostics.Add(Error(missingCode, ex.Message));
             return default;
