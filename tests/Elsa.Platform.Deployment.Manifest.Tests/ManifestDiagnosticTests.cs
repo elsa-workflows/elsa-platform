@@ -99,9 +99,11 @@ public class ManifestDiagnosticTests
     }
 
     [Theory]
-    [InlineData("workflows", "id: order-approval")]
-    [InlineData("recipes", "id: initialize-sales")]
-    public void PathEscapingManifestRootReturnsDiagnosticAndSkipsResource(string section, string identity)
+    [InlineData("workflows", "id: order-approval", "../order-approval.json")]
+    [InlineData("recipes", "id: initialize-sales", "../initialize-sales.yaml")]
+    [InlineData("workflows", "id: order-approval", "./order-approval.json")]
+    [InlineData("recipes", "id: initialize-sales", "recipes/./initialize-sales.yaml")]
+    public void InvalidPathReturnsDiagnosticAndSkipsResource(string section, string identity, string path)
     {
         var manifest = _reader.Read($"""
             apiVersion: platform.elsa.io/v1alpha1
@@ -111,7 +113,7 @@ public class ManifestDiagnosticTests
             resources:
               {section}:
                 - {identity}
-                  path: ../order-approval.json
+                  path: {path}
             """, ManifestFormat.Yaml).Manifest!;
 
         var normalized = _normalizer.Normalize(manifest);
