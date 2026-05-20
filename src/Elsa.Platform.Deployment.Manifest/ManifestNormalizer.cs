@@ -10,11 +10,11 @@ public sealed class ManifestNormalizer : IManifestNormalizer
     {
         var diagnostics = ManifestValidator.ValidateManifestHeader(manifest).ToList();
         var resources = new List<DeploymentResource>();
-        AddWorkflows(manifest.Resources.Workflows, resources, diagnostics);
-        AddVariables(manifest.Resources.Variables, resources, diagnostics);
-        AddFeatures(manifest.Resources.Features, resources, diagnostics);
-        AddPackages(manifest.Resources.Packages, resources, diagnostics);
-        AddRecipes(manifest.Resources.Recipes, resources, diagnostics);
+        AddWorkflows(manifest.Resources.Workflows ?? [], resources, diagnostics);
+        AddVariables(manifest.Resources.Variables ?? [], resources, diagnostics);
+        AddFeatures(manifest.Resources.Features ?? [], resources, diagnostics);
+        AddPackages(manifest.Resources.Packages ?? [], resources, diagnostics);
+        AddRecipes(manifest.Resources.Recipes ?? [], resources, diagnostics);
         AddExtensions(manifest, mapperRegistry, resources, diagnostics);
         resources = RemoveDuplicateResources(resources, diagnostics);
         return new NormalizedManifest(manifest, resources, diagnostics);
