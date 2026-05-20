@@ -9,6 +9,9 @@ namespace Elsa.Platform.Deployment.Manifest;
 public static class ManifestResourceHasher
 {
     private static readonly JsonSerializerOptions CompactJsonOptions = new() { WriteIndented = false };
+
+    // The hash wire schema intentionally uses PascalCase property names.
+    // Entry record properties must not be renamed without a hash migration strategy.
     private static readonly JsonSerializerOptions HashSerializerOptions = new()
     {
         WriteIndented = false,

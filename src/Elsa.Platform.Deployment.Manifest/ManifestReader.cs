@@ -134,11 +134,8 @@ public sealed class ManifestReader : IManifestReader
         if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer))
             return JsonValue.Create(integer);
 
-        if (decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number))
+        if (decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out var number))
             return JsonValue.Create(number);
-
-        if (decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out var exponential))
-            return JsonValue.Create(exponential);
 
         return JsonValue.Create(text);
     }
