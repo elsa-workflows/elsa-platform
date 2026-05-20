@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Elsa.Platform.Deployment.Abstractions.Artifacts;
 using Elsa.Platform.Deployment.Abstractions.Diagnostics;
 using Elsa.Platform.Deployment.Abstractions.Resources;
@@ -25,6 +26,14 @@ public class ArtifactContractTests
     public void ArtifactDigestFormatsAlgorithmAndValue()
     {
         _manifestDigest.ToString().Should().Be("sha256:manifest");
+    }
+
+    [Fact]
+    public void ArtifactDigestRoundTripsThroughJson()
+    {
+        var json = JsonSerializer.Serialize(_manifestDigest);
+
+        JsonSerializer.Deserialize<ArtifactDigest>(json).Should().Be(_manifestDigest);
     }
 
     [Fact]

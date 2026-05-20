@@ -203,7 +203,9 @@ public sealed class DeploymentArtifactBuilder(
         {
             var destination = Path.Combine(root, payload.ArtifactPath.Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            File.Copy(payload.SourcePath, destination, overwrite: false);
+            await using var sourceStream = File.OpenRead(payload.SourcePath);
+            await using var destinationStream = File.Create(destination);
+            await sourceStream.CopyToAsync(destinationStream, cancellationToken);
         }
 
         var metadataPath = Path.Combine(root, ArtifactLayoutConstants.MetadataPath);

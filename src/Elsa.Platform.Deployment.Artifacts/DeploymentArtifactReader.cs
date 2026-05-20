@@ -124,6 +124,8 @@ public sealed class DeploymentArtifactReader(
         var verification = new List<DeploymentArtifactChecksumVerification>();
         if (checksums is not null)
             await VerifyChecksumsAsync(store, checksums, entries, verification, diagnostics, cancellationToken);
+        if (metadata is not null && checksums is not null)
+            VerifyArtifactIdentity(metadata, checksums, diagnostics);
 
         var succeeded = diagnostics.All(x => x.Severity < DeploymentDiagnosticSeverity.Error);
         return new DeploymentArtifactInspectionResult(
@@ -230,11 +232,40 @@ public sealed class DeploymentArtifactReader(
         }
     }
 
+    private static void VerifyArtifactIdentity(
+        DeploymentArtifactMetadata metadata,
+        DeploymentArtifactChecksumInventory inventory,
+        ICollection<DeploymentDiagnostic> diagnostics)
+    {
+        if (inventory.Entries.Count == 0)
+            return;
+
+        var contentDigest = DeploymentArtifactChecksumService.ComputeContentDigest(
+            inventory.Entries.Where(entry => entry.Kind != DeploymentArtifactEntryKind.Metadata));
+        if (!string.Equals(metadata.ArtifactId, contentDigest.ToString(), StringComparison.Ordinal) ||
+            !string.Equals(metadata.ContentDigest.Algorithm, contentDigest.Algorithm, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(metadata.ContentDigest.Value, contentDigest.Value, StringComparison.OrdinalIgnoreCase))
+        {
+            diagnostics.Add(Error(
+                ArtifactDiagnosticCodes.IdentityMismatch,
+                "Artifact identity does not match the computed content digest.",
+                new Dictionary<string, string>
+                {
+                    ["metadataArtifactId"] = metadata.ArtifactId,
+                    ["metadataContentDigest"] = metadata.ContentDigest.ToString(),
+                    ["computedContentDigest"] = contentDigest.ToString()
+                }));
+        }
+    }
+
     private static DeploymentArtifactInspectionResult Failed(IReadOnlyCollection<DeploymentDiagnostic> diagnostics) =>
         new(false, null, null, null, null, [], [], diagnostics);
 
-    private static DeploymentDiagnostic Error(string code, string message) =>
-        new(code, DeploymentDiagnosticSeverity.Error, message);
+    private static DeploymentDiagnostic Error(
+        string code,
+        string message,
+        IReadOnlyDictionary<string, string>? details = null) =>
+        new(code, DeploymentDiagnosticSeverity.Error, message, details: details);
 
     private sealed class FolderArtifactStore(string root)
     {

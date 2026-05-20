@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 
 namespace Elsa.Platform.Deployment.Artifacts.Tests;
@@ -16,6 +17,7 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var result = await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
+        result.Diagnostics.Should().BeEmpty();
         result.Succeeded.Should().BeTrue();
         result.ArtifactId.Should().StartWith("sha256:");
         result.Metadata!.LayoutVersion.Should().Be(ArtifactLayoutConstants.LayoutVersion);
@@ -95,6 +97,29 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         result.Succeeded.Should().BeFalse();
         result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.LayoutUnsupported);
+    }
+
+    [Fact]
+    public async Task DetectsArtifactIdentityMismatch()
+    {
+        await _builder.BuildFolderAsync(_workspace.FolderOptions());
+        var metadataPath = Path.Combine(_workspace.OutputFolder, ArtifactLayoutConstants.MetadataPath);
+        var checksumPath = Path.Combine(_workspace.OutputFolder, ArtifactLayoutConstants.ChecksumInventoryPath);
+        var metadata = JsonNode.Parse(await File.ReadAllTextAsync(metadataPath))!.AsObject();
+        metadata["artifactId"] = "sha256:tampered";
+        metadata["contentDigest"]!["value"] = "tampered";
+        await File.WriteAllTextAsync(metadataPath, metadata.ToJsonString());
+        var metadataDigest = await DeploymentArtifactChecksumService.ComputeFileDigestAsync(metadataPath, CancellationToken.None);
+        var checksums = JsonNode.Parse(await File.ReadAllTextAsync(checksumPath))!.AsObject();
+        var metadataChecksum = checksums["entries"]!.AsArray().Single(entry => entry!["path"]!.GetValue<string>() == ArtifactLayoutConstants.MetadataPath)!.AsObject();
+        metadataChecksum["digest"] = metadataDigest.Value;
+        metadataChecksum["size"] = new FileInfo(metadataPath).Length;
+        await File.WriteAllTextAsync(checksumPath, checksums.ToJsonString());
+
+        var result = await _reader.InspectFolderAsync(_workspace.OutputFolder);
+
+        result.Succeeded.Should().BeFalse();
+        result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.IdentityMismatch);
     }
 
     [Fact]

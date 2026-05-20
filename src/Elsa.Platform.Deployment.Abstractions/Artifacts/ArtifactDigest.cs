@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using static Elsa.Platform.Deployment.Abstractions.DeploymentGuard;
 
 namespace Elsa.Platform.Deployment.Abstractions.Artifacts;
@@ -7,6 +8,7 @@ namespace Elsa.Platform.Deployment.Abstractions.Artifacts;
 /// </summary>
 public readonly record struct ArtifactDigest
 {
+    [JsonConstructor]
     public ArtifactDigest(string algorithm, string value)
     {
         Algorithm = Require(algorithm, nameof(algorithm));
