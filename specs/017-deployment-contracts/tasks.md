@@ -72,12 +72,12 @@
 
 ### Tests
 
-- [ ] T023 [P] [US2] Add dependency boundary tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/DependencyBoundaryTests.cs`
+- [x] T023 [P] [US2] Add dependency boundary tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/DependencyBoundaryTests.cs`
 
 ### Implementation
 
-- [ ] T024 [US2] Verify deployment abstractions project has no forbidden project references in `src/Elsa.Platform.Deployment.Abstractions/Elsa.Platform.Deployment.Abstractions.csproj`
-- [ ] T025 [US2] Keep forbidden runtime-state vocabulary out of public source files under `src/Elsa.Platform.Deployment.Abstractions/`
+- [x] T024 [US2] Verify deployment abstractions project has no forbidden project references in `src/Elsa.Platform.Deployment.Abstractions/Elsa.Platform.Deployment.Abstractions.csproj`
+- [x] T025 [US2] Keep forbidden runtime-state vocabulary out of public source files under `src/Elsa.Platform.Deployment.Abstractions/`
 
 **Checkpoint**: Boundary tests pass.
 
@@ -91,16 +91,16 @@
 
 ### Tests
 
-- [ ] T026 [P] [US3] Add sample extension implementation tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/ExtensionContractTests.cs`
+- [x] T026 [P] [US3] Add sample extension implementation tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/ExtensionContractTests.cs`
 
 ### Implementation
 
-- [ ] T027 [US3] Implement resource handler and state reader contracts in `src/Elsa.Platform.Deployment.Abstractions/Resources/IResourceHandler.cs` and `src/Elsa.Platform.Deployment.Abstractions/Resources/IResourceStateReader.cs`
-- [ ] T028 [US3] Implement resource validator contract in `src/Elsa.Platform.Deployment.Abstractions/Resources/IResourceValidator.cs`
-- [ ] T029 [US3] Implement artifact reader and writer contracts in `src/Elsa.Platform.Deployment.Abstractions/Artifacts/IArtifactReader.cs` and `src/Elsa.Platform.Deployment.Abstractions/Artifacts/IArtifactWriter.cs`
-- [ ] T030 [US3] Implement deployment target contract in `src/Elsa.Platform.Deployment.Abstractions/Targets/IDeploymentTarget.cs`
-- [ ] T031 [US3] Implement history store contract in `src/Elsa.Platform.Deployment.Abstractions/History/IDeploymentHistoryStore.cs`
-- [ ] T032 [US3] Implement deployment engine entry point contract in `src/Elsa.Platform.Deployment.Abstractions/IDeploymentEngine.cs`
+- [x] T027 [US3] Implement resource handler and state reader contracts in `src/Elsa.Platform.Deployment.Abstractions/Resources/IResourceHandler.cs` and `src/Elsa.Platform.Deployment.Abstractions/Resources/IResourceStateReader.cs`
+- [x] T028 [US3] Implement resource validator contract in `src/Elsa.Platform.Deployment.Abstractions/Resources/IResourceValidator.cs`
+- [x] T029 [US3] Implement artifact reader and writer contracts in `src/Elsa.Platform.Deployment.Abstractions/Artifacts/IArtifactReader.cs` and `src/Elsa.Platform.Deployment.Abstractions/Artifacts/IArtifactWriter.cs`
+- [x] T030 [US3] Implement deployment target contract in `src/Elsa.Platform.Deployment.Abstractions/Targets/IDeploymentTarget.cs`
+- [x] T031 [US3] Implement history store contract in `src/Elsa.Platform.Deployment.Abstractions/History/IDeploymentHistoryStore.cs`
+- [x] T032 [US3] Implement deployment engine entry point contract in `src/Elsa.Platform.Deployment.Abstractions/IDeploymentEngine.cs`
 
 **Checkpoint**: Extension contract tests pass.
 
