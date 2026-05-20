@@ -16,7 +16,7 @@ public sealed class ManifestNormalizer : IManifestNormalizer
         AddPackages(manifest.Resources.Packages, resources, diagnostics);
         AddRecipes(manifest.Resources.Recipes, resources, diagnostics);
         AddExtensions(manifest, mapperRegistry, resources, diagnostics);
-        AddDuplicateDiagnostics(resources, diagnostics);
+        resources = RemoveDuplicateResources(resources, diagnostics);
         return new NormalizedManifest(manifest, resources, diagnostics);
     }
 
@@ -156,13 +156,15 @@ public sealed class ManifestNormalizer : IManifestNormalizer
         ICollection<DeploymentResource> resources,
         IList<DeploymentDiagnostic> diagnostics)
     {
-        var context = new ManifestNormalizationContext(manifest, diagnostics);
         foreach (var section in manifest.Resources.Extensions)
         {
             if (mapperRegistry?.TryGet(section.Key, out var mapper) == true)
             {
+                var context = new ManifestNormalizationContext(manifest, diagnostics);
                 foreach (var resource in mapper.Map(section.Value, context))
                     resources.Add(resource);
+                foreach (var diagnostic in context.AddedDiagnostics)
+                    diagnostics.Add(diagnostic);
                 continue;
             }
 
@@ -173,10 +175,11 @@ public sealed class ManifestNormalizer : IManifestNormalizer
         }
     }
 
-    private static void AddDuplicateDiagnostics(
+    private static List<DeploymentResource> RemoveDuplicateResources(
         IEnumerable<DeploymentResource> resources,
         ICollection<DeploymentDiagnostic> diagnostics)
     {
+        var result = new List<DeploymentResource>();
         foreach (var group in resources.GroupBy(x => x.Id).Where(x => x.Count() > 1))
         {
             diagnostics.Add(new DeploymentDiagnostic(
@@ -185,6 +188,11 @@ public sealed class ManifestNormalizer : IManifestNormalizer
                 $"Resource '{group.Key}' is declared more than once.",
                 group.Key));
         }
+
+        foreach (var group in resources.GroupBy(x => x.Id))
+            result.Add(group.First());
+
+        return result;
     }
 
     private static IReadOnlyCollection<DeploymentResourceId> MapDependencies(

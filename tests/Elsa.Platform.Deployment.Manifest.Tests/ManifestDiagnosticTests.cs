@@ -68,6 +68,7 @@ public class ManifestDiagnosticTests
         var normalized = _normalizer.Normalize(manifest);
 
         normalized.Diagnostics.Should().ContainSingle(x => x.Code == ManifestDiagnosticCodes.ResourceDuplicate);
+        normalized.Resources.Should().ContainSingle();
     }
 
     [Theory]
@@ -121,6 +122,25 @@ public class ManifestDiagnosticTests
         var normalized = _normalizer.Normalize(manifest);
 
         normalized.Diagnostics.Should().ContainSingle(x => x.Code == ManifestDiagnosticCodes.ResourcePathInvalid);
+        normalized.Resources.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void MissingWorkflowPathReturnsPathRequiredDiagnosticAndSkipsResource()
+    {
+        var manifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: missing-path
+            resources:
+              workflows:
+                - id: order-approval
+            """, ManifestFormat.Yaml).Manifest!;
+
+        var normalized = _normalizer.Normalize(manifest);
+
+        normalized.Diagnostics.Should().ContainSingle(x => x.Code == ManifestDiagnosticCodes.ResourcePathRequired);
         normalized.Resources.Should().BeEmpty();
     }
 

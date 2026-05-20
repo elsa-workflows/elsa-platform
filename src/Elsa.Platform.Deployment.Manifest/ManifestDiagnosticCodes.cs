@@ -11,6 +11,7 @@ public static class ManifestDiagnosticCodes
     public const string ResourceIdentityRequired = "manifest.resource.identity.required";
     public const string ResourceDuplicate = "manifest.resource.duplicate";
     public const string ResourceDependencyInvalid = "manifest.resource.dependency.invalid";
+    public const string ResourcePathRequired = "manifest.resource.path.required";
     public const string ResourcePathInvalid = "manifest.resource.path.invalid";
     public const string ResourceUnsupported = "manifest.resource.unsupported";
 }

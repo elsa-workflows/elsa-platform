@@ -8,7 +8,7 @@ public static class ManifestPathValidator
     public static DeploymentDiagnostic? Validate(string? path, DeploymentResourceId resourceId)
     {
         if (string.IsNullOrWhiteSpace(path))
-            return new DeploymentDiagnostic(ManifestDiagnosticCodes.ResourcePathInvalid, DeploymentDiagnosticSeverity.Error, "Resource path is required.", resourceId);
+            return new DeploymentDiagnostic(ManifestDiagnosticCodes.ResourcePathRequired, DeploymentDiagnosticSeverity.Error, "Resource path is required.", resourceId);
 
         var normalized = path.Replace('\\', '/');
         if (Path.IsPathRooted(path) ||

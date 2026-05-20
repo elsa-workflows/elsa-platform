@@ -75,6 +75,42 @@ public class ManifestExtensionTests
     }
 
     [Fact]
+    public void CapturedResourceMapperContextCannotMutateNormalizedDiagnostics()
+    {
+        var manifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: custom
+            resources:
+              dashboards:
+                - id: sales
+            """, ManifestFormat.Yaml).Manifest!;
+        var mapper = new CapturingMapper();
+        var registry = new ManifestResourceMapperRegistry().Add(mapper);
+
+        var normalized = _normalizer.Normalize(manifest, registry);
+        mapper.Context!.AddDiagnostic(new DeploymentDiagnostic(
+            "dashboard.late",
+            DeploymentDiagnosticSeverity.Error,
+            "Late dashboard diagnostic."));
+
+        normalized.Diagnostics.Should().BeEmpty();
+        mapper.Context.Diagnostics.Should().Contain(x => x.Code == "dashboard.late");
+    }
+
+    [Fact]
+    public void DuplicateResourceMapperRegistrationThrows()
+    {
+        var registry = new ManifestResourceMapperRegistry().Add(new DashboardMapper());
+
+        var addDuplicate = () => registry.Add(new DashboardMapper());
+
+        addDuplicate.Should().Throw<InvalidOperationException>()
+            .WithMessage("A manifest resource mapper for section 'dashboards' is already registered.");
+    }
+
+    [Fact]
     public void ManifestAndResourceMetadataArePreserved()
     {
         var manifest = _reader.Read("""
@@ -143,6 +179,19 @@ public class ManifestExtensionTests
                 "dashboard.invalid",
                 DeploymentDiagnosticSeverity.Error,
                 "Dashboard resource is invalid."));
+            return [];
+        }
+    }
+
+    private sealed class CapturingMapper : IManifestResourceMapper
+    {
+        public string SectionName => "dashboards";
+
+        public ManifestNormalizationContext? Context { get; private set; }
+
+        public IReadOnlyCollection<DeploymentResource> Map(JsonNode? section, ManifestNormalizationContext context)
+        {
+            Context = context;
             return [];
         }
     }

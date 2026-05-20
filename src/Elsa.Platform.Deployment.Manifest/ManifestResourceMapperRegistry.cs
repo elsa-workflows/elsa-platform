@@ -6,7 +6,9 @@ public sealed class ManifestResourceMapperRegistry
 
     public ManifestResourceMapperRegistry Add(IManifestResourceMapper mapper)
     {
-        _mappers[mapper.SectionName] = mapper;
+        if (!_mappers.TryAdd(mapper.SectionName, mapper))
+            throw new InvalidOperationException($"A manifest resource mapper for section '{mapper.SectionName}' is already registered.");
+
         return this;
     }
 

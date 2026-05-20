@@ -2,7 +2,8 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Elsa.Platform.Deployment.Abstractions.Diagnostics;
-using YamlDotNet.Serialization;
+using YamlDotNet.Core;
+using YamlDotNet.RepresentationModel;
 
 namespace Elsa.Platform.Deployment.Manifest;
 
@@ -12,10 +13,6 @@ public sealed class ManifestReader : IManifestReader
     {
         PropertyNameCaseInsensitive = true
     };
-
-    private static readonly IDeserializer YamlDeserializer = new DeserializerBuilder()
-        .WithAttemptingUnquotedStringTypeDeserialization()
-        .Build();
 
     public ManifestParseResult Read(string text, ManifestFormat format)
     {
@@ -27,7 +24,7 @@ public sealed class ManifestReader : IManifestReader
             var root = format switch
             {
                 ManifestFormat.Json => JsonNode.Parse(text),
-                ManifestFormat.Yaml => ConvertYaml(YamlDeserializer.Deserialize<object?>(text)),
+                ManifestFormat.Yaml => ConvertYaml(text),
                 _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
             };
 
@@ -38,9 +35,6 @@ public sealed class ManifestReader : IManifestReader
             var manifest = document.Deserialize<EnvironmentManifest>(JsonOptions);
             if (manifest is null)
                 return Failed("Manifest could not be deserialized.");
-
-            if (format == ManifestFormat.Yaml)
-                manifest = NormalizeYaml(manifest);
 
             manifest = manifest with
             {
@@ -79,70 +73,53 @@ public sealed class ManifestReader : IManifestReader
             .ToDictionary(x => x.Key, x => x.Value?.DeepClone(), StringComparer.OrdinalIgnoreCase);
     }
 
-    private static EnvironmentManifest NormalizeYaml(EnvironmentManifest manifest)
+    private static JsonNode? ConvertYaml(string text)
     {
-        return manifest with
+        using var reader = new StringReader(text);
+        var yaml = new YamlStream();
+        yaml.Load(reader);
+        return yaml.Documents.Count == 0 ? null : ConvertYamlNode(yaml.Documents[0].RootNode);
+    }
+
+    private static JsonNode? ConvertYamlNode(YamlNode node)
+    {
+        return node switch
         {
-            Resources = manifest.Resources with
-            {
-                Variables = manifest.Resources.Variables
-                    .Select(variable => variable with { Value = NormalizeScalarNode(variable.Value) })
-                    .ToArray()
-            }
+            YamlMappingNode mapping => ConvertMapping(mapping),
+            YamlSequenceNode sequence => ConvertSequence(sequence),
+            YamlScalarNode scalar => ConvertScalar(scalar),
+            _ => JsonValue.Create(node.ToString())
         };
     }
 
-    private static JsonNode? NormalizeScalarNode(JsonNode? node)
-    {
-        if (node is null)
-            return null;
-
-        if (node is JsonValue value && value.TryGetValue<string>(out var text))
-            return ConvertYamlScalar(text);
-
-        return node;
-    }
-
-    private static JsonNode? ConvertYaml(object? value)
-    {
-        return value switch
-        {
-            null => null,
-            IDictionary<object, object> dictionary => ConvertDictionary(dictionary),
-            IDictionary<string, object> dictionary => ConvertDictionary(dictionary.ToDictionary(x => (object)x.Key, x => x.Value)),
-            string text => ConvertYamlScalar(text),
-            IEnumerable<object> sequence => ConvertSequence(sequence),
-            bool boolean => JsonValue.Create(boolean),
-            int number => JsonValue.Create(number),
-            long number => JsonValue.Create(number),
-            float number => JsonValue.Create(number),
-            double number => JsonValue.Create(number),
-            decimal number => JsonValue.Create(number),
-            DateTime dateTime => JsonValue.Create(dateTime.ToString("O", CultureInfo.InvariantCulture)),
-            DateTimeOffset dateTime => JsonValue.Create(dateTime.ToString("O", CultureInfo.InvariantCulture)),
-            IFormattable formattable => JsonValue.Create(formattable.ToString(null, CultureInfo.InvariantCulture)),
-            _ => JsonValue.Create(Convert.ToString(value, CultureInfo.InvariantCulture))
-        };
-    }
-
-    private static JsonObject ConvertDictionary(IDictionary<object, object> dictionary)
+    private static JsonObject ConvertMapping(YamlMappingNode mapping)
     {
         var result = new JsonObject();
-        foreach (var item in dictionary)
-            result[item.Key.ToString() ?? string.Empty] = ConvertYaml(item.Value);
+        foreach (var item in mapping.Children)
+            result[GetMappingKey(item.Key)] = ConvertYamlNode(item.Value);
         return result;
     }
 
-    private static JsonArray ConvertSequence(IEnumerable<object> sequence)
+    private static string GetMappingKey(YamlNode key) =>
+        key is YamlScalarNode scalar ? scalar.Value ?? string.Empty : key.ToString();
+
+    private static JsonArray ConvertSequence(YamlSequenceNode sequence)
     {
         var result = new JsonArray();
         foreach (var item in sequence)
-            result.Add(ConvertYaml(item));
+            result.Add(ConvertYamlNode(item));
         return result;
     }
 
-    private static JsonNode? ConvertYamlScalar(string text)
+    private static JsonNode? ConvertScalar(YamlScalarNode scalar)
     {
+        var text = scalar.Value;
+        if (text is null)
+            return null;
+
+        if (scalar.Style is ScalarStyle.SingleQuoted or ScalarStyle.DoubleQuoted or ScalarStyle.Literal or ScalarStyle.Folded)
+            return JsonValue.Create(text);
+
         if (bool.TryParse(text, out var boolean))
             return JsonValue.Create(boolean);
 

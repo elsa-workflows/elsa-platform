@@ -14,29 +14,35 @@ public interface IManifestResourceMapper
 
 public sealed class ManifestNormalizationContext
 {
-    private readonly IList<DeploymentDiagnostic> _diagnostics;
+    private readonly IReadOnlyList<DeploymentDiagnostic> _initialDiagnostics;
+    private readonly List<DeploymentDiagnostic> _addedDiagnostics = [];
     private readonly IReadOnlyList<DeploymentDiagnostic> _diagnosticsView;
 
-    public ManifestNormalizationContext(EnvironmentManifest manifest, IList<DeploymentDiagnostic> diagnostics)
+    public ManifestNormalizationContext(EnvironmentManifest manifest, IEnumerable<DeploymentDiagnostic> diagnostics)
     {
         Manifest = manifest;
-        _diagnostics = diagnostics;
-        _diagnosticsView = new DiagnosticView(diagnostics);
+        _initialDiagnostics = diagnostics.ToArray();
+        _diagnosticsView = new DiagnosticView(_initialDiagnostics, _addedDiagnostics);
     }
 
     public EnvironmentManifest Manifest { get; }
 
     public IReadOnlyList<DeploymentDiagnostic> Diagnostics => _diagnosticsView;
 
-    public void AddDiagnostic(DeploymentDiagnostic diagnostic) => _diagnostics.Add(diagnostic);
+    public void AddDiagnostic(DeploymentDiagnostic diagnostic) => _addedDiagnostics.Add(diagnostic);
 
-    private sealed class DiagnosticView(IList<DeploymentDiagnostic> diagnostics) : IReadOnlyList<DeploymentDiagnostic>
+    internal IReadOnlyCollection<DeploymentDiagnostic> AddedDiagnostics => _addedDiagnostics;
+
+    private sealed class DiagnosticView(
+        IReadOnlyList<DeploymentDiagnostic> initialDiagnostics,
+        IReadOnlyList<DeploymentDiagnostic> addedDiagnostics) : IReadOnlyList<DeploymentDiagnostic>
     {
-        public int Count => diagnostics.Count;
+        public int Count => initialDiagnostics.Count + addedDiagnostics.Count;
 
-        public DeploymentDiagnostic this[int index] => diagnostics[index];
+        public DeploymentDiagnostic this[int index] =>
+            index < initialDiagnostics.Count ? initialDiagnostics[index] : addedDiagnostics[index - initialDiagnostics.Count];
 
-        public IEnumerator<DeploymentDiagnostic> GetEnumerator() => diagnostics.GetEnumerator();
+        public IEnumerator<DeploymentDiagnostic> GetEnumerator() => initialDiagnostics.Concat(addedDiagnostics).GetEnumerator();
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }

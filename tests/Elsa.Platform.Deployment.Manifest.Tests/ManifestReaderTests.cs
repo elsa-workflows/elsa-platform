@@ -65,6 +65,26 @@ public class ManifestReaderTests
     }
 
     [Fact]
+    public void YamlReaderPreservesQuotedStringVariableValues()
+    {
+        var result = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: sales-staging
+            resources:
+              variables:
+                - key: code
+                  value: "0001"
+                - key: flagText
+                  value: "true"
+            """, ManifestFormat.Yaml);
+
+        result.Manifest!.Resources.Variables[0].Value!.ToJsonString().Should().Be("\"0001\"");
+        result.Manifest.Resources.Variables[1].Value!.ToJsonString().Should().Be("\"true\"");
+    }
+
+    [Fact]
     public void YamlReaderConvertsNumericScalarsUsingInvariantCulture()
     {
         var originalCulture = CultureInfo.CurrentCulture;

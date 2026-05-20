@@ -56,6 +56,7 @@ The manifest package emits `DeploymentDiagnostic` values with stable codes:
 - `manifest.resource.identity.required`
 - `manifest.resource.duplicate`
 - `manifest.resource.dependency.invalid`
+- `manifest.resource.path.required`
 - `manifest.resource.path.invalid`
 - `manifest.resource.unsupported`
 
