@@ -117,5 +117,52 @@ public class ArtifactReaderTests : IAsyncDisposable
         result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.PathInvalid);
     }
 
+    [Fact]
+    public async Task AllowsZipDirectoryEntries()
+    {
+        await _builder.BuildFolderAsync(_workspace.FolderOptions());
+        await using (var stream = File.Create(_workspace.OutputZip))
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create))
+        {
+            archive.CreateEntry("manifest/");
+            archive.CreateEntry("payload/");
+            archive.CreateEntry("payload/workflows/");
+            archive.CreateEntry("payload/recipes/");
+            foreach (var file in Directory.EnumerateFiles(_workspace.OutputFolder, "*", SearchOption.AllDirectories))
+                AddFile(archive, file, Path.GetRelativePath(_workspace.OutputFolder, file).Replace('\\', '/'));
+        }
+
+        var result = await _reader.InspectZipAsync(_workspace.OutputZip);
+
+        result.Succeeded.Should().BeTrue();
+        result.Diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task NullChecksumEntriesReturnsDiagnostic()
+    {
+        await _builder.BuildFolderAsync(_workspace.FolderOptions());
+        await File.WriteAllTextAsync(Path.Combine(_workspace.OutputFolder, ArtifactLayoutConstants.ChecksumInventoryPath), """
+            {
+              "algorithm": "sha256",
+              "entries": null
+            }
+            """);
+
+        var inspect = async () => await _reader.InspectFolderAsync(_workspace.OutputFolder);
+
+        var result = await inspect.Should().NotThrowAsync();
+        result.Subject.Succeeded.Should().BeFalse();
+        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumMissing);
+    }
+
     public async ValueTask DisposeAsync() => await _workspace.DisposeAsync();
+
+    private static void AddFile(ZipArchive archive, string file, string entryName)
+    {
+        var entry = archive.CreateEntry(entryName);
+        using var entryStream = entry.Open();
+        using var fileStream = File.OpenRead(file);
+        fileStream.CopyTo(entryStream);
+    }
 }

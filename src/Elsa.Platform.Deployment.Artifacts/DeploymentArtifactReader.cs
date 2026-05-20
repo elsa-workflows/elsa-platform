@@ -49,6 +49,9 @@ public sealed class DeploymentArtifactReader(
             {
                 foreach (var entry in archive.Entries)
                 {
+                    if (string.IsNullOrEmpty(entry.Name))
+                        continue;
+
                     var normalized = DeploymentArtifactPathValidator.NormalizeRelativePath(entry.FullName);
                     if (normalized is null)
                         return Failed([DeploymentArtifactPathValidator.Invalid(entry.FullName, "Artifact ZIP contains an invalid entry path.")]);
@@ -58,8 +61,7 @@ public sealed class DeploymentArtifactReader(
                         return Failed([DeploymentArtifactPathValidator.Invalid(entry.FullName, "Artifact ZIP entry escapes the extraction root.")]);
 
                     Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                    if (!string.IsNullOrEmpty(entry.Name))
-                        entry.ExtractToFile(destination, overwrite: false);
+                    entry.ExtractToFile(destination, overwrite: false);
                 }
             }
 
@@ -191,6 +193,12 @@ public sealed class DeploymentArtifactReader(
         ICollection<DeploymentDiagnostic> diagnostics,
         CancellationToken cancellationToken)
     {
+        if (inventory.Entries.Count == 0)
+        {
+            diagnostics.Add(Error(ArtifactDiagnosticCodes.ChecksumMissing, "Artifact checksum inventory must contain entries."));
+            return;
+        }
+
         var entryPaths = entries.Select(x => x.Path).ToHashSet(StringComparer.Ordinal);
         foreach (var checksum in inventory.Entries)
         {

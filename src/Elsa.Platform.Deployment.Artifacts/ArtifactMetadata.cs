@@ -56,6 +56,17 @@ public sealed record DeploymentArtifactChecksumVerification(
     string? ExpectedDigest = null,
     string? ActualDigest = null);
 
-internal sealed record DeploymentArtifactChecksumInventory(
-    string Algorithm,
-    IReadOnlyCollection<DeploymentArtifactChecksumEntry> Entries);
+internal sealed record DeploymentArtifactChecksumInventory
+{
+    public DeploymentArtifactChecksumInventory(
+        string algorithm,
+        IReadOnlyCollection<DeploymentArtifactChecksumEntry>? entries)
+    {
+        Algorithm = algorithm;
+        Entries = entries ?? [];
+    }
+
+    public string Algorithm { get; }
+
+    public IReadOnlyCollection<DeploymentArtifactChecksumEntry> Entries { get; }
+}
