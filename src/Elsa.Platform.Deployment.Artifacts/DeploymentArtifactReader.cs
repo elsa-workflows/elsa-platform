@@ -21,10 +21,17 @@ public sealed class DeploymentArtifactReader(
         string path,
         CancellationToken cancellationToken = default)
     {
-        if (!Directory.Exists(path))
-            return Failed([Error(ArtifactDiagnosticCodes.MetadataRequired, $"Artifact folder '{path}' does not exist.")]);
+        try
+        {
+            if (!Directory.Exists(path))
+                return Failed([Error(ArtifactDiagnosticCodes.MetadataRequired, $"Artifact folder '{path}' does not exist.")]);
 
-        return await InspectAsync(new FolderArtifactStore(path), cancellationToken);
+            return await InspectAsync(new FolderArtifactStore(path), cancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Failed([Error(ArtifactDiagnosticCodes.ReadFailed, ex.Message)]);
+        }
     }
 
     public async ValueTask<DeploymentArtifactInspectionResult> InspectZipAsync(

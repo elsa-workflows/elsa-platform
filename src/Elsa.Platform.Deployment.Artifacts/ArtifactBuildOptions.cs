@@ -34,7 +34,7 @@ public sealed record DeploymentArtifactBuildOptions
 
     public bool Overwrite { get; init; }
 
-    public DateTimeOffset? BuiltAt { get; init; }
+    public DateTimeOffset? BuiltAt { get; }
 
     public string? Builder { get; init; }
 

@@ -12,5 +12,6 @@ public static class ArtifactDiagnosticCodes
     public const string ChecksumMissing = "artifact.checksum.missing";
     public const string ChecksumMismatch = "artifact.checksum.mismatch";
     public const string ArchiveInvalid = "artifact.archive.invalid";
+    public const string ReadFailed = "artifact.read.failed";
     public const string BuildFailed = "artifact.build.failed";
 }
