@@ -8,6 +8,8 @@ namespace Elsa.Platform.Deployment.Manifest;
 
 public static class ManifestResourceHasher
 {
+    private static readonly JsonSerializerOptions CompactJsonOptions = new() { WriteIndented = false };
+
     public static ArtifactDigest Hash(string resourceType, object entry)
     {
         var node = JsonSerializer.SerializeToNode(entry) ?? new JsonObject();
@@ -16,7 +18,7 @@ public static class ManifestResourceHasher
             ["resourceType"] = resourceType,
             ["desired"] = node
         });
-        var json = canonical?.ToJsonString(new JsonSerializerOptions { WriteIndented = false }) ?? "null";
+        var json = canonical?.ToJsonString(CompactJsonOptions) ?? "null";
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(json));
         return new ArtifactDigest("sha256", Convert.ToHexString(bytes).ToLowerInvariant());
     }
@@ -45,7 +47,7 @@ public static class ManifestResourceHasher
         var items = array.Select(item => Canonicalize(item)).ToArray();
         if (string.Equals(propertyName, "dependencies", StringComparison.OrdinalIgnoreCase))
             items = items
-                .OrderBy(item => item?.ToJsonString(new JsonSerializerOptions { WriteIndented = false }) ?? "null", StringComparer.Ordinal)
+                .OrderBy(item => item?.ToJsonString(CompactJsonOptions) ?? "null", StringComparer.Ordinal)
                 .ToArray();
 
         var result = new JsonArray();

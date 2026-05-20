@@ -103,6 +103,8 @@ public class ManifestDiagnosticTests
     [InlineData("recipes", "id: initialize-sales", "../initialize-sales.yaml")]
     [InlineData("workflows", "id: order-approval", "./order-approval.json")]
     [InlineData("recipes", "id: initialize-sales", "recipes/./initialize-sales.yaml")]
+    [InlineData("workflows", "id: order-approval", "C:\\workflows\\order-approval.json")]
+    [InlineData("recipes", "id: initialize-sales", "/recipes/initialize-sales.yaml")]
     public void InvalidPathReturnsDiagnosticAndSkipsResource(string section, string identity, string path)
     {
         var manifest = _reader.Read($"""
