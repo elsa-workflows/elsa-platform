@@ -190,6 +190,32 @@ public class ArtifactReaderTests : IAsyncDisposable
         result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumMissing);
     }
 
+    [Fact]
+    public async Task NullChecksumEntryFieldsReturnDiagnostic()
+    {
+        await _builder.BuildFolderAsync(_workspace.FolderOptions());
+        await File.WriteAllTextAsync(Path.Combine(_workspace.OutputFolder, ArtifactLayoutConstants.ChecksumInventoryPath), """
+            {
+              "algorithm": "sha256",
+              "entries": [
+                {
+                  "path": null,
+                  "kind": "Payload",
+                  "algorithm": "sha256",
+                  "digest": null,
+                  "size": 1
+                }
+              ]
+            }
+            """);
+
+        var inspect = async () => await _reader.InspectFolderAsync(_workspace.OutputFolder);
+
+        var result = await inspect.Should().NotThrowAsync();
+        result.Subject.Succeeded.Should().BeFalse();
+        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumMissing);
+    }
+
     public async ValueTask DisposeAsync() => await _workspace.DisposeAsync();
 
     private static void AddFile(ZipArchive archive, string file, string entryName)

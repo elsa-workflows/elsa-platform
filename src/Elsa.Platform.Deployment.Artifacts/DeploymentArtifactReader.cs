@@ -204,6 +204,22 @@ public sealed class DeploymentArtifactReader(
         var entryPaths = entries.Select(x => x.Path).ToHashSet(StringComparer.Ordinal);
         foreach (var checksum in inventory.Entries)
         {
+            if (string.IsNullOrWhiteSpace(checksum.Path) ||
+                string.IsNullOrWhiteSpace(checksum.Algorithm) ||
+                string.IsNullOrWhiteSpace(checksum.Digest) ||
+                checksum.Size < 0)
+            {
+                verification.Add(new DeploymentArtifactChecksumVerification(
+                    checksum.Path ?? string.Empty,
+                    checksum.Kind,
+                    DeploymentArtifactChecksumStatus.Missing,
+                    checksum.Digest));
+                diagnostics.Add(Error(
+                    ArtifactDiagnosticCodes.ChecksumMissing,
+                    "Artifact checksum entry is missing required fields."));
+                continue;
+            }
+
             if (!store.Exists(checksum.Path))
             {
                 verification.Add(new DeploymentArtifactChecksumVerification(checksum.Path, checksum.Kind, DeploymentArtifactChecksumStatus.Missing, checksum.Digest));
