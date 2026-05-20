@@ -40,7 +40,9 @@ public class DependencyBoundaryTests
     {
         var projectFile = _repoRoot
             .GetFiles("Elsa.Platform.Deployment.Abstractions.csproj", SearchOption.AllDirectories)
-            .Single(file => file.FullName.Contains("src/Elsa.Platform.Deployment.Abstractions", StringComparison.Ordinal));
+            .Single(file => file.FullName.Contains(
+                Path.Combine("src", "Elsa.Platform.Deployment.Abstractions"),
+                StringComparison.Ordinal));
         var document = XDocument.Load(projectFile.FullName);
         var references = document
             .Descendants()
@@ -66,7 +68,8 @@ public class DependencyBoundaryTests
                 .Where(file => !file.FullName.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
                 .Select(file => File.ReadAllText(file.FullName)));
 
-        sourceText.Should().NotContainAny(_forbiddenSourcePhrases);
+        foreach (var phrase in _forbiddenSourcePhrases)
+            sourceText.Contains(phrase, StringComparison.OrdinalIgnoreCase).Should().BeFalse();
     }
 
     private static DirectoryInfo FindRepoRoot()

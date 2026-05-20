@@ -1,3 +1,5 @@
+using static Elsa.Platform.Deployment.Abstractions.DeploymentGuard;
+
 namespace Elsa.Platform.Deployment.Abstractions.History;
 
 /// <summary>
@@ -7,7 +9,7 @@ public sealed record DeploymentActor
 {
     public DeploymentActor(string id, string? displayName = null)
     {
-        Id = string.IsNullOrWhiteSpace(id) ? throw new ArgumentException("Value cannot be empty.", nameof(id)) : id.Trim();
+        Id = Require(id, nameof(id));
         DisplayName = string.IsNullOrWhiteSpace(displayName) ? null : displayName.Trim();
     }
 
