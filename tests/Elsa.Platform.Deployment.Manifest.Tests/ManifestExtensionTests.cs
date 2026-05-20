@@ -51,6 +51,30 @@ public class ManifestExtensionTests
     }
 
     [Fact]
+    public void ResourceMapperDiagnosticsAreAppendOnly()
+    {
+        var manifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: ''
+            resources:
+              dashboards:
+                - id: sales
+            """, ManifestFormat.Yaml).Manifest!;
+        var mapper = new DiagnosticMapper();
+        var registry = new ManifestResourceMapperRegistry().Add(mapper);
+
+        var normalized = _normalizer.Normalize(manifest, registry);
+
+        mapper.DiagnosticsWereMutable.Should().BeFalse();
+        normalized.Diagnostics.Select(x => x.Code).Should().Contain([
+            ManifestDiagnosticCodes.MetadataNameRequired,
+            "dashboard.invalid"
+        ]);
+    }
+
+    [Fact]
     public void ManifestAndResourceMetadataArePreserved()
     {
         var manifest = _reader.Read("""
@@ -104,5 +128,22 @@ public class ManifestExtensionTests
                 new DeploymentResourceId("dashboard", "sales"),
                 desiredStateHash: new ArtifactDigest("sha256", "custom"))
         ];
+    }
+
+    private sealed class DiagnosticMapper : IManifestResourceMapper
+    {
+        public bool DiagnosticsWereMutable { get; private set; }
+
+        public string SectionName => "dashboards";
+
+        public IReadOnlyCollection<DeploymentResource> Map(JsonNode? section, ManifestNormalizationContext context)
+        {
+            DiagnosticsWereMutable = context.Diagnostics is IList<DeploymentDiagnostic>;
+            context.AddDiagnostic(new DeploymentDiagnostic(
+                "dashboard.invalid",
+                DeploymentDiagnosticSeverity.Error,
+                "Dashboard resource is invalid."));
+            return [];
+        }
     }
 }
