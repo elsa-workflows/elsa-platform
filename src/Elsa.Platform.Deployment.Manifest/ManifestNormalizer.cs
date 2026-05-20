@@ -80,7 +80,7 @@ public sealed class ManifestNormalizer : IManifestNormalizer
                 id,
                 desiredStateHash: ManifestResourceHasher.Hash(DeploymentManifestConstants.VariableResourceType, entry),
                 dependencies: MapDependencies(entry.Dependencies, id, diagnostics),
-                metadata: entry.Metadata));
+                metadata: entry.Metadata ?? ManifestEmpty.StringDictionary));
         }
     }
 
@@ -137,7 +137,7 @@ public sealed class ManifestNormalizer : IManifestNormalizer
                 entry.Version,
                 ManifestResourceHasher.Hash(DeploymentManifestConstants.PackageResourceType, entry),
                 MapDependencies(entry.Dependencies, id, diagnostics),
-                metadata: entry.Metadata));
+                metadata: entry.Metadata ?? ManifestEmpty.StringDictionary));
         }
     }
 
@@ -239,14 +239,14 @@ public sealed class ManifestNormalizer : IManifestNormalizer
     }
 
     private static IReadOnlyCollection<DeploymentResourceId> MapDependencies(
-        IEnumerable<ManifestResourceReference> dependencies,
+        IEnumerable<ManifestResourceReference>? dependencies,
         DeploymentResourceId owner,
         ICollection<DeploymentDiagnostic> diagnostics)
     {
         var result = new List<DeploymentResourceId>();
-        foreach (var dependency in dependencies)
+        foreach (var dependency in dependencies ?? [])
         {
-            if (string.IsNullOrWhiteSpace(dependency.Type) || string.IsNullOrWhiteSpace(dependency.Id))
+            if (dependency is null || string.IsNullOrWhiteSpace(dependency.Type) || string.IsNullOrWhiteSpace(dependency.Id))
             {
                 diagnostics.Add(new DeploymentDiagnostic(
                     ManifestDiagnosticCodes.ResourceDependencyInvalid,
@@ -263,11 +263,11 @@ public sealed class ManifestNormalizer : IManifestNormalizer
     }
 
     private static IReadOnlyDictionary<string, string> WithPath(
-        IReadOnlyDictionary<string, string> metadata,
+        IReadOnlyDictionary<string, string>? metadata,
         string? path,
         params (string Key, string? Value)[] values)
     {
-        var result = new Dictionary<string, string>(metadata);
+        var result = new Dictionary<string, string>(metadata ?? ManifestEmpty.StringDictionary);
         if (!string.IsNullOrWhiteSpace(path))
             result["path"] = path;
         foreach (var (key, value) in values)
@@ -276,12 +276,12 @@ public sealed class ManifestNormalizer : IManifestNormalizer
         return result;
     }
 
-    private static IReadOnlyDictionary<string, string> WithValue(IReadOnlyDictionary<string, string> metadata, string key, string? value)
+    private static IReadOnlyDictionary<string, string> WithValue(IReadOnlyDictionary<string, string>? metadata, string key, string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
-            return metadata;
+            return metadata ?? ManifestEmpty.StringDictionary;
 
-        var result = new Dictionary<string, string>(metadata)
+        var result = new Dictionary<string, string>(metadata ?? ManifestEmpty.StringDictionary)
         {
             [key] = value
         };

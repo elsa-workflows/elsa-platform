@@ -140,6 +140,33 @@ public class ManifestDiagnosticTests
         normalized.Resources.Should().ContainSingle().Which.Dependencies.Should().BeEmpty();
     }
 
+    [Fact]
+    public void NullDependencyEntryReturnsDiagnostic()
+    {
+        var manifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: null-dependency
+            resources:
+              workflows:
+                - id: order-approval
+                  path: workflows/order-approval.json
+                  dependencies:
+                    - null
+            """, ManifestFormat.Yaml).Manifest!;
+
+        var normalize = () => _normalizer.Normalize(manifest);
+
+        var normalized = normalize.Should().NotThrow().Subject;
+        normalized.Diagnostics.Should().ContainSingle(x =>
+            x.Code == ManifestDiagnosticCodes.ResourceDependencyInvalid &&
+            x.ResourceId.HasValue &&
+            x.ResourceId.Value.Type == DeploymentManifestConstants.WorkflowDefinitionResourceType &&
+            x.ResourceId.Value.LogicalId == "order-approval");
+        normalized.Resources.Should().ContainSingle().Which.Dependencies.Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData("workflows", "id: order-approval", "../order-approval.json")]
     [InlineData("recipes", "id: initialize-sales", "../initialize-sales.yaml")]

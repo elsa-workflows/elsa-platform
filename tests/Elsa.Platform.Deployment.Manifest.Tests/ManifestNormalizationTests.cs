@@ -173,4 +173,91 @@ public class ManifestNormalizationTests
         yaml.Resources.Should().ContainSingle().Which.DesiredStateHash
             .Should().Be(json.Resources.Should().ContainSingle().Which.DesiredStateHash);
     }
+
+    [Fact]
+    public void OutOfRangeScientificNotationYamlAndJsonValuesProduceEquivalentHashes()
+    {
+        var yamlManifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: out-of-range-exponent-value
+            resources:
+              variables:
+                - key: largeNumber
+                  value: 1e400
+            """, ManifestFormat.Yaml).Manifest!;
+        var jsonManifest = _reader.Read("""
+            {
+              "apiVersion": "platform.elsa.io/v1alpha1",
+              "kind": "EnvironmentManifest",
+              "metadata": { "name": "out-of-range-exponent-value" },
+              "resources": {
+                "variables": [
+                  { "key": "largeNumber", "value": 1e400 }
+                ]
+              }
+            }
+            """, ManifestFormat.Json).Manifest!;
+
+        var yaml = _normalizer.Normalize(yamlManifest);
+        var json = _normalizer.Normalize(jsonManifest);
+
+        yaml.Diagnostics.Should().BeEmpty();
+        json.Diagnostics.Should().BeEmpty();
+        yaml.Resources.Should().ContainSingle().Which.DesiredStateHash
+            .Should().Be(json.Resources.Should().ContainSingle().Which.DesiredStateHash);
+    }
+
+    [Theory]
+    [InlineData("workflows")]
+    [InlineData("variables")]
+    [InlineData("features")]
+    [InlineData("packages")]
+    [InlineData("recipes")]
+    public void NullResourceMetadataIsTreatedAsEmpty(string section)
+    {
+        var resource = section switch
+        {
+            "workflows" => """
+                  id: order-approval
+                  path: workflows/order-approval.json
+                  metadata: null
+            """,
+            "variables" => """
+                  key: orderTimeout
+                  metadata: null
+            """,
+            "features" => """
+                  id: sales
+                  metadata: null
+            """,
+            "packages" => """
+                  id: Elsa.Workflows
+                  version: 3.0.0
+                  metadata: null
+            """,
+            "recipes" => """
+                  id: initialize-sales
+                  metadata: null
+            """,
+            _ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
+        };
+        var manifest = _reader.Read($"""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: null-resource-metadata
+            resources:
+              {section}:
+                -
+            {resource}
+            """, ManifestFormat.Yaml).Manifest!;
+
+        var normalize = () => _normalizer.Normalize(manifest);
+
+        var normalized = normalize.Should().NotThrow().Subject;
+        normalized.Diagnostics.Should().BeEmpty();
+        normalized.Resources.Should().ContainSingle();
+    }
 }
