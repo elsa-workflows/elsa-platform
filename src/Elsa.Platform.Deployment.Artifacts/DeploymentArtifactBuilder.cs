@@ -29,6 +29,7 @@ public sealed class DeploymentArtifactBuilder(
         var outputName = Path.GetFileName(outputPath);
         var tempPath = Path.Combine(outputParent, $".{outputName}.tmp-{Guid.NewGuid():N}");
         var backupPath = Path.Combine(outputParent, $".{outputName}.bak-{Guid.NewGuid():N}");
+        var committed = false;
         try
         {
             Directory.CreateDirectory(outputParent);
@@ -59,6 +60,7 @@ public sealed class DeploymentArtifactBuilder(
             try
             {
                 Directory.Move(tempPath, outputPath);
+                committed = true;
             }
             catch
             {
@@ -78,7 +80,8 @@ public sealed class DeploymentArtifactBuilder(
         {
             if (Directory.Exists(tempPath))
                 Directory.Delete(tempPath, recursive: true);
-            TryRecoverDirectoryBackup(backupPath, outputPath, diagnostics);
+            if (!committed)
+                TryRecoverDirectoryBackup(backupPath, outputPath, diagnostics);
         }
     }
 
@@ -93,6 +96,7 @@ public sealed class DeploymentArtifactBuilder(
         var folderPath = Path.Combine(outputParent, $".{outputName}.folder-{Guid.NewGuid():N}");
         var tempZipPath = Path.Combine(outputParent, $".{outputName}.tmp-{Guid.NewGuid():N}");
         var backupPath = Path.Combine(outputParent, $".{outputName}.bak-{Guid.NewGuid():N}");
+        var committed = false;
         var folderOptions = options with { OutputPath = folderPath, Overwrite = true };
         var result = await BuildFolderAsync(folderOptions, cancellationToken);
         if (!result.Succeeded)
@@ -123,6 +127,7 @@ public sealed class DeploymentArtifactBuilder(
             try
             {
                 File.Move(tempZipPath, outputPath);
+                committed = true;
             }
             catch
             {
@@ -144,7 +149,8 @@ public sealed class DeploymentArtifactBuilder(
                 Directory.Delete(folderPath, recursive: true);
             if (File.Exists(tempZipPath))
                 File.Delete(tempZipPath);
-            TryRecoverFileBackup(backupPath, outputPath, diagnostics);
+            if (!committed)
+                TryRecoverFileBackup(backupPath, outputPath, diagnostics);
         }
     }
 
