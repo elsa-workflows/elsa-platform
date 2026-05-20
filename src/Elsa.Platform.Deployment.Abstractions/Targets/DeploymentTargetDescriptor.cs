@@ -1,3 +1,6 @@
+using Elsa.Platform.Deployment.Abstractions;
+using static Elsa.Platform.Deployment.Abstractions.DeploymentGuard;
+
 namespace Elsa.Platform.Deployment.Abstractions.Targets;
 
 /// <summary>
@@ -25,13 +28,5 @@ public sealed record DeploymentTargetDescriptor
 
     public IReadOnlyDictionary<string, string> Properties { get; }
 
-    private static readonly IReadOnlyDictionary<string, string> EmptyProperties = new Dictionary<string, string>();
-
-    private static string Require(string value, string parameterName)
-    {
-        var normalized = value?.Trim();
-        return string.IsNullOrWhiteSpace(normalized)
-            ? throw new ArgumentException("Value cannot be empty.", parameterName)
-            : normalized;
-    }
+    private static readonly IReadOnlyDictionary<string, string> EmptyProperties = DeploymentEmpty.StringDictionary;
 }

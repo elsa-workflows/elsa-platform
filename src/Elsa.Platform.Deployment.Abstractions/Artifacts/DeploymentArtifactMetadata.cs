@@ -1,3 +1,5 @@
+using Elsa.Platform.Deployment.Abstractions;
+
 namespace Elsa.Platform.Deployment.Abstractions.Artifacts;
 
 /// <summary>
@@ -29,5 +31,5 @@ public sealed record DeploymentArtifactMetadata
 
     public IReadOnlyDictionary<string, string> Properties { get; }
 
-    private static readonly IReadOnlyDictionary<string, string> EmptyProperties = new Dictionary<string, string>();
+    private static readonly IReadOnlyDictionary<string, string> EmptyProperties = DeploymentEmpty.StringDictionary;
 }

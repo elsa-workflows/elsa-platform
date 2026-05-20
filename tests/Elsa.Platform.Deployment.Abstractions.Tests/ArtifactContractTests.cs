@@ -1,4 +1,7 @@
 using Elsa.Platform.Deployment.Abstractions.Artifacts;
+using Elsa.Platform.Deployment.Abstractions.Diagnostics;
+using Elsa.Platform.Deployment.Abstractions.Resources;
+using Elsa.Platform.Deployment.Abstractions.Targets;
 using FluentAssertions;
 
 namespace Elsa.Platform.Deployment.Abstractions.Tests;
@@ -53,5 +56,30 @@ public class ArtifactContractTests
         metadata.BuiltAt.Offset.Should().Be(TimeSpan.Zero);
         metadata.Builder.Should().Be("cli");
         metadata.Source.Should().Be("abc123");
+    }
+
+    [Fact]
+    public void DefaultMetadataDictionariesCannotBeMutatedThroughDictionaryDowncast()
+    {
+        var identity = new DeploymentArtifactIdentity("sales-staging", "v1alpha", _manifestDigest, _contentDigest);
+        var resource = new DeploymentResource(new DeploymentResourceId("variable", "orderTimeout"));
+        var state = new DeploymentResourceState(resource.Id);
+        var diagnostic = new DeploymentDiagnostic("test", DeploymentDiagnosticSeverity.Info, "Message");
+        var target = new DeploymentTargetDescriptor("staging");
+
+        AssertReadOnly(new DeploymentArtifactMetadata(identity, DateTimeOffset.UtcNow).Properties);
+        AssertReadOnly(resource.Metadata);
+        AssertReadOnly(state.Metadata);
+        AssertReadOnly(diagnostic.Details);
+        AssertReadOnly(target.Properties);
+        new DeploymentArtifactMetadata(identity, DateTimeOffset.UtcNow).Properties.Should().BeEmpty();
+    }
+
+    private static void AssertReadOnly(IReadOnlyDictionary<string, string> values)
+    {
+        var mutate = () => ((IDictionary<string, string>)values).Add("leaked", "true");
+
+        mutate.Should().Throw<NotSupportedException>();
+        values.Should().BeEmpty();
     }
 }

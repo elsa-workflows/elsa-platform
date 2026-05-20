@@ -68,4 +68,18 @@ public class HistoryContractTests
         history.Plan.Should().Be(plan);
         history.ResourceResults.Should().ContainSingle().Which.Should().Be(resourceResult);
     }
+
+    [Fact]
+    public void HistoryRecordLeavesCompletionTimeUnsetWhenNoCompletionWasRecorded()
+    {
+        var history = new DeploymentHistoryRecord(
+            "deploy-1",
+            _artifact,
+            _target,
+            DeploymentStatus.NotStarted,
+            startedAt: new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.FromHours(2)));
+
+        history.StartedAt.Offset.Should().Be(TimeSpan.Zero);
+        history.CompletedAt.Should().BeNull();
+    }
 }

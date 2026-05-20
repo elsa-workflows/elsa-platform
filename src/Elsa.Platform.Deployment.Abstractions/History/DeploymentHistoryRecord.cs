@@ -2,6 +2,7 @@ using Elsa.Platform.Deployment.Abstractions.Artifacts;
 using Elsa.Platform.Deployment.Abstractions.Diagnostics;
 using Elsa.Platform.Deployment.Abstractions.Plans;
 using Elsa.Platform.Deployment.Abstractions.Targets;
+using static Elsa.Platform.Deployment.Abstractions.DeploymentGuard;
 
 namespace Elsa.Platform.Deployment.Abstractions.History;
 
@@ -32,7 +33,7 @@ public sealed record DeploymentHistoryRecord
         ResourceResults = (resourceResults ?? []).ToArray();
         Diagnostics = (diagnostics ?? []).ToArray();
         StartedAt = (startedAt ?? DateTimeOffset.UtcNow).ToUniversalTime();
-        CompletedAt = (completedAt ?? StartedAt).ToUniversalTime();
+        CompletedAt = completedAt?.ToUniversalTime();
     }
 
     public string DeploymentId { get; }
@@ -55,13 +56,5 @@ public sealed record DeploymentHistoryRecord
 
     public DateTimeOffset StartedAt { get; }
 
-    public DateTimeOffset CompletedAt { get; }
-
-    private static string Require(string value, string parameterName)
-    {
-        var normalized = value?.Trim();
-        return string.IsNullOrWhiteSpace(normalized)
-            ? throw new ArgumentException("Value cannot be empty.", parameterName)
-            : normalized;
-    }
+    public DateTimeOffset? CompletedAt { get; }
 }

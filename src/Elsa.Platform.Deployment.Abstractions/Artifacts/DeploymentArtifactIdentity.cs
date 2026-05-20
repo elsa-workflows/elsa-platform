@@ -1,3 +1,5 @@
+using static Elsa.Platform.Deployment.Abstractions.DeploymentGuard;
+
 namespace Elsa.Platform.Deployment.Abstractions.Artifacts;
 
 /// <summary>
@@ -28,12 +30,4 @@ public sealed record DeploymentArtifactIdentity
     public ArtifactDigest ManifestDigest { get; }
 
     public ArtifactDigest ContentDigest { get; }
-
-    private static string Require(string value, string parameterName)
-    {
-        var normalized = value?.Trim();
-        return string.IsNullOrWhiteSpace(normalized)
-            ? throw new ArgumentException("Value cannot be empty.", parameterName)
-            : normalized;
-    }
 }

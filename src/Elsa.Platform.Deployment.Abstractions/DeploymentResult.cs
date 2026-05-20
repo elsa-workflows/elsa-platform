@@ -2,6 +2,7 @@ using Elsa.Platform.Deployment.Abstractions.Artifacts;
 using Elsa.Platform.Deployment.Abstractions.Diagnostics;
 using Elsa.Platform.Deployment.Abstractions.Plans;
 using Elsa.Platform.Deployment.Abstractions.Targets;
+using static Elsa.Platform.Deployment.Abstractions.DeploymentGuard;
 
 namespace Elsa.Platform.Deployment.Abstractions;
 
@@ -53,12 +54,4 @@ public sealed record DeploymentResult
     public DateTimeOffset StartedAt { get; }
 
     public DateTimeOffset? CompletedAt { get; }
-
-    private static string Require(string value, string parameterName)
-    {
-        var normalized = value?.Trim();
-        return string.IsNullOrWhiteSpace(normalized)
-            ? throw new ArgumentException("Value cannot be empty.", parameterName)
-            : normalized;
-    }
 }

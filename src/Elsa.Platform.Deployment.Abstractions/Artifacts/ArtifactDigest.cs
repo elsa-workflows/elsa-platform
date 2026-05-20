@@ -1,3 +1,5 @@
+using static Elsa.Platform.Deployment.Abstractions.DeploymentGuard;
+
 namespace Elsa.Platform.Deployment.Abstractions.Artifacts;
 
 /// <summary>
@@ -16,12 +18,4 @@ public readonly record struct ArtifactDigest
     public string Value { get; }
 
     public override string ToString() => $"{Algorithm}:{Value}";
-
-    private static string Require(string value, string parameterName)
-    {
-        var normalized = value?.Trim();
-        return string.IsNullOrWhiteSpace(normalized)
-            ? throw new ArgumentException("Value cannot be empty.", parameterName)
-            : normalized;
-    }
 }
