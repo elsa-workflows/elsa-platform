@@ -1,0 +1,153 @@
+# Implementation Plan: Deployment Manifest Parsing
+
+**Branch**: `018-deployment-manifest` | **Date**: 2026-05-20 | **Spec**: [spec.md](./spec.md)
+
+**Input**: Feature specification from `specs/018-deployment-manifest/spec.md`
+
+## Summary
+
+Add `Elsa.Platform.Deployment.Manifest` as the next Phase 1 deployment package. The package parses `platform.elsa.io/v1alpha1` `EnvironmentManifest` documents from YAML and JSON text, validates the supported shape, and normalizes workflow, variable, feature, package, and recipe entries into `DeploymentResource` values from `Elsa.Platform.Deployment.Abstractions`. This slice stops before artifact IO, deployment planning, dry-run, apply, CLI, API, runtime adapters, overlays, and secret handling.
+
+## Technical Context
+
+**Language/Version**: C# on .NET 10 using repository-wide `Directory.Build.props`.
+
+**Primary Dependencies**: `Elsa.Platform.Deployment.Abstractions`, `System.Text.Json`, YamlDotNet for YAML parsing, xUnit and FluentAssertions for tests.
+
+**Storage**: N/A. Manifest parsing is in-memory only.
+
+**Testing**: `dotnet test` for `tests/Elsa.Platform.Deployment.Manifest.Tests/` plus full solution verification.
+
+**Target Platform**: Cross-platform .NET library consumed by future artifact, engine, CLI, API, and operator packages.
+
+**Project Type**: Multi-project .NET repository; this slice adds one source library and one test project.
+
+**Performance Goals**: Deterministic normalization and hashing for normal CI/CD manifest sizes; no throughput target until artifact and engine slices.
+
+**Constraints**: Depend on Deployment Abstractions only plus parser libraries. Do not reference engine, CLI, API, Package Catalog implementation, Runtime Builder implementation, hosting, persistence, migration, UI, or runtime-state packages.
+
+**Scale/Scope**: v1alpha single-manifest parsing and normalization for Phase 1 resources/descriptors.
+
+## Constitution Check
+
+- **Control Plane First**: Pass. Manifest resources describe control-plane desired state only.
+- **Bounded Subsystems**: Pass. Manifest depends on deployment abstractions and not on engine/API/catalog/runtime implementation packages.
+- **Contract Stability**: Pass. v1alpha version is explicit and unsupported versions produce diagnostics.
+- **Safety By Design**: Pass. Manifest metadata excludes raw secret handling; secret references are deferred.
+- **Incremental Verifiability**: Pass. Tests can verify parsing/normalization independently from artifacts or engine execution.
+
+## Project Structure
+
+### Documentation (this feature)
+
+```text
+specs/018-deployment-manifest/
+├── spec.md
+├── plan.md
+├── research.md
+├── data-model.md
+├── quickstart.md
+├── contracts/
+│   ├── manifest-shape.md
+│   └── dependency-boundaries.md
+├── checklists/
+│   └── requirements.md
+└── tasks.md
+```
+
+### Source Code (repository root)
+
+```text
+src/
+  Elsa.Platform.Deployment.Manifest/
+    EnvironmentManifest.cs
+    ManifestMetadata.cs
+    ManifestResourceEntries.cs
+    ManifestParseResult.cs
+    ManifestReader.cs
+    ManifestNormalizer.cs
+    ManifestResourceMapperRegistry.cs
+    IManifestReader.cs
+    IManifestNormalizer.cs
+    IManifestResourceMapper.cs
+
+tests/
+  Elsa.Platform.Deployment.Manifest.Tests/
+    ManifestReaderTests.cs
+    ManifestNormalizationTests.cs
+    ManifestDiagnosticTests.cs
+    ManifestExtensionTests.cs
+    ManifestBoundaryTests.cs
+```
+
+**Structure Decision**: Keep parsing and normalization in `Elsa.Platform.Deployment.Manifest`. Artifact layout/checksum behavior belongs in `Elsa.Platform.Deployment.Artifacts`, and reconciliation belongs in `Elsa.Platform.Deployment.Engine`.
+
+## Phase Plan
+
+### Phase 1: Planning And Contracts
+
+Outcome:
+
+- Spec Kit artifacts define manifest shape, boundaries, and tasks.
+
+Exit gate:
+
+- `/speckit-analyze` finds no critical inconsistencies.
+
+### Phase 2: Project Skeleton
+
+Outcome:
+
+- Source/test projects exist and are added to the solution.
+- Package dependency on deployment abstractions is in place.
+
+Exit gate:
+
+- Empty project skeleton builds.
+
+### Phase 3: Manifest Model And Readers
+
+Outcome:
+
+- Environment manifest records and YAML/JSON reader parse supported manifest text.
+- Parse errors return diagnostics instead of leaking parser exceptions.
+
+Exit gate:
+
+- Valid/invalid YAML and JSON reader tests pass.
+
+### Phase 4: Normalization And Resource Mapping
+
+Outcome:
+
+- Built-in resource mappers normalize workflows, variables, features, packages, and recipes.
+- Extension mapper registry supports custom resource sections.
+- Deterministic desired-state hashes are produced.
+
+Exit gate:
+
+- Normalization, duplicate identity, path validation, unknown section, and extension tests pass.
+
+### Phase 5: Boundaries And Verification
+
+Outcome:
+
+- Boundary tests enforce allowed dependencies.
+- Docs/quickstart reflect verification.
+
+Exit gate:
+
+- Focused tests, full solution tests, and `git diff --check` pass.
+
+## Deferred Work
+
+- Artifact folder/ZIP IO and checksum manifests.
+- Deployment planner, validation orchestration, diff, dry-run, apply, and history persistence.
+- CLI and API surfaces.
+- Workflow/variable runtime adapters.
+- Package catalog validation implementation.
+- Overlays, secret references, signatures, OCI, GitOps, operators, Kubernetes CRDs, policy engines, and multi-tenant reconciliation.
+
+## Complexity Tracking
+
+No constitution violations are introduced.
