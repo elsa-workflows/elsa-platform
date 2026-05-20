@@ -108,12 +108,12 @@
 
 ## Final Phase: Polish And Verification
 
-- [ ] T033 Update deployment roadmap slice status in `docs/deployment-platform-phased-strategy.md`
-- [ ] T034 Update quickstart verification notes in `specs/017-deployment-contracts/quickstart.md`
-- [ ] T035 Run focused deployment abstractions tests with `dotnet test tests/Elsa.Platform.Deployment.Abstractions.Tests/Elsa.Platform.Deployment.Abstractions.Tests.csproj`
-- [ ] T036 Run full solution tests with `dotnet test Elsa.Platform.sln`
-- [ ] T037 Run `git diff --check`
-- [ ] T038 Confirm `tasks.md` checkboxes and blocker notes reflect actual progress
+- [x] T033 Update deployment roadmap slice status in `docs/deployment-platform-phased-strategy.md`
+- [x] T034 Update quickstart verification notes in `specs/017-deployment-contracts/quickstart.md`
+- [x] T035 Run focused deployment abstractions tests with `dotnet test tests/Elsa.Platform.Deployment.Abstractions.Tests/Elsa.Platform.Deployment.Abstractions.Tests.csproj`
+- [x] T036 Run full solution tests with `dotnet test Elsa.Platform.sln`
+- [x] T037 Run `git diff --check`
+- [x] T038 Confirm `tasks.md` checkboxes and blocker notes reflect actual progress
 
 ---
 

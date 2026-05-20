@@ -141,6 +141,12 @@ Stable contracts shared by all platform packages:
 
 Keep this package intentionally small. It should define the deployment language, not implementation details.
 
+Implementation status:
+
+- First foundation slice: `src/Elsa.Platform.Deployment.Abstractions` and `tests/Elsa.Platform.Deployment.Abstractions.Tests`.
+- Covers resource identity, artifact identity, target descriptors, diagnostics, plans, changes, results, history, and minimal extension contracts.
+- Still deferred from this slice: manifest parsing, artifact folder/ZIP IO, reconciliation execution, CLI commands, API endpoints, and runtime-specific resource handlers.
+
 ### Elsa.Platform.Deployment.Manifest
 
 Manifest parsing, schema validation, normalization, and versioning:

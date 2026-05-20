@@ -31,6 +31,34 @@ Expected result:
 - Deployment abstractions project has no project references.
 - Existing repository warnings remain unchanged unless separately addressed.
 
+## Verification Notes
+
+Last verified on 2026-05-20:
+
+```text
+dotnet test tests/Elsa.Platform.Deployment.Abstractions.Tests/Elsa.Platform.Deployment.Abstractions.Tests.csproj
+Passed: 28
+```
+
+```text
+dotnet test Elsa.Platform.sln
+Passed all .NET test projects
+```
+
+```text
+dotnet list src/Elsa.Platform.Deployment.Abstractions/Elsa.Platform.Deployment.Abstractions.csproj reference
+There are no Project to Project references.
+```
+
+```text
+git diff --check
+Passed
+```
+
+Known pre-existing warning:
+
+- `Microsoft.Build.Utilities.Core` 17.14.8 emits NU1903 for GHSA-w3q9-fxm7-j8fq in the package manifest generator MSBuild project and tests.
+
 ## Manual Review Checklist
 
 - `src/Elsa.Platform.Deployment.Abstractions/` contains only contracts and value types.
