@@ -93,12 +93,12 @@
 ## Phase 6: Boundaries And Verification
 
 - [x] T027 [P] Add dependency boundary tests in `tests/Elsa.Platform.Deployment.Manifest.Tests/ManifestBoundaryTests.cs`
-- [ ] T028 Update deployment roadmap status in `docs/deployment-platform-phased-strategy.md`
-- [ ] T029 Update quickstart verification notes in `specs/018-deployment-manifest/quickstart.md`
-- [ ] T030 Run focused tests with `dotnet test tests/Elsa.Platform.Deployment.Manifest.Tests/Elsa.Platform.Deployment.Manifest.Tests.csproj`
-- [ ] T031 Run full solution tests with `dotnet test Elsa.Platform.sln`
-- [ ] T032 Run `git diff --check`
-- [ ] T033 Confirm `tasks.md` checkboxes and blocker notes reflect actual progress
+- [x] T028 Update deployment roadmap status in `docs/deployment-platform-phased-strategy.md`
+- [x] T029 Update quickstart verification notes in `specs/018-deployment-manifest/quickstart.md`
+- [x] T030 Run focused tests with `dotnet test tests/Elsa.Platform.Deployment.Manifest.Tests/Elsa.Platform.Deployment.Manifest.Tests.csproj`
+- [x] T031 Run full solution tests with `dotnet test Elsa.Platform.sln`
+- [x] T032 Run `git diff --check`
+- [x] T033 Confirm `tasks.md` checkboxes and blocker notes reflect actual progress
 
 ---
 

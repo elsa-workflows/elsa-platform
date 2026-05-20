@@ -31,6 +31,29 @@ Expected result:
 - Manifest package references Deployment Abstractions only.
 - Existing repository warnings remain unchanged unless separately addressed.
 
+## Verification Notes
+
+Last verified on 2026-05-20:
+
+```text
+dotnet list src/Elsa.Platform.Deployment.Manifest/Elsa.Platform.Deployment.Manifest.csproj reference
+Project reference: ../Elsa.Platform.Deployment.Abstractions/Elsa.Platform.Deployment.Abstractions.csproj
+```
+
+```text
+dotnet test tests/Elsa.Platform.Deployment.Manifest.Tests/Elsa.Platform.Deployment.Manifest.Tests.csproj
+Passed: 18
+```
+
+```text
+dotnet test Elsa.Platform.sln
+Passed all .NET test projects
+```
+
+Known pre-existing warning:
+
+- `Microsoft.Build.Utilities.Core` 17.14.8 emits NU1903 for GHSA-w3q9-fxm7-j8fq in the package manifest generator MSBuild project and tests.
+
 ## Deferred Follow-Up Slices
 
 1. Folder and ZIP deployment artifact IO.
