@@ -209,6 +209,18 @@ public sealed class DeploymentArtifactReader(
         var entryPaths = entries.Select(x => x.Path).ToHashSet(StringComparer.Ordinal);
         foreach (var checksum in inventory.Entries)
         {
+            if (checksum is null)
+            {
+                verification.Add(new DeploymentArtifactChecksumVerification(
+                    string.Empty,
+                    DeploymentArtifactEntryKind.Payload,
+                    DeploymentArtifactChecksumStatus.Missing));
+                diagnostics.Add(Error(
+                    ArtifactDiagnosticCodes.ChecksumMissing,
+                    "Artifact checksum entry is missing required fields."));
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(checksum.Path) ||
                 string.IsNullOrWhiteSpace(checksum.Algorithm) ||
                 string.IsNullOrWhiteSpace(checksum.Digest) ||
@@ -243,7 +255,10 @@ public sealed class DeploymentArtifactReader(
             verification.Add(new DeploymentArtifactChecksumVerification(checksum.Path, checksum.Kind, DeploymentArtifactChecksumStatus.Verified, checksum.Digest, digest.Value));
         }
 
-        foreach (var unexpected in entryPaths.Except(inventory.Entries.Select(x => x.Path), StringComparer.Ordinal))
+        var checkedPaths = inventory.Entries
+            .Where(x => !string.IsNullOrWhiteSpace(x?.Path))
+            .Select(x => x!.Path);
+        foreach (var unexpected in entryPaths.Except(checkedPaths, StringComparer.Ordinal))
         {
             if (unexpected == ArtifactLayoutConstants.ChecksumInventoryPath)
                 continue;
@@ -262,7 +277,7 @@ public sealed class DeploymentArtifactReader(
             return;
 
         var contentDigest = DeploymentArtifactChecksumService.ComputeContentDigest(
-            inventory.Entries.Where(entry => entry.Kind != DeploymentArtifactEntryKind.Metadata));
+            inventory.Entries.Where(entry => entry is not null && entry.Kind != DeploymentArtifactEntryKind.Metadata));
         if (!string.Equals(metadata.ArtifactId, contentDigest.ToString(), StringComparison.Ordinal) ||
             !string.Equals(metadata.ContentDigest.Algorithm, contentDigest.Algorithm, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(metadata.ContentDigest.Value, contentDigest.Value, StringComparison.OrdinalIgnoreCase))

@@ -62,7 +62,7 @@ public sealed class DeploymentArtifactBuilder(
             }
             catch
             {
-                RestoreDirectoryBackup(backupPath, outputPath);
+                RecoverDirectoryBackup(backupPath, outputPath);
                 throw;
             }
 
@@ -78,6 +78,7 @@ public sealed class DeploymentArtifactBuilder(
         {
             if (Directory.Exists(tempPath))
                 Directory.Delete(tempPath, recursive: true);
+            TryRecoverDirectoryBackup(backupPath, outputPath, diagnostics);
         }
     }
 
@@ -85,6 +86,7 @@ public sealed class DeploymentArtifactBuilder(
         DeploymentArtifactBuildOptions options,
         CancellationToken cancellationToken = default)
     {
+        var diagnostics = new List<DeploymentDiagnostic>();
         var outputPath = Path.GetFullPath(options.OutputPath);
         var outputParent = Path.GetDirectoryName(outputPath) ?? Directory.GetCurrentDirectory();
         var outputName = Path.GetFileName(outputPath);
@@ -100,14 +102,20 @@ public sealed class DeploymentArtifactBuilder(
         {
             Directory.CreateDirectory(outputParent);
             if (Directory.Exists(outputPath))
-                return Failed(outputPath, [Error(ArtifactDiagnosticCodes.BuildFailed, $"Output path '{outputPath}' exists and is not a file.")]);
+            {
+                diagnostics.Add(Error(ArtifactDiagnosticCodes.BuildFailed, $"Output path '{outputPath}' exists and is not a file."));
+                return Failed(outputPath, diagnostics);
+            }
 
             ZipFile.CreateFromDirectory(folderPath, tempZipPath, CompressionLevel.Optimal, includeBaseDirectory: false);
 
             if (File.Exists(outputPath))
             {
                 if (!options.Overwrite)
-                    return Failed(outputPath, [Error(ArtifactDiagnosticCodes.BuildFailed, $"Output ZIP '{outputPath}' already exists.")]);
+                {
+                    diagnostics.Add(Error(ArtifactDiagnosticCodes.BuildFailed, $"Output ZIP '{outputPath}' already exists."));
+                    return Failed(outputPath, diagnostics);
+                }
                 File.Move(outputPath, backupPath);
             }
 
@@ -117,7 +125,7 @@ public sealed class DeploymentArtifactBuilder(
             }
             catch
             {
-                RestoreFileBackup(backupPath, outputPath);
+                RecoverFileBackup(backupPath, outputPath);
                 throw;
             }
 
@@ -126,7 +134,8 @@ public sealed class DeploymentArtifactBuilder(
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return Failed(outputPath, [Error(ArtifactDiagnosticCodes.BuildFailed, ex.Message)]);
+            diagnostics.Add(Error(ArtifactDiagnosticCodes.BuildFailed, ex.Message));
+            return Failed(outputPath, diagnostics);
         }
         finally
         {
@@ -134,6 +143,7 @@ public sealed class DeploymentArtifactBuilder(
                 Directory.Delete(folderPath, recursive: true);
             if (File.Exists(tempZipPath))
                 File.Delete(tempZipPath);
+            TryRecoverFileBackup(backupPath, outputPath, diagnostics);
         }
     }
 
@@ -310,10 +320,29 @@ public sealed class DeploymentArtifactBuilder(
     private static DeploymentDiagnostic Error(string code, string message) =>
         new(code, DeploymentDiagnosticSeverity.Error, message);
 
-    private static void RestoreDirectoryBackup(string backupPath, string outputPath)
+    private static void RecoverDirectoryBackup(string backupPath, string outputPath)
     {
-        if (Directory.Exists(backupPath) && !Directory.Exists(outputPath))
-            Directory.Move(backupPath, outputPath);
+        if (!Directory.Exists(backupPath))
+            return;
+
+        if (Directory.Exists(outputPath))
+            Directory.Delete(outputPath, recursive: true);
+        Directory.Move(backupPath, outputPath);
+    }
+
+    private static void TryRecoverDirectoryBackup(
+        string backupPath,
+        string outputPath,
+        ICollection<DeploymentDiagnostic> diagnostics)
+    {
+        try
+        {
+            RecoverDirectoryBackup(backupPath, outputPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(Error(ArtifactDiagnosticCodes.BuildFailed, $"Failed to restore output backup '{backupPath}': {ex.Message}"));
+        }
     }
 
     private static void DeleteDirectoryBackup(string backupPath)
@@ -322,10 +351,29 @@ public sealed class DeploymentArtifactBuilder(
             Directory.Delete(backupPath, recursive: true);
     }
 
-    private static void RestoreFileBackup(string backupPath, string outputPath)
+    private static void RecoverFileBackup(string backupPath, string outputPath)
     {
-        if (File.Exists(backupPath) && !File.Exists(outputPath))
-            File.Move(backupPath, outputPath);
+        if (!File.Exists(backupPath))
+            return;
+
+        if (File.Exists(outputPath))
+            File.Delete(outputPath);
+        File.Move(backupPath, outputPath);
+    }
+
+    private static void TryRecoverFileBackup(
+        string backupPath,
+        string outputPath,
+        ICollection<DeploymentDiagnostic> diagnostics)
+    {
+        try
+        {
+            RecoverFileBackup(backupPath, outputPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(Error(ArtifactDiagnosticCodes.BuildFailed, $"Failed to restore output backup '{backupPath}': {ex.Message}"));
+        }
     }
 
     private static void DeleteFileBackup(string backupPath)

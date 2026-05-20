@@ -230,6 +230,26 @@ public class ArtifactReaderTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task NullChecksumEntryElementReturnsDiagnostic()
+    {
+        await _builder.BuildFolderAsync(_workspace.FolderOptions());
+        await File.WriteAllTextAsync(Path.Combine(_workspace.OutputFolder, ArtifactLayoutConstants.ChecksumInventoryPath), """
+            {
+              "algorithm": "sha256",
+              "entries": [
+                null
+              ]
+            }
+            """);
+
+        var inspect = async () => await _reader.InspectFolderAsync(_workspace.OutputFolder);
+
+        var result = await inspect.Should().NotThrowAsync();
+        result.Subject.Succeeded.Should().BeFalse();
+        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumMissing);
+    }
+
+    [Fact]
     public async Task NullMetadataDigestFieldsReturnDiagnostic()
     {
         await _builder.BuildFolderAsync(_workspace.FolderOptions());
