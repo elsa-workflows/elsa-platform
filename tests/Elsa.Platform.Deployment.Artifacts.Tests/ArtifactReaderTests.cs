@@ -273,6 +273,30 @@ public class ArtifactReaderTests : IAsyncDisposable
         result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.MetadataRequired);
     }
 
+    [Fact]
+    public async Task MissingMetadataRequiredFieldsReturnDiagnostic()
+    {
+        await _builder.BuildFolderAsync(_workspace.FolderOptions());
+        var metadataPath = Path.Combine(_workspace.OutputFolder, ArtifactLayoutConstants.MetadataPath);
+        var checksumPath = Path.Combine(_workspace.OutputFolder, ArtifactLayoutConstants.ChecksumInventoryPath);
+        var metadata = JsonNode.Parse(await File.ReadAllTextAsync(metadataPath))!.AsObject();
+        metadata.Remove("manifest");
+        await File.WriteAllTextAsync(metadataPath, metadata.ToJsonString());
+        var metadataDigest = await DeploymentArtifactChecksumService.ComputeFileDigestAsync(metadataPath, CancellationToken.None);
+        var checksums = JsonNode.Parse(await File.ReadAllTextAsync(checksumPath))!.AsObject();
+        var metadataChecksum = checksums["entries"]!.AsArray().Single(entry => entry!["path"]!.GetValue<string>() == ArtifactLayoutConstants.MetadataPath)!.AsObject();
+        metadataChecksum["digest"] = metadataDigest.Value;
+        metadataChecksum["size"] = new FileInfo(metadataPath).Length;
+        await File.WriteAllTextAsync(checksumPath, checksums.ToJsonString());
+
+        var inspect = async () => await _reader.InspectFolderAsync(_workspace.OutputFolder);
+
+        var result = await inspect.Should().NotThrowAsync();
+        result.Subject.Succeeded.Should().BeFalse();
+        result.Subject.Metadata.Should().BeNull();
+        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.MetadataRequired);
+    }
+
     public async ValueTask DisposeAsync() => await _workspace.DisposeAsync();
 
     private static void AddFile(ZipArchive archive, string file, string entryName)

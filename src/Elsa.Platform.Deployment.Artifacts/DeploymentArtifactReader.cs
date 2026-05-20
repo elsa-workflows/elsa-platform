@@ -96,6 +96,9 @@ public sealed class DeploymentArtifactReader(
             diagnostics,
             cancellationToken);
 
+        if (metadata is not null && !ValidateMetadata(metadata, diagnostics))
+            metadata = null;
+
         if (metadata is not null && metadata.LayoutVersion != ArtifactLayoutConstants.LayoutVersion)
             diagnostics.Add(Error(ArtifactDiagnosticCodes.LayoutUnsupported, $"Artifact layout '{metadata.LayoutVersion}' is not supported."));
 
@@ -175,6 +178,33 @@ public sealed class DeploymentArtifactReader(
             .Where(path => path is $"{ArtifactLayoutConstants.ManifestDirectory}/manifest.yaml" or $"{ArtifactLayoutConstants.ManifestDirectory}/manifest.json")
             .OrderBy(path => path, StringComparer.Ordinal)
             .FirstOrDefault();
+
+    private static bool ValidateMetadata(
+        DeploymentArtifactMetadata metadata,
+        ICollection<DeploymentDiagnostic> diagnostics)
+    {
+        var isValid =
+            !string.IsNullOrWhiteSpace(metadata.LayoutVersion) &&
+            !string.IsNullOrWhiteSpace(metadata.ArtifactId) &&
+            metadata.Manifest is not null &&
+            metadata.Manifest.Labels is not null &&
+            metadata.Manifest.Annotations is not null &&
+            metadata.Resources is not null &&
+            !string.IsNullOrWhiteSpace(metadata.ContentDigest.Algorithm) &&
+            !string.IsNullOrWhiteSpace(metadata.ContentDigest.Value) &&
+            metadata.Resources.All(resource =>
+                resource is not null &&
+                !string.IsNullOrWhiteSpace(resource.Type) &&
+                !string.IsNullOrWhiteSpace(resource.LogicalId));
+
+        if (isValid)
+            return true;
+
+        diagnostics.Add(Error(
+            ArtifactDiagnosticCodes.MetadataRequired,
+            "Artifact metadata is missing required fields."));
+        return false;
+    }
 
     private static IEnumerable<DeploymentArtifactEntry> ListEntries(FolderArtifactStore store)
     {

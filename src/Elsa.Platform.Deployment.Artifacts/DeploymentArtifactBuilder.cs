@@ -97,6 +97,7 @@ public sealed class DeploymentArtifactBuilder(
         var result = await BuildFolderAsync(folderOptions, cancellationToken);
         if (!result.Succeeded)
             return result with { OutputPath = outputPath };
+        diagnostics.AddRange(result.Diagnostics);
 
         try
         {
