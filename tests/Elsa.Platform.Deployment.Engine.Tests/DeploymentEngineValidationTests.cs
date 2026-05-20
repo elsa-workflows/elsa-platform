@@ -67,6 +67,21 @@ public class DeploymentEngineValidationTests
         _handler.ApplyChanges.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task ValidateAsyncReportsValidationExceptionsWithValidationCode()
+    {
+        var resource = DeploymentEngineTestFixtures.Resource();
+        _handler.ValidationException = new InvalidOperationException("Validation exploded.");
+        var engine = CreateEngine(_handler);
+
+        var result = await engine.ValidateAsync(new TestArtifactReader(resource), _target);
+
+        result.Status.Should().Be(DeploymentStatus.ValidationFailed);
+        result.Diagnostics.Should().ContainSingle(x =>
+            x.Code == DeploymentEngineDiagnosticCodes.ValidateFailed &&
+            x.ResourceId == resource.Id);
+    }
+
     private static DeploymentEngine CreateEngine(params RecordingResourceHandler[] handlers) =>
         new(handlers, options: DeploymentEngineTestFixtures.StableOptions());
 }

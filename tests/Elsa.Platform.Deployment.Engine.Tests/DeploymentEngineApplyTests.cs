@@ -84,6 +84,22 @@ public class DeploymentEngineApplyTests
         history!.Diagnostics.Should().Contain(diagnostic);
     }
 
+    [Fact]
+    public async Task ApplyAsyncReportsHandlerExceptionsWithApplyCode()
+    {
+        var resource = DeploymentEngineTestFixtures.Resource();
+        _handler.ApplyException = new InvalidOperationException("Apply exploded.");
+        var engine = CreateEngine();
+        var plan = await engine.DiffAsync(new TestArtifactReader(resource), _target);
+
+        var result = await engine.ApplyAsync(plan, _target);
+
+        result.Status.Should().Be(DeploymentStatus.Failed);
+        result.Diagnostics.Should().ContainSingle(x =>
+            x.Code == DeploymentEngineDiagnosticCodes.ApplyFailed &&
+            x.ResourceId == resource.Id);
+    }
+
     private DeploymentEngine CreateEngine() =>
         new([_handler], _history, DeploymentEngineTestFixtures.StableOptions());
 }

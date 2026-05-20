@@ -79,6 +79,14 @@ internal sealed class RecordingResourceHandler(string resourceType = "variable")
 
     public Func<DeploymentChange, DeploymentResourceResult>? ApplyFactory { get; set; }
 
+    public Exception? ValidationException { get; set; }
+
+    public Exception? ReadException { get; set; }
+
+    public Exception? DiffException { get; set; }
+
+    public Exception? DryRunException { get; set; }
+
     public Exception? ApplyException { get; set; }
 
     public void SetCurrentState(DeploymentResourceState state) => _states[state.Id] = state;
@@ -88,6 +96,9 @@ internal sealed class RecordingResourceHandler(string resourceType = "variable")
         IDeploymentTarget target,
         CancellationToken cancellationToken = default)
     {
+        if (ReadException is not null)
+            throw ReadException;
+
         _states.TryGetValue(resource.Id, out var state);
         return ValueTask.FromResult(state);
     }
@@ -97,6 +108,9 @@ internal sealed class RecordingResourceHandler(string resourceType = "variable")
         IDeploymentTarget target,
         CancellationToken cancellationToken = default)
     {
+        if (ValidationException is not null)
+            throw ValidationException;
+
         ValidatedResources.Add(resource);
         return ValueTask.FromResult(ValidationDiagnostics);
     }
@@ -107,6 +121,9 @@ internal sealed class RecordingResourceHandler(string resourceType = "variable")
         IDeploymentTarget target,
         CancellationToken cancellationToken = default)
     {
+        if (DiffException is not null)
+            throw DiffException;
+
         if (DiffFactory is not null)
             return ValueTask.FromResult(DiffFactory(desired, current));
 
@@ -125,6 +142,9 @@ internal sealed class RecordingResourceHandler(string resourceType = "variable")
         IDeploymentTarget target,
         CancellationToken cancellationToken = default)
     {
+        if (DryRunException is not null)
+            throw DryRunException;
+
         DryRunChanges.Add(change);
         return ValueTask.FromResult(DryRunFactory?.Invoke(change) ?? Completed(change));
     }

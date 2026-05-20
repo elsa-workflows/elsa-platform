@@ -59,6 +59,28 @@ public class DeploymentEnginePlanningTests
     }
 
     [Fact]
+    public async Task DiffAsyncReportsReadAndDiffExceptionsWithOperationSpecificCodes()
+    {
+        var readFailure = DeploymentEngineTestFixtures.Resource(logicalId: "read");
+        var diffFailure = DeploymentEngineTestFixtures.Resource(logicalId: "diff");
+        _handler.ReadException = new InvalidOperationException("Read exploded.");
+        var readEngine = CreateEngine();
+
+        var readPlan = await readEngine.DiffAsync(new TestArtifactReader(readFailure), _target);
+
+        _handler.ReadException = null;
+        _handler.DiffException = new InvalidOperationException("Diff exploded.");
+        var diffPlan = await readEngine.DiffAsync(new TestArtifactReader(diffFailure), _target);
+
+        readPlan.Diagnostics.Should().ContainSingle(x =>
+            x.Code == DeploymentEngineDiagnosticCodes.ReadFailed &&
+            x.ResourceId == readFailure.Id);
+        diffPlan.Diagnostics.Should().ContainSingle(x =>
+            x.Code == DeploymentEngineDiagnosticCodes.DiffFailed &&
+            x.ResourceId == diffFailure.Id);
+    }
+
+    [Fact]
     public async Task DryRunAsyncDoesNotApplyResourcesOrRecordHistory()
     {
         var resource = DeploymentEngineTestFixtures.Resource();
@@ -89,6 +111,22 @@ public class DeploymentEnginePlanningTests
         result.ResourceResults.Should().ContainSingle().Which.Status.Should().Be(DeploymentChangeStatus.Skipped);
         _handler.DryRunChanges.Should().BeEmpty();
         _handler.ApplyChanges.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DryRunAsyncReportsHandlerExceptionsWithDryRunCode()
+    {
+        var resource = DeploymentEngineTestFixtures.Resource();
+        _handler.DryRunException = new InvalidOperationException("Dry-run exploded.");
+        var engine = CreateEngine();
+        var plan = await engine.DiffAsync(new TestArtifactReader(resource), _target);
+
+        var result = await engine.DryRunAsync(plan, _target);
+
+        result.Status.Should().Be(DeploymentStatus.ValidationFailed);
+        result.Diagnostics.Should().ContainSingle(x =>
+            x.Code == DeploymentEngineDiagnosticCodes.DryRunFailed &&
+            x.ResourceId == resource.Id);
     }
 
     private DeploymentEngine CreateEngine() =>

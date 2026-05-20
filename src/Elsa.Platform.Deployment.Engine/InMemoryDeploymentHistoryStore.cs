@@ -36,7 +36,6 @@ public sealed class InMemoryDeploymentHistoryStore : IDeploymentHistoryStore
         {
             cancellationToken.ThrowIfCancellationRequested();
             yield return record;
-            await Task.Yield();
         }
     }
 }

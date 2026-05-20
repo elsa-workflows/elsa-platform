@@ -71,6 +71,10 @@ Required diagnostic codes:
 - `deployment.engine.resource.duplicate`
 - `deployment.engine.artifact.invalid`
 - `deployment.engine.plan.invalid`
+- `deployment.engine.validate.failed`
+- `deployment.engine.read.failed`
+- `deployment.engine.diff.failed`
+- `deployment.engine.dry-run.failed`
 - `deployment.engine.apply.failed`
 - `deployment.engine.history.failed`
 - `deployment.engine.prune.disabled`

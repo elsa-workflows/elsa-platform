@@ -36,6 +36,8 @@ public sealed class DeploymentEngine : IDeploymentEngine
         DeploymentExecutionContext? context = null,
         CancellationToken cancellationToken = default)
     {
+        // Reserved for future validation-level options while keeping the engine contract uniform.
+        _ = context;
         var startedAt = _options.Clock();
         var snapshot = await ReadArtifactAsync(artifact, cancellationToken);
         var diagnostics = new List<DeploymentDiagnostic>(snapshot.Diagnostics);
@@ -55,6 +57,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
             diagnostics.AddRange(await GuardAsync(
                 () => handler.ValidateAsync(resource, target, cancellationToken),
                 resource.Id,
+                DeploymentEngineDiagnosticCodes.ValidateFailed,
                 "Resource validation failed."));
         }
 
@@ -95,6 +98,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
             var validationDiagnostics = await GuardAsync(
                 () => handler.ValidateAsync(resource, target, cancellationToken),
                 resource.Id,
+                DeploymentEngineDiagnosticCodes.ValidateFailed,
                 "Resource validation failed.");
             diagnostics.AddRange(validationDiagnostics);
             if (HasErrors(validationDiagnostics))
@@ -106,6 +110,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
             var current = await GuardAsync(
                 () => handler.ReadAsync(resource, target, cancellationToken),
                 resource.Id,
+                DeploymentEngineDiagnosticCodes.ReadFailed,
                 "Current resource state could not be read.",
                 diagnostics);
             if (HasResourceError(diagnostics, resource.Id))
@@ -114,6 +119,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
             var change = await GuardChangeAsync(
                 () => handler.DiffAsync(resource, current, target, cancellationToken),
                 resource.Id,
+                DeploymentEngineDiagnosticCodes.DiffFailed,
                 "Resource diff failed.",
                 diagnostics);
             if (change is null || HasResourceError(diagnostics, resource.Id))
@@ -137,6 +143,8 @@ public sealed class DeploymentEngine : IDeploymentEngine
         DeploymentExecutionContext? context = null,
         CancellationToken cancellationToken = default)
     {
+        // Dry-run behavior is fully plan-derived in Phase 1; context is reserved for future options.
+        _ = context;
         var startedAt = _options.Clock();
         var diagnostics = new List<DeploymentDiagnostic>(plan.Diagnostics);
         var resourceResults = new List<DeploymentResourceResult>();
@@ -173,6 +181,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
                 var resourceResult = await GuardResourceResultAsync(
                     () => handler.DryRunAsync(change, change.Resource, target, cancellationToken),
                     change,
+                    DeploymentEngineDiagnosticCodes.DryRunFailed,
                     "Dry-run failed.");
                 resourceResults.Add(resourceResult);
                 diagnostics.AddRange(resourceResult.Diagnostics.Where(x => x.Severity >= DeploymentDiagnosticSeverity.Error));
@@ -236,6 +245,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
                 var resourceResult = await GuardResourceResultAsync(
                     () => handler.ApplyAsync(change, change.Resource, target, cancellationToken),
                     change,
+                    DeploymentEngineDiagnosticCodes.ApplyFailed,
                     "Apply failed.");
                 resourceResults.Add(resourceResult);
                 diagnostics.AddRange(resourceResult.Diagnostics.Where(x => x.Severity >= DeploymentDiagnosticSeverity.Error));
@@ -417,6 +427,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
     private static async ValueTask<IReadOnlyCollection<DeploymentDiagnostic>> GuardAsync(
         Func<ValueTask<IReadOnlyCollection<DeploymentDiagnostic>>> action,
         DeploymentResourceId resourceId,
+        string diagnosticCode,
         string message)
     {
         try
@@ -425,13 +436,14 @@ public sealed class DeploymentEngine : IDeploymentEngine
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return [new DeploymentDiagnostic(DeploymentEngineDiagnosticCodes.ApplyFailed, DeploymentDiagnosticSeverity.Error, $"{message} {ex.Message}", resourceId)];
+            return [new DeploymentDiagnostic(diagnosticCode, DeploymentDiagnosticSeverity.Error, $"{message} {ex.Message}", resourceId)];
         }
     }
 
     private static async ValueTask<T?> GuardAsync<T>(
         Func<ValueTask<T?>> action,
         DeploymentResourceId resourceId,
+        string diagnosticCode,
         string message,
         ICollection<DeploymentDiagnostic> diagnostics)
     {
@@ -441,7 +453,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            diagnostics.Add(new DeploymentDiagnostic(DeploymentEngineDiagnosticCodes.ApplyFailed, DeploymentDiagnosticSeverity.Error, $"{message} {ex.Message}", resourceId));
+            diagnostics.Add(new DeploymentDiagnostic(diagnosticCode, DeploymentDiagnosticSeverity.Error, $"{message} {ex.Message}", resourceId));
             return default;
         }
     }
@@ -449,6 +461,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
     private static async ValueTask<DeploymentChange?> GuardChangeAsync(
         Func<ValueTask<DeploymentChange>> action,
         DeploymentResourceId resourceId,
+        string diagnosticCode,
         string message,
         ICollection<DeploymentDiagnostic> diagnostics)
     {
@@ -458,7 +471,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            diagnostics.Add(new DeploymentDiagnostic(DeploymentEngineDiagnosticCodes.ApplyFailed, DeploymentDiagnosticSeverity.Error, $"{message} {ex.Message}", resourceId));
+            diagnostics.Add(new DeploymentDiagnostic(diagnosticCode, DeploymentDiagnosticSeverity.Error, $"{message} {ex.Message}", resourceId));
             return default;
         }
     }
@@ -466,6 +479,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
     private static async ValueTask<DeploymentResourceResult> GuardResourceResultAsync(
         Func<ValueTask<DeploymentResourceResult>> action,
         DeploymentChange change,
+        string diagnosticCode,
         string message)
     {
         try
@@ -475,7 +489,7 @@ public sealed class DeploymentEngine : IDeploymentEngine
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             var diagnostic = new DeploymentDiagnostic(
-                DeploymentEngineDiagnosticCodes.ApplyFailed,
+                diagnosticCode,
                 DeploymentDiagnosticSeverity.Error,
                 $"{message} {ex.Message}",
                 change.ResourceId);
