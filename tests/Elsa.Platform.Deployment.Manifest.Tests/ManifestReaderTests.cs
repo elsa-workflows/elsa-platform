@@ -1,3 +1,4 @@
+using System.Globalization;
 using Elsa.Platform.Deployment.Abstractions.Diagnostics;
 using FluentAssertions;
 
@@ -61,6 +62,37 @@ public class ManifestReaderTests
 
         result.Manifest!.Resources.Variables[0].Value!.ToJsonString().Should().Be("\"0001\"");
         result.Manifest.Resources.Variables[1].Value!.ToJsonString().Should().Be("\"true\"");
+    }
+
+    [Fact]
+    public void YamlReaderConvertsNumericScalarsUsingInvariantCulture()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("nl-NL");
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("nl-NL");
+
+            var result = _reader.Read("""
+                apiVersion: platform.elsa.io/v1alpha1
+                kind: EnvironmentManifest
+                metadata:
+                  name: sales-staging
+                resources:
+                  variables:
+                    - key: ratio
+                      value: 1.5
+                """, ManifestFormat.Yaml);
+
+            result.Diagnostics.Should().BeEmpty();
+            result.Manifest!.Resources.Variables[0].Value!.ToJsonString().Should().Be("1.5");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
     }
 
     [Fact]

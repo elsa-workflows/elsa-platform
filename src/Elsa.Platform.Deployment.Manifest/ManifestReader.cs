@@ -115,9 +115,13 @@ public sealed class ManifestReader : IManifestReader
             bool boolean => JsonValue.Create(boolean),
             int number => JsonValue.Create(number),
             long number => JsonValue.Create(number),
+            float number => JsonValue.Create(number),
             double number => JsonValue.Create(number),
             decimal number => JsonValue.Create(number),
-            _ => JsonValue.Create(value.ToString())
+            DateTime dateTime => JsonValue.Create(dateTime.ToString("O", CultureInfo.InvariantCulture)),
+            DateTimeOffset dateTime => JsonValue.Create(dateTime.ToString("O", CultureInfo.InvariantCulture)),
+            IFormattable formattable => JsonValue.Create(formattable.ToString(null, CultureInfo.InvariantCulture)),
+            _ => JsonValue.Create(Convert.ToString(value, CultureInfo.InvariantCulture))
         };
     }
 
