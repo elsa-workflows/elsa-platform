@@ -84,6 +84,27 @@ public class ManifestReaderTests
         result.Manifest.Resources.Variables[1].Value!.ToJsonString().Should().Be("\"true\"");
     }
 
+    [Theory]
+    [InlineData("null")]
+    [InlineData("Null")]
+    [InlineData("NULL")]
+    [InlineData("~")]
+    public void YamlReaderConvertsPlainNullScalarsToJsonNull(string value)
+    {
+        var result = _reader.Read($"""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: sales-staging
+            resources:
+              variables:
+                - key: optionalValue
+                  value: {value}
+            """, ManifestFormat.Yaml);
+
+        result.Manifest!.Resources.Variables[0].Value.Should().BeNull();
+    }
+
     [Fact]
     public void YamlReaderConvertsNumericScalarsUsingInvariantCulture()
     {

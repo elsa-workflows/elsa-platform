@@ -79,4 +79,39 @@ public class ManifestNormalizationTests
         var secondResource = second.Resources.Should().ContainSingle().Which;
         firstResource.DesiredStateHash.Should().Be(secondResource.DesiredStateHash);
     }
+
+    [Fact]
+    public void NullYamlAndJsonValuesProduceEquivalentHashes()
+    {
+        var yamlManifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: null-value
+            resources:
+              variables:
+                - key: optionalValue
+                  value: null
+            """, ManifestFormat.Yaml).Manifest!;
+        var jsonManifest = _reader.Read("""
+            {
+              "apiVersion": "platform.elsa.io/v1alpha1",
+              "kind": "EnvironmentManifest",
+              "metadata": { "name": "null-value" },
+              "resources": {
+                "variables": [
+                  { "key": "optionalValue", "value": null }
+                ]
+              }
+            }
+            """, ManifestFormat.Json).Manifest!;
+
+        var yaml = _normalizer.Normalize(yamlManifest);
+        var json = _normalizer.Normalize(jsonManifest);
+
+        yaml.Diagnostics.Should().BeEmpty();
+        json.Diagnostics.Should().BeEmpty();
+        yaml.Resources.Should().ContainSingle().Which.DesiredStateHash
+            .Should().Be(json.Resources.Should().ContainSingle().Which.DesiredStateHash);
+    }
 }

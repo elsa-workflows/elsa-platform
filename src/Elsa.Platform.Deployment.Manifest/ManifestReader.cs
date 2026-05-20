@@ -120,6 +120,9 @@ public sealed class ManifestReader : IManifestReader
         if (scalar.Style is ScalarStyle.SingleQuoted or ScalarStyle.DoubleQuoted or ScalarStyle.Literal or ScalarStyle.Folded)
             return JsonValue.Create(text);
 
+        if (scalar.Style is ScalarStyle.Plain && text is "null" or "Null" or "NULL" or "~" or "")
+            return null;
+
         if (bool.TryParse(text, out var boolean))
             return JsonValue.Create(boolean);
 
