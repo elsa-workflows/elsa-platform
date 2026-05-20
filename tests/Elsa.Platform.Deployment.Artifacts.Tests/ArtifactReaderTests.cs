@@ -238,7 +238,7 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var result = await inspect.Should().NotThrowAsync();
         result.Subject.Succeeded.Should().BeFalse();
-        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumMissing);
+        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumInvalid);
     }
 
     [Fact]
@@ -308,7 +308,7 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var result = await inspect.Should().NotThrowAsync();
         result.Subject.Succeeded.Should().BeFalse();
-        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.MetadataRequired);
+        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.MetadataInvalid);
     }
 
     [Fact]
@@ -332,7 +332,7 @@ public class ArtifactReaderTests : IAsyncDisposable
         var result = await inspect.Should().NotThrowAsync();
         result.Subject.Succeeded.Should().BeFalse();
         result.Subject.Metadata.Should().BeNull();
-        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.MetadataRequired);
+        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.MetadataInvalid);
     }
 
     public async ValueTask DisposeAsync() => await _workspace.DisposeAsync();

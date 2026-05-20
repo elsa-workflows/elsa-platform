@@ -87,12 +87,14 @@ public sealed class DeploymentArtifactReader(
             store,
             ArtifactLayoutConstants.MetadataPath,
             ArtifactDiagnosticCodes.MetadataRequired,
+            ArtifactDiagnosticCodes.MetadataInvalid,
             diagnostics,
             cancellationToken);
         var checksums = await ReadJsonAsync<DeploymentArtifactChecksumInventory>(
             store,
             ArtifactLayoutConstants.ChecksumInventoryPath,
             ArtifactDiagnosticCodes.ChecksumMissing,
+            ArtifactDiagnosticCodes.ChecksumInvalid,
             diagnostics,
             cancellationToken);
 
@@ -146,6 +148,7 @@ public sealed class DeploymentArtifactReader(
         FolderArtifactStore store,
         string path,
         string missingCode,
+        string invalidCode,
         ICollection<DeploymentDiagnostic> diagnostics,
         CancellationToken cancellationToken)
     {
@@ -162,12 +165,12 @@ public sealed class DeploymentArtifactReader(
             if (result is not null)
                 return result;
 
-            diagnostics.Add(Error(missingCode, $"Artifact file '{path}' is required."));
+            diagnostics.Add(Error(invalidCode, $"Artifact file '{path}' must contain a JSON object."));
             return default;
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException)
         {
-            diagnostics.Add(Error(missingCode, ex.Message));
+            diagnostics.Add(Error(invalidCode, ex.Message));
             return default;
         }
     }
@@ -201,7 +204,7 @@ public sealed class DeploymentArtifactReader(
             return true;
 
         diagnostics.Add(Error(
-            ArtifactDiagnosticCodes.MetadataRequired,
+            ArtifactDiagnosticCodes.MetadataInvalid,
             "Artifact metadata is missing required fields."));
         return false;
     }

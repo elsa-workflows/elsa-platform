@@ -68,7 +68,7 @@ public sealed class DeploymentArtifactBuilder(
                 throw;
             }
 
-            DeleteDirectoryBackup(backupPath);
+            TryDeleteDirectoryBackup(backupPath, diagnostics);
             return new DeploymentArtifactBuildResult(true, metadata.ArtifactId, outputPath, metadata, diagnostics);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
@@ -135,7 +135,7 @@ public sealed class DeploymentArtifactBuilder(
                 throw;
             }
 
-            DeleteFileBackup(backupPath);
+            TryDeleteFileBackup(backupPath, diagnostics);
             return result with { OutputPath = outputPath };
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -328,6 +328,9 @@ public sealed class DeploymentArtifactBuilder(
     private static DeploymentDiagnostic Error(string code, string message) =>
         new(code, DeploymentDiagnosticSeverity.Error, message);
 
+    private static DeploymentDiagnostic Warning(string code, string message) =>
+        new(code, DeploymentDiagnosticSeverity.Warning, message);
+
     private static void RecoverDirectoryBackup(string backupPath, string outputPath)
     {
         if (!Directory.Exists(backupPath))
@@ -359,6 +362,20 @@ public sealed class DeploymentArtifactBuilder(
             Directory.Delete(backupPath, recursive: true);
     }
 
+    private static void TryDeleteDirectoryBackup(
+        string backupPath,
+        ICollection<DeploymentDiagnostic> diagnostics)
+    {
+        try
+        {
+            DeleteDirectoryBackup(backupPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(Warning(ArtifactDiagnosticCodes.BuildFailed, $"Failed to delete output backup '{backupPath}': {ex.Message}"));
+        }
+    }
+
     private static void RecoverFileBackup(string backupPath, string outputPath)
     {
         if (!File.Exists(backupPath))
@@ -388,6 +405,20 @@ public sealed class DeploymentArtifactBuilder(
     {
         if (File.Exists(backupPath))
             File.Delete(backupPath);
+    }
+
+    private static void TryDeleteFileBackup(
+        string backupPath,
+        ICollection<DeploymentDiagnostic> diagnostics)
+    {
+        try
+        {
+            DeleteFileBackup(backupPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(Warning(ArtifactDiagnosticCodes.BuildFailed, $"Failed to delete output backup '{backupPath}': {ex.Message}"));
+        }
     }
 
     private sealed record PreparedBuild(
