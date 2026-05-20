@@ -24,11 +24,11 @@
 
 **Purpose**: Define shared manifest result, metadata, and diagnostic helpers.
 
-- [ ] T006 [P] Create manifest constants in `src/Elsa.Platform.Deployment.Manifest/DeploymentManifestConstants.cs`
-- [ ] T007 [P] Create manifest metadata model in `src/Elsa.Platform.Deployment.Manifest/ManifestMetadata.cs`
-- [ ] T008 [P] Create manifest parse and normalization result models in `src/Elsa.Platform.Deployment.Manifest/ManifestParseResult.cs` and `src/Elsa.Platform.Deployment.Manifest/NormalizedManifest.cs`
-- [ ] T009 [P] Create manifest resource entry models in `src/Elsa.Platform.Deployment.Manifest/ManifestResourceEntries.cs`
-- [ ] T010 [P] Create manifest reader and normalizer interfaces in `src/Elsa.Platform.Deployment.Manifest/IManifestReader.cs` and `src/Elsa.Platform.Deployment.Manifest/IManifestNormalizer.cs`
+- [x] T006 [P] Create manifest constants in `src/Elsa.Platform.Deployment.Manifest/DeploymentManifestConstants.cs`
+- [x] T007 [P] Create manifest metadata model in `src/Elsa.Platform.Deployment.Manifest/ManifestMetadata.cs`
+- [x] T008 [P] Create manifest parse and normalization result models in `src/Elsa.Platform.Deployment.Manifest/ManifestParseResult.cs` and `src/Elsa.Platform.Deployment.Manifest/NormalizedManifest.cs`
+- [x] T009 [P] Create manifest resource entry models in `src/Elsa.Platform.Deployment.Manifest/ManifestResourceEntries.cs`
+- [x] T010 [P] Create manifest reader and normalizer interfaces in `src/Elsa.Platform.Deployment.Manifest/IManifestReader.cs` and `src/Elsa.Platform.Deployment.Manifest/IManifestNormalizer.cs`
 
 ---
 
@@ -40,16 +40,16 @@
 
 ### Tests
 
-- [ ] T011 [P] [US1] Add valid YAML and JSON reader tests in `tests/Elsa.Platform.Deployment.Manifest.Tests/ManifestReaderTests.cs`
-- [ ] T012 [P] [US1] Add built-in normalization tests in `tests/Elsa.Platform.Deployment.Manifest.Tests/ManifestNormalizationTests.cs`
-- [ ] T013 [P] [US1] Add deterministic hash equivalence tests in `tests/Elsa.Platform.Deployment.Manifest.Tests/ManifestNormalizationTests.cs`
+- [x] T011 [P] [US1] Add valid YAML and JSON reader tests in `tests/Elsa.Platform.Deployment.Manifest.Tests/ManifestReaderTests.cs`
+- [x] T012 [P] [US1] Add built-in normalization tests in `tests/Elsa.Platform.Deployment.Manifest.Tests/ManifestNormalizationTests.cs`
+- [x] T013 [P] [US1] Add deterministic hash equivalence tests in `tests/Elsa.Platform.Deployment.Manifest.Tests/ManifestNormalizationTests.cs`
 
 ### Implementation
 
-- [ ] T014 [US1] Implement environment manifest model in `src/Elsa.Platform.Deployment.Manifest/EnvironmentManifest.cs`
-- [ ] T015 [US1] Implement YAML and JSON manifest reader in `src/Elsa.Platform.Deployment.Manifest/ManifestReader.cs`
-- [ ] T016 [US1] Implement built-in resource normalization in `src/Elsa.Platform.Deployment.Manifest/ManifestNormalizer.cs`
-- [ ] T017 [US1] Implement deterministic resource hash helper in `src/Elsa.Platform.Deployment.Manifest/ManifestResourceHasher.cs`
+- [x] T014 [US1] Implement environment manifest model in `src/Elsa.Platform.Deployment.Manifest/EnvironmentManifest.cs`
+- [x] T015 [US1] Implement YAML and JSON manifest reader in `src/Elsa.Platform.Deployment.Manifest/ManifestReader.cs`
+- [x] T016 [US1] Implement built-in resource normalization in `src/Elsa.Platform.Deployment.Manifest/ManifestNormalizer.cs`
+- [x] T017 [US1] Implement deterministic resource hash helper in `src/Elsa.Platform.Deployment.Manifest/ManifestResourceHasher.cs`
 
 ---
 
@@ -61,14 +61,14 @@
 
 ### Tests
 
-- [ ] T018 [P] [US2] Add parse and schema diagnostic tests in `tests/Elsa.Platform.Deployment.Manifest.Tests/ManifestDiagnosticTests.cs`
-- [ ] T019 [P] [US2] Add duplicate identity and path validation tests in `tests/Elsa.Platform.Deployment.Manifest.Tests/ManifestDiagnosticTests.cs`
+- [x] T018 [P] [US2] Add parse and schema diagnostic tests in `tests/Elsa.Platform.Deployment.Manifest.Tests/ManifestDiagnosticTests.cs`
+- [x] T019 [P] [US2] Add duplicate identity and path validation tests in `tests/Elsa.Platform.Deployment.Manifest.Tests/ManifestDiagnosticTests.cs`
 
 ### Implementation
 
-- [ ] T020 [US2] Implement manifest validation diagnostics in `src/Elsa.Platform.Deployment.Manifest/ManifestValidator.cs`
-- [ ] T021 [US2] Implement duplicate identity detection in `src/Elsa.Platform.Deployment.Manifest/ManifestNormalizer.cs`
-- [ ] T022 [US2] Implement manifest-relative path validation in `src/Elsa.Platform.Deployment.Manifest/ManifestPathValidator.cs`
+- [x] T020 [US2] Implement manifest validation diagnostics in `src/Elsa.Platform.Deployment.Manifest/ManifestValidator.cs`
+- [x] T021 [US2] Implement duplicate identity detection in `src/Elsa.Platform.Deployment.Manifest/ManifestNormalizer.cs`
+- [x] T022 [US2] Implement manifest-relative path validation in `src/Elsa.Platform.Deployment.Manifest/ManifestPathValidator.cs`
 
 ---
 
@@ -80,19 +80,19 @@
 
 ### Tests
 
-- [ ] T023 [P] [US3] Add extension metadata and custom mapper tests in `tests/Elsa.Platform.Deployment.Manifest.Tests/ManifestExtensionTests.cs`
+- [x] T023 [P] [US3] Add extension metadata and custom mapper tests in `tests/Elsa.Platform.Deployment.Manifest.Tests/ManifestExtensionTests.cs`
 
 ### Implementation
 
-- [ ] T024 [US3] Implement resource mapper interface in `src/Elsa.Platform.Deployment.Manifest/IManifestResourceMapper.cs`
-- [ ] T025 [US3] Implement resource mapper registry in `src/Elsa.Platform.Deployment.Manifest/ManifestResourceMapperRegistry.cs`
-- [ ] T026 [US3] Integrate unknown section diagnostics and registered custom mappings in `src/Elsa.Platform.Deployment.Manifest/ManifestNormalizer.cs`
+- [x] T024 [US3] Implement resource mapper interface in `src/Elsa.Platform.Deployment.Manifest/IManifestResourceMapper.cs`
+- [x] T025 [US3] Implement resource mapper registry in `src/Elsa.Platform.Deployment.Manifest/ManifestResourceMapperRegistry.cs`
+- [x] T026 [US3] Integrate unknown section diagnostics and registered custom mappings in `src/Elsa.Platform.Deployment.Manifest/ManifestNormalizer.cs`
 
 ---
 
 ## Phase 6: Boundaries And Verification
 
-- [ ] T027 [P] Add dependency boundary tests in `tests/Elsa.Platform.Deployment.Manifest.Tests/ManifestBoundaryTests.cs`
+- [x] T027 [P] Add dependency boundary tests in `tests/Elsa.Platform.Deployment.Manifest.Tests/ManifestBoundaryTests.cs`
 - [ ] T028 Update deployment roadmap status in `docs/deployment-platform-phased-strategy.md`
 - [ ] T029 Update quickstart verification notes in `specs/018-deployment-manifest/quickstart.md`
 - [ ] T030 Run focused tests with `dotnet test tests/Elsa.Platform.Deployment.Manifest.Tests/Elsa.Platform.Deployment.Manifest.Tests.csproj`
