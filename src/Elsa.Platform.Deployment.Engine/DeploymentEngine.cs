@@ -165,8 +165,9 @@ public sealed class DeploymentEngine : IDeploymentEngine
 
                 if (change.Resource is null)
                 {
-                    diagnostics.Add(InvalidPlan(change.ResourceId, "Plan change is missing desired resource state."));
-                    resourceResults.Add(Failed(change, retryable: false, diagnostics.Where(x => x.ResourceId == change.ResourceId)));
+                    var diagnostic = InvalidPlan(change.ResourceId, "Plan change is missing desired resource state.");
+                    diagnostics.Add(diagnostic);
+                    resourceResults.Add(Failed(change, retryable: false, [diagnostic]));
                     continue;
                 }
 
