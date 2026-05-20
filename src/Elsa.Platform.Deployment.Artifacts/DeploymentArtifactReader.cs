@@ -155,7 +155,12 @@ public sealed class DeploymentArtifactReader(
         try
         {
             await using var stream = store.OpenRead(path);
-            return await JsonSerializer.DeserializeAsync<T>(stream, JsonOptions, cancellationToken);
+            var result = await JsonSerializer.DeserializeAsync<T>(stream, JsonOptions, cancellationToken);
+            if (result is not null)
+                return result;
+
+            diagnostics.Add(Error(missingCode, $"Artifact file '{path}' is required."));
+            return default;
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException)
         {
