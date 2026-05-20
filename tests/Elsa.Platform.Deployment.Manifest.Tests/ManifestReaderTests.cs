@@ -154,6 +154,23 @@ public class ManifestReaderTests
     }
 
     [Fact]
+    public void YamlReaderConvertsScientificNotationScalarsToNumbers()
+    {
+        var result = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: sales-staging
+            resources:
+              variables:
+                - key: largeNumber
+                  value: 1e5
+            """, ManifestFormat.Yaml);
+
+        result.Manifest!.Resources.Variables[0].Value!.ToJsonString().Should().Be("100000");
+    }
+
+    [Fact]
     public void ReaderDoesNotDuplicateHeaderValidationDiagnosticsOwnedByNormalizer()
     {
         var result = _reader.Read("""

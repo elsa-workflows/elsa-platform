@@ -114,4 +114,39 @@ public class ManifestNormalizationTests
         yaml.Resources.Should().ContainSingle().Which.DesiredStateHash
             .Should().Be(json.Resources.Should().ContainSingle().Which.DesiredStateHash);
     }
+
+    [Fact]
+    public void ScientificNotationYamlAndJsonValuesProduceEquivalentHashes()
+    {
+        var yamlManifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: exponent-value
+            resources:
+              variables:
+                - key: largeNumber
+                  value: 1e5
+            """, ManifestFormat.Yaml).Manifest!;
+        var jsonManifest = _reader.Read("""
+            {
+              "apiVersion": "platform.elsa.io/v1alpha1",
+              "kind": "EnvironmentManifest",
+              "metadata": { "name": "exponent-value" },
+              "resources": {
+                "variables": [
+                  { "key": "largeNumber", "value": 100000 }
+                ]
+              }
+            }
+            """, ManifestFormat.Json).Manifest!;
+
+        var yaml = _normalizer.Normalize(yamlManifest);
+        var json = _normalizer.Normalize(jsonManifest);
+
+        yaml.Diagnostics.Should().BeEmpty();
+        json.Diagnostics.Should().BeEmpty();
+        yaml.Resources.Should().ContainSingle().Which.DesiredStateHash
+            .Should().Be(json.Resources.Should().ContainSingle().Which.DesiredStateHash);
+    }
 }

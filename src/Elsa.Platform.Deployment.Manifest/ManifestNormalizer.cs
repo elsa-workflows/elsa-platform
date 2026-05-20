@@ -154,7 +154,7 @@ public sealed class ManifestNormalizer : IManifestNormalizer
         EnvironmentManifest manifest,
         ManifestResourceMapperRegistry? mapperRegistry,
         ICollection<DeploymentResource> resources,
-        IList<DeploymentDiagnostic> diagnostics)
+        ICollection<DeploymentDiagnostic> diagnostics)
     {
         foreach (var section in manifest.Resources.Extensions)
         {

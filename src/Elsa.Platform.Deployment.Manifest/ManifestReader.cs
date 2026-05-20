@@ -132,6 +132,9 @@ public sealed class ManifestReader : IManifestReader
         if (decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number))
             return JsonValue.Create(number);
 
+        if (decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out var exponential))
+            return JsonValue.Create(exponential);
+
         return JsonValue.Create(text);
     }
 }
