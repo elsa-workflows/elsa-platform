@@ -37,14 +37,14 @@ public sealed class DeploymentArtifactBuilder(
             if (build is null)
                 return Failed(outputPath, diagnostics);
 
-            Directory.CreateDirectory(tempPath);
-            var metadata = await WriteFolderContentsAsync(tempPath, options, build, cancellationToken);
-
             if (File.Exists(outputPath))
             {
                 diagnostics.Add(Error(ArtifactDiagnosticCodes.BuildFailed, $"Output path '{outputPath}' exists and is not a folder."));
                 return Failed(outputPath, diagnostics);
             }
+
+            Directory.CreateDirectory(tempPath);
+            var metadata = await WriteFolderContentsAsync(tempPath, options, build, cancellationToken);
 
             if (Directory.Exists(outputPath))
             {

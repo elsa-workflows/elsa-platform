@@ -233,6 +233,12 @@ public sealed class DeploymentArtifactReader(
         ICollection<DeploymentDiagnostic> diagnostics,
         CancellationToken cancellationToken)
     {
+        if (!string.Equals(inventory.Algorithm, ArtifactLayoutConstants.ChecksumAlgorithm, StringComparison.OrdinalIgnoreCase))
+        {
+            diagnostics.Add(Error(ArtifactDiagnosticCodes.ChecksumInvalid, $"Artifact checksum inventory uses unsupported algorithm '{inventory.Algorithm}'."));
+            return;
+        }
+
         if (inventory.Entries.Count == 0)
         {
             diagnostics.Add(Error(ArtifactDiagnosticCodes.ChecksumMissing, "Artifact checksum inventory must contain entries."));
