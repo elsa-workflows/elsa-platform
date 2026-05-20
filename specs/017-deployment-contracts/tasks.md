@@ -12,10 +12,10 @@
 
 **Purpose**: Add the deployment foundation project skeletons to the solution.
 
-- [ ] T001 Create deployment abstractions project in `src/Elsa.Platform.Deployment.Abstractions/Elsa.Platform.Deployment.Abstractions.csproj`
-- [ ] T002 Create deployment abstractions test project in `tests/Elsa.Platform.Deployment.Abstractions.Tests/Elsa.Platform.Deployment.Abstractions.Tests.csproj`
-- [ ] T003 Add deployment abstractions source and test projects to `Elsa.Platform.sln`
-- [ ] T004 Create source folders in `src/Elsa.Platform.Deployment.Abstractions/Artifacts`, `Diagnostics`, `History`, `Plans`, `Resources`, and `Targets`
+- [x] T001 Create deployment abstractions project in `src/Elsa.Platform.Deployment.Abstractions/Elsa.Platform.Deployment.Abstractions.csproj`
+- [x] T002 Create deployment abstractions test project in `tests/Elsa.Platform.Deployment.Abstractions.Tests/Elsa.Platform.Deployment.Abstractions.Tests.csproj`
+- [x] T003 Add deployment abstractions source and test projects to `Elsa.Platform.sln`
+- [x] T004 Create source folders in `src/Elsa.Platform.Deployment.Abstractions/Artifacts`, `Diagnostics`, `History`, `Plans`, `Resources`, and `Targets`
 
 **Checkpoint**: Empty project skeletons restore and build.
 
