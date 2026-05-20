@@ -70,17 +70,19 @@ public class ManifestDiagnosticTests
         normalized.Diagnostics.Should().ContainSingle(x => x.Code == ManifestDiagnosticCodes.ResourceDuplicate);
     }
 
-    [Fact]
-    public void PathEscapingManifestRootReturnsDiagnostic()
+    [Theory]
+    [InlineData("workflows", "id: order-approval")]
+    [InlineData("recipes", "id: initialize-sales")]
+    public void PathEscapingManifestRootReturnsDiagnosticAndSkipsResource(string section, string identity)
     {
-        var manifest = _reader.Read("""
+        var manifest = _reader.Read($"""
             apiVersion: platform.elsa.io/v1alpha1
             kind: EnvironmentManifest
             metadata:
               name: invalid-path
             resources:
-              workflows:
-                - id: order-approval
+              {section}:
+                - {identity}
                   path: ../order-approval.json
             """, ManifestFormat.Yaml).Manifest!;
 

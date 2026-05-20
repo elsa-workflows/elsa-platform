@@ -132,7 +132,10 @@ public sealed class ManifestNormalizer : IManifestNormalizer
             {
                 var pathDiagnostic = ManifestPathValidator.Validate(entry.Path, id);
                 if (pathDiagnostic is not null)
+                {
                     diagnostics.Add(pathDiagnostic);
+                    continue;
+                }
             }
 
             resources.Add(new DeploymentResource(
