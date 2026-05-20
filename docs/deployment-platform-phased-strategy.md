@@ -157,6 +157,12 @@ Manifest parsing, schema validation, normalization, and versioning:
 - Manifest diagnostics.
 - Future overlay hooks, but no overlay implementation in Phase 1 unless forced by implementation feedback.
 
+Implementation status:
+
+- First manifest slice: `src/Elsa.Platform.Deployment.Manifest` and `tests/Elsa.Platform.Deployment.Manifest.Tests`.
+- Covers v1alpha `EnvironmentManifest` parsing from YAML/JSON, built-in resource normalization, structured diagnostics, deterministic desired-state hashes, extension mapper registration, and dependency boundary tests.
+- Still deferred from this slice: artifact folder/ZIP IO, manifest file loading from artifacts, deployment planning, dry-run/apply execution, CLI/API surfaces, runtime adapters, overlays, secret references, OCI, signing, and policy evaluation.
+
 ### Elsa.Platform.Deployment.Artifacts
 
 Artifact creation and reading:
