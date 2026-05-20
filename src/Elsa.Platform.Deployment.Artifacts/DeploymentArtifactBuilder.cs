@@ -28,30 +28,51 @@ public sealed class DeploymentArtifactBuilder(
         if (build is null)
             return Failed(options.OutputPath, diagnostics);
 
-        var tempPath = Path.Combine(Path.GetTempPath(), $"elsa-artifact-{Guid.NewGuid():N}");
+        var outputPath = Path.GetFullPath(options.OutputPath);
+        var outputParent = Path.GetDirectoryName(outputPath) ?? Directory.GetCurrentDirectory();
+        Directory.CreateDirectory(outputParent);
+        var outputName = Path.GetFileName(outputPath);
+        var tempPath = Path.Combine(outputParent, $".{outputName}.tmp-{Guid.NewGuid():N}");
+        var backupPath = Path.Combine(outputParent, $".{outputName}.bak-{Guid.NewGuid():N}");
         try
         {
             Directory.CreateDirectory(tempPath);
             await WriteFolderContentsAsync(tempPath, options, build, cancellationToken);
 
-            if (Directory.Exists(options.OutputPath))
+            if (File.Exists(outputPath))
+            {
+                diagnostics.Add(Error(ArtifactDiagnosticCodes.BuildFailed, $"Output path '{outputPath}' exists and is not a folder."));
+                return Failed(outputPath, diagnostics);
+            }
+
+            if (Directory.Exists(outputPath))
             {
                 if (!options.Overwrite)
                 {
-                    diagnostics.Add(Error(ArtifactDiagnosticCodes.BuildFailed, $"Output folder '{options.OutputPath}' already exists."));
-                    return Failed(options.OutputPath, diagnostics);
+                    diagnostics.Add(Error(ArtifactDiagnosticCodes.BuildFailed, $"Output folder '{outputPath}' already exists."));
+                    return Failed(outputPath, diagnostics);
                 }
 
-                Directory.Delete(options.OutputPath, recursive: true);
+                Directory.Move(outputPath, backupPath);
             }
 
-            Directory.Move(tempPath, options.OutputPath);
-            return new DeploymentArtifactBuildResult(true, build.Metadata.ArtifactId, options.OutputPath, build.Metadata, diagnostics);
+            try
+            {
+                Directory.Move(tempPath, outputPath);
+            }
+            catch
+            {
+                RestoreDirectoryBackup(backupPath, outputPath);
+                throw;
+            }
+
+            DeleteDirectoryBackup(backupPath);
+            return new DeploymentArtifactBuildResult(true, build.Metadata.ArtifactId, outputPath, build.Metadata, diagnostics);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
             diagnostics.Add(Error(ArtifactDiagnosticCodes.BuildFailed, ex.Message));
-            return Failed(options.OutputPath, diagnostics);
+            return Failed(outputPath, diagnostics);
         }
         finally
         {
@@ -64,32 +85,55 @@ public sealed class DeploymentArtifactBuilder(
         DeploymentArtifactBuildOptions options,
         CancellationToken cancellationToken = default)
     {
-        var folderPath = Path.Combine(Path.GetTempPath(), $"elsa-artifact-folder-{Guid.NewGuid():N}");
+        var outputPath = Path.GetFullPath(options.OutputPath);
+        var outputParent = Path.GetDirectoryName(outputPath) ?? Directory.GetCurrentDirectory();
+        Directory.CreateDirectory(outputParent);
+        var outputName = Path.GetFileName(outputPath);
+        var folderPath = Path.Combine(outputParent, $".{outputName}.folder-{Guid.NewGuid():N}");
+        var tempZipPath = Path.Combine(outputParent, $".{outputName}.tmp-{Guid.NewGuid():N}");
+        var backupPath = Path.Combine(outputParent, $".{outputName}.bak-{Guid.NewGuid():N}");
         var folderOptions = options with { OutputPath = folderPath, Overwrite = true };
         var result = await BuildFolderAsync(folderOptions, cancellationToken);
         if (!result.Succeeded)
-            return result with { OutputPath = options.OutputPath };
+            return result with { OutputPath = outputPath };
 
         try
         {
-            if (File.Exists(options.OutputPath))
+            if (Directory.Exists(outputPath))
+                return Failed(outputPath, [Error(ArtifactDiagnosticCodes.BuildFailed, $"Output path '{outputPath}' exists and is not a file.")]);
+
+            ZipFile.CreateFromDirectory(folderPath, tempZipPath, CompressionLevel.Optimal, includeBaseDirectory: false);
+
+            if (File.Exists(outputPath))
             {
                 if (!options.Overwrite)
-                    return Failed(options.OutputPath, [Error(ArtifactDiagnosticCodes.BuildFailed, $"Output ZIP '{options.OutputPath}' already exists.")]);
-                File.Delete(options.OutputPath);
+                    return Failed(outputPath, [Error(ArtifactDiagnosticCodes.BuildFailed, $"Output ZIP '{outputPath}' already exists.")]);
+                File.Move(outputPath, backupPath);
             }
 
-            ZipFile.CreateFromDirectory(folderPath, options.OutputPath, CompressionLevel.Optimal, includeBaseDirectory: false);
-            return result with { OutputPath = options.OutputPath };
+            try
+            {
+                File.Move(tempZipPath, outputPath);
+            }
+            catch
+            {
+                RestoreFileBackup(backupPath, outputPath);
+                throw;
+            }
+
+            DeleteFileBackup(backupPath);
+            return result with { OutputPath = outputPath };
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return Failed(options.OutputPath, [Error(ArtifactDiagnosticCodes.BuildFailed, ex.Message)]);
+            return Failed(outputPath, [Error(ArtifactDiagnosticCodes.BuildFailed, ex.Message)]);
         }
         finally
         {
             if (Directory.Exists(folderPath))
                 Directory.Delete(folderPath, recursive: true);
+            if (File.Exists(tempZipPath))
+                File.Delete(tempZipPath);
         }
     }
 
@@ -268,6 +312,30 @@ public sealed class DeploymentArtifactBuilder(
 
     private static DeploymentDiagnostic Error(string code, string message) =>
         new(code, DeploymentDiagnosticSeverity.Error, message);
+
+    private static void RestoreDirectoryBackup(string backupPath, string outputPath)
+    {
+        if (Directory.Exists(backupPath) && !Directory.Exists(outputPath))
+            Directory.Move(backupPath, outputPath);
+    }
+
+    private static void DeleteDirectoryBackup(string backupPath)
+    {
+        if (Directory.Exists(backupPath))
+            Directory.Delete(backupPath, recursive: true);
+    }
+
+    private static void RestoreFileBackup(string backupPath, string outputPath)
+    {
+        if (File.Exists(backupPath) && !File.Exists(outputPath))
+            File.Move(backupPath, outputPath);
+    }
+
+    private static void DeleteFileBackup(string backupPath)
+    {
+        if (File.Exists(backupPath))
+            File.Delete(backupPath);
+    }
 
     private sealed record PreparedBuild(
         NormalizedManifest Normalized,

@@ -24,7 +24,7 @@ public sealed class DeploymentArtifactReader(
         try
         {
             if (!Directory.Exists(path))
-                return Failed([Error(ArtifactDiagnosticCodes.MetadataRequired, $"Artifact folder '{path}' does not exist.")]);
+                return Failed([Error(ArtifactDiagnosticCodes.ReadFailed, $"Artifact folder '{path}' does not exist.")]);
 
             return await InspectAsync(new FolderArtifactStore(path), cancellationToken);
         }

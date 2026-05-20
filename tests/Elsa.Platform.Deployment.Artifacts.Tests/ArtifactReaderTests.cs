@@ -37,6 +37,15 @@ public class ArtifactReaderTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task MissingArtifactFolderReturnsReadFailedDiagnostic()
+    {
+        var result = await _reader.InspectFolderAsync(Path.Combine(_workspace.Root, "missing-artifact"));
+
+        result.Succeeded.Should().BeFalse();
+        result.Diagnostics.Should().ContainSingle(x => x.Code == ArtifactDiagnosticCodes.ReadFailed);
+    }
+
+    [Fact]
     public async Task DetectsMissingPayload()
     {
         await _builder.BuildFolderAsync(_workspace.FolderOptions());
