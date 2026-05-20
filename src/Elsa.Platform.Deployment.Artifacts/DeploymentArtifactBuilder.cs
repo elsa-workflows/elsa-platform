@@ -372,7 +372,7 @@ public sealed class DeploymentArtifactBuilder(
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            diagnostics.Add(Warning(ArtifactDiagnosticCodes.BuildFailed, $"Failed to delete output backup '{backupPath}': {ex.Message}"));
+            diagnostics.Add(Warning(ArtifactDiagnosticCodes.CleanupFailed, $"Failed to delete output backup '{backupPath}': {ex.Message}"));
         }
     }
 
@@ -417,7 +417,7 @@ public sealed class DeploymentArtifactBuilder(
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            diagnostics.Add(Warning(ArtifactDiagnosticCodes.BuildFailed, $"Failed to delete output backup '{backupPath}': {ex.Message}"));
+            diagnostics.Add(Warning(ArtifactDiagnosticCodes.CleanupFailed, $"Failed to delete output backup '{backupPath}': {ex.Message}"));
         }
     }
 

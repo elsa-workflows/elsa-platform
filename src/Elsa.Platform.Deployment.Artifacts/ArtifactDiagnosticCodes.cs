@@ -17,4 +17,5 @@ public static class ArtifactDiagnosticCodes
     public const string ArchiveInvalid = "artifact.archive.invalid";
     public const string ReadFailed = "artifact.read.failed";
     public const string BuildFailed = "artifact.build.failed";
+    public const string CleanupFailed = "artifact.cleanup.failed";
 }
