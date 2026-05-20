@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Elsa.Platform.Deployment.Abstractions.Artifacts;
 using Elsa.Platform.Deployment.Abstractions.Resources;
 
@@ -58,6 +59,7 @@ public sealed record DeploymentArtifactChecksumVerification(
 
 internal sealed record DeploymentArtifactChecksumInventory
 {
+    [JsonConstructor]
     public DeploymentArtifactChecksumInventory(
         string algorithm,
         IReadOnlyCollection<DeploymentArtifactChecksumEntry>? entries)

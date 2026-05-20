@@ -37,7 +37,7 @@ public sealed class DeploymentArtifactBuilder(
                 return Failed(outputPath, diagnostics);
 
             Directory.CreateDirectory(tempPath);
-            await WriteFolderContentsAsync(tempPath, options, build, cancellationToken);
+            var metadata = await WriteFolderContentsAsync(tempPath, options, build, cancellationToken);
 
             if (File.Exists(outputPath))
             {
@@ -67,7 +67,7 @@ public sealed class DeploymentArtifactBuilder(
             }
 
             DeleteDirectoryBackup(backupPath);
-            return new DeploymentArtifactBuildResult(true, build.Metadata.ArtifactId, outputPath, build.Metadata, diagnostics);
+            return new DeploymentArtifactBuildResult(true, metadata.ArtifactId, outputPath, metadata, diagnostics);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -162,34 +162,14 @@ public sealed class DeploymentArtifactBuilder(
         if (diagnostics.Any(x => x.Severity == DeploymentDiagnosticSeverity.Error))
             return null;
 
-        var manifestPath = $"{ArtifactLayoutConstants.ManifestDirectory}/manifest.{ManifestExtension(options.ManifestFormat)}";
-        var manifestEntry = new DeploymentArtifactEntry(manifestPath, DeploymentArtifactEntryKind.Manifest, System.Text.Encoding.UTF8.GetByteCount(options.ManifestText));
         var payloadEntries = payloads
             .Select(payload => new DeploymentArtifactEntry(payload.ArtifactPath, DeploymentArtifactEntryKind.Payload, new FileInfo(payload.SourcePath).Length, payload.SourceRelativePath))
             .ToArray();
-        var initialEntries = new[] { manifestEntry }.Concat(payloadEntries).ToArray();
-        var initialChecksums = await ComputeChecksumsAsync(initialEntries, payloads, options, cancellationToken);
-        var contentDigest = DeploymentArtifactChecksumService.ComputeContentDigest(initialChecksums);
-        var artifactId = contentDigest.ToString();
-        var metadata = new DeploymentArtifactMetadata(
-            ArtifactLayoutConstants.LayoutVersion,
-            artifactId,
-            options.BuiltAt ?? DateTimeOffset.UtcNow,
-            new DeploymentArtifactManifestMetadata(
-                normalized.Manifest.Metadata.Name,
-                normalized.Manifest.Metadata.Version,
-                normalized.Manifest.Metadata.Environment,
-                normalized.Manifest.Metadata.Labels,
-                normalized.Manifest.Metadata.Annotations),
-            normalized.Resources.Select(DeploymentArtifactResourceSummary.FromResource).ToArray(),
-            contentDigest,
-            options.Builder,
-            options.Source);
-
-        return new PreparedBuild(normalized, payloads, metadata, initialChecksums);
+        var payloadChecksums = await ComputePayloadChecksumsAsync(payloadEntries, payloads, cancellationToken);
+        return new PreparedBuild(normalized, payloads, payloadChecksums);
     }
 
-    private static async ValueTask WriteFolderContentsAsync(
+    private static async ValueTask<DeploymentArtifactMetadata> WriteFolderContentsAsync(
         string root,
         DeploymentArtifactBuildOptions options,
         PreparedBuild build,
@@ -198,6 +178,13 @@ public sealed class DeploymentArtifactBuilder(
         var manifestPath = Path.Combine(root, ArtifactLayoutConstants.ManifestDirectory, $"manifest.{ManifestExtension(options.ManifestFormat)}");
         Directory.CreateDirectory(Path.GetDirectoryName(manifestPath)!);
         await File.WriteAllTextAsync(manifestPath, options.ManifestText, cancellationToken);
+        var manifestDigest = await DeploymentArtifactChecksumService.ComputeFileDigestAsync(manifestPath, cancellationToken);
+        var manifestEntry = new DeploymentArtifactChecksumEntry(
+            Path.GetRelativePath(root, manifestPath).Replace('\\', '/'),
+            DeploymentArtifactEntryKind.Manifest,
+            manifestDigest.Algorithm,
+            manifestDigest.Value,
+            new FileInfo(manifestPath).Length);
 
         foreach (var payload in build.Payloads)
         {
@@ -208,8 +195,24 @@ public sealed class DeploymentArtifactBuilder(
             await sourceStream.CopyToAsync(destinationStream, cancellationToken);
         }
 
+        var contentChecksums = new[] { manifestEntry }.Concat(build.PayloadChecksums).ToArray();
+        var contentDigest = DeploymentArtifactChecksumService.ComputeContentDigest(contentChecksums);
+        var metadata = new DeploymentArtifactMetadata(
+            ArtifactLayoutConstants.LayoutVersion,
+            contentDigest.ToString(),
+            options.BuiltAt ?? DateTimeOffset.UtcNow,
+            new DeploymentArtifactManifestMetadata(
+                build.Normalized.Manifest.Metadata.Name,
+                build.Normalized.Manifest.Metadata.Version,
+                build.Normalized.Manifest.Metadata.Environment,
+                build.Normalized.Manifest.Metadata.Labels,
+                build.Normalized.Manifest.Metadata.Annotations),
+            build.Normalized.Resources.Select(DeploymentArtifactResourceSummary.FromResource).ToArray(),
+            contentDigest,
+            options.Builder,
+            options.Source);
         var metadataPath = Path.Combine(root, ArtifactLayoutConstants.MetadataPath);
-        await File.WriteAllTextAsync(metadataPath, JsonSerializer.Serialize(build.Metadata, JsonOptions), cancellationToken);
+        await File.WriteAllTextAsync(metadataPath, JsonSerializer.Serialize(metadata, JsonOptions), cancellationToken);
         var metadataDigest = await DeploymentArtifactChecksumService.ComputeFileDigestAsync(metadataPath, cancellationToken);
         var metadataEntry = new DeploymentArtifactChecksumEntry(
             ArtifactLayoutConstants.MetadataPath,
@@ -219,9 +222,10 @@ public sealed class DeploymentArtifactBuilder(
             new FileInfo(metadataPath).Length);
         var inventory = new DeploymentArtifactChecksumInventory(
             ArtifactLayoutConstants.ChecksumAlgorithm,
-            build.Checksums.Concat([metadataEntry]).OrderBy(x => x.Path, StringComparer.Ordinal).ToArray());
+            contentChecksums.Concat([metadataEntry]).OrderBy(x => x.Path, StringComparer.Ordinal).ToArray());
         var checksumPath = Path.Combine(root, ArtifactLayoutConstants.ChecksumInventoryPath);
         await File.WriteAllTextAsync(checksumPath, JsonSerializer.Serialize(inventory, JsonOptions), cancellationToken);
+        return metadata;
     }
 
     private static IReadOnlyCollection<PayloadFile> CollectPayloads(
@@ -281,28 +285,19 @@ public sealed class DeploymentArtifactBuilder(
         return payloads;
     }
 
-    private static async ValueTask<IReadOnlyCollection<DeploymentArtifactChecksumEntry>> ComputeChecksumsAsync(
+    private static async ValueTask<IReadOnlyCollection<DeploymentArtifactChecksumEntry>> ComputePayloadChecksumsAsync(
         IEnumerable<DeploymentArtifactEntry> entries,
         IEnumerable<PayloadFile> payloads,
-        DeploymentArtifactBuildOptions options,
         CancellationToken cancellationToken)
     {
         var result = new List<DeploymentArtifactChecksumEntry>();
         foreach (var entry in entries)
         {
-            var digest = entry.Kind == DeploymentArtifactEntryKind.Manifest
-                ? ComputeTextDigest(options.ManifestText)
-                : await DeploymentArtifactChecksumService.ComputeFileDigestAsync(payloads.Single(x => x.ArtifactPath == entry.Path).SourcePath, cancellationToken);
+            var digest = await DeploymentArtifactChecksumService.ComputeFileDigestAsync(payloads.Single(x => x.ArtifactPath == entry.Path).SourcePath, cancellationToken);
             result.Add(new DeploymentArtifactChecksumEntry(entry.Path, entry.Kind, digest.Algorithm, digest.Value, entry.Size));
         }
 
         return result;
-    }
-
-    private static Elsa.Platform.Deployment.Abstractions.Artifacts.ArtifactDigest ComputeTextDigest(string text)
-    {
-        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text));
-        return new(ArtifactLayoutConstants.ChecksumAlgorithm, Convert.ToHexString(hash).ToLowerInvariant());
     }
 
     private static string ManifestExtension(ManifestFormat format) => format == ManifestFormat.Json ? "json" : "yaml";
@@ -342,8 +337,7 @@ public sealed class DeploymentArtifactBuilder(
     private sealed record PreparedBuild(
         NormalizedManifest Normalized,
         IReadOnlyCollection<PayloadFile> Payloads,
-        DeploymentArtifactMetadata Metadata,
-        IReadOnlyCollection<DeploymentArtifactChecksumEntry> Checksums);
+        IReadOnlyCollection<DeploymentArtifactChecksumEntry> PayloadChecksums);
 
     private sealed record PayloadFile(string SourceRelativePath, string ArtifactPath, string SourcePath);
 }
