@@ -44,21 +44,21 @@
 
 ### Tests
 
-- [ ] T011 [P] [US1] Add resource identity tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/ResourceIdentityTests.cs`
-- [ ] T012 [P] [US1] Add artifact contract tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/ArtifactContractTests.cs`
-- [ ] T013 [P] [US1] Add diagnostic contract tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/DiagnosticContractTests.cs`
-- [ ] T014 [P] [US1] Add plan contract tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/PlanContractTests.cs`
-- [ ] T015 [P] [US1] Add history contract tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/HistoryContractTests.cs`
+- [x] T011 [P] [US1] Add resource identity tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/ResourceIdentityTests.cs`
+- [x] T012 [P] [US1] Add artifact contract tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/ArtifactContractTests.cs`
+- [x] T013 [P] [US1] Add diagnostic contract tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/DiagnosticContractTests.cs`
+- [x] T014 [P] [US1] Add plan contract tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/PlanContractTests.cs`
+- [x] T015 [P] [US1] Add history contract tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/HistoryContractTests.cs`
 
 ### Implementation
 
-- [ ] T016 [US1] Implement resource identity and resource contracts in `src/Elsa.Platform.Deployment.Abstractions/Resources/DeploymentResourceId.cs` and `src/Elsa.Platform.Deployment.Abstractions/Resources/DeploymentResource.cs`
-- [ ] T017 [US1] Implement artifact identity and metadata contracts in `src/Elsa.Platform.Deployment.Abstractions/Artifacts/DeploymentArtifactIdentity.cs` and `src/Elsa.Platform.Deployment.Abstractions/Artifacts/DeploymentArtifactMetadata.cs`
-- [ ] T018 [US1] Implement target descriptor contract in `src/Elsa.Platform.Deployment.Abstractions/Targets/DeploymentTargetDescriptor.cs`
-- [ ] T019 [US1] Implement diagnostic contract in `src/Elsa.Platform.Deployment.Abstractions/Diagnostics/DeploymentDiagnostic.cs`
-- [ ] T020 [US1] Implement plan and change contracts in `src/Elsa.Platform.Deployment.Abstractions/Plans/DeploymentPlan.cs` and `src/Elsa.Platform.Deployment.Abstractions/Plans/DeploymentChange.cs`
-- [ ] T021 [US1] Implement result and resource operation result contracts in `src/Elsa.Platform.Deployment.Abstractions/DeploymentResult.cs` and `src/Elsa.Platform.Deployment.Abstractions/DeploymentResourceResult.cs`
-- [ ] T022 [US1] Implement history record and actor contracts in `src/Elsa.Platform.Deployment.Abstractions/History/DeploymentHistoryRecord.cs` and `src/Elsa.Platform.Deployment.Abstractions/History/DeploymentActor.cs`
+- [x] T016 [US1] Implement resource identity and resource contracts in `src/Elsa.Platform.Deployment.Abstractions/Resources/DeploymentResourceId.cs` and `src/Elsa.Platform.Deployment.Abstractions/Resources/DeploymentResource.cs`
+- [x] T017 [US1] Implement artifact identity and metadata contracts in `src/Elsa.Platform.Deployment.Abstractions/Artifacts/DeploymentArtifactIdentity.cs` and `src/Elsa.Platform.Deployment.Abstractions/Artifacts/DeploymentArtifactMetadata.cs`
+- [x] T018 [US1] Implement target descriptor contract in `src/Elsa.Platform.Deployment.Abstractions/Targets/DeploymentTargetDescriptor.cs`
+- [x] T019 [US1] Implement diagnostic contract in `src/Elsa.Platform.Deployment.Abstractions/Diagnostics/DeploymentDiagnostic.cs`
+- [x] T020 [US1] Implement plan and change contracts in `src/Elsa.Platform.Deployment.Abstractions/Plans/DeploymentPlan.cs` and `src/Elsa.Platform.Deployment.Abstractions/Plans/DeploymentChange.cs`
+- [x] T021 [US1] Implement result and resource operation result contracts in `src/Elsa.Platform.Deployment.Abstractions/DeploymentResult.cs` and `src/Elsa.Platform.Deployment.Abstractions/DeploymentResourceResult.cs`
+- [x] T022 [US1] Implement history record and actor contracts in `src/Elsa.Platform.Deployment.Abstractions/History/DeploymentHistoryRecord.cs` and `src/Elsa.Platform.Deployment.Abstractions/History/DeploymentActor.cs`
 
 **Checkpoint**: Core contract tests pass.
 
