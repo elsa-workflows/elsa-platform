@@ -1,0 +1,1183 @@
+openapi: 3.1.0
+info:
+  title: Elsa Package Catalog API
+  version: 0.1.0
+  description: Public and admin REST contracts for package, feature, compatibility, sync, validation, and approval workflows.
+servers:
+  - url: http://localhost:5000
+security: []
+tags:
+  - name: Public Sources
+  - name: Public Packages
+  - name: Public Features
+  - name: Runtime Builder
+  - name: Public Compatibility
+  - name: Admin Sources
+  - name: Admin Sync
+  - name: Admin Packages
+paths:
+  /api/packages:
+    get:
+      tags: [Public Packages]
+      summary: List public packages
+      parameters:
+        - $ref: '#/components/parameters/SourceIdsQuery'
+        - $ref: '#/components/parameters/PackageIdQuery'
+        - $ref: '#/components/parameters/TagQuery'
+        - $ref: '#/components/parameters/FeatureIdQuery'
+        - $ref: '#/components/parameters/ElsaVersionQuery'
+      responses:
+        '200':
+          description: Public packages containing only listed, approved, valid versions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PackageSummary'
+  /api/sources:
+    get:
+      tags: [Public Sources]
+      summary: List public browseable package sources
+      responses:
+        '200':
+          description: Public catalog-owned sources that can be selected for browsing.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PublicPackageSource'
+  /api/sources/{sourceId}/packages/{packageId}:
+    get:
+      tags: [Public Packages]
+      summary: Get source-qualified public package details
+      parameters:
+        - $ref: '#/components/parameters/SourceIdPath'
+        - $ref: '#/components/parameters/PackageIdPath'
+      responses:
+        '200':
+          description: Public package details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/sources/{sourceId}/packages/{packageId}/versions:
+    get:
+      tags: [Public Packages]
+      summary: List public source-qualified package versions
+      parameters:
+        - $ref: '#/components/parameters/SourceIdPath'
+        - $ref: '#/components/parameters/PackageIdPath'
+      responses:
+        '200':
+          description: Public versions for a package.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PackageVersionSummary'
+  /api/sources/{sourceId}/packages/{packageId}/versions/{version}:
+    get:
+      tags: [Public Packages]
+      summary: Get public source-qualified package version details
+      parameters:
+        - $ref: '#/components/parameters/SourceIdPath'
+        - $ref: '#/components/parameters/PackageIdPath'
+        - $ref: '#/components/parameters/VersionPath'
+      responses:
+        '200':
+          description: Public package version details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageVersionDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/features:
+    get:
+      tags: [Public Features]
+      summary: List public features
+      parameters:
+        - $ref: '#/components/parameters/PackageIdQuery'
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: requiredCapability
+          in: query
+          schema:
+            type: string
+        - name: advanced
+          in: query
+          schema:
+            type: boolean
+        - name: experimental
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Public feature summaries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FeatureSummary'
+  /api/features/{featureId}:
+    get:
+      tags: [Public Features]
+      summary: Get public feature details
+      parameters:
+        - $ref: '#/components/parameters/FeatureIdPath'
+      responses:
+        '200':
+          description: Public feature details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/compatibility/check:
+    post:
+      tags: [Public Compatibility]
+      summary: Check selected package and feature compatibility
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompatibilityCheckRequest'
+      responses:
+        '200':
+          description: Compatibility result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompatibilityCheckResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/builder/catalog:
+    get:
+      tags: [Runtime Builder]
+      summary: Get Runtime Builder package and infrastructure catalog
+      parameters:
+        - $ref: '#/components/parameters/SourceIdsQuery'
+      responses:
+        '200':
+          description: Builder-ready package catalog with source provenance and infrastructure providers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuilderCatalog'
+  /api/builder/infrastructure/providers:
+    get:
+      tags: [Runtime Builder]
+      summary: List infrastructure providers that can satisfy abstract requirements
+      responses:
+        '200':
+          description: Infrastructure providers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InfrastructureProvider'
+  /api/builder/resolve:
+    post:
+      tags: [Runtime Builder]
+      summary: Resolve selected packages and features for builder feedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BuilderResolveRequest'
+      responses:
+        '200':
+          description: Builder compatibility findings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuilderResolveResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/admin/sources:
+    get:
+      tags: [Admin Sources]
+      security:
+        - ApiKeyAuth: []
+      summary: List package sources
+      responses:
+        '200':
+          description: Package sources.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminPackageSource'
+    post:
+      tags: [Admin Sources]
+      security:
+        - ApiKeyAuth: []
+      summary: Create package source
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertPackageSourceRequest'
+      responses:
+        '201':
+          description: Created source.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPackageSource'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/admin/sources/{id}:
+    put:
+      tags: [Admin Sources]
+      security:
+        - ApiKeyAuth: []
+      summary: Update package source
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertPackageSourceRequest'
+      responses:
+        '200':
+          description: Updated source.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPackageSource'
+    delete:
+      tags: [Admin Sources]
+      security:
+        - ApiKeyAuth: []
+      summary: Delete package source
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '204':
+          description: Source deleted.
+  /api/admin/sync:
+    post:
+      tags: [Admin Sync]
+      security:
+        - ApiKeyAuth: []
+      summary: Trigger sync for all enabled sources
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/SyncAccepted'
+  /api/admin/sync/sources/{sourceId}:
+    post:
+      tags: [Admin Sync]
+      security:
+        - ApiKeyAuth: []
+      summary: Trigger sync for one source
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/SyncAccepted'
+  /api/admin/sync/packages/{packageId}:
+    post:
+      tags: [Admin Sync]
+      security:
+        - ApiKeyAuth: []
+      summary: Trigger sync for one package ID
+      parameters:
+        - $ref: '#/components/parameters/PackageIdPath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/SyncAccepted'
+  /api/admin/sync-runs:
+    get:
+      tags: [Admin Sync]
+      security:
+        - ApiKeyAuth: []
+      summary: List sync runs
+      responses:
+        '200':
+          description: Sync runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SyncRunSummary'
+  /api/admin/sync-runs/{id}:
+    get:
+      tags: [Admin Sync]
+      security:
+        - ApiKeyAuth: []
+      summary: Get sync run details
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Sync run details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncRunDetails'
+  /api/admin/packages:
+    get:
+      tags: [Admin Packages]
+      security:
+        - ApiKeyAuth: []
+      summary: List packages including admin states
+      responses:
+        '200':
+          description: Admin packages.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminPackageSummary'
+  /api/admin/packages/{packageId}:
+    get:
+      tags: [Admin Packages]
+      security:
+        - ApiKeyAuth: []
+      summary: Get admin package details
+      parameters:
+        - $ref: '#/components/parameters/PackageIdPath'
+      responses:
+        '200':
+          description: Admin package details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPackageDetails'
+  /api/admin/packages/{packageId}/approve:
+    post:
+      tags: [Admin Packages]
+      security:
+        - ApiKeyAuth: []
+      summary: Approve package
+      parameters:
+        - $ref: '#/components/parameters/PackageIdPath'
+      requestBody:
+        $ref: '#/components/requestBodies/ApprovalRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApprovalUpdated'
+  /api/admin/packages/{packageId}/reject:
+    post:
+      tags: [Admin Packages]
+      security:
+        - ApiKeyAuth: []
+      summary: Reject package
+      parameters:
+        - $ref: '#/components/parameters/PackageIdPath'
+      requestBody:
+        $ref: '#/components/requestBodies/ApprovalRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApprovalUpdated'
+  /api/admin/packages/{packageId}/versions/{version}/approve:
+    post:
+      tags: [Admin Packages]
+      security:
+        - ApiKeyAuth: []
+      summary: Approve package version
+      parameters:
+        - $ref: '#/components/parameters/PackageIdPath'
+        - $ref: '#/components/parameters/VersionPath'
+      requestBody:
+        $ref: '#/components/requestBodies/ApprovalRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApprovalUpdated'
+  /api/admin/packages/{packageId}/versions/{version}/reject:
+    post:
+      tags: [Admin Packages]
+      security:
+        - ApiKeyAuth: []
+      summary: Reject package version
+      parameters:
+        - $ref: '#/components/parameters/PackageIdPath'
+        - $ref: '#/components/parameters/VersionPath'
+      requestBody:
+        $ref: '#/components/requestBodies/ApprovalRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApprovalUpdated'
+  /api/admin/packages/{packageId}/versions/{version}/validation:
+    get:
+      tags: [Admin Packages]
+      security:
+        - ApiKeyAuth: []
+      summary: Get validation results for a package version
+      parameters:
+        - $ref: '#/components/parameters/PackageIdPath'
+        - $ref: '#/components/parameters/VersionPath'
+      responses:
+        '200':
+          description: Validation results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationDetails'
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    SourceIdPath:
+      name: sourceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PackageIdPath:
+      name: packageId
+      in: path
+      required: true
+      schema:
+        type: string
+    VersionPath:
+      name: version
+      in: path
+      required: true
+      schema:
+        type: string
+    FeatureIdPath:
+      name: featureId
+      in: path
+      required: true
+      schema:
+        type: string
+    PackageIdQuery:
+      name: packageId
+      in: query
+      schema:
+        type: string
+    TagQuery:
+      name: tag
+      in: query
+      schema:
+        type: string
+    FeatureIdQuery:
+      name: featureId
+      in: query
+      schema:
+        type: string
+    ElsaVersionQuery:
+      name: elsaVersion
+      in: query
+      schema:
+        type: string
+    SourceIdsQuery:
+      name: sourceIds
+      in: query
+      schema:
+        type: array
+        items:
+          type: string
+          format: uuid
+      style: form
+      explode: true
+  requestBodies:
+    ApprovalRequest:
+      required: false
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApprovalRequest'
+  responses:
+    NotFound:
+      description: Resource not found or not visible.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    BadRequest:
+      description: Invalid request.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    SyncAccepted:
+      description: Sync accepted.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              syncRunId:
+                type: string
+              status:
+                type: string
+                enum: [Running]
+    ApprovalUpdated:
+      description: Approval state updated.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                enum: [Pending, Approved, Rejected]
+              updatedAt:
+                type: string
+                format: date-time
+  schemas:
+    PublicPackageSource:
+      type: object
+      required: [id, name, url, packageCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        url:
+          type: string
+        packageCount:
+          type: integer
+    PackageSummary:
+      type: object
+      required: [packageId, displayName, latestVersion]
+      properties:
+        packageId:
+          type: string
+        source:
+          $ref: '#/components/schemas/PackageSourceProvenance'
+        displayName:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        latestVersion:
+          type: string
+    PackageDetails:
+      allOf:
+        - $ref: '#/components/schemas/PackageSummary'
+        - type: object
+          properties:
+            versions:
+              type: array
+              items:
+                $ref: '#/components/schemas/PackageVersionSummary'
+            documentation:
+              $ref: '#/components/schemas/Documentation'
+            license:
+              $ref: '#/components/schemas/License'
+    PackageVersionSummary:
+      type: object
+      required: [packageId, version]
+      properties:
+        packageId:
+          type: string
+        version:
+          type: string
+        source:
+          $ref: '#/components/schemas/PackageSourceProvenance'
+        publishedAt:
+          type: string
+          format: date-time
+        indexedAt:
+          type: string
+          format: date-time
+        featureCount:
+          type: integer
+    PackageVersionDetails:
+      allOf:
+        - $ref: '#/components/schemas/PackageVersionSummary'
+        - type: object
+          properties:
+            manifestSchemaVersion:
+              type: string
+            compatibility:
+              $ref: '#/components/schemas/Compatibility'
+            features:
+              type: array
+              items:
+                $ref: '#/components/schemas/FeatureDetails'
+            dependencies:
+              type: array
+              items:
+                $ref: '#/components/schemas/Dependency'
+            conflicts:
+              type: array
+              items:
+                $ref: '#/components/schemas/Conflict'
+    FeatureSummary:
+      type: object
+      required: [featureId, packageId, packageVersion, displayName]
+      properties:
+        featureId:
+          type: string
+        packageId:
+          type: string
+        packageVersion:
+          type: string
+        source:
+          $ref: '#/components/schemas/PackageSourceProvenance'
+        displayName:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        advanced:
+          type: boolean
+        experimental:
+          type: boolean
+        extensions:
+          type: object
+          additionalProperties: true
+        infrastructure:
+          type: array
+          items:
+            $ref: '#/components/schemas/InfrastructureRequirement'
+    FeatureDetails:
+      allOf:
+        - $ref: '#/components/schemas/FeatureSummary'
+        - type: object
+          properties:
+            typeName:
+              type: string
+            settings:
+              type: array
+              items:
+                $ref: '#/components/schemas/FeatureSetting'
+            dependencies:
+              type: array
+              items:
+                $ref: '#/components/schemas/Dependency'
+            conflicts:
+              type: array
+              items:
+                $ref: '#/components/schemas/Conflict'
+            requiredCapabilities:
+              type: array
+              items:
+                type: string
+    FeatureSetting:
+      type: object
+      required: [name, jsonType, required]
+      properties:
+        name:
+          type: string
+        clrType:
+          type: string
+        jsonType:
+          type: string
+        required:
+          type: boolean
+        defaultValue: true
+        displayName:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        validation:
+          type: object
+          additionalProperties: true
+        secret:
+          type: boolean
+        restartRequired:
+          type: boolean
+        environmentVariable:
+          type: string
+        ui:
+          type: object
+          additionalProperties: true
+        extensions:
+          type: object
+          additionalProperties: true
+    PackageSourceProvenance:
+      type: object
+      required: [id, name, url]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        url:
+          type: string
+    InfrastructureRequirement:
+      type: object
+      required: [id, kind]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        optional:
+          type: boolean
+        reason:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        providers:
+          type: array
+          items:
+            type: string
+        configurationKeys:
+          type: array
+          items:
+            type: string
+        extensions:
+          type: object
+          additionalProperties: true
+    InfrastructureProvider:
+      type: object
+      required: [id, displayName, kind, strategy, provider]
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+        kind:
+          type: string
+        strategy:
+          type: string
+          enum: [compose-sidecar, external-service, platform-managed]
+        provider:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        outputs:
+          type: array
+          items:
+            type: string
+    BuilderCatalog:
+      type: object
+      required: [packages, infrastructureProviders]
+      properties:
+        packages:
+          type: array
+          items:
+            $ref: '#/components/schemas/PackageDetails'
+        infrastructureProviders:
+          type: array
+          items:
+            $ref: '#/components/schemas/InfrastructureProvider'
+    BuilderResolveRequest:
+      type: object
+      required: [packages]
+      properties:
+        elsaVersion:
+          type: string
+        dockerImageVersion:
+          type: string
+        packages:
+          type: array
+          items:
+            type: object
+            required: [sourceId, packageId, version]
+            properties:
+              sourceId:
+                type: string
+                format: uuid
+              packageId:
+                type: string
+              version:
+                type: string
+              selectedFeatures:
+                type: array
+                items:
+                  type: string
+        features:
+          type: array
+          description: Optional flat selected feature list. When absent, selected features are read from packages[].selectedFeatures.
+          items:
+            type: string
+    BuilderResolveResponse:
+      type: object
+      required: [compatible, findings]
+      properties:
+        compatible:
+          type: boolean
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompatibilityFinding'
+    CompatibilityCheckRequest:
+      type: object
+      required: [packages]
+      properties:
+        elsaVersion:
+          type: string
+        dockerImageVersion:
+          type: string
+        runtimeCapabilities:
+          type: array
+          items:
+            type: string
+        packages:
+          type: array
+          items:
+            type: object
+            required: [sourceId, packageId, version]
+            properties:
+              sourceId:
+                type: string
+                format: uuid
+              packageId:
+                type: string
+              version:
+                type: string
+              selectedFeatures:
+                type: array
+                items:
+                  type: string
+        licenseConstraints:
+          type: object
+          additionalProperties: true
+    CompatibilityCheckResponse:
+      type: object
+      required: [compatible, findings]
+      properties:
+        compatible:
+          type: boolean
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompatibilityFinding'
+    CompatibilityFinding:
+      type: object
+      required: [severity, code, message]
+      properties:
+        severity:
+          type: string
+          enum: [info, warning, error]
+        code:
+          type: string
+        packageId:
+          type: string
+        version:
+          type: string
+        featureId:
+          type: string
+        message:
+          type: string
+    Compatibility:
+      type: object
+      properties:
+        elsaVersionRange:
+          type: string
+        dockerImageVersionRange:
+          type: string
+        runtimeCapabilities:
+          type: array
+          items:
+            type: string
+    Dependency:
+      type: object
+      properties:
+        packageId:
+          type: string
+        versionRange:
+          type: string
+        featureId:
+          type: string
+        optional:
+          type: boolean
+        reason:
+          type: string
+    Conflict:
+      type: object
+      properties:
+        packageId:
+          type: string
+        versionRange:
+          type: string
+        featureId:
+          type: string
+        reason:
+          type: string
+    License:
+      type: object
+      properties:
+        expression:
+          type: string
+        url:
+          type: string
+        requiresAcceptance:
+          type: boolean
+    Documentation:
+      type: object
+      properties:
+        readmeUrl:
+          type: string
+        projectUrl:
+          type: string
+        releaseNotesUrl:
+          type: string
+        configurationUrl:
+          type: string
+    AdminPackageSource:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [NuGetFeed]
+        url:
+          type: string
+        enabled:
+          type: boolean
+        includePatterns:
+          type: array
+          items:
+            type: string
+        excludePatterns:
+          type: array
+          items:
+            type: string
+        approvalPolicy:
+          type: string
+          enum: [AutoApprove, Manual]
+        versionDiscoveryPolicy:
+          $ref: '#/components/schemas/PackageSourceVersionDiscoveryPolicy'
+        lastSyncedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    UpsertPackageSourceRequest:
+      type: object
+      required: [name, type, url, enabled, includePatterns, approvalPolicy]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [NuGetFeed]
+        url:
+          type: string
+        enabled:
+          type: boolean
+        includePatterns:
+          type: array
+          items:
+            type: string
+        excludePatterns:
+          type: array
+          items:
+            type: string
+        approvalPolicy:
+          type: string
+          enum: [AutoApprove, Manual]
+        versionDiscoveryPolicy:
+          type: string
+          enum: [AllVersions, LatestStable, LatestIncludingPrerelease, LatestPreview]
+          default: AllVersions
+    PackageSourceVersionDiscoveryPolicy:
+      type: string
+      enum: [AllVersions, LatestStable, LatestIncludingPrerelease, LatestPreview]
+    SyncRequest:
+      type: object
+      properties:
+        forceReindex:
+          type: boolean
+          default: false
+    SyncRunSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        trigger:
+          type: string
+        status:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        summaryCounters:
+          type: object
+          additionalProperties:
+            type: integer
+    SyncRunDetails:
+      allOf:
+        - $ref: '#/components/schemas/SyncRunSummary'
+        - type: object
+          properties:
+            error:
+              type: string
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  sourceId:
+                    type: string
+                  packageId:
+                    type: string
+                  version:
+                    type: string
+                  status:
+                    type: string
+                  message:
+                    type: string
+                  error:
+                    type: string
+    AdminPackageSummary:
+      type: object
+      properties:
+        packageId:
+          type: string
+        sourceId:
+          type: string
+        approved:
+          type: boolean
+        listed:
+          type: boolean
+        latestVersion:
+          type: string
+    AdminPackageDetails:
+      allOf:
+        - $ref: '#/components/schemas/AdminPackageSummary'
+        - type: object
+          properties:
+            versions:
+              type: array
+              items:
+                type: object
+                properties:
+                  version:
+                    type: string
+                  validationStatus:
+                    type: string
+                  approvalStatus:
+                    type: string
+                  isListed:
+                    type: boolean
+                  suspiciousChangeDetected:
+                    type: boolean
+    ApprovalRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+    ValidationDetails:
+      type: object
+      properties:
+        packageId:
+          type: string
+        version:
+          type: string
+        schemaVersion:
+          type: string
+        status:
+          type: string
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationFinding'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationFinding'
+    ValidationFinding:
+      type: object
+      properties:
+        path:
+          type: string
+        ruleId:
+          type: string
+        message:
+          type: string
+        severity:
+          type: string
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string

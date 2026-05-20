@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --background: 0 0% 100%;
+  --foreground: 220 18% 11%;
+  --surface: 210 20% 98%;
+  --muted: 210 20% 96%;
+  --muted-foreground: 220 9% 40%;
+  --border: 220 13% 89%;
+  --primary: 220 75% 35%;
+  --primary-foreground: 0 0% 100%;
+  --destructive: 0 72% 44%;
+  --warning: 36 90% 42%;
+  --success: 145 63% 32%;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: 220 20% 8%;
+  --foreground: 210 20% 96%;
+  --surface: 220 18% 12%;
+  --muted: 220 16% 16%;
+  --muted-foreground: 215 11% 68%;
+  --border: 220 14% 24%;
+  --primary: 213 89% 68%;
+  --primary-foreground: 220 20% 8%;
+  --destructive: 0 84% 65%;
+  --warning: 38 92% 58%;
+  --success: 145 58% 48%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}

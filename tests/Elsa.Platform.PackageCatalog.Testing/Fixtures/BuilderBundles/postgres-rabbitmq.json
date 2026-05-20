@@ -1,0 +1,28 @@
+{
+  "image": {
+    "slug": "elsa-pro-combined",
+    "tag": "latest",
+    "hostPort": 8080,
+    "envOverrides": {}
+  },
+  "packages": [],
+  "packageSources": [],
+  "infrastructure": [
+    {
+      "kind": "database",
+      "providerId": "postgres-compose",
+      "strategy": "compose-sidecar",
+      "settings": {}
+    },
+    {
+      "kind": "message-broker",
+      "providerId": "rabbitmq-compose",
+      "strategy": "compose-sidecar",
+      "settings": {}
+    }
+  ],
+  "localPackages": {
+    "enabled": false,
+    "directoryPath": "packages"
+  }
+}

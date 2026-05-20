@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Elsa.Platform.PackageCatalog.Core\Elsa.Platform.PackageCatalog.Core.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Platform.RuntimeBuilder.Abstractions\Elsa.Platform.RuntimeBuilder.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Platform.RuntimeBuilder.Core\Elsa.Platform.RuntimeBuilder.Core.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Platform.RuntimeBuilder.DeploymentTemplates\Elsa.Platform.RuntimeBuilder.DeploymentTemplates.csproj" />
+    <ProjectReference Include="..\Elsa.Platform.PackageCatalog.Testing\Elsa.Platform.PackageCatalog.Testing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.elsa-workflows.io/package-manifest-generator/overrides/v1/elsa-package.overrides.schema.json",
+  "title": "Elsa Package Manifest Generator Overrides",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "displayName": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "documentation": { "$ref": "#/$defs/documentation" },
+        "icon": { "$ref": "#/$defs/icon" },
+        "license": { "$ref": "#/$defs/license" },
+        "compatibility": { "$ref": "#/$defs/compatibility" },
+        "dependencies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dependency" }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/conflict" }
+        },
+        "requiredCapabilities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "extensions": { "$ref": "#/$defs/extensions" }
+      }
+    },
+    "features": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/featureOverride" }
+    }
+  },
+  "$defs": {
+    "documentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": { "type": "string", "format": "uri" },
+        "readme": { "type": "string" },
+        "remarks": { "type": "string" },
+        "examples": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "icon": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": { "type": "string", "format": "uri" },
+        "path": { "type": "string" }
+      }
+    },
+    "license": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "expression": { "type": "string" },
+        "url": { "type": "string", "format": "uri" }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "elsaVersionRange": { "type": "string" },
+        "dockerImageVersionRange": { "type": "string" },
+        "runtimeCapabilities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "extensions": { "$ref": "#/$defs/extensions" }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packageId"],
+      "properties": {
+        "packageId": { "type": "string", "minLength": 1 },
+        "versionRange": { "type": "string" },
+        "featureId": { "type": "string" }
+      }
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packageId"],
+      "properties": {
+        "packageId": { "type": "string", "minLength": 1 },
+        "versionRange": { "type": "string" },
+        "featureId": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    },
+    "featureOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["id"] },
+        { "required": ["clrTypeName"] }
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "clrTypeName": { "type": "string", "minLength": 1 },
+        "displayName": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "advanced": { "type": "boolean" },
+        "experimental": { "type": "boolean" },
+        "compatibility": { "$ref": "#/$defs/compatibility" },
+        "dependencies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dependency" }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/conflict" }
+        },
+        "requiredCapabilities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "infrastructure": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/infrastructureRequirement" }
+        },
+        "settings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/settingOverride" }
+        },
+        "extensions": { "$ref": "#/$defs/extensions" }
+      }
+    },
+    "settingOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "displayName": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "group": { "type": "string" },
+        "required": { "type": "boolean" },
+        "nullable": { "type": "boolean" },
+        "defaultValue": true,
+        "secret": { "type": "boolean" },
+        "sensitive": { "type": "boolean" },
+        "restartRequired": { "type": "boolean" },
+        "uiHint": { "type": "string" },
+        "ui": { "$ref": "#/$defs/settingUI" },
+        "advanced": { "type": "boolean" },
+        "experimental": { "type": "boolean" },
+        "extensions": { "$ref": "#/$defs/extensions" }
+      }
+    },
+    "settingUI": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "hint": { "type": "string" },
+        "group": { "type": "string" },
+        "advanced": { "type": "boolean" },
+        "experimental": { "type": "boolean" },
+        "options": { "$ref": "#/$defs/settingUIOptions" }
+      }
+    },
+    "settingUIOptions": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "source": { "enum": ["static", "provider"] },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/settingUIOption" }
+        },
+        "provider": { "type": "string", "minLength": 1 },
+        "dependsOn": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "parameters": { "$ref": "#/$defs/extensions" }
+      }
+    },
+    "settingUIOption": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["value"],
+      "properties": {
+        "value": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "infrastructureRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "optional": { "type": "boolean" },
+        "reason": { "type": "string" },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "providers": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "configurationKeys": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "extensions": { "$ref": "#/$defs/extensions" }
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

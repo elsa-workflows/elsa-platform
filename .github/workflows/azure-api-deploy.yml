@@ -1,0 +1,198 @@
+name: Azure API Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      deploy_mode:
+        description: "Use app for code-only deployment; use infra after AppHost infrastructure changes."
+        required: true
+        default: app
+        type: choice
+        options:
+          - app
+          - infra
+
+concurrency:
+  group: azure-api-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Validate and Deploy API
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+      AZURE_APP_SERVICE_DASHBOARD_URI: ${{ vars.AZURE_APP_SERVICE_DASHBOARD_URI }}
+      AZURE_CONTAINER_REGISTRY_ENDPOINT: ${{ vars.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
+      API_IDENTITY_CLIENTID: ${{ vars.API_IDENTITY_CLIENTID }}
+      API_IDENTITY_ID: ${{ vars.API_IDENTITY_ID }}
+      CATALOG_SQL_SQLSERVERFQDN: ${{ vars.CATALOG_SQL_SQLSERVERFQDN }}
+      ELSA_PACKAGE_CATALOG_AZURE_APP_SERVICE_DASHBOARD_URI: ${{ vars.ELSA_PACKAGE_CATALOG_AZURE_APP_SERVICE_DASHBOARD_URI }}
+      ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_ENDPOINT: ${{ vars.ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_ENDPOINT }}
+      ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID: ${{ vars.ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID }}
+      ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID: ${{ vars.ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
+      ELSA_PACKAGE_CATALOG_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_ID: ${{ vars.ELSA_PACKAGE_CATALOG_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_ID }}
+      ELSA_PACKAGE_CATALOG_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_PRINCIPAL_ID: ${{ vars.ELSA_PACKAGE_CATALOG_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_PRINCIPAL_ID }}
+      ELSA_PACKAGE_CATALOG_PLANID: ${{ vars.ELSA_PACKAGE_CATALOG_PLANID }}
+      ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/Elsa.Catalog.AdminUi/package-lock.json
+
+      - name: Install azd
+        uses: Azure/setup-azd@v2
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required=(
+            AZURE_CLIENT_ID
+            AZURE_TENANT_ID
+            AZURE_SUBSCRIPTION_ID
+            AZURE_ENV_NAME
+            AZURE_LOCATION
+            AZURE_RESOURCE_GROUP
+            AZURE_WEBAPP_NAME
+            AZURE_APP_SERVICE_DASHBOARD_URI
+            AZURE_CONTAINER_REGISTRY_ENDPOINT
+            API_IDENTITY_CLIENTID
+            API_IDENTITY_ID
+            CATALOG_SQL_SQLSERVERFQDN
+            ELSA_PACKAGE_CATALOG_AZURE_APP_SERVICE_DASHBOARD_URI
+            ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_ENDPOINT
+            ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID
+            ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
+            ELSA_PACKAGE_CATALOG_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_ID
+            ELSA_PACKAGE_CATALOG_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_PRINCIPAL_ID
+            ELSA_PACKAGE_CATALOG_PLANID
+            ADMIN_API_KEY
+          )
+
+          for name in "${required[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              echo "$name is not configured."
+              exit 1
+            fi
+          done
+
+      - name: Restore
+        run: dotnet restore Elsa.PackageCatalog.sln
+
+      - name: Build AppHost
+        run: dotnet build src/Elsa.Catalog.AppHost/Elsa.Catalog.AppHost.csproj --configuration Release --no-restore
+
+      - name: Test API
+        run: dotnet test tests/Elsa.Catalog.Api.Tests/Elsa.Catalog.Api.Tests.csproj --configuration Release --no-restore --verbosity normal
+
+      - name: Build and test admin dashboard
+        working-directory: src/Elsa.Catalog.AdminUi
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: Log in with Azure federated credentials
+        shell: bash
+        run: |
+          azd auth login \
+            --client-id "$AZURE_CLIENT_ID" \
+            --tenant-id "$AZURE_TENANT_ID" \
+            --federated-credential-provider github
+
+      - name: Log in Azure CLI
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Configure azd environment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          azd env new "$AZURE_ENV_NAME" \
+            --location "$AZURE_LOCATION" \
+            --subscription "$AZURE_SUBSCRIPTION_ID" \
+            --no-prompt
+
+          azd env config set infra.parameters.adminApiKey "$ADMIN_API_KEY"
+          azd env set AZURE_APP_SERVICE_DASHBOARD_URI "$AZURE_APP_SERVICE_DASHBOARD_URI"
+          azd env set AZURE_CONTAINER_REGISTRY_ENDPOINT "$AZURE_CONTAINER_REGISTRY_ENDPOINT"
+          azd env set API_IDENTITY_CLIENTID "$API_IDENTITY_CLIENTID"
+          azd env set API_IDENTITY_ID "$API_IDENTITY_ID"
+          azd env set CATALOG_SQL_SQLSERVERFQDN "$CATALOG_SQL_SQLSERVERFQDN"
+          azd env set ELSA_PACKAGE_CATALOG_AZURE_APP_SERVICE_DASHBOARD_URI "$ELSA_PACKAGE_CATALOG_AZURE_APP_SERVICE_DASHBOARD_URI"
+          azd env set ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_ENDPOINT "$ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_ENDPOINT"
+          azd env set ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID "$ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID"
+          azd env set ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID "$ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID"
+          azd env set ELSA_PACKAGE_CATALOG_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_ID "$ELSA_PACKAGE_CATALOG_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_ID"
+          azd env set ELSA_PACKAGE_CATALOG_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_PRINCIPAL_ID "$ELSA_PACKAGE_CATALOG_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_PRINCIPAL_ID"
+          azd env set ELSA_PACKAGE_CATALOG_PLANID "$ELSA_PACKAGE_CATALOG_PLANID"
+          azd env set APPLICATION_BUILD_NUMBER "$GITHUB_RUN_NUMBER"
+
+      - name: Deploy API app
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.deploy_mode }}" = "infra" ]; then
+            azd up --no-prompt
+          else
+            image="$AZURE_CONTAINER_REGISTRY_ENDPOINT/elsa-package-catalog/api-elsa-package-catalog:${GITHUB_SHA}"
+            acr_name="${AZURE_CONTAINER_REGISTRY_ENDPOINT%%.azurecr.io}"
+
+            az acr login --name "$acr_name"
+            docker build --file src/Elsa.Catalog.Api/Dockerfile --tag "$image" .
+            docker push "$image"
+
+            az webapp config appsettings set \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_WEBAPP_NAME" \
+              --settings AZURE_TOKEN_CREDENTIALS=prod Application__BuildNumber="$GITHUB_RUN_NUMBER" \
+              --output none
+
+            az webapp sitecontainers update \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_WEBAPP_NAME" \
+              --container-name main \
+              --image "$image" \
+              --target-port 8080 \
+              --is-main true \
+              --user-assigned-identity "$ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID" \
+              --output none
+
+            az webapp restart \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_WEBAPP_NAME" \
+              --output none
+          fi

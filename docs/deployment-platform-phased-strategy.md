@@ -52,12 +52,27 @@ elsa-platform/
     Elsa.Platform.Deployment.Engine/
     Elsa.Platform.Deployment.Cli/
     Elsa.Platform.Deployment.Api/
+    Elsa.Platform.PackageCatalog.Abstractions/
+    Elsa.Platform.PackageCatalog.Core/
+    Elsa.Platform.PackageCatalog.Api/
+    Elsa.Platform.PackageCatalog.AdminUi/
+    Elsa.Platform.PackageCatalog.Sources.NuGet/
+    Elsa.Platform.RuntimeBuilder.Abstractions/
+    Elsa.Platform.RuntimeBuilder.Core/
+    Elsa.Platform.RuntimeBuilder.Api/
+    Elsa.Platform.RuntimeBuilder.DeploymentTemplates/
+    Elsa.Platform.PackageManifests/
+    Elsa.Platform.PackageManifest.Generator/
   tests/
     Elsa.Platform.Deployment.Manifest.Tests/
     Elsa.Platform.Deployment.Artifacts.Tests/
     Elsa.Platform.Deployment.Engine.Tests/
     Elsa.Platform.Deployment.Cli.Tests/
     Elsa.Platform.Deployment.Api.Tests/
+    Elsa.Platform.PackageCatalog.*.Tests/
+    Elsa.Platform.RuntimeBuilder.*.Tests/
+    Elsa.Platform.PackageManifests.Tests/
+    Elsa.Platform.PackageManifest.Generator.*.Tests/
   samples/
     basic-workflow-deployment/
     ci-dry-run/
@@ -91,8 +106,14 @@ src/
 - Manifest schema and parsing.
 - Artifact creation, inspection, and immutability rules.
 - Deployment planning, validation orchestration, diffing, dry-run, apply, and history.
+- Package catalog, package manifest contracts, package manifest generation, package approval, and package compatibility metadata.
+- Runtime Builder planning, runtime image metadata, server-side bundle generation, deployment template generation, and saved runtime configuration intent.
 - CLI, API, operator, GitOps, OCI, signing, approvals, overlays, governance, and platform documentation.
 - Resource handler abstractions and default handlers that can operate through public Elsa runtime APIs.
+
+Package Catalog and Runtime Builder are sibling platform subsystems, not children of Deployment. Deployment should consume package catalog capabilities through abstractions or client contracts for package descriptor validation, approval state, and compatibility checks. Runtime Builder should own builder intent, runtime image metadata, server-side planning, generated bundles, and deployment template output that may later feed deployment artifacts.
+
+Deployment should not consume Runtime Builder intent as a deployment manifest. Phase 1 Deployment consumes deployment-specific manifests/artifacts and may validate package requirements through `Elsa.Platform.PackageCatalog.Abstractions`. Runtime Builder generated bundles can become an input to future artifact build workflows only after implementation feedback proves the contract, but they should not bypass deployment validation, diff, dry-run, apply, or history.
 
 ## 4. Package And Module Boundaries
 
@@ -229,6 +250,8 @@ The Phase 1 implementation should support as descriptors and validation inputs, 
 - Recipe references.
 
 This narrower slice is intentional. Workflows and variables prove resource identity, desired state, diff, apply, history, rollback semantics, and idempotency without forcing premature package management, feature activation, or Loom integration decisions.
+
+Package requirement validation should call a catalog-facing contract such as `IDeploymentPackageCatalog`, not Package Catalog API endpoint classes, EF stores, source providers, or admin UI code. The validation result must keep discovery, manifest validity, approval, trust, suspicious-change, compatibility, feature, and conflict findings distinct so governance decisions can mature without changing the deployment manifest shape.
 
 ### Phase 1 Non-Goals
 
@@ -378,6 +401,8 @@ Recommended Phase 1 taxonomy:
 | `feature` | Descriptor and validation; apply if stable runtime feature API exists | Feature id | Desired enabled/disabled state compared to runtime capability state |
 | `package` | Descriptor and validation; package installation deferred unless Nuplane API is ready | Package id plus version range | Runtime must satisfy version; install behavior deferred |
 | `recipe` | Descriptor and validation; execution deferred unless Loom API is ready | Recipe id plus version/hash | Recipe execution must be explicit and recorded; avoid hidden imperative mutation |
+
+The package descriptor validation contract lives in `Elsa.Platform.PackageCatalog.Abstractions` so `Elsa.Platform.Deployment.*` packages can reference it directly while remaining independent from Package Catalog API, UI, persistence, migrations, and source-provider internals.
 
 Deletion in Phase 1 should be conservative. The manifest can describe desired resources, but destructive deletion should require explicit per-resource settings and should not be the default.
 
