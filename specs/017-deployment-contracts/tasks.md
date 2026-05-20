@@ -25,12 +25,12 @@
 
 **Purpose**: Establish shared enums and primitive value types used by every user story.
 
-- [ ] T005 [P] Create deployment diagnostic severity and status enums in `src/Elsa.Platform.Deployment.Abstractions/Diagnostics/DeploymentDiagnosticSeverity.cs`
-- [ ] T006 [P] Create deployment operation mode enum in `src/Elsa.Platform.Deployment.Abstractions/DeploymentOperationMode.cs`
-- [ ] T007 [P] Create deployment status enum in `src/Elsa.Platform.Deployment.Abstractions/DeploymentStatus.cs`
-- [ ] T008 [P] Create deployment change action and status enums in `src/Elsa.Platform.Deployment.Abstractions/Plans/DeploymentChangeAction.cs` and `src/Elsa.Platform.Deployment.Abstractions/Plans/DeploymentChangeStatus.cs`
-- [ ] T009 [P] Create deletion behavior enum in `src/Elsa.Platform.Deployment.Abstractions/Resources/DeploymentDeletionBehavior.cs`
-- [ ] T010 [P] Create digest value object in `src/Elsa.Platform.Deployment.Abstractions/Artifacts/ArtifactDigest.cs`
+- [x] T005 [P] Create deployment diagnostic severity and status enums in `src/Elsa.Platform.Deployment.Abstractions/Diagnostics/DeploymentDiagnosticSeverity.cs`
+- [x] T006 [P] Create deployment operation mode enum in `src/Elsa.Platform.Deployment.Abstractions/DeploymentOperationMode.cs`
+- [x] T007 [P] Create deployment status enum in `src/Elsa.Platform.Deployment.Abstractions/DeploymentStatus.cs`
+- [x] T008 [P] Create deployment change action and status enums in `src/Elsa.Platform.Deployment.Abstractions/Plans/DeploymentChangeAction.cs` and `src/Elsa.Platform.Deployment.Abstractions/Plans/DeploymentChangeStatus.cs`
+- [x] T009 [P] Create deletion behavior enum in `src/Elsa.Platform.Deployment.Abstractions/Resources/DeploymentDeletionBehavior.cs`
+- [x] T010 [P] Create digest value object in `src/Elsa.Platform.Deployment.Abstractions/Artifacts/ArtifactDigest.cs`
 
 **Checkpoint**: Shared primitives compile before higher-level contracts are added.
 
