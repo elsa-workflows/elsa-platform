@@ -287,13 +287,13 @@ public sealed class DeploymentEngine : IDeploymentEngine
         {
             diagnostics.Add(new DeploymentDiagnostic(
                 DeploymentEngineDiagnosticCodes.HistoryFailed,
-                DeploymentDiagnosticSeverity.Error,
+                DeploymentDiagnosticSeverity.Warning,
                 ex.Message));
 
             return new DeploymentResult(
                 deploymentId,
                 DeploymentOperationMode.Apply,
-                MapHistoryFailureStatus(status),
+                status,
                 plan.Artifact,
                 target.Descriptor,
                 plan,
@@ -424,11 +424,6 @@ public sealed class DeploymentEngine : IDeploymentEngine
 
         return failed == applyableResults.Length ? DeploymentStatus.Failed : DeploymentStatus.PartiallyApplied;
     }
-
-    private static DeploymentStatus MapHistoryFailureStatus(DeploymentStatus status) =>
-        status is DeploymentStatus.Applied or DeploymentStatus.NoOp
-            ? DeploymentStatus.CompletedWithWarnings
-            : status;
 
     private static async ValueTask<IReadOnlyCollection<DeploymentDiagnostic>> GuardAsync(
         Func<ValueTask<IReadOnlyCollection<DeploymentDiagnostic>>> action,

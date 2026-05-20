@@ -117,7 +117,7 @@ public class DeploymentEngineApplyTests
     }
 
     [Fact]
-    public async Task ApplyAsyncReportsSuccessfulApplyWithHistoryFailureAsWarningStatus()
+    public async Task ApplyAsyncPreservesApplyStatusWhenHistoryFails()
     {
         var resource = DeploymentEngineTestFixtures.Resource();
         var history = new FailingDeploymentHistoryStore();
@@ -126,9 +126,11 @@ public class DeploymentEngineApplyTests
 
         var result = await engine.ApplyAsync(plan, _target);
 
-        result.Status.Should().Be(DeploymentStatus.CompletedWithWarnings);
+        result.Status.Should().Be(DeploymentStatus.Applied);
         result.ResourceResults.Should().ContainSingle().Which.Status.Should().Be(DeploymentChangeStatus.Completed);
-        result.Diagnostics.Should().ContainSingle(x => x.Code == DeploymentEngineDiagnosticCodes.HistoryFailed);
+        result.Diagnostics.Should().ContainSingle(x =>
+            x.Code == DeploymentEngineDiagnosticCodes.HistoryFailed &&
+            x.Severity == DeploymentDiagnosticSeverity.Warning);
     }
 
     private DeploymentEngine CreateEngine() =>
