@@ -301,10 +301,11 @@ public sealed class DeploymentArtifactBuilder(
         IEnumerable<PayloadFile> payloads,
         CancellationToken cancellationToken)
     {
+        var payloadsByArtifactPath = payloads.ToDictionary(payload => payload.ArtifactPath, StringComparer.Ordinal);
         var result = new List<DeploymentArtifactChecksumEntry>();
         foreach (var entry in entries)
         {
-            var digest = await DeploymentArtifactChecksumService.ComputeFileDigestAsync(payloads.Single(x => x.ArtifactPath == entry.Path).SourcePath, cancellationToken);
+            var digest = await DeploymentArtifactChecksumService.ComputeFileDigestAsync(payloadsByArtifactPath[entry.Path].SourcePath, cancellationToken);
             result.Add(new DeploymentArtifactChecksumEntry(entry.Path, entry.Kind, digest.Algorithm, digest.Value, entry.Size));
         }
 

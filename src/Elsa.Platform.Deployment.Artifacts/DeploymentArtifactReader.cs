@@ -267,14 +267,22 @@ public sealed class DeploymentArtifactReader(
                 continue;
             }
 
-            if (!store.Exists(checksum.Path))
+            var checksumFullPath = store.TryFullPath(checksum.Path);
+            if (checksumFullPath is null)
+            {
+                verification.Add(new DeploymentArtifactChecksumVerification(checksum.Path, checksum.Kind, DeploymentArtifactChecksumStatus.Missing, checksum.Digest));
+                diagnostics.Add(DeploymentArtifactPathValidator.Invalid(checksum.Path, $"Artifact checksum entry '{checksum.Path}' has an invalid path."));
+                continue;
+            }
+
+            if (!File.Exists(checksumFullPath))
             {
                 verification.Add(new DeploymentArtifactChecksumVerification(checksum.Path, checksum.Kind, DeploymentArtifactChecksumStatus.Missing, checksum.Digest));
                 diagnostics.Add(Error(ArtifactDiagnosticCodes.ChecksumMissing, $"Artifact entry '{checksum.Path}' is missing."));
                 continue;
             }
 
-            var digest = await DeploymentArtifactChecksumService.ComputeFileDigestAsync(store.FullPath(checksum.Path), cancellationToken);
+            var digest = await DeploymentArtifactChecksumService.ComputeFileDigestAsync(checksumFullPath, cancellationToken);
             if (!string.Equals(digest.Value, checksum.Digest, StringComparison.OrdinalIgnoreCase))
             {
                 verification.Add(new DeploymentArtifactChecksumVerification(checksum.Path, checksum.Kind, DeploymentArtifactChecksumStatus.Mismatched, checksum.Digest, digest.Value));
@@ -287,7 +295,9 @@ public sealed class DeploymentArtifactReader(
 
         var checkedPaths = inventory.Entries
             .Where(x => !string.IsNullOrWhiteSpace(x?.Path))
-            .Select(x => x!.Path);
+            .Select(x => DeploymentArtifactPathValidator.NormalizeRelativePath(x!.Path))
+            .Where(x => x is not null)
+            .Select(x => x!);
         foreach (var unexpected in entryPaths.Except(checkedPaths, StringComparer.Ordinal))
         {
             if (unexpected == ArtifactLayoutConstants.ChecksumInventoryPath)
@@ -339,7 +349,20 @@ public sealed class DeploymentArtifactReader(
 
         public bool Exists(string path) => File.Exists(FullPath(path));
 
-        public string FullPath(string path) => Path.Combine(_root, path.Replace('/', Path.DirectorySeparatorChar));
+        public string FullPath(string path) =>
+            TryFullPath(path) ?? throw new InvalidDataException($"Artifact path '{path}' is invalid.");
+
+        public string? TryFullPath(string path)
+        {
+            var normalized = DeploymentArtifactPathValidator.NormalizeRelativePath(path);
+            if (normalized is null)
+                return null;
+
+            var fullPath = Path.GetFullPath(Path.Combine(_root, normalized.Replace('/', Path.DirectorySeparatorChar)));
+            return fullPath == _root || fullPath.StartsWith(_root + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                ? fullPath
+                : null;
+        }
 
         public Stream OpenRead(string path) => File.OpenRead(FullPath(path));
 

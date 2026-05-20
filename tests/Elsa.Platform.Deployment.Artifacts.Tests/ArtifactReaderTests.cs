@@ -71,6 +71,27 @@ public class ArtifactReaderTests : IAsyncDisposable
         result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.PayloadUnexpected);
     }
 
+    [Fact]
+    public async Task RejectsChecksumTraversalPaths()
+    {
+        await _builder.BuildFolderAsync(_workspace.FolderOptions());
+        var outsidePath = Path.Combine(_workspace.Root, "outside.txt");
+        await File.WriteAllTextAsync(outsidePath, "outside artifact root");
+        var outsideDigest = await DeploymentArtifactChecksumService.ComputeFileDigestAsync(outsidePath, CancellationToken.None);
+        var checksumPath = Path.Combine(_workspace.OutputFolder, ArtifactLayoutConstants.ChecksumInventoryPath);
+        var checksums = JsonNode.Parse(await File.ReadAllTextAsync(checksumPath))!.AsObject();
+        var payloadChecksum = checksums["entries"]!.AsArray().First(entry => entry!["kind"]!.GetValue<string>() == "Payload")!.AsObject();
+        payloadChecksum["path"] = "../outside.txt";
+        payloadChecksum["digest"] = outsideDigest.Value;
+        payloadChecksum["size"] = new FileInfo(outsidePath).Length;
+        await File.WriteAllTextAsync(checksumPath, checksums.ToJsonString());
+
+        var result = await _reader.InspectFolderAsync(_workspace.OutputFolder);
+
+        result.Succeeded.Should().BeFalse();
+        result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.PathInvalid);
+    }
+
     [Theory]
     [InlineData(ArtifactLayoutConstants.MetadataPath, ArtifactDiagnosticCodes.MetadataRequired)]
     [InlineData("manifest/manifest.yaml", ArtifactDiagnosticCodes.ManifestRequired)]
