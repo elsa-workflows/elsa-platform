@@ -64,7 +64,7 @@ public sealed class DeploymentArtifactBuilder(
             }
             catch
             {
-                RecoverDirectoryBackup(backupPath, outputPath);
+                TryRecoverDirectoryBackup(backupPath, outputPath, diagnostics);
                 throw;
             }
 
@@ -131,7 +131,7 @@ public sealed class DeploymentArtifactBuilder(
             }
             catch
             {
-                RecoverFileBackup(backupPath, outputPath);
+                TryRecoverFileBackup(backupPath, outputPath, diagnostics);
                 throw;
             }
 

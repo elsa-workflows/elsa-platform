@@ -39,6 +39,23 @@ public class ArtifactReaderTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task DetectsChecksumAlgorithmMismatch()
+    {
+        await _builder.BuildFolderAsync(_workspace.FolderOptions());
+        var checksumPath = Path.Combine(_workspace.OutputFolder, ArtifactLayoutConstants.ChecksumInventoryPath);
+        var checksums = JsonNode.Parse(await File.ReadAllTextAsync(checksumPath))!.AsObject();
+        var payloadChecksum = checksums["entries"]!.AsArray().First(entry => entry!["kind"]!.GetValue<string>() == "Payload")!.AsObject();
+        payloadChecksum["algorithm"] = "sha512";
+        await File.WriteAllTextAsync(checksumPath, checksums.ToJsonString());
+
+        var result = await _reader.InspectFolderAsync(_workspace.OutputFolder);
+
+        result.Succeeded.Should().BeFalse();
+        result.ArtifactId.Should().BeNull();
+        result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumMismatch);
+    }
+
+    [Fact]
     public async Task MissingArtifactFolderReturnsReadFailedDiagnostic()
     {
         var result = await _reader.InspectFolderAsync(Path.Combine(_workspace.Root, "missing-artifact"));

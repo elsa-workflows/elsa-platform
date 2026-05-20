@@ -267,6 +267,19 @@ public sealed class DeploymentArtifactReader(
                 continue;
             }
 
+            if (!string.Equals(checksum.Algorithm, ArtifactLayoutConstants.ChecksumAlgorithm, StringComparison.OrdinalIgnoreCase))
+            {
+                verification.Add(new DeploymentArtifactChecksumVerification(
+                    checksum.Path,
+                    checksum.Kind,
+                    DeploymentArtifactChecksumStatus.Mismatched,
+                    checksum.Digest));
+                diagnostics.Add(Error(
+                    ArtifactDiagnosticCodes.ChecksumMismatch,
+                    $"Artifact entry '{checksum.Path}' uses unsupported checksum algorithm '{checksum.Algorithm}'."));
+                continue;
+            }
+
             var checksumFullPath = store.TryFullPath(checksum.Path);
             if (checksumFullPath is null)
             {
