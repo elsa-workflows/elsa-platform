@@ -13,5 +13,6 @@ public static class ManifestDiagnosticCodes
     public const string ResourceDependencyInvalid = "manifest.resource.dependency.invalid";
     public const string ResourcePathRequired = "manifest.resource.path.required";
     public const string ResourcePathInvalid = "manifest.resource.path.invalid";
+    public const string ResourceMapperFailed = "manifest.resource.mapper.failed";
     public const string ResourceUnsupported = "manifest.resource.unsupported";
 }

@@ -131,6 +131,29 @@ public class ManifestExtensionTests
     }
 
     [Fact]
+    public void ThrowingResourceMapperReturnsDiagnostic()
+    {
+        var manifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: custom
+            resources:
+              dashboards:
+                - id: sales
+            """, ManifestFormat.Yaml).Manifest!;
+        var registry = new ManifestResourceMapperRegistry().Add(new ThrowingMapper());
+
+        var normalize = () => _normalizer.Normalize(manifest, registry);
+
+        var normalized = normalize.Should().NotThrow().Subject;
+        normalized.Diagnostics.Should().ContainSingle(x =>
+            x.Code == ManifestDiagnosticCodes.ResourceMapperFailed &&
+            x.Details.Contains(new KeyValuePair<string, string>("section", "dashboards")));
+        normalized.Resources.Should().BeEmpty();
+    }
+
+    [Fact]
     public void ManifestAndResourceMetadataArePreserved()
     {
         var manifest = _reader.Read("""
@@ -214,5 +237,13 @@ public class ManifestExtensionTests
             Context = context;
             return [];
         }
+    }
+
+    private sealed class ThrowingMapper : IManifestResourceMapper
+    {
+        public string SectionName => "dashboards";
+
+        public IReadOnlyCollection<DeploymentResource> Map(JsonNode? section, ManifestNormalizationContext context) =>
+            throw new InvalidOperationException("Dashboard mapper failed.");
     }
 }

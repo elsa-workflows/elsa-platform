@@ -67,6 +67,31 @@ public class ManifestDiagnosticTests
         normalized.Diagnostics.Should().ContainSingle(x => x.Code == ManifestDiagnosticCodes.MetadataNameRequired);
     }
 
+    [Theory]
+    [InlineData("workflows")]
+    [InlineData("variables")]
+    [InlineData("features")]
+    [InlineData("packages")]
+    [InlineData("recipes")]
+    public void NullResourceListEntryReturnsIdentityDiagnostic(string section)
+    {
+        var manifest = _reader.Read($"""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: null-entry
+            resources:
+              {section}:
+                - null
+            """, ManifestFormat.Yaml).Manifest!;
+
+        var normalize = () => _normalizer.Normalize(manifest);
+
+        var normalized = normalize.Should().NotThrow().Subject;
+        normalized.Diagnostics.Should().ContainSingle(x => x.Code == ManifestDiagnosticCodes.ResourceIdentityRequired);
+        normalized.Resources.Should().BeEmpty();
+    }
+
     [Fact]
     public void DuplicateResourceIdentityReturnsDiagnostic()
     {

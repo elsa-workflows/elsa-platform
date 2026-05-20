@@ -9,10 +9,15 @@ namespace Elsa.Platform.Deployment.Manifest;
 public static class ManifestResourceHasher
 {
     private static readonly JsonSerializerOptions CompactJsonOptions = new() { WriteIndented = false };
+    private static readonly JsonSerializerOptions HashSerializerOptions = new()
+    {
+        WriteIndented = false,
+        PropertyNamingPolicy = null
+    };
 
     public static ArtifactDigest Hash(string resourceType, object entry)
     {
-        var node = JsonSerializer.SerializeToNode(entry) ?? new JsonObject();
+        var node = JsonSerializer.SerializeToNode(entry, HashSerializerOptions) ?? new JsonObject();
         var canonical = Canonicalize(new JsonObject
         {
             ["resourceType"] = resourceType,

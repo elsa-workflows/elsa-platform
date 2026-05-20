@@ -29,6 +29,10 @@ public sealed class ManifestNormalizationContext
 
     public IReadOnlyList<DeploymentDiagnostic> Diagnostics => _diagnosticsView;
 
+    /// <summary>
+    /// Adds a mapper diagnostic during the active <see cref="IManifestResourceMapper.Map"/> call.
+    /// Diagnostics added after the mapper returns are visible on this captured context only and are not merged into the normalized manifest.
+    /// </summary>
     public void AddDiagnostic(DeploymentDiagnostic diagnostic) => _addedDiagnostics.Add(diagnostic);
 
     internal IReadOnlyCollection<DeploymentDiagnostic> AddedDiagnostics => _addedDiagnostics;

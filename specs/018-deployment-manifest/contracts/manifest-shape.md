@@ -58,6 +58,7 @@ The manifest package emits `DeploymentDiagnostic` values with stable codes:
 - `manifest.resource.dependency.invalid`
 - `manifest.resource.path.required`
 - `manifest.resource.path.invalid`
+- `manifest.resource.mapper.failed`
 - `manifest.resource.unsupported`
 
 ## Deferred Shape

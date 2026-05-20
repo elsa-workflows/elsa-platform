@@ -27,6 +27,12 @@ public sealed class ManifestNormalizer : IManifestNormalizer
     {
         foreach (var entry in entries)
         {
+            if (entry is null)
+            {
+                diagnostics.Add(ManifestValidator.Error(ManifestDiagnosticCodes.ResourceIdentityRequired, "Workflow entry is required."));
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(entry.Id))
             {
                 diagnostics.Add(ManifestValidator.Error(ManifestDiagnosticCodes.ResourceIdentityRequired, "Workflow id is required."));
@@ -57,6 +63,12 @@ public sealed class ManifestNormalizer : IManifestNormalizer
     {
         foreach (var entry in entries)
         {
+            if (entry is null)
+            {
+                diagnostics.Add(ManifestValidator.Error(ManifestDiagnosticCodes.ResourceIdentityRequired, "Variable entry is required."));
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(entry.Key))
             {
                 diagnostics.Add(ManifestValidator.Error(ManifestDiagnosticCodes.ResourceIdentityRequired, "Variable key is required."));
@@ -79,6 +91,12 @@ public sealed class ManifestNormalizer : IManifestNormalizer
     {
         foreach (var entry in entries)
         {
+            if (entry is null)
+            {
+                diagnostics.Add(ManifestValidator.Error(ManifestDiagnosticCodes.ResourceIdentityRequired, "Feature entry is required."));
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(entry.Id))
             {
                 diagnostics.Add(ManifestValidator.Error(ManifestDiagnosticCodes.ResourceIdentityRequired, "Feature id is required."));
@@ -101,6 +119,12 @@ public sealed class ManifestNormalizer : IManifestNormalizer
     {
         foreach (var entry in entries)
         {
+            if (entry is null)
+            {
+                diagnostics.Add(ManifestValidator.Error(ManifestDiagnosticCodes.ResourceIdentityRequired, "Package entry is required."));
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(entry.Id))
             {
                 diagnostics.Add(ManifestValidator.Error(ManifestDiagnosticCodes.ResourceIdentityRequired, "Package id is required."));
@@ -124,6 +148,12 @@ public sealed class ManifestNormalizer : IManifestNormalizer
     {
         foreach (var entry in entries)
         {
+            if (entry is null)
+            {
+                diagnostics.Add(ManifestValidator.Error(ManifestDiagnosticCodes.ResourceIdentityRequired, "Recipe entry is required."));
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(entry.Id))
             {
                 diagnostics.Add(ManifestValidator.Error(ManifestDiagnosticCodes.ResourceIdentityRequired, "Recipe id is required."));
@@ -161,10 +191,22 @@ public sealed class ManifestNormalizer : IManifestNormalizer
             if (mapperRegistry?.TryGet(section.Key, out var mapper) == true)
             {
                 var context = new ManifestNormalizationContext(manifest, diagnostics);
-                foreach (var resource in mapper.Map(section.Value, context))
-                    resources.Add(resource);
-                foreach (var diagnostic in context.AddedDiagnostics)
-                    diagnostics.Add(diagnostic);
+                try
+                {
+                    foreach (var resource in mapper.Map(section.Value, context))
+                        resources.Add(resource);
+                    foreach (var diagnostic in context.AddedDiagnostics)
+                        diagnostics.Add(diagnostic);
+                }
+                catch (Exception ex)
+                {
+                    diagnostics.Add(new DeploymentDiagnostic(
+                        ManifestDiagnosticCodes.ResourceMapperFailed,
+                        DeploymentDiagnosticSeverity.Error,
+                        $"Resource mapper for section '{section.Key}' failed: {ex.Message}",
+                        details: new Dictionary<string, string> { ["section"] = section.Key }));
+                }
+
                 continue;
             }
 

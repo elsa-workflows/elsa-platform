@@ -36,14 +36,10 @@ public class ManifestBoundaryTests
         "File.OpenRead",
         "ZipFile",
         "HttpClient",
-        "workflow instance",
-        "workflow instances",
-        "bookmark",
-        "bookmarks",
-        "execution state",
-        "execution log",
-        "runtime queue",
-        "transient runtime state"
+        "using Elsa.Workflows.Runtime",
+        "using Elsa.Workflows.Management",
+        "Elsa.Workflows.Runtime.",
+        "Elsa.Workflows.Management."
     ];
 
     [Fact]
