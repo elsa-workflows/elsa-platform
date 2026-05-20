@@ -159,7 +159,7 @@ public class ManifestNormalizationTests
               "metadata": { "name": "exponent-value" },
               "resources": {
                 "variables": [
-                  { "key": "largeNumber", "value": 100000 }
+                  { "key": "largeNumber", "value": 1e5 }
                 ]
               }
             }

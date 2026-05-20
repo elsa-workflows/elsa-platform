@@ -193,7 +193,8 @@ public sealed class ManifestNormalizer : IManifestNormalizer
                 var context = new ManifestNormalizationContext(manifest, diagnostics);
                 try
                 {
-                    foreach (var resource in mapper.Map(section.Value, context))
+                    var mappedResources = mapper.Map(section.Value, context).ToArray();
+                    foreach (var resource in mappedResources)
                         resources.Add(resource);
                     foreach (var diagnostic in context.AddedDiagnostics)
                         diagnostics.Add(diagnostic);

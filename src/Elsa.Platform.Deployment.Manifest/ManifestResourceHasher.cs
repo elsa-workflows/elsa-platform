@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -38,7 +39,28 @@ public static class ManifestResourceHasher
             JsonObject obj => CanonicalizeObject(obj),
             JsonArray array => CanonicalizeArray(array, propertyName),
             null => null,
-            _ => JsonNode.Parse(node.ToJsonString())
+            JsonValue value => CanonicalizeValue(value),
+            _ => JsonNode.Parse(node.ToJsonString(CompactJsonOptions))
+        };
+    }
+
+    private static JsonNode? CanonicalizeValue(JsonValue value)
+    {
+        if (!value.TryGetValue<JsonElement>(out var element))
+            return JsonNode.Parse(value.ToJsonString(CompactJsonOptions));
+
+        return element.ValueKind switch
+        {
+            JsonValueKind.Number when decimal.TryParse(
+                element.GetRawText(),
+                NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent,
+                CultureInfo.InvariantCulture,
+                out var number) => JsonValue.Create(number),
+            JsonValueKind.String => JsonValue.Create(element.GetString()),
+            JsonValueKind.True => JsonValue.Create(true),
+            JsonValueKind.False => JsonValue.Create(false),
+            JsonValueKind.Null => null,
+            _ => JsonNode.Parse(element.GetRawText())
         };
     }
 

@@ -154,6 +154,26 @@ public class ManifestExtensionTests
     }
 
     [Fact]
+    public void LazyThrowingResourceMapperDoesNotKeepPartialResources()
+    {
+        var manifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: custom
+            resources:
+              dashboards:
+                - id: sales
+            """, ManifestFormat.Yaml).Manifest!;
+        var registry = new ManifestResourceMapperRegistry().Add(new LazyThrowingMapper());
+
+        var normalized = _normalizer.Normalize(manifest, registry);
+
+        normalized.Diagnostics.Should().ContainSingle(x => x.Code == ManifestDiagnosticCodes.ResourceMapperFailed);
+        normalized.Resources.Should().BeEmpty();
+    }
+
+    [Fact]
     public void ManifestAndResourceMetadataArePreserved()
     {
         var manifest = _reader.Read("""
@@ -245,5 +265,28 @@ public class ManifestExtensionTests
 
         public IReadOnlyCollection<DeploymentResource> Map(JsonNode? section, ManifestNormalizationContext context) =>
             throw new InvalidOperationException("Dashboard mapper failed.");
+    }
+
+    private sealed class LazyThrowingMapper : IManifestResourceMapper
+    {
+        public string SectionName => "dashboards";
+
+        public IReadOnlyCollection<DeploymentResource> Map(JsonNode? section, ManifestNormalizationContext context) =>
+            new LazyThrowingResources();
+    }
+
+    private sealed class LazyThrowingResources : IReadOnlyCollection<DeploymentResource>
+    {
+        public int Count => 1;
+
+        public IEnumerator<DeploymentResource> GetEnumerator()
+        {
+            yield return new DeploymentResource(
+                new DeploymentResourceId("dashboard", "partial"),
+                desiredStateHash: new ArtifactDigest("sha256", "partial"));
+            throw new InvalidOperationException("Lazy mapper failed.");
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }
