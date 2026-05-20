@@ -21,12 +21,12 @@ public static class ManifestResourceHasher
         return new ArtifactDigest("sha256", Convert.ToHexString(bytes).ToLowerInvariant());
     }
 
-    private static JsonNode? Canonicalize(JsonNode? node)
+    private static JsonNode? Canonicalize(JsonNode? node, string? propertyName = null)
     {
         return node switch
         {
             JsonObject obj => CanonicalizeObject(obj),
-            JsonArray array => CanonicalizeArray(array),
+            JsonArray array => CanonicalizeArray(array, propertyName),
             null => null,
             _ => JsonNode.Parse(node.ToJsonString())
         };
@@ -36,15 +36,21 @@ public static class ManifestResourceHasher
     {
         var result = new JsonObject();
         foreach (var property in obj.OrderBy(x => x.Key, StringComparer.Ordinal))
-            result[property.Key] = Canonicalize(property.Value);
+            result[property.Key] = Canonicalize(property.Value, property.Key);
         return result;
     }
 
-    private static JsonArray CanonicalizeArray(JsonArray array)
+    private static JsonArray CanonicalizeArray(JsonArray array, string? propertyName)
     {
+        var items = array.Select(item => Canonicalize(item)).ToArray();
+        if (string.Equals(propertyName, "dependencies", StringComparison.OrdinalIgnoreCase))
+            items = items
+                .OrderBy(item => item?.ToJsonString(new JsonSerializerOptions { WriteIndented = false }) ?? "null", StringComparer.Ordinal)
+                .ToArray();
+
         var result = new JsonArray();
-        foreach (var item in array)
-            result.Add(Canonicalize(item));
+        foreach (var item in items)
+            result.Add(item);
         return result;
     }
 }

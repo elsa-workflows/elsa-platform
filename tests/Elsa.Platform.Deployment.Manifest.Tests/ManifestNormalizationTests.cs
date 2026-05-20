@@ -35,4 +35,48 @@ public class ManifestNormalizationTests
 
         yaml.Resources.Select(x => x.DesiredStateHash).Should().Equal(json.Resources.Select(x => x.DesiredStateHash));
     }
+
+    [Fact]
+    public void DependencyOrderDoesNotChangeDesiredStateHash()
+    {
+        var firstManifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: dependency-order
+            resources:
+              workflows:
+                - id: order-approval
+                  path: workflows/order-approval.json
+                  dependencies:
+                    - type: variable
+                      id: orderTimeout
+                    - type: feature
+                      id: sales
+            """, ManifestFormat.Yaml).Manifest!;
+        var secondManifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: dependency-order
+            resources:
+              workflows:
+                - id: order-approval
+                  path: workflows/order-approval.json
+                  dependencies:
+                    - type: feature
+                      id: sales
+                    - type: variable
+                      id: orderTimeout
+            """, ManifestFormat.Yaml).Manifest!;
+
+        var first = _normalizer.Normalize(firstManifest);
+        var second = _normalizer.Normalize(secondManifest);
+
+        first.Diagnostics.Should().BeEmpty();
+        second.Diagnostics.Should().BeEmpty();
+        var firstResource = first.Resources.Should().ContainSingle().Which;
+        var secondResource = second.Resources.Should().ContainSingle().Which;
+        firstResource.DesiredStateHash.Should().Be(secondResource.DesiredStateHash);
+    }
 }

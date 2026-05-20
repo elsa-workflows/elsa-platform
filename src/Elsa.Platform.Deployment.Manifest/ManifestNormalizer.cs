@@ -45,7 +45,7 @@ public sealed class ManifestNormalizer : IManifestNormalizer
                 id,
                 entry.Version,
                 ManifestResourceHasher.Hash(DeploymentManifestConstants.WorkflowDefinitionResourceType, entry),
-                MapDependencies(entry.Dependencies),
+                MapDependencies(entry.Dependencies, id, diagnostics),
                 metadata: WithPath(entry.Metadata, entry.Path, ("activation", entry.Activation))));
         }
     }
@@ -63,10 +63,11 @@ public sealed class ManifestNormalizer : IManifestNormalizer
                 continue;
             }
 
+            var id = new DeploymentResourceId(DeploymentManifestConstants.VariableResourceType, entry.Key, entry.Scope);
             resources.Add(new DeploymentResource(
-                new DeploymentResourceId(DeploymentManifestConstants.VariableResourceType, entry.Key, entry.Scope),
+                id,
                 desiredStateHash: ManifestResourceHasher.Hash(DeploymentManifestConstants.VariableResourceType, entry),
-                dependencies: MapDependencies(entry.Dependencies),
+                dependencies: MapDependencies(entry.Dependencies, id, diagnostics),
                 metadata: entry.Metadata));
         }
     }
@@ -84,10 +85,11 @@ public sealed class ManifestNormalizer : IManifestNormalizer
                 continue;
             }
 
+            var id = new DeploymentResourceId(DeploymentManifestConstants.FeatureResourceType, entry.Id);
             resources.Add(new DeploymentResource(
-                new DeploymentResourceId(DeploymentManifestConstants.FeatureResourceType, entry.Id),
+                id,
                 desiredStateHash: ManifestResourceHasher.Hash(DeploymentManifestConstants.FeatureResourceType, entry),
-                dependencies: MapDependencies(entry.Dependencies),
+                dependencies: MapDependencies(entry.Dependencies, id, diagnostics),
                 metadata: WithValue(entry.Metadata, "state", entry.State)));
         }
     }
@@ -105,11 +107,12 @@ public sealed class ManifestNormalizer : IManifestNormalizer
                 continue;
             }
 
+            var id = new DeploymentResourceId(DeploymentManifestConstants.PackageResourceType, entry.Id);
             resources.Add(new DeploymentResource(
-                new DeploymentResourceId(DeploymentManifestConstants.PackageResourceType, entry.Id),
+                id,
                 entry.Version,
                 ManifestResourceHasher.Hash(DeploymentManifestConstants.PackageResourceType, entry),
-                MapDependencies(entry.Dependencies),
+                MapDependencies(entry.Dependencies, id, diagnostics),
                 metadata: entry.Metadata));
         }
     }
@@ -142,7 +145,7 @@ public sealed class ManifestNormalizer : IManifestNormalizer
                 id,
                 entry.Version,
                 ManifestResourceHasher.Hash(DeploymentManifestConstants.RecipeResourceType, entry),
-                MapDependencies(entry.Dependencies),
+                MapDependencies(entry.Dependencies, id, diagnostics),
                 metadata: WithPath(entry.Metadata, entry.Path)));
         }
     }
@@ -184,11 +187,29 @@ public sealed class ManifestNormalizer : IManifestNormalizer
         }
     }
 
-    private static IReadOnlyCollection<DeploymentResourceId> MapDependencies(IEnumerable<ManifestResourceReference> dependencies) =>
-        dependencies
-            .Where(x => !string.IsNullOrWhiteSpace(x.Type) && !string.IsNullOrWhiteSpace(x.Id))
-            .Select(x => new DeploymentResourceId(x.Type!, x.Id!, x.Scope))
-            .ToArray();
+    private static IReadOnlyCollection<DeploymentResourceId> MapDependencies(
+        IEnumerable<ManifestResourceReference> dependencies,
+        DeploymentResourceId owner,
+        ICollection<DeploymentDiagnostic> diagnostics)
+    {
+        var result = new List<DeploymentResourceId>();
+        foreach (var dependency in dependencies)
+        {
+            if (string.IsNullOrWhiteSpace(dependency.Type) || string.IsNullOrWhiteSpace(dependency.Id))
+            {
+                diagnostics.Add(new DeploymentDiagnostic(
+                    ManifestDiagnosticCodes.ResourceDependencyInvalid,
+                    DeploymentDiagnosticSeverity.Error,
+                    $"Resource '{owner}' has a dependency with missing type or id.",
+                    owner));
+                continue;
+            }
+
+            result.Add(new DeploymentResourceId(dependency.Type, dependency.Id, dependency.Scope));
+        }
+
+        return result;
+    }
 
     private static IReadOnlyDictionary<string, string> WithPath(
         IReadOnlyDictionary<string, string> metadata,
