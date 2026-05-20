@@ -87,7 +87,7 @@ src/
   Elsa.Platform.PackageCatalog.Abstractions/
   Elsa.Platform.PackageCatalog.Core/
   Elsa.Platform.PackageCatalog.Api/
-  Elsa.Platform.PackageCatalog.AdminUi/
+  Elsa.Platform.AdminUi/
   Elsa.Platform.PackageCatalog.Sources.NuGet/
   Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
   Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/

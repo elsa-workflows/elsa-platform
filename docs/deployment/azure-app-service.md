@@ -52,7 +52,7 @@ docker push <acr>/<repo>:<sha>
 az webapp sitecontainers update ...
 ```
 
-The Dockerfile uses a Node build stage for `src/Elsa.Platform.PackageCatalog.AdminUi` and copies
+The Dockerfile uses a Node build stage for `src/Elsa.Platform.AdminUi` and copies
 the Vite `dist` output into `src/Elsa.Platform.PackageCatalog.Api/wwwroot/admin` before
 `dotnet publish`. ASP.NET Core serves `/admin` as the dashboard SPA and keeps the
 admin API endpoints under `/api/admin`.

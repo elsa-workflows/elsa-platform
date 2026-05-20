@@ -1,10 +1,10 @@
 FROM node:22-alpine AS admin-ui-build
-WORKDIR /src/src/Elsa.Platform.PackageCatalog.AdminUi
+WORKDIR /src/src/Elsa.Platform.AdminUi
 
-COPY src/Elsa.Platform.PackageCatalog.AdminUi/package*.json ./
+COPY src/Elsa.Platform.AdminUi/package*.json ./
 RUN npm ci
 
-COPY src/Elsa.Platform.PackageCatalog.AdminUi/ ./
+COPY src/Elsa.Platform.AdminUi/ ./
 RUN npm run build
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0.300 AS build
@@ -12,7 +12,7 @@ WORKDIR /src
 
 COPY . .
 RUN mkdir -p src/Elsa.Platform.PackageCatalog.Api/wwwroot/admin
-COPY --from=admin-ui-build /src/src/Elsa.Platform.PackageCatalog.AdminUi/dist/ src/Elsa.Platform.PackageCatalog.Api/wwwroot/admin/
+COPY --from=admin-ui-build /src/src/Elsa.Platform.AdminUi/dist/ src/Elsa.Platform.PackageCatalog.Api/wwwroot/admin/
 RUN dotnet restore Elsa.Platform.sln
 RUN dotnet publish src/Elsa.Platform.PackageCatalog.Api/Elsa.Platform.PackageCatalog.Api.csproj \
     --configuration Release \

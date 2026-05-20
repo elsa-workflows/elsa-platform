@@ -55,7 +55,7 @@ elsa-platform/
     Elsa.Platform.PackageCatalog.Abstractions/
     Elsa.Platform.PackageCatalog.Core/
     Elsa.Platform.PackageCatalog.Api/
-    Elsa.Platform.PackageCatalog.AdminUi/
+    Elsa.Platform.AdminUi/
     Elsa.Platform.PackageCatalog.Sources.NuGet/
     Elsa.Platform.RuntimeBuilder.Abstractions/
     Elsa.Platform.RuntimeBuilder.Core/
@@ -108,6 +108,7 @@ src/
 - Deployment planning, validation orchestration, diffing, dry-run, apply, and history.
 - Package catalog, package manifest contracts, package manifest generation, package approval, and package compatibility metadata.
 - Runtime Builder planning, runtime image metadata, server-side bundle generation, deployment template generation, and saved runtime configuration intent.
+- Unified React admin UI shell and subsystem modules for package governance, deployment, Runtime Builder, targets, managed runtimes, operations, and audit.
 - CLI, API, operator, GitOps, OCI, signing, approvals, overlays, governance, and platform documentation.
 - Resource handler abstractions and default handlers that can operate through public Elsa runtime APIs.
 

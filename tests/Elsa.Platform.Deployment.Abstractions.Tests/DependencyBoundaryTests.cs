@@ -10,7 +10,7 @@ public class DependencyBoundaryTests
     [
         "Elsa.Platform.PackageCatalog.Api",
         "Elsa.Platform.PackageCatalog.Core",
-        "Elsa.Platform.PackageCatalog.AdminUi",
+        "Elsa.Platform.AdminUi",
         "Elsa.Platform.PackageCatalog.Persistence",
         "Elsa.Platform.PackageCatalog.Sources",
         "Elsa.Platform.RuntimeBuilder.Core",

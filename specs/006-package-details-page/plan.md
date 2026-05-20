@@ -105,7 +105,7 @@ src/
 │           ├── AdminPackageEndpoints.cs
 │           ├── AdminValidationEndpoints.cs
 │           └── AdminApprovalEndpoints.cs
-└── Elsa.Platform.PackageCatalog.AdminUi/
+└── Elsa.Platform.AdminUi/
     └── src/
         ├── app/
         │   ├── routes.tsx
@@ -131,11 +131,11 @@ tests/
 │   └── AdminApprovalApiTests.cs
 ├── Elsa.Platform.PackageCatalog.Testing/
 │   └── PublicCatalogSeedData.cs
-└── Elsa.Platform.PackageCatalog.AdminUi.E2E/
+└── Elsa.Platform.AdminUi.E2E/
     └── package-details.spec.ts
 
 src/
-└── Elsa.Platform.PackageCatalog.AdminUi/
+└── Elsa.Platform.AdminUi/
     └── src/
         └── features/
             └── packages/
