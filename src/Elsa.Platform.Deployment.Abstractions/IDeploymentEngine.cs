@@ -12,20 +12,24 @@ public interface IDeploymentEngine
     ValueTask<DeploymentResult> ValidateAsync(
         IArtifactReader artifact,
         IDeploymentTarget target,
+        DeploymentExecutionContext? context = null,
         CancellationToken cancellationToken = default);
 
     ValueTask<DeploymentPlan> DiffAsync(
         IArtifactReader artifact,
         IDeploymentTarget target,
+        DeploymentExecutionContext? context = null,
         CancellationToken cancellationToken = default);
 
     ValueTask<DeploymentResult> DryRunAsync(
         DeploymentPlan plan,
         IDeploymentTarget target,
+        DeploymentExecutionContext? context = null,
         CancellationToken cancellationToken = default);
 
     ValueTask<DeploymentResult> ApplyAsync(
         DeploymentPlan plan,
         IDeploymentTarget target,
+        DeploymentExecutionContext? context = null,
         CancellationToken cancellationToken = default);
 }

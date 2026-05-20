@@ -43,11 +43,14 @@ public class ExtensionContractTests
         var artifact = new SampleArtifact(metadata);
 
         await artifact.WriteMetadataAsync(metadata);
+        await artifact.WriteResourcesAsync([_resource]);
         await artifact.WriteAsync("manifest.yaml", new MemoryStream("apiVersion: v1alpha"u8.ToArray()));
         var readMetadata = await artifact.ReadMetadataAsync();
+        var resources = await artifact.ReadResourcesAsync();
         await using var content = await artifact.OpenReadAsync("manifest.yaml");
 
         readMetadata.Should().Be(metadata);
+        resources.Should().ContainSingle().Which.Should().Be(_resource);
         content.Length.Should().BeGreaterThan(0);
     }
 
@@ -114,10 +117,14 @@ public class ExtensionContractTests
     private sealed class SampleArtifact(DeploymentArtifactMetadata metadata) : IArtifactReader, IArtifactWriter
     {
         private readonly Dictionary<string, byte[]> _content = new();
+        private IReadOnlyCollection<DeploymentResource> _resources = [];
         private DeploymentArtifactMetadata _metadata = metadata;
 
         public ValueTask<DeploymentArtifactMetadata> ReadMetadataAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_metadata);
+
+        public ValueTask<IReadOnlyCollection<DeploymentResource>> ReadResourcesAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(_resources);
 
         public ValueTask<Stream> OpenReadAsync(string path, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<Stream>(new MemoryStream(_content[path], writable: false));
@@ -125,6 +132,12 @@ public class ExtensionContractTests
         public ValueTask WriteMetadataAsync(DeploymentArtifactMetadata metadata, CancellationToken cancellationToken = default)
         {
             _metadata = metadata;
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask WriteResourcesAsync(IReadOnlyCollection<DeploymentResource> resources)
+        {
+            _resources = resources;
             return ValueTask.CompletedTask;
         }
 
@@ -141,6 +154,7 @@ public class ExtensionContractTests
         public async ValueTask<DeploymentResult> ValidateAsync(
             IArtifactReader artifact,
             IDeploymentTarget target,
+            DeploymentExecutionContext? context = null,
             CancellationToken cancellationToken = default)
         {
             var metadata = await artifact.ReadMetadataAsync(cancellationToken);
@@ -150,6 +164,7 @@ public class ExtensionContractTests
         public async ValueTask<DeploymentPlan> DiffAsync(
             IArtifactReader artifact,
             IDeploymentTarget target,
+            DeploymentExecutionContext? context = null,
             CancellationToken cancellationToken = default)
         {
             var metadata = await artifact.ReadMetadataAsync(cancellationToken);
@@ -160,12 +175,14 @@ public class ExtensionContractTests
         public ValueTask<DeploymentResult> DryRunAsync(
             DeploymentPlan plan,
             IDeploymentTarget target,
+            DeploymentExecutionContext? context = null,
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(CreateResult(plan, target, DeploymentOperationMode.DryRun, DeploymentStatus.DryRunCompleted));
 
         public ValueTask<DeploymentResult> ApplyAsync(
             DeploymentPlan plan,
             IDeploymentTarget target,
+            DeploymentExecutionContext? context = null,
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(CreateResult(plan, target, DeploymentOperationMode.Apply, DeploymentStatus.NoOp));
 
