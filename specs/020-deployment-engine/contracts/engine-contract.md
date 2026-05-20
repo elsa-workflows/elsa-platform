@@ -19,6 +19,7 @@ Phase 1 uses existing abstraction concepts. Analysis found two implementation-bl
 
 - `IArtifactReader.ReadResourcesAsync(CancellationToken)` returning normalized `DeploymentResource` records.
 - `DeploymentExecutionContext` carrying optional `DeploymentActor Actor` and `bool Prune`.
+- `DeploymentChange.Resource` carrying the desired resource snapshot needed by dry-run and apply.
 
 The execution context is deliberately transport-agnostic. CLI/API/operator slices can populate it later without changing the engine core.
 
@@ -72,6 +73,7 @@ Required diagnostic codes:
 - `deployment.engine.plan.invalid`
 - `deployment.engine.apply.failed`
 - `deployment.engine.history.failed`
+- `deployment.engine.prune.disabled`
 
 ## Status Mapping
 

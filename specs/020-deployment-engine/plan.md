@@ -65,7 +65,6 @@ src/
     DeploymentEngineDiagnosticCodes.cs
     InMemoryDeploymentHistoryStore.cs
     ResourceHandlerRegistry.cs
-    Properties/AssemblyInfo.cs
 
 tests/
   Elsa.Platform.Deployment.Engine.Tests/

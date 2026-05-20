@@ -1,3 +1,5 @@
+using Elsa.Platform.Deployment.Abstractions.Resources;
+
 namespace Elsa.Platform.Deployment.Abstractions.Artifacts;
 
 /// <summary>
@@ -6,6 +8,8 @@ namespace Elsa.Platform.Deployment.Abstractions.Artifacts;
 public interface IArtifactReader
 {
     ValueTask<DeploymentArtifactMetadata> ReadMetadataAsync(CancellationToken cancellationToken = default);
+
+    ValueTask<IReadOnlyCollection<DeploymentResource>> ReadResourcesAsync(CancellationToken cancellationToken = default);
 
     ValueTask<Stream> OpenReadAsync(string path, CancellationToken cancellationToken = default);
 }

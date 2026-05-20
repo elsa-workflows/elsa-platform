@@ -1,0 +1,13 @@
+namespace Elsa.Platform.Deployment.Engine;
+
+public static class DeploymentEngineDiagnosticCodes
+{
+    public const string HandlerMissing = "deployment.engine.handler.missing";
+    public const string HandlerDuplicate = "deployment.engine.handler.duplicate";
+    public const string ResourceDuplicate = "deployment.engine.resource.duplicate";
+    public const string ArtifactInvalid = "deployment.engine.artifact.invalid";
+    public const string PlanInvalid = "deployment.engine.plan.invalid";
+    public const string ApplyFailed = "deployment.engine.apply.failed";
+    public const string HistoryFailed = "deployment.engine.history.failed";
+    public const string PruneDisabled = "deployment.engine.prune.disabled";
+}

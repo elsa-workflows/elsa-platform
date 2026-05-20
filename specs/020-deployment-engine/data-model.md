@@ -82,6 +82,7 @@ Fields:
 - `Status`: Pending, ready, blocked, skipped, completed, or failed.
 - `Reason`: Human-readable reason.
 - `Diagnostics`: Change-specific diagnostics.
+- `Resource`: Optional desired resource snapshot carried with the plan so dry-run and apply can operate without re-reading the artifact.
 
 State transitions:
 

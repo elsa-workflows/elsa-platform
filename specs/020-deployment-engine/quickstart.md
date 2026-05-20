@@ -33,7 +33,7 @@ tests/Elsa.Platform.Deployment.Engine.Tests/
 3. Provide desired resources through an artifact reader test double:
 
    ```csharp
-   var artifact = TestArtifactReader.FromResources([
+   var artifact = new TestArtifactReader([
        new DeploymentResource(new("workflowDefinition", "order-approval"), desiredStateHash: hash)
    ]);
    ```
@@ -59,7 +59,8 @@ tests/Elsa.Platform.Deployment.Engine.Tests/
 7. Apply:
 
    ```csharp
-   var result = await engine.ApplyAsync(plan, target);
+   var actor = new DeploymentActor("user:alice", "Alice");
+   var result = await engine.ApplyAsync(plan, target, new DeploymentExecutionContext(actor));
    ```
 
 8. Inspect history:

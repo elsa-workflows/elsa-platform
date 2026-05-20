@@ -13,13 +13,15 @@ public sealed record DeploymentChange
         DeploymentChangeAction action,
         DeploymentChangeStatus status = DeploymentChangeStatus.Pending,
         string? reason = null,
-        IEnumerable<DeploymentDiagnostic>? diagnostics = null)
+        IEnumerable<DeploymentDiagnostic>? diagnostics = null,
+        DeploymentResource? resource = null)
     {
         ResourceId = resourceId;
         Action = action;
         Status = status;
         Reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
         Diagnostics = (diagnostics ?? []).ToArray();
+        Resource = resource;
     }
 
     public DeploymentResourceId ResourceId { get; }
@@ -31,4 +33,6 @@ public sealed record DeploymentChange
     public string? Reason { get; }
 
     public IReadOnlyCollection<DeploymentDiagnostic> Diagnostics { get; }
+
+    public DeploymentResource? Resource { get; }
 }
