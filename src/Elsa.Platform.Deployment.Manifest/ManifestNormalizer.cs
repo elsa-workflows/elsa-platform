@@ -201,6 +201,8 @@ public sealed class ManifestNormalizer : IManifestNormalizer
                 }
                 catch (Exception ex)
                 {
+                    foreach (var diagnostic in context.AddedDiagnostics)
+                        diagnostics.Add(diagnostic);
                     diagnostics.Add(new DeploymentDiagnostic(
                         ManifestDiagnosticCodes.ResourceMapperFailed,
                         DeploymentDiagnosticSeverity.Error,

@@ -137,6 +137,27 @@ public sealed class ManifestReader : IManifestReader
         if (decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out var number))
             return JsonValue.Create(number);
 
+        if (TryParseJsonNumber(text, out var jsonNumber))
+            return jsonNumber;
+
         return JsonValue.Create(text);
+    }
+
+    private static bool TryParseJsonNumber(string text, out JsonNode? jsonNumber)
+    {
+        try
+        {
+            jsonNumber = JsonNode.Parse(text);
+            if (jsonNumber is JsonValue value &&
+                value.TryGetValue<JsonElement>(out var element) &&
+                element.ValueKind is JsonValueKind.Number)
+                return true;
+        }
+        catch (JsonException)
+        {
+        }
+
+        jsonNumber = null;
+        return false;
     }
 }

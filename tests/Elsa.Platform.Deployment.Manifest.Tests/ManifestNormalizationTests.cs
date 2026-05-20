@@ -209,6 +209,39 @@ public class ManifestNormalizationTests
             .Should().Be(json.Resources.Should().ContainSingle().Which.DesiredStateHash);
     }
 
+    [Fact]
+    public void OutOfRangeNumericAndStringValuesProduceDifferentHashes()
+    {
+        var numericManifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: out-of-range-exponent-value
+            resources:
+              variables:
+                - key: largeNumber
+                  value: 1e400
+            """, ManifestFormat.Yaml).Manifest!;
+        var stringManifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: out-of-range-exponent-value
+            resources:
+              variables:
+                - key: largeNumber
+                  value: "1e400"
+            """, ManifestFormat.Yaml).Manifest!;
+
+        var numeric = _normalizer.Normalize(numericManifest);
+        var text = _normalizer.Normalize(stringManifest);
+
+        numeric.Diagnostics.Should().BeEmpty();
+        text.Diagnostics.Should().BeEmpty();
+        numeric.Resources.Should().ContainSingle().Which.DesiredStateHash
+            .Should().NotBe(text.Resources.Should().ContainSingle().Which.DesiredStateHash);
+    }
+
     [Theory]
     [InlineData("workflows")]
     [InlineData("variables")]

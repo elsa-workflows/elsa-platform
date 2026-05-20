@@ -154,6 +154,28 @@ public class ManifestExtensionTests
     }
 
     [Fact]
+    public void ThrowingResourceMapperPreservesPreThrowDiagnostics()
+    {
+        var manifest = _reader.Read("""
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: custom
+            resources:
+              dashboards:
+                - id: sales
+            """, ManifestFormat.Yaml).Manifest!;
+        var registry = new ManifestResourceMapperRegistry().Add(new DiagnosticThenThrowingMapper());
+
+        var normalized = _normalizer.Normalize(manifest, registry);
+
+        normalized.Diagnostics.Select(x => x.Code).Should().Equal(
+            "dashboard.prethrow",
+            ManifestDiagnosticCodes.ResourceMapperFailed);
+        normalized.Resources.Should().BeEmpty();
+    }
+
+    [Fact]
     public void LazyThrowingResourceMapperDoesNotKeepPartialResources()
     {
         var manifest = _reader.Read("""
@@ -265,6 +287,20 @@ public class ManifestExtensionTests
 
         public IReadOnlyCollection<DeploymentResource> Map(JsonNode? section, ManifestNormalizationContext context) =>
             throw new InvalidOperationException("Dashboard mapper failed.");
+    }
+
+    private sealed class DiagnosticThenThrowingMapper : IManifestResourceMapper
+    {
+        public string SectionName => "dashboards";
+
+        public IReadOnlyCollection<DeploymentResource> Map(JsonNode? section, ManifestNormalizationContext context)
+        {
+            context.AddDiagnostic(new DeploymentDiagnostic(
+                "dashboard.prethrow",
+                DeploymentDiagnosticSeverity.Warning,
+                "Dashboard mapper found an issue before failing."));
+            throw new InvalidOperationException("Dashboard mapper failed.");
+        }
     }
 
     private sealed class LazyThrowingMapper : IManifestResourceMapper

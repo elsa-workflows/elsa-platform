@@ -56,7 +56,7 @@ public static class ManifestResourceHasher
                 NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent,
                 CultureInfo.InvariantCulture,
                 out var number) => JsonValue.Create(number),
-            JsonValueKind.Number => JsonValue.Create(element.GetRawText()),
+            JsonValueKind.Number => JsonNode.Parse(element.GetRawText()),
             JsonValueKind.String => JsonValue.Create(element.GetString()),
             JsonValueKind.True => JsonValue.Create(true),
             JsonValueKind.False => JsonValue.Create(false),
