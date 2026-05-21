@@ -37,7 +37,7 @@ const navSections: Array<{ label: string; items: NavItem[] }> = [
       { to: "/admin/overview", label: "Overview", icon: Home },
       { to: "/admin/deployments", label: "Deployments", icon: Rocket, disabled: true },
       { to: "/admin/artifacts", label: "Artifacts", icon: Archive, disabled: true },
-      { to: "/admin/runtime-builder", label: "Runtime Builder", icon: Layers3, disabled: true }
+      { to: "/admin/runtime-builder", label: "Runtime Builder", icon: Layers3 }
     ]
   },
   {
