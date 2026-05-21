@@ -35,6 +35,7 @@ public sealed class AccountWorkspaceStore(CatalogDbContext dbContext) : IAccount
     public async Task UpdateExternalIdentitySeenAsync(Guid externalIdentityId, string? displayName, string? email, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         await dbContext.ExternalIdentities
             .Where(x => x.Id == externalIdentityId)
             .ExecuteUpdateAsync(updates => updates
@@ -49,6 +50,7 @@ public sealed class AccountWorkspaceStore(CatalogDbContext dbContext) : IAccount
                 .SetProperty(x => x.DisplayName, displayName)
                 .SetProperty(x => x.Email, email)
                 .SetProperty(x => x.UpdatedAt, now), cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<WorkspaceEntitlementSnapshot?> GetLatestEntitlementAsync(Guid workspaceId, CancellationToken cancellationToken = default)
