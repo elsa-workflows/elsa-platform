@@ -7,6 +7,7 @@ import { SourceDetailsPage } from "@/features/sources/SourceDetailsPage";
 import { SourcesPage } from "@/features/sources/SourcesPage";
 import { PackageDetailsPage } from "@/features/packages/PackageDetailsPage";
 import { PackagesPage } from "@/features/packages/PackagesPage";
+import { RuntimeBuilderPage } from "@/features/runtime-builder/RuntimeBuilderPage";
 import { SyncRunDetailsPage } from "@/features/sync-runs/SyncRunDetailsPage";
 import { SyncRunsPage } from "@/features/sync-runs/SyncRunsPage";
 
@@ -43,7 +44,7 @@ export const router = createBrowserRouter([
       { path: "sync-runs/:runId", element: <SyncRunDetailsPage /> },
       { path: "deployments", element: <PlaceholderPage title="Deployments" /> },
       { path: "artifacts", element: <PlaceholderPage title="Artifacts" /> },
-      { path: "runtime-builder", element: <PlaceholderPage title="Runtime Builder" /> },
+      { path: "runtime-builder", element: <RuntimeBuilderPage /> },
       { path: "targets", element: <PlaceholderPage title="Targets" /> },
       { path: "runtimes", element: <PlaceholderPage title="Managed Runtimes" /> },
       { path: "operations", element: <PlaceholderPage title="Runtime Operations" /> },
