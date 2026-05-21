@@ -5,6 +5,7 @@ import { defineConfig, loadEnv } from "vite";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, "");
   const catalogApiProxyTarget = env.CATALOG_API_PROXY_TARGET ?? "http://localhost:5220";
+  const catalogApiProxyOrigin = new URL(catalogApiProxyTarget).origin;
   const devIdentityIssuer = env.CATALOG_DEV_IDENTITY_ISSUER ?? "https://elsaworkflows.io";
   const devIdentitySubject = env.CATALOG_DEV_IDENTITY_SUBJECT ?? "local-admin";
   const devIdentityEmail = env.CATALOG_DEV_IDENTITY_EMAIL ?? "local-admin@example.test";
@@ -26,6 +27,7 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           configure: (proxy) => {
             proxy.on("proxyReq", (proxyReq) => {
+              proxyReq.setHeader("Origin", catalogApiProxyOrigin);
               proxyReq.setHeader("X-Catalog-Identity-Issuer", devIdentityIssuer);
               proxyReq.setHeader("X-Catalog-Identity-Subject", devIdentitySubject);
               proxyReq.setHeader("X-Catalog-Identity-Email", devIdentityEmail);
