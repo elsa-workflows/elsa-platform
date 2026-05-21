@@ -23,6 +23,7 @@ import {
   type BuilderBundleResponse,
   type BuilderCatalog,
   type BuilderFinding,
+  type BuilderPlanResponse,
   type BuilderPackage,
   type DeploymentTarget,
   type InfrastructureProvider,
@@ -33,6 +34,7 @@ import {
 import { cn } from "@/lib/utils";
 import { queryKeys } from "@/lib/query/queryClient";
 import { sourceStatusTone, statusToneClass } from "@/lib/status/statusBadges";
+import { ApiError } from "@/lib/api/httpClient";
 
 const defaultTarget: DeploymentTarget = "docker-compose";
 
@@ -219,7 +221,9 @@ export function RuntimeBuilderPage() {
   }
 
   if (workspaces.isLoading) return <RequestStateView state="loading" title="Loading workspace context" />;
-  if (workspaces.isError && !workspaces.data) return <RequestStateView state="unauthorized" title="Workspace context could not load" />;
+  if (workspaces.isError && !workspaces.data) {
+    return <RequestStateView state={workspaceContextErrorState(workspaces.error)} title="Workspace context could not load" />;
+  }
   if ((workspaces.data?.workspaces.length ?? 0) === 0) {
     return <EmptyState title="No workspaces available" description="Runtime Builder needs a workspace before it can resolve packages and save configurations." />;
   }
@@ -230,6 +234,8 @@ export function RuntimeBuilderPage() {
   const selectedFile = bundle?.files.find((file) => file.path === selectedFilePath) ?? bundle?.files[0] ?? null;
   const findings = [...(plan.data?.findings ?? []), ...(bundle?.findings ?? [])];
   const canSubmit = Boolean(currentIntent && effectiveWorkspaceId && selectedImage);
+  const autoAdded = plan.data?.autoAdded;
+  const hasPlannerAdditions = hasAutoAddedItems(autoAdded);
 
   return (
     <section className="space-y-5">
@@ -539,12 +545,11 @@ export function RuntimeBuilderPage() {
                 {bundleGeneration.isPending ? "Generating" : "Generate Bundle"}
               </SecondaryButton>
             </div>
-            {plan.data?.autoAdded ? (
+            {hasPlannerAdditions && autoAdded ? (
               <div className="mt-4 rounded-ui border border-border bg-background p-3 text-sm">
                 <p className="font-medium">Planner additions</p>
                 <p className="mt-1 text-muted-foreground">
-                  {plan.data.autoAdded.packages.length} packages, {plan.data.autoAdded.features.length} features,{" "}
-                  {plan.data.autoAdded.infrastructure.length} infrastructure providers
+                  {autoAdded.packages.length} packages, {autoAdded.features.length} features, {autoAdded.infrastructure.length} infrastructure providers
                 </p>
               </div>
             ) : null}
@@ -818,4 +823,12 @@ function findingTone(level: string) {
   if (level === "error") return statusToneClass(sourceStatusTone("Error"));
   if (level === "warning") return statusToneClass(sourceStatusTone("Warning"));
   return statusToneClass(sourceStatusTone("Info"));
+}
+
+function hasAutoAddedItems(autoAdded: BuilderPlanResponse["autoAdded"] | undefined) {
+  return Boolean(autoAdded && (autoAdded.packages.length > 0 || autoAdded.features.length > 0 || autoAdded.infrastructure.length > 0));
+}
+
+function workspaceContextErrorState(error: unknown) {
+  return error instanceof ApiError && (error.kind === "Unauthorized" || error.kind === "Forbidden") ? "unauthorized" : "unexpected";
 }
