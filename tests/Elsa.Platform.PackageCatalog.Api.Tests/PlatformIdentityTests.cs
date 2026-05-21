@@ -64,6 +64,21 @@ public sealed class PlatformIdentityTests
     }
 
     [Fact]
+    public async Task Me_workspaces_rejects_platform_jwt_when_audience_is_not_configured()
+    {
+        await using var app = new CatalogApiTestApplication(new Dictionary<string, string?>
+        {
+            [$"{PlatformIdentityDefaults.ConfigurationSection}:Audience"] = null
+        });
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreatePlatformIdentityClient();
+
+        var response = await client.GetAsync("/api/me/workspaces");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
     public async Task Me_workspaces_rejects_expired_platform_jwt_identity()
     {
         await using var app = new CatalogApiTestApplication();

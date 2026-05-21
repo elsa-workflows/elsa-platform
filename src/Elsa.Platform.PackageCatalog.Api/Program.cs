@@ -101,7 +101,7 @@ builder.Services.AddOptions<JwtBearerOptions>(PlatformIdentityDefaults.Scheme)
                 || !string.IsNullOrWhiteSpace(platformIdentity.Authority)
                 || !string.IsNullOrWhiteSpace(platformIdentity.SymmetricSigningKey),
             ValidIssuer = string.IsNullOrWhiteSpace(platformIdentity.Issuer) ? platformIdentity.Authority : platformIdentity.Issuer,
-            ValidateAudience = !string.IsNullOrWhiteSpace(platformIdentity.Audience),
+            ValidateAudience = true,
             ValidAudience = platformIdentity.Audience,
             ValidateIssuerSigningKey = !string.IsNullOrWhiteSpace(platformIdentity.SymmetricSigningKey),
             IssuerSigningKey = string.IsNullOrWhiteSpace(platformIdentity.SymmetricSigningKey)
