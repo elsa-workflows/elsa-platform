@@ -12,9 +12,11 @@ npm install
 npm run dev
 ```
 
-Set `VITE_CATALOG_API_PROXY_TARGET` in a local `.env` file while the package
-catalog API host serves the admin backend. The browser client uses relative
-`/api` requests by default so the Vite dev proxy can avoid CORS requirements.
+The Vite dev server proxies relative `/api` requests to the package catalog API
+host at `http://localhost:5220` by default so the browser client can avoid CORS
+requirements. Override `VITE_CATALOG_API_PROXY_TARGET` in a local `.env` file
+when the API runs elsewhere. In development, the proxy also forwards local
+trusted workspace identity headers for workspace-scoped Runtime Builder APIs.
 Admin access is provided by the API host's dashboard session cookie, not by a
 browser-readable API key.
 

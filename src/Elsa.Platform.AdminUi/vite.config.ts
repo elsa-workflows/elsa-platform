@@ -2,6 +2,12 @@ import path from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+const catalogApiProxyTarget = process.env.VITE_CATALOG_API_PROXY_TARGET ?? "http://localhost:5220";
+const devIdentityIssuer = process.env.VITE_CATALOG_DEV_IDENTITY_ISSUER ?? "https://elsaworkflows.io";
+const devIdentitySubject = process.env.VITE_CATALOG_DEV_IDENTITY_SUBJECT ?? "local-admin";
+const devIdentityEmail = process.env.VITE_CATALOG_DEV_IDENTITY_EMAIL ?? "local-admin@example.test";
+const devIdentityName = process.env.VITE_CATALOG_DEV_IDENTITY_NAME ?? "Local Admin";
+
 export default defineConfig({
   base: "/admin/",
   plugins: [react()],
@@ -14,8 +20,16 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: process.env.VITE_CATALOG_API_PROXY_TARGET ?? "http://localhost:5000",
-        changeOrigin: true
+        target: catalogApiProxyTarget,
+        changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq) => {
+            proxyReq.setHeader("X-Catalog-Identity-Issuer", devIdentityIssuer);
+            proxyReq.setHeader("X-Catalog-Identity-Subject", devIdentitySubject);
+            proxyReq.setHeader("X-Catalog-Identity-Email", devIdentityEmail);
+            proxyReq.setHeader("X-Catalog-Identity-Name", devIdentityName);
+          });
+        }
       }
     }
   }
