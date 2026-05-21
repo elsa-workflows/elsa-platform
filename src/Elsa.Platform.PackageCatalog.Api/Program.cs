@@ -97,7 +97,9 @@ builder.Services.AddOptions<JwtBearerOptions>(PlatformIdentityDefaults.Scheme)
         options.Audience = string.IsNullOrWhiteSpace(platformIdentity.Audience) ? null : platformIdentity.Audience;
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = !string.IsNullOrWhiteSpace(platformIdentity.Issuer) || !string.IsNullOrWhiteSpace(platformIdentity.Authority),
+            ValidateIssuer = !string.IsNullOrWhiteSpace(platformIdentity.Issuer)
+                || !string.IsNullOrWhiteSpace(platformIdentity.Authority)
+                || !string.IsNullOrWhiteSpace(platformIdentity.SymmetricSigningKey),
             ValidIssuer = string.IsNullOrWhiteSpace(platformIdentity.Issuer) ? platformIdentity.Authority : platformIdentity.Issuer,
             ValidateAudience = !string.IsNullOrWhiteSpace(platformIdentity.Audience),
             ValidAudience = platformIdentity.Audience,

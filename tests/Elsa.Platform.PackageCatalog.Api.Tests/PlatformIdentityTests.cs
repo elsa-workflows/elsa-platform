@@ -35,6 +35,21 @@ public sealed class PlatformIdentityTests
     }
 
     [Fact]
+    public async Task Me_workspaces_rejects_platform_jwt_when_signing_key_has_no_configured_issuer()
+    {
+        await using var app = new CatalogApiTestApplication(new Dictionary<string, string?>
+        {
+            [$"{PlatformIdentityDefaults.ConfigurationSection}:Issuer"] = null
+        });
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreatePlatformIdentityClient();
+
+        var response = await client.GetAsync("/api/me/workspaces");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
     public async Task Me_workspaces_rejects_wrong_audience_platform_jwt_identity()
     {
         await using var app = new CatalogApiTestApplication();

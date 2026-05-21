@@ -82,7 +82,7 @@ public static class WorkspaceSourceEndpoints
 
         var access = await accounts.GetWorkspaceAccessAsync(identity, workspaceId, cancellationToken);
         return access is null
-            ? new WorkspaceEndpointAccess(null, Results.Forbid())
+            ? new WorkspaceEndpointAccess(null, Results.Problem(title: "Access to this workspace is not allowed.", statusCode: StatusCodes.Status403Forbidden))
             : new WorkspaceEndpointAccess(access, null);
     }
 

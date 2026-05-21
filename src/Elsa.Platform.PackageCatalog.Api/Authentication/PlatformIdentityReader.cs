@@ -18,11 +18,9 @@ public sealed class PlatformIdentityReader(IOptions<PlatformIdentityOptions> opt
             return null;
 
         var issuer = ClaimValue(user, JwtRegisteredClaimNames.Iss)
-            ?? ClaimValue(user, "iss")
             ?? _options.Issuer
             ?? _options.Authority;
         var subject = ClaimValue(user, _options.Claims.Subject)
-            ?? ClaimValue(user, JwtRegisteredClaimNames.Sub)
             ?? ClaimValue(user, ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(issuer) || string.IsNullOrWhiteSpace(subject))
             return null;
