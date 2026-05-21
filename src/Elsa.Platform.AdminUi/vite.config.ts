@@ -1,36 +1,39 @@
 import path from "node:path";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 
-const catalogApiProxyTarget = process.env.VITE_CATALOG_API_PROXY_TARGET ?? "http://localhost:5220";
-const devIdentityIssuer = process.env.VITE_CATALOG_DEV_IDENTITY_ISSUER ?? "https://elsaworkflows.io";
-const devIdentitySubject = process.env.VITE_CATALOG_DEV_IDENTITY_SUBJECT ?? "local-admin";
-const devIdentityEmail = process.env.VITE_CATALOG_DEV_IDENTITY_EMAIL ?? "local-admin@example.test";
-const devIdentityName = process.env.VITE_CATALOG_DEV_IDENTITY_NAME ?? "Local Admin";
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, __dirname, "");
+  const catalogApiProxyTarget = env.CATALOG_API_PROXY_TARGET ?? "http://localhost:5220";
+  const devIdentityIssuer = env.CATALOG_DEV_IDENTITY_ISSUER ?? "https://elsaworkflows.io";
+  const devIdentitySubject = env.CATALOG_DEV_IDENTITY_SUBJECT ?? "local-admin";
+  const devIdentityEmail = env.CATALOG_DEV_IDENTITY_EMAIL ?? "local-admin@example.test";
+  const devIdentityName = env.CATALOG_DEV_IDENTITY_NAME ?? "Local Admin";
 
-export default defineConfig({
-  base: "/admin/",
-  plugins: [react()],
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src")
-    }
-  },
-  server: {
-    port: 5173,
-    proxy: {
-      "/api": {
-        target: catalogApiProxyTarget,
-        changeOrigin: true,
-        configure: (proxy) => {
-          proxy.on("proxyReq", (proxyReq) => {
-            proxyReq.setHeader("X-Catalog-Identity-Issuer", devIdentityIssuer);
-            proxyReq.setHeader("X-Catalog-Identity-Subject", devIdentitySubject);
-            proxyReq.setHeader("X-Catalog-Identity-Email", devIdentityEmail);
-            proxyReq.setHeader("X-Catalog-Identity-Name", devIdentityName);
-          });
+  return {
+    base: "/admin/",
+    plugins: [react()],
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src")
+      }
+    },
+    server: {
+      port: 5173,
+      proxy: {
+        "/api": {
+          target: catalogApiProxyTarget,
+          changeOrigin: true,
+          configure: (proxy) => {
+            proxy.on("proxyReq", (proxyReq) => {
+              proxyReq.setHeader("X-Catalog-Identity-Issuer", devIdentityIssuer);
+              proxyReq.setHeader("X-Catalog-Identity-Subject", devIdentitySubject);
+              proxyReq.setHeader("X-Catalog-Identity-Email", devIdentityEmail);
+              proxyReq.setHeader("X-Catalog-Identity-Name", devIdentityName);
+            });
+          }
         }
       }
     }
-  }
+  };
 });
