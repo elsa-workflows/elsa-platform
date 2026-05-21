@@ -9,7 +9,14 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
         if (existing is not null)
         {
             await store.UpdateExternalIdentitySeenAsync(existing.ExternalIdentityId, normalized.DisplayName, normalized.Email, cancellationToken);
-            return existing.Context;
+            return existing.Context with
+            {
+                Account = existing.Context.Account with
+                {
+                    DisplayName = normalized.DisplayName,
+                    Email = normalized.Email
+                }
+            };
         }
 
         var account = new Account
@@ -53,7 +60,14 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
                 throw;
 
             await store.UpdateExternalIdentitySeenAsync(concurrent.ExternalIdentityId, normalized.DisplayName, normalized.Email, cancellationToken);
-            return concurrent.Context;
+            return concurrent.Context with
+            {
+                Account = concurrent.Context.Account with
+                {
+                    DisplayName = normalized.DisplayName,
+                    Email = normalized.Email
+                }
+            };
         }
 
         return new AccountWorkspaceContext(

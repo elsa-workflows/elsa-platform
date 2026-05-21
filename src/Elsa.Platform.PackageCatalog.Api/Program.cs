@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json.Serialization;
 using Elsa.Platform.PackageCatalog.Abstractions.Catalog;
 using Elsa.Platform.PackageCatalog.Abstractions.Compatibility;
@@ -36,7 +37,10 @@ using Elsa.Platform.RuntimeBuilder.Core.RuntimeConfigurations;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -49,7 +53,13 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
 });
-builder.Services.AddAuthentication(ApiKeyAuthenticationDefaults.Scheme)
+builder.Services.Configure<PlatformIdentityOptions>(builder.Configuration.GetSection(PlatformIdentityDefaults.ConfigurationSection));
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = PlatformIdentityDefaults.Scheme;
+        options.DefaultChallengeScheme = PlatformIdentityDefaults.Scheme;
+    })
+    .AddJwtBearer(PlatformIdentityDefaults.Scheme)
     .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationDefaults.Scheme, _ => { })
     .AddScheme<AuthenticationSchemeOptions, BuilderClientApiKeyAuthenticationHandler>(BuilderClientApiKeyAuthenticationDefaults.Scheme, _ => { })
     .AddCookie(AdminDashboardAuthenticationDefaults.Scheme, options =>
@@ -77,6 +87,28 @@ builder.Services.AddAuthentication(ApiKeyAuthenticationDefaults.Scheme)
             return Task.CompletedTask;
         };
     });
+builder.Services.AddOptions<JwtBearerOptions>(PlatformIdentityDefaults.Scheme)
+    .Configure<IOptions<PlatformIdentityOptions>>((options, platformIdentityOptions) =>
+    {
+        var platformIdentity = platformIdentityOptions.Value;
+        options.MapInboundClaims = false;
+        options.RequireHttpsMetadata = platformIdentity.RequireHttpsMetadata;
+        options.Authority = string.IsNullOrWhiteSpace(platformIdentity.Authority) ? null : platformIdentity.Authority;
+        options.Audience = string.IsNullOrWhiteSpace(platformIdentity.Audience) ? null : platformIdentity.Audience;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = !string.IsNullOrWhiteSpace(platformIdentity.Issuer) || !string.IsNullOrWhiteSpace(platformIdentity.Authority),
+            ValidIssuer = string.IsNullOrWhiteSpace(platformIdentity.Issuer) ? platformIdentity.Authority : platformIdentity.Issuer,
+            ValidateAudience = !string.IsNullOrWhiteSpace(platformIdentity.Audience),
+            ValidAudience = platformIdentity.Audience,
+            ValidateIssuerSigningKey = !string.IsNullOrWhiteSpace(platformIdentity.SymmetricSigningKey),
+            IssuerSigningKey = string.IsNullOrWhiteSpace(platformIdentity.SymmetricSigningKey)
+                ? null
+                : new SymmetricSecurityKey(Encoding.UTF8.GetBytes(platformIdentity.SymmetricSigningKey)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+    });
 builder.Services.AddCatalogAuthorization();
 builder.Services.AddBuilderClientAuthorization();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -93,7 +125,12 @@ builder.Services.AddScoped<IAccountWorkspaceStore, AccountWorkspaceStore>();
 builder.Services.AddScoped<AccountWorkspaceService>();
 builder.Services.AddScoped<WorkspaceSourceService>();
 builder.Services.AddScoped<RuntimeConfigurationService>();
-builder.Services.AddScoped<IWorkspaceIdentityReader, TrustedHeaderWorkspaceIdentityReader>();
+builder.Services.AddScoped<PlatformIdentityReader>();
+builder.Services.AddScoped<TrustedHeaderWorkspaceIdentityReader>();
+builder.Services.AddScoped<IWorkspaceIdentityReader>(services => new CompositeWorkspaceIdentityReader([
+    services.GetRequiredService<PlatformIdentityReader>(),
+    services.GetRequiredService<TrustedHeaderWorkspaceIdentityReader>()
+]));
 builder.Services.AddSingleton<PublicCatalogCache>();
 builder.Services.AddSingleton<IPublicCatalogCacheInvalidator>(services => services.GetRequiredService<PublicCatalogCache>());
 builder.Services.AddScoped<IPackageSourceStore, PackageSourceStore>();
