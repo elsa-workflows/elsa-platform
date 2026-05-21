@@ -5,7 +5,16 @@ import { defineConfig, loadEnv } from "vite";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, "");
   const catalogApiProxyTarget = env.CATALOG_API_PROXY_TARGET ?? "http://localhost:5220";
-  const catalogApiProxyOrigin = new URL(catalogApiProxyTarget).origin;
+  let catalogApiProxyOrigin: string;
+  try {
+    catalogApiProxyOrigin = new URL(catalogApiProxyTarget).origin;
+    if (catalogApiProxyOrigin === "null") {
+      throw new Error("include a URL scheme such as http:// or https://");
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Invalid CATALOG_API_PROXY_TARGET "${catalogApiProxyTarget}": ${message}`);
+  }
   const devIdentityIssuer = env.CATALOG_DEV_IDENTITY_ISSUER ?? "https://elsaworkflows.io";
   const devIdentitySubject = env.CATALOG_DEV_IDENTITY_SUBJECT ?? "local-admin";
   const devIdentityEmail = env.CATALOG_DEV_IDENTITY_EMAIL ?? "local-admin@example.test";
