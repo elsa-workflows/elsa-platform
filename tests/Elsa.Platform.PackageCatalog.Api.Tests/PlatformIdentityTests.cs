@@ -1,7 +1,9 @@
 using System.Net;
-using Elsa.Platform.PackageCatalog.Api.Workspace;
-using FluentAssertions;
 using Elsa.Platform.PackageCatalog.Api.Authentication;
+using Elsa.Platform.PackageCatalog.Api.Workspace;
+using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
+using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Elsa.Platform.PackageCatalog.Api.Tests;
 
@@ -147,5 +149,22 @@ public sealed class PlatformIdentityTests
         second!.Account.Id.Should().Be(first!.Account.Id);
         second.Account.DisplayName.Should().Be("Ada Byron");
         second.Account.Email.Should().Be("ada.byron@example.test");
+    }
+
+    [Fact]
+    public async Task Workspace_endpoint_does_not_provision_unknown_identity_on_denied_access()
+    {
+        await using var app = new CatalogApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreatePlatformIdentityClient(subject: "unknown-user");
+
+        var response = await client.GetAsync($"/api/workspaces/{Guid.NewGuid()}/sources");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await using var scope = app.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        dbContext.Accounts.Should().BeEmpty();
+        dbContext.Workspaces.Should().BeEmpty();
+        dbContext.ExternalIdentities.Should().BeEmpty();
     }
 }

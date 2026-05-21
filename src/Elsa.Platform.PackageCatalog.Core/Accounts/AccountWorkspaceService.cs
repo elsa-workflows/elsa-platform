@@ -77,9 +77,14 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
 
     public async Task<WorkspaceAccess?> GetWorkspaceAccessAsync(TrustedWorkspaceIdentity identity, Guid workspaceId, CancellationToken cancellationToken = default)
     {
-        var context = await GetOrCreateAsync(identity, cancellationToken);
-        var workspace = context.Workspaces.SingleOrDefault(x => x.Id == workspaceId);
-        return workspace is null ? null : new WorkspaceAccess(context.Account.Id, workspace.Id, workspace.Role);
+        var normalized = identity.Normalize();
+        var existing = await store.FindByExternalIdentityAsync(normalized.Issuer, normalized.Subject, cancellationToken);
+        if (existing is null)
+            return null;
+
+        await store.UpdateExternalIdentitySeenAsync(existing.ExternalIdentityId, normalized.DisplayName, normalized.Email, cancellationToken);
+        var workspace = existing.Context.Workspaces.SingleOrDefault(x => x.Id == workspaceId);
+        return workspace is null ? null : new WorkspaceAccess(existing.Context.Account.Id, workspace.Id, workspace.Role);
     }
 }
 
