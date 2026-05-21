@@ -1,8 +1,10 @@
 using System.Net;
+using System.Net.Http.Headers;
 using Elsa.Platform.PackageCatalog.Api.Authentication;
 using Elsa.Platform.PackageCatalog.Api.Workspace;
 using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Elsa.Platform.PackageCatalog.Api.Tests;
@@ -52,6 +54,22 @@ public sealed class PlatformIdentityTests
     }
 
     [Fact]
+    public async Task Me_workspaces_rejects_platform_jwt_with_empty_issuer_when_signing_key_has_no_configured_issuer()
+    {
+        await using var app = new CatalogApiTestApplication(new Dictionary<string, string?>
+        {
+            [$"{PlatformIdentityDefaults.ConfigurationSection}:Issuer"] = null,
+            [$"{PlatformIdentityDefaults.ConfigurationSection}:Authority"] = null
+        });
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreatePlatformIdentityClient(issuer: "");
+
+        var response = await client.GetAsync("/api/me/workspaces");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
     public async Task Me_workspaces_rejects_wrong_audience_platform_jwt_identity()
     {
         await using var app = new CatalogApiTestApplication();
@@ -76,6 +94,24 @@ public sealed class PlatformIdentityTests
         var response = await client.GetAsync("/api/me/workspaces");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Me_workspaces_rejects_invalid_bearer_token_without_falling_back_to_trusted_headers()
+    {
+        await using var app = new CatalogApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "not-a-valid-token");
+        client.DefaultRequestHeaders.Add(TrustedHeaderWorkspaceIdentityReader.IssuerHeader, "https://trusted.example.test");
+        client.DefaultRequestHeaders.Add(TrustedHeaderWorkspaceIdentityReader.SubjectHeader, "trusted-subject");
+
+        var response = await client.GetAsync("/api/me/workspaces");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await using var scope = app.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        dbContext.Accounts.Should().BeEmpty();
     }
 
     [Fact]
@@ -181,5 +217,40 @@ public sealed class PlatformIdentityTests
         dbContext.Accounts.Should().BeEmpty();
         dbContext.Workspaces.Should().BeEmpty();
         dbContext.ExternalIdentities.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Workspace_endpoint_does_not_update_profile_metadata_on_denied_access()
+    {
+        await using var app = new CatalogApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var ownerClient = app.CreatePlatformIdentityClient(subject: "owner");
+        var workspaceId = (await ownerClient.GetCatalogJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Workspaces.Single().Id;
+        var otherClient = app.CreatePlatformIdentityClient(
+            subject: "other-user",
+            claims: new Dictionary<string, string>
+            {
+                ["name"] = "Other User",
+                ["email"] = "other@example.test"
+            });
+        await otherClient.GetCatalogJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
+        var deniedClient = app.CreatePlatformIdentityClient(
+            subject: "other-user",
+            claims: new Dictionary<string, string>
+            {
+                ["name"] = "Changed User",
+                ["email"] = "changed@example.test"
+            });
+
+        var response = await deniedClient.GetAsync($"/api/workspaces/{workspaceId}/sources");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await using var scope = app.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        var account = await dbContext.Accounts
+            .AsNoTracking()
+            .SingleAsync(x => x.ExternalIdentities.Any(identity => identity.Subject == "other-user"));
+        account.DisplayName.Should().Be("Other User");
+        account.Email.Should().Be("other@example.test");
     }
 }

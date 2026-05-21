@@ -82,9 +82,12 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
         if (existing is null)
             return null;
 
-        await store.UpdateExternalIdentitySeenAsync(existing.ExternalIdentityId, normalized.DisplayName, normalized.Email, cancellationToken);
         var workspace = existing.Context.Workspaces.SingleOrDefault(x => x.Id == workspaceId);
-        return workspace is null ? null : new WorkspaceAccess(existing.Context.Account.Id, workspace.Id, workspace.Role);
+        if (workspace is null)
+            return null;
+
+        await store.UpdateExternalIdentitySeenAsync(existing.ExternalIdentityId, normalized.DisplayName, normalized.Email, cancellationToken);
+        return new WorkspaceAccess(existing.Context.Account.Id, workspace.Id, workspace.Role);
     }
 }
 

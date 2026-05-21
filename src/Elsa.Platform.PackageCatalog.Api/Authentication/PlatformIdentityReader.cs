@@ -10,6 +10,12 @@ public sealed class PlatformIdentityReader(IOptions<PlatformIdentityOptions> opt
 {
     private readonly PlatformIdentityOptions _options = options.Value;
 
+    public static bool HasBearerToken(HttpContext context)
+    {
+        var authorization = context.Request.Headers.Authorization.FirstOrDefault();
+        return authorization?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
     public async ValueTask<TrustedWorkspaceIdentity?> ReadAsync(HttpContext context)
     {
         var result = await context.AuthenticateAsync(PlatformIdentityDefaults.Scheme);
@@ -63,6 +69,8 @@ public sealed class CompositeWorkspaceIdentityReader(IEnumerable<IWorkspaceIdent
             var identity = await reader.ReadAsync(context);
             if (identity is not null)
                 return identity;
+            if (reader is PlatformIdentityReader && PlatformIdentityReader.HasBearerToken(context))
+                return null;
         }
 
         return null;
