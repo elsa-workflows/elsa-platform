@@ -250,6 +250,41 @@ public sealed class AdminDashboardAuthenticationTests
     }
 
     [Fact]
+    public async Task Same_origin_validation_uses_forwarded_scheme()
+    {
+        await using var app = new CatalogApiTestApplication();
+        var client = app.CreateClient(new() { AllowAutoRedirect = false });
+        await PostLoginAsync(client, "local-dev-key");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/admin/sync/packages/Elsa.Workflows");
+        request.Headers.Host = "catalog.example";
+        request.Headers.Add(HeaderNames.Origin, "https://catalog.example");
+        request.Headers.Add("X-Forwarded-Proto", "https");
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Same_origin_validation_uses_forwarded_host()
+    {
+        await using var app = new CatalogApiTestApplication();
+        var client = app.CreateClient(new() { AllowAutoRedirect = false });
+        await PostLoginAsync(client, "local-dev-key");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/admin/sync/packages/Elsa.Workflows");
+        request.Headers.Host = "internal.example";
+        request.Headers.Add(HeaderNames.Origin, "https://catalog.example");
+        request.Headers.Add("X-Forwarded-Proto", "https");
+        request.Headers.Add("X-Forwarded-Host", "catalog.example");
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task Api_key_authenticated_admin_api_mutation_bypasses_browser_origin_check()
     {
         await using var app = new CatalogApiTestApplication();

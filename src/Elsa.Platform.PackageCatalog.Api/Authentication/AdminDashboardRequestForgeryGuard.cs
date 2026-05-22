@@ -36,17 +36,40 @@ public static class AdminDashboardRequestForgeryGuard
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
             return false;
 
-        return HeaderComparer.Equals(uri.Scheme, request.Scheme) &&
-               HeaderComparer.Equals(uri.Host, request.Host.Host) &&
-               uri.Port == GetPort(request);
+        var host = GetEffectiveHost(request);
+        return HeaderComparer.Equals(uri.Scheme, GetEffectiveScheme(request)) &&
+               HeaderComparer.Equals(uri.Host, host.Host) &&
+               uri.Port == GetPort(request, host);
     }
 
-    private static int GetPort(HttpRequest request)
+    private static string GetEffectiveScheme(HttpRequest request) =>
+        GetForwardedHeaderValue(request, "X-Forwarded-Proto") ?? request.Scheme;
+
+    private static HostString GetEffectiveHost(HttpRequest request)
     {
-        if (request.Host.Port is { } port)
+        var forwardedHost = GetForwardedHeaderValue(request, "X-Forwarded-Host");
+        return HostString.FromUriComponent(forwardedHost ?? request.Host.ToUriComponent());
+    }
+
+    private static string? GetForwardedHeaderValue(HttpRequest request, string headerName)
+    {
+        if (!request.Headers.TryGetValue(headerName, out var values))
+            return null;
+
+        var value = values.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var commaIndex = value.IndexOf(',');
+        return (commaIndex >= 0 ? value[..commaIndex] : value).Trim();
+    }
+
+    private static int GetPort(HttpRequest request, HostString host)
+    {
+        if (host.Port is { } port)
             return port;
 
-        return HeaderComparer.Equals(request.Scheme, "https") ? 443 : 80;
+        return HeaderComparer.Equals(GetEffectiveScheme(request), "https") ? 443 : 80;
     }
 }
 

@@ -9,6 +9,7 @@ LOCATION="${LOCATION:-westeurope}"
 RESOURCE_GROUP="${RESOURCE_GROUP:-}"
 RESOURCE_GROUP_EXPLICIT=false
 IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M%S)}"
+DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
 SQL_ADMINISTRATOR_LOGIN="${SQL_ADMINISTRATOR_LOGIN:-elsaadmin}"
 ADMIN_API_KEY="${ADMIN_API_KEY:-}"
 BUILDER_CLIENT_API_KEY="${BUILDER_CLIENT_API_KEY:-}"
@@ -26,6 +27,7 @@ Options:
   --location <name>          Azure region. Default: westeurope.
   --subscription <id>        Azure subscription ID. Can also use AZURE_SUBSCRIPTION_ID.
   --image-tag <tag>          Container image tag. Default: current git SHA.
+  --docker-platform <value>  Docker target platform. Default: linux/amd64.
   --what-if                  Preview the infrastructure deployment only.
   -h, --help                 Show this help.
 
@@ -36,6 +38,7 @@ Required environment variables:
 Optional environment variables:
   BUILDER_CLIENT_API_KEY
   SQL_ADMINISTRATOR_LOGIN
+  DOCKER_PLATFORM
 USAGE
 }
 
@@ -63,6 +66,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --image-tag)
       IMAGE_TAG="$2"
+      shift 2
+      ;;
+    --docker-platform)
+      DOCKER_PLATFORM="$2"
       shift 2
       ;;
     --what-if)
@@ -195,6 +202,7 @@ IMAGE="$ACR_LOGIN_SERVER/elsa-platform/api:$IMAGE_TAG"
 echo "Building $IMAGE."
 az acr login --name "$ACR_NAME"
 docker build \
+  --platform "$DOCKER_PLATFORM" \
   --file src/Elsa.Platform.PackageCatalog.Api/Dockerfile \
   --tag "$IMAGE" \
   .
