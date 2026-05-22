@@ -13,9 +13,18 @@ param skuName string
 @description('Full container image reference.')
 param containerImage string
 
+@description('Catalog SQL server fully qualified domain name.')
+param sqlServerFullyQualifiedDomainName string
+
+@description('Catalog SQL database name.')
+param catalogDatabaseName string
+
+@description('SQL administrator login.')
+param sqlAdministratorLogin string
+
 @secure()
-@description('Catalog SQL connection string.')
-param catalogConnectionString string
+@description('SQL administrator password.')
+param sqlAdministratorPassword string
 
 @secure()
 @description('Admin API key.')
@@ -34,6 +43,8 @@ param additionalAppSettings object = {}
 
 @description('Resource tags.')
 param tags object = {}
+
+var catalogConnectionString = 'Server=tcp:${sqlServerFullyQualifiedDomainName},1433;Initial Catalog=${catalogDatabaseName};Persist Security Info=False;User ID=${sqlAdministratorLogin};Password=${sqlAdministratorPassword};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=120;'
 
 var requiredAppSettings = [
   {

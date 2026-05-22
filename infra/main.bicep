@@ -121,8 +121,6 @@ module sql 'modules/sql-catalog.bicep' = {
   }
 }
 
-var catalogConnectionString = 'Server=tcp:${sql.outputs.fullyQualifiedDomainName},1433;Initial Catalog=${sqlDatabaseName};Persist Security Info=False;User ID=${sqlAdministratorLogin};Password=${sqlAdministratorPassword};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=120;'
-
 module web 'modules/platform-api-webapp.bicep' = {
   name: 'platform-api-webapp'
   params: {
@@ -131,11 +129,14 @@ module web 'modules/platform-api-webapp.bicep' = {
     appInsightsConnectionString: observability.outputs.applicationInsightsConnectionString
     appServicePlanName: appServicePlanName
     builderClientApiKey: builderClientApiKey
-    catalogConnectionString: catalogConnectionString
+    catalogDatabaseName: sqlDatabaseName
     containerImage: effectiveContainerImage
     location: location
     name: webAppName
     skuName: appServiceSkuName
+    sqlAdministratorLogin: sqlAdministratorLogin
+    sqlAdministratorPassword: sqlAdministratorPassword
+    sqlServerFullyQualifiedDomainName: sql.outputs.fullyQualifiedDomainName
     tags: tags
   }
 }

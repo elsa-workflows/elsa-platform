@@ -98,6 +98,7 @@ require_secret() {
 }
 
 require_command az
+require_command python3
 
 if [[ "$WHAT_IF" != true ]]; then
   require_command docker
@@ -116,20 +117,61 @@ az group create \
   --location "$LOCATION" \
   --output none
 
-COMMON_PARAMETERS=(
-  environmentName="$ENVIRONMENT_NAME"
-  location="$LOCATION"
-  adminApiKey="$ADMIN_API_KEY"
-  builderClientApiKey="$BUILDER_CLIENT_API_KEY"
-  sqlAdministratorLogin="$SQL_ADMINISTRATOR_LOGIN"
-  sqlAdministratorPassword="$SQL_ADMINISTRATOR_PASSWORD"
-)
+PARAMETERS_FILE="$(mktemp)"
+IMAGE_PARAMETERS_FILE=""
+
+cleanup() {
+  rm -f "$PARAMETERS_FILE"
+  if [[ -n "$IMAGE_PARAMETERS_FILE" ]]; then
+    rm -f "$IMAGE_PARAMETERS_FILE"
+  fi
+}
+
+trap cleanup EXIT
+
+write_parameters_file() {
+  local file_path="$1"
+  local container_image="${2:-}"
+
+  ENVIRONMENT_NAME="$ENVIRONMENT_NAME" \
+  LOCATION="$LOCATION" \
+  ADMIN_API_KEY="$ADMIN_API_KEY" \
+  BUILDER_CLIENT_API_KEY="$BUILDER_CLIENT_API_KEY" \
+  SQL_ADMINISTRATOR_LOGIN="$SQL_ADMINISTRATOR_LOGIN" \
+  SQL_ADMINISTRATOR_PASSWORD="$SQL_ADMINISTRATOR_PASSWORD" \
+  CONTAINER_IMAGE="$container_image" \
+  python3 - "$file_path" <<'PY'
+import json
+import os
+import sys
+
+parameters = {
+    "environmentName": os.environ["ENVIRONMENT_NAME"],
+    "location": os.environ["LOCATION"],
+    "adminApiKey": os.environ["ADMIN_API_KEY"],
+    "builderClientApiKey": os.environ["BUILDER_CLIENT_API_KEY"],
+    "sqlAdministratorLogin": os.environ["SQL_ADMINISTRATOR_LOGIN"],
+    "sqlAdministratorPassword": os.environ["SQL_ADMINISTRATOR_PASSWORD"],
+}
+
+container_image = os.environ["CONTAINER_IMAGE"]
+if container_image:
+    parameters["containerImage"] = container_image
+
+with open(sys.argv[1], "w", encoding="utf-8") as parameters_file:
+    json.dump({"parameters": {key: {"value": value} for key, value in parameters.items()}}, parameters_file)
+PY
+
+  chmod 600 "$file_path"
+}
+
+write_parameters_file "$PARAMETERS_FILE"
 
 if [[ "$WHAT_IF" == true ]]; then
   az deployment group what-if \
     --resource-group "$RESOURCE_GROUP" \
     --template-file infra/main.bicep \
-    --parameters "${COMMON_PARAMETERS[@]}"
+    --parameters "@$PARAMETERS_FILE"
   exit 0
 fi
 
@@ -137,7 +179,7 @@ echo "Provisioning base infrastructure."
 az deployment group create \
   --resource-group "$RESOURCE_GROUP" \
   --template-file infra/main.bicep \
-  --parameters "${COMMON_PARAMETERS[@]}" \
+  --parameters "@$PARAMETERS_FILE" \
   --query properties.outputs \
   --output json
 
@@ -158,11 +200,14 @@ docker build \
   .
 docker push "$IMAGE"
 
+IMAGE_PARAMETERS_FILE="$(mktemp)"
+write_parameters_file "$IMAGE_PARAMETERS_FILE" "$IMAGE"
+
 echo "Deploying Web App image $IMAGE."
 az deployment group create \
   --resource-group "$RESOURCE_GROUP" \
   --template-file infra/main.bicep \
-  --parameters "${COMMON_PARAMETERS[@]}" containerImage="$IMAGE" \
+  --parameters "@$IMAGE_PARAMETERS_FILE" \
   --query properties.outputs \
   --output json
 
