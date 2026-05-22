@@ -52,6 +52,10 @@ var requiredAppSettings = [
     value: 'Production'
   }
   {
+    name: 'ASPNETCORE_FORWARDEDHEADERS_ENABLED'
+    value: 'true'
+  }
+  {
     name: 'WEBSITES_PORT'
     value: '8080'
   }
