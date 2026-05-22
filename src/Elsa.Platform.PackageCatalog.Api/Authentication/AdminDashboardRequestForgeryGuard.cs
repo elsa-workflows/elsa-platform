@@ -97,7 +97,7 @@ public sealed class AdminDashboardRequestForgeryMiddleware(
             var adminCookieResult = await context.AuthenticateAsync(AdminDashboardAuthenticationDefaults.Scheme);
             if (!adminCookieResult.Succeeded)
             {
-                await next(context);
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 return;
             }
 

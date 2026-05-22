@@ -4,6 +4,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
 
 namespace Elsa.Platform.PackageCatalog.Api.Tests;
 
@@ -55,5 +56,31 @@ public sealed class CustomerAuthenticationTests
         customer.Cookie.HttpOnly.Should().BeTrue();
         customer.ExpireTimeSpan.Should().Be(CustomerAuthenticationDefaults.SessionLifetime);
         customer.SlidingExpiration.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Logout_rejects_cross_site_post()
+    {
+        await using var app = new CatalogApiTestApplication();
+        var client = app.CreateClient(new() { AllowAutoRedirect = false });
+        using var request = new HttpRequestMessage(HttpMethod.Post, CustomerAuthenticationDefaults.LogoutPath);
+        request.Headers.Add(HeaderNames.Origin, "https://evil.example");
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Logout_accepts_same_origin_post()
+    {
+        await using var app = new CatalogApiTestApplication();
+        var client = app.CreateClient(new() { AllowAutoRedirect = false });
+        using var request = new HttpRequestMessage(HttpMethod.Post, CustomerAuthenticationDefaults.LogoutPath);
+        request.Headers.Add(HeaderNames.Origin, "http://localhost");
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 }

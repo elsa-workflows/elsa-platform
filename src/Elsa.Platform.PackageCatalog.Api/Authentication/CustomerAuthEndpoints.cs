@@ -50,6 +50,9 @@ public static class CustomerAuthEndpoints
             IOptions<PlatformIdentityOptions> options,
             string? returnUrl) =>
         {
+            if (!AdminDashboardRequestForgeryGuard.IsSameOriginBrowserRequest(context.Request))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
             var redirectUri = SafeReturnUrl(returnUrl);
             await context.SignOutAsync(CustomerAuthenticationDefaults.CookieScheme);
             if (!options.Value.IsCustomerLoginConfigured)

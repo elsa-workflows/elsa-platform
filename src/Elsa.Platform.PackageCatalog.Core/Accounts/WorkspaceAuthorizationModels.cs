@@ -30,6 +30,7 @@ public static class WorkspaceRolePolicy
         {
             WorkspaceOperation.Read => true,
             WorkspaceOperation.ManageSources => role is WorkspaceRole.Owner or WorkspaceRole.SourceAdmin,
+            // Keep this separate from ManageSources so a future deployer/runtime role can mutate workspace resources without managing package sources.
             WorkspaceOperation.MutateWorkspaceResource => role is WorkspaceRole.Owner or WorkspaceRole.SourceAdmin,
             _ => false
         };
