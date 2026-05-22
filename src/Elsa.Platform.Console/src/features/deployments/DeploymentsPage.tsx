@@ -49,6 +49,7 @@ const views: Array<{ id: ViewId; label: string }> = [
 
 export function DeploymentsPage() {
   const workspaceContext = useQuery({ queryKey: queryKeys.deploymentWorkspaceContext, queryFn: getDeploymentWorkspaceContext });
+  // TODO: support workspace selection when users have multiple workspace memberships.
   const workspaceId = workspaceContext.data?.workspaces[0]?.id ?? "";
   const cockpit = useQuery({
     queryKey: queryKeys.deploymentCockpit(workspaceId),
@@ -534,6 +535,16 @@ function AssistantPlanView({
   onReject: () => void;
 }) {
   const plan = data.assistantPlans[0];
+  if (!plan) {
+    return (
+      <RequestStateView
+        state="empty"
+        title="No assistant plan available"
+        description="Assistant review will appear after a deployment plan is generated for this workspace."
+      />
+    );
+  }
+
   const displayedStatus = outcome === "Proposed" ? plan.status : outcome;
   const blocked = hasBlockingValidation(plan.validations);
 

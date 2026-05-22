@@ -81,10 +81,20 @@ describe("DeploymentsPage", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Plan marked Rejected");
     expect(screen.getByText("No platform mutations executed.")).toBeInTheDocument();
   });
+
+  it("shows an empty assistant review state when no plan is available", async () => {
+    renderDeployments({ ...deploymentCockpitFixture, assistantPlans: [] });
+
+    await screen.findByRole("heading", { name: "Deployments" });
+    await userEvent.click(screen.getByRole("button", { name: "Assistant Review" }));
+
+    expect(screen.getByText("No assistant plan available")).toBeInTheDocument();
+    expect(screen.getByText("Assistant review will appear after a deployment plan is generated for this workspace.")).toBeInTheDocument();
+  });
 });
 
-function renderDeployments() {
-  vi.stubGlobal("fetch", createDeploymentFetchMock());
+function renderDeployments(cockpit: DeploymentCockpit = deploymentCockpitFixture) {
+  vi.stubGlobal("fetch", createDeploymentFetchMock(cockpit));
   render(
     <TestQueryProvider>
       <DeploymentsPage />
@@ -92,7 +102,7 @@ function renderDeployments() {
   );
 }
 
-function createDeploymentFetchMock() {
+function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = input instanceof Request ? input.url : input.toString();
     if (url.endsWith("/api/me/workspaces")) {
@@ -102,7 +112,7 @@ function createDeploymentFetchMock() {
       });
     }
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/cockpit`)) {
-      return jsonResponse(deploymentCockpitFixture);
+      return jsonResponse(cockpit);
     }
     return jsonResponse({ title: "Not found" }, 404);
   });
