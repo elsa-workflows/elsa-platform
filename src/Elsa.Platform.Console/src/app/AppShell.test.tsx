@@ -22,7 +22,7 @@ describe("AppShell", () => {
     expect(screen.getAllByRole("link", { name: "Sources" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Packages" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Sync Runs" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Deployments").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Deployments" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Artifacts").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Runtime Builder").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Managed Runtimes").length).toBeGreaterThan(0);

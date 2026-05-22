@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppShell } from "@/app/AppShell";
 import { OverviewPage } from "@/app/OverviewPage";
 import { RequestStateView } from "@/components/states/RequestStateViews";
+import { DeploymentsPage } from "@/features/deployments/DeploymentsPage";
 import { NewSourcePage, EditSourcePage } from "@/features/sources/SourceFormPage";
 import { SourceDetailsPage } from "@/features/sources/SourceDetailsPage";
 import { SourcesPage } from "@/features/sources/SourcesPage";
@@ -42,7 +43,7 @@ export const router = createBrowserRouter([
       { path: "packages/:packageId/versions/:version/:section", element: <PackageDetailsPage /> },
       { path: "sync-runs", element: <SyncRunsPage /> },
       { path: "sync-runs/:runId", element: <SyncRunDetailsPage /> },
-      { path: "deployments", element: <PlaceholderPage title="Deployments" /> },
+      { path: "deployments", element: <DeploymentsPage /> },
       { path: "artifacts", element: <PlaceholderPage title="Artifacts" /> },
       { path: "runtime-builder", element: <RuntimeBuilderPage /> },
       { path: "targets", element: <PlaceholderPage title="Targets" /> },

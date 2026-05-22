@@ -20,9 +20,12 @@ A customer user signs in through a configured platform identity provider adapter
 
 **Acceptance Scenarios**:
 
-1. **Given** a valid trusted identity with issuer and subject, **When** the user requests their platform context, **Then** the system maps the identity to a catalog-local account and returns the workspaces the account belongs to.
-2. **Given** the same trusted identity returns later with changed display name or email, **When** the user requests their platform context, **Then** the system keeps the same account identity and updates profile metadata.
-3. **Given** a request without a trusted identity, **When** the caller requests account or workspace context, **Then** the system rejects the request and does not create account, identity, or workspace data.
+1. **Given** platform customer login is configured, **When** an anonymous user opens a customer-only console route, **Then** the console starts a provider-backed sign-in flow or shows a sign-in action without requiring the user to enter account or workspace identifiers.
+2. **Given** the identity provider returns a valid sign-in response, **When** the platform completes the callback, **Then** the system establishes a customer-authenticated platform context and the console can request `GET /api/me/workspaces`.
+3. **Given** a valid trusted identity with issuer and subject, **When** the user requests their platform context, **Then** the system maps the identity to a catalog-local account and returns the workspaces the account belongs to.
+4. **Given** the same trusted identity returns later with changed display name or email, **When** the user requests their platform context, **Then** the system keeps the same account identity and updates profile metadata.
+5. **Given** a request without a trusted identity, **When** the caller requests account or workspace context, **Then** the system rejects the request and does not create account, identity, or workspace data.
+6. **Given** a user signs out from the console, **When** sign-out completes, **Then** the local platform session or token state is cleared and subsequent customer workspace API calls require a new trusted identity.
 
 ---
 
@@ -157,7 +160,12 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 
 ### Edge Cases
 
+- OIDC configuration is incomplete, disabled, or references an unavailable provider metadata endpoint; customer login is unavailable with an operator-visible configuration error rather than silently accepting an unverified identity.
 - A trusted identity token is expired, has the wrong audience, has an untrusted issuer, or lacks a stable subject; the request is rejected before account or workspace data is read or created.
+- The identity provider callback fails because of invalid state, replay, mismatched redirect URI, authorization denial, or code exchange failure; no customer account, workspace, or session is created.
+- A browser refreshes or opens a second tab while the customer session is valid; workspace context loads from the established platform identity without requiring caller-supplied account or workspace IDs.
+- A browser still holds an expired, revoked, or invalid access token/session; the console clears unusable auth state, returns to sign-in, and does not retry workspace APIs with forged headers.
+- A deployment uses a backend-for-frontend session instead of direct browser bearer tokens; API authorization still resolves the same trusted issuer and subject and never trusts frontend-provided membership data.
 - The same email address appears under different issuer and subject pairs; account linkage remains based on trusted issuer and subject, not email alone.
 - A user is removed from a workspace while their browser still holds a valid session; subsequent workspace requests use current membership and deny access.
 - A workspace is soft-deleted; no private records owned by that workspace are exposed or mutable through customer APIs.
@@ -183,6 +191,12 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **FR-001**: System MUST authenticate customer users from a trusted identity context that provides a verifiable issuer and stable subject.
 - **FR-001a**: System MUST expose a pluggable platform identity adapter boundary so deployments can configure Generic OIDC/JWT, Microsoft Entra, Auth0, Keycloak, trusted backend, or custom integrations without changing account/workspace tenancy behavior.
 - **FR-001b**: System MUST support configurable claim mapping for subject, display name, and email metadata.
+- **FR-001c**: System MUST provide a customer login flow for the console that supports a standards-based OIDC authorization-code flow with PKCE or an equivalent backend-mediated flow that verifies the provider response before creating a platform-authenticated context.
+- **FR-001d**: System MUST provide customer logout behavior that clears platform session or token state and, when configured, redirects to or invokes the upstream identity provider logout endpoint.
+- **FR-001e**: System MUST expose enough non-secret runtime configuration for the console to determine whether customer login is enabled, which sign-in entry point to use, and how to recover from missing or expired customer identity.
+- **FR-001f**: System MUST attach customer authentication to console API calls through a secure session or bearer-token mechanism without storing provider secrets in the browser.
+- **FR-001g**: System MUST support provider-specific issuer, audience, redirect URI, post-logout redirect URI, scope, and claim mapping configuration for Microsoft Entra, Auth0, Keycloak, and generic OIDC-compatible providers.
+- **FR-001h**: System MUST fail closed when provider metadata, signing keys, state validation, code exchange, token validation, or required claims cannot be verified.
 - **FR-002**: System MUST reject browser-supplied user IDs, account IDs, workspace memberships, roles, or entitlements as authority for customer identity.
 - **FR-003**: System MUST map each trusted `issuer + subject` pair to one catalog-local account through an external identity record.
 - **FR-004**: System MUST create one personal workspace and owner membership for a first-time trusted identity.
@@ -235,6 +249,8 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 
 - **Trusted Identity Context**: Verified sign-in context for a customer user, containing issuer, subject, and optional profile metadata.
 - **Platform Identity Provider**: Configured adapter that verifies and normalizes customer identity from Generic OIDC/JWT, Microsoft Entra, Auth0, Keycloak, trusted backend, or custom integration.
+- **Customer Login Session**: Browser-facing authenticated state created only after a provider response or token is verified, used by the console to call customer APIs without exposing provider secrets.
+- **OIDC Client Configuration**: Deployment-owned settings for provider authority, client identifier, redirect URIs, logout behavior, scopes, expected audience, issuer, and claim mappings.
 - **Account**: Catalog-local user record linked to trusted external identities and workspace memberships.
 - **External Identity**: Stable mapping from trusted issuer and subject to one account.
 - **Workspace**: Durable tenant boundary for customer-owned platform data; starts as a personal workspace and can support organization workspaces later.
@@ -259,22 +275,25 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 ### Measurable Outcomes
 
 - **SC-001**: A first-time user with a valid trusted identity can receive an account and personal workspace in a single request, and repeated requests return the same records.
-- **SC-002**: Requests lacking trusted identity cannot create or access account or workspace context.
-- **SC-003**: Cross-workspace access tests prove a user cannot read or mutate another workspace's customer-owned records even when they know the workspace ID or resource ID.
-- **SC-004**: Public catalog browsing continues to work anonymously while workspace-owned sources and packages remain hidden from anonymous users.
-- **SC-005**: Role and entitlement tests prove privileged and entitlement-gated operations are denied server-side when the caller lacks the required membership, role, or entitlement.
-- **SC-006**: Operator-only operations remain available through operator authorization and are denied to ordinary customer identities.
-- **SC-007**: Security-sensitive operations produce audit metadata that distinguishes account/workspace customer actions from operator actions.
-- **SC-008**: A workspace administrator can register a workflow engine in an environment using a secret reference and see health plus supported capabilities without exposing raw credentials.
-- **SC-009**: Unsupported runtime or hosting operations are unavailable or rejected with a clear capability error rather than executed through a guessed provider-specific action.
-- **SC-010**: A user can compare two environment desired-state revisions and identify changed workflows, feature settings, shell configuration, runtime configuration, secret references, observability bindings, and target bindings before deployment.
-- **SC-011**: Deployment validation blocks applying a revision when required secrets are missing, target engines are unreachable, capabilities are incompatible, or workspace entitlements are insufficient.
-- **SC-012**: Deployment history identifies the applied revision, actor, environment, workflow engine, validation outcome, final status, and rollback source when applicable.
-- **SC-013**: Environment observability views can retrieve structured logs, console streams, OpenTelemetry-compatible traces, or metrics from configured providers and correlate results to a workspace environment and deployment revision.
-- **SC-014**: Drift detection can report differences between desired state and observed engine state without mutating either source automatically.
-- **SC-015**: Assistant access tests prove the assistant can summarize and compare only data visible to the requesting account's current workspace membership, role, and entitlement state.
-- **SC-016**: Assistant mutation tests prove deployment, rollback, runtime control, secret-reference, and desired-state changes require explicit approval of the exact immutable plan artifact, enforce all-or-nothing plan execution on step failure, and produce audit records that distinguish proposed actions from executed actions.
-- **SC-017**: Prompt-injection tests prove adversarial workspace content cannot cause assistant responses to expose raw secrets, hidden credentials, operator-only data, or data from another workspace.
+- **SC-002**: A user can complete customer sign-in from the console through a configured OIDC-compatible provider and load workspace context without entering or supplying account, workspace, role, or entitlement identifiers.
+- **SC-003**: Requests lacking trusted identity cannot create or access account or workspace context.
+- **SC-004**: Invalid provider callbacks, expired tokens, wrong audience, wrong issuer, invalid state, or missing subject are rejected without creating customer account, identity, workspace, or session records.
+- **SC-005**: Customer sign-out clears console authentication state so the next workspace API call requires a new trusted identity.
+- **SC-006**: Cross-workspace access tests prove a user cannot read or mutate another workspace's customer-owned records even when they know the workspace ID or resource ID.
+- **SC-007**: Public catalog browsing continues to work anonymously while workspace-owned sources and packages remain hidden from anonymous users.
+- **SC-008**: Role and entitlement tests prove privileged and entitlement-gated operations are denied server-side when the caller lacks the required membership, role, or entitlement.
+- **SC-009**: Operator-only operations remain available through operator authorization and are denied to ordinary customer identities.
+- **SC-010**: Security-sensitive operations produce audit metadata that distinguishes account/workspace customer actions from operator actions.
+- **SC-011**: A workspace administrator can register a workflow engine in an environment using a secret reference and see health plus supported capabilities without exposing raw credentials.
+- **SC-012**: Unsupported runtime or hosting operations are unavailable or rejected with a clear capability error rather than executed through a guessed provider-specific action.
+- **SC-013**: A user can compare two environment desired-state revisions and identify changed workflows, feature settings, shell configuration, runtime configuration, secret references, observability bindings, and target bindings before deployment.
+- **SC-014**: Deployment validation blocks applying a revision when required secrets are missing, target engines are unreachable, capabilities are incompatible, or workspace entitlements are insufficient.
+- **SC-015**: Deployment history identifies the applied revision, actor, environment, workflow engine, validation outcome, final status, and rollback source when applicable.
+- **SC-016**: Environment observability views can retrieve structured logs, console streams, OpenTelemetry-compatible traces, or metrics from configured providers and correlate results to a workspace environment and deployment revision.
+- **SC-017**: Drift detection can report differences between desired state and observed engine state without mutating either source automatically.
+- **SC-018**: Assistant access tests prove the assistant can summarize and compare only data visible to the requesting account's current workspace membership, role, and entitlement state.
+- **SC-019**: Assistant mutation tests prove deployment, rollback, runtime control, secret-reference, and desired-state changes require explicit approval of the exact immutable plan artifact, enforce all-or-nothing plan execution on step failure, and produce audit records that distinguish proposed actions from executed actions.
+- **SC-020**: Prompt-injection tests prove adversarial workspace content cannot cause assistant responses to expose raw secrets, hidden credentials, operator-only data, or data from another workspace.
 
 ## Assumptions
 
@@ -283,6 +302,9 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - Organization workspaces, invitations, billing purchase flows, and central customer-service ownership are later features unless already represented by entitlement snapshots.
 - Existing account/workspace records from the custom-feed feature are reused and normalized instead of creating a second identity model.
 - Existing API-key dashboard access remains an operator fallback while customer login moves to trusted identity.
+- Customer-facing login should prefer a backend-for-frontend session built on a standards-based OIDC authorization-code flow, with direct SPA bearer-token ownership reserved for deployments that explicitly require it; both patterns must produce the same trusted identity contract for workspace tenancy.
+- The console is allowed to improve UX by hiding unavailable workspace actions, but backend membership, role, entitlement, and identity checks remain authoritative.
+- Provider-specific app registration, client secret storage, and redirect URI ownership are deployment responsibilities; Elsa Platform stores only configuration required to validate provider responses and establish customer-authenticated API access.
 - Elsa Platform owns desired state, deployment orchestration, environment governance, and fleet visibility; workflow engines own runtime execution and expose runtime controls through explicit capabilities.
 - The live workflow engine is observed or applied state, not the canonical source of truth for cross-environment deployment.
 - Desired state is expected to be stored in a workspace-controlled source repository or equivalent versioned store so environment state can be diffed, promoted, audited, and rolled back.
