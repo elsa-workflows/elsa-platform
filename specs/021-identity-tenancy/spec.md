@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Proceed with the proposed plan to get multitenancy done and OIDC/JWT login: make Workspace the platform tenant boundary, add real OIDC/JWT login, replace trusted browser-supplied identity with backend-derived account and workspace context, centralize workspace authorization, preserve operator fallback access, and defer runtime tenant reconciliation to a later deployment feature."
+**Input**: User description: "Proceed with the proposed plan to get multitenancy done and OIDC/JWT login: make Workspace the platform tenant boundary, add real OIDC/JWT login, replace trusted browser-supplied identity with backend-derived account and workspace context, centralize workspace authorization, preserve operator fallback access, and define the deployment-platform direction for workflow engines, environments, desired state, promotion, secrets, observability, and future runtime tenant reconciliation."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -88,6 +88,54 @@ Platform operators retain a separate admin access path for operational and emerg
 2. **Given** a customer user with a valid trusted identity, **When** they attempt an operator-only operation, **Then** the system rejects the request.
 3. **Given** an operator signs in through the fallback admin path, **When** account workspace APIs are called, **Then** the system does not infer customer account membership from the shared operator credential.
 
+---
+
+### User Story 6 - Register Workflow Engines In Environments (Priority: P3)
+
+A workspace member registers one or more workflow engines as concrete Elsa application deployments attached to an environment, so the platform can show health, capabilities, credentials status, and supported runtime controls without treating hosting infrastructure as uniform.
+
+**Why this priority**: Deployment management needs a durable model for "an Elsa workflows application instance running somewhere" before the platform can safely deploy configuration, query runtime state, or expose operational controls.
+
+**Independent Test**: Can be tested by creating an environment, registering a workflow engine with an endpoint and credential reference, discovering its supported capabilities, and verifying that unsupported controls are hidden or rejected.
+
+**Acceptance Scenarios**:
+
+1. **Given** a workspace administrator with deployment entitlement, **When** they register a workflow engine for an environment, **Then** the system stores the engine endpoint, credential reference, display metadata, health status, and capability set as workspace-owned data.
+2. **Given** a registered workflow engine reports support for pausing processing and reloading configuration, **When** the user opens the environment operations view, **Then** only those supported engine-level controls are available.
+3. **Given** no hosting provider adapter is configured for the engine, **When** the user looks for host infrastructure controls such as restarting a Kubernetes pod or recycling an app service, **Then** those controls are unavailable and the platform does not present a generic restart action.
+
+---
+
+### User Story 7 - Promote Desired State Across Environments (Priority: P3)
+
+A workspace member manages workflow definitions, feature flags, shell configuration, runtime configuration, secret references, observability bindings, and engine target bindings as versioned desired state, then promotes reviewed revisions from dev to test, stage, and production.
+
+**Why this priority**: Users need a safe deployment flow where the source of truth is not whichever workflow engine was edited most recently, and where production changes can be diffed, validated, approved, deployed, and rolled back.
+
+**Independent Test**: Can be tested by creating two environment revisions, comparing them, promoting selected changes into a target environment, validating required secrets and engine compatibility, and recording the deployed revision.
+
+**Acceptance Scenarios**:
+
+1. **Given** a workflow is authored in dev and committed into desired state, **When** the user promotes it to test, **Then** the platform shows the workflow, configuration, feature, shell, secret-reference, and observability differences before deployment.
+2. **Given** a target environment is missing a required secret reference or the registered engine lacks a required capability, **When** the user attempts deployment, **Then** validation fails before any target engine state is changed.
+3. **Given** production is running revision 12 and revision 14 causes a regression, **When** an authorized user chooses rollback, **Then** the platform can redeploy a previously known-good revision and records the rollback as a deployment event.
+
+---
+
+### User Story 8 - Observe And Govern Runtime Environments (Priority: P3)
+
+A workspace member uses Elsa Platform as a central cockpit for environment health, structured logs, console streams, traces, metrics, deployment history, secret-reference status, and drift between desired and observed engine state.
+
+**Why this priority**: Cross-environment governance is the main reason to centralize this in Elsa Platform rather than leaving every runtime concern inside one Elsa Studio connection.
+
+**Independent Test**: Can be tested by configuring observability bindings for an environment, pulling logs and traces from the configured backends, correlating them with a deployment revision, and detecting when live engine state differs from desired state.
+
+**Acceptance Scenarios**:
+
+1. **Given** an environment has log, trace, metric, and console bindings, **When** the user opens the environment cockpit, **Then** the platform retrieves runtime telemetry from the configured providers and scopes results to the workspace and environment.
+2. **Given** a workflow engine has live configuration that differs from the last deployed desired-state revision, **When** the platform checks drift, **Then** it reports the difference without silently overwriting either side.
+3. **Given** Elsa Studio and Elsa Platform both expose access to secrets or configuration, **When** a user changes a value through either surface, **Then** the change is governed by the same workspace authorization, provider-backed secret rules, audit metadata, and desired-state policy.
+
 ### Edge Cases
 
 - A trusted identity token is expired, has the wrong audience, has an untrusted issuer, or lacks a stable subject; the request is rejected before account or workspace data is read or created.
@@ -97,7 +145,13 @@ Platform operators retain a separate admin access path for operational and emerg
 - A caller supplies account ID, workspace ID, role, entitlement, or membership claims that conflict with server records; server records are authoritative.
 - Workspace source URLs or deployment target metadata contain secrets or tokens; customer-facing responses do not expose raw secrets.
 - Public catalog data and health endpoints remain available to anonymous users where already designed as public.
-- Runtime tenant manifests and tenant-specific deployment reconciliation are not implemented by this feature; they remain later deployment-platform scope.
+- A workflow engine is unreachable, presents invalid credentials, or has an untrusted certificate; deployment and control operations fail closed while preserving existing desired state.
+- A requested runtime control is not advertised by the workflow engine or a configured hosting adapter; the platform rejects the operation instead of guessing how to perform it.
+- A hosting provider can restart infrastructure but the workflow engine can only reload shells or configuration; the UI and audit trail distinguish host operations from engine API operations.
+- Required secret values are missing, inaccessible, or stored in a provider unavailable to the target environment; deployment validation fails before applying changes.
+- Observability storage is unavailable or returns partial results; the environment cockpit reports telemetry degradation without changing engine state.
+- Live workflow engine state drifts from the source-controlled desired state; the platform reports drift and requires an explicit reconcile, import, or redeploy action.
+- Runtime tenant manifests and tenant-specific deployment reconciliation are not implemented by the identity foundation; they remain later deployment-platform scope but must fit under the workspace/environment model.
 
 ## Requirements *(mandatory)*
 
@@ -124,6 +178,26 @@ Platform operators retain a separate admin access path for operational and emerg
 - **FR-017**: System MUST record enough audit metadata to identify the account, external identity, workspace, membership role, and operator/customer authorization path involved in security-sensitive operations.
 - **FR-018**: System MUST provide a local or test-only trusted identity mode that cannot be enabled accidentally as a browser-supplied production identity mechanism.
 - **FR-019**: System MUST define the boundary between platform workspaces and future runtime tenant/deployment tenant scopes so later features can add nested tenant concepts without changing the account/workspace model.
+- **FR-020**: System MUST define a workflow application grouping within a workspace so related environments, workflow engines, desired state, deployments, and observability bindings can be managed together.
+- **FR-021**: System MUST define an environment as a workspace-owned deployment target context, such as dev, test, stage, or production, that can contain workflow engine registrations, desired state, secret references, observability bindings, and deployment history.
+- **FR-022**: System MUST represent a workflow engine as a registered Elsa workflows application deployment with endpoint metadata, credential reference, health status, advertised capabilities, and optional hosting provider metadata.
+- **FR-023**: System MUST store workflow engine credentials as secret references or provider-backed handles and MUST NOT expose raw engine API credentials in customer-facing responses, audit logs, or source-controlled desired state.
+- **FR-024**: System MUST categorize runtime controls by boundary: workflow operations, workflow engine API operations, shell operations, and hosting infrastructure operations.
+- **FR-025**: System MUST expose only controls supported by the workflow engine capability set or an explicitly configured hosting provider adapter.
+- **FR-026**: System MUST NOT provide a generic "restart" operation unless the target capability defines whether the action restarts workflow processing, reloads configuration, restarts a shell, or restarts hosting infrastructure.
+- **FR-027**: System MUST treat source-controlled desired state as the canonical deployment source of truth and treat workflow engine state as applied or observed state.
+- **FR-028**: System MUST version environment desired state including workflow definitions, feature settings, shell configuration, runtime configuration, secret references, observability bindings, and engine target bindings.
+- **FR-029**: System MUST allow authorized users to compare desired-state revisions across environments before promotion or deployment.
+- **FR-030**: System MUST validate required secrets, engine reachability, engine capabilities, workspace entitlements, and operation-specific roles before applying a desired-state revision to an environment.
+- **FR-031**: System MUST record deployment attempts, deployed revisions, validation failures, rollbacks, actor identity, target environment, target engine, and resulting status.
+- **FR-032**: System MUST support rollback by redeploying a previously recorded desired-state revision when the target environment and engine capabilities remain compatible.
+- **FR-033**: System MUST model secrets as provider-backed references with environment scope, provider identity, external key/path, optional version policy, and verification status; secret values MUST remain outside source-controlled desired state unless a future provider explicitly supports encrypted sealed-secret semantics.
+- **FR-034**: System MUST allow environment observability bindings for structured logs, console streams, OpenTelemetry-compatible traces, and metrics without requiring Elsa Platform to own the underlying telemetry stores.
+- **FR-035**: System MUST scope environment observability results to the requesting workspace, environment, workflow engine, shell, workflow definition, workflow instance, or deployment revision where the provider supports those dimensions.
+- **FR-036**: System MUST detect and report drift between source-controlled desired state and observed workflow engine state without silently overwriting either side.
+- **FR-037**: System MUST keep Elsa Studio and Elsa Platform aligned on shared authorization, secret-provider, and audit rules when both surfaces expose workflow, configuration, or secret management.
+- **FR-038**: System MUST position Elsa Studio as the single-engine authoring and runtime inspection surface, while Elsa Platform owns cross-environment promotion, deployment, governance, fleet visibility, and workspace-level controls.
+- **FR-039**: System MUST leave room for future runtime tenant and deployment tenant concepts as nested or environment-specific concerns under workspace ownership, rather than replacing workspace as the platform tenant boundary.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -137,6 +211,15 @@ Platform operators retain a separate admin access path for operational and emerg
 - **Workspace Entitlement Snapshot**: Server-enforced capability and limit snapshot for a workspace.
 - **Operator Principal**: Separate administrative identity used for platform operations and emergency access, not a customer account membership.
 - **Customer-Owned Resource**: Any record whose visibility and mutation rights are scoped to a workspace, including private package sources, saved runtime configurations, deployment targets, deployment runs, and managed runtime environments.
+- **Workflow Application**: Workspace-owned grouping for related workflow environments, engines, desired-state revisions, deployments, secrets, and observability configuration.
+- **Environment**: Workspace-owned deployment context such as dev, test, stage, or production, containing desired state, workflow engine registrations, secret references, observability bindings, and deployment history.
+- **Workflow Engine**: Registered Elsa workflows application instance running in any hosting environment, reachable through an endpoint and credential reference and described by health and capability metadata.
+- **Engine Capability**: Advertised operation or feature supported by a workflow engine or hosting adapter, such as pause processing, reload configuration, restart shell, drain workers, or host restart.
+- **Shell**: Runtime isolation unit inside a workflow engine that can have its own service configuration, feature set, and operational lifecycle when supported by the engine.
+- **Desired-State Revision**: Versioned source of truth for an environment, including workflows, feature settings, shell configuration, runtime configuration, secret references, observability bindings, and target bindings.
+- **Deployment**: Attempt to apply a desired-state revision to one environment and one or more workflow engines, with validation results, actor metadata, status, and rollback relationship.
+- **Secret Reference**: Environment-scoped pointer to a secret stored in a provider such as engine storage, Azure Key Vault, or another configured provider, including verification and version policy metadata but not the raw secret value.
+- **Observability Binding**: Environment-scoped connection to structured logs, console streams, OpenTelemetry-compatible traces, or metrics providers used by the platform cockpit.
 
 ## Success Criteria *(mandatory)*
 
@@ -149,6 +232,13 @@ Platform operators retain a separate admin access path for operational and emerg
 - **SC-005**: Role and entitlement tests prove privileged and entitlement-gated operations are denied server-side when the caller lacks the required membership, role, or entitlement.
 - **SC-006**: Operator-only operations remain available through operator authorization and are denied to ordinary customer identities.
 - **SC-007**: Security-sensitive operations produce audit metadata that distinguishes account/workspace customer actions from operator actions.
+- **SC-008**: A workspace administrator can register a workflow engine in an environment using a secret reference and see health plus supported capabilities without exposing raw credentials.
+- **SC-009**: Unsupported runtime or hosting operations are unavailable or rejected with a clear capability error rather than executed through a guessed provider-specific action.
+- **SC-010**: A user can compare two environment desired-state revisions and identify changed workflows, feature settings, shell configuration, runtime configuration, secret references, observability bindings, and target bindings before deployment.
+- **SC-011**: Deployment validation blocks applying a revision when required secrets are missing, target engines are unreachable, capabilities are incompatible, or workspace entitlements are insufficient.
+- **SC-012**: Deployment history identifies the applied revision, actor, environment, workflow engine, validation outcome, final status, and rollback source when applicable.
+- **SC-013**: Environment observability views can retrieve structured logs, console streams, OpenTelemetry-compatible traces, or metrics from configured providers and correlate results to a workspace environment and deployment revision.
+- **SC-014**: Drift detection can report differences between desired state and observed engine state without mutating either source automatically.
 
 ## Assumptions
 
@@ -157,4 +247,11 @@ Platform operators retain a separate admin access path for operational and emerg
 - Organization workspaces, invitations, billing purchase flows, and central customer-service ownership are later features unless already represented by entitlement snapshots.
 - Existing account/workspace records from the custom-feed feature are reused and normalized instead of creating a second identity model.
 - Existing API-key dashboard access remains an operator fallback while customer login moves to trusted identity.
-- Elsa runtime tenant concepts and deployment tenant overlays are separate nested concerns and are intentionally deferred from this feature.
+- Elsa Platform owns desired state, deployment orchestration, environment governance, and fleet visibility; workflow engines own runtime execution and expose runtime controls through explicit capabilities.
+- The live workflow engine is observed or applied state, not the canonical source of truth for cross-environment deployment.
+- Desired state is expected to be stored in a workspace-controlled source repository or equivalent versioned store so environment state can be diffed, promoted, audited, and rolled back.
+- Environment names such as dev, test, stage, and production are conventions, not hard-coded tenant semantics.
+- There is no canonical workflow engine environment; canonical state is the versioned desired state that can be deployed to any compatible environment.
+- Secret values are managed by configured providers; source-controlled desired state stores references, requirements, and policies rather than plaintext values.
+- Elsa Studio remains the preferred single-engine workflow authoring and runtime inspection experience, while Elsa Platform provides the central cockpit for environment promotion, governance, deployment, observability, and fleet operations.
+- Elsa runtime tenant concepts and deployment tenant overlays are separate nested concerns and are intentionally deferred from the identity foundation, but future deployment features must preserve workspace ownership as the outer platform boundary.
