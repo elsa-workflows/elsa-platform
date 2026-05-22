@@ -11,6 +11,7 @@ using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
 using Elsa.Platform.PackageCatalog.Testing;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Elsa.Platform.PackageCatalog.Api.Tests;
@@ -206,14 +207,30 @@ public sealed class WorkspaceCustomFeedsApiTests
         anonymousDetail.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task Workspace_sources_returns_problem_details_when_identity_lacks_workspace_access()
+    {
+        await using var app = new CatalogApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = WorkspaceClient(app);
+        var workspaceId = (await owner.GetCatalogJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Workspaces.Single().Id;
+
+        var response = await WorkspaceClient(app, "other-user").GetAsync($"/api/workspaces/{workspaceId}/sources");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var problem = await response.Content.ReadCatalogJsonAsync<ProblemDetails>();
+        problem!.Title.Should().Be("Access to this workspace is not allowed.");
+        problem.Status.Should().Be((int)HttpStatusCode.Forbidden);
+    }
+
     private static WorkspaceSourceRequest CreateSourceRequest(string name, string url) =>
         new(name, url, true, ["Elsa.*"], [], PackageSourceVersionDiscoveryPolicy.AllVersions);
 
-    private static HttpClient WorkspaceClient(WebApplicationFactory<Program> app)
+    private static HttpClient WorkspaceClient(WebApplicationFactory<Program> app, string subject = "user-123")
     {
         var client = app.CreateClient();
         client.DefaultRequestHeaders.Add(TrustedHeaderWorkspaceIdentityReader.IssuerHeader, "https://elsaworkflows.io");
-        client.DefaultRequestHeaders.Add(TrustedHeaderWorkspaceIdentityReader.SubjectHeader, "user-123");
+        client.DefaultRequestHeaders.Add(TrustedHeaderWorkspaceIdentityReader.SubjectHeader, subject);
         client.DefaultRequestHeaders.Add(TrustedHeaderWorkspaceIdentityReader.EmailHeader, "ada@example.test");
         client.DefaultRequestHeaders.Add(TrustedHeaderWorkspaceIdentityReader.NameHeader, "Ada Lovelace");
         return client;

@@ -6,7 +6,7 @@ namespace Elsa.Platform.PackageCatalog.Api.Authentication;
 
 public interface IWorkspaceIdentityReader
 {
-    TrustedWorkspaceIdentity? Read(HttpContext context);
+    ValueTask<TrustedWorkspaceIdentity?> ReadAsync(HttpContext context);
 }
 
 public sealed class TrustedHeaderWorkspaceIdentityReader(IConfiguration configuration) : IWorkspaceIdentityReader
@@ -18,25 +18,25 @@ public sealed class TrustedHeaderWorkspaceIdentityReader(IConfiguration configur
     public const string EmailHeader = "X-Catalog-Identity-Email";
     public const string NameHeader = "X-Catalog-Identity-Name";
 
-    public TrustedWorkspaceIdentity? Read(HttpContext context)
+    public ValueTask<TrustedWorkspaceIdentity?> ReadAsync(HttpContext context)
     {
         if (!configuration.GetValue<bool>(EnabledConfigurationKey))
-            return null;
+            return ValueTask.FromResult<TrustedWorkspaceIdentity?>(null);
 
         if (!IsTrustedProxy(context.Connection.RemoteIpAddress))
-            return null;
+            return ValueTask.FromResult<TrustedWorkspaceIdentity?>(null);
 
         var request = context.Request;
         var issuer = request.Headers[IssuerHeader].FirstOrDefault();
         var subject = request.Headers[SubjectHeader].FirstOrDefault();
         if (string.IsNullOrWhiteSpace(issuer) || string.IsNullOrWhiteSpace(subject))
-            return null;
+            return ValueTask.FromResult<TrustedWorkspaceIdentity?>(null);
 
-        return new TrustedWorkspaceIdentity(
+        return ValueTask.FromResult<TrustedWorkspaceIdentity?>(new TrustedWorkspaceIdentity(
             issuer,
             subject,
             request.Headers[NameHeader].FirstOrDefault(),
-            request.Headers[EmailHeader].FirstOrDefault());
+            request.Headers[EmailHeader].FirstOrDefault()));
     }
 
     private bool IsTrustedProxy(IPAddress? remoteIpAddress)

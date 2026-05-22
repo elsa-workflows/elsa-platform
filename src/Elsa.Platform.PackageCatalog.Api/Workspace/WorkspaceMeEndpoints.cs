@@ -13,7 +13,7 @@ public static class WorkspaceMeEndpoints
             AccountWorkspaceService accounts,
             CancellationToken cancellationToken) =>
         {
-            var identity = identityReader.Read(context);
+            var identity = await identityReader.ReadAsync(context);
             if (identity is null)
                 return WorkspaceIdentityHttpContextExtensions.UnauthorizedWorkspaceIdentity();
 

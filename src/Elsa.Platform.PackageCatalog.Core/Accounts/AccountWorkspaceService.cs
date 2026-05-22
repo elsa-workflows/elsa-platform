@@ -9,7 +9,14 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
         if (existing is not null)
         {
             await store.UpdateExternalIdentitySeenAsync(existing.ExternalIdentityId, normalized.DisplayName, normalized.Email, cancellationToken);
-            return existing.Context;
+            return existing.Context with
+            {
+                Account = existing.Context.Account with
+                {
+                    DisplayName = normalized.DisplayName,
+                    Email = normalized.Email
+                }
+            };
         }
 
         var account = new Account
@@ -53,7 +60,14 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
                 throw;
 
             await store.UpdateExternalIdentitySeenAsync(concurrent.ExternalIdentityId, normalized.DisplayName, normalized.Email, cancellationToken);
-            return concurrent.Context;
+            return concurrent.Context with
+            {
+                Account = concurrent.Context.Account with
+                {
+                    DisplayName = normalized.DisplayName,
+                    Email = normalized.Email
+                }
+            };
         }
 
         return new AccountWorkspaceContext(
@@ -63,9 +77,17 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
 
     public async Task<WorkspaceAccess?> GetWorkspaceAccessAsync(TrustedWorkspaceIdentity identity, Guid workspaceId, CancellationToken cancellationToken = default)
     {
-        var context = await GetOrCreateAsync(identity, cancellationToken);
-        var workspace = context.Workspaces.SingleOrDefault(x => x.Id == workspaceId);
-        return workspace is null ? null : new WorkspaceAccess(context.Account.Id, workspace.Id, workspace.Role);
+        var normalized = identity.Normalize();
+        var existing = await store.FindByExternalIdentityAsync(normalized.Issuer, normalized.Subject, cancellationToken);
+        if (existing is null)
+            return null;
+
+        var workspace = existing.Context.Workspaces.SingleOrDefault(x => x.Id == workspaceId);
+        if (workspace is null)
+            return null;
+
+        await store.UpdateExternalIdentitySeenAsync(existing.ExternalIdentityId, normalized.DisplayName, normalized.Email, cancellationToken);
+        return new WorkspaceAccess(existing.Context.Account.Id, workspace.Id, workspace.Role);
     }
 }
 

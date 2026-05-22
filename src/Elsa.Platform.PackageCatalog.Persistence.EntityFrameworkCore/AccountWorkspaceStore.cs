@@ -34,22 +34,23 @@ public sealed class AccountWorkspaceStore(CatalogDbContext dbContext) : IAccount
 
     public async Task UpdateExternalIdentitySeenAsync(Guid externalIdentityId, string? displayName, string? email, CancellationToken cancellationToken = default)
     {
-        var identity = await dbContext.ExternalIdentities
-            .Include(x => x.Account)
-            .SingleAsync(x => x.Id == externalIdentityId, cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        identity.DisplayName = displayName;
-        identity.Email = email;
-        identity.LastSeenAt = now;
-        identity.UpdatedAt = now;
-        if (identity.Account is not null)
-        {
-            identity.Account.DisplayName = displayName;
-            identity.Account.Email = email;
-            identity.Account.UpdatedAt = now;
-        }
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await dbContext.ExternalIdentities
+            .Where(x => x.Id == externalIdentityId)
+            .ExecuteUpdateAsync(updates => updates
+                .SetProperty(x => x.DisplayName, displayName)
+                .SetProperty(x => x.Email, email)
+                .SetProperty(x => x.LastSeenAt, now)
+                .SetProperty(x => x.UpdatedAt, now), cancellationToken);
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await dbContext.Accounts
+            .Where(x => x.ExternalIdentities.Any(identity => identity.Id == externalIdentityId))
+            .ExecuteUpdateAsync(updates => updates
+                .SetProperty(x => x.DisplayName, displayName)
+                .SetProperty(x => x.Email, email)
+                .SetProperty(x => x.UpdatedAt, now), cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<WorkspaceEntitlementSnapshot?> GetLatestEntitlementAsync(Guid workspaceId, CancellationToken cancellationToken = default)

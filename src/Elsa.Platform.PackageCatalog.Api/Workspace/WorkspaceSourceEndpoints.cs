@@ -76,13 +76,13 @@ public static class WorkspaceSourceEndpoints
         AccountWorkspaceService accounts,
         CancellationToken cancellationToken)
     {
-        var identity = identityReader.Read(context);
+        var identity = await identityReader.ReadAsync(context);
         if (identity is null)
             return new WorkspaceEndpointAccess(null, WorkspaceIdentityHttpContextExtensions.UnauthorizedWorkspaceIdentity());
 
         var access = await accounts.GetWorkspaceAccessAsync(identity, workspaceId, cancellationToken);
         return access is null
-            ? new WorkspaceEndpointAccess(null, Results.Forbid())
+            ? new WorkspaceEndpointAccess(null, Results.Problem(title: "Access to this workspace is not allowed.", statusCode: StatusCodes.Status403Forbidden))
             : new WorkspaceEndpointAccess(access, null);
     }
 

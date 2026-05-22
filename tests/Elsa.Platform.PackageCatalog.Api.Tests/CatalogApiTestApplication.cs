@@ -17,8 +17,17 @@ namespace Elsa.Platform.PackageCatalog.Api.Tests;
 internal sealed class CatalogApiTestApplication : WebApplicationFactory<Program>, IAsyncDisposable
 {
     public const string TestRemoteIpHeader = "X-Test-Remote-Ip";
+    public const string TestPlatformIdentityIssuer = "https://local.elsa-platform.test";
+    public const string TestPlatformIdentityAudience = "elsa-platform-tests";
+    public const string TestPlatformIdentitySigningKey = "local-test-platform-identity-signing-key-change-me-12345";
 
     private readonly string _databasePath = Path.Combine(Path.GetTempPath(), $"elsa-catalog-{Guid.NewGuid():N}.db");
+    private readonly IReadOnlyDictionary<string, string?> _configuration;
+
+    public CatalogApiTestApplication(IReadOnlyDictionary<string, string?>? configuration = null)
+    {
+        _configuration = configuration ?? new Dictionary<string, string?>();
+    }
 
     public static JsonSerializerOptions JsonOptions { get; } = CreateJsonOptions();
 
@@ -29,13 +38,22 @@ internal sealed class CatalogApiTestApplication : WebApplicationFactory<Program>
         builder.UseEnvironment("Testing");
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
-            configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            var values = new Dictionary<string, string?>
             {
                 [ApiKeyAuthenticationDefaults.ConfigurationKey] = "local-dev-key",
                 [BuilderClientApiKeyAuthenticationDefaults.ConfigurationKey] = "builder-dev-key",
+                [$"{PlatformIdentityDefaults.ConfigurationSection}:Provider"] = PlatformIdentityProviderKind.GenericOidc.ToString(),
+                [$"{PlatformIdentityDefaults.ConfigurationSection}:Audience"] = TestPlatformIdentityAudience,
+                [$"{PlatformIdentityDefaults.ConfigurationSection}:Issuer"] = TestPlatformIdentityIssuer,
+                [$"{PlatformIdentityDefaults.ConfigurationSection}:SymmetricSigningKey"] = TestPlatformIdentitySigningKey,
+                [$"{PlatformIdentityDefaults.ConfigurationSection}:RequireHttpsMetadata"] = "false",
                 [TrustedHeaderWorkspaceIdentityReader.EnabledConfigurationKey] = "true",
                 [TrustedHeaderWorkspaceIdentityReader.AllowedProxyNetworksConfigurationKey] = "127.0.0.1/32,::1/128"
-            });
+            };
+            foreach (var (key, value) in _configuration)
+                values[key] = value;
+
+            configuration.AddInMemoryCollection(values);
         });
 
         builder.ConfigureServices(services =>
