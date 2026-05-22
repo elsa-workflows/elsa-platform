@@ -6,11 +6,11 @@
 
 **Status**: Draft
 
-**Input**: User description: "Specify the functionality of the package details page in the admin dashboard so administrators can inspect package identity, versions, approval and validation state, visibility reasons, features, dependencies, compatibility, raw manifest content, and operational actions from the placeholder Package Details screen."
+**Input**: User description: "Specify the functionality of the package details page in the console so administrators can inspect package identity, versions, approval and validation state, visibility reasons, features, dependencies, compatibility, raw manifest content, and operational actions from the placeholder Package Details screen."
 
 ## Overview
 
-The Package Details page turns the current placeholder admin dashboard route into
+The Package Details page turns the current placeholder console route into
 an operational inspection view for one catalog package. Administrators use this
 page to understand what was indexed, which package versions are available, why a
 version is or is not publicly visible, what validation found, what features and
@@ -377,7 +377,7 @@ actions are omitted or clearly unavailable.
 
 ## Assumptions
 
-- Package details are part of the existing authenticated admin dashboard
+- Package details are part of the existing authenticated console
   experience.
 - Administrators already have permission to view package catalog operational
   data when they can access the dashboard.

@@ -118,7 +118,7 @@ Operator endpoint to replace the latest entitlement snapshot for a workspace.
 
 Authentication:
 
-- Existing admin API key or admin dashboard cookie policy.
+- Existing admin API key or console cookie policy.
 
 Request:
 

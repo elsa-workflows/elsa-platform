@@ -63,7 +63,7 @@
 ### Tests
 
 - [x] T018 [P] [US2] Run baseline `dotnet test Elsa.Platform.sln` in old repo and record results in `specs/001-platform-package-catalog-consolidation/quickstart.md`
-- [x] T019 [P] [US2] Run baseline admin UI tests in old repo and record results in `specs/001-platform-package-catalog-consolidation/quickstart.md`
+- [x] T019 [P] [US2] Run baseline console tests in old repo and record results in `specs/001-platform-package-catalog-consolidation/quickstart.md`
 
 ### Implementation
 
@@ -71,7 +71,7 @@
 - [x] T021 [US2] Resolve path, solution, and Spec Kit file conflicts after import
 - [x] T022 [US2] Restore imported .NET projects from `elsa-platform`
 - [x] T023 [US2] Run imported .NET test suites from `elsa-platform`
-- [x] T024 [US2] Run imported admin UI unit tests from `elsa-platform`
+- [x] T024 [US2] Run imported console unit tests from `elsa-platform`
 - [x] T025 [US2] Document any pre-existing or migration-caused test failures in `specs/001-platform-package-catalog-consolidation/quickstart.md`
 - [x] T026 [US2] Verify PR #36 Runtime Builder specs `009` through `016` and tests are included in the import
 
@@ -95,12 +95,12 @@
 - [x] T029 [US3] Rename `Elsa.Platform.PackageCatalog.Core` to `Elsa.Platform.PackageCatalog.Core`
 - [x] T030 [US3] Extract `Elsa.Platform.PackageCatalog.Abstractions` from catalog core contracts
 - [x] T031 [US3] Rename `Elsa.Platform.PackageCatalog.Sources.NuGet` to `Elsa.Platform.PackageCatalog.Sources.NuGet`
-- [x] T032 [US3] Rename catalog API, AppHost, ServiceDefaults, AdminUi, persistence, and migration projects to `Elsa.Platform.PackageCatalog.*`
+- [x] T032 [US3] Rename catalog API, AppHost, ServiceDefaults, Console, persistence, and migration projects to platform package names
 - [x] T033 [US3] Rename `Elsa.Platform.PackageManifests` source project to `Elsa.Platform.PackageManifests`
 - [x] T034 [US3] Rename generator projects to `Elsa.Platform.PackageManifest.Generator*`
 - [x] T035 [US3] Update namespaces, project references, solution files, test project references, package metadata, and docs after project renames
 - [x] T036 [US3] Run .NET restore/build/test after renames
-- [x] T037 [US3] Run admin UI tests after path and package updates
+- [x] T037 [US3] Run console tests after path and package updates
 
 **Checkpoint**: Platform package architecture is in place and verified.
 

@@ -10,7 +10,7 @@ Add a protected Runtime Builder bundle-generation capability to the existing Cat
 
 ## Technical Context
 
-**Language/Version**: C# on .NET 10 LTS for API/Core; existing TypeScript/React admin UI remains out of scope.
+**Language/Version**: C# on .NET 10 LTS for API/Core; existing TypeScript/React console remains out of scope.
 
 **Primary Dependencies**: ASP.NET Core minimal APIs and authorization, dedicated builder-client API-key authentication/authorization, existing workspace identity adapter, existing compatibility checks, System.Text.Json, existing catalog query services, xUnit, FluentAssertions.
 

@@ -1,7 +1,7 @@
 # Contract: Admin Package Details
 
 This contract defines the admin API and UI route behavior required by the
-Package Details page. It refines the broader admin dashboard UI contract for the
+Package Details page. It refines the broader console UI contract for the
 package details slice.
 
 ## Authentication
@@ -276,7 +276,7 @@ Optional actions are exposed only when supported for the selected version:
 
 If unsupported, the UI omits the action or shows it disabled with a reason.
 
-## Admin UI Routes
+## Console Routes
 
 Supported routes:
 

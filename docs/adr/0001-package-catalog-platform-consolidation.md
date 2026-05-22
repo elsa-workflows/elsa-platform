@@ -6,7 +6,7 @@ Date: 2026-05-19
 
 ## Context
 
-`elsa-package-catalog` contains package manifest contracts, manifest generation, package source synchronization, package approval, compatibility validation, catalog APIs, admin UI, persistence, migrations, Runtime Builder backend foundations, deployment template generation, Azure deployment assets, tests, and Spec Kit specs.
+`elsa-package-catalog` contains package manifest contracts, manifest generation, package source synchronization, package approval, compatibility validation, catalog APIs, console, persistence, migrations, Runtime Builder backend foundations, deployment template generation, Azure deployment assets, tests, and Spec Kit specs.
 
 The Elsa Deployment Platform roadmap needs package descriptor validation, package compatibility metadata, approval/trust signals, and package manifest contracts. Keeping these capabilities in a separate long-term repository would create avoidable drift between deployment, catalog, Runtime Builder, and package publishing workflows.
 

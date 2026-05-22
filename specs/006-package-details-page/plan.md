@@ -13,24 +13,24 @@ operational inspection page. The implementation extends the existing
 administrator package details projection to include source identity, canonical
 package casing, per-version manifest metadata, feature and setting records,
 dependency/conflict/compatibility JSON surfaces, validation findings, visibility
-reasons, and stale-state signals. The React admin UI will select the latest
+reasons, and stale-state signals. The React console will select the latest
 indexed version by default, support direct links to versions and major sections,
 provide in-page search/filtering for large sections, and keep trust-changing
 actions scoped to package versions.
 
 ## Technical Context
 
-**Language/Version**: C# on .NET 10 LTS for API/Core/Persistence; TypeScript + React for the existing admin UI.
+**Language/Version**: C# on .NET 10 LTS for API/Core/Persistence; TypeScript + React for the existing console.
 
 **Primary Dependencies**: ASP.NET Core minimal APIs and authorization, Entity Framework Core, System.Text.Json, Elsa.Platform.PackageManifests JSON shape, React Router, TanStack Query, TailwindCSS, shadcn/ui-style local components, Vitest/Testing Library.
 
 **Storage**: Existing relational catalog database. No new durable entity is required; the feature reads existing `Packages`, `PackageVersions`, `PackageSources`, validation result records, feature records, and feature setting records.
 
-**Testing**: xUnit, FluentAssertions, ASP.NET Core WebApplicationFactory integration tests, EF Core query/persistence tests where projection behavior needs coverage, Vitest/Testing Library for admin UI behavior, and Playwright admin UI E2E for route-level smoke coverage.
+**Testing**: xUnit, FluentAssertions, ASP.NET Core WebApplicationFactory integration tests, EF Core query/persistence tests where projection behavior needs coverage, Vitest/Testing Library for console behavior, and Playwright console E2E for route-level smoke coverage.
 
-**Target Platform**: ASP.NET Core API container deployed to Azure App Service with the built React admin UI served by the API host.
+**Target Platform**: ASP.NET Core API container deployed to Azure App Service with the built React console served by the API host.
 
-**Project Type**: Modular monolith web service with static admin dashboard assets.
+**Project Type**: Modular monolith web service with static console assets.
 
 **Performance Goals**: Package details should show summary and version data within 2 seconds for packages with up to 100 indexed versions; in-page search/filtering should let administrators find validation, feature, setting, dependency, or manifest content within 30 seconds for large seeded records.
 
@@ -63,7 +63,7 @@ The plan MUST answer these gates:
 - **Debuggability**: Are sync runs, validation errors, indexing decisions, and suspicious changes persisted and inspectable?
   - Pass. This feature improves admin inspectability for validation findings, visibility decisions, manifest hashes, and suspicious changes.
 - **Modular monolith**: Does the design avoid distributed infrastructure unless justified?
-  - Pass. Work stays inside existing API/Core/Persistence/Admin UI modules.
+  - Pass. Work stays inside existing API/Core/Persistence/Console modules.
 - **Runtime Builder readiness**: Do APIs and manifests support package discovery, feature selection, settings schemas, and compatibility checks?
   - Pass. The page exposes features, settings, dependencies, conflicts, and compatibility metadata in ways aligned with future builder diagnostics.
 - **Simplicity**: Are new abstractions, dependencies, and infrastructure justified by current requirements?
@@ -105,7 +105,7 @@ src/
 │           ├── AdminPackageEndpoints.cs
 │           ├── AdminValidationEndpoints.cs
 │           └── AdminApprovalEndpoints.cs
-└── Elsa.Platform.AdminUi/
+└── Elsa.Platform.Console/
     └── src/
         ├── app/
         │   ├── routes.tsx
@@ -131,11 +131,11 @@ tests/
 │   └── AdminApprovalApiTests.cs
 ├── Elsa.Platform.PackageCatalog.Testing/
 │   └── PublicCatalogSeedData.cs
-└── Elsa.Platform.AdminUi.E2E/
+└── Elsa.Platform.Console.E2E/
     └── package-details.spec.ts
 
 src/
-└── Elsa.Platform.AdminUi/
+└── Elsa.Platform.Console/
     └── src/
         └── features/
             └── packages/

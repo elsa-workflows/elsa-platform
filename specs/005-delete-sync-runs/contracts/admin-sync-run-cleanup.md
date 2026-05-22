@@ -99,7 +99,7 @@ Response shape:
 }
 ```
 
-## Admin UI Contract
+## Console Contract
 
 Sync Runs page behavior:
 

@@ -72,13 +72,13 @@ jobs:
           echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> "$GITHUB_ENV"
 
       - name: Restore
-        run: dotnet restore Elsa.PackageCatalog.sln
+        run: dotnet restore Elsa.Platform.sln
 
       - name: Build
-        run: dotnet build Elsa.PackageCatalog.sln --configuration Release --no-restore
+        run: dotnet build Elsa.Platform.sln --configuration Release --no-restore
 
       - name: Test
-        run: dotnet test Elsa.PackageCatalog.sln --configuration Release --no-build --verbosity normal
+        run: dotnet test Elsa.Platform.sln --configuration Release --no-build --verbosity normal
 
       - name: Pack packages
         shell: bash
@@ -87,8 +87,8 @@ jobs:
           mkdir -p ./artifacts
 
           projects=(
-            "src/Elsa.PackageManifests/Elsa.PackageManifests.csproj"
-            "src/Elsa.PackageManifest.Generator/Elsa.PackageManifest.Generator.csproj"
+            "src/Elsa.Platform.PackageManifests/Elsa.Platform.PackageManifests.csproj"
+            "src/Elsa.Platform.PackageManifest.Generator/Elsa.Platform.PackageManifest.Generator.csproj"
           )
 
           for proj in "${projects[@]}"; do

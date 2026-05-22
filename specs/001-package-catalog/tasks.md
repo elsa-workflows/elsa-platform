@@ -171,7 +171,7 @@
 
 - [X] T092a [US3] Add latest-preview-only version discovery tests in `tests/Elsa.Platform.PackageCatalog.Sources.NuGet.Tests/NuGetPackageSourceClientTests.cs`
 - [X] T092b [US3] Implement latest-preview-only source policy in `src/Elsa.Platform.PackageCatalog.Sources.NuGet/NuGetPackageSourceClient.cs`
-- [X] T092c [US3] Expose latest-preview-only source policy through admin source API/UI contracts in `src/Elsa.Platform.PackageCatalog.Api/Admin/Sources/AdminSourceContracts.cs` and `src/Elsa.Platform.AdminUi/src/features/sources/sourceModels.ts`
+- [X] T092c [US3] Expose latest-preview-only source policy through admin source API/UI contracts in `src/Elsa.Platform.PackageCatalog.Api/Admin/Sources/AdminSourceContracts.cs` and `src/Elsa.Platform.Console/src/features/sources/sourceModels.ts`
 - [X] T092d [US3] Add background manual sync trigger tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminSyncApiTests.cs`
 - [X] T092e [US3] Implement queued background manual sync execution in `src/Elsa.Platform.PackageCatalog.Api/Admin/Sync` so admin requests are not tied to package download cancellation.
 

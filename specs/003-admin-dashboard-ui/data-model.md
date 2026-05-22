@@ -1,4 +1,4 @@
-# Data Model: Elsa Package Catalog Admin Dashboard UI
+# Data Model: Elsa Package Catalog Console UI
 
 The dashboard does not own durable domain data. These models describe the UI's
 view models and the admin API data it consumes or mutates.

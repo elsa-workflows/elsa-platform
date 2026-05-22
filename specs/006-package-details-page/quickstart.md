@@ -30,7 +30,7 @@
    `{"expectedStateToken":"<versionStateToken>","reason":"Not ready"}`.
 10. Attempt a rejection with a blank reason and confirm it is blocked.
 
-## Admin UI Verification
+## Console Verification
 
 1. Open `/admin/packages`.
 2. Select a package link and confirm `/admin/packages/:packageId` opens the
@@ -56,8 +56,8 @@ Run:
 dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter AdminPackages
 dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter AdminValidation
 dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter AdminApproval
-cd src/Elsa.Platform.AdminUi && npm test -- src/features/packages/PackageDetailsPage.test.tsx src/features/packages/packageModels.test.ts
-cd tests/Elsa.Platform.AdminUi.E2E && npm run e2e -- package-details.spec.ts
+cd src/Elsa.Platform.Console && npm test -- src/features/packages/PackageDetailsPage.test.tsx src/features/packages/packageModels.test.ts
+cd tests/Elsa.Platform.Console.E2E && npm run e2e -- package-details.spec.ts
 ```
 
 ## Implementation Verification Notes
@@ -65,10 +65,10 @@ cd tests/Elsa.Platform.AdminUi.E2E && npm run e2e -- package-details.spec.ts
 Verified on 2026-05-17:
 
 - `dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj`
-- `cd src/Elsa.Platform.AdminUi && npm test`
-- `cd src/Elsa.Platform.AdminUi && npm run typecheck`
-- `cd src/Elsa.Platform.AdminUi && npm run build`
-- `cd tests/Elsa.Platform.AdminUi.E2E && npm run e2e -- package-details.spec.ts`
+- `cd src/Elsa.Platform.Console && npm test`
+- `cd src/Elsa.Platform.Console && npm run typecheck`
+- `cd src/Elsa.Platform.Console && npm run build`
+- `cd tests/Elsa.Platform.Console.E2E && npm run e2e -- package-details.spec.ts`
 
 The implementation uses the existing catalog database only. It adds no public
 catalog API behavior, does not change the manifest schema, reads stored manifest

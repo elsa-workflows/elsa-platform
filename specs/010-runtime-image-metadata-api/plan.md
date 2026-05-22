@@ -10,7 +10,7 @@ Move deployment-affecting Elsa Docker runtime image metadata into the Catalog AP
 
 ## Technical Context
 
-**Language/Version**: C# on .NET 10 LTS for API/Core; existing TypeScript/React admin UI remains out of scope.
+**Language/Version**: C# on .NET 10 LTS for API/Core; existing TypeScript/React console remains out of scope.
 
 **Primary Dependencies**: ASP.NET Core minimal APIs, System.Text.Json, options/configuration binding, existing builder catalog and bundle generation services, xUnit, FluentAssertions.
 

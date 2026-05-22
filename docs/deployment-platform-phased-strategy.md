@@ -55,7 +55,7 @@ elsa-platform/
     Elsa.Platform.PackageCatalog.Abstractions/
     Elsa.Platform.PackageCatalog.Core/
     Elsa.Platform.PackageCatalog.Api/
-    Elsa.Platform.AdminUi/
+    Elsa.Platform.Console/
     Elsa.Platform.PackageCatalog.Sources.NuGet/
     Elsa.Platform.RuntimeBuilder.Abstractions/
     Elsa.Platform.RuntimeBuilder.Core/
@@ -108,7 +108,7 @@ src/
 - Deployment planning, validation orchestration, diffing, dry-run, apply, and history.
 - Package catalog, package manifest contracts, package manifest generation, package approval, and package compatibility metadata.
 - Runtime Builder planning, runtime image metadata, server-side bundle generation, deployment template generation, and saved runtime configuration intent.
-- Unified React admin UI shell and subsystem modules for package governance, deployment, Runtime Builder, targets, managed runtimes, operations, and audit.
+- Unified React console shell and subsystem modules for package governance, deployment, Runtime Builder, targets, managed runtimes, operations, and audit.
 - CLI, API, operator, GitOps, OCI, signing, approvals, overlays, governance, and platform documentation.
 - Resource handler abstractions and default handlers that can operate through public Elsa runtime APIs.
 
@@ -264,7 +264,7 @@ The Phase 1 implementation should support as descriptors and validation inputs, 
 
 This narrower slice is intentional. Workflows and variables prove resource identity, desired state, diff, apply, history, rollback semantics, and idempotency without forcing premature package management, feature activation, or Loom integration decisions.
 
-Package requirement validation should call a catalog-facing contract such as `IDeploymentPackageCatalog`, not Package Catalog API endpoint classes, EF stores, source providers, or admin UI code. The validation result must keep discovery, manifest validity, approval, trust, suspicious-change, compatibility, feature, and conflict findings distinct so governance decisions can mature without changing the deployment manifest shape.
+Package requirement validation should call a catalog-facing contract such as `IDeploymentPackageCatalog`, not Package Catalog API endpoint classes, EF stores, source providers, or console code. The validation result must keep discovery, manifest validity, approval, trust, suspicious-change, compatibility, feature, and conflict findings distinct so governance decisions can mature without changing the deployment manifest shape.
 
 ### Phase 1 Non-Goals
 

@@ -15,7 +15,7 @@ contract and avoids introducing a second read model for the same route.
 - **Use public package endpoints for most data**: Rejected because public
   endpoints intentionally hide pending, rejected, invalid, suspicious, and
   unlisted versions.
-- **Expose raw persistence models directly**: Rejected because admin UI contracts
+- **Expose raw persistence models directly**: Rejected because console contracts
   should stay stable and separate from EF Core shape.
 
 ## Decision: Resolve package IDs case-insensitively and return canonical casing

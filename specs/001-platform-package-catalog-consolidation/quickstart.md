@@ -35,9 +35,9 @@ Expected:
 Phase 4 verification log, 2026-05-19:
 
 - Old repository baseline at `e321965a09cdcf63bb6ad3144badd9a203c10da8`: `dotnet test Elsa.PackageCatalog.sln` passed. The run reported the existing `Microsoft.Build.Utilities.Core` NU1903 advisory warnings.
-- Old repository admin UI baseline: `npm install --prefix src/Elsa.Catalog.AdminUi` then `npm test --prefix src/Elsa.Catalog.AdminUi -- --run` passed with 11 files and 64 tests. `npm install` reported 5 moderate vulnerabilities and React Router v7 future-flag warnings during tests.
+- Old repository console baseline: `npm install --prefix src/Elsa.Catalog.AdminUi` then `npm test --prefix src/Elsa.Catalog.AdminUi -- --run` passed with 11 files and 64 tests. `npm install` reported 5 moderate vulnerabilities and React Router v7 future-flag warnings during tests.
 - Platform import verification: `dotnet test Elsa.Platform.sln` passed from `elsa-platform`, including PR #36 builder/runtime tests. The same NU1903 advisory warnings were present.
-- Platform admin UI verification: `npm install --prefix src/Elsa.Platform.AdminUi && npm test --prefix src/Elsa.Platform.AdminUi -- --run` passed with 11 files and 64 tests. The same npm audit and React Router warnings were present.
+- Platform console verification: `npm install --prefix src/Elsa.Platform.Console && npm test --prefix src/Elsa.Platform.Console -- --run` passed with 11 files and 64 tests. The same npm audit and React Router warnings were present.
 - Merge conflicts were limited to expected repository bootstrap files. `elsa-platform` Spec Kit state, `AGENTS.md`, `README.md`, and `LICENSE` were kept as authoritative.
 
 ## History-Preserving Import Candidate
@@ -88,11 +88,11 @@ Expected:
 Phase 5 verification log, 2026-05-19:
 
 - `Elsa.PackageCatalog.sln` was renamed to `Elsa.Platform.sln`.
-- Source, test, namespace, package, and admin UI package names were normalized to `Elsa.Platform.PackageCatalog.*`, `Elsa.Platform.PackageManifests`, and `Elsa.Platform.PackageManifest.Generator*`.
+- Source, test, namespace, package, and console package names were normalized to `Elsa.Platform.PackageCatalog.*`, `Elsa.Platform.PackageManifests`, and `Elsa.Platform.PackageManifest.Generator*`.
 - `Elsa.Platform.PackageCatalog.Abstractions` was added with compatibility validation request/result contracts. Core and API reference it directly; entity and persistence contracts remain in Core/Persistence until a later deployment-facing boundary needs them.
 - `dotnet test Elsa.Platform.sln` passed after renames and abstraction extraction. The run still reports the existing `Microsoft.Build.Utilities.Core` NU1903 advisory warnings.
-- `npm install --prefix src/Elsa.Platform.AdminUi` reported 5 moderate npm audit findings.
-- `npm test --prefix src/Elsa.Platform.AdminUi -- --run` passed with 11 files and 64 tests. React Router v7 future-flag warnings remain pre-existing.
+- `npm install --prefix src/Elsa.Platform.Console` reported 5 moderate npm audit findings.
+- `npm test --prefix src/Elsa.Platform.Console -- --run` passed with 11 files and 64 tests. React Router v7 future-flag warnings remain pre-existing.
 - Runtime Builder code from PR #36 still lives under Package Catalog projects in this phase and is intentionally scheduled for Phase 6 extraction.
 
 Phase 6 verification log, 2026-05-19:
@@ -106,15 +106,15 @@ Phase 6 verification log, 2026-05-19:
 - Kept EF runtime-configuration storage in the catalog EF project as the current host database adapter, while moving runtime configuration models and store interface to Runtime Builder abstractions.
 - `dotnet build Elsa.Platform.sln` passed. The run still reports the existing `Microsoft.Build.Utilities.Core` NU1903 advisory warnings.
 - `dotnet test Elsa.Platform.sln` passed. Runtime Builder tests now run under `tests/Elsa.Platform.RuntimeBuilder.Core.Tests` with 27 tests.
-- `npm test --prefix src/Elsa.Platform.AdminUi -- --run` passed with 11 files and 64 tests. React Router v7 future-flag warnings remain pre-existing.
+- `npm test --prefix src/Elsa.Platform.Console -- --run` passed with 11 files and 64 tests. React Router v7 future-flag warnings remain pre-existing.
 
-## 4. Admin UI Validation
+## 4. Console Validation
 
 After UI path moves:
 
 ```bash
-npm install --prefix src/Elsa.Platform.AdminUi
-npm test --prefix src/Elsa.Platform.AdminUi
+npm install --prefix src/Elsa.Platform.Console
+npm test --prefix src/Elsa.Platform.Console
 ```
 
 Expected:
@@ -165,7 +165,7 @@ dotnet test Elsa.Platform.sln
 Expected:
 
 - `Elsa.Platform.PackageCatalog.Abstractions` exposes deployment-facing package requirement validation contracts.
-- Deployment package projects, when present, can reference catalog abstractions without referencing catalog API, Admin UI, persistence, migrations, source-provider internals, or AppHost.
+- Deployment package projects, when present, can reference catalog abstractions without referencing catalog API, Console, persistence, migrations, source-provider internals, or AppHost.
 - Package requirement validation result shape keeps discovery, manifest validity, approval, trust, suspicious-change, compatibility, feature, and conflict findings distinct.
 
 Phase 8 verification log, 2026-05-19:
@@ -182,7 +182,7 @@ Phase 8 verification log, 2026-05-19:
 Phase final verification log, 2026-05-19:
 
 - `dotnet test Elsa.Platform.sln` passed.
-- `npm test --prefix src/Elsa.Platform.AdminUi -- --run` passed with 11 files and 64 tests.
+- `npm test --prefix src/Elsa.Platform.Console -- --run` passed with 11 files and 64 tests.
 - Active source/docs old-name scan found only intentionally historical old-repo baseline references in this quickstart.
 - Added ADR-0002 for package identity compatibility.
 - Added ADR-0003 for standalone package catalog repository deprecation.

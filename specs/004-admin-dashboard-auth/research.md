@@ -1,4 +1,4 @@
-# Research: Admin Dashboard Authentication
+# Research: Console Authentication
 
 ## Decision: Reuse the existing admin API key to establish an HTTP-only dashboard cookie
 

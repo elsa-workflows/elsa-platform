@@ -1,4 +1,4 @@
-# Implementation Plan: Elsa Package Catalog Admin Dashboard UI
+# Implementation Plan: Elsa Package Catalog Console UI
 
 **Branch**: `codex/004-admin-dashboard-ui` | **Date**: 2026-05-15 | **Spec**: [spec.md](./spec.md)
 
@@ -22,7 +22,7 @@ version detail for manifest/validation/visibility explanation screens.
 
 ## Technical Context
 
-**Language/Version**: TypeScript for the admin UI; existing backend remains C# on
+**Language/Version**: TypeScript for the console; existing backend remains C# on
 .NET 10 LTS with ASP.NET Core.
 
 **Primary Dependencies**: React, React Router, TanStack Query, TailwindCSS,
@@ -121,7 +121,7 @@ specs/003-admin-dashboard-ui/
 
 ```text
 src/
-├── Elsa.Platform.AdminUi/
+├── Elsa.Platform.Console/
 │   ├── src/
 │   │   ├── app/
 │   │   ├── components/
@@ -145,11 +145,11 @@ src/
 
 tests/
 ├── Elsa.Platform.PackageCatalog.Api.Tests/
-└── Elsa.Platform.AdminUi.E2E/
+└── Elsa.Platform.Console.E2E/
 ```
 
 **Structure Decision**: Add one dedicated frontend project under
-`src/Elsa.Platform.AdminUi` so the UI can evolve independently from the ASP.NET
+`src/Elsa.Platform.Console` so the UI can evolve independently from the ASP.NET
 Core API while still living inside the same repository and release workflow.
 Shared frontend code is organized by operational feature area and a thin `lib/api`
 adapter layer. Backend changes remain in the existing `Elsa.Platform.PackageCatalog.Api`,

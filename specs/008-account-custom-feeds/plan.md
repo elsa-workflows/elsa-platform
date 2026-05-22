@@ -10,7 +10,7 @@ Add the account/workspace foundation required for paid custom package feeds. The
 
 ## Technical Context
 
-**Language/Version**: C# on .NET 10 LTS for API/Core/Persistence; existing TypeScript/React admin UI remains out of scope for this backend-first slice.
+**Language/Version**: C# on .NET 10 LTS for API/Core/Persistence; existing TypeScript/React console remains out of scope for this backend-first slice.
 
 **Primary Dependencies**: ASP.NET Core minimal APIs and authorization, existing custom API-key admin authentication, lightweight workspace identity adapter for trusted request contexts, Entity Framework Core, SQLite/SQL Server EF migrations.
 
