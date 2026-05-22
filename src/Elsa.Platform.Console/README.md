@@ -20,6 +20,9 @@ trusted workspace identity headers for workspace-scoped Runtime Builder APIs.
 Admin access is provided by the API host's dashboard session cookie, not by a
 browser-readable API key.
 
+When running `src/Elsa.Platform.AppHost`, Aspire starts this Vite app as the
+`console` resource and injects the API endpoint as `CATALOG_API_PROXY_TARGET`.
+
 ## Verification
 
 ```bash

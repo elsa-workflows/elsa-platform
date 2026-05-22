@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.3.2" />
     <PackageVersion Include="Aspire.Hosting.Azure.AppService" Version="13.3.2" />
     <PackageVersion Include="Aspire.Hosting.Azure.Sql" Version="13.3.2" />
     <PackageVersion Include="FluentAssertions" Version="8.8.0" />

@@ -77,6 +77,10 @@ Run the Aspire host:
 dotnet run --project src/Elsa.Platform.AppHost
 ```
 
+In local Aspire runs, the dashboard starts both the API and the Vite-based
+console. Production publish still serves the built console assets from the API
+container under `/admin`.
+
 Run the console during frontend development:
 
 ```bash

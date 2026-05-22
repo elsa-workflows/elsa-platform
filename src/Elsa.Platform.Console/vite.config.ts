@@ -5,6 +5,12 @@ import { defineConfig, loadEnv } from "vite";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, "");
   const catalogApiProxyTarget = env.CATALOG_API_PROXY_TARGET ?? "http://localhost:5220";
+  const portValue = process.env.PORT ?? env.PORT ?? "5173";
+  const port = Number(portValue);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Invalid PORT "${portValue}": expected a TCP port between 1 and 65535`);
+  }
+
   let catalogApiProxyOrigin: string;
   try {
     catalogApiProxyOrigin = new URL(catalogApiProxyTarget).origin;
@@ -29,7 +35,8 @@ export default defineConfig(({ mode }) => {
       }
     },
     server: {
-      port: 5173,
+      port,
+      strictPort: true,
       proxy: {
         "/api": {
           target: catalogApiProxyTarget,

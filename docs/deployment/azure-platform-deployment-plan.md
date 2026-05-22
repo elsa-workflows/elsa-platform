@@ -60,15 +60,35 @@ az deployment group what-if \
 
 ## Environment Strategy
 
-Use one resource group per environment:
+Use one GitHub Actions environment per Azure resource group:
 
-| Environment | Example name | Notes |
+| GitHub environment | Azure environment | Example resource group | Notes |
 | --- | --- | --- |
-| Development | `rg-elsa-platform-dev` | Lower SKU, disposable data. |
-| Test | `rg-elsa-platform-test` | Production-like config for release validation. |
-| Production | `rg-elsa-platform-prod` | Strong secrets, backups, access review. |
+| `development` | `dev` | `rg-elsa-platform-dev` | Lower SKU, disposable data. |
+| `test` | `test` | `rg-elsa-platform-test` | Production-like config for release validation. |
+| `production` | `production` or `prod` | `rg-elsa-platform-prod` | Strong secrets, backups, access review. |
 
 Every environment should set a distinct `environmentName` parameter. Resource names are derived from that value plus subscription/resource-group uniqueness.
+
+After a resource group has been provisioned once, bootstrap the matching GitHub environment from the Azure deployment outputs:
+
+```bash
+scripts/bootstrap-github-azure.sh \
+  --environment development \
+  --azure-environment dev \
+  --resource-group rg-elsa-platform-dev \
+  --location westeurope
+```
+
+The bootstrap script creates or reuses an Entra app registration for GitHub Actions OIDC, adds a federated credential scoped to the selected GitHub environment, assigns Azure roles to the target resource group and registry, and writes the environment variables consumed by `.github/workflows/azure-api-deploy.yml`.
+
+For infrastructure deployments from GitHub Actions, also set these GitHub environment secrets:
+
+- `ADMIN_API_KEY`
+- `SQL_ADMINISTRATOR_PASSWORD`
+- optionally `BUILDER_CLIENT_API_KEY`
+
+For app-only deployments, the workflow needs only the OIDC and Azure resource variables written by the bootstrap script.
 
 ## Secret Handling
 

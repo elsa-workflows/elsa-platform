@@ -5,32 +5,40 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 GITHUB_ENVIRONMENT="${GITHUB_ENVIRONMENT:-production}"
-REMOTE_NAME="${REMOTE_NAME:-origin}"
-RUN_PIPELINE_CONFIG="${RUN_PIPELINE_CONFIG:-true}"
-DRY_RUN="${DRY_RUN:-false}"
-AZD_ENVIRONMENT="${AZD_ENVIRONMENT:-}"
+AZURE_ENVIRONMENT="${AZURE_ENVIRONMENT:-}"
+LOCATION="${AZURE_LOCATION:-westeurope}"
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-}"
+SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-}"
+APP_DISPLAY_NAME="${APP_DISPLAY_NAME:-}"
+AZURE_CLIENT_ID="${AZURE_CLIENT_ID:-}"
+SQL_ADMINISTRATOR_LOGIN="${SQL_ADMINISTRATOR_LOGIN:-elsaadmin}"
+DRY_RUN=false
+SKIP_ROLE_ASSIGNMENTS=false
 
 usage() {
   cat <<'USAGE'
 Usage: scripts/bootstrap-github-azure.sh [options]
 
-Configures the GitHub environment used by the Azure Platform API Deploy workflow.
+Creates or updates a GitHub Actions environment that deploys to a matching
+Azure resource group through OpenID Connect.
 
 Options:
-  --environment <name>       GitHub environment name. Default: production.
-  --azd-environment <name>   azd environment name. Default: current azd env.
-  --remote-name <name>       Git remote used by azd pipeline config. Default: origin.
-  --skip-pipeline-config     Do not run azd pipeline config.
-  --dry-run                  Print actions without changing Azure/GitHub.
-  -h, --help                 Show this help.
+  --environment <name>        GitHub environment name. Default: production.
+  --azure-environment <name>  Azure/Bicep environment name. Default: GitHub environment,
+                              with development mapped to dev.
+  --resource-group <name>     Azure resource group. Default: rg-elsa-platform-<azure-env>.
+  --location <name>           Azure region. Default: westeurope.
+  --subscription <id>         Azure subscription ID. Default: current az account.
+  --client-id <id>            Existing Entra app registration client ID to use.
+  --app-display-name <name>   Entra app display name when creating/reusing OIDC app.
+  --skip-role-assignments     Do not create Azure role assignments.
+  --dry-run                   Print changes without writing Azure/GitHub state.
+  -h, --help                  Show this help.
 
-Environment:
-  ADMIN_API_KEY              Required unless already present as AZURE_ADMIN_API_KEY
-                             in the selected azd environment.
-  AZURE_CLIENT_ID            Optional fallback if azd pipeline config has not set
-                             the GitHub environment variable yet.
-  AZURE_RESOURCE_GROUP       Optional override for the resource group.
-  AZURE_WEBAPP_NAME          Optional override for the API App Service name.
+Optional environment variables used as GitHub environment secrets:
+  ADMIN_API_KEY
+  SQL_ADMINISTRATOR_PASSWORD
+  BUILDER_CLIENT_API_KEY
 USAGE
 }
 
@@ -40,16 +48,32 @@ while [[ $# -gt 0 ]]; do
       GITHUB_ENVIRONMENT="$2"
       shift 2
       ;;
-    --azd-environment)
-      AZD_ENVIRONMENT="$2"
+    --azure-environment)
+      AZURE_ENVIRONMENT="$2"
       shift 2
       ;;
-    --remote-name)
-      REMOTE_NAME="$2"
+    --resource-group)
+      RESOURCE_GROUP="$2"
       shift 2
       ;;
-    --skip-pipeline-config)
-      RUN_PIPELINE_CONFIG=false
+    --location)
+      LOCATION="$2"
+      shift 2
+      ;;
+    --subscription)
+      SUBSCRIPTION_ID="$2"
+      shift 2
+      ;;
+    --client-id)
+      AZURE_CLIENT_ID="$2"
+      shift 2
+      ;;
+    --app-display-name)
+      APP_DISPLAY_NAME="$2"
+      shift 2
+      ;;
+    --skip-role-assignments)
+      SKIP_ROLE_ASSIGNMENTS=true
       shift
       ;;
     --dry-run)
@@ -85,20 +109,6 @@ run() {
   fi
 }
 
-azd_get() {
-  local name="$1"
-  local value
-  if value="$(azd env get-value "$name" -e "$AZD_ENVIRONMENT" 2>/dev/null)"; then
-    printf '%s\n' "$value"
-  fi
-}
-
-gh_env_var() {
-  local name="$1"
-  gh variable list --env "$GITHUB_ENVIRONMENT" \
-    | awk -v key="$name" '$1 == key { print $2; found = 1 } END { if (!found) exit 1 }' 2>/dev/null || true
-}
-
 set_github_var() {
   local name="$1"
   local value="$2"
@@ -112,13 +122,13 @@ set_github_var() {
   run gh variable set "$name" --env "$GITHUB_ENVIRONMENT" --body "$value"
 }
 
-set_github_secret() {
+set_github_secret_if_present() {
   local name="$1"
-  local value="$2"
+  local value="${!name:-}"
 
   if [[ -z "$value" ]]; then
-    echo "Cannot set $name because its value is empty." >&2
-    exit 1
+    echo "Skipping GitHub secret $name because it is not set locally."
+    return
   fi
 
   echo "Setting GitHub secret $name in environment $GITHUB_ENVIRONMENT."
@@ -129,80 +139,156 @@ set_github_secret() {
   fi
 }
 
+ensure_role_assignment() {
+  local assignee="$1"
+  local role="$2"
+  local scope="$3"
+
+  echo "Ensuring Azure role '$role' at $scope."
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "DRY RUN: az role assignment create --assignee $assignee --role $role --scope $scope"
+    return
+  fi
+
+  local existing
+  existing="$(az role assignment list --assignee "$assignee" --role "$role" --scope "$scope" --all --query '[0].id' -o tsv 2>/dev/null || true)"
+  if [[ -n "$existing" ]]; then
+    return
+  fi
+
+  az role assignment create \
+    --assignee "$assignee" \
+    --role "$role" \
+    --scope "$scope" \
+    --only-show-errors \
+    --output none || {
+      echo "Warning: Could not create Azure role '$role' at $scope. It may already exist, or your account may not have role assignment permissions." >&2
+    }
+}
+
 require_command az
-require_command azd
 require_command gh
-require_command awk
-
-if [[ -z "$AZD_ENVIRONMENT" ]]; then
-  AZD_ENVIRONMENT="$(azd_get AZURE_ENV_NAME)"
-fi
-
-if [[ -z "$AZD_ENVIRONMENT" ]]; then
-  echo "Could not determine azd environment. Pass --azd-environment <name>." >&2
-  exit 1
-fi
+require_command python3
 
 if [[ "$DRY_RUN" != true ]]; then
   gh auth status >/dev/null
 fi
 
-echo "Using azd environment: $AZD_ENVIRONMENT"
+if [[ -z "$SUBSCRIPTION_ID" ]]; then
+  SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+fi
+
+az account set --subscription "$SUBSCRIPTION_ID"
+TENANT_ID="$(az account show --query tenantId -o tsv)"
+
+if [[ -z "$AZURE_ENVIRONMENT" ]]; then
+  if [[ "$GITHUB_ENVIRONMENT" == "development" ]]; then
+    AZURE_ENVIRONMENT="dev"
+  else
+    AZURE_ENVIRONMENT="$GITHUB_ENVIRONMENT"
+  fi
+fi
+
+RESOURCE_GROUP="${RESOURCE_GROUP:-rg-elsa-platform-$AZURE_ENVIRONMENT}"
+APP_DISPLAY_NAME="${APP_DISPLAY_NAME:-elsa-platform-$GITHUB_ENVIRONMENT-github-actions}"
+
+REPO_FULL_NAME="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+SUBJECT="repo:$REPO_FULL_NAME:environment:$GITHUB_ENVIRONMENT"
+ISSUER="https://token.actions.githubusercontent.com"
+
 echo "Using GitHub environment: $GITHUB_ENVIRONMENT"
+echo "Using Azure environment: $AZURE_ENVIRONMENT"
+echo "Using resource group: $RESOURCE_GROUP"
+echo "Using subscription: $SUBSCRIPTION_ID"
 
 run gh api --method PUT "repos/:owner/:repo/environments/$GITHUB_ENVIRONMENT" >/dev/null
 
-if [[ "$RUN_PIPELINE_CONFIG" == true ]]; then
-  run azd pipeline config \
-    --provider github \
-    --auth-type federated \
-    --environment "$AZD_ENVIRONMENT" \
-    --remote-name "$REMOTE_NAME" \
-    --no-prompt
+if [[ -z "$AZURE_CLIENT_ID" ]]; then
+  AZURE_CLIENT_ID="$(az ad app list --display-name "$APP_DISPLAY_NAME" --query '[0].appId' -o tsv)"
 fi
 
-AZURE_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-$(azd_get AZURE_SUBSCRIPTION_ID)}"
-AZURE_LOCATION="${AZURE_LOCATION:-$(azd_get AZURE_LOCATION)}"
-AZURE_TENANT_ID="${AZURE_TENANT_ID:-$(az account show --query tenantId -o tsv)}"
-AZURE_CLIENT_ID="${AZURE_CLIENT_ID:-$(gh_env_var AZURE_CLIENT_ID)}"
-AZURE_RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-$(azd_get AZURE_RESOURCE_GROUP)}"
-AZURE_RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-rg-$AZD_ENVIRONMENT}"
-AZURE_WEBAPP_NAME="${AZURE_WEBAPP_NAME:-$(az webapp list --resource-group "$AZURE_RESOURCE_GROUP" --query "[?starts_with(name, 'api-')].name | [0]" -o tsv)}"
-
-ADMIN_API_KEY="${ADMIN_API_KEY:-$(azd_get AZURE_ADMIN_API_KEY)}"
-ADMIN_API_KEY="${ADMIN_API_KEY:-$(azd_get adminApiKey)}"
-
 if [[ -z "$AZURE_CLIENT_ID" ]]; then
-  echo "AZURE_CLIENT_ID is empty. Run without --skip-pipeline-config or export AZURE_CLIENT_ID." >&2
+  echo "Creating Entra app registration $APP_DISPLAY_NAME."
+  if [[ "$DRY_RUN" == true ]]; then
+    AZURE_CLIENT_ID="00000000-0000-0000-0000-000000000000"
+    echo "DRY RUN: az ad app create --display-name $APP_DISPLAY_NAME"
+  else
+    AZURE_CLIENT_ID="$(az ad app create --display-name "$APP_DISPLAY_NAME" --query appId -o tsv)"
+  fi
+else
+  echo "Using Entra app registration client ID $AZURE_CLIENT_ID."
+fi
+
+APP_OBJECT_ID="$(az ad app show --id "$AZURE_CLIENT_ID" --query id -o tsv 2>/dev/null || true)"
+
+if [[ "$DRY_RUN" != true ]]; then
+  az ad sp create --id "$AZURE_CLIENT_ID" --only-show-errors --output none 2>/dev/null || true
+fi
+
+SERVICE_PRINCIPAL_OBJECT_ID="$(az ad sp show --id "$AZURE_CLIENT_ID" --query id -o tsv 2>/dev/null || true)"
+
+if [[ -n "$APP_OBJECT_ID" ]]; then
+  EXISTING_CREDENTIAL="$(az ad app federated-credential list --id "$APP_OBJECT_ID" --query "[?subject=='$SUBJECT'].id | [0]" -o tsv 2>/dev/null || true)"
+  if [[ -z "$EXISTING_CREDENTIAL" ]]; then
+    echo "Creating GitHub environment federated credential."
+    if [[ "$DRY_RUN" == true ]]; then
+      echo "DRY RUN: az ad app federated-credential create --id $APP_OBJECT_ID --subject $SUBJECT"
+    else
+      CREDENTIAL_FILE="$(mktemp)"
+      trap 'rm -f "$CREDENTIAL_FILE"' EXIT
+      python3 - "$CREDENTIAL_FILE" "$GITHUB_ENVIRONMENT" "$ISSUER" "$SUBJECT" <<'PY'
+import json
+import sys
+
+path, environment, issuer, subject = sys.argv[1:]
+credential = {
+    "name": f"github-{environment}",
+    "issuer": issuer,
+    "subject": subject,
+    "audiences": ["api://AzureADTokenExchange"],
+}
+
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(credential, handle)
+PY
+      az ad app federated-credential create --id "$APP_OBJECT_ID" --parameters "@$CREDENTIAL_FILE" --only-show-errors --output none
+    fi
+  else
+    echo "GitHub environment federated credential already exists."
+  fi
+fi
+
+OUTPUTS="$(az deployment group show --resource-group "$RESOURCE_GROUP" --name main --query properties.outputs -o json 2>/dev/null || true)"
+if [[ -z "$OUTPUTS" || "$OUTPUTS" == "null" ]]; then
+  echo "Could not read deployment outputs from $RESOURCE_GROUP/main. Run an infra deployment first or create the resource group with scripts/deploy-azure-platform.sh." >&2
   exit 1
 fi
 
-declare -A values=(
-  [AZURE_CLIENT_ID]="$AZURE_CLIENT_ID"
-  [AZURE_TENANT_ID]="$AZURE_TENANT_ID"
-  [AZURE_SUBSCRIPTION_ID]="$AZURE_SUBSCRIPTION_ID"
-  [AZURE_ENV_NAME]="$AZD_ENVIRONMENT"
-  [AZURE_LOCATION]="$AZURE_LOCATION"
-  [AZURE_RESOURCE_GROUP]="$AZURE_RESOURCE_GROUP"
-  [AZURE_WEBAPP_NAME]="$AZURE_WEBAPP_NAME"
-  [AZURE_APP_SERVICE_DASHBOARD_URI]="$(azd_get AZURE_APP_SERVICE_DASHBOARD_URI)"
-  [AZURE_CONTAINER_REGISTRY_ENDPOINT]="$(azd_get AZURE_CONTAINER_REGISTRY_ENDPOINT)"
-  [API_IDENTITY_CLIENTID]="$(azd_get API_IDENTITY_CLIENTID)"
-  [API_IDENTITY_ID]="$(azd_get API_IDENTITY_ID)"
-  [PLATFORM_SQL_SQLSERVERFQDN]="$(azd_get PLATFORM_SQL_SQLSERVERFQDN)"
-  [ELSA_PLATFORM_AZURE_APP_SERVICE_DASHBOARD_URI]="$(azd_get ELSA_PLATFORM_AZURE_APP_SERVICE_DASHBOARD_URI)"
-  [ELSA_PLATFORM_AZURE_CONTAINER_REGISTRY_ENDPOINT]="$(azd_get ELSA_PLATFORM_AZURE_CONTAINER_REGISTRY_ENDPOINT)"
-  [ELSA_PLATFORM_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID]="$(azd_get ELSA_PLATFORM_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID)"
-  [ELSA_PLATFORM_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID]="$(azd_get ELSA_PLATFORM_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID)"
-  [ELSA_PLATFORM_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_ID]="$(azd_get ELSA_PLATFORM_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_ID)"
-  [ELSA_PLATFORM_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_PRINCIPAL_ID]="$(azd_get ELSA_PLATFORM_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_PRINCIPAL_ID)"
-  [ELSA_PLATFORM_PLANID]="$(azd_get ELSA_PLATFORM_PLANID)"
-)
+WEBAPP_NAME="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["webAppName"]["value"])' <<<"$OUTPUTS")"
+ACR_ENDPOINT="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["containerRegistryLoginServer"]["value"])' <<<"$OUTPUTS")"
+ACR_NAME="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["containerRegistryName"]["value"])' <<<"$OUTPUTS")"
 
-for name in "${!values[@]}"; do
-  set_github_var "$name" "${values[$name]}"
-done
+RESOURCE_GROUP_ID="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP"
+ACR_ID="$(az acr show --resource-group "$RESOURCE_GROUP" --name "$ACR_NAME" --query id -o tsv)"
 
-set_github_secret ADMIN_API_KEY "$ADMIN_API_KEY"
+if [[ "$SKIP_ROLE_ASSIGNMENTS" != true ]]; then
+  ROLE_ASSIGNEE="${SERVICE_PRINCIPAL_OBJECT_ID:-$AZURE_CLIENT_ID}"
+  ensure_role_assignment "$ROLE_ASSIGNEE" Contributor "$RESOURCE_GROUP_ID"
+  ensure_role_assignment "$ROLE_ASSIGNEE" AcrPush "$ACR_ID"
+fi
 
-echo "GitHub Azure deployment bootstrap completed."
+set_github_var AZURE_CLIENT_ID "$AZURE_CLIENT_ID"
+set_github_var AZURE_TENANT_ID "$TENANT_ID"
+set_github_var AZURE_SUBSCRIPTION_ID "$SUBSCRIPTION_ID"
+set_github_var AZURE_ENV_NAME "$AZURE_ENVIRONMENT"
+set_github_var AZURE_LOCATION "$LOCATION"
+set_github_var AZURE_RESOURCE_GROUP "$RESOURCE_GROUP"
+set_github_var AZURE_WEBAPP_NAME "$WEBAPP_NAME"
+set_github_var AZURE_CONTAINER_REGISTRY_ENDPOINT "$ACR_ENDPOINT"
+set_github_var SQL_ADMINISTRATOR_LOGIN "$SQL_ADMINISTRATOR_LOGIN"
+
+set_github_secret_if_present ADMIN_API_KEY
+set_github_secret_if_present SQL_ADMINISTRATOR_PASSWORD
+set_github_secret_if_present BUILDER_CLIENT_API_KEY
+
+echo "GitHub environment $GITHUB_ENVIRONMENT is configured for $RESOURCE_GROUP."

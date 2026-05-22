@@ -56,6 +56,11 @@ else
 {
     api.WithEnvironment("Database__Provider", "Sqlite")
         .WithEnvironment("ConnectionStrings__Catalog", "Data Source=elsa-catalog-dev.db");
+
+    builder.AddViteApp("console", "../Elsa.Platform.Console")
+        .WithReference(api)
+        .WithEnvironment("CATALOG_API_PROXY_TARGET", api.GetEndpoint("http"))
+        .WaitFor(api);
 }
 
 builder.Build().Run();
