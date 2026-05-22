@@ -19,6 +19,7 @@ The deployment must be reproducible without depending on an existing `azd` envir
 The API runs with:
 
 - `ASPNETCORE_ENVIRONMENT=Production`
+- `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` so ASP.NET Core uses App Service forwarded scheme/host headers for HTTPS-aware auth, redirects, and same-origin checks
 - `Database__Provider=SqlServer`
 - `ConnectionStrings__Catalog=<Azure SQL connection string>`
 - `Authentication__ApiKey=<strong deployment secret>`
@@ -30,7 +31,7 @@ The API applies EF Core SQL Server migrations at startup outside the `Testing` e
 
 1. Select target subscription, resource group, location, and environment name.
 2. Provision or update Azure infrastructure from `infra/main.bicep`.
-3. Build the API container with the Console baked in.
+3. Build the API container with the Console baked in. The helper script targets `linux/amd64` by default so local Apple Silicon builds run correctly on Linux App Service.
 4. Push the image to the provisioned Azure Container Registry.
 5. Re-run the Bicep deployment with the pushed image reference.
 6. Verify `/health` and `/admin`.
