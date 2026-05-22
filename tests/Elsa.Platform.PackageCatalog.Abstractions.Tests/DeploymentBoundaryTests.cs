@@ -11,7 +11,7 @@ public sealed class DeploymentBoundaryTests
         "Elsa.Platform.AdminUi",
         "Elsa.Platform.PackageCatalog.Persistence",
         "Elsa.Platform.PackageCatalog.Sources.NuGet",
-        "Elsa.Platform.PackageCatalog.AppHost"
+        "Elsa.Platform.AppHost"
     ];
 
     [Fact]

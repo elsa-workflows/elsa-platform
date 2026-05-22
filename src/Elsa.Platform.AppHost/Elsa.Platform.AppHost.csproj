@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <UserSecretsId>elsa-package-catalog-apphost</UserSecretsId>
+    <UserSecretsId>elsa-platform-apphost</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

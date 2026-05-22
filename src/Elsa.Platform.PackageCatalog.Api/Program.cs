@@ -166,7 +166,7 @@ app.UseAuthorization();
 
 app.MapOpenApi();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
-app.MapGet("/", () => "Elsa Package Catalog");
+app.MapGet("/", () => "Elsa Platform API");
 app.MapGet("/admin", () => Results.Redirect("/admin/overview"));
 app.MapAdminDashboardAuthEndpoints();
 app.MapPublicPackageEndpoints();

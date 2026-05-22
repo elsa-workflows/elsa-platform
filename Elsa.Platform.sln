@@ -52,9 +52,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "solution", "solution", "{9F
 		AGENTS.md = AGENTS.md
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Elsa.Platform.PackageCatalog.AppHost", "src\Elsa.Platform.PackageCatalog.AppHost\Elsa.Platform.PackageCatalog.AppHost.csproj", "{60DAE03C-A730-4125-B310-656D64BA28F0}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Elsa.Platform.AppHost", "src\Elsa.Platform.AppHost\Elsa.Platform.AppHost.csproj", "{60DAE03C-A730-4125-B310-656D64BA28F0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Elsa.Platform.PackageCatalog.ServiceDefaults", "src\Elsa.Platform.PackageCatalog.ServiceDefaults\Elsa.Platform.PackageCatalog.ServiceDefaults.csproj", "{1906CE1B-FB94-4E2B-8EF7-44A927277BEA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Elsa.Platform.ServiceDefaults", "src\Elsa.Platform.ServiceDefaults\Elsa.Platform.ServiceDefaults.csproj", "{1906CE1B-FB94-4E2B-8EF7-44A927277BEA}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations", "src\Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations\Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.csproj", "{66B0FC48-A0E5-4266-B557-4D3046A543F7}"
 EndProject

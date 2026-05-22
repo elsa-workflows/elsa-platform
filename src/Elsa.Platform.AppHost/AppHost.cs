@@ -6,7 +6,7 @@ var adminApiKey = builder.AddParameter("adminApiKey", secret: true);
 var applicationBuildNumber = Environment.GetEnvironmentVariable("APPLICATION_BUILD_NUMBER")
     ?? Environment.GetEnvironmentVariable("GITHUB_RUN_NUMBER");
 
-builder.AddAzureAppServiceEnvironment("elsa-package-catalog")
+builder.AddAzureAppServiceEnvironment("elsa-platform")
     .ConfigureInfrastructure(infrastructure =>
     {
         var plan = infrastructure.GetProvisionableResources().OfType<AppServicePlan>().Single();
@@ -30,7 +30,7 @@ if (!string.IsNullOrWhiteSpace(applicationBuildNumber))
 
 if (builder.ExecutionContext.IsPublishMode)
 {
-    var sql = builder.AddAzureSqlServer("catalog-sql")
+    var sql = builder.AddAzureSqlServer("platform-sql")
         .ConfigureInfrastructure(infrastructure =>
         {
             var sqlDatabase = infrastructure.GetProvisionableResources().OfType<SqlDatabase>().Single();

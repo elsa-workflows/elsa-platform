@@ -40,7 +40,7 @@ confirm the detected Aspire AppHost.
 
 ## GitHub Actions Deployment
 
-The `Azure API Deploy` workflow runs on pushes to `main` and can also be run
+The `Azure Platform API Deploy` workflow runs on pushes to `main` and can also be run
 manually from GitHub Actions. Normal `main` deployments build the admin
 dashboard, build the API container with the dashboard static assets mounted
 under `/admin`, push it to ACR, and update the existing App Service site
@@ -85,29 +85,29 @@ Required GitHub Actions variables:
 - `AZURE_TENANT_ID`: Microsoft Entra tenant ID.
 - `AZURE_SUBSCRIPTION_ID`: target Azure subscription ID.
 - `AZURE_ENV_NAME`: existing or desired `azd` environment name, for example
-  `elsa-package-catalog`.
+  `elsa-platform`.
 - `AZURE_LOCATION`: Azure region for the `azd` environment, for example
   `westeurope`.
 - `AZURE_RESOURCE_GROUP`: resource group containing the deployed App Service,
-  for example `rg-elsa-package-catalog`.
+  for example `rg-elsa-platform`.
 - `AZURE_WEBAPP_NAME`: API App Service name, for example `api-k35qdj734hds2`.
 - `AZURE_APP_SERVICE_DASHBOARD_URI`: Aspire dashboard URL emitted by `azd up`.
 - `AZURE_CONTAINER_REGISTRY_ENDPOINT`: ACR login server for app image pushes,
-  for example `elsapackagecatalogacrk35qdj734hds2.azurecr.io`.
+  for example `elsaplatformacrk35qdj734hds2.azurecr.io`.
 - `API_IDENTITY_CLIENTID` and `API_IDENTITY_ID`: managed identity values emitted
   by `azd up` for the API Web App.
-- `CATALOG_SQL_SQLSERVERFQDN`: Azure SQL server FQDN emitted by `azd up`.
-- `ELSA_PACKAGE_CATALOG_AZURE_APP_SERVICE_DASHBOARD_URI`: Aspire dashboard URL
+- `PLATFORM_SQL_SQLSERVERFQDN`: Azure SQL server FQDN emitted by `azd up`.
+- `ELSA_PLATFORM_AZURE_APP_SERVICE_DASHBOARD_URI`: Aspire dashboard URL
   emitted by `azd up`.
-- `ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_ENDPOINT`: ACR login server
+- `ELSA_PLATFORM_AZURE_CONTAINER_REGISTRY_ENDPOINT`: ACR login server
   emitted by `azd up`.
-- `ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID` and
-  `ELSA_PACKAGE_CATALOG_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID`: managed
+- `ELSA_PLATFORM_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID` and
+  `ELSA_PLATFORM_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID`: managed
   identity values emitted by `azd up` for ACR image pushes.
-- `ELSA_PACKAGE_CATALOG_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_ID` and
-  `ELSA_PACKAGE_CATALOG_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_PRINCIPAL_ID`:
+- `ELSA_PLATFORM_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_ID` and
+  `ELSA_PLATFORM_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_PRINCIPAL_ID`:
   managed identity values emitted by `azd up` for Web App updates.
-- `ELSA_PACKAGE_CATALOG_PLANID`: App Service plan resource ID emitted by
+- `ELSA_PLATFORM_PLANID`: App Service plan resource ID emitted by
   `azd up`.
 
 Required GitHub Actions secrets:
@@ -128,7 +128,7 @@ Use the bootstrap script to recreate or refresh the GitHub `production`
 environment wiring from the selected `azd` environment:
 
 ```bash
-scripts/bootstrap-github-azure.sh --azd-environment elsa-package-catalog
+scripts/bootstrap-github-azure.sh --azd-environment elsa-platform
 ```
 
 The script:
