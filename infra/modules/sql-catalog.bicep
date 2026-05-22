@@ -65,7 +65,7 @@ resource database 'Microsoft.Sql/servers/databases@2023-08-01' = {
     autoPauseDelay: autoPauseDelay
     collation: 'SQL_Latin1_General_CP1_CI_AS'
     minCapacity: json(minCapacity)
-    requestedBackupStorageRedundancy: 'Local'
+    requestedBackupStorageRedundancy: 'Zone'
     zoneRedundant: false
   }
 }

@@ -25,6 +25,7 @@ param adminApiKey string
 @description('Optional builder-client API key.')
 param builderClientApiKey string = ''
 
+@secure()
 @description('Application Insights connection string.')
 param appInsightsConnectionString string = ''
 

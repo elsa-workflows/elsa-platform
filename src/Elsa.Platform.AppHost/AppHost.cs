@@ -43,10 +43,8 @@ if (builder.ExecutionContext.IsPublishMode)
             };
             sqlDatabase.MinCapacity = 0.5;
             sqlDatabase.AutoPauseDelay = 60;
-            sqlDatabase.RequestedBackupStorageRedundancy = SqlBackupStorageRedundancy.Local;
+            sqlDatabase.RequestedBackupStorageRedundancy = SqlBackupStorageRedundancy.Zone;
             sqlDatabase.IsZoneRedundant = false;
-            sqlDatabase.UseFreeLimit = true;
-            sqlDatabase.FreeLimitExhaustionBehavior = FreeLimitExhaustionBehavior.AutoPause;
         });
     var database = sql.AddDatabase("Catalog");
 
