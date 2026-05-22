@@ -229,6 +229,7 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **FR-045**: System MUST prevent the assistant from exposing raw secrets, engine credentials, provider tokens, or data outside the user's authorized workspace scope.
 - **FR-046**: System MUST distinguish assistant recommendations from executed platform state changes so users and auditors can tell whether the system only suggested an action or actually applied it.
 - **FR-047**: System MUST treat workspace content supplied to the assistant as untrusted input and validate assistant responses so prompt injection in workflow definitions, environment metadata, deployment descriptions, or observability data cannot cause disclosure beyond the requesting user's authorized scope.
+- **FR-048**: System MUST enforce the all-or-nothing execution boundary for an approved assistant mutation plan; if any step fails, the platform MUST stop remaining steps, roll back or compensate already-applied steps where possible, and audit/report any residual partial state before allowing another plan execution.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -272,7 +273,7 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **SC-013**: Environment observability views can retrieve structured logs, console streams, OpenTelemetry-compatible traces, or metrics from configured providers and correlate results to a workspace environment and deployment revision.
 - **SC-014**: Drift detection can report differences between desired state and observed engine state without mutating either source automatically.
 - **SC-015**: Assistant access tests prove the assistant can summarize and compare only data visible to the requesting account's current workspace membership, role, and entitlement state.
-- **SC-016**: Assistant mutation tests prove deployment, rollback, runtime control, secret-reference, and desired-state changes require explicit approval of the exact immutable plan artifact and produce audit records that distinguish proposed actions from executed actions.
+- **SC-016**: Assistant mutation tests prove deployment, rollback, runtime control, secret-reference, and desired-state changes require explicit approval of the exact immutable plan artifact, enforce all-or-nothing plan execution on step failure, and produce audit records that distinguish proposed actions from executed actions.
 - **SC-017**: Prompt-injection tests prove adversarial workspace content cannot cause assistant responses to expose raw secrets, hidden credentials, operator-only data, or data from another workspace.
 
 ## Assumptions
@@ -292,5 +293,5 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - Elsa runtime tenant concepts and deployment tenant overlays are separate nested concerns and are intentionally deferred from the identity foundation, but future deployment features must preserve workspace ownership as the outer platform boundary.
 - The AI assistant is a copilot for platform operations, not an independent authority; it acts through the same workspace-scoped APIs, validation, approval, and audit controls as a user-driven workflow.
 - Assistant memory, retrieval, and tool execution are scoped by workspace and current user authorization, and any future cross-workspace or operator assistant mode requires separate operator authorization.
-- Assistant-generated mutation plans are approved and executed as one atomic plan by default; partial step approval is out of scope unless a future requirement defines compensating rollback behavior and per-step audit semantics.
+- Assistant-generated mutation plans are approved and executed as one atomic plan by default under FR-048; partial step approval is out of scope unless a future requirement defines compensating rollback behavior and per-step audit semantics.
 - Assistant-generated mutation plans are frozen when presented for approval; execution uses that same plan artifact and must not regenerate or alter the action set after approval.
