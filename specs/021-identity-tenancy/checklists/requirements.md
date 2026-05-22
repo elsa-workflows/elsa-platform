@@ -2,6 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-05-21
+**Last Validated**: 2026-05-22
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
@@ -33,3 +34,4 @@
 
 - The specification intentionally treats `Workspace` as the platform tenant boundary and defers Elsa runtime tenant overlays and first-class tenant reconciliation to later deployment-platform features.
 - The existing admin API-key dashboard flow is preserved as operator fallback, not promoted to customer authentication.
+- The deployment-platform additions define product boundaries for workflow engines, environments, desired state, promotion, secrets, observability, and capability-based operations; detailed deployment implementation planning remains future work.
