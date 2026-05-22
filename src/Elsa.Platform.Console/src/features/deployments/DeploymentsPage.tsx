@@ -18,8 +18,9 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Badge, Button, SecondaryButton, Select, Table } from "@/components/ui";
 import { RequestStateView } from "@/components/states/RequestStateViews";
-import { getDeploymentCockpit } from "@/features/deployments/deploymentApi";
+import { getDeploymentCockpit, getDeploymentWorkspaceContext } from "@/features/deployments/deploymentApi";
 import {
+  type DiffCategory,
   engineLabel,
   environmentLabel,
   hasBlockingValidation,
@@ -47,7 +48,13 @@ const views: Array<{ id: ViewId; label: string }> = [
 ];
 
 export function DeploymentsPage() {
-  const cockpit = useQuery({ queryKey: queryKeys.deployments, queryFn: getDeploymentCockpit });
+  const workspaceContext = useQuery({ queryKey: queryKeys.deploymentWorkspaceContext, queryFn: getDeploymentWorkspaceContext });
+  const workspaceId = workspaceContext.data?.workspaces[0]?.id ?? "";
+  const cockpit = useQuery({
+    queryKey: queryKeys.deploymentCockpit(workspaceId),
+    queryFn: () => getDeploymentCockpit(workspaceId),
+    enabled: Boolean(workspaceId)
+  });
   const [activeView, setActiveView] = useState<ViewId>("fleet");
   const [selectedApplicationId, setSelectedApplicationId] = useState("claims-ops");
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState("claims-stage");
@@ -67,7 +74,11 @@ export function DeploymentsPage() {
     );
   }, [data?.comparisons, sourceEnvironmentId, targetEnvironmentId]);
 
-  if (cockpit.isLoading) return <RequestStateView state="loading" title="Loading deployments" />;
+  if (workspaceContext.isLoading || cockpit.isLoading) return <RequestStateView state="loading" title="Loading deployments" />;
+  if (workspaceContext.isError) return <RequestStateView state="unexpected" title="Workspace context could not load" />;
+  if (!workspaceId) {
+    return <RequestStateView state="empty" title="No workspace selected" description="Sign in with a workspace membership to view deployments." />;
+  }
   if (cockpit.isError || !data || !selectedApplication || !selectedEngine) {
     return <RequestStateView state="unexpected" title="Deployments could not load" />;
   }
@@ -405,7 +416,7 @@ function PromotionView({
                 <tbody className="divide-y divide-border">
                   {comparison.diff.map((item) => (
                     <tr key={item.id}>
-                      <td className="px-3 py-3">{item.category}</td>
+                      <td className="px-3 py-3">{diffCategoryLabel(item.category)}</td>
                       <td className="px-3 py-3 font-medium">{item.name}</td>
                       <td className="px-3 py-3 text-muted-foreground">{item.sourceValue}</td>
                       <td className="px-3 py-3 text-muted-foreground">{item.targetValue}</td>
@@ -679,4 +690,19 @@ function validationTone(status: ValidationSeverity): StatusTone {
 
 function driftLabel(status: DriftStatus) {
   return status === "InSync" ? "In sync" : status === "DriftDetected" ? "Drift detected" : "Unknown";
+}
+
+function diffCategoryLabel(category: DiffCategory) {
+  switch (category) {
+    case "ShellConfiguration":
+      return "Shell configuration";
+    case "RuntimeConfiguration":
+      return "Runtime configuration";
+    case "SecretReferences":
+      return "Secret references";
+    case "EngineBindings":
+      return "Engine bindings";
+    default:
+      return category;
+  }
 }

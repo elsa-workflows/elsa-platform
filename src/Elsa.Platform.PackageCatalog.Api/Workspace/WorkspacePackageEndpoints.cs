@@ -17,14 +17,13 @@ public static class WorkspacePackageEndpoints
             Guid workspaceId,
             [FromQuery] Guid[] sourceIds,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             PublicCatalogQueryService catalog,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
 
             var result = await catalog.ListPackagesForWorkspaceAsync(workspaceId, sourceIds, cancellationToken);
             return Results.Ok(result.Select(PublicPackageEndpoints.ToResponse));
@@ -35,14 +34,13 @@ public static class WorkspacePackageEndpoints
             Guid sourceId,
             string packageId,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             PublicCatalogQueryService catalog,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
 
             var package = await catalog.GetPackageForWorkspaceAsync(workspaceId, sourceId, packageId, cancellationToken);
             return package is null ? Results.NotFound() : Results.Ok(PublicPackageEndpoints.ToResponse(package));
@@ -53,14 +51,13 @@ public static class WorkspacePackageEndpoints
             Guid sourceId,
             string packageId,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             PublicCatalogQueryService catalog,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
 
             var versions = await catalog.ListVersionsForWorkspaceAsync(workspaceId, sourceId, packageId, cancellationToken);
             return Results.Ok(versions.Select(PublicPackageEndpoints.ToResponse));
@@ -72,14 +69,13 @@ public static class WorkspacePackageEndpoints
             string packageId,
             string version,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             PublicCatalogQueryService catalog,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
 
             var packageVersion = await catalog.GetVersionForWorkspaceAsync(workspaceId, sourceId, packageId, version, cancellationToken);
             return packageVersion is null ? Results.NotFound() : Results.Ok(PublicPackageEndpoints.ToResponse(packageVersion));

@@ -14,10 +14,25 @@ Expected result: first sign-in provisions customer context exactly once, and rep
 ## Provider Integration Smoke Test
 
 1. Configure `Authentication:PlatformIdentity:Provider` for `MicrosoftEntra`, `Auth0`, `Keycloak`, or `Custom`.
-2. Configure authority, audience, issuer, and claim mappings for that provider.
-3. Sign in and call `GET /api/me/workspaces`.
+2. Configure authority, audience, issuer, client ID, redirect URI, post-logout redirect URI, scopes, and claim mappings for that provider.
+3. Open `/admin/runtime-builder` in a browser.
+4. Confirm anonymous browser navigation starts customer sign-in through `/api/auth/login`.
+5. Complete provider sign-in and return through `/api/auth/callback`.
+6. Confirm `GET /api/auth/session` reports `authenticated = true`.
+7. Confirm the console can call `GET /api/me/workspaces`.
+8. Submit customer sign-out through `/api/auth/logout`.
+9. Confirm subsequent workspace API calls require a new customer identity.
 
 Expected result: provider-specific configuration changes token validation and claim mapping, but account/workspace provisioning still uses the same issuer and subject contract.
+
+## API Bearer Token Smoke Test
+
+1. Configure `Authentication:PlatformIdentity` with trusted issuer and audience.
+2. Call `GET /api/me/workspaces` with a valid `Authorization: Bearer` token.
+3. Call a workspace read endpoint with the same bearer token.
+4. Call a workspace mutation endpoint with the same bearer token and no browser origin headers.
+
+Expected result: direct API clients can use bearer tokens without browser session cookies or same-origin headers, while workspace membership, role, and entitlement checks remain authoritative.
 
 ## Invalid Identity Smoke Test
 

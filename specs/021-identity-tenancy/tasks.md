@@ -37,10 +37,10 @@
 - [X] T008 Add platform OIDC/JWT authentication registration in `src/Elsa.Platform.PackageCatalog.Api/Program.cs`
 - [X] T009 Add `PlatformIdentityReader` abstraction that derives `TrustedWorkspaceIdentity` from authenticated principals in `src/Elsa.Platform.PackageCatalog.Api/Authentication/PlatformIdentityReader.cs`
 - [X] T010 Add test identity helper utilities in `tests/Elsa.Platform.PackageCatalog.Api.Tests/TestWorkspaceIdentity.cs`
-- [ ] T011 [P] Add shared workspace access result models in `src/Elsa.Platform.PackageCatalog.Core/Accounts/WorkspaceAuthorizationModels.cs`
-- [ ] T012 Add workspace access resolver service in `src/Elsa.Platform.PackageCatalog.Api/Authentication/WorkspaceAccessResolver.cs`
-- [ ] T013 Add workspace authorization endpoint filters/policies in `src/Elsa.Platform.PackageCatalog.Api/Authentication/WorkspaceAuthorization.cs`
-- [ ] T014 Register customer identity and workspace authorization services in `src/Elsa.Platform.PackageCatalog.Api/Program.cs`
+- [X] T011 [P] Add shared workspace access result models in `src/Elsa.Platform.PackageCatalog.Core/Accounts/WorkspaceAuthorizationModels.cs`
+- [X] T012 Add workspace access resolver service in `src/Elsa.Platform.PackageCatalog.Api/Authentication/WorkspaceAccessResolver.cs`
+- [X] T013 Add workspace authorization endpoint filters/policies in `src/Elsa.Platform.PackageCatalog.Api/Authentication/WorkspaceAuthorization.cs`
+- [X] T014 Register customer identity and workspace authorization services in `src/Elsa.Platform.PackageCatalog.Api/Program.cs`
 
 ---
 
@@ -70,6 +70,21 @@
 
 ---
 
+## Phase 3a: Customer OIDC Console Login
+
+**Goal**: Hosted console users can start customer login, carry a server-side customer session into workspace APIs, and sign out without using operator credentials as customer identity.
+
+- [X] T024a Add customer OIDC client settings and OpenID Connect package reference in `Directory.Packages.props`, `src/Elsa.Platform.PackageCatalog.Api/Elsa.Platform.PackageCatalog.Api.csproj`, and `src/Elsa.Platform.PackageCatalog.Api/appsettings*.json`
+- [X] T024b Add dedicated customer cookie/session defaults and session identity reader in `src/Elsa.Platform.PackageCatalog.Api/Authentication/`
+- [X] T024c Add customer session, login, and logout endpoints in `src/Elsa.Platform.PackageCatalog.Api/Authentication/CustomerAuthEndpoints.cs`
+- [X] T024d Allow configured customer sessions to serve the hosted console shell without authorizing operator-only APIs in `src/Elsa.Platform.PackageCatalog.Api/Authentication/AdminDashboardAuthenticationMiddleware.cs`
+- [X] T024e Add same-origin protection for cookie-authenticated workspace mutations in `src/Elsa.Platform.PackageCatalog.Api/Authentication/AdminDashboardRequestForgeryGuard.cs`
+- [X] T024f Add console auth API, provider, customer route guards, and cookie-aware API requests in `src/Elsa.Platform.Console/src/lib/auth/`, `src/Elsa.Platform.Console/src/app/routes.tsx`, `src/Elsa.Platform.Console/src/main.tsx`, and `src/Elsa.Platform.Console/src/lib/api/httpClient.ts`
+- [X] T024g Add customer authentication API tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/CustomerAuthenticationTests.cs` and console HTTP client coverage in `src/Elsa.Platform.Console/src/lib/api/httpClient.test.ts`
+- [X] T024h Run `npm test` and `npm run typecheck` in `src/Elsa.Platform.Console`
+
+---
+
 ## Phase 4: User Story 2 - First Sign-In Creates A Personal Workspace (Priority: P1)
 
 **Goal**: First sign-in provisions exactly one account, external identity, personal workspace, and owner membership.
@@ -78,18 +93,18 @@
 
 ### Tests for User Story 2
 
-- [ ] T025 [P] [US2] Add first sign-in provisioning tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceProvisioningTests.cs`
-- [ ] T026 [P] [US2] Add repeated sign-in idempotency tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceProvisioningTests.cs`
-- [ ] T027 [P] [US2] Add concurrent first sign-in tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceProvisioningTests.cs`
-- [ ] T028 [P] [US2] Add multi-workspace membership listing tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceProvisioningTests.cs`
+- [X] T025 [P] [US2] Add first sign-in provisioning tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceProvisioningTests.cs`
+- [X] T026 [P] [US2] Add repeated sign-in idempotency tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceProvisioningTests.cs`
+- [X] T027 [P] [US2] Add concurrent first sign-in tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceProvisioningTests.cs`
+- [X] T028 [P] [US2] Add multi-workspace membership listing tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceProvisioningTests.cs`
 
 ### Implementation for User Story 2
 
 - [X] T029 [US2] Harden `AccountWorkspaceService.GetOrCreateAsync` profile updates and duplicate handling in `src/Elsa.Platform.PackageCatalog.Core/Accounts/AccountWorkspaceService.cs`
-- [ ] T030 [US2] Ensure external identity uniqueness and workspace membership mappings remain enforced in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
-- [ ] T031 [US2] Extend `AccountWorkspaceStore` queries to exclude soft-deleted workspaces from customer context in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/AccountWorkspaceStore.cs`
-- [ ] T032 [US2] Update workspace context response contracts if needed in `src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceContracts.cs`
-- [ ] T033 [US2] Run `dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter WorkspaceProvisioningTests`
+- [X] T030 [US2] Ensure external identity uniqueness and workspace membership mappings remain enforced in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
+- [X] T031 [US2] Extend `AccountWorkspaceStore` queries to exclude soft-deleted workspaces from customer context in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/AccountWorkspaceStore.cs`
+- [X] T032 [US2] Update workspace context response contracts if needed in `src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceContracts.cs`
+- [X] T033 [US2] Run `dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter WorkspaceProvisioningTests`
 
 **Checkpoint**: First sign-in and returning sign-in are deterministic and safe under concurrency.
 
@@ -103,21 +118,21 @@
 
 ### Tests for User Story 3
 
-- [ ] T034 [P] [US3] Add cross-workspace source visibility tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceIsolationTests.cs`
-- [ ] T035 [P] [US3] Add cross-workspace package browsing tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceIsolationTests.cs`
-- [ ] T036 [P] [US3] Add cross-workspace builder endpoint tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceIsolationTests.cs`
-- [ ] T037 [P] [US3] Add cross-workspace runtime configuration tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceIsolationTests.cs`
-- [ ] T038 [P] [US3] Add anonymous public catalog regression tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceIsolationTests.cs`
+- [X] T034 [P] [US3] Add cross-workspace source visibility tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceIsolationTests.cs`
+- [X] T035 [P] [US3] Add cross-workspace package browsing tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceIsolationTests.cs`
+- [X] T036 [P] [US3] Add cross-workspace builder endpoint tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceIsolationTests.cs`
+- [X] T037 [P] [US3] Add cross-workspace runtime configuration tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceIsolationTests.cs`
+- [X] T038 [P] [US3] Add anonymous public catalog regression tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceIsolationTests.cs`
 
 ### Implementation for User Story 3
 
-- [ ] T039 [US3] Apply shared workspace authorization to source endpoints in `src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceSourceEndpoints.cs`
-- [ ] T040 [US3] Apply shared workspace authorization to package endpoints in `src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspacePackageEndpoints.cs`
-- [ ] T041 [US3] Apply shared workspace authorization to builder endpoints in `src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceBuilderEndpoints.cs`
-- [ ] T042 [US3] Apply shared workspace authorization to runtime configuration endpoints in `src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceRuntimeConfigurationEndpoints.cs`
-- [ ] T043 [US3] Centralize workspace-visible public/private source query checks in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/PublicSourceQueries.cs`
-- [ ] T044 [US3] Centralize workspace-visible package query checks in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/PublicCatalogQueries.cs`
-- [ ] T045 [US3] Run `dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter WorkspaceIsolationTests`
+- [X] T039 [US3] Apply shared workspace authorization to source endpoints in `src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceSourceEndpoints.cs`
+- [X] T040 [US3] Apply shared workspace authorization to package endpoints in `src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspacePackageEndpoints.cs`
+- [X] T041 [US3] Apply shared workspace authorization to builder endpoints in `src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceBuilderEndpoints.cs`
+- [X] T042 [US3] Apply shared workspace authorization to runtime configuration endpoints in `src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceRuntimeConfigurationEndpoints.cs`
+- [X] T043 [US3] Centralize workspace-visible public/private source query checks in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/PublicSourceQueries.cs`
+- [X] T044 [US3] Centralize workspace-visible package query checks in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/PublicCatalogQueries.cs`
+- [X] T045 [US3] Run `dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter WorkspaceIsolationTests`
 
 **Checkpoint**: Workspace authorization is consistent across current customer-owned API paths.
 
@@ -131,17 +146,17 @@
 
 ### Tests for User Story 4
 
-- [ ] T046 [P] [US4] Add owner/source-admin/reader source-management tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceAuthorizationTests.cs`
-- [ ] T047 [P] [US4] Add entitlement denial and limit tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceAuthorizationTests.cs`
-- [ ] T048 [P] [US4] Add current-membership-after-role-change tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceAuthorizationTests.cs`
+- [X] T046 [P] [US4] Add owner/source-admin/reader source-management tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceAuthorizationTests.cs`
+- [X] T047 [P] [US4] Add entitlement denial and limit tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceAuthorizationTests.cs`
+- [X] T048 [P] [US4] Add current-membership-after-role-change tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceAuthorizationTests.cs`
 
 ### Implementation for User Story 4
 
-- [ ] T049 [US4] Extend workspace access models for operation-specific role checks in `src/Elsa.Platform.PackageCatalog.Core/Accounts/WorkspaceAuthorizationModels.cs`
-- [ ] T050 [US4] Enforce source administrator role through shared authorization in `src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceSourceEndpoints.cs`
-- [ ] T051 [US4] Enforce entitlement checks through shared authorization in `src/Elsa.Platform.PackageCatalog.Core/Accounts/WorkspaceSourceService.cs`
-- [ ] T052 [US4] Ensure admin entitlement updates remain operator-only in `src/Elsa.Platform.PackageCatalog.Api/Admin/Workspaces/AdminWorkspaceEntitlementEndpoints.cs`
-- [ ] T053 [US4] Run `dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter WorkspaceAuthorizationTests`
+- [X] T049 [US4] Extend workspace access models for operation-specific role checks in `src/Elsa.Platform.PackageCatalog.Core/Accounts/WorkspaceAuthorizationModels.cs`
+- [X] T050 [US4] Enforce source administrator role through shared authorization in `src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceSourceEndpoints.cs`
+- [X] T051 [US4] Enforce entitlement checks through shared authorization in `src/Elsa.Platform.PackageCatalog.Core/Accounts/WorkspaceSourceService.cs`
+- [X] T052 [US4] Ensure admin entitlement updates remain operator-only in `src/Elsa.Platform.PackageCatalog.Api/Admin/Workspaces/AdminWorkspaceEntitlementEndpoints.cs`
+- [X] T053 [US4] Run `dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter WorkspaceAuthorizationTests`
 
 **Checkpoint**: Roles and entitlements are authoritative server-side, independent of frontend state.
 
@@ -155,16 +170,16 @@
 
 ### Tests for User Story 5
 
-- [ ] T054 [P] [US5] Add operator entitlement endpoint authorization tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/OperatorAuthorizationTests.cs`
-- [ ] T055 [P] [US5] Add customer-denied-from-operator-endpoints tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/OperatorAuthorizationTests.cs`
-- [ ] T056 [P] [US5] Add admin-key-does-not-provision-customer-context tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/OperatorAuthorizationTests.cs`
+- [X] T054 [P] [US5] Add operator entitlement endpoint authorization tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/OperatorAuthorizationTests.cs`
+- [X] T055 [P] [US5] Add customer-denied-from-operator-endpoints tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/OperatorAuthorizationTests.cs`
+- [X] T056 [P] [US5] Add admin-key-does-not-provision-customer-context tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/OperatorAuthorizationTests.cs`
 
 ### Implementation for User Story 5
 
-- [ ] T057 [US5] Separate customer and operator authentication policy registration in `src/Elsa.Platform.PackageCatalog.Api/Authentication/AdminAuthorization.cs`
-- [ ] T058 [US5] Ensure admin dashboard cookie/API-key schemes do not satisfy customer workspace identity in `src/Elsa.Platform.PackageCatalog.Api/Authentication/PlatformIdentityReader.cs`
-- [ ] T059 [US5] Update admin dashboard auth documentation in `specs/004-admin-dashboard-auth/quickstart.md`
-- [ ] T060 [US5] Run `dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter OperatorAuthorizationTests`
+- [X] T057 [US5] Separate customer and operator authentication policy registration in `src/Elsa.Platform.PackageCatalog.Api/Authentication/AdminAuthorization.cs`
+- [X] T058 [US5] Ensure admin dashboard cookie/API-key schemes do not satisfy customer workspace identity in `src/Elsa.Platform.PackageCatalog.Api/Authentication/PlatformIdentityReader.cs`
+- [X] T059 [US5] Update admin dashboard auth documentation in `specs/004-admin-dashboard-auth/quickstart.md`
+- [X] T060 [US5] Run `dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter OperatorAuthorizationTests`
 
 **Checkpoint**: Operator and customer identities are separate authorization paths.
 
@@ -174,11 +189,11 @@
 
 **Purpose**: Final hardening, documentation, and broad verification.
 
-- [ ] T061 [P] Update identity/tenancy API contract examples in `specs/021-identity-tenancy/contracts/identity-workspace-api.md`
-- [ ] T062 [P] Update appsettings production guidance in `src/Elsa.Platform.PackageCatalog.Api/appsettings.Production.json`
-- [ ] T063 Review security-sensitive logs and audit metadata in `src/Elsa.Platform.PackageCatalog.Api/Authentication/`
-- [ ] T064 Run `dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj`
-- [ ] T065 Run `dotnet test Elsa.Platform.sln`
+- [X] T061 [P] Update identity/tenancy API contract examples in `specs/021-identity-tenancy/contracts/identity-workspace-api.md`
+- [X] T062 [P] Update appsettings production guidance in `src/Elsa.Platform.PackageCatalog.Api/appsettings.Production.json`
+- [X] T063 Review security-sensitive logs and audit metadata in `src/Elsa.Platform.PackageCatalog.Api/Authentication/`
+- [X] T064 Run `dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj`
+- [X] T065 Run `dotnet test Elsa.Platform.sln`
 - [ ] T066 Execute quickstart smoke checks from `specs/021-identity-tenancy/quickstart.md`
 
 ---

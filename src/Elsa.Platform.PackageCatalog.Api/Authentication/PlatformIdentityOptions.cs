@@ -13,8 +13,17 @@ public sealed class PlatformIdentityOptions
     public string? Audience { get; init; }
     public string? Issuer { get; init; }
     public string? SymmetricSigningKey { get; init; }
+    public string? ClientId { get; init; }
+    public string? ClientSecret { get; init; }
+    public string[] Scopes { get; init; } = ["openid", "profile", "email"];
+    public string? RedirectUri { get; init; }
+    public string? PostLogoutRedirectUri { get; init; }
     public bool RequireHttpsMetadata { get; init; } = true;
     public PlatformIdentityClaimOptions Claims { get; init; } = new();
+
+    public bool IsCustomerLoginConfigured =>
+        !string.IsNullOrWhiteSpace(Authority) &&
+        !string.IsNullOrWhiteSpace(ClientId);
 }
 
 public sealed class PlatformIdentityClaimOptions

@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
+import { AuthProvider } from "@/lib/auth/AuthProvider";
 import { QueryProvider } from "@/lib/query/queryClient";
 import { router } from "@/app/routes";
 import "@/styles.css";
@@ -8,7 +9,9 @@ import "@/styles.css";
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryProvider>
-      <RouterProvider router={router} />
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
     </QueryProvider>
   </React.StrictMode>
 );

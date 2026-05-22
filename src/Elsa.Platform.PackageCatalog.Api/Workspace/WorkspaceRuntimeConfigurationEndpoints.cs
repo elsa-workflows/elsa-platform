@@ -18,14 +18,13 @@ public static class WorkspaceRuntimeConfigurationEndpoints
         group.MapGet("/", async (
             Guid workspaceId,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
 
             var items = await configurations.ListAsync(workspaceId, cancellationToken);
             return Results.Ok(items.Select(ToResponse));
@@ -35,14 +34,13 @@ public static class WorkspaceRuntimeConfigurationEndpoints
             Guid workspaceId,
             WorkspaceRuntimeConfigurationRequest request,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.MutateWorkspaceResource, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
             if (request.Intent is null)
                 return Results.BadRequest(new { error = "intent is required." });
 
@@ -54,14 +52,13 @@ public static class WorkspaceRuntimeConfigurationEndpoints
             Guid workspaceId,
             Guid id,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
 
             var configuration = await configurations.GetAsync(workspaceId, id, cancellationToken);
             return configuration is null ? Results.NotFound() : Results.Ok(ToResponse(configuration));
@@ -72,14 +69,13 @@ public static class WorkspaceRuntimeConfigurationEndpoints
             Guid id,
             WorkspaceRuntimeConfigurationRequest request,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.MutateWorkspaceResource, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
             if (request.Intent is null)
                 return Results.BadRequest(new { error = "intent is required." });
 
@@ -91,14 +87,13 @@ public static class WorkspaceRuntimeConfigurationEndpoints
             Guid workspaceId,
             Guid id,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.MutateWorkspaceResource, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
 
             return await configurations.DeleteAsync(workspaceId, id, cancellationToken)
                 ? Results.NoContent()
@@ -109,14 +104,13 @@ public static class WorkspaceRuntimeConfigurationEndpoints
             Guid workspaceId,
             Guid id,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.MutateWorkspaceResource, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
 
             var clone = await configurations.CloneAsync(workspaceId, id, cancellationToken);
             return clone is null ? Results.NotFound() : Results.Ok(ToResponse(clone));
@@ -126,14 +120,13 @@ public static class WorkspaceRuntimeConfigurationEndpoints
             Guid workspaceId,
             Guid id,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.MutateWorkspaceResource, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
 
             var version = await configurations.CreateVersionAsync(workspaceId, id, cancellationToken);
             return version is null ? Results.NotFound() : Results.Ok(ToResponse(version));
@@ -143,14 +136,13 @@ public static class WorkspaceRuntimeConfigurationEndpoints
             Guid workspaceId,
             Guid id,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
 
             var versions = await configurations.ListVersionsAsync(workspaceId, id, cancellationToken);
             return Results.Ok(versions.Select(ToResponse));
@@ -160,15 +152,14 @@ public static class WorkspaceRuntimeConfigurationEndpoints
             Guid workspaceId,
             Guid id,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             BundleGenerationService bundles,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
 
             var configuration = await configurations.GetAsync(workspaceId, id, cancellationToken);
             if (configuration is null)

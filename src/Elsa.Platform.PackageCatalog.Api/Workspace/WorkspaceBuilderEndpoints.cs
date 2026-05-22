@@ -25,16 +25,15 @@ public static class WorkspaceBuilderEndpoints
             Guid workspaceId,
             [FromQuery] Guid[] sourceIds,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             PublicCatalogQueryService catalog,
             RuntimeImageCatalog runtimeImages,
             InfrastructureProviderCatalog infrastructure,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
 
             var packages = await catalog.ListPackagesForWorkspaceAsync(workspaceId, sourceIds, cancellationToken);
             return Results.Ok(new BuilderCatalogResponse(
@@ -47,14 +46,13 @@ public static class WorkspaceBuilderEndpoints
             Guid workspaceId,
             BuilderResolveRequest request,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             CompatibilityCheckService compatibility,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
 
             if (request.Packages is null)
                 return Results.BadRequest(new { error = "packages is required." });
@@ -80,14 +78,13 @@ public static class WorkspaceBuilderEndpoints
             Guid workspaceId,
             BuilderPlanApiRequest request,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             BuilderPlannerService planner,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
             if (request.Intent is null)
                 return Results.BadRequest(new { error = "intent is required." });
 
@@ -99,14 +96,13 @@ public static class WorkspaceBuilderEndpoints
             Guid workspaceId,
             BuilderBundleRequest request,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             BundleGenerationService bundles,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
 
             if (!BuilderEndpoints.TryMapIntent(request, out var intent, out var error))
                 return Results.BadRequest(new { error });
@@ -119,14 +115,13 @@ public static class WorkspaceBuilderEndpoints
             Guid workspaceId,
             CompatibilityCheckApiRequest request,
             HttpContext context,
-            IWorkspaceIdentityReader identityReader,
-            AccountWorkspaceService accounts,
+            WorkspaceAccessResolver accessResolver,
             CompatibilityCheckService compatibility,
             CancellationToken cancellationToken) =>
         {
-            var access = await WorkspaceSourceEndpoints.GetAccessAsync(context, workspaceId, identityReader, accounts, cancellationToken);
-            if (access.Result is not null)
-                return access.Result;
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
 
             var result = await compatibility.CheckAsync(new CompatibilityCheckRequest(
                 request.ElsaVersion,

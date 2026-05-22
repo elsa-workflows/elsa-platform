@@ -15,6 +15,7 @@ export const queryClient = new QueryClient({
 });
 
 export const queryKeys = {
+  authSession: ["auth-session"] as const,
   application: ["application"] as const,
   sources: ["sources"] as const,
   packages: ["packages"] as const,
@@ -23,7 +24,8 @@ export const queryKeys = {
   packageManifest: (packageId: string, version: string) => ["packages", packageId, "versions", version, "manifest"] as const,
   syncRuns: ["sync-runs"] as const,
   syncRun: (runId: string) => ["sync-runs", runId] as const,
-  deployments: ["deployments"] as const,
+  deploymentWorkspaceContext: ["deployments", "workspace-context"] as const,
+  deploymentCockpit: (workspaceId: string) => ["deployments", workspaceId, "cockpit"] as const,
   overview: ["overview"] as const,
   workspaceContext: ["workspace-context"] as const,
   runtimeBuilderCatalog: (workspaceId: string) => ["runtime-builder", workspaceId, "catalog"] as const,

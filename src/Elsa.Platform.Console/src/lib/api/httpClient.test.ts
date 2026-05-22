@@ -33,6 +33,15 @@ describe("apiRequest", () => {
       message: "The Name field is required. | The Url field is not a valid fully-qualified URI."
     });
   });
+
+  it("sends same-origin credentials for cookie-backed customer sessions", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiRequest<{ ok: boolean }>("/api/me/workspaces");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/me/workspaces", expect.objectContaining({ credentials: "same-origin" }));
+  });
 });
 
 function stubErrorResponse(body: unknown) {

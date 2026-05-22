@@ -43,9 +43,12 @@ internal sealed class CatalogApiTestApplication : WebApplicationFactory<Program>
                 [ApiKeyAuthenticationDefaults.ConfigurationKey] = "local-dev-key",
                 [BuilderClientApiKeyAuthenticationDefaults.ConfigurationKey] = "builder-dev-key",
                 [$"{PlatformIdentityDefaults.ConfigurationSection}:Provider"] = PlatformIdentityProviderKind.GenericOidc.ToString(),
+                [$"{PlatformIdentityDefaults.ConfigurationSection}:Authority"] = "",
                 [$"{PlatformIdentityDefaults.ConfigurationSection}:Audience"] = TestPlatformIdentityAudience,
                 [$"{PlatformIdentityDefaults.ConfigurationSection}:Issuer"] = TestPlatformIdentityIssuer,
                 [$"{PlatformIdentityDefaults.ConfigurationSection}:SymmetricSigningKey"] = TestPlatformIdentitySigningKey,
+                [$"{PlatformIdentityDefaults.ConfigurationSection}:ClientId"] = "",
+                [$"{PlatformIdentityDefaults.ConfigurationSection}:ClientSecret"] = "",
                 [$"{PlatformIdentityDefaults.ConfigurationSection}:RequireHttpsMetadata"] = "false",
                 [TrustedHeaderWorkspaceIdentityReader.EnabledConfigurationKey] = "true",
                 [TrustedHeaderWorkspaceIdentityReader.AllowedProxyNetworksConfigurationKey] = "127.0.0.1/32,::1/128"
