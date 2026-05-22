@@ -224,7 +224,7 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **FR-040**: System MUST expose an AI assistant boundary that can read, reason over, and summarize workspace-authorized platform context including workspaces, environments, engines, desired-state revisions, deployment history, drift, validation results, and observability metadata.
 - **FR-041**: System MUST enforce the same current account, workspace membership, role, entitlement, and operator/customer separation rules for every assistant tool call as for direct API calls.
 - **FR-042**: System MUST require explicit platform-mediated approval before an assistant can execute any mutation to desired state, deployments, runtime controls, engine registrations, secret references, observability bindings, entitlements, or workspace membership.
-- **FR-043**: System MUST present assistant-generated action plans in a reviewable form that identifies target workspace, environment, engine, affected resources, validation checks, expected impact, required approvals, all-or-nothing execution boundary, and rollback or undo path where applicable.
+- **FR-043**: System MUST present assistant-generated action plans in a reviewable, versioned, immutable form that identifies target workspace, environment, engine, affected resources, validation checks, expected impact, required approvals, all-or-nothing execution boundary, and rollback or undo path where applicable.
 - **FR-044**: System MUST audit assistant sessions that perform or prepare security-sensitive operations, including prompt/session identity, account, workspace, environment, proposed actions, tool calls, approvals, validation failures, executed mutations, and final outcomes.
 - **FR-045**: System MUST prevent the assistant from exposing raw secrets, engine credentials, provider tokens, or data outside the user's authorized workspace scope.
 - **FR-046**: System MUST distinguish assistant recommendations from executed platform state changes so users and auditors can tell whether the system only suggested an action or actually applied it.
@@ -272,7 +272,7 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **SC-013**: Environment observability views can retrieve structured logs, console streams, OpenTelemetry-compatible traces, or metrics from configured providers and correlate results to a workspace environment and deployment revision.
 - **SC-014**: Drift detection can report differences between desired state and observed engine state without mutating either source automatically.
 - **SC-015**: Assistant access tests prove the assistant can summarize and compare only data visible to the requesting account's current workspace membership, role, and entitlement state.
-- **SC-016**: Assistant mutation tests prove deployment, rollback, runtime control, secret-reference, and desired-state changes require explicit approval and produce audit records that distinguish proposed actions from executed actions.
+- **SC-016**: Assistant mutation tests prove deployment, rollback, runtime control, secret-reference, and desired-state changes require explicit approval of the exact immutable plan artifact and produce audit records that distinguish proposed actions from executed actions.
 - **SC-017**: Prompt-injection tests prove adversarial workspace content cannot cause assistant responses to expose raw secrets, hidden credentials, operator-only data, or data from another workspace.
 
 ## Assumptions
@@ -293,3 +293,4 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - The AI assistant is a copilot for platform operations, not an independent authority; it acts through the same workspace-scoped APIs, validation, approval, and audit controls as a user-driven workflow.
 - Assistant memory, retrieval, and tool execution are scoped by workspace and current user authorization, and any future cross-workspace or operator assistant mode requires separate operator authorization.
 - Assistant-generated mutation plans are approved and executed as one atomic plan by default; partial step approval is out of scope unless a future requirement defines compensating rollback behavior and per-step audit semantics.
+- Assistant-generated mutation plans are frozen when presented for approval; execution uses that same plan artifact and must not regenerate or alter the action set after approval.
