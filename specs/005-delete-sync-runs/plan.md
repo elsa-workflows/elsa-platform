@@ -8,21 +8,21 @@
 
 ## Summary
 
-Add an administrator-only sync run cleanup capability that can delete a single terminal sync run or all terminal sync runs completed before an explicit UTC cutoff. The implementation stays in the existing ASP.NET Core admin API, `Elsa.Platform.PackageCatalog.Core` sync domain, EF Core persistence adapter, and admin UI sync-runs feature. Cleanup preserves package sources, packages, package versions, manifests, validation results, approvals, and public catalog state while removing only sync run history and dependent item diagnostics.
+Add an administrator-only sync run cleanup capability that can delete a single terminal sync run or all terminal sync runs completed before an explicit UTC cutoff. The implementation stays in the existing ASP.NET Core admin API, `Elsa.Platform.PackageCatalog.Core` sync domain, EF Core persistence adapter, and console sync-runs feature. Cleanup preserves package sources, packages, package versions, manifests, validation results, approvals, and public catalog state while removing only sync run history and dependent item diagnostics.
 
 ## Technical Context
 
-**Language/Version**: C# on .NET 10 LTS for API/Core/Persistence; TypeScript + React for the existing admin UI.
+**Language/Version**: C# on .NET 10 LTS for API/Core/Persistence; TypeScript + React for the existing console.
 
 **Primary Dependencies**: ASP.NET Core minimal APIs and authorization, Entity Framework Core, SQLite/SQL Server EF migrations, React Router, TanStack Query, TailwindCSS, shadcn/ui-style local components.
 
 **Storage**: Existing relational catalog database. No new durable entity is required; existing `SyncRuns` and `SyncRunItems` are deleted with existing cascade semantics.
 
-**Testing**: xUnit, FluentAssertions, ASP.NET Core WebApplicationFactory integration tests, EF Core persistence tests, Vitest/Testing Library for admin UI behavior where UI controls are added.
+**Testing**: xUnit, FluentAssertions, ASP.NET Core WebApplicationFactory integration tests, EF Core persistence tests, Vitest/Testing Library for console behavior where UI controls are added.
 
-**Target Platform**: ASP.NET Core API container deployed to Azure App Service with the built React admin UI served by the API host.
+**Target Platform**: ASP.NET Core API container deployed to Azure App Service with the built React console served by the API host.
 
-**Project Type**: Modular monolith web service with static admin dashboard assets.
+**Project Type**: Modular monolith web service with static console assets.
 
 **Performance Goals**: Bulk cleanup can delete at least 1,000 eligible sync runs in one administrator request and return a count summary within 30 seconds in normal local/test database conditions.
 
@@ -55,7 +55,7 @@ The plan MUST answer these gates:
 - **Debuggability**: Are sync runs, validation errors, indexing decisions, and suspicious changes persisted and inspectable?
   - Pass with scoped tradeoff. Recent and non-deleted sync runs remain inspectable; administrators explicitly delete obsolete history only after previewing scope. Cleanup activity is logged with counts.
 - **Modular monolith**: Does the design avoid distributed infrastructure unless justified?
-  - Pass. The design remains in the existing API/Core/Persistence/Admin UI modules.
+  - Pass. The design remains in the existing API/Core/Persistence/Console modules.
 - **Runtime Builder readiness**: Do APIs and manifests support package discovery, feature selection, settings schemas, and compatibility checks?
   - Preserved. Runtime Builder-facing catalog data is unchanged.
 - **Simplicity**: Are new abstractions, dependencies, and infrastructure justified by current requirements?
@@ -92,7 +92,7 @@ src/
 │       └── Sync/
 │           ├── AdminSyncContracts.cs
 │           └── AdminSyncEndpoints.cs
-└── Elsa.Platform.AdminUi/
+└── Elsa.Platform.Console/
     └── src/
         └── features/
             └── sync-runs/
@@ -104,7 +104,7 @@ tests/
 │   └── SyncPersistenceTests.cs
 ├── Elsa.Platform.PackageCatalog.Api.Tests/
 │   └── AdminSyncApiTests.cs
-└── Elsa.Platform.AdminUi/
+└── Elsa.Platform.Console/
     └── src/
         └── features/
             └── sync-runs/

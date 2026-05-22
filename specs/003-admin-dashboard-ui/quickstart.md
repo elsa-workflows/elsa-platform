@@ -1,6 +1,6 @@
-# Quickstart: Elsa Package Catalog Admin Dashboard UI
+# Quickstart: Elsa Package Catalog Console UI
 
-This quickstart describes how to verify the planned admin dashboard once tasks
+This quickstart describes how to verify the planned console once tasks
 are implemented.
 
 ## Prerequisites
@@ -19,12 +19,12 @@ dotnet run --project src/Elsa.Platform.PackageCatalog.Api
 
 Use the existing admin API key configuration for authenticated admin requests.
 
-## Run the Admin UI
+## Run the Console
 
-From the admin UI project:
+From the console project:
 
 ```bash
-cd src/Elsa.Platform.AdminUi
+cd src/Elsa.Platform.Console
 npm install
 npm run dev
 ```
@@ -100,7 +100,7 @@ Expected implementation commands:
 
 ```bash
 dotnet test
-cd src/Elsa.Platform.AdminUi
+cd src/Elsa.Platform.Console
 npm test
 npm run build
 npm run e2e

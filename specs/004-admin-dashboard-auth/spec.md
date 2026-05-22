@@ -1,4 +1,4 @@
-# Feature Specification: Admin Dashboard Authentication
+# Feature Specification: Console Authentication
 
 **Feature Branch**: `004-admin-dashboard-auth`
 
@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "The deployed admin dashboard is anonymously accessible. Proceed with the recommended option: app-owned cookie authentication for the dashboard using the existing configured admin API key, using Spec Kit."
+**Input**: User description: "The deployed console is anonymously accessible. Proceed with the recommended option: app-owned cookie authentication for the dashboard using the existing configured admin API key, using Spec Kit."
 
 ## Clarifications
 
@@ -21,7 +21,7 @@
 
 ### User Story 1 - Require Admin Login For Dashboard (Priority: P1)
 
-An administrator opening the admin dashboard must be prompted for an admin credential before any dashboard page or static dashboard asset can be used.
+An administrator opening the console must be prompted for an admin credential before any dashboard page or static dashboard asset can be used.
 
 **Why this priority**: The dashboard exposes operational admin capabilities and must not be anonymously accessible.
 

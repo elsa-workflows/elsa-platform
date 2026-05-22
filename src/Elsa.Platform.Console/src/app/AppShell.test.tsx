@@ -46,7 +46,7 @@ describe("AppShell", () => {
     await userEvent.click(screen.getAllByRole("button", { name: "Switch to dark mode" })[0]);
 
     expect(document.documentElement).toHaveClass("dark");
-    expect(window.localStorage.getItem("elsa-admin-theme")).toBe("dark");
+    expect(window.localStorage.getItem("elsa-console-theme")).toBe("dark");
     expect(screen.getAllByRole("button", { name: "Switch to light mode" }).length).toBeGreaterThan(0);
   });
 });

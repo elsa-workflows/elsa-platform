@@ -98,7 +98,7 @@ Current test projects and UI test packages:
 - `Elsa.Platform.PackageManifest.Generator.MSBuild.Tests`
 - `Elsa.Platform.PackageManifest.Generator.Testing`
 - `Elsa.Platform.PackageManifests.Tests`
-- `Elsa.Platform.AdminUi.E2E`
+- `Elsa.Platform.Console.E2E`
 
 Current specs:
 

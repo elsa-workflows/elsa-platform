@@ -1,4 +1,4 @@
-# Feature Specification: Elsa Package Catalog Admin Dashboard UI
+# Feature Specification: Elsa Package Catalog Console UI
 
 **Feature Branch**: `codex/004-admin-dashboard-ui`
 
@@ -6,11 +6,11 @@
 
 **Status**: Draft
 
-**Input**: User description: "Create a specification for a lightweight admin dashboard UI for the Elsa Package Catalog system."
+**Input**: User description: "Create a specification for a lightweight console UI for the Elsa Package Catalog system."
 
 ## Overview
 
-The Elsa Package Catalog Admin Dashboard is a lightweight operational web UI for
+The Elsa Package Catalog Console is a lightweight operational web UI for
 administrators who manage package sources, monitor synchronization activity,
 inspect package manifests, review validation results, approve or reject packages,
 and troubleshoot indexing problems. It consumes the authenticated Catalog Admin

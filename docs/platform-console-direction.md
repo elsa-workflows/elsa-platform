@@ -1,6 +1,6 @@
-# Elsa Platform Admin UI Direction
+# Elsa Platform Console Direction
 
-The admin UI is a unified React console served from `/admin`. It is a thin web
+The console is a unified React console served from `/admin`. It is a thin web
 app over platform REST APIs and SignalR streams where backend features expose
 live operational updates.
 

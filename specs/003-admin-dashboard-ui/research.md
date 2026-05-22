@@ -1,10 +1,10 @@
-# Research: Elsa Package Catalog Admin Dashboard UI
+# Research: Elsa Package Catalog Console UI
 
 ## Decision: Add a dedicated admin frontend project
 
 **Rationale**: The repository currently has ASP.NET Core API, core, persistence,
 packaging, and manifest generator projects but no browser UI. A dedicated
-`src/Elsa.Platform.AdminUi` project keeps React/TypeScript build tooling,
+`src/Elsa.Platform.Console` project keeps React/TypeScript build tooling,
 components, route definitions, and UI tests separate from API concerns while
 remaining in the same monorepo and local development flow.
 

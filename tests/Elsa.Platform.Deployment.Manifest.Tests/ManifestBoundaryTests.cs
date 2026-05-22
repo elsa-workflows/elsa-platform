@@ -15,7 +15,7 @@ public class ManifestBoundaryTests
         "Elsa.Platform.PackageCatalog.Api",
         "Elsa.Platform.PackageCatalog.Core",
         "Elsa.Platform.PackageCatalog.Persistence",
-        "Elsa.Platform.AdminUi",
+        "Elsa.Platform.Console",
         "Elsa.Platform.RuntimeBuilder.Core",
         "Elsa.Platform.RuntimeBuilder.DeploymentTemplates",
         "Microsoft.AspNetCore",

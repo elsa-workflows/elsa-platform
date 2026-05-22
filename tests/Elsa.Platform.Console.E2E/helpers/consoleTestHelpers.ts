@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-export async function navigateAdmin(page: Page, path = "/admin/overview") {
+export async function navigateConsole(page: Page, path = "/admin/overview") {
   await page.goto(path);
 }
 

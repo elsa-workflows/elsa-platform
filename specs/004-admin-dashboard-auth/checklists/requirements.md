@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Admin Dashboard Authentication
+# Specification Quality Checklist: Console Authentication
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-05-15

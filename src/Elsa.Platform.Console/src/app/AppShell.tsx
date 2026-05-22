@@ -71,7 +71,7 @@ export function AppShell() {
           <div className="flex items-start justify-between gap-3 px-2 pb-6">
             <div>
               <p className="font-display text-base font-semibold tracking-normal">Elsa Platform</p>
-              <p className="text-xs text-muted-foreground">Admin Console</p>
+              <p className="text-xs text-muted-foreground">Platform Console</p>
             </div>
             <ThemeToggle theme={theme} onThemeChange={setTheme} />
           </div>
@@ -130,7 +130,7 @@ function getStoredTheme(): Theme {
   }
 
   try {
-    return window.localStorage.getItem("elsa-admin-theme") === "dark" ? "dark" : "light";
+    return window.localStorage.getItem("elsa-console-theme") === "dark" ? "dark" : "light";
   } catch {
     return "light";
   }
@@ -142,7 +142,7 @@ function storeTheme(theme: Theme) {
   }
 
   try {
-    window.localStorage.setItem("elsa-admin-theme", theme);
+    window.localStorage.setItem("elsa-console-theme", theme);
   } catch {
     // Theme persistence is optional; the UI should continue to work without browser storage.
   }

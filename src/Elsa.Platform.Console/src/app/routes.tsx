@@ -28,7 +28,7 @@ export const router = createBrowserRouter([
   {
     path: "/admin",
     element: <AppShell />,
-    errorElement: <RequestStateView state="unexpected" title="The admin dashboard could not load." />,
+    errorElement: <RequestStateView state="unexpected" title="The console could not load." />,
     children: [
       { index: true, element: <Navigate to="/admin/overview" replace /> },
       { path: "overview", element: <OverviewPage /> },

@@ -17,7 +17,7 @@
 9. Call `DELETE /api/admin/sync-runs?completedBefore=<UTC cutoff>` for bulk cleanup.
 10. Confirm only eligible old terminal runs are removed and recent or running runs remain visible.
 
-## Admin UI Verification
+## Console Verification
 
 1. Open `/admin/sync-runs`.
 2. Confirm terminal runs show a delete action and running runs do not.
@@ -33,5 +33,5 @@ Run:
 dotnet test tests/Elsa.Platform.PackageCatalog.Core.Tests/Elsa.Platform.PackageCatalog.Core.Tests.csproj --filter SyncRunCleanup
 dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter SyncPersistence
 dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter AdminSync
-cd src/Elsa.Platform.AdminUi && npm test -- --run src/features/sync-runs/SyncRunsPage.test.tsx
+cd src/Elsa.Platform.Console && npm test -- --run src/features/sync-runs/SyncRunsPage.test.tsx
 ```

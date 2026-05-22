@@ -1,9 +1,9 @@
-# Elsa Platform Admin UI
+# Elsa Platform Console
 
-Unified React admin console for Elsa Platform administrators. Package Catalog is
-the first active module; deployment artifacts, Runtime Builder, environment
-workbenches, managed runtimes, runtime operations, and audit views are reserved
-as platform modules from the beginning.
+Unified React console for Elsa Platform workspace users and operators. Package
+Catalog is the first active module; deployment artifacts, Runtime Builder,
+environment workbenches, managed runtimes, runtime operations, and audit views
+are reserved as platform modules from the beginning.
 
 ## Development
 
@@ -29,7 +29,7 @@ npm run build
 ```
 
 Package details coverage lives in `src/features/packages/PackageDetailsPage.test.tsx`
-and the Playwright smoke test in `tests/Elsa.Platform.AdminUi.E2E/package-details.spec.ts`.
+and the Playwright smoke test in `tests/Elsa.Platform.Console.E2E/package-details.spec.ts`.
 The page covers canonical package casing, version routes, visibility blockers,
 validation findings, feature/settings inspection, manifest review, and
 version-scoped approval/rejection actions.

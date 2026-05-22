@@ -1,4 +1,4 @@
-# Quickstart: Admin Dashboard Authentication
+# Quickstart: Console Authentication
 
 ## Local Verification
 

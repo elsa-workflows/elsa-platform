@@ -1,4 +1,4 @@
-# Contract: Admin Dashboard Authentication
+# Contract: Console Authentication
 
 ## GET /admin/login
 

@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Elsa Package Catalog Admin Dashboard UI
+# Specification Quality Checklist: Elsa Package Catalog Console UI
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-05-15

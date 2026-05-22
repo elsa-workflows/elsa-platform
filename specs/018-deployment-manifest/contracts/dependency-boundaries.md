@@ -26,7 +26,7 @@ The manifest package must not reference:
 - `Elsa.Platform.PackageCatalog.Api`
 - `Elsa.Platform.PackageCatalog.Core`
 - `Elsa.Platform.PackageCatalog.Persistence.*`
-- `Elsa.Platform.AdminUi`
+- `Elsa.Platform.Console`
 - `Elsa.Platform.RuntimeBuilder.Core`
 - `Elsa.Platform.RuntimeBuilder.DeploymentTemplates`
 - ASP.NET hosting packages

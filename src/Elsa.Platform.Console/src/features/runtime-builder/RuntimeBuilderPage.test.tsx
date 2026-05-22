@@ -181,8 +181,8 @@ describe("RuntimeBuilderPage", () => {
     renderRuntimeBuilder(fetchMock);
 
     expect(await screen.findByText("Workspace context could not load")).toBeInTheDocument();
-    expect(screen.getByText("The dashboard could not complete the request.")).toBeInTheDocument();
-    expect(screen.queryByText("Your admin credentials are missing or no longer valid.")).not.toBeInTheDocument();
+    expect(screen.getByText("The console could not complete the request.")).toBeInTheDocument();
+    expect(screen.queryByText("Your console session is missing or no longer valid.")).not.toBeInTheDocument();
   });
 });
 

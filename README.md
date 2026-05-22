@@ -12,13 +12,13 @@ src/
   Elsa.Platform.Deployment.*
   Elsa.Platform.PackageCatalog.*
   Elsa.Platform.RuntimeBuilder.*
-  Elsa.Platform.AdminUi
+  Elsa.Platform.Console
   Elsa.Platform.PackageManifests
   Elsa.Platform.PackageManifest.Generator
   Elsa.Platform.PackageManifest.Generator.Core
   Elsa.Platform.PackageManifest.Generator.MSBuild
 ```
 
-Package Catalog and Runtime Builder are sibling subsystems to Deployment. Deployment may validate package descriptors through catalog abstractions or client contracts, and may consume Runtime Builder artifacts/contracts where appropriate, but it must not depend on catalog API, persistence, or source-provider internals. The React admin UI lives as a platform-level shell in `Elsa.Platform.AdminUi` so deployment, package, runtime builder, and operations modules can share one console.
+Package Catalog and Runtime Builder are sibling subsystems to Deployment. Deployment may validate package descriptors through catalog abstractions or client contracts, and may consume Runtime Builder artifacts/contracts where appropriate, but it must not depend on catalog API, persistence, or source-provider internals. The React console lives as a platform-level shell in `Elsa.Platform.Console` so deployment, package, runtime builder, and operations modules can share one console.
 
 Implementation work is tracked through Spec Kit under `specs/`.

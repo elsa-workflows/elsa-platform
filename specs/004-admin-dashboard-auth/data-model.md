@@ -1,4 +1,4 @@
-# Data Model: Admin Dashboard Authentication
+# Data Model: Console Authentication
 
 ## Dashboard Session
 

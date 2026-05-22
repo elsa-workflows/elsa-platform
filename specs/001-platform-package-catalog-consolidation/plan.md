@@ -25,17 +25,17 @@ src/
 
 ## Technical Context
 
-**Language/Version**: C# on .NET 10 based on the current catalog repository `global.json` and project files; TypeScript/React/Vite for the catalog admin UI.
+**Language/Version**: C# on .NET 10 based on the current catalog repository `global.json` and project files; TypeScript/React/Vite for the catalog console.
 
 **Primary Dependencies**: ASP.NET Core, Entity Framework Core, NuGet.Protocol, JsonSchema.Net, Aspire AppHost, Vite/React, existing Spec Kit workflow.
 
 **Storage**: SQLite and SQL Server EF Core providers for Package Catalog persistence.
 
-**Testing**: `dotnet test` for .NET projects; Vitest and Playwright for admin UI tests where applicable.
+**Testing**: `dotnet test` for .NET projects; Vitest and Playwright for console tests where applicable.
 
 **Target Platform**: Cross-platform .NET service and tooling; Azure App Service deployment remains a catalog hosting option.
 
-**Project Type**: Multi-project platform repository with library packages, web API, admin UI, app host, CLI/deployment packages, and test projects.
+**Project Type**: Multi-project platform repository with library packages, web API, console, app host, CLI/deployment packages, and test projects.
 
 **Performance Goals**: Preserve existing catalog sync behavior; no new sync performance target in the migration phase.
 
@@ -87,7 +87,7 @@ src/
   Elsa.Platform.PackageCatalog.Abstractions/
   Elsa.Platform.PackageCatalog.Core/
   Elsa.Platform.PackageCatalog.Api/
-  Elsa.Platform.AdminUi/
+  Elsa.Platform.Console/
   Elsa.Platform.PackageCatalog.Sources.NuGet/
   Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
   Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/

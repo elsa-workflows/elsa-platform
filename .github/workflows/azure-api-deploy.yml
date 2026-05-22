@@ -64,7 +64,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: src/Elsa.Platform.AdminUi/package-lock.json
+          cache-dependency-path: src/Elsa.Platform.Console/package-lock.json
 
       - name: Install azd
         uses: Azure/setup-azd@v2
@@ -113,8 +113,8 @@ jobs:
       - name: Test API
         run: dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --configuration Release --no-restore --verbosity normal
 
-      - name: Build and test admin dashboard
-        working-directory: src/Elsa.Platform.AdminUi
+      - name: Build and test console
+        working-directory: src/Elsa.Platform.Console
         run: |
           npm ci
           npm test

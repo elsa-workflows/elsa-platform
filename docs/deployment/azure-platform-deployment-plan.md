@@ -2,7 +2,7 @@
 
 ## Objective
 
-Deploy Elsa Platform repeatably into any Azure subscription from repository-owned infrastructure as code. The first production deployment unit is the Elsa Platform API container, including the built Admin UI assets under `/admin`.
+Deploy Elsa Platform repeatably into any Azure subscription from repository-owned infrastructure as code. The first production deployment unit is the Elsa Platform API container, including the built Console assets under `/admin`.
 
 The deployment must be reproducible without depending on an existing `azd` environment. Aspire/azd remains useful for developer-driven deployments, but the subscription-neutral path is Bicep plus an explicit container image build/push step.
 
@@ -30,7 +30,7 @@ The API applies EF Core SQL Server migrations at startup outside the `Testing` e
 
 1. Select target subscription, resource group, location, and environment name.
 2. Provision or update Azure infrastructure from `infra/main.bicep`.
-3. Build the API container with the Admin UI baked in.
+3. Build the API container with the Console baked in.
 4. Push the image to the provisioned Azure Container Registry.
 5. Re-run the Bicep deployment with the pushed image reference.
 6. Verify `/health` and `/admin`.

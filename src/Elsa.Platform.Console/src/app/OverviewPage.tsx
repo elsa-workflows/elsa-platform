@@ -71,7 +71,7 @@ export function OverviewPage() {
         <div className="max-w-3xl space-y-3">
           <h1 className="font-display text-3xl font-semibold tracking-normal md:text-4xl">Platform Overview</h1>
           <p className="text-sm leading-6 text-muted-foreground md:text-base">
-            One admin console for package governance, runtime building, deployment artifacts, environment workbenches, and managed
+            One platform console for package governance, runtime building, deployment artifacts, environment workbenches, and managed
             runtime operations.
           </p>
         </div>

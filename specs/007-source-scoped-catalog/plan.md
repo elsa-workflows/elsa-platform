@@ -12,17 +12,17 @@ Make source/feed selection a first-class catalog concern. Public browsing and Ru
 
 ## Technical Context
 
-**Language/Version**: C# on .NET 10 LTS for API/Core/Persistence; TypeScript + React for the existing admin UI and future Lovable-facing integration contracts.
+**Language/Version**: C# on .NET 10 LTS for API/Core/Persistence; TypeScript + React for the existing console and future Lovable-facing integration contracts.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs and authorization, Entity Framework Core, SQLite/SQL Server EF migrations, React Router/TanStack Query for existing admin UI, OpenID Connect/JWT validation when account integration is implemented.
+**Primary Dependencies**: ASP.NET Core minimal APIs and authorization, Entity Framework Core, SQLite/SQL Server EF migrations, React Router/TanStack Query for existing console, OpenID Connect/JWT validation when account integration is implemented.
 
 **Storage**: Existing relational catalog database for sources/packages; later migrations add browseability, account/workspace ownership, external identity mappings, and entitlement snapshots.
 
 **Testing**: xUnit, FluentAssertions, ASP.NET Core WebApplicationFactory integration tests, EF Core persistence tests, and UI/integration tests where source selection behavior is implemented.
 
-**Target Platform**: ASP.NET Core API container deployed to Azure App Service, with static admin dashboard assets served by the API host and a separate Lovable-built public UX consuming public APIs.
+**Target Platform**: ASP.NET Core API container deployed to Azure App Service, with static console assets served by the API host and a separate Lovable-built public UX consuming public APIs.
 
-**Project Type**: Modular monolith web service with public/catalog APIs, admin APIs, persistence adapters, and static admin UI assets.
+**Project Type**: Modular monolith web service with public/catalog APIs, admin APIs, persistence adapters, and static console assets.
 
 **Performance Goals**: Source-filtered public catalog responses should remain within current public catalog latency expectations and avoid loading packages from unselected sources. Selected-source cache keys should prevent cross-source result contamination.
 
@@ -86,7 +86,7 @@ src/
 │       ├── Sources/
 │       ├── Packages/
 │       └── Builder/
-└── Elsa.Platform.AdminUi/
+└── Elsa.Platform.Console/
     └── src/features/sources/       # admin/operator source flags if needed
 
 tests/
