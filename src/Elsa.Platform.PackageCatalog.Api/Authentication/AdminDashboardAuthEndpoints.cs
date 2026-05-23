@@ -18,7 +18,9 @@ public static class AdminDashboardAuthEndpoints
             .AllowAnonymous();
 
         endpoints.MapPost(AdminDashboardAuthenticationDefaults.LogoutPath, () =>
-            Results.Redirect($"{CustomerAuthenticationDefaults.LogoutPath}?returnUrl={Uri.EscapeDataString(AdminDashboardAuthenticationDefaults.DefaultReturnPath)}"))
+            Results.Redirect(
+                $"{CustomerAuthenticationDefaults.LogoutPath}?returnUrl={Uri.EscapeDataString(AdminDashboardAuthenticationDefaults.DefaultReturnPath)}",
+                preserveMethod: true))
             .AllowAnonymous()
             .DisableAntiforgery();
 

@@ -124,7 +124,6 @@ Realm role: platform_admin
 Token claim: role
 Mapper: user realm role mapper
 ```
-```
 
 The client secret must match the `keycloakClientSecret` Bicep parameter, which is
 written to the API as:

@@ -89,13 +89,14 @@ For a browser sign-in flow, start the local Keycloak realm and run the API with 
 
 ```bash
 docker compose -f docker-compose.identity.yml up
-ASPNETCORE_ENVIRONMENT=Keycloak dotnet run --project src/Elsa.Platform.PackageCatalog.Api --launch-profile http
+dotnet dev-certs https --trust
+ASPNETCORE_ENVIRONMENT=Keycloak dotnet run --project src/Elsa.Platform.PackageCatalog.Api --launch-profile https
 ```
 
 Then open the console and use a workspace-only view such as Runtime Builder:
 
 ```text
-http://localhost:5220/admin/runtime-builder
+https://localhost:5221/admin/runtime-builder
 ```
 
 When the view needs workspace identity it links to `/api/auth/login`, which starts the OIDC authorization-code flow against Keycloak and returns to the console with an HttpOnly customer session cookie. The imported local user is:
