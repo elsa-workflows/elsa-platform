@@ -51,8 +51,11 @@ public sealed class CustomerAuthenticationTests
     [InlineData("\\\\evil.example\\admin", CustomerAuthenticationDefaults.DefaultReturnPath)]
     [InlineData("https://evil.example/admin", CustomerAuthenticationDefaults.DefaultReturnPath)]
     [InlineData("/admin/login", CustomerAuthenticationDefaults.DefaultReturnPath)]
+    [InlineData("/admin/logout", CustomerAuthenticationDefaults.DefaultReturnPath)]
     [InlineData("/api/auth/login", CustomerAuthenticationDefaults.DefaultReturnPath)]
+    [InlineData("/api/auth/logout", CustomerAuthenticationDefaults.DefaultReturnPath)]
     [InlineData("/api/auth/sign-in", CustomerAuthenticationDefaults.DefaultReturnPath)]
+    [InlineData("/api/auth/sign-out", CustomerAuthenticationDefaults.DefaultReturnPath)]
     [InlineData("/api/auth/callback", CustomerAuthenticationDefaults.DefaultReturnPath)]
     public void Safe_return_url_accepts_only_root_relative_paths(string? returnUrl, string expected)
     {

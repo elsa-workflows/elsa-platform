@@ -61,6 +61,17 @@ public sealed class AdminDashboardAuthenticationTests
     }
 
     [Fact]
+    public async Task Legacy_login_path_ignores_logout_return_url()
+    {
+        await using var app = new CatalogApiTestApplication();
+        var response = await app.CreateClient(new() { AllowAutoRedirect = false })
+            .GetAsync($"{AdminDashboardAuthenticationDefaults.LoginPath}?returnUrl={AdminDashboardAuthenticationDefaults.LogoutPath}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location.Should().Be($"{CustomerAuthenticationDefaults.LoginPath}?returnUrl={Uri.EscapeDataString(AdminDashboardAuthenticationDefaults.DefaultReturnPath)}");
+    }
+
+    [Fact]
     public async Task Legacy_logout_post_preserves_post_method_for_customer_logout()
     {
         await using var app = new CatalogApiTestApplication();

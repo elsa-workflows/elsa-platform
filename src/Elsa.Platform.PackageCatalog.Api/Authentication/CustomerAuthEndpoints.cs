@@ -57,8 +57,11 @@ public static class CustomerAuthEndpoints
             returnUrl.StartsWith("/", StringComparison.Ordinal) &&
             !returnUrl.StartsWith("//", StringComparison.Ordinal) &&
             !returnUrl.StartsWith(AdminDashboardAuthenticationDefaults.LoginPath, StringComparison.OrdinalIgnoreCase) &&
+            !returnUrl.StartsWith(AdminDashboardAuthenticationDefaults.LogoutPath, StringComparison.OrdinalIgnoreCase) &&
             !returnUrl.StartsWith(CustomerAuthenticationDefaults.LoginPath, StringComparison.OrdinalIgnoreCase) &&
+            !returnUrl.StartsWith(CustomerAuthenticationDefaults.LogoutPath, StringComparison.OrdinalIgnoreCase) &&
             !returnUrl.StartsWith("/api/auth/sign-in", StringComparison.OrdinalIgnoreCase) &&
+            !returnUrl.StartsWith("/api/auth/sign-out", StringComparison.OrdinalIgnoreCase) &&
             !returnUrl.StartsWith(CustomerAuthenticationDefaults.CallbackPath, StringComparison.OrdinalIgnoreCase))
             return uri.OriginalString;
 

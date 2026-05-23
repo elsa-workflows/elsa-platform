@@ -33,7 +33,8 @@ public static class AdminDashboardAuthEndpoints
             returnUrl.StartsWith("//", StringComparison.Ordinal) ||
             !Uri.TryCreate(returnUrl, UriKind.Relative, out _) ||
             !returnUrl.StartsWith("/admin", StringComparison.OrdinalIgnoreCase) ||
-            returnUrl.StartsWith(AdminDashboardAuthenticationDefaults.LoginPath, StringComparison.OrdinalIgnoreCase))
+            returnUrl.StartsWith(AdminDashboardAuthenticationDefaults.LoginPath, StringComparison.OrdinalIgnoreCase) ||
+            returnUrl.StartsWith(AdminDashboardAuthenticationDefaults.LogoutPath, StringComparison.OrdinalIgnoreCase))
         {
             return AdminDashboardAuthenticationDefaults.DefaultReturnPath;
         }
