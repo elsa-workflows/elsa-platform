@@ -42,23 +42,6 @@ public static class CustomerAuthEndpoints
                 [CustomerAuthenticationDefaults.OidcScheme]);
         }).AllowAnonymous();
 
-        group.MapGet("/sign-in", (
-            IOptions<PlatformIdentityOptions> options,
-            string? returnUrl) =>
-        {
-            if (!options.Value.IsCustomerLoginConfigured)
-            {
-                return Results.Problem(
-                    title: "Customer login is not configured.",
-                    statusCode: StatusCodes.Status503ServiceUnavailable);
-            }
-
-            var redirectUri = GetSafeReturnUrl(returnUrl);
-            return Results.Challenge(
-                new AuthenticationProperties { RedirectUri = redirectUri },
-                [CustomerAuthenticationDefaults.OidcScheme]);
-        }).AllowAnonymous();
-
         group.MapPost("/logout", SignOutAsync).AllowAnonymous();
         group.MapPost("/sign-out", SignOutAsync).AllowAnonymous();
 
@@ -73,7 +56,10 @@ public static class CustomerAuthEndpoints
         if (Uri.TryCreate(returnUrl, UriKind.Relative, out var uri) &&
             returnUrl.StartsWith("/", StringComparison.Ordinal) &&
             !returnUrl.StartsWith("//", StringComparison.Ordinal) &&
-            !returnUrl.StartsWith(AdminDashboardAuthenticationDefaults.LoginPath, StringComparison.OrdinalIgnoreCase))
+            !returnUrl.StartsWith(AdminDashboardAuthenticationDefaults.LoginPath, StringComparison.OrdinalIgnoreCase) &&
+            !returnUrl.StartsWith(CustomerAuthenticationDefaults.LoginPath, StringComparison.OrdinalIgnoreCase) &&
+            !returnUrl.StartsWith("/api/auth/sign-in", StringComparison.OrdinalIgnoreCase) &&
+            !returnUrl.StartsWith(CustomerAuthenticationDefaults.CallbackPath, StringComparison.OrdinalIgnoreCase))
             return uri.OriginalString;
 
         return CustomerAuthenticationDefaults.DefaultReturnPath;

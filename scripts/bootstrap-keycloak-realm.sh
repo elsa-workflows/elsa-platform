@@ -61,6 +61,9 @@ require_value KEYCLOAK_CLIENT_SECRET
 KEYCLOAK_URL="${KEYCLOAK_URL%/}"
 PLATFORM_API_URL="${PLATFORM_API_URL%/}"
 
+tmp_dir="$(mktemp -d)"
+trap 'rm -rf "$tmp_dir"' EXIT
+
 TOKEN="$(curl -fsS -X POST "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   --data-urlencode 'grant_type=password' \
@@ -68,44 +71,54 @@ TOKEN="$(curl -fsS -X POST "$KEYCLOAK_URL/realms/master/protocol/openid-connect/
   --data-urlencode "username=$KEYCLOAK_ADMIN_USERNAME" \
   --data-urlencode "password=$KEYCLOAK_ADMIN_PASSWORD" | jq -r '.access_token')"
 
-realm_status="$(curl -sS -o /tmp/elsa-keycloak-realm-check.out -w '%{http_code}' \
+realm_check_file="$tmp_dir/realm-check.out"
+realm_payload_file="$tmp_dir/realm.json"
+role_check_file="$tmp_dir/role-check.out"
+role_payload_file="$tmp_dir/platform-admin-role.json"
+client_payload_file="$tmp_dir/client.json"
+role_mapper_payload_file="$tmp_dir/role-mapper.json"
+user_payload_file="$tmp_dir/user.json"
+password_payload_file="$tmp_dir/password.json"
+dev_user_role_payload_file="$tmp_dir/dev-user-role.json"
+
+realm_status="$(curl -sS -o "$realm_check_file" -w '%{http_code}' \
   -H "Authorization: Bearer $TOKEN" \
   "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM")"
 
 if [[ "$realm_status" == "404" ]]; then
   jq -n --arg realm "$KEYCLOAK_REALM" \
     '{realm:$realm, enabled:true, registrationAllowed:false, loginWithEmailAllowed:true}' \
-    > /tmp/elsa-keycloak-realm.json
+    > "$realm_payload_file"
   curl -fsS -X POST "$KEYCLOAK_URL/admin/realms" \
     -H "Authorization: Bearer $TOKEN" \
     -H 'Content-Type: application/json' \
-    --data @/tmp/elsa-keycloak-realm.json
+    --data @"$realm_payload_file"
   echo "Created realm $KEYCLOAK_REALM."
 elif [[ "$realm_status" == "200" ]]; then
   echo "Realm $KEYCLOAK_REALM already exists."
 else
   echo "Unexpected realm lookup status $realm_status." >&2
-  cat /tmp/elsa-keycloak-realm-check.out >&2
+  cat "$realm_check_file" >&2
   exit 1
 fi
 
-role_status="$(curl -sS -o /tmp/elsa-keycloak-role-check.out -w '%{http_code}' \
+role_status="$(curl -sS -o "$role_check_file" -w '%{http_code}' \
   -H "Authorization: Bearer $TOKEN" \
   "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/roles/$PLATFORM_ADMIN_ROLE")"
 if [[ "$role_status" == "404" ]]; then
   jq -n --arg name "$PLATFORM_ADMIN_ROLE" \
     '{name:$name, description:"Grants access to Elsa Platform administration surfaces."}' \
-    > /tmp/elsa-keycloak-platform-admin-role.json
+    > "$role_payload_file"
   curl -fsS -X POST "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/roles" \
     -H "Authorization: Bearer $TOKEN" \
     -H 'Content-Type: application/json' \
-    --data @/tmp/elsa-keycloak-platform-admin-role.json
+    --data @"$role_payload_file"
   echo "Created realm role $PLATFORM_ADMIN_ROLE."
 elif [[ "$role_status" == "200" ]]; then
   echo "Realm role $PLATFORM_ADMIN_ROLE already exists."
 else
   echo "Unexpected role lookup status $role_status." >&2
-  cat /tmp/elsa-keycloak-role-check.out >&2
+  cat "$role_check_file" >&2
   exit 1
 fi
 
@@ -136,19 +149,19 @@ jq -n \
       "post.logout.redirect.uris": ($apiUrl + "/admin/*")
     }
   } | with_entries(select(.value != null))' \
-  > /tmp/elsa-keycloak-client.json
+  > "$client_payload_file"
 
 if [[ -z "$client_uuid" ]]; then
   curl -fsS -X POST "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients" \
     -H "Authorization: Bearer $TOKEN" \
     -H 'Content-Type: application/json' \
-    --data @/tmp/elsa-keycloak-client.json
+    --data @"$client_payload_file"
   echo "Created client $KEYCLOAK_CLIENT_ID."
 else
   curl -fsS -X PUT "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients/$client_uuid" \
     -H "Authorization: Bearer $TOKEN" \
     -H 'Content-Type: application/json' \
-    --data @/tmp/elsa-keycloak-client.json
+    --data @"$client_payload_file"
   echo "Updated client $KEYCLOAK_CLIENT_ID."
 fi
 
@@ -176,19 +189,19 @@ jq -n \
       "claim.name": "role",
       "jsonType.label": "String"
     }
-  }' > /tmp/elsa-keycloak-role-mapper.json
+  }' > "$role_mapper_payload_file"
 
 if [[ -z "$role_mapper_id" ]]; then
   curl -fsS -X POST "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients/$client_uuid/protocol-mappers/models" \
     -H "Authorization: Bearer $TOKEN" \
     -H 'Content-Type: application/json' \
-    --data @/tmp/elsa-keycloak-role-mapper.json
+    --data @"$role_mapper_payload_file"
   echo "Created realm role claim mapper."
 else
   curl -fsS -X PUT "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/clients/$client_uuid/protocol-mappers/models/$role_mapper_id" \
     -H "Authorization: Bearer $TOKEN" \
     -H 'Content-Type: application/json' \
-    --data @/tmp/elsa-keycloak-role-mapper.json
+    --data @"$role_mapper_payload_file"
   echo "Updated realm role claim mapper."
 fi
 
@@ -203,22 +216,22 @@ if [[ "$CREATE_DEV_USER" == "true" ]]; then
       --arg username "$DEV_USERNAME" \
       --arg email "$DEV_EMAIL" \
       '{username:$username, email:$email, enabled:true, emailVerified:true}' \
-      > /tmp/elsa-keycloak-user.json
+      > "$user_payload_file"
     curl -fsS -X POST "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/users" \
       -H "Authorization: Bearer $TOKEN" \
       -H 'Content-Type: application/json' \
-      --data @/tmp/elsa-keycloak-user.json
+      --data @"$user_payload_file"
     user_id="$(curl -fsS \
       -H "Authorization: Bearer $TOKEN" \
       "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/users?username=$DEV_USERNAME&exact=true" \
       | jq -r '.[0].id')"
     jq -n --arg password "$DEV_PASSWORD" \
       '{type:"password", temporary:false, value:$password}' \
-      > /tmp/elsa-keycloak-password.json
+      > "$password_payload_file"
     curl -fsS -X PUT "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/users/$user_id/reset-password" \
       -H "Authorization: Bearer $TOKEN" \
       -H 'Content-Type: application/json' \
-      --data @/tmp/elsa-keycloak-password.json
+      --data @"$password_payload_file"
     echo "Created dev user $DEV_USERNAME."
   else
     echo "Dev user $DEV_USERNAME already exists."
@@ -234,11 +247,11 @@ if [[ "$CREATE_DEV_USER" == "true" ]]; then
   if [[ "$has_role" == "true" ]]; then
     echo "$DEV_USERNAME already has $PLATFORM_ADMIN_ROLE."
   else
-    printf '[%s]' "$role" > /tmp/elsa-keycloak-dev-user-role.json
+    printf '[%s]' "$role" > "$dev_user_role_payload_file"
     curl -fsS -X POST "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/users/$user_id/role-mappings/realm" \
       -H "Authorization: Bearer $TOKEN" \
       -H 'Content-Type: application/json' \
-      --data @/tmp/elsa-keycloak-dev-user-role.json
+      --data @"$dev_user_role_payload_file"
     echo "Assigned $PLATFORM_ADMIN_ROLE to $DEV_USERNAME."
   fi
 fi
