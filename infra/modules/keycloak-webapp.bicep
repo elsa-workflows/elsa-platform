@@ -48,7 +48,8 @@ param tags object = {}
 var keycloakPort = '8080'
 var postgresHost = '${postgres.name}.postgres.database.azure.com'
 var jdbcUrl = 'jdbc:postgresql://${postgresHost}:5432/${databaseName}?sslmode=require'
-var keycloakUrl = 'https://${name}.azurewebsites.net'
+var keycloakHostName = '${name}.azurewebsites.net'
+var keycloakUrl = 'https://${keycloakHostName}'
 var postgresSkuTier = startsWith(postgresSkuName, 'Standard_B') ? 'Burstable' : startsWith(postgresSkuName, 'Standard_E') ? 'MemoryOptimized' : 'GeneralPurpose'
 
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2023-12-01-preview' = {
@@ -148,7 +149,7 @@ resource app 'Microsoft.Web/sites@2023-12-01' = {
         }
         {
           name: 'KC_HOSTNAME'
-          value: keycloakUrl
+          value: keycloakHostName
         }
         {
           name: 'KC_HTTP_ENABLED'
