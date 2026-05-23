@@ -39,7 +39,7 @@ public static class CustomerAuthEndpoints
                     statusCode: StatusCodes.Status503ServiceUnavailable);
             }
 
-            var redirectUri = SafeReturnUrl(returnUrl);
+            var redirectUri = GetSafeReturnUrl(returnUrl);
             return Results.Challenge(
                 new AuthenticationProperties { RedirectUri = redirectUri },
                 [CustomerAuthenticationDefaults.OidcScheme]);
@@ -53,7 +53,7 @@ public static class CustomerAuthEndpoints
             if (!AdminDashboardRequestForgeryGuard.IsSameOriginBrowserRequest(context.Request))
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
 
-            var redirectUri = SafeReturnUrl(returnUrl);
+            var redirectUri = GetSafeReturnUrl(returnUrl);
             await context.SignOutAsync(CustomerAuthenticationDefaults.CookieScheme);
             if (!options.Value.IsCustomerLoginConfigured)
                 return Results.NoContent();
@@ -66,12 +66,14 @@ public static class CustomerAuthEndpoints
         return endpoints;
     }
 
-    private static string SafeReturnUrl(string? returnUrl)
+    public static string GetSafeReturnUrl(string? returnUrl)
     {
         if (string.IsNullOrWhiteSpace(returnUrl))
             return CustomerAuthenticationDefaults.DefaultReturnPath;
 
-        if (Uri.TryCreate(returnUrl, UriKind.Relative, out var uri) && !returnUrl.StartsWith("//", StringComparison.Ordinal))
+        if (Uri.TryCreate(returnUrl, UriKind.Relative, out var uri) &&
+            returnUrl.StartsWith("/", StringComparison.Ordinal) &&
+            !returnUrl.StartsWith("//", StringComparison.Ordinal))
             return uri.OriginalString;
 
         return CustomerAuthenticationDefaults.DefaultReturnPath;

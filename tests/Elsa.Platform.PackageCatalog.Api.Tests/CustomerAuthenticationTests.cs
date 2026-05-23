@@ -42,6 +42,19 @@ public sealed class CustomerAuthenticationTests
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
     }
 
+    [Theory]
+    [InlineData(null, CustomerAuthenticationDefaults.DefaultReturnPath)]
+    [InlineData("", CustomerAuthenticationDefaults.DefaultReturnPath)]
+    [InlineData("/admin/runtime-builder", "/admin/runtime-builder")]
+    [InlineData("relative/path", CustomerAuthenticationDefaults.DefaultReturnPath)]
+    [InlineData("//evil.example/admin", CustomerAuthenticationDefaults.DefaultReturnPath)]
+    [InlineData("\\\\evil.example\\admin", CustomerAuthenticationDefaults.DefaultReturnPath)]
+    [InlineData("https://evil.example/admin", CustomerAuthenticationDefaults.DefaultReturnPath)]
+    public void Safe_return_url_accepts_only_root_relative_paths(string? returnUrl, string expected)
+    {
+        CustomerAuthEndpoints.GetSafeReturnUrl(returnUrl).Should().Be(expected);
+    }
+
     [Fact]
     public void Customer_session_cookie_is_separate_from_operator_cookie()
     {
