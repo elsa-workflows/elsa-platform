@@ -8,13 +8,13 @@ public static class AdminDashboardAuthEndpoints
             Results.Redirect(GetSignInUrl(context.Request.Query["returnUrl"].FirstOrDefault())))
             .AllowAnonymous();
 
-        endpoints.MapPost(AdminDashboardAuthenticationDefaults.LoginPath, (HttpContext context) =>
-            Results.Redirect(GetSignInUrl(context.Request.Form["returnUrl"].FirstOrDefault())))
+        endpoints.MapPost(AdminDashboardAuthenticationDefaults.LoginPath, async (HttpContext context) =>
+            Results.Redirect(GetSignInUrl(await GetFormReturnUrlAsync(context))))
             .AllowAnonymous()
             .DisableAntiforgery();
 
         endpoints.MapGet(AdminDashboardAuthenticationDefaults.LogoutPath, () =>
-            Results.Redirect($"{CustomerAuthenticationDefaults.LogoutPath}?returnUrl={Uri.EscapeDataString(AdminDashboardAuthenticationDefaults.DefaultReturnPath)}"))
+            Results.StatusCode(StatusCodes.Status405MethodNotAllowed))
             .AllowAnonymous();
 
         endpoints.MapPost(AdminDashboardAuthenticationDefaults.LogoutPath, () =>
@@ -41,4 +41,13 @@ public static class AdminDashboardAuthEndpoints
 
     private static string GetSignInUrl(string? returnUrl) =>
         $"{CustomerAuthenticationDefaults.LoginPath}?returnUrl={Uri.EscapeDataString(GetSafeReturnUrl(returnUrl))}";
+
+    private static async Task<string?> GetFormReturnUrlAsync(HttpContext context)
+    {
+        if (!context.Request.HasFormContentType)
+            return context.Request.Query["returnUrl"].FirstOrDefault();
+
+        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+        return form["returnUrl"].FirstOrDefault();
+    }
 }

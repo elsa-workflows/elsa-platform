@@ -122,7 +122,8 @@ if (configuredPlatformIdentity.IsCustomerLoginConfigured)
                     : platformIdentity.Issuer,
                 NameClaimType = platformIdentity.Claims.DisplayName.FirstOrDefault() ?? "name",
                 RoleClaimType = "role",
-                ValidateAudience = false
+                ValidateAudience = !string.IsNullOrWhiteSpace(platformIdentity.ClientId),
+                ValidAudience = string.IsNullOrWhiteSpace(platformIdentity.ClientId) ? null : platformIdentity.ClientId
             };
             options.Events.OnTokenValidated = context =>
             {

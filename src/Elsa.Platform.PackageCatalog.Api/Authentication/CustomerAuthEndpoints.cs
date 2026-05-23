@@ -59,9 +59,7 @@ public static class CustomerAuthEndpoints
                 [CustomerAuthenticationDefaults.OidcScheme]);
         }).AllowAnonymous();
 
-        group.MapGet("/logout", SignOutAsync).AllowAnonymous();
         group.MapPost("/logout", SignOutAsync).AllowAnonymous();
-        group.MapGet("/sign-out", SignOutAsync).AllowAnonymous();
         group.MapPost("/sign-out", SignOutAsync).AllowAnonymous();
 
         return endpoints;
@@ -86,16 +84,13 @@ public static class CustomerAuthEndpoints
         IOptions<PlatformIdentityOptions> options,
         string? returnUrl)
     {
-        if (HttpMethods.IsPost(context.Request.Method) &&
-            !AdminDashboardRequestForgeryGuard.IsSameOriginBrowserRequest(context.Request))
-        {
+        if (!AdminDashboardRequestForgeryGuard.IsSameOriginBrowserRequest(context.Request))
             return Results.StatusCode(StatusCodes.Status403Forbidden);
-        }
 
         var redirectUri = GetSafeReturnUrl(returnUrl);
         await context.SignOutAsync(CustomerAuthenticationDefaults.CookieScheme);
         if (!options.Value.IsCustomerLoginConfigured)
-            return HttpMethods.IsPost(context.Request.Method) ? Results.NoContent() : Results.Redirect(redirectUri);
+            return Results.NoContent();
 
         return Results.SignOut(
             new AuthenticationProperties { RedirectUri = redirectUri },

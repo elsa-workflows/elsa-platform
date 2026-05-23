@@ -10,10 +10,10 @@ export function startCustomerSignIn(returnUrl = `${window.location.pathname}${wi
 }
 
 export function startCustomerSignOut(returnUrl = "/admin/runtime-builder") {
-  void fetch(`/api/auth/logout?returnUrl=${encodeURIComponent(returnUrl)}`, {
-    method: "POST",
-    credentials: "same-origin"
-  }).then(() => {
-    window.location.assign(returnUrl);
-  });
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = `/api/auth/logout?returnUrl=${encodeURIComponent(returnUrl)}`;
+  form.style.display = "none";
+  document.body.appendChild(form);
+  form.submit();
 }

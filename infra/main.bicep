@@ -131,6 +131,7 @@ var keycloakApiSettings = deployKeycloak ? {
   Authentication__PlatformIdentity__Provider: 'Keycloak'
   Authentication__PlatformIdentity__Authority: keycloakAuthority
   Authentication__PlatformIdentity__Issuer: keycloakAuthority
+  Authentication__PlatformIdentity__Audience: keycloakClientId
   Authentication__PlatformIdentity__ClientId: keycloakClientId
   Authentication__PlatformIdentity__ClientSecret: keycloakClientSecret
   Authentication__PlatformIdentity__RequireHttpsMetadata: 'true'

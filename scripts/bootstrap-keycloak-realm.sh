@@ -133,7 +133,7 @@ jq -n \
     webOrigins: [$apiUrl],
     attributes: {
       "pkce.code.challenge.method": "S256",
-      "post.logout.redirect.uris": ($apiUrl + "/admin/runtime-builder")
+      "post.logout.redirect.uris": ($apiUrl + "/admin/*")
     }
   } | with_entries(select(.value != null))' \
   > /tmp/elsa-keycloak-client.json

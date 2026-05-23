@@ -8,7 +8,7 @@ tenant authorization. Keycloak owns users, passwords, MFA, federation, sessions,
 and OIDC tokens.
 
 ```text
-Browser -> Elsa API /api/auth/sign-in -> Keycloak
+Browser -> Elsa API /api/auth/login -> Keycloak
 Keycloak -> Elsa API /api/auth/callback -> platform session cookie
 Console -> Elsa APIs -> platform session + role/workspace checks
 ```
@@ -141,6 +141,7 @@ When `deployKeycloak=true`, Bicep writes these API settings:
 Authentication__PlatformIdentity__Provider=Keycloak
 Authentication__PlatformIdentity__Authority=https://<keycloak-app>.azurewebsites.net/realms/elsa-platform
 Authentication__PlatformIdentity__Issuer=https://<keycloak-app>.azurewebsites.net/realms/elsa-platform
+Authentication__PlatformIdentity__Audience=elsa-platform-console
 Authentication__PlatformIdentity__ClientId=elsa-platform-console
 Authentication__PlatformIdentity__ClientSecret=<secret>
 Authentication__PlatformIdentity__RequireHttpsMetadata=true

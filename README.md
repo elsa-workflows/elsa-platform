@@ -98,7 +98,7 @@ Then open the console and use a workspace-only view such as Runtime Builder:
 http://localhost:5220/admin/runtime-builder
 ```
 
-When the view needs workspace identity it links to `/api/auth/sign-in`, which starts the OIDC authorization-code flow against Keycloak and returns to the console with an HttpOnly customer session cookie. The imported local user is:
+When the view needs workspace identity it links to `/api/auth/login`, which starts the OIDC authorization-code flow against Keycloak and returns to the console with an HttpOnly customer session cookie. The imported local user is:
 
 ```text
 username: ada
