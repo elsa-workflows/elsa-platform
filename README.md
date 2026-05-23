@@ -85,7 +85,7 @@ The local token defaults to issuer `https://local.elsa-platform.test`, audience 
 TOKEN="$(scripts/create-local-platform-jwt.sh user-456 "Grace Hopper" grace@example.test)"
 ```
 
-For a browser sign-in flow, start the local Keycloak realm and run the API with the `Keycloak` environment:
+For a browser sign-in flow, start the local Keycloak realm and run the API with the `Keycloak` environment on HTTPS:
 
 ```bash
 docker compose -f docker-compose.identity.yml up
