@@ -60,6 +60,48 @@ param sqlDatabaseAutoPauseDelay int = 60
 @description('Allow Azure service public IPs to reach Azure SQL. Required for the default App Service to SQL path.')
 param allowAzureSqlServiceAccess bool = true
 
+@description('Deploy a managed Keycloak identity service for customer login.')
+param deployKeycloak bool = false
+
+@description('Keycloak App Service Plan SKU. Use at least B2/P1v3 for production traffic.')
+param keycloakAppServiceSkuName string = 'B2'
+
+@description('Keycloak container image.')
+param keycloakContainerImage string = 'quay.io/keycloak/keycloak:26.0'
+
+@description('Keycloak container startup command.')
+param keycloakStartCommand string = 'start --hostname-strict=false'
+
+@description('Keycloak realm used by Elsa Platform.')
+param keycloakRealm string = 'elsa-platform'
+
+@description('Keycloak OIDC client ID used by the Elsa Platform API.')
+param keycloakClientId string = 'elsa-platform-console'
+
+@secure()
+@description('Keycloak OIDC confidential client secret used by the Elsa Platform API. Must match the Keycloak client.')
+param keycloakClientSecret string = ''
+
+@description('Keycloak bootstrap admin username. Used by Keycloak only when the server initializes an empty database.')
+param keycloakAdminUsername string = 'keycloak-admin'
+
+@secure()
+@description('Keycloak bootstrap admin password. Required when deployKeycloak is true.')
+param keycloakAdminPassword string = ''
+
+@description('Keycloak PostgreSQL administrator login name.')
+param keycloakPostgresAdministratorLogin string = 'keycloakadmin'
+
+@secure()
+@description('Keycloak PostgreSQL administrator password. Required when deployKeycloak is true.')
+param keycloakPostgresAdministratorPassword string = ''
+
+@description('Keycloak PostgreSQL compute SKU.')
+param keycloakPostgresSkuName string = 'Standard_B1ms'
+
+@description('Keycloak PostgreSQL storage in GiB.')
+param keycloakPostgresStorageGb int = 32
+
 @description('Additional application settings to merge into the Web App.')
 param additionalAppSettings object = {}
 
@@ -76,8 +118,30 @@ var sqlServerName = take(toLower('${normalizedPrefix}-sql-${uniqueSuffix}'), 63)
 var sqlDatabaseName = 'Catalog'
 var logAnalyticsWorkspaceName = take('${normalizedPrefix}-logs-${uniqueSuffix}', 63)
 var appInsightsName = take('${normalizedPrefix}-appi-${uniqueSuffix}', 255)
+var keycloakWebAppName = take('${normalizedPrefix}-identity-${uniqueSuffix}', 60)
+var keycloakPlanName = '${normalizedPrefix}-identity-plan-${uniqueSuffix}'
+var keycloakPostgresName = take(toLower('${normalizedPrefix}-identity-pg-${uniqueSuffix}'), 63)
+var keycloakDatabaseName = 'keycloak'
 var defaultImage = '${registryName}.azurecr.io/elsa-platform/api:latest'
 var effectiveContainerImage = empty(containerImage) ? defaultImage : containerImage
+var keycloakDefaultHostName = 'https://${keycloakWebAppName}.azurewebsites.net'
+var keycloakAuthority = '${keycloakDefaultHostName}/realms/${keycloakRealm}'
+
+var keycloakApiSettings = deployKeycloak ? {
+  Authentication__PlatformIdentity__Provider: 'Keycloak'
+  Authentication__PlatformIdentity__Authority: keycloakAuthority
+  Authentication__PlatformIdentity__Issuer: keycloakAuthority
+  Authentication__PlatformIdentity__ClientId: keycloakClientId
+  Authentication__PlatformIdentity__ClientSecret: keycloakClientSecret
+  Authentication__PlatformIdentity__RequireHttpsMetadata: 'true'
+  Authentication__PlatformIdentity__Scopes__0: 'openid'
+  Authentication__PlatformIdentity__Scopes__1: 'profile'
+  Authentication__PlatformIdentity__Scopes__2: 'email'
+  Authentication__PlatformIdentity__Claims__Subject: 'sub'
+  Authentication__PlatformIdentity__Claims__DisplayName__0: 'name'
+  Authentication__PlatformIdentity__Claims__DisplayName__1: 'preferred_username'
+  Authentication__PlatformIdentity__Claims__Email__0: 'email'
+} : {}
 
 module observability 'modules/observability.bicep' = {
   name: 'observability'
@@ -121,10 +185,31 @@ module sql 'modules/sql-catalog.bicep' = {
   }
 }
 
+module keycloak 'modules/keycloak-webapp.bicep' = if (deployKeycloak) {
+  name: 'keycloak-webapp'
+  params: {
+    adminPassword: keycloakAdminPassword
+    adminUsername: keycloakAdminUsername
+    appServicePlanName: keycloakPlanName
+    containerImage: keycloakContainerImage
+    databaseName: keycloakDatabaseName
+    location: location
+    name: keycloakWebAppName
+    postgresAdministratorLogin: keycloakPostgresAdministratorLogin
+    postgresAdministratorPassword: keycloakPostgresAdministratorPassword
+    postgresServerName: keycloakPostgresName
+    postgresSkuName: keycloakPostgresSkuName
+    postgresStorageGb: keycloakPostgresStorageGb
+    skuName: keycloakAppServiceSkuName
+    startCommand: keycloakStartCommand
+    tags: tags
+  }
+}
+
 module web 'modules/platform-api-webapp.bicep' = {
   name: 'platform-api-webapp'
   params: {
-    additionalAppSettings: additionalAppSettings
+    additionalAppSettings: union(keycloakApiSettings, additionalAppSettings)
     adminApiKey: adminApiKey
     appInsightsConnectionString: observability.outputs.applicationInsightsConnectionString
     appServicePlanName: appServicePlanName
@@ -157,6 +242,10 @@ output containerRegistryLoginServer string = containerRegistry.properties.loginS
 output containerRegistryName string = containerRegistry.name
 output defaultContainerImage string = defaultImage
 output platformApiUrl string = web.outputs.defaultHostName
+output keycloakUrl string = deployKeycloak ? keycloakDefaultHostName : ''
+output keycloakAuthority string = deployKeycloak ? keycloakAuthority : ''
+output keycloakRealm string = deployKeycloak ? keycloakRealm : ''
+output keycloakClientId string = deployKeycloak ? keycloakClientId : ''
 output resourceGroupName string = resourceGroup().name
 output sqlDatabaseName string = sqlDatabaseName
 output sqlServerFullyQualifiedDomainName string = sql.outputs.fullyQualifiedDomainName

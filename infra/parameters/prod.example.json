@@ -14,6 +14,18 @@
     "containerRegistrySku": {
       "value": "Standard"
     },
+    "deployKeycloak": {
+      "value": true
+    },
+    "keycloakAppServiceSkuName": {
+      "value": "B2"
+    },
+    "keycloakRealm": {
+      "value": "elsa-platform"
+    },
+    "keycloakClientId": {
+      "value": "elsa-platform-console"
+    },
     "tags": {
       "value": {
         "application": "elsa-platform",

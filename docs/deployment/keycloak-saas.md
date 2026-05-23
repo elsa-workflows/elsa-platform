@@ -1,0 +1,201 @@
+# Keycloak SaaS Deployment
+
+## Decision
+
+Run Keycloak as a separate production identity service and keep Elsa Platform as
+an OIDC relying party. Elsa owns accounts, workspaces, roles, entitlements, and
+tenant authorization. Keycloak owns users, passwords, MFA, federation, sessions,
+and OIDC tokens.
+
+```text
+Browser -> Elsa API /api/auth/sign-in -> Keycloak
+Keycloak -> Elsa API /api/auth/callback -> platform session cookie
+Console -> Elsa APIs -> platform session + role/workspace checks
+```
+
+Do not create one Keycloak realm per Elsa workspace. Use one production realm for
+the SaaS identity boundary and keep `Workspace` as the SaaS tenant boundary.
+
+## Azure Production Shape
+
+The Bicep deployment can optionally provision:
+
+- Elsa Platform API Web App and Azure SQL catalog database.
+- Keycloak Web App running the official Keycloak container.
+- Azure Database for PostgreSQL Flexible Server for Keycloak.
+- API app settings that point Elsa at the Keycloak realm.
+
+Enable it with:
+
+```bash
+az deployment group create \
+  --resource-group rg-elsa-platform-prod \
+  --template-file infra/main.bicep \
+  --parameters @infra/parameters/prod.example.json \
+  --parameters \
+      adminApiKey='<strong-admin-key>' \
+      sqlAdministratorPassword='<strong-sql-password>' \
+      keycloakAdminPassword='<strong-keycloak-admin-password>' \
+      keycloakPostgresAdministratorPassword='<strong-keycloak-db-password>' \
+      keycloakClientSecret='<strong-oidc-client-secret>'
+```
+
+The deployment outputs include:
+
+- `platformApiUrl`
+- `keycloakUrl`
+- `keycloakAuthority`
+- `keycloakRealm`
+- `keycloakClientId`
+
+The first deployment creates the Keycloak service and database. Keycloak creates
+its bootstrap admin only when the database is empty.
+
+For dev App Service deployments, the official Keycloak image can be run with the
+development startup command while the Azure shape is being validated:
+
+```bash
+KEYCLOAK_START_COMMAND='start-dev --hostname-strict=false' \
+scripts/deploy-azure-platform.sh --environment dev --deploy-keycloak
+```
+
+Use the default production command once hostname, TLS, and realm configuration
+are ready for a non-development environment.
+
+## Keycloak Realm Setup
+
+After infrastructure is deployed, bootstrap the realm and confidential client:
+
+```bash
+KEYCLOAK_URL='https://<keycloak-app>.azurewebsites.net' \
+PLATFORM_API_URL='https://<platform-api-app>.azurewebsites.net' \
+KEYCLOAK_ADMIN_USERNAME='keycloak-admin' \
+KEYCLOAK_ADMIN_PASSWORD='<strong-keycloak-admin-password>' \
+KEYCLOAK_CLIENT_SECRET='<strong-oidc-client-secret>' \
+scripts/bootstrap-keycloak-realm.sh
+```
+
+The bootstrap creates a `platform_admin` realm role and configures the OIDC
+client to emit realm roles as the `role` claim. For a disposable dev
+environment, add `CREATE_DEV_USER=true` to create a test user using
+`DEV_USERNAME` and `DEV_PASSWORD`; the dev user is assigned `platform_admin`.
+
+You can also sign into the Keycloak admin console:
+
+```text
+https://<keycloak-app>.azurewebsites.net
+```
+
+Use the bootstrap admin credentials supplied to the Bicep deployment. Then
+complete any operational realm configuration that should not be hard-coded:
+
+1. Configure SMTP for the realm.
+2. Enable email verification and password reset policies.
+3. Enable brute-force protection.
+4. Configure MFA or WebAuthn policy for production users.
+5. Create named admin users and remove or rotate the bootstrap admin.
+
+Client settings:
+
+```text
+Client ID: elsa-platform-console
+Client authentication: On
+Standard flow: On
+Direct access grants: Off
+PKCE method: S256
+```
+
+URLs:
+
+```text
+Valid redirect URIs:
+  https://<platform-api-app>.azurewebsites.net/api/auth/callback
+
+Valid post logout redirect URIs:
+  https://<platform-api-app>.azurewebsites.net/admin/*
+
+Web origins:
+  https://<platform-api-app>.azurewebsites.net
+
+Role claim:
+
+```text
+Realm role: platform_admin
+Token claim: role
+Mapper: user realm role mapper
+```
+```
+
+The client secret must match the `keycloakClientSecret` Bicep parameter, which is
+written to the API as:
+
+```text
+Authentication__PlatformIdentity__ClientSecret
+```
+
+## Elsa API Settings
+
+When `deployKeycloak=true`, Bicep writes these API settings:
+
+```text
+Authentication__PlatformIdentity__Provider=Keycloak
+Authentication__PlatformIdentity__Authority=https://<keycloak-app>.azurewebsites.net/realms/elsa-platform
+Authentication__PlatformIdentity__Issuer=https://<keycloak-app>.azurewebsites.net/realms/elsa-platform
+Authentication__PlatformIdentity__ClientId=elsa-platform-console
+Authentication__PlatformIdentity__ClientSecret=<secret>
+Authentication__PlatformIdentity__RequireHttpsMetadata=true
+Authentication__WorkspaceTrustedHeaders__Enabled=false
+```
+
+For custom domains, update both sides together:
+
+- Keycloak `KC_HOSTNAME`.
+- Elsa `Authentication__PlatformIdentity__Authority`.
+- Elsa `Authentication__PlatformIdentity__Issuer`.
+- Keycloak client redirect URIs and web origins.
+
+## Smoke Test
+
+After realm/client setup:
+
+```bash
+curl https://<platform-api-app>.azurewebsites.net/health
+curl https://<platform-api-app>.azurewebsites.net/api/auth/session
+```
+
+Open:
+
+```text
+https://<platform-api-app>.azurewebsites.net/admin/runtime-builder
+```
+
+Expected flow:
+
+1. Anonymous browser request redirects to Keycloak.
+2. Sign in with a realm user.
+3. Browser returns to `/admin/runtime-builder`.
+4. `GET /api/me/workspaces` succeeds and provisions/loads the user's personal workspace.
+5. Admin API calls require the signed-in user to have `platform_admin`.
+
+## Production Hardening Checklist
+
+- Replace default Azure App Service hostnames with custom domains before public launch.
+- Enable HTTPS-only and HSTS at the edge.
+- Store all secrets in environment secrets or Key Vault references.
+- Back up the Keycloak PostgreSQL database and test restore.
+- Configure SMTP and test password reset before inviting users.
+- Disable or rotate bootstrap admin credentials after creating named admin users.
+- Enable Keycloak brute-force protection.
+- Configure MFA or WebAuthn for admins.
+- Restrict Keycloak admin console access at the network or identity layer when possible.
+- Monitor Keycloak health, login failures, and PostgreSQL storage/CPU.
+- Export realm configuration after material changes and store it as an operational artifact without secrets.
+- Keep `Authentication__WorkspaceTrustedHeaders__Enabled=false` in production.
+
+## Known Follow-Ups
+
+- Move Keycloak and Elsa secrets to Key Vault references in Bicep.
+- Add custom domain and managed certificate resources.
+- Add private networking between App Service and PostgreSQL.
+- Move realm/client bootstrap to a one-shot deployment job once the desired
+  production realm contract stabilizes.

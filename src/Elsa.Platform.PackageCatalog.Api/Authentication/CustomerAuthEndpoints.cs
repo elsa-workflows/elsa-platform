@@ -1,5 +1,3 @@
-using System.Security.Claims;
-using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
@@ -25,10 +23,9 @@ public static class CustomerAuthEndpoints
                 identity?.Email,
                 CustomerAuthenticationDefaults.LoginPath,
                 CustomerAuthenticationDefaults.LogoutPath));
-        });
+        }).AllowAnonymous();
 
         group.MapGet("/login", (
-            HttpContext context,
             IOptions<PlatformIdentityOptions> options,
             string? returnUrl) =>
         {
@@ -43,25 +40,29 @@ public static class CustomerAuthEndpoints
             return Results.Challenge(
                 new AuthenticationProperties { RedirectUri = redirectUri },
                 [CustomerAuthenticationDefaults.OidcScheme]);
-        });
+        }).AllowAnonymous();
 
-        group.MapPost("/logout", async (
-            HttpContext context,
+        group.MapGet("/sign-in", (
             IOptions<PlatformIdentityOptions> options,
             string? returnUrl) =>
         {
-            if (!AdminDashboardRequestForgeryGuard.IsSameOriginBrowserRequest(context.Request))
-                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            if (!options.Value.IsCustomerLoginConfigured)
+            {
+                return Results.Problem(
+                    title: "Customer login is not configured.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
 
             var redirectUri = GetSafeReturnUrl(returnUrl);
-            await context.SignOutAsync(CustomerAuthenticationDefaults.CookieScheme);
-            if (!options.Value.IsCustomerLoginConfigured)
-                return Results.NoContent();
-
-            return Results.SignOut(
+            return Results.Challenge(
                 new AuthenticationProperties { RedirectUri = redirectUri },
                 [CustomerAuthenticationDefaults.OidcScheme]);
-        });
+        }).AllowAnonymous();
+
+        group.MapGet("/logout", SignOutAsync).AllowAnonymous();
+        group.MapPost("/logout", SignOutAsync).AllowAnonymous();
+        group.MapGet("/sign-out", SignOutAsync).AllowAnonymous();
+        group.MapPost("/sign-out", SignOutAsync).AllowAnonymous();
 
         return endpoints;
     }
@@ -73,10 +74,32 @@ public static class CustomerAuthEndpoints
 
         if (Uri.TryCreate(returnUrl, UriKind.Relative, out var uri) &&
             returnUrl.StartsWith("/", StringComparison.Ordinal) &&
-            !returnUrl.StartsWith("//", StringComparison.Ordinal))
+            !returnUrl.StartsWith("//", StringComparison.Ordinal) &&
+            !returnUrl.StartsWith(AdminDashboardAuthenticationDefaults.LoginPath, StringComparison.OrdinalIgnoreCase))
             return uri.OriginalString;
 
         return CustomerAuthenticationDefaults.DefaultReturnPath;
+    }
+
+    private static async Task<IResult> SignOutAsync(
+        HttpContext context,
+        IOptions<PlatformIdentityOptions> options,
+        string? returnUrl)
+    {
+        if (HttpMethods.IsPost(context.Request.Method) &&
+            !AdminDashboardRequestForgeryGuard.IsSameOriginBrowserRequest(context.Request))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var redirectUri = GetSafeReturnUrl(returnUrl);
+        await context.SignOutAsync(CustomerAuthenticationDefaults.CookieScheme);
+        if (!options.Value.IsCustomerLoginConfigured)
+            return HttpMethods.IsPost(context.Request.Method) ? Results.NoContent() : Results.Redirect(redirectUri);
+
+        return Results.SignOut(
+            new AuthenticationProperties { RedirectUri = redirectUri },
+            [CustomerAuthenticationDefaults.OidcScheme]);
     }
 }
 

@@ -1,6 +1,7 @@
 @baseUrl = http://localhost:5220
 @apiKey = local-dev-key
 @builderClientApiKey = builder-dev-key
+@platformJwt = paste-token-from-scripts-create-local-platform-jwt-here
 @sourceId = 00000000-0000-0000-0000-000000000000
 @syncRunId = 00000000-0000-0000-0000-000000000000
 @packageId = Elsa.Email
@@ -100,10 +101,13 @@ Content-Type: application/json
   }
 }
 
+### Workspace: current account and workspaces
+GET {{baseUrl}}/api/me/workspaces
+Authorization: Bearer {{platformJwt}}
+
 ### Workspace: plan runtime builder intent
 POST {{baseUrl}}/api/workspaces/{{workspaceId}}/builder/plan
-X-Catalog-Identity-Issuer: https://elsaworkflows.io
-X-Catalog-Identity-Subject: user-123
+Authorization: Bearer {{platformJwt}}
 Content-Type: application/json
 
 {
@@ -126,13 +130,11 @@ Content-Type: application/json
 
 ### Workspace: list runtime configurations
 GET {{baseUrl}}/api/workspaces/{{workspaceId}}/runtime-configurations
-X-Catalog-Identity-Issuer: https://elsaworkflows.io
-X-Catalog-Identity-Subject: user-123
+Authorization: Bearer {{platformJwt}}
 
 ### Workspace: create runtime configuration
 POST {{baseUrl}}/api/workspaces/{{workspaceId}}/runtime-configurations
-X-Catalog-Identity-Issuer: https://elsaworkflows.io
-X-Catalog-Identity-Subject: user-123
+Authorization: Bearer {{platformJwt}}
 Content-Type: application/json
 
 {
@@ -157,13 +159,11 @@ Content-Type: application/json
 
 ### Workspace: create runtime configuration version
 POST {{baseUrl}}/api/workspaces/{{workspaceId}}/runtime-configurations/{{runtimeConfigurationId}}/versions
-X-Catalog-Identity-Issuer: https://elsaworkflows.io
-X-Catalog-Identity-Subject: user-123
+Authorization: Bearer {{platformJwt}}
 
 ### Workspace: generate bundle from saved runtime configuration
 POST {{baseUrl}}/api/workspaces/{{workspaceId}}/runtime-configurations/{{runtimeConfigurationId}}/bundle
-X-Catalog-Identity-Issuer: https://elsaworkflows.io
-X-Catalog-Identity-Subject: user-123
+Authorization: Bearer {{platformJwt}}
 
 ### Admin: list package sources
 GET {{baseUrl}}/api/admin/sources

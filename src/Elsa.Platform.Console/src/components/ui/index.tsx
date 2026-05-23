@@ -44,11 +44,12 @@ export function Badge({ children, className }: { children: ReactNode; className?
   );
 }
 
-export function EmptyState({ title, description }: { title: string; description: string }) {
+export function EmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
   return (
     <div className="rounded-ui border border-dashed border-border bg-surface p-8 text-center">
       <h2 className="text-base font-medium">{title}</h2>
       <p className="mt-2 text-sm text-muted-foreground">{description}</p>
+      {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
     </div>
   );
 }

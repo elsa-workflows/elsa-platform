@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, FileCode2, PackagePlus, Play, RefreshCw, Save, Search, Settings2, Trash2 } from "lucide-react";
+import { Check, Copy, FileCode2, LogIn, PackagePlus, Play, RefreshCw, Save, Search, Settings2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, EmptyState, Input, SecondaryButton, Select } from "@/components/ui";
 import { RequestStateView } from "@/components/states/RequestStateViews";
@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { queryKeys } from "@/lib/query/queryClient";
 import { sourceStatusTone, statusToneClass } from "@/lib/status/statusBadges";
 import { ApiError } from "@/lib/api/httpClient";
+import { startCustomerSignIn } from "@/lib/auth/authApi";
 
 const defaultTarget: DeploymentTarget = "docker-compose";
 
@@ -222,6 +223,21 @@ export function RuntimeBuilderPage() {
 
   if (workspaces.isLoading) return <RequestStateView state="loading" title="Loading workspace context" />;
   if (workspaces.isError && !workspaces.data) {
+    if (workspaces.error instanceof ApiError && workspaces.error.kind === "Unauthorized") {
+      return (
+        <EmptyState
+          title="Sign in to load workspace context"
+          description="Runtime Builder needs a customer identity before it can resolve workspaces, packages, and saved configurations."
+          action={
+            <Button onClick={() => startCustomerSignIn()}>
+              <LogIn className="h-4 w-4" />
+              Sign in
+            </Button>
+          }
+        />
+      );
+    }
+
     return <RequestStateView state={workspaceContextErrorState(workspaces.error)} title="Workspace context could not load" />;
   }
   if ((workspaces.data?.workspaces.length ?? 0) === 0) {

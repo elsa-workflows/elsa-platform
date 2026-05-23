@@ -42,6 +42,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -83,6 +84,11 @@ var authentication = builder.Services.AddAuthentication(options =>
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             return Task.CompletedTask;
         };
+        options.Events.OnRedirectToAccessDenied = context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        };
     });
 if (configuredPlatformIdentity.IsCustomerLoginConfigured)
 {
@@ -115,7 +121,8 @@ if (configuredPlatformIdentity.IsCustomerLoginConfigured)
                     ? (string.IsNullOrWhiteSpace(platformIdentity.Authority) ? null : platformIdentity.Authority)
                     : platformIdentity.Issuer,
                 NameClaimType = platformIdentity.Claims.DisplayName.FirstOrDefault() ?? "name",
-                RoleClaimType = "roles"
+                RoleClaimType = "role",
+                ValidateAudience = false
             };
             options.Events.OnTokenValidated = context =>
             {
@@ -126,32 +133,6 @@ if (configuredPlatformIdentity.IsCustomerLoginConfigured)
             };
         });
 }
-
-authentication.AddCookie(AdminDashboardAuthenticationDefaults.Scheme, options =>
-    {
-        options.Cookie.Name = AdminDashboardAuthenticationDefaults.CookieName;
-        options.Cookie.HttpOnly = true;
-        options.Cookie.Path = "/";
-        options.Cookie.SameSite = SameSiteMode.Lax;
-        options.Cookie.SecurePolicy = builder.Environment.IsEnvironment("Testing")
-            ? CookieSecurePolicy.SameAsRequest
-            : CookieSecurePolicy.Always;
-        options.ExpireTimeSpan = AdminDashboardAuthenticationDefaults.SessionLifetime;
-        options.LoginPath = AdminDashboardAuthenticationDefaults.LoginPath;
-        options.LogoutPath = AdminDashboardAuthenticationDefaults.LogoutPath;
-        options.SlidingExpiration = true;
-        options.Events.OnRedirectToLogin = context =>
-        {
-            if (context.Request.Path.StartsWithSegments("/api"))
-            {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                return Task.CompletedTask;
-            }
-
-            context.Response.Redirect(context.RedirectUri);
-            return Task.CompletedTask;
-        };
-    });
 builder.Services.AddOptions<JwtBearerOptions>(PlatformIdentityDefaults.Scheme)
     .Configure<IOptions<PlatformIdentityOptions>>((options, platformIdentityOptions) =>
     {
@@ -183,7 +164,6 @@ builder.Services.AddBuilderClientAuthorization();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AdminApiKeyValidator>();
 builder.Services.AddSingleton<BuilderClientApiKeyValidator>();
-builder.Services.AddSingleton<AdminDashboardLoginThrottle>();
 builder.Services.AddCatalogDbContext(builder.Configuration);
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
 builder.Services.AddScoped<IPublicCatalogQueries, PublicCatalogQueries>();
@@ -198,6 +178,7 @@ builder.Services.AddScoped<PlatformIdentityReader>();
 builder.Services.AddScoped<CustomerSessionIdentityReader>();
 builder.Services.AddScoped<TrustedHeaderWorkspaceIdentityReader>();
 builder.Services.AddScoped<WorkspaceAccessResolver>();
+builder.Services.AddHostedService<PlatformIdentityConfigurationValidator>();
 builder.Services.AddScoped<IWorkspaceIdentityReader>(services => new CompositeWorkspaceIdentityReader([
     services.GetRequiredService<PlatformIdentityReader>(),
     services.GetRequiredService<CustomerSessionIdentityReader>(),
