@@ -82,7 +82,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:5220/api/me/workspaces
 The local token defaults to issuer `https://local.elsa-platform.test`, audience `elsa-platform-dev`, subject `user-123`, and a one-hour lifetime. Pass a different subject/name/email when you need another user:
 
 ```bash
-TOKEN="$(scripts/create-local-platform-jwt.sh user-456 "Grace Hopper" grace@example.test)"
+TOKEN="$(scripts/create-local-platform-jwt.sh user-456 'Grace Hopper' grace@example.test)"
 ```
 
 For a browser sign-in flow, start the local Keycloak realm and run the API with the `Keycloak` environment on HTTPS:
