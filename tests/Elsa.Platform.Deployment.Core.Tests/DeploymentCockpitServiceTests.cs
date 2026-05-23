@@ -20,6 +20,7 @@ public sealed class DeploymentCockpitServiceTests
             && x.DeploymentStatus == DeploymentStatus.Blocked);
         cockpit.Engines.Should().Contain(x =>
             x.Id == "stage-engine"
+            && x.Endpoint.Version == "Elsa 4.0.0"
             && x.CredentialReference.Provider == "Azure Key Vault"
             && x.CredentialReference.Reference == "kv://acme-platform/stage/elsa-api");
         cockpit.Engines.Select(x => x.CredentialReference.Reference).Should().NotContain(reference =>

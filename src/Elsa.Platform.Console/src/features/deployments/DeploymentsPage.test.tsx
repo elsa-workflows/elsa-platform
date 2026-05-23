@@ -27,6 +27,7 @@ describe("DeploymentsPage", () => {
 
     await screen.findByRole("heading", { name: "Deployments" });
     await userEvent.click(screen.getByRole("button", { name: "Engine Registration" }));
+    await userEvent.selectOptions(screen.getByLabelText("Environment"), "claims-stage");
 
     expect(screen.getAllByText("claims-stage-weu-01").length).toBeGreaterThan(0);
     expect(screen.getByText("kv://acme-platform/stage/elsa-api")).toBeInTheDocument();

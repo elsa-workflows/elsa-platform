@@ -155,7 +155,8 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore
                 Control("reload-configuration", "Reload Configuration", CapabilityBoundary.EngineApi, "engine.reload-configuration", "Reloads engine API configuration from desired state."),
                 Control("restart-shell", "Restart Shell", CapabilityBoundary.Shell, "shell.restart", "Hidden until the shell restart capability is advertised.")
             ],
-            CertificateStatus.Expiring),
+            CertificateStatus.Expiring,
+            "Elsa 4.0.0"),
         Engine(
             "prod-engine",
             "claims-prod-weu-01",
@@ -170,7 +171,8 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore
             [
                 Control("pause-processing", "Pause Processing", CapabilityBoundary.Workflow, "workflow.pause-processing", "Stops new workflow dispatch without touching host infrastructure."),
                 Control("reload-configuration", "Reload Configuration", CapabilityBoundary.EngineApi, "engine.reload-configuration", "Hidden until the engine advertises support.")
-            ]),
+            ],
+            version: "Elsa 4.0.0"),
         Engine(
             "care-dev-engine",
             "care-dev-weu-01",
@@ -307,12 +309,13 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore
         string? hostingProvider,
         IReadOnlyList<EngineCapability> capabilities,
         IReadOnlyList<RuntimeControl> controls,
-        CertificateStatus certificateStatus = CertificateStatus.Trusted) =>
+        CertificateStatus certificateStatus = CertificateStatus.Trusted,
+        string version = "Elsa 4.0.1") =>
         new(
             id,
             name,
             environmentId,
-            new EngineEndpointMetadata(endpoint, "West Europe", "Elsa 4.0.1", certificateStatus),
+            new EngineEndpointMetadata(endpoint, "West Europe", version, certificateStatus),
             new EngineCredentialReference("Azure Key Vault", credentialReference, credentialStatus, credentialStatus == CredentialVerificationStatus.Verified ? Parse("2026-05-22T07:50:00Z") : null),
             health,
             lastHeartbeatAt,

@@ -94,7 +94,7 @@ if (configuredPlatformIdentity.IsCustomerLoginConfigured)
             options.SignInScheme = CustomerAuthenticationDefaults.CookieScheme;
             options.ResponseType = "code";
             options.UsePkce = true;
-            options.SaveTokens = false;
+            options.SaveTokens = true;
             options.MapInboundClaims = false;
             options.RequireHttpsMetadata = platformIdentity.RequireHttpsMetadata;
             options.Authority = string.IsNullOrWhiteSpace(platformIdentity.Authority) ? null : platformIdentity.Authority;
@@ -116,6 +116,13 @@ if (configuredPlatformIdentity.IsCustomerLoginConfigured)
                     : platformIdentity.Issuer,
                 NameClaimType = platformIdentity.Claims.DisplayName.FirstOrDefault() ?? "name",
                 RoleClaimType = "roles"
+            };
+            options.Events.OnTokenValidated = context =>
+            {
+                if (context.Properties is { } properties)
+                    properties.StoreTokens(properties.GetTokens().Where(token => token.Name == "id_token"));
+
+                return Task.CompletedTask;
             };
         });
 }
