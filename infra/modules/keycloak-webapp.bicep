@@ -49,6 +49,7 @@ var keycloakPort = '8080'
 var postgresHost = '${postgres.name}.postgres.database.azure.com'
 var jdbcUrl = 'jdbc:postgresql://${postgresHost}:5432/${databaseName}?sslmode=require'
 var keycloakUrl = 'https://${name}.azurewebsites.net'
+var postgresSkuTier = startsWith(postgresSkuName, 'Standard_B') ? 'Burstable' : startsWith(postgresSkuName, 'Standard_E') ? 'MemoryOptimized' : 'GeneralPurpose'
 
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2023-12-01-preview' = {
   name: postgresServerName
@@ -56,7 +57,7 @@ resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2023-12-01-preview'
   tags: tags
   sku: {
     name: postgresSkuName
-    tier: startsWith(postgresSkuName, 'Standard_B') ? 'Burstable' : 'GeneralPurpose'
+    tier: postgresSkuTier
   }
   properties: {
     administratorLogin: postgresAdministratorLogin
@@ -127,7 +128,7 @@ resource app 'Microsoft.Web/sites@2023-12-01' = {
         }
         {
           name: 'WEBSITE_WARMUP_PATH'
-          value: '/realms/master'
+          value: '/health/live'
         }
         {
           name: 'KC_DB'
@@ -176,7 +177,7 @@ resource app 'Microsoft.Web/sites@2023-12-01' = {
       ]
       appCommandLine: startCommand
       ftpsState: 'Disabled'
-      healthCheckPath: '/realms/master'
+      healthCheckPath: '/health/live'
       linuxFxVersion: 'DOCKER|${containerImage}'
       minTlsVersion: '1.2'
     }
