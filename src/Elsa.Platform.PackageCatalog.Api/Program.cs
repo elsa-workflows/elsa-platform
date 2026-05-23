@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.PackageCatalog.Abstractions.Catalog;
 using Elsa.Platform.PackageCatalog.Abstractions.Compatibility;
 using Elsa.Platform.PackageCatalog.Api.Admin.Application;
@@ -38,6 +39,7 @@ using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -54,7 +56,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
 });
 builder.Services.Configure<PlatformIdentityOptions>(builder.Configuration.GetSection(PlatformIdentityDefaults.ConfigurationSection));
-builder.Services.AddAuthentication(options =>
+var configuredPlatformIdentity = builder.Configuration.GetSection(PlatformIdentityDefaults.ConfigurationSection).Get<PlatformIdentityOptions>() ?? new PlatformIdentityOptions();
+var authentication = builder.Services.AddAuthentication(options =>
     {
         options.DefaultAuthenticateScheme = PlatformIdentityDefaults.Scheme;
         options.DefaultChallengeScheme = PlatformIdentityDefaults.Scheme;
@@ -62,7 +65,69 @@ builder.Services.AddAuthentication(options =>
     .AddJwtBearer(PlatformIdentityDefaults.Scheme)
     .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationDefaults.Scheme, _ => { })
     .AddScheme<AuthenticationSchemeOptions, BuilderClientApiKeyAuthenticationHandler>(BuilderClientApiKeyAuthenticationDefaults.Scheme, _ => { })
-    .AddCookie(AdminDashboardAuthenticationDefaults.Scheme, options =>
+    .AddCookie(CustomerAuthenticationDefaults.CookieScheme, options =>
+    {
+        options.Cookie.Name = CustomerAuthenticationDefaults.CookieName;
+        options.Cookie.HttpOnly = true;
+        options.Cookie.Path = "/";
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = builder.Environment.IsEnvironment("Testing")
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
+        options.ExpireTimeSpan = CustomerAuthenticationDefaults.SessionLifetime;
+        options.LoginPath = CustomerAuthenticationDefaults.LoginPath;
+        options.LogoutPath = CustomerAuthenticationDefaults.LogoutPath;
+        options.SlidingExpiration = true;
+        options.Events.OnRedirectToLogin = context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return Task.CompletedTask;
+        };
+    });
+if (configuredPlatformIdentity.IsCustomerLoginConfigured)
+{
+    authentication.AddOpenIdConnect(CustomerAuthenticationDefaults.OidcScheme, _ => { });
+    builder.Services.AddOptions<OpenIdConnectOptions>(CustomerAuthenticationDefaults.OidcScheme)
+        .Configure<IOptions<PlatformIdentityOptions>>((options, platformIdentityOptions) =>
+        {
+            var platformIdentity = platformIdentityOptions.Value;
+            options.SignInScheme = CustomerAuthenticationDefaults.CookieScheme;
+            options.ResponseType = "code";
+            options.UsePkce = true;
+            options.SaveTokens = true;
+            options.MapInboundClaims = false;
+            options.RequireHttpsMetadata = platformIdentity.RequireHttpsMetadata;
+            options.Authority = string.IsNullOrWhiteSpace(platformIdentity.Authority) ? null : platformIdentity.Authority;
+            options.ClientId = string.IsNullOrWhiteSpace(platformIdentity.ClientId) ? null : platformIdentity.ClientId;
+            options.ClientSecret = string.IsNullOrWhiteSpace(platformIdentity.ClientSecret) ? null : platformIdentity.ClientSecret;
+            options.CallbackPath = PathStringFromUri(platformIdentity.RedirectUri, CustomerAuthenticationDefaults.CallbackPath);
+            options.SignedOutCallbackPath = PathStringFromUri(platformIdentity.PostLogoutRedirectUri, "/api/auth/logout-callback");
+            options.SignedOutRedirectUri = string.IsNullOrWhiteSpace(platformIdentity.PostLogoutRedirectUri)
+                ? CustomerAuthenticationDefaults.DefaultReturnPath
+                : platformIdentity.PostLogoutRedirectUri;
+            options.Scope.Clear();
+            foreach (var scope in platformIdentity.Scopes.Where(scope => !string.IsNullOrWhiteSpace(scope)).Select(scope => scope.Trim()).Distinct(StringComparer.Ordinal))
+                options.Scope.Add(scope);
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = !string.IsNullOrWhiteSpace(platformIdentity.Issuer) || !string.IsNullOrWhiteSpace(platformIdentity.Authority),
+                ValidIssuer = string.IsNullOrWhiteSpace(platformIdentity.Issuer)
+                    ? (string.IsNullOrWhiteSpace(platformIdentity.Authority) ? null : platformIdentity.Authority)
+                    : platformIdentity.Issuer,
+                NameClaimType = platformIdentity.Claims.DisplayName.FirstOrDefault() ?? "name",
+                RoleClaimType = "roles"
+            };
+            options.Events.OnTokenValidated = context =>
+            {
+                if (context.Properties is { } properties)
+                    properties.StoreTokens(properties.GetTokens().Where(token => token.Name == "id_token"));
+
+                return Task.CompletedTask;
+            };
+        });
+}
+
+authentication.AddCookie(AdminDashboardAuthenticationDefaults.Scheme, options =>
     {
         options.Cookie.Name = AdminDashboardAuthenticationDefaults.CookieName;
         options.Cookie.HttpOnly = true;
@@ -130,9 +195,12 @@ builder.Services.AddScoped<AccountWorkspaceService>();
 builder.Services.AddScoped<WorkspaceSourceService>();
 builder.Services.AddScoped<RuntimeConfigurationService>();
 builder.Services.AddScoped<PlatformIdentityReader>();
+builder.Services.AddScoped<CustomerSessionIdentityReader>();
 builder.Services.AddScoped<TrustedHeaderWorkspaceIdentityReader>();
+builder.Services.AddScoped<WorkspaceAccessResolver>();
 builder.Services.AddScoped<IWorkspaceIdentityReader>(services => new CompositeWorkspaceIdentityReader([
     services.GetRequiredService<PlatformIdentityReader>(),
+    services.GetRequiredService<CustomerSessionIdentityReader>(),
     services.GetRequiredService<TrustedHeaderWorkspaceIdentityReader>()
 ]));
 builder.Services.AddSingleton<PublicCatalogCache>();
@@ -147,6 +215,8 @@ builder.Services.AddScoped<IRuntimeConfigurationStore, RuntimeConfigurationStore
 builder.Services.AddScoped<ApprovalService>();
 builder.Services.AddScoped<CompatibilityCheckService>();
 builder.Services.AddScoped<IPackageCompatibilityService>(services => services.GetRequiredService<CompatibilityCheckService>());
+builder.Services.AddScoped<DeploymentCockpitService>();
+builder.Services.AddSingleton<IDeploymentCockpitStore, InMemoryDeploymentCockpitStore>();
 builder.Services.AddScoped<IPackageVersionDiscoveryClient, NuGetPackageSourceClient>();
 builder.Services.AddScoped<IPackageArchiveDownloader, NuGetSyncPackageDownloader>();
 builder.Services.AddScoped<IPackageArchiveManifestReader, PackageArchiveManifestReader>();
@@ -209,6 +279,7 @@ app.MapOpenApi();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapGet("/", () => "Elsa Platform API");
 app.MapGet("/admin", () => Results.Redirect("/admin/overview"));
+app.MapCustomerAuthEndpoints();
 app.MapAdminDashboardAuthEndpoints();
 app.MapPublicPackageEndpoints();
 app.MapPublicSourceEndpoints();
@@ -220,6 +291,7 @@ app.MapWorkspaceSourceEndpoints();
 app.MapWorkspacePackageEndpoints();
 app.MapWorkspaceBuilderEndpoints();
 app.MapWorkspaceRuntimeConfigurationEndpoints();
+app.MapWorkspaceDeploymentEndpoints();
 app.MapAdminApplicationEndpoints();
 app.MapAdminSourceEndpoints();
 app.MapAdminSyncEndpoints();
@@ -230,6 +302,19 @@ app.MapAdminWorkspaceEntitlementEndpoints();
 app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
 
 app.Run();
+
+static PathString PathStringFromUri(string? uri, string fallback)
+{
+    if (string.IsNullOrWhiteSpace(uri))
+        return new PathString(fallback);
+
+    if (Uri.TryCreate(uri, UriKind.Absolute, out var absolute))
+        return new PathString(absolute.AbsolutePath);
+
+    return uri.StartsWith("/", StringComparison.Ordinal)
+        ? new PathString(uri)
+        : new PathString(fallback);
+}
 
 [UsedImplicitly]
 public partial class Program;

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Options;
 
 namespace Elsa.Platform.PackageCatalog.Api.Authentication;
 
@@ -28,9 +29,24 @@ public sealed class AdminDashboardAuthenticationMiddleware(RequestDelegate next)
             return;
         }
 
+        var customerResult = await context.AuthenticateAsync(CustomerAuthenticationDefaults.CookieScheme);
+        if (customerResult.Succeeded && customerResult.Principal is not null)
+        {
+            context.User = customerResult.Principal;
+            await next(context);
+            return;
+        }
+
         if (IsBrowserNavigation(context.Request))
         {
             var returnUrl = Uri.EscapeDataString(context.Request.PathBase + context.Request.Path + context.Request.QueryString);
+            var platformIdentity = context.RequestServices.GetRequiredService<IOptions<PlatformIdentityOptions>>().Value;
+            if (platformIdentity.IsCustomerLoginConfigured)
+            {
+                context.Response.Redirect($"{CustomerAuthenticationDefaults.LoginPath}?returnUrl={returnUrl}");
+                return;
+            }
+
             context.Response.Redirect($"{AdminDashboardAuthenticationDefaults.LoginPath}?returnUrl={returnUrl}");
             return;
         }

@@ -3,6 +3,7 @@ import { AppShell } from "@/app/AppShell";
 import { OverviewPage } from "@/app/OverviewPage";
 import { RequestStateView } from "@/components/states/RequestStateViews";
 import { DeploymentsPage } from "@/features/deployments/DeploymentsPage";
+import { RequireCustomerAuth } from "@/lib/auth/AuthProvider";
 import { NewSourcePage, EditSourcePage } from "@/features/sources/SourceFormPage";
 import { SourceDetailsPage } from "@/features/sources/SourceDetailsPage";
 import { SourcesPage } from "@/features/sources/SourcesPage";
@@ -43,9 +44,9 @@ export const router = createBrowserRouter([
       { path: "packages/:packageId/versions/:version/:section", element: <PackageDetailsPage /> },
       { path: "sync-runs", element: <SyncRunsPage /> },
       { path: "sync-runs/:runId", element: <SyncRunDetailsPage /> },
-      { path: "deployments", element: <DeploymentsPage /> },
+      { path: "deployments", element: <RequireCustomerAuth><DeploymentsPage /></RequireCustomerAuth> },
       { path: "artifacts", element: <PlaceholderPage title="Artifacts" /> },
-      { path: "runtime-builder", element: <RuntimeBuilderPage /> },
+      { path: "runtime-builder", element: <RequireCustomerAuth><RuntimeBuilderPage /></RequireCustomerAuth> },
       { path: "targets", element: <PlaceholderPage title="Targets" /> },
       { path: "runtimes", element: <PlaceholderPage title="Managed Runtimes" /> },
       { path: "operations", element: <PlaceholderPage title="Runtime Operations" /> },

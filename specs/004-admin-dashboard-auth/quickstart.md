@@ -15,6 +15,7 @@
 11. Call `/api/admin/sources` with the `X-Api-Key` header and confirm existing API clients still work.
 12. Open `/health` and a public catalog endpoint without credentials and confirm they remain public.
 13. Submit `/admin/logout` and confirm `/admin/overview` requires login again.
+14. If customer OIDC login is configured, open a customer workspace console route without credentials and confirm browser navigation starts `/api/auth/login` instead of treating the admin API key as customer identity.
 
 ## Automated Verification
 
@@ -35,6 +36,7 @@ Expected coverage includes:
 - Existing API-key header authorization.
 - Logout.
 - Public endpoint access.
+- Separation between operator dashboard authentication and customer platform identity.
 
 ## Deployment Smoke
 
@@ -46,3 +48,4 @@ After deployment:
 4. A valid dashboard login should set an HTTP-only auth cookie.
 5. Cookie-authenticated cross-origin admin API mutations should fail.
 6. `GET https://<app>/health` should return `200 OK`.
+7. Customer OIDC sessions, when enabled, should not authorize `/api/admin/*` endpoints.

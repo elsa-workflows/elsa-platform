@@ -234,6 +234,20 @@ public sealed class AdminDashboardAuthenticationTests
     }
 
     [Fact]
+    public async Task Admin_api_mutation_fails_closed_without_api_key_or_valid_admin_cookie()
+    {
+        await using var app = new CatalogApiTestApplication();
+        var client = app.CreateClient(new() { AllowAutoRedirect = false });
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/admin/sync/packages/Elsa.Workflows");
+        request.Headers.Add(HeaderNames.Origin, "http://localhost");
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
     public async Task Same_origin_validation_uses_effective_request_host()
     {
         await using var app = new CatalogApiTestApplication();

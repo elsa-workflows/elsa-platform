@@ -31,7 +31,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}, option
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(`${options.baseUrl ?? defaultBaseUrl}${path}`, { ...init, headers });
+  const response = await fetch(`${options.baseUrl ?? defaultBaseUrl}${path}`, { credentials: "same-origin", ...init, headers });
 
   if (!response.ok) {
     throw await toApiError(response);

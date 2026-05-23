@@ -4,7 +4,7 @@ export type DeploymentStatus = "Succeeded" | "Running" | "Blocked" | "RolledBack
 export type CredentialVerificationStatus = "Verified" | "Missing" | "Expired" | "Unverified";
 export type CapabilityBoundary = "Workflow" | "EngineApi" | "Shell" | "Hosting";
 export type ValidationSeverity = "Pass" | "Warning" | "Blocker";
-export type DiffCategory = "Workflows" | "Features" | "Shell configuration" | "Runtime configuration" | "Secret references" | "Observability" | "Engine bindings";
+export type DiffCategory = "Workflows" | "Features" | "ShellConfiguration" | "RuntimeConfiguration" | "SecretReferences" | "Observability" | "EngineBindings";
 export type AssistantPlanStatus = "Proposed" | "Approved" | "Rejected" | "Executed";
 
 export type RuntimeControl = {

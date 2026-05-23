@@ -14,12 +14,13 @@ import {
   ShieldCheck,
   XCircle
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Badge, Button, SecondaryButton, Select, Table } from "@/components/ui";
 import { RequestStateView } from "@/components/states/RequestStateViews";
-import { getDeploymentCockpit } from "@/features/deployments/deploymentApi";
+import { getDeploymentCockpit, getDeploymentWorkspaceContext } from "@/features/deployments/deploymentApi";
 import {
+  type DiffCategory,
   engineLabel,
   environmentLabel,
   hasBlockingValidation,
@@ -47,29 +48,75 @@ const views: Array<{ id: ViewId; label: string }> = [
 ];
 
 export function DeploymentsPage() {
-  const cockpit = useQuery({ queryKey: queryKeys.deployments, queryFn: getDeploymentCockpit });
+  const workspaceContext = useQuery({ queryKey: queryKeys.deploymentWorkspaceContext, queryFn: getDeploymentWorkspaceContext });
+  // TODO: support workspace selection when users have multiple workspace memberships.
+  const workspaceId = workspaceContext.data?.workspaces[0]?.id ?? "";
+  const cockpit = useQuery({
+    queryKey: queryKeys.deploymentCockpit(workspaceId),
+    queryFn: () => getDeploymentCockpit(workspaceId),
+    enabled: Boolean(workspaceId)
+  });
   const [activeView, setActiveView] = useState<ViewId>("fleet");
-  const [selectedApplicationId, setSelectedApplicationId] = useState("claims-ops");
-  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState("claims-stage");
-  const [selectedEngineId, setSelectedEngineId] = useState("stage-engine");
-  const [sourceEnvironmentId, setSourceEnvironmentId] = useState("claims-stage");
-  const [targetEnvironmentId, setTargetEnvironmentId] = useState("claims-prod");
+  const [selectedApplicationId, setSelectedApplicationId] = useState("");
+  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState("");
+  const [selectedEngineId, setSelectedEngineId] = useState("");
+  const [sourceEnvironmentId, setSourceEnvironmentId] = useState("");
+  const [targetEnvironmentId, setTargetEnvironmentId] = useState("");
   const [operationNotice, setOperationNotice] = useState("");
   const [assistantOutcome, setAssistantOutcome] = useState<"Proposed" | "Approved" | "Rejected">("Proposed");
 
   const data = cockpit.data;
   const selectedApplication = data?.applications.find((application) => application.id === selectedApplicationId) ?? data?.applications[0];
-  const selectedEngine = data?.engines.find((engine) => engine.id === selectedEngineId) ?? data?.engines[0];
+  const selectedEnvironment =
+    selectedApplication?.environments.find((environment) => environment.id === selectedEnvironmentId) ?? selectedApplication?.environments[0];
+  const selectedEngine =
+    data?.engines.find((engine) => engine.id === selectedEngineId && (!selectedEnvironment || engine.environmentId === selectedEnvironment.id)) ??
+    data?.engines.find((engine) => engine.environmentId === selectedEnvironment?.id) ??
+    data?.engines[0];
+
+  useEffect(() => {
+    if (!data) return;
+
+    const application = data.applications.find((item) => item.id === selectedApplicationId) ?? data.applications[0];
+    const environment = application?.environments.find((item) => item.id === selectedEnvironmentId) ?? application?.environments[0];
+    const engine =
+      data.engines.find((item) => item.id === selectedEngineId && (!environment || item.environmentId === environment.id)) ??
+      data.engines.find((item) => item.environmentId === environment?.id) ??
+      data.engines[0];
+    const nextComparison = data.comparisons.find(
+      (item) => item.sourceEnvironmentId === sourceEnvironmentId && item.targetEnvironmentId === targetEnvironmentId
+    ) ?? data.comparisons[0];
+
+    if (application && application.id !== selectedApplicationId) setSelectedApplicationId(application.id);
+    if (environment && environment.id !== selectedEnvironmentId) setSelectedEnvironmentId(environment.id);
+    if (engine && engine.id !== selectedEngineId) setSelectedEngineId(engine.id);
+    if (nextComparison && !sourceEnvironmentId) setSourceEnvironmentId(nextComparison.sourceEnvironmentId);
+    if (nextComparison && !targetEnvironmentId) setTargetEnvironmentId(nextComparison.targetEnvironmentId);
+  }, [data, selectedApplicationId, selectedEngineId, selectedEnvironmentId, sourceEnvironmentId, targetEnvironmentId]);
 
   const comparison = useMemo(() => {
     return data?.comparisons.find(
       (item) => item.sourceEnvironmentId === sourceEnvironmentId && item.targetEnvironmentId === targetEnvironmentId
-    );
+    ) ?? data?.comparisons[0];
   }, [data?.comparisons, sourceEnvironmentId, targetEnvironmentId]);
 
-  if (cockpit.isLoading) return <RequestStateView state="loading" title="Loading deployments" />;
+  if (workspaceContext.isLoading || cockpit.isLoading) return <RequestStateView state="loading" title="Loading deployments" />;
+  if (workspaceContext.isError) return <RequestStateView state="unexpected" title="Workspace context could not load" />;
+  if (!workspaceId) {
+    return <RequestStateView state="empty" title="No workspace selected" description="Sign in with a workspace membership to view deployments." />;
+  }
   if (cockpit.isError || !data || !selectedApplication || !selectedEngine) {
     return <RequestStateView state="unexpected" title="Deployments could not load" />;
+  }
+
+  function selectApplication(applicationId: string) {
+    const application = data?.applications.find((item) => item.id === applicationId);
+    const environment = application?.environments[0];
+    const engine = data?.engines.find((item) => item.environmentId === environment?.id);
+    setSelectedApplicationId(applicationId);
+    if (environment) setSelectedEnvironmentId(environment.id);
+    if (engine) setSelectedEngineId(engine.id);
+    setOperationNotice("");
   }
 
   function inspectEnvironment(environmentId: string) {
@@ -94,7 +141,7 @@ export function DeploymentsPage() {
             <Select
               className="mt-1 w-full"
               value={selectedApplication.id}
-              onChange={(event) => setSelectedApplicationId(event.target.value)}
+              onChange={(event) => selectApplication(event.target.value)}
             >
               {data.applications.map((application) => (
                 <option key={application.id} value={application.id}>
@@ -405,7 +452,7 @@ function PromotionView({
                 <tbody className="divide-y divide-border">
                   {comparison.diff.map((item) => (
                     <tr key={item.id}>
-                      <td className="px-3 py-3">{item.category}</td>
+                      <td className="px-3 py-3">{diffCategoryLabel(item.category)}</td>
                       <td className="px-3 py-3 font-medium">{item.name}</td>
                       <td className="px-3 py-3 text-muted-foreground">{item.sourceValue}</td>
                       <td className="px-3 py-3 text-muted-foreground">{item.targetValue}</td>
@@ -523,6 +570,16 @@ function AssistantPlanView({
   onReject: () => void;
 }) {
   const plan = data.assistantPlans[0];
+  if (!plan) {
+    return (
+      <RequestStateView
+        state="empty"
+        title="No assistant plan available"
+        description="Assistant review will appear after a deployment plan is generated for this workspace."
+      />
+    );
+  }
+
   const displayedStatus = outcome === "Proposed" ? plan.status : outcome;
   const blocked = hasBlockingValidation(plan.validations);
 
@@ -679,4 +736,19 @@ function validationTone(status: ValidationSeverity): StatusTone {
 
 function driftLabel(status: DriftStatus) {
   return status === "InSync" ? "In sync" : status === "DriftDetected" ? "Drift detected" : "Unknown";
+}
+
+function diffCategoryLabel(category: DiffCategory) {
+  switch (category) {
+    case "ShellConfiguration":
+      return "Shell configuration";
+    case "RuntimeConfiguration":
+      return "Runtime configuration";
+    case "SecretReferences":
+      return "Secret references";
+    case "EngineBindings":
+      return "Engine bindings";
+    default:
+      return category;
+  }
 }

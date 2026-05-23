@@ -16,6 +16,13 @@ public static class AdminDashboardRequestForgeryGuard
          HttpMethods.IsPatch(request.Method) ||
          HttpMethods.IsDelete(request.Method));
 
+    public static bool IsWorkspaceApiMutation(HttpRequest request) =>
+        request.Path.StartsWithSegments("/api/workspaces") &&
+        (HttpMethods.IsPost(request.Method) ||
+         HttpMethods.IsPut(request.Method) ||
+         HttpMethods.IsPatch(request.Method) ||
+         HttpMethods.IsDelete(request.Method));
+
     public static bool IsSameOriginBrowserRequest(HttpRequest request)
     {
         if (request.Headers.TryGetValue("Origin", out var origins))
@@ -79,15 +86,40 @@ public sealed class AdminDashboardRequestForgeryMiddleware(
 {
     public async Task InvokeAsync(HttpContext context)
     {
-        if (!AdminDashboardRequestForgeryGuard.IsAdminApiMutation(context.Request) ||
-            AdminDashboardRequestForgeryGuard.HasValidApiKey(context.Request, apiKeyValidator))
+        if (AdminDashboardRequestForgeryGuard.IsAdminApiMutation(context.Request))
+        {
+            if (AdminDashboardRequestForgeryGuard.HasValidApiKey(context.Request, apiKeyValidator))
+            {
+                await next(context);
+                return;
+            }
+
+            var adminCookieResult = await context.AuthenticateAsync(AdminDashboardAuthenticationDefaults.Scheme);
+            if (!adminCookieResult.Succeeded)
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return;
+            }
+
+            if (!AdminDashboardRequestForgeryGuard.IsSameOriginBrowserRequest(context.Request))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
+            await next(context);
+            return;
+        }
+
+        if (!AdminDashboardRequestForgeryGuard.IsWorkspaceApiMutation(context.Request) ||
+            PlatformIdentityReader.HasBearerToken(context.Request.HttpContext))
         {
             await next(context);
             return;
         }
 
-        var cookieResult = await context.AuthenticateAsync(AdminDashboardAuthenticationDefaults.Scheme);
-        if (!cookieResult.Succeeded)
+        var customerCookieResult = await context.AuthenticateAsync(CustomerAuthenticationDefaults.CookieScheme);
+        if (!customerCookieResult.Succeeded)
         {
             await next(context);
             return;
