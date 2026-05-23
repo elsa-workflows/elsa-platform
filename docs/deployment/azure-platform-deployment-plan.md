@@ -25,6 +25,11 @@ The API runs with:
 - `Authentication__ApiKey=<strong deployment secret>`
 - optional `Authentication__BuilderClientApiKey=<strong deployment secret>`
 
+For SaaS customer login, enable the optional Keycloak stack in `infra/main.bicep`
+with `deployKeycloak=true`. This provisions a separate Keycloak Web App,
+PostgreSQL Flexible Server, and API OIDC app settings. The production runbook is
+documented in [keycloak-saas.md](keycloak-saas.md).
+
 The API applies EF Core SQL Server migrations at startup outside the `Testing` environment.
 
 ## Deployment Flow
@@ -94,6 +99,10 @@ For app-only deployments, the workflow needs only the OIDC and Azure resource va
 
 Initial IaC uses secure Bicep parameters for the API key and SQL administrator password. Do not commit real parameter files. For CI/CD, pass these values from the target environment secret store.
 
+The admin API key is for machine-to-machine administration only. Browser users
+sign in through the platform OIDC provider and receive a platform session cookie.
+Admin UI/API access is granted by the `platform_admin` role.
+
 Later hardening should move the connection string and application credentials into Key Vault references and replace SQL password auth with Microsoft Entra database users once database principal provisioning is part of the deployment pipeline.
 
 ## Operational Checks
@@ -105,7 +114,8 @@ curl https://<web-app-name>.azurewebsites.net/health
 curl -I https://<web-app-name>.azurewebsites.net/admin
 ```
 
-Then sign into `/admin/login` with the configured admin API key.
+Then open `/admin`. Anonymous browser requests redirect to the platform OIDC
+sign-in flow.
 
 ## Known Follow-Ups
 
@@ -113,3 +123,5 @@ Then sign into `/admin/login` with the configured admin API key.
 - Add backup, restore, and retention policy decisions for Azure SQL before production data is material.
 - Add private networking once the platform has stable network boundaries.
 - Add Key Vault references and Entra-only SQL auth as a hardening slice.
+- Add Key Vault references and private networking for the optional Keycloak
+  PostgreSQL database before public SaaS launch.

@@ -20,13 +20,21 @@ public sealed class PlatformIdentityReader(IOptions<PlatformIdentityOptions> opt
     {
         var result = await context.AuthenticateAsync(PlatformIdentityDefaults.Scheme);
         var user = result.Succeeded ? result.Principal : context.User;
-        if (user.Identity is not { IsAuthenticated: true })
+        return PlatformClaimsIdentityMapper.ToTrustedWorkspaceIdentity(user, _options);
+    }
+}
+
+internal static class PlatformClaimsIdentityMapper
+{
+    public static TrustedWorkspaceIdentity? ToTrustedWorkspaceIdentity(ClaimsPrincipal? user, PlatformIdentityOptions options)
+    {
+        if (user?.Identity is not { IsAuthenticated: true })
             return null;
 
         var issuer = ClaimValue(user, JwtRegisteredClaimNames.Iss)
-            ?? _options.Issuer
-            ?? _options.Authority;
-        var subject = ClaimValue(user, _options.Claims.Subject)
+            ?? options.Issuer
+            ?? options.Authority;
+        var subject = ClaimValue(user, options.Claims.Subject)
             ?? ClaimValue(user, ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(issuer) || string.IsNullOrWhiteSpace(subject))
             return null;
@@ -34,10 +42,10 @@ public sealed class PlatformIdentityReader(IOptions<PlatformIdentityOptions> opt
         return new TrustedWorkspaceIdentity(
             issuer,
             subject,
-            FirstClaimValue(user, _options.Claims.DisplayName)
+            FirstClaimValue(user, options.Claims.DisplayName)
                 ?? ClaimValue(user, JwtRegisteredClaimNames.Name)
                 ?? ClaimValue(user, ClaimTypes.Name),
-            FirstClaimValue(user, _options.Claims.Email)
+            FirstClaimValue(user, options.Claims.Email)
                 ?? ClaimValue(user, JwtRegisteredClaimNames.Email)
                 ?? ClaimValue(user, ClaimTypes.Email));
     }

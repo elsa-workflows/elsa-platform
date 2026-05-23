@@ -94,8 +94,8 @@ public sealed class AdminDashboardRequestForgeryMiddleware(
                 return;
             }
 
-            var adminCookieResult = await context.AuthenticateAsync(AdminDashboardAuthenticationDefaults.Scheme);
-            if (!adminCookieResult.Succeeded)
+            var customerCookieResult = await context.AuthenticateAsync(CustomerAuthenticationDefaults.CookieScheme);
+            if (!customerCookieResult.Succeeded)
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 return;
@@ -118,8 +118,8 @@ public sealed class AdminDashboardRequestForgeryMiddleware(
             return;
         }
 
-        var customerCookieResult = await context.AuthenticateAsync(CustomerAuthenticationDefaults.CookieScheme);
-        if (!customerCookieResult.Succeeded)
+        var customerResult = await context.AuthenticateAsync(CustomerAuthenticationDefaults.CookieScheme);
+        if (!customerResult.Succeeded)
         {
             await next(context);
             return;

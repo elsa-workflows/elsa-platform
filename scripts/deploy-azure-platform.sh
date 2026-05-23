@@ -14,6 +14,13 @@ SQL_ADMINISTRATOR_LOGIN="${SQL_ADMINISTRATOR_LOGIN:-elsaadmin}"
 ADMIN_API_KEY="${ADMIN_API_KEY:-}"
 BUILDER_CLIENT_API_KEY="${BUILDER_CLIENT_API_KEY:-}"
 SQL_ADMINISTRATOR_PASSWORD="${SQL_ADMINISTRATOR_PASSWORD:-}"
+DEPLOY_KEYCLOAK="${DEPLOY_KEYCLOAK:-false}"
+KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-}"
+KEYCLOAK_POSTGRES_ADMINISTRATOR_PASSWORD="${KEYCLOAK_POSTGRES_ADMINISTRATOR_PASSWORD:-}"
+KEYCLOAK_CLIENT_SECRET="${KEYCLOAK_CLIENT_SECRET:-}"
+KEYCLOAK_REALM="${KEYCLOAK_REALM:-elsa-platform}"
+KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-elsa-platform-console}"
+KEYCLOAK_START_COMMAND="${KEYCLOAK_START_COMMAND:-}"
 SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-}"
 WHAT_IF=false
 
@@ -28,6 +35,7 @@ Options:
   --subscription <id>        Azure subscription ID. Can also use AZURE_SUBSCRIPTION_ID.
   --image-tag <tag>          Container image tag. Default: current git SHA.
   --docker-platform <value>  Docker target platform. Default: linux/amd64.
+  --deploy-keycloak          Provision/update the optional Keycloak identity stack.
   --what-if                  Preview the infrastructure deployment only.
   -h, --help                 Show this help.
 
@@ -37,6 +45,13 @@ Required environment variables:
 
 Optional environment variables:
   BUILDER_CLIENT_API_KEY
+  DEPLOY_KEYCLOAK
+  KEYCLOAK_ADMIN_PASSWORD
+  KEYCLOAK_POSTGRES_ADMINISTRATOR_PASSWORD
+  KEYCLOAK_CLIENT_SECRET
+  KEYCLOAK_REALM
+  KEYCLOAK_CLIENT_ID
+  KEYCLOAK_START_COMMAND
   SQL_ADMINISTRATOR_LOGIN
   DOCKER_PLATFORM
 USAGE
@@ -71,6 +86,10 @@ while [[ $# -gt 0 ]]; do
     --docker-platform)
       DOCKER_PLATFORM="$2"
       shift 2
+      ;;
+    --deploy-keycloak)
+      DEPLOY_KEYCLOAK=true
+      shift
       ;;
     --what-if)
       WHAT_IF=true
@@ -113,6 +132,11 @@ fi
 
 require_secret ADMIN_API_KEY
 require_secret SQL_ADMINISTRATOR_PASSWORD
+if [[ "$DEPLOY_KEYCLOAK" == true ]]; then
+  require_secret KEYCLOAK_ADMIN_PASSWORD
+  require_secret KEYCLOAK_POSTGRES_ADMINISTRATOR_PASSWORD
+  require_secret KEYCLOAK_CLIENT_SECRET
+fi
 
 if [[ -n "$SUBSCRIPTION_ID" ]]; then
   az account set --subscription "$SUBSCRIPTION_ID"
@@ -146,6 +170,13 @@ write_parameters_file() {
   BUILDER_CLIENT_API_KEY="$BUILDER_CLIENT_API_KEY" \
   SQL_ADMINISTRATOR_LOGIN="$SQL_ADMINISTRATOR_LOGIN" \
   SQL_ADMINISTRATOR_PASSWORD="$SQL_ADMINISTRATOR_PASSWORD" \
+  DEPLOY_KEYCLOAK="$DEPLOY_KEYCLOAK" \
+  KEYCLOAK_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD" \
+  KEYCLOAK_POSTGRES_ADMINISTRATOR_PASSWORD="$KEYCLOAK_POSTGRES_ADMINISTRATOR_PASSWORD" \
+  KEYCLOAK_CLIENT_SECRET="$KEYCLOAK_CLIENT_SECRET" \
+  KEYCLOAK_REALM="$KEYCLOAK_REALM" \
+  KEYCLOAK_CLIENT_ID="$KEYCLOAK_CLIENT_ID" \
+  KEYCLOAK_START_COMMAND="$KEYCLOAK_START_COMMAND" \
   CONTAINER_IMAGE="$container_image" \
   python3 - "$file_path" <<'PY'
 import json
@@ -159,7 +190,20 @@ parameters = {
     "builderClientApiKey": os.environ["BUILDER_CLIENT_API_KEY"],
     "sqlAdministratorLogin": os.environ["SQL_ADMINISTRATOR_LOGIN"],
     "sqlAdministratorPassword": os.environ["SQL_ADMINISTRATOR_PASSWORD"],
+    "deployKeycloak": os.environ["DEPLOY_KEYCLOAK"].lower() == "true",
 }
+
+if parameters["deployKeycloak"]:
+    parameters.update({
+        "keycloakAdminPassword": os.environ["KEYCLOAK_ADMIN_PASSWORD"],
+        "keycloakPostgresAdministratorPassword": os.environ["KEYCLOAK_POSTGRES_ADMINISTRATOR_PASSWORD"],
+        "keycloakClientSecret": os.environ["KEYCLOAK_CLIENT_SECRET"],
+        "keycloakRealm": os.environ["KEYCLOAK_REALM"],
+        "keycloakClientId": os.environ["KEYCLOAK_CLIENT_ID"],
+    })
+    keycloak_start_command = os.environ["KEYCLOAK_START_COMMAND"]
+    if keycloak_start_command:
+        parameters["keycloakStartCommand"] = keycloak_start_command
 
 container_image = os.environ["CONTAINER_IMAGE"]
 if container_image:

@@ -71,6 +71,43 @@ dotnet run --project src/Elsa.Platform.PackageCatalog.Api
 
 The API exposes `/health`, OpenAPI metadata, public catalog endpoints, workspace endpoints, and the admin console route under `/admin`. In development it uses SQLite by default with the connection string from `appsettings.Development.json`.
 
+Local development uses `GenericOidc`-style JWT bearer validation for workspace APIs. Generate a local token that matches `appsettings.Development.json`:
+
+```bash
+chmod +x scripts/create-local-platform-jwt.sh
+TOKEN="$(scripts/create-local-platform-jwt.sh)"
+curl -H "Authorization: Bearer $TOKEN" http://localhost:5220/api/me/workspaces
+```
+
+The local token defaults to issuer `https://local.elsa-platform.test`, audience `elsa-platform-dev`, subject `user-123`, and a one-hour lifetime. Pass a different subject/name/email when you need another user:
+
+```bash
+TOKEN="$(scripts/create-local-platform-jwt.sh user-456 'Grace Hopper' grace@example.test)"
+```
+
+For a browser sign-in flow, start the local Keycloak realm and run the API with the `Keycloak` environment on HTTPS:
+
+```bash
+docker compose -f docker-compose.identity.yml up
+dotnet dev-certs https --trust
+ASPNETCORE_ENVIRONMENT=Keycloak dotnet run --project src/Elsa.Platform.PackageCatalog.Api --launch-profile https
+```
+
+Then open the console and use a workspace-only view such as Runtime Builder:
+
+```text
+https://localhost:5221/admin/runtime-builder
+```
+
+When the view needs workspace identity it links to `/api/auth/login`, which starts the OIDC authorization-code flow against Keycloak and returns to the console with an HttpOnly customer session cookie. The imported local user is:
+
+```text
+username: ada
+password: password
+```
+
+The local Keycloak admin console is available at `http://localhost:8080` with `admin` / `admin`.
+
 Run the Aspire host:
 
 ```bash
