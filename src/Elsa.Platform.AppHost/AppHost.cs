@@ -54,7 +54,7 @@ if (builder.ExecutionContext.IsPublishMode)
 }
 else
 {
-    const string keycloakAuthority = "http://localhost:8080/realms/elsa-platform";
+    const string keycloakAuthority = "https://localhost:8080/realms/elsa-platform";
     const string keycloakClientId = "elsa-platform-console";
     const string keycloakClientSecret = "local-dev-secret";
     var keycloakAdminUsername = builder.AddParameter("keycloak-admin-username", "admin");

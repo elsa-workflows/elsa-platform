@@ -15,7 +15,7 @@ namespace Elsa.Platform.Api.Tests;
 public sealed class AdminDashboardAuthenticationTests
 {
     [Fact]
-    public async Task Dashboard_route_redirects_anonymous_browser_to_platform_sign_in()
+    public async Task Dashboard_route_renders_local_console_shell_without_starting_oidc_challenge()
     {
         await using var app = new PlatformApiTestApplication();
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
@@ -24,12 +24,13 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        response.Headers.Location!.OriginalString.Should().StartWith($"{CustomerAuthenticationDefaults.LoginPath}?returnUrl=");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.Location.Should().BeNull();
+        (await response.Content.ReadAsStringAsync()).Should().Contain("/api/auth/login?returnUrl=%2Fadmin%2Foverview");
     }
 
     [Fact]
-    public async Task Dashboard_root_redirects_anonymous_browser_to_platform_sign_in()
+    public async Task Dashboard_root_redirects_to_console_shell()
     {
         await using var app = new PlatformApiTestApplication();
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
@@ -39,17 +40,32 @@ public sealed class AdminDashboardAuthenticationTests
         var response = await client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        response.Headers.Location!.OriginalString.Should().StartWith($"{CustomerAuthenticationDefaults.LoginPath}?returnUrl=");
+        response.Headers.Location!.OriginalString.Should().Be("/admin/");
     }
 
     [Fact]
-    public async Task Dashboard_asset_rejects_anonymous_non_browser_request()
+    public async Task Dashboard_shell_renders_local_sign_in_fallback_without_starting_oidc_challenge()
+    {
+        await using var app = new PlatformApiTestApplication();
+        var client = app.CreateClient(new() { AllowAutoRedirect = false });
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.Location.Should().BeNull();
+        (await response.Content.ReadAsStringAsync()).Should().Contain("/api/auth/login?returnUrl=%2Fadmin%2Foverview");
+    }
+
+    [Fact]
+    public async Task Missing_dashboard_asset_remains_not_found()
     {
         await using var app = new PlatformApiTestApplication();
         var response = await app.CreateClient(new() { AllowAutoRedirect = false })
             .GetAsync("/admin/assets/index.js");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]

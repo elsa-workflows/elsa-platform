@@ -42,7 +42,10 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
+
+IdentityModelEventSource.ShowPII = true;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -259,7 +262,11 @@ app.UseAuthorization();
 app.MapOpenApi();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapGet("/", () => "Elsa Platform API");
-app.MapGet("/admin", () => TypedResults.Redirect("/admin/overview"));
+if (!AdminConsoleAssetsExist(app.Environment))
+{
+    app.MapGet("/admin/", () => Results.Content(AdminConsoleFallbackPage(), "text/html"));
+    app.MapGet("/admin/{*path:nonfile}", () => Results.Content(AdminConsoleFallbackPage(), "text/html"));
+}
 app.MapCustomerAuthEndpoints();
 app.MapAdminDashboardAuthEndpoints();
 app.MapPublicPackageEndpoints();
@@ -280,7 +287,8 @@ app.MapAdminPackageEndpoints();
 app.MapAdminApprovalEndpoints();
 app.MapAdminValidationEndpoints();
 app.MapAdminWorkspaceEntitlementEndpoints();
-app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
+if (AdminConsoleAssetsExist(app.Environment))
+    app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
 
 app.Run();
 
@@ -296,6 +304,36 @@ static PathString PathStringFromUri(string? uri, string fallback)
         ? new PathString(uri)
         : new PathString(fallback);
 }
+
+static bool AdminConsoleAssetsExist(IWebHostEnvironment environment) =>
+    !string.IsNullOrWhiteSpace(environment.WebRootPath) &&
+    File.Exists(Path.Combine(environment.WebRootPath, "admin", "index.html"));
+
+static string AdminConsoleFallbackPage() =>
+    """
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Elsa Platform Console</title>
+        <style>
+          body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8fafc; color: #0f172a; }
+          main { width: min(440px, calc(100vw - 32px)); border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; padding: 24px; box-shadow: 0 16px 40px rgb(15 23 42 / 0.08); }
+          h1 { margin: 0 0 8px; font-size: 1.35rem; }
+          p { margin: 0 0 20px; color: #475569; line-height: 1.5; }
+          a { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; border-radius: 6px; background: #2563eb; color: #fff; padding: 0 16px; font-weight: 600; text-decoration: none; }
+        </style>
+      </head>
+      <body>
+        <main>
+          <h1>Elsa Platform Console</h1>
+          <p>Sign in with the configured local identity provider to continue.</p>
+          <a href="/api/auth/login?returnUrl=%2Fadmin%2Foverview">Sign in</a>
+        </main>
+      </body>
+    </html>
+    """;
 
 [UsedImplicitly]
 public partial class Program;

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.Options;
 
 namespace Elsa.Platform.Api.Authentication;
@@ -25,14 +26,28 @@ public static class CustomerAuthEndpoints
                 CustomerAuthenticationDefaults.LogoutPath));
         }).AllowAnonymous();
 
-        group.MapGet("/login", (
+        group.MapGet("/login", async (
             IOptions<PlatformIdentityOptions> options,
+            IOptionsMonitor<OpenIdConnectOptions> oidcOptionsMonitor,
             string? returnUrl) =>
         {
             if (!options.Value.IsCustomerLoginConfigured)
             {
                 return Results.Problem(
                     title: "Customer login is not configured.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            var oidcOptions = oidcOptionsMonitor.Get(CustomerAuthenticationDefaults.OidcScheme);
+            try
+            {
+                await oidcOptions.ConfigurationManager!.GetConfigurationAsync(CancellationToken.None);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(
+                    title: "Identity provider is currently unavailable.",
+                    detail: ex.Message,
                     statusCode: StatusCodes.Status503ServiceUnavailable);
             }
 
