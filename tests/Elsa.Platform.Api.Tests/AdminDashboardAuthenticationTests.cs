@@ -6,6 +6,11 @@ using Elsa.Platform.Api.Authentication;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
@@ -66,6 +71,22 @@ public sealed class AdminDashboardAuthenticationTests
             .GetAsync("/admin/assets/index.js");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Dashboard_route_proxies_to_development_console_when_configured()
+    {
+        await using var console = await DevelopmentConsoleStub.StartAsync();
+        await using var app = new PlatformApiTestApplication(new Dictionary<string, string?>
+        {
+            [AdminDashboardAuthenticationDefaults.DevelopmentUrlConfigurationKey] = console.Url
+        });
+
+        var response = await app.CreateClient(new() { AllowAutoRedirect = false })
+            .GetAsync("/admin/overview?tab=workspaces");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().Be("/admin/overview?tab=workspaces");
     }
 
     [Fact]
@@ -310,5 +331,29 @@ public sealed class AdminDashboardAuthenticationTests
         var ticket = new AuthenticationTicket(principal, CustomerAuthenticationDefaults.CookieScheme);
         var cookie = options.TicketDataFormat.Protect(ticket);
         client.DefaultRequestHeaders.Add("Cookie", $"{CustomerAuthenticationDefaults.CookieName}={cookie}");
+    }
+
+    private sealed class DevelopmentConsoleStub(WebApplication app, string url) : IAsyncDisposable
+    {
+        private readonly WebApplication _app = app;
+
+        public string Url { get; } = url;
+
+        public static async Task<DevelopmentConsoleStub> StartAsync()
+        {
+            var builder = WebApplication.CreateSlimBuilder();
+            builder.WebHost.UseKestrel().UseUrls("http://127.0.0.1:0");
+            var app = builder.Build();
+            app.MapGet("/admin/{*path}", (HttpRequest request) =>
+                Results.Text($"{request.Path}{request.QueryString}", "text/plain"));
+            await app.StartAsync();
+
+            var addresses = app.Services.GetRequiredService<IServer>()
+                .Features.Get<IServerAddressesFeature>()!;
+            return new DevelopmentConsoleStub(app, addresses.Addresses.Single());
+        }
+
+        public async ValueTask DisposeAsync() =>
+            await _app.DisposeAsync();
     }
 }

@@ -2,7 +2,7 @@
   "realm": "elsa-platform",
   "enabled": true,
   "displayName": "Elsa Platform",
-  "registrationAllowed": false,
+  "registrationAllowed": true,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": true,

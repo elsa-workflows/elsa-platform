@@ -54,6 +54,7 @@ builder.AddServiceDefaults();
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient(AdminDashboardAuthenticationDefaults.DevelopmentUrlConfigurationKey);
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
@@ -97,44 +98,7 @@ if (configuredPlatformIdentity.IsCustomerLoginConfigured)
     authentication.AddOpenIdConnect(CustomerAuthenticationDefaults.OidcScheme, _ => { });
     builder.Services.AddOptions<OpenIdConnectOptions>(CustomerAuthenticationDefaults.OidcScheme)
         .Configure<IOptions<PlatformIdentityOptions>>((options, platformIdentityOptions) =>
-        {
-            var platformIdentity = platformIdentityOptions.Value;
-            options.SignInScheme = CustomerAuthenticationDefaults.CookieScheme;
-            options.ResponseType = "code";
-            options.UsePkce = true;
-            options.SaveTokens = true;
-            options.MapInboundClaims = false;
-            options.RequireHttpsMetadata = platformIdentity.RequireHttpsMetadata;
-            options.Authority = string.IsNullOrWhiteSpace(platformIdentity.Authority) ? null : platformIdentity.Authority;
-            options.ClientId = string.IsNullOrWhiteSpace(platformIdentity.ClientId) ? null : platformIdentity.ClientId;
-            options.ClientSecret = string.IsNullOrWhiteSpace(platformIdentity.ClientSecret) ? null : platformIdentity.ClientSecret;
-            options.CallbackPath = PathStringFromUri(platformIdentity.RedirectUri, CustomerAuthenticationDefaults.CallbackPath);
-            options.SignedOutCallbackPath = PathStringFromUri(platformIdentity.PostLogoutRedirectUri, "/api/auth/logout-callback");
-            options.SignedOutRedirectUri = string.IsNullOrWhiteSpace(platformIdentity.PostLogoutRedirectUri)
-                ? CustomerAuthenticationDefaults.DefaultReturnPath
-                : platformIdentity.PostLogoutRedirectUri;
-            options.Scope.Clear();
-            foreach (var scope in platformIdentity.Scopes.Where(scope => !string.IsNullOrWhiteSpace(scope)).Select(scope => scope.Trim()).Distinct(StringComparer.Ordinal))
-                options.Scope.Add(scope);
-            options.TokenValidationParameters = new TokenValidationParameters
-            {
-                ValidateIssuer = !string.IsNullOrWhiteSpace(platformIdentity.Issuer) || !string.IsNullOrWhiteSpace(platformIdentity.Authority),
-                ValidIssuer = string.IsNullOrWhiteSpace(platformIdentity.Issuer)
-                    ? (string.IsNullOrWhiteSpace(platformIdentity.Authority) ? null : platformIdentity.Authority)
-                    : platformIdentity.Issuer,
-                NameClaimType = platformIdentity.Claims.DisplayName.FirstOrDefault() ?? "name",
-                RoleClaimType = "role",
-                ValidateAudience = !string.IsNullOrWhiteSpace(platformIdentity.ClientId),
-                ValidAudience = string.IsNullOrWhiteSpace(platformIdentity.ClientId) ? null : platformIdentity.ClientId
-            };
-            options.Events.OnTokenValidated = context =>
-            {
-                if (context.Properties is { } properties)
-                    properties.StoreTokens(properties.GetTokens().Where(token => token.Name == "id_token"));
-
-                return Task.CompletedTask;
-            };
-        });
+            CustomerOidcOptionsConfigurator.Configure(options, platformIdentityOptions.Value));
 }
 builder.Services.AddOptions<JwtBearerOptions>(PlatformIdentityDefaults.Scheme)
     .Configure<IOptions<PlatformIdentityOptions>>((options, platformIdentityOptions) =>
@@ -262,7 +226,15 @@ app.UseAuthorization();
 app.MapOpenApi();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapGet("/", () => "Elsa Platform API");
-if (!AdminConsoleAssetsExist(app.Environment))
+if (!AdminConsoleAssetsExist(app.Environment) &&
+    GetAdminConsoleDevelopmentUrl(app.Configuration) is { } adminConsoleDevelopmentUrl)
+{
+    app.MapMethods("/admin/{*path}", [HttpMethods.Get, HttpMethods.Head], (
+        HttpContext context,
+        IHttpClientFactory httpClientFactory) =>
+        ProxyAdminConsoleDevelopmentServerAsync(context, httpClientFactory, adminConsoleDevelopmentUrl));
+}
+else if (!AdminConsoleAssetsExist(app.Environment))
 {
     app.MapGet("/admin/", () => Results.Content(AdminConsoleFallbackPage(), "text/html"));
     app.MapGet("/admin/{*path:nonfile}", () => Results.Content(AdminConsoleFallbackPage(), "text/html"));
@@ -292,22 +264,101 @@ if (AdminConsoleAssetsExist(app.Environment))
 
 app.Run();
 
-static PathString PathStringFromUri(string? uri, string fallback)
-{
-    if (string.IsNullOrWhiteSpace(uri))
-        return new PathString(fallback);
-
-    if (Uri.TryCreate(uri, UriKind.Absolute, out var absolute))
-        return new PathString(absolute.AbsolutePath);
-
-    return uri.StartsWith("/", StringComparison.Ordinal)
-        ? new PathString(uri)
-        : new PathString(fallback);
-}
-
 static bool AdminConsoleAssetsExist(IWebHostEnvironment environment) =>
     !string.IsNullOrWhiteSpace(environment.WebRootPath) &&
     File.Exists(Path.Combine(environment.WebRootPath, "admin", "index.html"));
+
+static Uri? GetAdminConsoleDevelopmentUrl(IConfiguration configuration)
+{
+    var value = configuration[AdminDashboardAuthenticationDefaults.DevelopmentUrlConfigurationKey];
+    return Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+           (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+        ? uri
+        : null;
+}
+
+static async Task ProxyAdminConsoleDevelopmentServerAsync(
+    HttpContext context,
+    IHttpClientFactory httpClientFactory,
+    Uri adminConsoleDevelopmentUrl)
+{
+    var targetUri = GetAdminConsoleDevelopmentProxyUri(adminConsoleDevelopmentUrl, context.Request.Path, context.Request.QueryString);
+    using var request = new HttpRequestMessage(new HttpMethod(context.Request.Method), targetUri);
+    CopyProxyRequestHeaders(context.Request, request);
+
+    var client = httpClientFactory.CreateClient(AdminDashboardAuthenticationDefaults.DevelopmentUrlConfigurationKey);
+    using var response = await SendAdminConsoleDevelopmentProxyRequestAsync(
+        client,
+        request,
+        context,
+        adminConsoleDevelopmentUrl);
+    if (response is null)
+        return;
+
+    context.Response.StatusCode = (int)response.StatusCode;
+    CopyProxyResponseHeaders(response, context.Response);
+
+    if (!HttpMethods.IsHead(context.Request.Method))
+        await response.Content.CopyToAsync(context.Response.Body, context.RequestAborted);
+}
+
+static async Task<HttpResponseMessage?> SendAdminConsoleDevelopmentProxyRequestAsync(
+    HttpClient client,
+    HttpRequestMessage request,
+    HttpContext context,
+    Uri adminConsoleDevelopmentUrl)
+{
+    try
+    {
+        return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
+    }
+    catch (HttpRequestException)
+    {
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        context.Response.ContentType = "text/html";
+        if (!HttpMethods.IsHead(context.Request.Method))
+            await context.Response.WriteAsync(AdminConsoleDevelopmentUnavailablePage(adminConsoleDevelopmentUrl), context.RequestAborted);
+        return null;
+    }
+}
+
+static Uri GetAdminConsoleDevelopmentProxyUri(Uri adminConsoleDevelopmentUrl, PathString requestPath, QueryString queryString)
+{
+    var basePath = adminConsoleDevelopmentUrl.AbsolutePath.TrimEnd('/');
+    var path = requestPath.Value ?? "/admin/";
+    var builder = new UriBuilder(adminConsoleDevelopmentUrl)
+    {
+        Path = $"{basePath}{path}",
+        Query = queryString.HasValue ? queryString.Value![1..] : string.Empty
+    };
+    return builder.Uri;
+}
+
+static void CopyProxyRequestHeaders(HttpRequest source, HttpRequestMessage target)
+{
+    foreach (var header in source.Headers)
+    {
+        if (string.Equals(header.Key, "Host", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(header.Key, "Cookie", StringComparison.OrdinalIgnoreCase))
+        {
+            continue;
+        }
+
+        if (!target.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray()))
+            target.Content?.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+    }
+}
+
+static void CopyProxyResponseHeaders(HttpResponseMessage source, HttpResponse target)
+{
+    foreach (var header in source.Headers)
+        target.Headers[header.Key] = header.Value.ToArray();
+
+    foreach (var header in source.Content.Headers)
+        target.Headers[header.Key] = header.Value.ToArray();
+
+    target.Headers.Remove("transfer-encoding");
+}
 
 static string AdminConsoleFallbackPage() =>
     """
@@ -330,6 +381,32 @@ static string AdminConsoleFallbackPage() =>
           <h1>Elsa Platform Console</h1>
           <p>Sign in with the configured local identity provider to continue.</p>
           <a href="/api/auth/login?returnUrl=%2Fadmin%2Foverview">Sign in</a>
+        </main>
+      </body>
+    </html>
+    """;
+
+static string AdminConsoleDevelopmentUnavailablePage(Uri adminConsoleDevelopmentUrl) =>
+    $$"""
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Elsa Platform Console</title>
+        <style>
+          body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8fafc; color: #0f172a; }
+          main { width: min(520px, calc(100vw - 32px)); border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; padding: 24px; box-shadow: 0 16px 40px rgb(15 23 42 / 0.08); }
+          h1 { margin: 0 0 8px; font-size: 1.35rem; }
+          p { margin: 0 0 20px; color: #475569; line-height: 1.5; }
+          code { border-radius: 4px; background: #f1f5f9; padding: 2px 5px; }
+        </style>
+      </head>
+      <body>
+        <main>
+          <h1>Elsa Platform Console</h1>
+          <p>The local console dev server is not responding at <code>{{adminConsoleDevelopmentUrl}}</code>.</p>
+          <p>Start the Aspire console resource or run <code>npm run dev</code> in <code>src/Elsa.Platform.Console</code>, then refresh this page.</p>
         </main>
       </body>
     </html>

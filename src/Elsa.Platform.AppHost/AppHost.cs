@@ -54,7 +54,7 @@ if (builder.ExecutionContext.IsPublishMode)
 }
 else
 {
-    const string keycloakAuthority = "https://localhost:8080/realms/elsa-platform";
+    const string keycloakAuthority = "https://127.0.0.1:8080/realms/elsa-platform";
     const string keycloakClientId = "elsa-platform-console";
     const string keycloakClientSecret = "local-dev-secret";
     var keycloakAdminUsername = builder.AddParameter("keycloak-admin-username", "admin");
@@ -66,9 +66,15 @@ else
             port: 8080,
             adminUsername: keycloakAdminUsername,
             adminPassword: keycloakAdminPassword)
+        .WithDataVolume("elsa-platform-keycloak-data")
         .WithRealmImport(keycloakRealmImport);
+    var console = builder.AddViteApp("console", "../Elsa.Platform.Console")
+        .WithReference(api)
+        .WithEnvironment("CATALOG_API_PROXY_TARGET", api.GetEndpoint("http"))
+        .WaitFor(api);
 
     api.WithEnvironment("Database__Provider", "Sqlite")
+        .WithEnvironment("Console__DevelopmentUrl", console.GetEndpoint("http"))
         .WithEnvironment("ConnectionStrings__Catalog", "Data Source=elsa-catalog-dev.db")
         .WithEnvironment("Authentication__PlatformIdentity__Provider", "Keycloak")
         .WithEnvironment("Authentication__PlatformIdentity__Authority", keycloakAuthority)
@@ -81,11 +87,6 @@ else
         .WithEnvironment("Authentication__PlatformIdentity__RequireHttpsMetadata", "false")
         .WithEnvironment("Authentication__WorkspaceTrustedHeaders__Enabled", "false")
         .WaitFor(keycloak);
-
-    builder.AddViteApp("console", "../Elsa.Platform.Console")
-        .WithReference(api)
-        .WithEnvironment("CATALOG_API_PROXY_TARGET", api.GetEndpoint("http"))
-        .WaitFor(api);
 }
 
 builder.Build().Run();

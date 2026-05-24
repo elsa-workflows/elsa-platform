@@ -2,6 +2,7 @@ using System.Net;
 using Elsa.Platform.Api.Authentication;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
@@ -76,6 +77,22 @@ public sealed class CustomerAuthenticationTests
         customer.Cookie.HttpOnly.Should().BeTrue();
         customer.ExpireTimeSpan.Should().Be(CustomerAuthenticationDefaults.SessionLifetime);
         customer.SlidingExpiration.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Customer_oidc_challenge_uses_callback_scoped_cookies_without_pushed_authorization()
+    {
+        var options = new OpenIdConnectOptions();
+        CustomerOidcOptionsConfigurator.Configure(options, new PlatformIdentityOptions
+        {
+            Authority = "https://identity.example/realms/elsa-platform",
+            ClientId = "elsa-platform-console",
+            RedirectUri = CustomerAuthenticationDefaults.CallbackPath
+        });
+
+        options.PushedAuthorizationBehavior.Should().Be(PushedAuthorizationBehavior.Disable);
+        options.CorrelationCookie.Path.Should().Be(CustomerAuthenticationDefaults.CallbackPath);
+        options.NonceCookie.Path.Should().Be(CustomerAuthenticationDefaults.CallbackPath);
     }
 
     [Fact]

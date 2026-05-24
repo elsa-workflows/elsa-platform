@@ -85,18 +85,19 @@ The local token defaults to issuer `https://local.elsa-platform.test`, audience 
 TOKEN="$(scripts/create-local-platform-jwt.sh user-456 'Grace Hopper' grace@example.test)"
 ```
 
-For a browser sign-in flow, start the local Keycloak realm and run the API with the `Keycloak` environment on HTTPS:
+For a browser sign-in flow, start the local Keycloak realm, API, and console dev server in separate terminals:
 
 ```bash
 docker compose -f docker-compose.identity.yml up
 dotnet dev-certs https --trust
 ASPNETCORE_ENVIRONMENT=Keycloak dotnet run --project src/Elsa.Platform.Api --launch-profile https
+cd src/Elsa.Platform.Console && npm install && npm run dev
 ```
 
 Then open the console and use a workspace-only view such as Runtime Builder:
 
 ```text
-https://localhost:5221/admin/runtime-builder
+https://localhost:7094/admin/runtime-builder
 ```
 
 When the view needs workspace identity it links to `/api/auth/login`, which starts the OIDC authorization-code flow against Keycloak and returns to the console with an HttpOnly customer session cookie. The imported local user is:
@@ -106,7 +107,9 @@ username: ada
 password: password
 ```
 
-The local Keycloak admin console is available at `http://localhost:8080` with `admin` / `admin`.
+Local Keycloak authorities use `127.0.0.1` instead of `localhost` so browser cookies from the console/API host are not sent to Keycloak on a different port.
+
+The local Keycloak admin console is available at `http://127.0.0.1:8080` with `admin` / `admin`.
 
 Run the Aspire host:
 
@@ -116,10 +119,18 @@ dotnet run --project src/Elsa.Platform.AppHost
 
 In local Aspire runs, the dashboard starts Keycloak, the API, and the Vite-based
 console. The Aspire-managed Keycloak instance imports
-`dev/keycloak/elsa-platform-realm.json`, listens on `http://localhost:8080`, and
-uses `admin` / `admin` for the local admin console. The imported console user is
-`ada` / `password`. Production publish still serves the built console assets from
-the API container under `/admin`.
+`dev/keycloak/elsa-platform-realm.json`, listens on `https://127.0.0.1:8080`, and
+uses `admin` / `admin` for the local admin console. Keycloak data is persisted in
+the `elsa-platform-keycloak-data` Aspire volume, so locally registered users
+survive AppHost restarts. The imported console user is `ada` / `password`. Local
+self-registration is enabled in the imported realm, so the Keycloak sign-in page
+shows a registration link. If the Keycloak data volume already exists, either
+enable **User registration** in the Keycloak admin console under realm login
+settings or remove the local Keycloak data volume so the realm import is applied
+again. When built console assets are absent, Aspire injects the actual Vite
+console endpoint into the API so `/admin/*` is proxied to the console while the
+OIDC callback returns to the same browser origin. Production publish still
+serves the built console assets from the API container under `/admin`.
 
 Run the console during frontend development:
 

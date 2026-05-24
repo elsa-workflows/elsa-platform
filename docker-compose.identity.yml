@@ -8,4 +8,8 @@ services:
     ports:
       - "8080:8080"
     volumes:
+      - keycloak-data:/opt/keycloak/data
       - ./dev/keycloak/elsa-platform-realm.json:/opt/keycloak/data/import/elsa-platform-realm.json:ro
+
+volumes:
+  keycloak-data:
