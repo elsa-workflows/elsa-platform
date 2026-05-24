@@ -14,7 +14,7 @@ are implemented.
 From the repository root:
 
 ```bash
-dotnet run --project src/Elsa.Platform.PackageCatalog.Api
+dotnet run --project src/Elsa.Platform.Api
 ```
 
 Use the existing admin API key configuration for authenticated admin requests.

@@ -368,7 +368,7 @@ The catalog is an ASP.NET Core modular monolith using an onion-style layering mo
 Suggested solution projects:
 
 - **Elsa.Platform.PackageManifests**: Shared manifest DTOs, schema version constants, JSON serialization settings, validation abstractions and helpers, compatibility models, extension data support, validation result contracts, and embedded JSON Schema resources.
-- **Elsa.Platform.PackageCatalog.Api**: Public and admin REST endpoints, API key authentication, request and response contracts, error responses, and API documentation.
+- **Elsa.Platform.Api**: Public and admin REST endpoints, API key authentication, request and response contracts, error responses, and API documentation.
 - **Elsa.Platform.PackageCatalog.Core**: Catalog entities, value objects, enums, manifest projections, approval rules, immutable package-version behavior, sync status concepts, and small use-case services when they earn their place outside the API layer.
 - **Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore**: SQLite-backed persistence, relational mappings, migrations, query projections, and database-provider-neutral model design for later PostgreSQL support.
 - **Elsa.Platform.PackageCatalog.Sources.NuGet**: NuGet feed querying, package version discovery, package download, manifest archive inspection, NuGet metadata extraction, and NuGet-specific error translation.

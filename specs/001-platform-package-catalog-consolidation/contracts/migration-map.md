@@ -4,7 +4,7 @@
 
 | Current project | Target project |
 | --- | --- |
-| `Elsa.Platform.PackageCatalog.Api` | `Elsa.Platform.PackageCatalog.Api` |
+| `Elsa.Platform.Api` | `Elsa.Platform.Api` |
 | `Elsa.Platform.PackageCatalog.AppHost` | `Elsa.Platform.PackageCatalog.AppHost` |
 | `Elsa.Platform.PackageCatalog.Core` | `Elsa.Platform.PackageCatalog.Core` |
 | New extraction | `Elsa.Platform.PackageCatalog.Abstractions` |
@@ -21,8 +21,8 @@
 | `Elsa.Platform.PackageCatalog.Core/Builder/*` | `Elsa.Platform.RuntimeBuilder.Core` and `Elsa.Platform.RuntimeBuilder.Abstractions` |
 | `Elsa.Platform.PackageCatalog.Core/DeploymentTemplates/*` | `Elsa.Platform.RuntimeBuilder.DeploymentTemplates` |
 | `Elsa.Platform.PackageCatalog.Core/RuntimeConfigurations/*` | `Elsa.Platform.RuntimeBuilder.Core` and `Elsa.Platform.RuntimeBuilder.Abstractions` |
-| `Elsa.Platform.PackageCatalog.Api/Public/Builder/*` | Hosted in `Elsa.Platform.PackageCatalog.Api` until `Elsa.Platform.RuntimeBuilder.Api` packaging is justified |
-| `Elsa.Platform.PackageCatalog.Api/Workspace/*RuntimeConfiguration*` | Hosted in `Elsa.Platform.PackageCatalog.Api` until `Elsa.Platform.RuntimeBuilder.Api` packaging is justified |
+| `Elsa.Platform.Api/Public/Builder/*` | Hosted in `Elsa.Platform.Api` until `Elsa.Platform.RuntimeBuilder.Api` packaging is justified |
+| `Elsa.Platform.Api/Workspace/*RuntimeConfiguration*` | Hosted in `Elsa.Platform.Api` until `Elsa.Platform.RuntimeBuilder.Api` packaging is justified |
 | `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/RuntimeConfigurationStore.cs` | Current catalog EF adapter for `Elsa.Platform.RuntimeBuilder.Abstractions.RuntimeConfigurations.IRuntimeConfigurationStore` |
 
 ## Compatibility Review

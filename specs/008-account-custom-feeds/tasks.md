@@ -28,8 +28,8 @@
 - [X] T007 Configure account/workspace EF mappings and PackageSource ownership mapping in src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs
 - [X] T008 Add SQLite migration for account-owned custom feeds in src/Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/Migrations/
 - [X] T009 Add SQL Server migration for account-owned custom feeds in src/Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/Migrations/
-- [X] T010 [P] Add account/workspace persistence coverage through tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceCustomFeedsApiTests.cs
-- [X] T011 Register account/workspace services and query adapters in src/Elsa.Platform.PackageCatalog.Api/Program.cs
+- [X] T010 [P] Add account/workspace persistence coverage through tests/Elsa.Platform.Api.Tests/WorkspaceCustomFeedsApiTests.cs
+- [X] T011 Register account/workspace services and query adapters in src/Elsa.Platform.Api/Program.cs
 
 **Checkpoint**: Foundation ready - user story implementation can now begin.
 
@@ -43,15 +43,15 @@
 
 ### Tests for User Story 1
 
-- [X] T012 [P] [US1] Add API tests for workspace provisioning and unauthorized identity rejection in tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceCustomFeedsApiTests.cs
-- [X] T013 [P] [US1] Add idempotent identity provisioning coverage through tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceCustomFeedsApiTests.cs
+- [X] T012 [P] [US1] Add API tests for workspace provisioning and unauthorized identity rejection in tests/Elsa.Platform.Api.Tests/WorkspaceCustomFeedsApiTests.cs
+- [X] T013 [P] [US1] Add idempotent identity provisioning coverage through tests/Elsa.Platform.Api.Tests/WorkspaceCustomFeedsApiTests.cs
 
 ### Implementation for User Story 1
 
-- [X] T014 [US1] Implement trusted workspace identity adapter in src/Elsa.Platform.PackageCatalog.Api/Authentication/WorkspaceIdentity.cs
+- [X] T014 [US1] Implement trusted workspace identity adapter in src/Elsa.Platform.Api/Authentication/WorkspaceIdentity.cs
 - [X] T015 [US1] Implement account provisioning service contracts in src/Elsa.Platform.PackageCatalog.Core/Accounts/AccountWorkspaceService.cs
 - [X] T016 [US1] Implement EF account workspace store in src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/AccountWorkspaceStore.cs
-- [X] T017 [US1] Add `GET /api/me/workspaces` endpoint in src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceMeEndpoints.cs
+- [X] T017 [US1] Add `GET /api/me/workspaces` endpoint in src/Elsa.Platform.Api/Workspace/WorkspaceMeEndpoints.cs
 
 **Checkpoint**: User Story 1 is independently functional.
 
@@ -65,15 +65,15 @@
 
 ### Tests for User Story 2
 
-- [X] T018 [P] [US2] Add API tests for entitlement grant and source creation in tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceCustomFeedsApiTests.cs
-- [X] T019 [P] [US2] Add entitlement enforcement coverage through tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceCustomFeedsApiTests.cs
+- [X] T018 [P] [US2] Add API tests for entitlement grant and source creation in tests/Elsa.Platform.Api.Tests/WorkspaceCustomFeedsApiTests.cs
+- [X] T019 [P] [US2] Add entitlement enforcement coverage through tests/Elsa.Platform.Api.Tests/WorkspaceCustomFeedsApiTests.cs
 
 ### Implementation for User Story 2
 
 - [X] T020 [US2] Implement workspace entitlement and source creation service in src/Elsa.Platform.PackageCatalog.Core/Accounts/WorkspaceSourceService.cs
 - [X] T021 [US2] Extend AccountWorkspaceStore with entitlement and workspace source operations in src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/AccountWorkspaceStore.cs
-- [X] T022 [US2] Add admin entitlement endpoint in src/Elsa.Platform.PackageCatalog.Api/Admin/Workspaces/AdminWorkspaceEntitlementEndpoints.cs
-- [X] T023 [US2] Add `GET` and `POST /api/workspaces/{workspaceId}/sources` endpoints in src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceSourceEndpoints.cs
+- [X] T022 [US2] Add admin entitlement endpoint in src/Elsa.Platform.Api/Admin/Workspaces/AdminWorkspaceEntitlementEndpoints.cs
+- [X] T023 [US2] Add `GET` and `POST /api/workspaces/{workspaceId}/sources` endpoints in src/Elsa.Platform.Api/Workspace/WorkspaceSourceEndpoints.cs
 
 **Checkpoint**: User Story 2 is independently functional.
 
@@ -87,15 +87,15 @@
 
 ### Tests for User Story 3
 
-- [X] T024 [P] [US3] Add API tests for workspace source/package visibility in tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceCustomFeedsApiTests.cs
-- [X] T025 [P] [US3] Add workspace-visible package query coverage through tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceCustomFeedsApiTests.cs
+- [X] T024 [P] [US3] Add API tests for workspace source/package visibility in tests/Elsa.Platform.Api.Tests/WorkspaceCustomFeedsApiTests.cs
+- [X] T025 [P] [US3] Add workspace-visible package query coverage through tests/Elsa.Platform.Api.Tests/WorkspaceCustomFeedsApiTests.cs
 
 ### Implementation for User Story 3
 
 - [X] T026 [US3] Extend public source queries with workspace visibility in src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/PublicSourceQueries.cs
 - [X] T027 [US3] Extend public catalog queries with workspace visibility in src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/PublicCatalogQueries.cs
-- [X] T028 [US3] Add workspace package endpoints in src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspacePackageEndpoints.cs
-- [X] T029 [US3] Add workspace builder/compatibility endpoint wrappers or visibility plumbing in src/Elsa.Platform.PackageCatalog.Api/Workspace/
+- [X] T028 [US3] Add workspace package endpoints in src/Elsa.Platform.Api/Workspace/WorkspacePackageEndpoints.cs
+- [X] T029 [US3] Add workspace builder/compatibility endpoint wrappers or visibility plumbing in src/Elsa.Platform.Api/Workspace/
 
 **Checkpoint**: User Story 3 is independently functional.
 
@@ -109,11 +109,11 @@
 
 ### Tests for User Story 4
 
-- [X] T030 [P] [US4] Add admin entitlement update tests in tests/Elsa.Platform.PackageCatalog.Api.Tests/WorkspaceCustomFeedsApiTests.cs
+- [X] T030 [P] [US4] Add admin entitlement update tests in tests/Elsa.Platform.Api.Tests/WorkspaceCustomFeedsApiTests.cs
 
 ### Implementation for User Story 4
 
-- [X] T031 [US4] Complete entitlement response contracts and validation in src/Elsa.Platform.PackageCatalog.Api/Admin/Workspaces/AdminWorkspaceEntitlementEndpoints.cs
+- [X] T031 [US4] Complete entitlement response contracts and validation in src/Elsa.Platform.Api/Admin/Workspaces/AdminWorkspaceEntitlementEndpoints.cs
 - [X] T032 [US4] Add entitlement quickstart coverage in specs/008-account-custom-feeds/quickstart.md
 
 ---
@@ -123,7 +123,7 @@
 **Purpose**: Validation, cleanup, and documentation alignment.
 
 - [X] T033 Update AGENTS.md active technologies and recent changes for account-owned custom feeds
-- [X] T034 Review source URL sanitization paths for workspace responses in src/Elsa.Platform.PackageCatalog.Api/Workspace/
+- [X] T034 Review source URL sanitization paths for workspace responses in src/Elsa.Platform.Api/Workspace/
 - [X] T035 Run `dotnet build Elsa.Platform.sln --no-restore`
 - [X] T036 Run `dotnet test Elsa.Platform.sln --no-build`
 - [X] T037 Verify quickstart scenarios against implemented endpoints

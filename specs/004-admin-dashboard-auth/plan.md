@@ -68,7 +68,7 @@ specs/004-admin-dashboard-auth/
 
 ```text
 src/
-├── Elsa.Platform.PackageCatalog.Api/
+├── Elsa.Platform.Api/
 │   ├── Authentication/
 │   ├── Admin/
 │   └── Program.cs
@@ -76,7 +76,7 @@ src/
     └── src/
 
 tests/
-└── Elsa.Platform.PackageCatalog.Api.Tests/
+└── Elsa.Platform.Api.Tests/
     └── AdminDashboardAuthenticationTests.cs
 ```
 

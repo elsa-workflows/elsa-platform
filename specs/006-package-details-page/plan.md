@@ -98,7 +98,7 @@ src/
 │       └── CatalogStoreContracts.cs
 ├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
 │   └── ApprovalStore.cs
-├── Elsa.Platform.PackageCatalog.Api/
+├── Elsa.Platform.Api/
 │   └── Admin/
 │       └── Packages/
 │           ├── AdminPackageContracts.cs
@@ -125,7 +125,7 @@ src/
             └── status/
 
 tests/
-├── Elsa.Platform.PackageCatalog.Api.Tests/
+├── Elsa.Platform.Api.Tests/
 │   ├── AdminPackagesApiTests.cs
 │   ├── AdminValidationApiTests.cs
 │   └── AdminApprovalApiTests.cs

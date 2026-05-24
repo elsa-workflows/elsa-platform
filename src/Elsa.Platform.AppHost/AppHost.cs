@@ -18,7 +18,7 @@ builder.AddAzureAppServiceEnvironment("elsa-platform")
         };
     });
 
-var api = builder.AddProject<Projects.Elsa_Platform_PackageCatalog_Api>("api")
+var api = builder.AddProject<Projects.Elsa_Platform_Api>("api")
     .WithExternalHttpEndpoints()
     .WithHttpHealthCheck("/health")
     .WithEnvironment("Authentication__ApiKey", adminApiKey);

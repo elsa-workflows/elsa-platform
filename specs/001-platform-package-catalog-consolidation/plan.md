@@ -86,7 +86,7 @@ src/
 
   Elsa.Platform.PackageCatalog.Abstractions/
   Elsa.Platform.PackageCatalog.Core/
-  Elsa.Platform.PackageCatalog.Api/
+  Elsa.Platform.Api/
   Elsa.Platform.Console/
   Elsa.Platform.PackageCatalog.Sources.NuGet/
   Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/

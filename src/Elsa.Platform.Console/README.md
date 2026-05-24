@@ -12,7 +12,7 @@ npm install
 npm run dev
 ```
 
-The Vite dev server proxies relative `/api` requests to the package catalog API
+The Vite dev server proxies relative `/api` requests to the platform API
 host at `http://localhost:5220` by default so the browser client can avoid CORS
 requirements. Override `CATALOG_API_PROXY_TARGET` in a local `.env` file
 when the API runs elsewhere. In development, the proxy also forwards local

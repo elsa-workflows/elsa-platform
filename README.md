@@ -8,7 +8,7 @@ The repository is organized as a set of bounded subsystems rather than one large
 
 - **Package manifests**: stable JSON contracts that describe deploy-time features, settings, infrastructure requirements, and extension metadata for Elsa packages.
 - **Manifest generator**: an MSBuild-integrated generator that inspects package assemblies with metadata-only reflection and emits `elsa-package.json` during build or pack.
-- **Package Catalog API**: an ASP.NET Core API for public catalog reads, source synchronization, approvals, compatibility checks, workspace custom feeds, Runtime Builder access, and operator administration.
+- **Platform API**: an ASP.NET Core API for public catalog reads, source synchronization, approvals, compatibility checks, workspace custom feeds, Runtime Builder access, and operator administration.
 - **Runtime Builder**: services and contracts for runtime images, saved runtime configurations, server bundle generation, and deployment template rendering.
 - **Deployment**: manifest parsing, artifact construction, path and checksum safety, deployment contracts, planning, execution, and history abstractions.
 - **Platform Console**: a Vite/React admin UI served from `/admin` by the API container in production.
@@ -66,7 +66,7 @@ dotnet build Elsa.Platform.sln
 Run the API directly:
 
 ```bash
-dotnet run --project src/Elsa.Platform.PackageCatalog.Api
+dotnet run --project src/Elsa.Platform.Api
 ```
 
 The API exposes `/health`, OpenAPI metadata, public catalog endpoints, workspace endpoints, and the admin console route under `/admin`. In development it uses SQLite by default with the connection string from `appsettings.Development.json`.
@@ -90,7 +90,7 @@ For a browser sign-in flow, start the local Keycloak realm and run the API with 
 ```bash
 docker compose -f docker-compose.identity.yml up
 dotnet dev-certs https --trust
-ASPNETCORE_ENVIRONMENT=Keycloak dotnet run --project src/Elsa.Platform.PackageCatalog.Api --launch-profile https
+ASPNETCORE_ENVIRONMENT=Keycloak dotnet run --project src/Elsa.Platform.Api --launch-profile https
 ```
 
 Then open the console and use a workspace-only view such as Runtime Builder:

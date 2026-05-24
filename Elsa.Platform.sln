@@ -9,7 +9,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Elsa.Platform.PackageManife
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Elsa.Platform.PackageCatalog.Core", "src\Elsa.Platform.PackageCatalog.Core\Elsa.Platform.PackageCatalog.Core.csproj", "{3A6D3050-5C90-4BB6-97EB-916E982670EC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Elsa.Platform.PackageCatalog.Api", "src\Elsa.Platform.PackageCatalog.Api\Elsa.Platform.PackageCatalog.Api.csproj", "{ACCCF817-BA52-4F8D-8D5D-6922A324CBB1}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Elsa.Platform.Api", "src\Elsa.Platform.Api\Elsa.Platform.Api.csproj", "{ACCCF817-BA52-4F8D-8D5D-6922A324CBB1}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore", "src\Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore\Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.csproj", "{45AC411D-4B37-454B-AD94-0C363D8A0EBB}"
 EndProject
@@ -21,7 +21,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Elsa.Platform.PackageManife
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Elsa.Platform.PackageCatalog.Core.Tests", "tests\Elsa.Platform.PackageCatalog.Core.Tests\Elsa.Platform.PackageCatalog.Core.Tests.csproj", "{4A8DB526-E63F-4464-8ECC-6FE063FF29A6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Elsa.Platform.PackageCatalog.Api.Tests", "tests\Elsa.Platform.PackageCatalog.Api.Tests\Elsa.Platform.PackageCatalog.Api.Tests.csproj", "{83C090E4-9B96-4C72-A46B-CAE5CC4DE39E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Elsa.Platform.Api.Tests", "tests\Elsa.Platform.Api.Tests\Elsa.Platform.Api.Tests.csproj", "{83C090E4-9B96-4C72-A46B-CAE5CC4DE39E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests", "tests\Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests\Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj", "{D98D33A6-8161-42A3-92DD-EA462E8C0471}"
 EndProject

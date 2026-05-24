@@ -56,12 +56,12 @@ specs/011-saved-runtime-configurations/
 ```text
 src/
 ├── Elsa.Platform.PackageCatalog.Core/RuntimeConfigurations/
-├── Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceRuntimeConfigurationEndpoints.cs
+├── Elsa.Platform.Api/Workspace/WorkspaceRuntimeConfigurationEndpoints.cs
 └── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
 
 tests/
 ├── Elsa.Platform.PackageCatalog.Core.Tests/
-├── Elsa.Platform.PackageCatalog.Api.Tests/
+├── Elsa.Platform.Api.Tests/
 └── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
 ```
 

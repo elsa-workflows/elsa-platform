@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Elsa.Platform.PackageCatalog.Api\Elsa.Platform.PackageCatalog.Api.csproj" />
+    <ProjectReference Include="..\Elsa.Platform.Api\Elsa.Platform.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>

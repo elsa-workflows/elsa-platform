@@ -119,7 +119,7 @@ src/
 │   ├── Sources/
 │   ├── Sync/
 │   └── Validation/
-├── Elsa.Platform.PackageCatalog.Api/
+├── Elsa.Platform.Api/
 │   ├── Admin/
 │   ├── Public/
 │   ├── Authentication/
@@ -136,14 +136,14 @@ src/
 tests/
 ├── Elsa.Platform.PackageManifests.Tests/
 ├── Elsa.Platform.PackageCatalog.Core.Tests/
-├── Elsa.Platform.PackageCatalog.Api.Tests/
+├── Elsa.Platform.Api.Tests/
 ├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
 ├── Elsa.Platform.PackageCatalog.Sources.NuGet.Tests/
 └── Elsa.Platform.PackageCatalog.Testing/
 ```
 
 **Structure Decision**: Use an onion-style modular monolith. `Elsa.Platform.PackageCatalog.Core`
-is the inner catalog model and workflow layer. `Elsa.Platform.PackageCatalog.Api` is the delivery
+is the inner catalog model and workflow layer. `Elsa.Platform.Api` is the delivery
 edge. `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore` and
 `Elsa.Platform.PackageCatalog.Sources.NuGet` are outer adapters. The shared manifest package
 remains independent.

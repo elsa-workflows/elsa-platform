@@ -138,13 +138,13 @@ src/
 │   ├── package.json
 │   ├── vite.config.ts
 │   └── tailwind.config.ts
-├── Elsa.Platform.PackageCatalog.Api/
+├── Elsa.Platform.Api/
 │   └── Admin/
 └── existing catalog projects unchanged unless admin API contract deltas require
     small source, approval, validation, or sync endpoint updates
 
 tests/
-├── Elsa.Platform.PackageCatalog.Api.Tests/
+├── Elsa.Platform.Api.Tests/
 └── Elsa.Platform.Console.E2E/
 ```
 
@@ -152,7 +152,7 @@ tests/
 `src/Elsa.Platform.Console` so the UI can evolve independently from the ASP.NET
 Core API while still living inside the same repository and release workflow.
 Shared frontend code is organized by operational feature area and a thin `lib/api`
-adapter layer. Backend changes remain in the existing `Elsa.Platform.PackageCatalog.Api`,
+adapter layer. Backend changes remain in the existing `Elsa.Platform.Api`,
 `Elsa.Platform.PackageCatalog.Core`, and persistence test projects only when needed to satisfy
 the UI contract.
 

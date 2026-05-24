@@ -23,7 +23,7 @@ The manifest package must not reference:
 - `Elsa.Platform.Deployment.Cli`
 - `Elsa.Platform.Deployment.Api`
 - `Elsa.Platform.Deployment.Artifacts`
-- `Elsa.Platform.PackageCatalog.Api`
+- `Elsa.Platform.Api`
 - `Elsa.Platform.PackageCatalog.Core`
 - `Elsa.Platform.PackageCatalog.Persistence.*`
 - `Elsa.Platform.Console`

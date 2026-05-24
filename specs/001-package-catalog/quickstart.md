@@ -36,7 +36,7 @@ Expected coverage areas:
 ## Run Locally
 
 ```bash
-dotnet run --project src/Elsa.Platform.PackageCatalog.Api
+dotnet run --project src/Elsa.Platform.Api
 ```
 
 Expected default behavior:

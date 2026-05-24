@@ -38,7 +38,7 @@ Extend the bundle generation service with target-specific renderers while keepin
 src/Elsa.Platform.PackageCatalog.Core/Builder/Renderers/
 src/Elsa.Platform.PackageCatalog.Core/DeploymentTemplates/
 tests/Elsa.Platform.PackageCatalog.Core.Tests/
-tests/Elsa.Platform.PackageCatalog.Api.Tests/
+tests/Elsa.Platform.Api.Tests/
 ```
 
 ## Complexity Tracking

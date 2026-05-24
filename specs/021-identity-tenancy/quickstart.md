@@ -3,7 +3,7 @@
 ## Local Platform Identity Smoke Test
 
 1. Configure `Authentication:PlatformIdentity` with `Provider = GenericOidc` and a local test issuer/audience/signing key.
-2. Start the Package Catalog API.
+2. Start the Platform API.
 3. Call `GET /api/me/workspaces` with a valid trusted identity.
 4. Confirm the response contains one account and one personal workspace.
 5. Call the same endpoint again with the same issuer and subject.

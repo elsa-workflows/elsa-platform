@@ -5,13 +5,13 @@
 ## Phase 1: Setup
 
 - [X] T001 [P] Create template target tests in `tests/Elsa.Platform.PackageCatalog.Core.Tests/DeploymentTemplateTargetTests.cs`
-- [X] T002 [P] Create template API tests in `tests/Elsa.Platform.PackageCatalog.Api.Tests/DeploymentTemplateBundleApiTests.cs`
+- [X] T002 [P] Create template API tests in `tests/Elsa.Platform.Api.Tests/DeploymentTemplateBundleApiTests.cs`
 
 ## Phase 2: Foundation
 
 - [X] T003 Define target models in `src/Elsa.Platform.PackageCatalog.Core/DeploymentTemplates/DeploymentTemplateModels.cs`
 - [X] T004 Define target renderer registry in `src/Elsa.Platform.PackageCatalog.Core/DeploymentTemplates/DeploymentTemplateRegistry.cs`
-- [X] T005 Extend bundle request target DTO in `src/Elsa.Platform.PackageCatalog.Api/Public/Builder/BuilderContracts.cs`
+- [X] T005 Extend bundle request target DTO in `src/Elsa.Platform.Api/Public/Builder/BuilderContracts.cs`
 
 ## Phase 3: User Story 1 - Choose Target (Priority: P1)
 

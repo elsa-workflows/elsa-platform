@@ -87,7 +87,7 @@ src/
 │       └── SyncRunCleanupService.cs
 ├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
 │   └── SyncRunStore.cs
-├── Elsa.Platform.PackageCatalog.Api/
+├── Elsa.Platform.Api/
 │   └── Admin/
 │       └── Sync/
 │           ├── AdminSyncContracts.cs
@@ -102,7 +102,7 @@ tests/
 │   └── SyncRunCleanupServiceTests.cs
 ├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
 │   └── SyncPersistenceTests.cs
-├── Elsa.Platform.PackageCatalog.Api.Tests/
+├── Elsa.Platform.Api.Tests/
 │   └── AdminSyncApiTests.cs
 └── Elsa.Platform.Console/
     └── src/

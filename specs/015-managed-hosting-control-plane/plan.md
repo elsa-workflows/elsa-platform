@@ -34,10 +34,10 @@ Introduce a narrow managed hosting control plane for provisioning, lifecycle, UR
 
 ```text
 src/Elsa.Platform.PackageCatalog.Core/ManagedHosting/
-src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceManagedHostingEndpoints.cs
+src/Elsa.Platform.Api/Workspace/WorkspaceManagedHostingEndpoints.cs
 src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
 tests/Elsa.Platform.PackageCatalog.Core.Tests/
-tests/Elsa.Platform.PackageCatalog.Api.Tests/
+tests/Elsa.Platform.Api.Tests/
 ```
 
 ## Complexity Tracking

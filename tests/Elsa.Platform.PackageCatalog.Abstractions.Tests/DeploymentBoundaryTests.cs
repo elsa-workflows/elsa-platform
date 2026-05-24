@@ -7,7 +7,7 @@ public sealed class DeploymentBoundaryTests
 {
     private static readonly string[] ForbiddenProjectReferences =
     [
-        "Elsa.Platform.PackageCatalog.Api",
+        "Elsa.Platform.Api",
         "Elsa.Platform.Console",
         "Elsa.Platform.PackageCatalog.Persistence",
         "Elsa.Platform.PackageCatalog.Sources.NuGet",

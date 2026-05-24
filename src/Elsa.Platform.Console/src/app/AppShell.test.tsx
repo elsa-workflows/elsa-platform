@@ -53,7 +53,7 @@ describe("AppShell", () => {
 
 function renderAppShell(buildNumber = "0.0.1") {
   installLocalStorageStub();
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ name: "Elsa.Platform.PackageCatalog.Api", buildNumber })));
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ name: "Elsa.Platform.Api", buildNumber })));
   const router = createMemoryRouter([{ path: "/admin", element: <AppShell /> }], {
     initialEntries: ["/admin"]
   });

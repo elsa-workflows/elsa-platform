@@ -6,22 +6,22 @@
 
 ## Phase 1: Setup
 
-- [X] T001 Inspect existing builder catalog contracts in `src/Elsa.Platform.PackageCatalog.Api/Public/Builder/BuilderContracts.cs`
+- [X] T001 Inspect existing builder catalog contracts in `src/Elsa.Platform.Api/Public/Builder/BuilderContracts.cs`
 - [X] T002 [P] Create runtime image core test file `tests/Elsa.Platform.PackageCatalog.Core.Tests/RuntimeImageCatalogTests.cs`
-- [X] T003 [P] Create runtime image API test file `tests/Elsa.Platform.PackageCatalog.Api.Tests/RuntimeImageApiTests.cs`
+- [X] T003 [P] Create runtime image API test file `tests/Elsa.Platform.Api.Tests/RuntimeImageApiTests.cs`
 
 ## Phase 2: Foundation
 
 - [X] T004 Define runtime image records in `src/Elsa.Platform.PackageCatalog.Core/Builder/RuntimeImageModels.cs`
 - [X] T005 Define seeded runtime image catalog in `src/Elsa.Platform.PackageCatalog.Core/Builder/RuntimeImageCatalog.cs`
 - [X] T006 Define runtime image validation rules in `src/Elsa.Platform.PackageCatalog.Core/Builder/RuntimeImageValidator.cs`
-- [X] T007 Register runtime image catalog and validator in `src/Elsa.Platform.PackageCatalog.Api/Program.cs`
+- [X] T007 Register runtime image catalog and validator in `src/Elsa.Platform.Api/Program.cs`
 
 ## Phase 3: User Story 1 - Select Runtime Images From Platform Metadata (Priority: P1)
 
-- [X] T008 [P] [US1] Add API test that `/api/builder/catalog` returns `images` with all three known slugs in `tests/Elsa.Platform.PackageCatalog.Api.Tests/RuntimeImageApiTests.cs`
-- [X] T009 [US1] Add `images` to builder catalog response DTOs in `src/Elsa.Platform.PackageCatalog.Api/Public/Builder/BuilderContracts.cs`
-- [X] T010 [US1] Populate `images` from runtime image catalog in `src/Elsa.Platform.PackageCatalog.Api/Public/Builder/BuilderEndpoints.cs`
+- [X] T008 [P] [US1] Add API test that `/api/builder/catalog` returns `images` with all three known slugs in `tests/Elsa.Platform.Api.Tests/RuntimeImageApiTests.cs`
+- [X] T009 [US1] Add `images` to builder catalog response DTOs in `src/Elsa.Platform.Api/Public/Builder/BuilderContracts.cs`
+- [X] T010 [US1] Populate `images` from runtime image catalog in `src/Elsa.Platform.Api/Public/Builder/BuilderEndpoints.cs`
 
 ## Phase 4: User Story 2 - Use Image Metadata During Bundle Generation (Priority: P1)
 
@@ -38,11 +38,11 @@
 
 - [X] T016 [P] [US4] Add validation tests for duplicate slugs and missing image references in `tests/Elsa.Platform.PackageCatalog.Core.Tests/RuntimeImageCatalogTests.cs`
 - [X] T017 [US4] Add validation tests for default tags, duplicate env vars, and broken companion references in `tests/Elsa.Platform.PackageCatalog.Core.Tests/RuntimeImageCatalogTests.cs`
-- [X] T018 [US4] Invoke runtime image validation during application startup in `src/Elsa.Platform.PackageCatalog.Api/Program.cs`
+- [X] T018 [US4] Invoke runtime image validation during application startup in `src/Elsa.Platform.Api/Program.cs`
 
 ## Phase 7: Polish
 
-- [X] T019 Update API examples in `src/Elsa.Platform.PackageCatalog.Api/Elsa.Platform.PackageCatalog.Api.http`
+- [X] T019 Update API examples in `src/Elsa.Platform.Api/Elsa.Platform.Api.http`
 - [X] T020 Run `dotnet build Elsa.Platform.sln --no-restore` against `Elsa.Platform.sln`
 - [X] T021 Run `dotnet test Elsa.Platform.sln --no-build` against `Elsa.Platform.sln`
 

@@ -47,7 +47,7 @@
 - [X] T018 [P] Create representative dashboard fixture data in `src/Elsa.Platform.Console/src/test/fixtures.ts`
 - [X] T019 Add E2E test helpers for API stubbing, navigation, and admin credentials in `tests/Elsa.Platform.Console.E2E/helpers/adminUiTestHelpers.ts`
 - [X] T020 Verify the root app renders the four MVP navigation entries with a component test in `src/Elsa.Platform.Console/src/app/AppShell.test.tsx`
-- [X] T020a Expose and render authenticated application build metadata in `src/Elsa.Platform.PackageCatalog.Api/Admin/Application/AdminApplicationEndpoints.cs`, `src/Elsa.Platform.Console/src/app/applicationApi.ts`, and `src/Elsa.Platform.Console/src/app/AppShell.tsx`
+- [X] T020a Expose and render authenticated application build metadata in `src/Elsa.Platform.Api/Admin/Application/AdminApplicationEndpoints.cs`, `src/Elsa.Platform.Console/src/app/applicationApi.ts`, and `src/Elsa.Platform.Console/src/app/AppShell.tsx`
 
 **Checkpoint**: Foundation ready. User story implementation can now begin in priority order or in parallel by story.
 
@@ -61,7 +61,7 @@
 
 ### Tests for User Story 1
 
-- [X] T021 [P] [US1] Add API tests for source soft-delete, active source filtering, source status, last successful sync, and package count in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminSourcesApiTests.cs`
+- [X] T021 [P] [US1] Add API tests for source soft-delete, active source filtering, source status, last successful sync, and package count in `tests/Elsa.Platform.Api.Tests/AdminSourcesApiTests.cs`
 - [X] T022 [P] [US1] Add source pattern tester parity tests for include/exclude precedence in `src/Elsa.Platform.Console/src/features/sources/patternTester.test.ts`
 - [X] T023 [P] [US1] Add component tests for source list empty, loading, populated, stale, and filtered states in `src/Elsa.Platform.Console/src/features/sources/SourcesPage.test.tsx`
 - [X] T024 [P] [US1] Add component tests for create/edit validation and unsaved value preservation in `src/Elsa.Platform.Console/src/features/sources/SourceForm.test.tsx`
@@ -74,8 +74,8 @@
 - [X] T028 [US1] Add provider migrations for source soft-delete, health, and polling interval fields in `src/Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/Migrations/20260515_AddPackageSourceSoftDeleteAndHealth.cs` and `src/Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/Migrations/20260515_AddPackageSourceSoftDeleteAndHealth.cs`
 - [X] T029 [US1] Update source store queries to hide soft-deleted sources by default and preserve history in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/PackageSourceStore.cs`
 - [X] T030 [US1] Update source service soft-delete behavior, polling interval validation, and source health projection in `src/Elsa.Platform.PackageCatalog.Core/Sources/PackageSourceService.cs`
-- [X] T031 [US1] Update admin source contracts with status, lastSuccessfulSyncAt, packageCount, softDeletedAt, and pollingInterval fields in `src/Elsa.Platform.PackageCatalog.Api/Admin/Sources/AdminSourceContracts.cs`
-- [X] T032 [US1] Update admin source endpoints to expose active sources, soft-delete semantics, source health fields, and sync-linkable IDs in `src/Elsa.Platform.PackageCatalog.Api/Admin/Sources/AdminSourceEndpoints.cs`
+- [X] T031 [US1] Update admin source contracts with status, lastSuccessfulSyncAt, packageCount, softDeletedAt, and pollingInterval fields in `src/Elsa.Platform.Api/Admin/Sources/AdminSourceContracts.cs`
+- [X] T032 [US1] Update admin source endpoints to expose active sources, soft-delete semantics, source health fields, and sync-linkable IDs in `src/Elsa.Platform.Api/Admin/Sources/AdminSourceEndpoints.cs`
 - [X] T033 [US1] Create source API adapter functions in `src/Elsa.Platform.Console/src/features/sources/sourceApi.ts`
 - [X] T034 [US1] Create source view models, polling interval mapping, and status derivation helpers in `src/Elsa.Platform.Console/src/features/sources/sourceModels.ts`
 - [X] T035 [US1] Implement include/exclude pattern tester logic with case-insensitive glob matching in `src/Elsa.Platform.Console/src/features/sources/patternTester.ts`
@@ -97,19 +97,19 @@
 
 ### Tests for User Story 2
 
-- [ ] T041 [P] [US2] Add API tests that every package version rejection requires a non-empty reason in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminApprovalApiTests.cs`
-- [ ] T042 [P] [US2] Add API tests that package identity approval endpoints are not needed by dashboard version workflows in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminApprovalApiTests.cs`
+- [ ] T041 [P] [US2] Add API tests that every package version rejection requires a non-empty reason in `tests/Elsa.Platform.Api.Tests/AdminApprovalApiTests.cs`
+- [ ] T042 [P] [US2] Add API tests that package identity approval endpoints are not needed by dashboard version workflows in `tests/Elsa.Platform.Api.Tests/AdminApprovalApiTests.cs`
 - [ ] T043 [P] [US2] Add component tests for package search, filters, sorting, selection, and bulk selected count in `src/Elsa.Platform.Console/src/features/packages/PackagesPage.test.tsx`
 - [ ] T044 [P] [US2] Add component tests for approve/reject dialogs and required rejection reason validation in `src/Elsa.Platform.Console/src/features/packages/PackageVersionActions.test.tsx`
 - [ ] T045 [P] [US2] Add E2E test for pending package-version approval and rejection workflow in `tests/Elsa.Platform.Console.E2E/packages-approval.spec.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T046 [US2] Update approval request handling to reject empty package version rejection reasons in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminApprovalEndpoints.cs`
+- [ ] T046 [US2] Update approval request handling to reject empty package version rejection reasons in `src/Elsa.Platform.Api/Admin/Packages/AdminApprovalEndpoints.cs`
 - [ ] T047 [US2] Update approval store/service to persist and expose version rejection reasons in `src/Elsa.Platform.PackageCatalog.Core/Approvals/ApprovalService.cs`
 - [ ] T048 [US2] Update approval persistence for rejection reasons in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/ApprovalStore.cs`
-- [ ] T049 [US2] Add package list query/filter/sort support needed by the dashboard in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminPackageEndpoints.cs`
-- [ ] T050 [US2] Update admin package contracts with sourceId, updatedAt, feature count, aggregate statuses, and version rejection reason fields in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminPackageContracts.cs`
+- [ ] T049 [US2] Add package list query/filter/sort support needed by the dashboard in `src/Elsa.Platform.Api/Admin/Packages/AdminPackageEndpoints.cs`
+- [ ] T050 [US2] Update admin package contracts with sourceId, updatedAt, feature count, aggregate statuses, and version rejection reason fields in `src/Elsa.Platform.Api/Admin/Packages/AdminPackageContracts.cs`
 - [ ] T051 [US2] Create package API adapter functions for list, details, approve version, reject version, optional re-sync, optional revalidate, optional recompute metadata, and repeated bulk mutations in `src/Elsa.Platform.Console/src/features/packages/packageApi.ts`
 - [ ] T052 [US2] Create package list and package-version view models in `src/Elsa.Platform.Console/src/features/packages/packageModels.ts`
 - [ ] T053 [US2] Implement Packages page with URL-backed search, filters, sorting, selection, bulk action bar, and status badges in `src/Elsa.Platform.Console/src/features/packages/PackagesPage.tsx`
@@ -129,7 +129,7 @@
 
 ### Tests for User Story 3
 
-- [ ] T057 [P] [US3] Add API tests for admin package version manifest retrieval and manifest hash fields in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminPackagesApiTests.cs`
+- [ ] T057 [P] [US3] Add API tests for admin package version manifest retrieval and manifest hash fields in `tests/Elsa.Platform.Api.Tests/AdminPackagesApiTests.cs`
 - [ ] T058 [P] [US3] Add component tests for validation issue grouping, unknown codes, long messages, and missing paths in `src/Elsa.Platform.Console/src/features/packages/ValidationPanel.test.tsx`
 - [ ] T059 [P] [US3] Add component tests for formatted, raw-only, and unavailable manifest viewer states in `src/Elsa.Platform.Console/src/features/packages/ManifestViewer.test.tsx`
 - [ ] T060 [P] [US3] Add component tests for public visibility explanation combinations in `src/Elsa.Platform.Console/src/features/packages/VisibilityExplanation.test.tsx`
@@ -137,8 +137,8 @@
 
 ### Implementation for User Story 3
 
-- [ ] T062 [US3] Add or extend admin package version detail endpoint with manifest hash, suspicious hash, feature metadata, visibility inputs, supported action flags, and raw manifest JSON in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminPackageEndpoints.cs`
-- [ ] T063 [US3] Normalize admin validation result contract to expose finding arrays for UI consumption in `src/Elsa.Platform.PackageCatalog.Api/Admin/Packages/AdminValidationEndpoints.cs`
+- [ ] T062 [US3] Add or extend admin package version detail endpoint with manifest hash, suspicious hash, feature metadata, visibility inputs, supported action flags, and raw manifest JSON in `src/Elsa.Platform.Api/Admin/Packages/AdminPackageEndpoints.cs`
+- [ ] T063 [US3] Normalize admin validation result contract to expose finding arrays for UI consumption in `src/Elsa.Platform.Api/Admin/Packages/AdminValidationEndpoints.cs`
 - [ ] T064 [US3] Create validation finding normalization helpers for current and future response shapes in `src/Elsa.Platform.Console/src/features/packages/validationModels.ts`
 - [ ] T065 [US3] Implement feature metadata section for package version details in `src/Elsa.Platform.Console/src/features/packages/FeaturesPanel.tsx`
 - [ ] T066 [US3] Implement validation diagnostics panel with grouped severity, code, message, and path rendering in `src/Elsa.Platform.Console/src/features/packages/ValidationPanel.tsx`
@@ -158,15 +158,15 @@
 
 ### Tests for User Story 4
 
-- [ ] T070 [P] [US4] Add API tests for sync run summary counters, duration inputs, item diagnostics, and run cancellation in `tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminSyncApiTests.cs`
+- [ ] T070 [P] [US4] Add API tests for sync run summary counters, duration inputs, item diagnostics, and run cancellation in `tests/Elsa.Platform.Api.Tests/AdminSyncApiTests.cs`
 - [ ] T071 [P] [US4] Add component tests for sync run list states, status filters, polling refresh, active run labels, and cancel actions in `src/Elsa.Platform.Console/src/features/sync-runs/SyncRunsPage.test.tsx`
 - [ ] T072 [P] [US4] Add component tests for sync run details timeline, grouped failures, warnings, and diagnostic links in `src/Elsa.Platform.Console/src/features/sync-runs/SyncRunDetailsPage.test.tsx`
 - [ ] T073 [P] [US4] Add E2E test for failed sync run troubleshooting workflow in `tests/Elsa.Platform.Console.E2E/sync-runs.spec.ts`
 
 ### Implementation for User Story 4
 
-- [ ] T074 [US4] Update sync contracts to expose summary counters in typed form while preserving existing JSON counters in `src/Elsa.Platform.PackageCatalog.Api/Admin/Sync/AdminSyncContracts.cs`
-- [ ] T075 [US4] Update sync run endpoint mapping for duration-ready fields, item diagnostics, and cancel requests in `src/Elsa.Platform.PackageCatalog.Api/Admin/Sync/AdminSyncEndpoints.cs`
+- [ ] T074 [US4] Update sync contracts to expose summary counters in typed form while preserving existing JSON counters in `src/Elsa.Platform.Api/Admin/Sync/AdminSyncContracts.cs`
+- [ ] T075 [US4] Update sync run endpoint mapping for duration-ready fields, item diagnostics, and cancel requests in `src/Elsa.Platform.Api/Admin/Sync/AdminSyncEndpoints.cs`
 - [ ] T076 [US4] Create sync run API adapter functions, including cancel, in `src/Elsa.Platform.Console/src/features/sync-runs/syncRunApi.ts`
 - [ ] T077 [US4] Create sync run view models and summary counter helpers, including canceled status handling, in `src/Elsa.Platform.Console/src/features/sync-runs/syncRunModels.ts`
 - [ ] T078 [US4] Implement Sync Runs page with table columns, filters, active-run polling, cancel controls, empty states, and manual refresh in `src/Elsa.Platform.Console/src/features/sync-runs/SyncRunsPage.tsx`
@@ -284,7 +284,7 @@
 ## Parallel Example: User Story 1
 
 ```text
-Task: "T021 [P] [US1] Add API tests for source soft-delete, active source filtering, source status, last successful sync, and package count in tests/Elsa.Platform.PackageCatalog.Api.Tests/AdminSourcesApiTests.cs"
+Task: "T021 [P] [US1] Add API tests for source soft-delete, active source filtering, source status, last successful sync, and package count in tests/Elsa.Platform.Api.Tests/AdminSourcesApiTests.cs"
 Task: "T022 [P] [US1] Add source pattern tester parity tests for include/exclude precedence in src/Elsa.Platform.Console/src/features/sources/patternTester.test.ts"
 Task: "T023 [P] [US1] Add component tests for source list empty, loading, populated, stale, and filtered states in src/Elsa.Platform.Console/src/features/sources/SourcesPage.test.tsx"
 Task: "T024 [P] [US1] Add component tests for create/edit validation and unsaved value preservation in src/Elsa.Platform.Console/src/features/sources/SourceForm.test.tsx"

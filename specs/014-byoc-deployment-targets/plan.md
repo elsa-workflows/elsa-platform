@@ -36,10 +36,10 @@ Add workspace-owned deployment targets, preview runs, and deployment run trackin
 
 ```text
 src/Elsa.Platform.PackageCatalog.Core/DeploymentTargets/
-src/Elsa.Platform.PackageCatalog.Api/Workspace/WorkspaceDeploymentTargetEndpoints.cs
+src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentTargetEndpoints.cs
 src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
 tests/Elsa.Platform.PackageCatalog.Core.Tests/
-tests/Elsa.Platform.PackageCatalog.Api.Tests/
+tests/Elsa.Platform.Api.Tests/
 ```
 
 ## Complexity Tracking

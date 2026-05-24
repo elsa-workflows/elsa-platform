@@ -16,9 +16,9 @@ Promote the existing account/workspace foundation into the platform tenant model
 
 **Storage**: Existing catalog EF Core stores and migrations for accounts, external identities, workspaces, memberships, entitlements, and workspace-owned resources.
 
-**Testing**: `dotnet test`, with focused API and persistence coverage under `tests/Elsa.Platform.PackageCatalog.Api.Tests` and related package catalog test projects.
+**Testing**: `dotnet test`, with focused API and persistence coverage under `tests/Elsa.Platform.Api.Tests` and related package catalog test projects.
 
-**Target Platform**: ASP.NET Core Package Catalog API and React console served from the platform host.
+**Target Platform**: ASP.NET Core Platform API and React console served from the platform host.
 
 **Project Type**: Web service with React admin UI shell and EF-backed persistence.
 
@@ -31,7 +31,7 @@ Promote the existing account/workspace foundation into the platform tenant model
 ## Constitution Check
 
 - **Control Plane First**: Pass. This feature governs platform control-plane access and explicitly defers runtime data-plane tenant reconciliation.
-- **Bounded Subsystems**: Pass. Identity and workspace tenancy are implemented through Package Catalog API/Core/Persistence boundaries first; Deployment and Runtime Builder consume workspace authorization through API/service contracts rather than catalog persistence internals.
+- **Bounded Subsystems**: Pass. Identity and workspace tenancy are implemented through Platform API/Core/Persistence boundaries first; Deployment and Runtime Builder consume workspace authorization through API/service contracts rather than catalog persistence internals.
 - **Contract Stability**: Pass with care. New authentication and workspace context contracts must be documented before replacing trusted-header behavior.
 - **Safety By Design**: Pass. Caller-supplied account, role, entitlement, and workspace membership claims are not trusted; server-side records remain authoritative.
 - **Incremental Verifiability**: Pass. Customer auth, account provisioning, workspace authorization, operator fallback, and cross-workspace isolation are independently testable.
@@ -56,7 +56,7 @@ specs/021-identity-tenancy/
 
 ```text
 src/
-  Elsa.Platform.PackageCatalog.Api/
+  Elsa.Platform.Api/
     Authentication/
       PlatformIdentityOptions.cs
       PlatformIdentityReader.cs
@@ -94,7 +94,7 @@ src/
           AuthCallbackPage.tsx
 
 tests/
-  Elsa.Platform.PackageCatalog.Api.Tests/
+  Elsa.Platform.Api.Tests/
     PlatformIdentityTests.cs
     WorkspaceAuthorizationTests.cs
     WorkspaceIsolationTests.cs

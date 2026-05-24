@@ -8,7 +8,7 @@ public class DependencyBoundaryTests
     private readonly DirectoryInfo _repoRoot = FindRepoRoot();
     private readonly string[] _forbiddenReferenceFragments =
     [
-        "Elsa.Platform.PackageCatalog.Api",
+        "Elsa.Platform.Api",
         "Elsa.Platform.PackageCatalog.Core",
         "Elsa.Platform.Console",
         "Elsa.Platform.PackageCatalog.Persistence",

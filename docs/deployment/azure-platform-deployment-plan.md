@@ -11,7 +11,7 @@ The deployment must be reproducible without depending on an existing `azd` envir
 - Azure Resource Group per environment.
 - Azure Container Registry for the platform API image.
 - Linux Azure App Service Plan.
-- Linux Web App running the Elsa Platform API image built from `src/Elsa.Platform.PackageCatalog.Api/Dockerfile`.
+- Linux Web App running the Elsa Platform API image built from `src/Elsa.Platform.Api/Dockerfile`.
 - Azure SQL logical server and catalog database.
 - Application Insights and Log Analytics for runtime telemetry.
 - System-assigned Web App identity with `AcrPull` on the registry.

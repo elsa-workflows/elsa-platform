@@ -47,13 +47,13 @@ under `/admin`, push it to ACR, and update the existing App Service site
 container:
 
 ```bash
-docker build --file src/Elsa.Platform.PackageCatalog.Api/Dockerfile --tag <acr>/<repo>:<sha> .
+docker build --file src/Elsa.Platform.Api/Dockerfile --tag <acr>/<repo>:<sha> .
 docker push <acr>/<repo>:<sha>
 az webapp sitecontainers update ...
 ```
 
 The Dockerfile uses a Node build stage for `src/Elsa.Platform.Console` and copies
-the Vite `dist` output into `src/Elsa.Platform.PackageCatalog.Api/wwwroot/admin` before
+the Vite `dist` output into `src/Elsa.Platform.Api/wwwroot/admin` before
 `dotnet publish`. ASP.NET Core serves `/admin` as the console SPA and keeps the
 admin API endpoints under `/api/admin`.
 

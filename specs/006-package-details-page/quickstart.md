@@ -53,9 +53,9 @@
 Run:
 
 ```sh
-dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter AdminPackages
-dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter AdminValidation
-dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj --filter AdminApproval
+dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter AdminPackages
+dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter AdminValidation
+dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter AdminApproval
 cd src/Elsa.Platform.Console && npm test -- src/features/packages/PackageDetailsPage.test.tsx src/features/packages/packageModels.test.ts
 cd tests/Elsa.Platform.Console.E2E && npm run e2e -- package-details.spec.ts
 ```
@@ -64,7 +64,7 @@ cd tests/Elsa.Platform.Console.E2E && npm run e2e -- package-details.spec.ts
 
 Verified on 2026-05-17:
 
-- `dotnet test tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj`
+- `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj`
 - `cd src/Elsa.Platform.Console && npm test`
 - `cd src/Elsa.Platform.Console && npm run typecheck`
 - `cd src/Elsa.Platform.Console && npm run build`

@@ -72,7 +72,7 @@ src/
 │   │   └── Renderers/
 │   ├── Compatibility/
 │   └── Packages/
-└── Elsa.Platform.PackageCatalog.Api/
+└── Elsa.Platform.Api/
     ├── Public/Builder/
     │   ├── BuilderContracts.cs
     │   └── BuilderEndpoints.cs
@@ -82,7 +82,7 @@ src/
 tests/
 ├── Elsa.Platform.PackageCatalog.Core.Tests/
 │   └── BuilderBundleGenerationTests.cs
-└── Elsa.Platform.PackageCatalog.Api.Tests/
+└── Elsa.Platform.Api.Tests/
     ├── PublicBuilderBundleApiTests.cs
     └── WorkspaceBuilderBundleApiTests.cs
 ```

@@ -17,7 +17,7 @@ The test project may depend on:
 
 `Elsa.Platform.Deployment.Abstractions` must not reference:
 
-- `Elsa.Platform.PackageCatalog.Api`
+- `Elsa.Platform.Api`
 - `Elsa.Platform.PackageCatalog.Core`
 - `Elsa.Platform.Console`
 - `Elsa.Platform.PackageCatalog.Persistence.*`

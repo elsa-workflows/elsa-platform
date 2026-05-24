@@ -81,7 +81,7 @@ src/
 │   ├── PublicCatalogQueries.cs
 │   ├── PublicSourceQueries.cs
 │   └── Models/CatalogModelConfiguration.cs
-├── Elsa.Platform.PackageCatalog.Api/
+├── Elsa.Platform.Api/
 │   └── Public/
 │       ├── Sources/
 │       ├── Packages/
@@ -92,10 +92,10 @@ src/
 tests/
 ├── Elsa.Platform.PackageCatalog.Core.Tests/
 ├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
-└── Elsa.Platform.PackageCatalog.Api.Tests/
+└── Elsa.Platform.Api.Tests/
 ```
 
-**Structure Decision**: Keep public source filtering and source-qualified package queries in `Elsa.Platform.PackageCatalog.Core` and EF Core query adapters because visibility is domain/query behavior. Expose public browseable sources and source-qualified package routes under `Elsa.Platform.PackageCatalog.Api/Public`. Defer account/workspace source management to a later `Accounts` or `Workspaces` area once paid custom feeds are actively implemented.
+**Structure Decision**: Keep public source filtering and source-qualified package queries in `Elsa.Platform.PackageCatalog.Core` and EF Core query adapters because visibility is domain/query behavior. Expose public browseable sources and source-qualified package routes under `Elsa.Platform.Api/Public`. Defer account/workspace source management to a later `Accounts` or `Workspaces` area once paid custom feeds are actively implemented.
 
 ## Complexity Tracking
 

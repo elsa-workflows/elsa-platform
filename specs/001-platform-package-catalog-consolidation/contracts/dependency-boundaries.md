@@ -10,7 +10,7 @@ Elsa.Platform.PackageCatalog.*
   -> Elsa.Platform.PackageCatalog.Abstractions
   -> Elsa.Platform.PackageManifests
 
-Elsa.Platform.PackageCatalog.Api
+Elsa.Platform.Api
   -> Elsa.Platform.PackageCatalog.Core
   -> Elsa.Platform.PackageCatalog.Persistence.*
   -> Elsa.Platform.PackageCatalog.Sources.*
@@ -29,7 +29,7 @@ Elsa.Platform.Deployment.*
 
 ## Forbidden References
 
-- Deployment must not reference Package Catalog API, Platform Console, EF persistence, migrations, AppHost, or NuGet source provider projects.
+- Deployment must not reference Platform API, Platform Console, EF persistence, migrations, AppHost, or NuGet source provider projects.
 - Package Manifests must not reference Package Catalog, Deployment, Generator implementation, persistence, hosting, ASP.NET Core, EF Core, or NuGet.Protocol.
 - Catalog Core must not reference Platform Console.
 - Catalog Core should not reference concrete source providers unless the boundary is explicitly reviewed.
@@ -107,7 +107,7 @@ Observed state after platform naming normalization:
 
 - `Elsa.Platform.PackageCatalog.Abstractions` exists and currently owns compatibility validation request/result contracts only.
 - `Elsa.Platform.PackageCatalog.Core` references `Elsa.Platform.PackageCatalog.Abstractions` and `Elsa.Platform.PackageManifests`.
-- `Elsa.Platform.PackageCatalog.Api` references abstractions directly because endpoint code maps public API requests into compatibility contracts.
+- `Elsa.Platform.Api` references abstractions directly because endpoint code maps public API requests into compatibility contracts.
 - `Elsa.Platform.PackageManifests` has no project references to catalog, deployment, persistence, hosting, API, or generator implementation projects.
 - `Elsa.Platform.PackageCatalog.Sources.NuGet` still references catalog Core because source-provider ports and entities have not yet been split into a source-provider abstraction.
 - Runtime Builder services remain in Package Catalog projects until Phase 6. This is a tracked temporary state, not the final boundary.
@@ -120,12 +120,12 @@ Inspection date: 2026-05-19.
 Observed state after Runtime Builder extraction:
 
 - `Elsa.Platform.RuntimeBuilder.Core` references `Elsa.Platform.RuntimeBuilder.Abstractions`, `Elsa.Platform.RuntimeBuilder.DeploymentTemplates`, and `Elsa.Platform.PackageCatalog.Abstractions`.
-- `Elsa.Platform.RuntimeBuilder.Core` has no project reference to Package Catalog Core, Package Catalog API, Package Catalog EF persistence, migrations, source providers, or Console.
+- `Elsa.Platform.RuntimeBuilder.Core` has no project reference to Package Catalog Core, Platform API, Package Catalog EF persistence, migrations, source providers, or Console.
 - Runtime Builder reads catalog package projections through `IPublicCatalogQueries` from Package Catalog abstractions.
 - Runtime Builder checks selected package compatibility through `IPackageCompatibilityService` from Package Catalog abstractions.
 - Runtime configuration models and the `IRuntimeConfigurationStore` seam live in Runtime Builder abstractions.
 - The current EF implementation of runtime configuration storage still lives in `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore` because the imported service currently uses the catalog database context. This is a host adapter detail, not a Runtime Builder Core dependency.
-- Runtime Builder HTTP endpoints are still hosted by `Elsa.Platform.PackageCatalog.Api` pending a later `Elsa.Platform.RuntimeBuilder.Api` packaging decision.
+- Runtime Builder HTTP endpoints are still hosted by `Elsa.Platform.Api` pending a later `Elsa.Platform.RuntimeBuilder.Api` packaging decision.
 - BYOC deployment targets, managed hosting, runtime operations, and fleet concerns remain deferred.
 
 ## Phase 8 Deployment Integration Boundary
@@ -137,7 +137,7 @@ Deployment-facing package requirement validation now starts at `Elsa.Platform.Pa
 Required boundary:
 
 - Deployment may reference `Elsa.Platform.PackageCatalog.Abstractions`.
-- Deployment may not reference `Elsa.Platform.PackageCatalog.Api`, `Elsa.Platform.Console`, `Elsa.Platform.PackageCatalog.Persistence.*`, `Elsa.Platform.PackageCatalog.Sources.*`, `Elsa.Platform.PackageCatalog.AppHost`, or catalog migration projects.
+- Deployment may not reference `Elsa.Platform.Api`, `Elsa.Platform.Console`, `Elsa.Platform.PackageCatalog.Persistence.*`, `Elsa.Platform.PackageCatalog.Sources.*`, `Elsa.Platform.PackageCatalog.AppHost`, or catalog migration projects.
 - Deployment may validate package requirements through catalog abstractions or a future transport-specific client adapter.
 - Deployment should consume deployment-specific manifests and artifacts. Runtime Builder intent or generated bundles may become artifact-build inputs later, but must not bypass deployment validation, diff, dry-run, apply, or history.
 

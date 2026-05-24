@@ -68,7 +68,7 @@ src/
 │       ├── RuntimeImageCatalog.cs
 │       ├── RuntimeImageModels.cs
 │       └── RuntimeImageValidator.cs
-└── Elsa.Platform.PackageCatalog.Api/
+└── Elsa.Platform.Api/
     └── Public/Builder/
         ├── BuilderContracts.cs
         └── BuilderEndpoints.cs
@@ -76,7 +76,7 @@ src/
 tests/
 ├── Elsa.Platform.PackageCatalog.Core.Tests/
 │   └── RuntimeImageCatalogTests.cs
-└── Elsa.Platform.PackageCatalog.Api.Tests/
+└── Elsa.Platform.Api.Tests/
     └── RuntimeImageApiTests.cs
 ```
 

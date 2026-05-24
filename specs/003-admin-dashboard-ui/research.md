@@ -10,7 +10,7 @@ remaining in the same monorepo and local development flow.
 
 **Alternatives considered**:
 
-- Embed UI files directly in `Elsa.Platform.PackageCatalog.Api`: rejected because it mixes
+- Embed UI files directly in `Elsa.Platform.Api`: rejected because it mixes
   frontend build concerns with API endpoints and makes UI testing/dependencies
   noisier.
 - Create an external repository: rejected because this is an internal operator

@@ -73,7 +73,7 @@ Merged PR reviewed: [elsa-workflows/elsa-package-catalog#36](https://github.com/
 
 Current source projects:
 
-- `Elsa.Platform.PackageCatalog.Api`
+- `Elsa.Platform.Api`
 - `Elsa.Platform.PackageCatalog.AppHost`
 - `Elsa.Platform.PackageCatalog.Core`
 - `Elsa.Platform.PackageCatalog.Sources.NuGet`
@@ -88,7 +88,7 @@ Current source projects:
 
 Current test projects and UI test packages:
 
-- `Elsa.Platform.PackageCatalog.Api.Tests`
+- `Elsa.Platform.Api.Tests`
 - `Elsa.Platform.PackageCatalog.Core.Tests`
 - `Elsa.Platform.PackageCatalog.Sources.NuGet.Tests`
 - `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests`

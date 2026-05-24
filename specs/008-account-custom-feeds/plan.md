@@ -75,7 +75,7 @@ src/
 │   └── Models/CatalogModelConfiguration.cs
 ├── Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/
 ├── Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/
-└── Elsa.Platform.PackageCatalog.Api/
+└── Elsa.Platform.Api/
     ├── Authentication/
     ├── Admin/Workspaces/
     └── Workspace/
@@ -83,10 +83,10 @@ src/
 tests/
 ├── Elsa.Platform.PackageCatalog.Core.Tests/
 ├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
-└── Elsa.Platform.PackageCatalog.Api.Tests/
+└── Elsa.Platform.Api.Tests/
 ```
 
-**Structure Decision**: Keep account/workspace domain concepts in `Elsa.Platform.PackageCatalog.Core/Accounts`, EF Core persistence in the existing persistence project, and HTTP endpoints under new workspace/admin route groups in `Elsa.Platform.PackageCatalog.Api`. Extend existing public catalog query services with an explicit optional workspace visibility context rather than creating a separate duplicate package-query stack.
+**Structure Decision**: Keep account/workspace domain concepts in `Elsa.Platform.PackageCatalog.Core/Accounts`, EF Core persistence in the existing persistence project, and HTTP endpoints under new workspace/admin route groups in `Elsa.Platform.Api`. Extend existing public catalog query services with an explicit optional workspace visibility context rather than creating a separate duplicate package-query stack.
 
 ## Complexity Tracking
 
