@@ -39,7 +39,7 @@ public sealed class AdminDashboardAuthenticationMiddleware(RequestDelegate next)
     }
 
     private static bool RequiresDashboardAuthentication(PathString path) =>
-        path.StartsWithSegments("/admin") &&
+        (path.Equals("/admin") || path.StartsWithSegments("/admin")) &&
         !path.StartsWithSegments(AdminDashboardAuthenticationDefaults.LoginPath) &&
         !path.StartsWithSegments(AdminDashboardAuthenticationDefaults.LogoutPath);
 

@@ -29,6 +29,20 @@ public sealed class AdminDashboardAuthenticationTests
     }
 
     [Fact]
+    public async Task Dashboard_root_redirects_anonymous_browser_to_platform_sign_in()
+    {
+        await using var app = new PlatformApiTestApplication();
+        var client = app.CreateClient(new() { AllowAutoRedirect = false });
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.OriginalString.Should().StartWith($"{CustomerAuthenticationDefaults.LoginPath}?returnUrl=");
+    }
+
+    [Fact]
     public async Task Dashboard_asset_rejects_anonymous_non_browser_request()
     {
         await using var app = new PlatformApiTestApplication();

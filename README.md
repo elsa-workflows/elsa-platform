@@ -114,9 +114,12 @@ Run the Aspire host:
 dotnet run --project src/Elsa.Platform.AppHost
 ```
 
-In local Aspire runs, the dashboard starts both the API and the Vite-based
-console. Production publish still serves the built console assets from the API
-container under `/admin`.
+In local Aspire runs, the dashboard starts Keycloak, the API, and the Vite-based
+console. The Aspire-managed Keycloak instance imports
+`dev/keycloak/elsa-platform-realm.json`, listens on `http://localhost:8080`, and
+uses `admin` / `admin` for the local admin console. The imported console user is
+`ada` / `password`. Production publish still serves the built console assets from
+the API container under `/admin`.
 
 Run the console during frontend development:
 

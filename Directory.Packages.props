@@ -4,9 +4,10 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
-    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.3.2" />
-    <PackageVersion Include="Aspire.Hosting.Azure.AppService" Version="13.3.2" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Sql" Version="13.3.2" />
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.3.5" />
+    <PackageVersion Include="Aspire.Hosting.Keycloak" Version="13.3.5-preview.1.26270.6" />
+    <PackageVersion Include="Aspire.Hosting.Azure.AppService" Version="13.3.5" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Sql" Version="13.3.5" />
     <PackageVersion Include="FluentAssertions" Version="8.8.0" />
     <PackageVersion Include="JetBrains.Annotations" Version="2025.2.4" />
     <PackageVersion Include="JsonSchema.Net" Version="9.2.0" />

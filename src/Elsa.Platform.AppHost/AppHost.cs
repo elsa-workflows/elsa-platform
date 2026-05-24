@@ -54,8 +54,33 @@ if (builder.ExecutionContext.IsPublishMode)
 }
 else
 {
+    const string keycloakAuthority = "http://localhost:8080/realms/elsa-platform";
+    const string keycloakClientId = "elsa-platform-console";
+    const string keycloakClientSecret = "local-dev-secret";
+    var keycloakAdminUsername = builder.AddParameter("keycloak-admin-username", "admin");
+    var keycloakAdminPassword = builder.AddParameter("keycloak-admin-password", "admin", secret: true);
+    var keycloakRealmImport = Path.GetFullPath(
+        Path.Combine(builder.AppHostDirectory, "../../dev/keycloak/elsa-platform-realm.json"));
+    var keycloak = builder.AddKeycloak(
+            "keycloak",
+            port: 8080,
+            adminUsername: keycloakAdminUsername,
+            adminPassword: keycloakAdminPassword)
+        .WithRealmImport(keycloakRealmImport);
+
     api.WithEnvironment("Database__Provider", "Sqlite")
-        .WithEnvironment("ConnectionStrings__Catalog", "Data Source=elsa-catalog-dev.db");
+        .WithEnvironment("ConnectionStrings__Catalog", "Data Source=elsa-catalog-dev.db")
+        .WithEnvironment("Authentication__PlatformIdentity__Provider", "Keycloak")
+        .WithEnvironment("Authentication__PlatformIdentity__Authority", keycloakAuthority)
+        .WithEnvironment("Authentication__PlatformIdentity__Issuer", keycloakAuthority)
+        .WithEnvironment("Authentication__PlatformIdentity__Audience", keycloakClientId)
+        .WithEnvironment("Authentication__PlatformIdentity__ClientId", keycloakClientId)
+        .WithEnvironment("Authentication__PlatformIdentity__ClientSecret", keycloakClientSecret)
+        .WithEnvironment("Authentication__PlatformIdentity__RedirectUri", "/api/auth/callback")
+        .WithEnvironment("Authentication__PlatformIdentity__PostLogoutRedirectUri", "/admin")
+        .WithEnvironment("Authentication__PlatformIdentity__RequireHttpsMetadata", "false")
+        .WithEnvironment("Authentication__WorkspaceTrustedHeaders__Enabled", "false")
+        .WaitFor(keycloak);
 
     builder.AddViteApp("console", "../Elsa.Platform.Console")
         .WithReference(api)
