@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Elsa.Platform.PackageCatalog.Core.Manifests;
 using Elsa.Platform.PackageCatalog.Core.Packages;
@@ -218,5 +219,102 @@ internal sealed class RuntimeConfigurationVersionConfiguration : IEntityTypeConf
         builder.Property(x => x.CreatedAt)
             .HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.RuntimeConfigurationId, x.VersionNumber }).IsUnique();
+    }
+}
+
+internal sealed class DeploymentApplicationConfiguration : IEntityTypeConfiguration<DeploymentApplicationEntity>
+{
+    public void Configure(EntityTypeBuilder<DeploymentApplicationEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Description).HasMaxLength(1000);
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.WorkspaceId, x.Name }).IsUnique();
+        builder.HasOne<Workspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.Environments).WithOne(x => x.Application).HasForeignKey(x => x.ApplicationId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class DeploymentEnvironmentConfiguration : IEntityTypeConfiguration<DeploymentEnvironmentEntity>
+{
+    public void Configure(EntityTypeBuilder<DeploymentEnvironmentEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Tier).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.DeploymentStatus).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.DriftStatus).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.Name }).IsUnique();
+        builder.HasMany(x => x.Engines).WithOne(x => x.Environment).HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.Revisions).WithOne(x => x.Environment).HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class WorkflowEngineConfiguration : IEntityTypeConfiguration<WorkflowEngineEntity>
+{
+    public void Configure(EntityTypeBuilder<WorkflowEngineEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.BaseUrl).HasMaxLength(2048).IsRequired();
+        builder.Property(x => x.Region).HasMaxLength(128);
+        builder.Property(x => x.Version).HasMaxLength(128);
+        builder.Property(x => x.CertificateStatus).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.CredentialProvider).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.CredentialReference).HasMaxLength(1024).IsRequired();
+        builder.Property(x => x.CredentialVerificationStatus).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.Health).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.HostingProvider).HasMaxLength(200);
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.WorkspaceId, x.EnvironmentId, x.Name }).IsUnique();
+        builder.HasMany(x => x.Capabilities).WithOne(x => x.Engine).HasForeignKey(x => x.EngineId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.Controls).WithOne(x => x.Engine).HasForeignKey(x => x.EngineId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class EngineCapabilityConfiguration : IEntityTypeConfiguration<EngineCapabilityEntity>
+{
+    public void Configure(EntityTypeBuilder<EngineCapabilityEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.CapabilityId).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Label).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Boundary).HasConversion<string>().HasMaxLength(32);
+        builder.HasIndex(x => new { x.EngineId, x.CapabilityId }).IsUnique();
+    }
+}
+
+internal sealed class RuntimeControlConfiguration : IEntityTypeConfiguration<RuntimeControlEntity>
+{
+    public void Configure(EntityTypeBuilder<RuntimeControlEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.ControlId).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Label).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Boundary).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.RequiredCapabilityId).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Description).HasMaxLength(1000).IsRequired();
+        builder.HasIndex(x => new { x.EngineId, x.ControlId }).IsUnique();
+    }
+}
+
+internal sealed class DesiredStateRevisionConfiguration : IEntityTypeConfiguration<DesiredStateRevisionEntity>
+{
+    public void Configure(EntityTypeBuilder<DesiredStateRevisionEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Label).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Commit).HasMaxLength(128);
+        builder.Property(x => x.ContentHash).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.DesiredStateJson).IsRequired();
+        builder.Property(x => x.AuthoredAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.EnvironmentId, x.RevisionNumber }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.ContentHash });
     }
 }

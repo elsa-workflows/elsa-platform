@@ -1,9 +1,35 @@
+using Elsa.Platform.Deployment.Core.Workspace;
+
 namespace Elsa.Platform.Deployment.Core.Cockpit;
 
-public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore
+public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore, IWorkspaceDeploymentStore
 {
     public Task<DeploymentCockpit> GetCockpitAsync(Guid workspaceId, CancellationToken cancellationToken = default) =>
         Task.FromResult(Seed(workspaceId));
+
+    public Task<WorkspaceDeploymentApplication> CreateApplicationAsync(
+        Guid workspaceId,
+        CreateWorkflowApplicationRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
+
+    public Task<WorkspaceDeploymentEnvironment> CreateEnvironmentAsync(
+        Guid workspaceId,
+        CreateDeploymentEnvironmentRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
+
+    public Task<WorkspaceWorkflowEngine> RegisterEngineAsync(
+        Guid workspaceId,
+        RegisterWorkflowEngineRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
+
+    public Task<WorkspaceDesiredStateRevision> CreateRevisionAsync(
+        Guid workspaceId,
+        CreateDesiredStateRevisionRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
 
     private static DeploymentCockpit Seed(Guid workspaceId)
     {

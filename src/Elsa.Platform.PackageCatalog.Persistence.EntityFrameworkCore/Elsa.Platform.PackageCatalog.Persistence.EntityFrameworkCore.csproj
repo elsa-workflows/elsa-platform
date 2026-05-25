@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <ProjectReference Include="..\Elsa.Platform.Deployment.Core\Elsa.Platform.Deployment.Core.csproj" />
     <ProjectReference Include="..\Elsa.Platform.PackageCatalog.Core\Elsa.Platform.PackageCatalog.Core.csproj" />
     <ProjectReference Include="..\Elsa.Platform.PackageManifests\Elsa.Platform.PackageManifests.csproj" />
     <ProjectReference Include="..\Elsa.Platform.RuntimeBuilder.Abstractions\Elsa.Platform.RuntimeBuilder.Abstractions.csproj" />

@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Serialization;
 using Elsa.Platform.Deployment.Core.Cockpit;
+using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.PackageCatalog.Abstractions.Catalog;
 using Elsa.Platform.PackageCatalog.Abstractions.Compatibility;
 using Elsa.Platform.Api.Admin.Application;
@@ -164,7 +165,7 @@ builder.Services.AddScoped<ApprovalService>();
 builder.Services.AddScoped<CompatibilityCheckService>();
 builder.Services.AddScoped<IPackageCompatibilityService>(services => services.GetRequiredService<CompatibilityCheckService>());
 builder.Services.AddScoped<DeploymentCockpitService>();
-builder.Services.AddSingleton<IDeploymentCockpitStore, InMemoryDeploymentCockpitStore>();
+builder.Services.AddScoped<IWorkspaceDeploymentStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<IPackageVersionDiscoveryClient, NuGetPackageSourceClient>();
 builder.Services.AddScoped<IPackageArchiveDownloader, NuGetSyncPackageDownloader>();
 builder.Services.AddScoped<IPackageArchiveManifestReader, PackageArchiveManifestReader>();
