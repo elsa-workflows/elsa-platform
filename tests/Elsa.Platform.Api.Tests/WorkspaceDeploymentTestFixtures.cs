@@ -1,5 +1,9 @@
 using Elsa.Platform.Api.Authentication;
 using Elsa.Platform.Api.Workspace;
+using Elsa.Platform.Deployment.Core.Workspace;
+using Elsa.Platform.PackageCatalog.Core.Accounts;
+using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Elsa.Platform.Api.Tests;
 
@@ -23,5 +27,31 @@ internal static class WorkspaceDeploymentTestFixtures
     {
         var response = await client.GetPlatformJsonAsync<MeWorkspacesResponse>("/api/me/workspaces", cancellationToken);
         return response!.Workspaces.Single().Id;
+    }
+
+    public static async Task<Guid> AddWorkspaceMemberAsync(this PlatformApiTestApplication app, Guid workspaceId, string subject, WorkspaceRole role)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        var account = new Account { DisplayName = subject, Email = $"{subject}@example.test" };
+        account.ExternalIdentities.Add(new ExternalIdentity
+        {
+            Account = account,
+            Issuer = DefaultIssuer,
+            Subject = subject,
+            DisplayName = subject,
+            Email = $"{subject}@example.test"
+        });
+        account.Memberships.Add(new WorkspaceMembership { Account = account, WorkspaceId = workspaceId, Role = role });
+        db.Accounts.Add(account);
+        await db.SaveChangesAsync();
+        return account.Id;
+    }
+
+    public static async Task GrantWorkspaceDeploymentPermissionAsync(this PlatformApiTestApplication app, Guid workspaceId, Guid accountId, string permission)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IWorkspacePermissionStore>();
+        await store.GrantPermissionAsync(workspaceId, new GrantWorkspacePermissionRequest(accountId, permission, null));
     }
 }

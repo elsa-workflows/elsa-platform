@@ -1,6 +1,7 @@
 export type DeploymentHealth = "Healthy" | "Degraded" | "Unreachable";
 export type DriftStatus = "InSync" | "DriftDetected" | "Unknown";
 export type DeploymentStatus = "Succeeded" | "Running" | "Blocked" | "RolledBack";
+export type WorkspaceDeploymentRunStatus = "Queued" | "Running" | "Succeeded" | "Failed" | "Blocked" | "Cancelled" | "RolledBack" | "RecoveryRequired";
 export type CredentialVerificationStatus = "Verified" | "Missing" | "Expired" | "Unverified";
 export type CapabilityBoundary = "Workflow" | "EngineApi" | "Shell" | "Hosting";
 export type ValidationSeverity = "Pass" | "Warning" | "Blocker";
@@ -105,6 +106,115 @@ export type PromotionComparison = {
   rollbackRevision: number | null;
 };
 
+export type DesiredStateRecordKind =
+  | "Workflow"
+  | "Feature"
+  | "ShellConfiguration"
+  | "RuntimeConfiguration"
+  | "SecretReference"
+  | "ObservabilityBinding"
+  | "EngineBinding";
+
+export type WorkspaceDesiredStateRecordRequest = {
+  kind: DesiredStateRecordKind;
+  name: string;
+  payload: unknown;
+};
+
+export type CreateDesiredStateRevisionRequest = {
+  label: string;
+  commit: string | null;
+  records: WorkspaceDesiredStateRecordRequest[];
+};
+
+export type WorkspaceDesiredStateRevision = {
+  id: string;
+  workspaceId: string;
+  applicationId: string;
+  environmentId: string;
+  revisionNumber: number;
+  label: string;
+  commit: string | null;
+  contentHash: string;
+  desiredStateJson: string;
+};
+
+export type PromotionPreviewRequest = {
+  sourceEnvironmentId: string;
+  targetEnvironmentId: string;
+  sourceRevisionId: string;
+  targetEngineId: string;
+};
+
+export type ConfirmationActionType = "Deploy" | "Rollback" | "RuntimeControl";
+
+export type ActionConfirmation = {
+  id: string;
+  workspaceId: string;
+  actionType: ConfirmationActionType;
+  targetId: string;
+  confirmedByAccountId: string;
+  confirmedAt: string;
+  expiresAt: string;
+  usedAt: string | null;
+};
+
+export type CreateActionConfirmationRequest = {
+  actionType: ConfirmationActionType;
+  targetId: string;
+  lifetimeSeconds: number | null;
+};
+
+export type QueueDeploymentRunRequest = {
+  sourceRevisionId: string;
+  targetEnvironmentId: string;
+  targetEngineId: string;
+  confirmationId: string;
+  mode: "DryRun" | "Apply";
+};
+
+export type QueueRollbackRunRequest = QueueDeploymentRunRequest & {
+  rollbackSourceRunId: string;
+};
+
+export type WorkspaceDeploymentRun = {
+  id: string;
+  workspaceId: string;
+  applicationId: string;
+  environmentId: string;
+  engineId: string;
+  sourceRevisionId: string;
+  previousDeployedRevisionId: string | null;
+  rollbackSourceRunId: string | null;
+  status: WorkspaceDeploymentRunStatus;
+  validationOutcome: "Passed" | "Warnings" | "Blocked";
+  confirmationId: string;
+  actorAccountId: string;
+  queuedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  workerId: string | null;
+  workerHeartbeatAt: string | null;
+  attemptNumber: number;
+  recoveryReason: string | null;
+  failureMessage: string | null;
+};
+
+export type DeploymentRunHistoryRecord = {
+  id: string;
+  workspaceId: string;
+  runId: string;
+  status: WorkspaceDeploymentRunStatus;
+  message: string;
+  createdAt: string;
+};
+
+export type WorkspaceDeploymentRunDetailResponse = {
+  run: WorkspaceDeploymentRun;
+  history: DeploymentRunHistoryRecord[];
+};
+
 export type ObservabilityBinding = {
   id: string;
   kind: "Logs" | "Traces" | "Metrics" | "Console";
@@ -165,6 +275,40 @@ export type DeploymentCockpit = {
 
 export type WorkspaceDeploymentPermissionsResponse = {
   permissions: DeploymentPermission[];
+};
+
+export type CreateDeploymentApplicationRequest = {
+  name: string;
+  description: string | null;
+};
+
+export type CreateDeploymentEnvironmentRequest = {
+  name: string;
+  tier: EnvironmentSummary["tier"];
+};
+
+export type RegisterDeploymentEngineRequest = {
+  name: string;
+  baseUrl: string;
+  region: string | null;
+  credentialProvider: string;
+  credentialReference: string;
+  capabilities: EngineCapability[];
+  controls: RuntimeControl[];
+  hostingProvider: string | null;
+};
+
+export type CreatedDeploymentApplication = {
+  id: string;
+  workspaceId: string;
+  name: string;
+};
+
+export type CreatedDeploymentEnvironment = {
+  id: string;
+  workspaceId: string;
+  applicationId: string;
+  name: string;
 };
 
 export function environmentLabel(environmentId: string, applications: WorkflowApplication[]) {

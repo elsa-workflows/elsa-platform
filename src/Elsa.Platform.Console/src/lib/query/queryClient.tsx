@@ -26,6 +26,7 @@ export const queryKeys = {
   syncRun: (runId: string) => ["sync-runs", runId] as const,
   deploymentWorkspaceContext: ["deployments", "workspace-context"] as const,
   deploymentCockpit: (workspaceId: string) => ["deployments", workspaceId, "cockpit"] as const,
+  deploymentPermissions: (workspaceId: string) => ["deployments", workspaceId, "permissions"] as const,
   overview: ["overview"] as const,
   workspaceContext: ["workspace-context"] as const,
   runtimeBuilderCatalog: (workspaceId: string) => ["runtime-builder", workspaceId, "catalog"] as const,

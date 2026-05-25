@@ -75,6 +75,82 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Persists_structured_desired_state_records_and_keeps_revisions_immutable()
+    {
+        var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));
+        var environment = await _store.CreateEnvironmentAsync(_workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production));
+        var first = await _store.CreateRevisionAsync(
+            _workspaceId,
+            new CreateDesiredStateRevisionRequest(application.Id, environment.Id, "Baseline", "abc123", """
+                {"records":[{"kind":"Workflow","name":"Payment Retry","payload":{"version":1}}]}
+                """, null));
+        var second = await _store.CreateRevisionAsync(
+            _workspaceId,
+            new CreateDesiredStateRevisionRequest(application.Id, environment.Id, "Update", "def456", """
+                {"records":[{"kind":"Workflow","name":"Payment Retry","payload":{"version":2}}]}
+                """, null));
+
+        _db.ChangeTracker.Clear();
+        var loadedFirst = await _store.GetRevisionAsync(_workspaceId, first.Id);
+        var latest = await _store.GetLatestRevisionAsync(_workspaceId, environment.Id);
+        var recordCount = await CountStructuredDesiredStateRecordsAsync();
+
+        loadedFirst!.RevisionNumber.Should().Be(1);
+        loadedFirst.DesiredStateJson.Should().Contain("\"version\":1");
+        latest!.Id.Should().Be(second.Id);
+        latest.RevisionNumber.Should().Be(2);
+        recordCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Persists_confirmations_runs_and_append_only_history()
+    {
+        var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));
+        var sourceEnvironment = await _store.CreateEnvironmentAsync(_workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Stage", EnvironmentTier.Stage));
+        var targetEnvironment = await _store.CreateEnvironmentAsync(_workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production));
+        var engine = await _store.RegisterEngineAsync(
+            _workspaceId,
+            new RegisterWorkflowEngineRequest(
+                targetEnvironment.Id,
+                "claims-prod",
+                "https://workflows.example.test/elsa",
+                null,
+                "Azure Key Vault",
+                "kv://claims/prod/elsa-api",
+                [],
+                [],
+                null));
+        var revision = await _store.CreateRevisionAsync(
+            _workspaceId,
+            new CreateDesiredStateRevisionRequest(application.Id, sourceEnvironment.Id, "Candidate", "abc123", "{\"records\":[]}", null));
+        var mutationStore = (IWorkspaceDeploymentMutationStore)_store;
+        var now = DateTimeOffset.UtcNow;
+        var confirmation = await mutationStore.CreateConfirmationAsync(
+            _workspaceId,
+            new CreateActionConfirmationRequest(ConfirmationActionType.Deploy, revision.Id.ToString("D"), _accountId),
+            now);
+        var usedConfirmation = await mutationStore.MarkConfirmationUsedAsync(_workspaceId, confirmation.Id, now.AddSeconds(1));
+        var run = await mutationStore.CreateRunAsync(
+            _workspaceId,
+            new QueueWorkspaceDeploymentRunRequest(revision.Id, targetEnvironment.Id, engine.Id, confirmation.Id, _accountId),
+            now.AddSeconds(2));
+
+        var claimed = await mutationStore.ClaimNextQueuedRunAsync("worker-1", now.AddSeconds(3));
+        var completed = await mutationStore.UpdateRunStatusAsync(_workspaceId, run.Id, WorkspaceDeploymentRunStatus.Succeeded, "Deployment run completed.", now.AddSeconds(4));
+        var loaded = await mutationStore.GetRunAsync(_workspaceId, run.Id);
+        var history = await mutationStore.GetRunHistoryAsync(_workspaceId, run.Id);
+
+        usedConfirmation.UsedAt.Should().Be(now.AddSeconds(1));
+        claimed!.Id.Should().Be(run.Id);
+        completed.Status.Should().Be(WorkspaceDeploymentRunStatus.Succeeded);
+        loaded!.Status.Should().Be(WorkspaceDeploymentRunStatus.Succeeded);
+        history.Select(x => x.Status).Should().Equal(
+            WorkspaceDeploymentRunStatus.Queued,
+            WorkspaceDeploymentRunStatus.Running,
+            WorkspaceDeploymentRunStatus.Succeeded);
+    }
+
+    [Fact]
     public async Task Projects_persisted_observability_and_drift_metadata()
     {
         var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));
@@ -115,6 +191,14 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
     }
 
     public void Dispose() => _db.Dispose();
+
+    private async Task<long> CountStructuredDesiredStateRecordsAsync()
+    {
+        await using var command = _db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM StructuredDesiredStateRecords";
+        var count = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(count);
+    }
 
     private static CatalogDbContext CreateDbContext()
     {

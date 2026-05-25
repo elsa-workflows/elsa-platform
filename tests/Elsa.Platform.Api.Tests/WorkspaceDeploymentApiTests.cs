@@ -1,7 +1,10 @@
 using System.Diagnostics;
 using System.Net;
+using System.Text.Json;
+using Elsa.Platform.Api.Workspace;
 using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
+using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -68,6 +71,132 @@ public sealed class WorkspaceDeploymentApiTests
         cockpit.Engines.Should().HaveCount(200);
     }
 
+    [Fact]
+    public async Task Owner_can_create_desired_state_revision_and_preview_promotion()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("preview-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var (application, sourceEnvironment, targetEnvironment, targetEngine) = await SeedPreviewTopologyAsync(app, workspaceId);
+
+        var sourceRevisionResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications/{application.Id}/environments/{sourceEnvironment.Id}/revisions",
+            new WorkspaceDesiredStateRevisionRequest(
+                "Stage candidate",
+                "stage123",
+                [
+                    Record(DesiredStateRecordKind.Workflow, "Payment Retry", "{\"version\":8}"),
+                    Record(DesiredStateRecordKind.SecretReference, "Payment API", "{\"reference\":\"kv://claims/prod/payment-api\"}")
+                ]));
+        var targetRevision = await CreateRevisionDirectAsync(app, workspaceId, application.Id, targetEnvironment.Id, "Prod baseline", "{\"records\":[{\"kind\":\"Workflow\",\"name\":\"Payment Retry\",\"payload\":{\"version\":7}}]}");
+        var sourceRevision = await sourceRevisionResponse.Content.ReadPlatformJsonAsync<WorkspaceDesiredStateRevision>();
+
+        var previewResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/promotions/preview",
+            new WorkspacePromotionPreviewRequestDto(sourceEnvironment.Id, targetEnvironment.Id, sourceRevision!.Id, targetEngine.Id));
+        var preview = await previewResponse.Content.ReadPlatformJsonAsync<PromotionComparison>();
+
+        sourceRevisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        previewResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        preview!.SourceRevision.Should().Be(sourceRevision.RevisionNumber);
+        preview.TargetRevision.Should().Be(targetRevision.RevisionNumber);
+        preview.Diff.Should().Contain(x => x.Name == "Payment Retry" && x.Impact == DiffImpact.Changed);
+        preview.Diff.Should().Contain(x => x.Name == "Payment API" && x.Impact == DiffImpact.Added);
+        preview.Validations.Should().Contain(x => x.Severity == ValidationSeverity.Pass);
+    }
+
+    [Fact]
+    public async Task Promotion_preview_requires_preview_permission_for_readers()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("preview-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var (application, sourceEnvironment, targetEnvironment, targetEngine) = await SeedPreviewTopologyAsync(app, workspaceId);
+        var sourceRevision = await CreateRevisionDirectAsync(app, workspaceId, application.Id, sourceEnvironment.Id, "Stage candidate", "{\"records\":[]}");
+        var readerAccountId = await app.AddWorkspaceMemberAsync(workspaceId, "preview-reader", WorkspaceRole.Reader);
+        var reader = app.CreateTrustedWorkspaceClient("preview-reader");
+        var request = new WorkspacePromotionPreviewRequestDto(sourceEnvironment.Id, targetEnvironment.Id, sourceRevision.Id, targetEngine.Id);
+
+        var denied = await reader.PostPlatformJsonAsync($"/api/workspaces/{workspaceId}/deployments/promotions/preview", request);
+        await app.GrantWorkspaceDeploymentPermissionAsync(workspaceId, readerAccountId, WorkspaceDeploymentPermissions.PreviewPromotion);
+        var allowed = await reader.PostPlatformJsonAsync($"/api/workspaces/{workspaceId}/deployments/promotions/preview", request);
+
+        denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        allowed.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Owner_can_confirm_queue_inspect_and_rollback_deployment_run()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("run-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var (application, sourceEnvironment, targetEnvironment, targetEngine) = await SeedPreviewTopologyAsync(app, workspaceId);
+        var revision = await CreateRevisionDirectAsync(app, workspaceId, application.Id, sourceEnvironment.Id, "Stage candidate", "{\"records\":[]}");
+
+        var confirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Deploy, revision.Id);
+        var runResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runs",
+            new WorkspaceDeploymentRunRequestDto(revision.Id, targetEnvironment.Id, targetEngine.Id, confirmation.Id, DeploymentRunMode.Apply));
+        var run = await runResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentRun>();
+        var detail = await owner.GetPlatformJsonAsync<WorkspaceDeploymentRunDetailResponse>($"/api/workspaces/{workspaceId}/deployments/runs/{run!.Id}");
+
+        await CompleteRunAsync(app, workspaceId, run.Id);
+        var rollbackConfirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Rollback, revision.Id);
+        var rollbackResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/rollbacks",
+            new WorkspaceRollbackRunRequestDto(revision.Id, targetEnvironment.Id, targetEngine.Id, rollbackConfirmation.Id, run.Id, DeploymentRunMode.Apply));
+        var rollback = await rollbackResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentRun>();
+
+        runResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        detail!.Run.Id.Should().Be(run.Id);
+        detail.History.Should().ContainSingle(x => x.Status == WorkspaceDeploymentRunStatus.Queued);
+        rollbackResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        rollback!.RollbackSourceRunId.Should().Be(run.Id);
+    }
+
+    [Fact]
+    public async Task Deployment_run_confirmation_rejects_wrong_user_replay_and_expired_confirmation()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("run-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var (application, sourceEnvironment, targetEnvironment, targetEngine) = await SeedPreviewTopologyAsync(app, workspaceId);
+        var revision = await CreateRevisionDirectAsync(app, workspaceId, application.Id, sourceEnvironment.Id, "Stage candidate", "{\"records\":[]}");
+        var readerAccountId = await app.AddWorkspaceMemberAsync(workspaceId, "run-reader", WorkspaceRole.Reader);
+        await app.GrantWorkspaceDeploymentPermissionAsync(workspaceId, readerAccountId, WorkspaceDeploymentPermissions.ExecuteDeployment);
+        var reader = app.CreateTrustedWorkspaceClient("run-reader");
+
+        var ownerConfirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Deploy, revision.Id);
+        var wrongUser = await reader.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runs",
+            new WorkspaceDeploymentRunRequestDto(revision.Id, targetEnvironment.Id, targetEngine.Id, ownerConfirmation.Id, DeploymentRunMode.Apply));
+        var runResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runs",
+            new WorkspaceDeploymentRunRequestDto(revision.Id, targetEnvironment.Id, targetEngine.Id, ownerConfirmation.Id, DeploymentRunMode.Apply));
+        var run = await runResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentRun>();
+        await CompleteRunAsync(app, workspaceId, run!.Id);
+        var replay = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runs",
+            new WorkspaceDeploymentRunRequestDto(revision.Id, targetEnvironment.Id, targetEngine.Id, ownerConfirmation.Id, DeploymentRunMode.Apply));
+        var expiredConfirmationResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/confirmations",
+            new WorkspaceActionConfirmationRequest(ConfirmationActionType.Deploy, revision.Id.ToString("D"), 0));
+        var expiredConfirmation = await expiredConfirmationResponse.Content.ReadPlatformJsonAsync<ActionConfirmation>();
+        var expired = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runs",
+            new WorkspaceDeploymentRunRequestDto(revision.Id, targetEnvironment.Id, targetEngine.Id, expiredConfirmation!.Id, DeploymentRunMode.Apply));
+
+        wrongUser.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        runResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        replay.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        expired.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
     private static async Task SeedDeploymentAsync(PlatformApiTestApplication app, Guid workspaceId)
     {
         await using var scope = app.Services.CreateAsyncScope();
@@ -99,6 +228,63 @@ public sealed class WorkspaceDeploymentApiTests
             VALUES ({Guid.NewGuid()}, {workspaceId}, {environment.Id}, {engine.Id}, {"RuntimeConfiguration"}, {"Concurrency 32"}, {"Concurrency 16"}, {"Review"}, {DateTimeOffset.UtcNow.UtcTicks});
             """);
     }
+
+    private static async Task<(WorkspaceDeploymentApplication Application, WorkspaceDeploymentEnvironment SourceEnvironment, WorkspaceDeploymentEnvironment TargetEnvironment, WorkspaceWorkflowEngine TargetEngine)> SeedPreviewTopologyAsync(
+        PlatformApiTestApplication app,
+        Guid workspaceId)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IWorkspaceDeploymentStore>();
+        var application = await store.CreateApplicationAsync(workspaceId, new CreateWorkflowApplicationRequest("Claims Operations", null, null));
+        var sourceEnvironment = await store.CreateEnvironmentAsync(workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Stage", EnvironmentTier.Stage));
+        var targetEnvironment = await store.CreateEnvironmentAsync(workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production));
+        var targetEngine = await store.RegisterEngineAsync(
+            workspaceId,
+            new RegisterWorkflowEngineRequest(
+                targetEnvironment.Id,
+                "claims-prod",
+                "https://workflows.example.test/elsa",
+                "westeurope",
+                "Azure Key Vault",
+                "kv://claims/prod/elsa-api",
+                [new EngineCapability("engine.reload-configuration", "Reload engine configuration", CapabilityBoundary.EngineApi)],
+                [new RuntimeControl("reload-configuration", "Reload Configuration", CapabilityBoundary.EngineApi, "engine.reload-configuration", "Reloads engine API configuration.")],
+                null));
+
+        return (application, sourceEnvironment, targetEnvironment, targetEngine);
+    }
+
+    private static async Task<WorkspaceDesiredStateRevision> CreateRevisionDirectAsync(
+        PlatformApiTestApplication app,
+        Guid workspaceId,
+        Guid applicationId,
+        Guid environmentId,
+        string label,
+        string desiredStateJson)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IWorkspaceDeploymentStore>();
+        return await store.CreateRevisionAsync(workspaceId, new CreateDesiredStateRevisionRequest(applicationId, environmentId, label, null, desiredStateJson, null));
+    }
+
+    private static async Task<ActionConfirmation> CreateConfirmationAsync(HttpClient client, Guid workspaceId, ConfirmationActionType actionType, Guid targetId)
+    {
+        var response = await client.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/confirmations",
+            new WorkspaceActionConfirmationRequest(actionType, targetId.ToString("D"), null));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return (await response.Content.ReadPlatformJsonAsync<ActionConfirmation>())!;
+    }
+
+    private static async Task CompleteRunAsync(PlatformApiTestApplication app, Guid workspaceId, Guid runId)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IWorkspaceDeploymentMutationStore>();
+        await store.UpdateRunStatusAsync(workspaceId, runId, WorkspaceDeploymentRunStatus.Succeeded, "Deployment run completed.", DateTimeOffset.UtcNow);
+    }
+
+    private static WorkspaceDesiredStateRecordRequest Record(DesiredStateRecordKind kind, string name, string payloadJson) =>
+        new(kind, name, JsonSerializer.Deserialize<JsonElement>(payloadJson, PlatformApiTestApplication.JsonOptions));
 
     private static async Task SeedNormalDatasetAsync(PlatformApiTestApplication app, Guid workspaceId)
     {

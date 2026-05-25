@@ -167,6 +167,7 @@ builder.Services.AddScoped<IPackageCompatibilityService>(services => services.Ge
 builder.Services.AddScoped<DeploymentCockpitService>();
 builder.Services.AddScoped<IWorkspaceDeploymentStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<IWorkspacePermissionStore, DeploymentWorkspaceStore>();
+builder.Services.AddScoped<IWorkspaceDeploymentMutationStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<WorkspaceDeploymentService>();
 builder.Services.AddScoped<WorkspacePermissionService>();
 builder.Services.AddScoped<DeploymentValidationService>();
@@ -175,6 +176,8 @@ builder.Services.AddScoped<DeploymentQueueWorker>();
 builder.Services.AddScoped<RuntimeControlService>();
 builder.Services.AddScoped<ConfirmationService>();
 builder.Services.AddScoped<ObservabilityDriftService>();
+if (!builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddHostedService<DeploymentQueueHostedService>();
 builder.Services.AddScoped<IPackageVersionDiscoveryClient, NuGetPackageSourceClient>();
 builder.Services.AddScoped<IPackageArchiveDownloader, NuGetSyncPackageDownloader>();
 builder.Services.AddScoped<IPackageArchiveManifestReader, PackageArchiveManifestReader>();

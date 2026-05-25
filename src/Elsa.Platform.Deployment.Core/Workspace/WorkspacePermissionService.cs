@@ -2,6 +2,22 @@ namespace Elsa.Platform.Deployment.Core.Workspace;
 
 public sealed class WorkspacePermissionService(IWorkspacePermissionStore store)
 {
+    public async Task<EffectiveWorkspacePermissions> BootstrapOwnerPermissionsAsync(
+        Guid workspaceId,
+        Guid accountId,
+        CancellationToken cancellationToken = default)
+    {
+        foreach (var permission in WorkspaceDeploymentPermissions.All)
+        {
+            await store.GrantPermissionAsync(
+                workspaceId,
+                new GrantWorkspacePermissionRequest(accountId, permission, accountId),
+                cancellationToken);
+        }
+
+        return await GetEffectivePermissionsAsync(workspaceId, accountId, cancellationToken);
+    }
+
     public async Task<EffectiveWorkspacePermissions> GetEffectivePermissionsAsync(
         Guid workspaceId,
         Guid accountId,

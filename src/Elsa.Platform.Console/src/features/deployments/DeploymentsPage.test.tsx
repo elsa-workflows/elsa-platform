@@ -38,6 +38,40 @@ describe("DeploymentsPage", () => {
     expect(screen.queryByText("Claims Operations")).not.toBeInTheDocument();
   });
 
+  it("creates deployment setup from the empty state through live APIs", async () => {
+    const fetchMock = renderDeployments({
+      applications: [],
+      engines: [],
+      comparisons: [],
+      observabilityBindings: [],
+      history: [],
+      driftReport: [],
+      assistantPlans: []
+    });
+
+    await userEvent.type(await screen.findByLabelText("Application"), "Claims Operations");
+    await userEvent.clear(screen.getByLabelText("Environment"));
+    await userEvent.type(screen.getByLabelText("Environment"), "Prod");
+    await userEvent.type(screen.getByLabelText("Engine"), "claims-prod");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://workflows.example.test/elsa");
+    await userEvent.type(screen.getByLabelText("Credential reference"), "kv://claims/prod/elsa-api");
+    await userEvent.click(screen.getByRole("button", { name: "Create setup" }));
+
+    await screen.findByText("Claims Operations");
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications`),
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/app-created/environments`),
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/environments/env-created/engines`),
+      expect.objectContaining({ method: "POST" })
+    );
+  });
+
   it("shows only capability-supported engine controls and records selected operations", async () => {
     renderDeployments();
 
@@ -82,6 +116,17 @@ describe("DeploymentsPage", () => {
     expect(screen.getByRole("button", { name: "Deploy Revision" })).toBeEnabled();
   });
 
+  it("shows an empty promotion preview state when the cockpit has no comparison", async () => {
+    renderDeployments({ ...deploymentCockpitFixture, comparisons: [] });
+
+    await screen.findByRole("heading", { name: "Deployments" });
+    await userEvent.click(screen.getByRole("button", { name: "Promotion Diff" }));
+
+    expect(screen.getByText("No comparison available")).toBeInTheDocument();
+    expect(screen.getByText("Choose a supported source and target environment pair.")).toBeInTheDocument();
+    expect(screen.getByText("No comparison")).toBeInTheDocument();
+  });
+
   it("keeps assistant plans immutable and distinguishes proposed from executed actions", async () => {
     renderDeployments();
 
@@ -108,28 +153,60 @@ describe("DeploymentsPage", () => {
     expect(screen.getByText("No assistant plan available")).toBeInTheDocument();
     expect(screen.getByText("Assistant review will appear after a deployment plan is generated for this workspace.")).toBeInTheDocument();
   });
+
+  it("shows deployment run history and confirmation actions", async () => {
+    renderDeployments();
+
+    await screen.findByRole("heading", { name: "Deployments" });
+    await userEvent.click(screen.getByRole("button", { name: "Observability" }));
+
+    expect(screen.getByText("Run history")).toBeInTheDocument();
+    expect(screen.getByText("Mira Chen")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm Deployment" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Confirm Rollback" })).toBeDisabled();
+  });
 });
 
 function renderDeployments(cockpit: DeploymentCockpit = deploymentCockpitFixture) {
-  vi.stubGlobal("fetch", createDeploymentFetchMock(cockpit));
+  const fetchMock = createDeploymentFetchMock(cockpit);
+  vi.stubGlobal("fetch", fetchMock);
   render(
     <TestQueryProvider>
       <DeploymentsPage />
     </TestQueryProvider>
   );
+  return fetchMock;
 }
 
 function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
-  return vi.fn(async (input: RequestInfo | URL) => {
+  let currentCockpit = cockpit;
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : input.toString();
+    const method = init?.method ?? (input instanceof Request ? input.method : "GET");
     if (url.endsWith("/api/me/workspaces")) {
       return jsonResponse({
         account: { id: "account-1", displayName: "Test User", email: "test@example.com" },
         workspaces: [{ id: workspaceId, name: "Acme Insurance", kind: "Personal", role: "Owner" }]
       });
     }
+    if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/permissions`)) {
+      return jsonResponse({ permissions: ["deployments.read", "deployments.setup.manage"] });
+    }
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/cockpit`)) {
-      return jsonResponse(cockpit);
+      return jsonResponse(currentCockpit);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications`)) {
+      return jsonResponse({ id: "app-created", workspaceId, name: "Claims Operations" }, 201);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications/app-created/environments`)) {
+      return jsonResponse({ id: "env-created", workspaceId, applicationId: "app-created", name: "Prod" }, 201);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/environments/env-created/engines`)) {
+      currentCockpit = {
+        ...deploymentCockpitFixture,
+        applications: [{ ...deploymentCockpitFixture.applications[0], id: "app-created", name: "Claims Operations" }]
+      };
+      return jsonResponse({ id: "engine-created", name: "claims-prod", environmentId: "env-created" }, 201);
     }
     return jsonResponse({ title: "Not found" }, 404);
   });

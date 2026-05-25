@@ -35,7 +35,38 @@ public sealed class WorkspaceDeploymentServiceTests
         var hash = WorkspaceDeploymentService.ComputeDesiredStateHash("{\"kind\":\"Workflow\"}");
 
         hash.Should().Be(WorkspaceDeploymentService.ComputeDesiredStateHash("{\"kind\":\"Workflow\"}"));
+        hash.Should().Be(WorkspaceDeploymentService.ComputeDesiredStateHash("{ \"kind\" : \"Workflow\" }"));
         hash.Should().NotBe(WorkspaceDeploymentService.ComputeDesiredStateHash("{\"kind\":\"Feature\"}"));
+    }
+
+    [Fact]
+    public void Computes_canonical_desired_state_hashes()
+    {
+        var left = WorkspaceDeploymentService.ComputeDesiredStateHash("{\"payload\":{\"name\":\"Payment Retry\",\"version\":8}}");
+        var right = WorkspaceDeploymentService.ComputeDesiredStateHash("{\"payload\":{\"version\":8,\"name\":\"Payment Retry\"}}");
+
+        left.Should().Be(right);
+    }
+
+    [Fact]
+    public async Task Validates_engine_registration_before_store_call()
+    {
+        var service = new WorkspaceDeploymentService(_store);
+
+        var act = () => service.RegisterEngineAsync(
+            _workspaceId,
+            new RegisterWorkflowEngineRequest(
+                Guid.NewGuid(),
+                "claims-prod",
+                "not-a-url",
+                null,
+                "Azure Key Vault",
+                "kv://claims/prod",
+                [],
+                [],
+                null));
+
+        await act.Should().ThrowAsync<ArgumentException>();
     }
 
     private sealed class RecordingDeploymentStore : IWorkspaceDeploymentStore
@@ -59,6 +90,15 @@ public sealed class WorkspaceDeploymentServiceTests
             throw new NotSupportedException();
 
         public Task<WorkspaceDesiredStateRevision> CreateRevisionAsync(Guid workspaceId, CreateDesiredStateRevisionRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<WorkspaceDesiredStateRevision?> GetRevisionAsync(Guid workspaceId, Guid revisionId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<WorkspaceDesiredStateRevision?> GetLatestRevisionAsync(Guid workspaceId, Guid environmentId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<WorkspaceWorkflowEngine?> GetEngineAsync(Guid workspaceId, Guid engineId, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }
 }

@@ -91,23 +91,23 @@
 
 ### Tests for User Story 2
 
-- [ ] T038 [P] [US2] Add setup permission service tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspacePermissionServiceTests.cs`
-- [ ] T039 [P] [US2] Add application/environment/engine service tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceDeploymentServiceTests.cs`
-- [ ] T040 [P] [US2] Add registration API permission and entitlement tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentPermissionTests.cs`
-- [ ] T041 [P] [US2] Add console setup form tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T038 [P] [US2] Add setup permission service tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspacePermissionServiceTests.cs`
+- [X] T039 [P] [US2] Add application/environment/engine service tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceDeploymentServiceTests.cs`
+- [X] T040 [P] [US2] Add registration API permission and entitlement tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentPermissionTests.cs`
+- [X] T041 [P] [US2] Add console setup form tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 2
 
-- [ ] T042 [US2] Implement bootstrap workspace-owner permission grants and effective permission reads in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspacePermissionService.cs`
-- [ ] T043 [US2] Implement permission grant persistence in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [ ] T044 [US2] Implement application and environment create/update methods in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
-- [ ] T045 [US2] Implement engine registration methods with credential redaction and capability validation in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
-- [ ] T046 [US2] Implement application/environment/engine write methods in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [ ] T047 [US2] Add permissions, application, environment, and engine registration endpoints in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [ ] T048 [US2] Add setup and permissions API client calls in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
-- [ ] T049 [US2] Add setup and engine registration UI in `src/Elsa.Platform.Console/src/features/deployments/DeploymentSetupPanel.tsx`
-- [ ] T050 [US2] Wire setup and engine registration UI into `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [ ] T051 [US2] Run focused US2 checks documented in `specs/022-deployment-ux/quickstart.md`
+- [X] T042 [US2] Implement bootstrap workspace-owner permission grants and effective permission reads in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspacePermissionService.cs`
+- [X] T043 [US2] Implement permission grant persistence in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T044 [US2] Implement application and environment create/update methods in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
+- [X] T045 [US2] Implement engine registration methods with credential redaction and capability validation in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
+- [X] T046 [US2] Implement application/environment/engine write methods in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T047 [US2] Add permissions, application, environment, and engine registration endpoints in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T048 [US2] Add setup and permissions API client calls in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
+- [X] T049 [US2] Add setup and engine registration UI in `src/Elsa.Platform.Console/src/features/deployments/DeploymentSetupPanel.tsx`
+- [X] T050 [US2] Wire setup and engine registration UI into `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T051 [US2] Run focused US2 checks documented in `specs/022-deployment-ux/quickstart.md`
 
 **Checkpoint**: User Story 2 is independently functional from API and console.
 
@@ -121,22 +121,22 @@
 
 ### Tests for User Story 3
 
-- [ ] T052 [P] [US3] Add structured desired-state service tests in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentValidationServiceTests.cs`
-- [ ] T053 [P] [US3] Add desired-state persistence tests in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
-- [ ] T054 [P] [US3] Add promotion preview API permission tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentApiTests.cs`
-- [ ] T055 [P] [US3] Add promotion preview console tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T052 [P] [US3] Add structured desired-state service tests in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentValidationServiceTests.cs`
+- [X] T053 [P] [US3] Add desired-state persistence tests in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
+- [X] T054 [P] [US3] Add promotion preview API permission tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentApiTests.cs`
+- [X] T055 [P] [US3] Add promotion preview console tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 3
 
-- [ ] T056 [US3] Implement desired-state record validation and deterministic hashing in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentValidationService.cs`
-- [ ] T057 [US3] Implement desired-state revision creation and immutable storage in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
-- [ ] T058 [US3] Implement structured desired-state persistence in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [ ] T059 [US3] Implement structured desired-state diff and target validation in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentValidationService.cs`
-- [ ] T060 [US3] Add revision and promotion preview endpoints with permission checks in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [ ] T061 [US3] Add desired-state and promotion preview API client calls in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
-- [ ] T062 [US3] Add promotion preview UI in `src/Elsa.Platform.Console/src/features/deployments/PromotionPreviewPanel.tsx`
-- [ ] T063 [US3] Wire promotion preview UI into `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [ ] T064 [US3] Run focused US3 checks documented in `specs/022-deployment-ux/quickstart.md`
+- [X] T056 [US3] Implement desired-state record validation and deterministic hashing in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentValidationService.cs`
+- [X] T057 [US3] Implement desired-state revision creation and immutable storage in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
+- [X] T058 [US3] Implement structured desired-state persistence in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T059 [US3] Implement structured desired-state diff and target validation in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentValidationService.cs`
+- [X] T060 [US3] Add revision and promotion preview endpoints with permission checks in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T061 [US3] Add desired-state and promotion preview API client calls in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
+- [X] T062 [US3] Add promotion preview UI in `src/Elsa.Platform.Console/src/features/deployments/PromotionPreviewPanel.tsx`
+- [X] T063 [US3] Wire promotion preview UI into `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T064 [US3] Run focused US3 checks documented in `specs/022-deployment-ux/quickstart.md`
 
 **Checkpoint**: User Story 3 is independently functional, preview is read-only, and desired state is structured platform data.
 
@@ -150,27 +150,27 @@
 
 ### Tests for User Story 4
 
-- [ ] T065 [P] [US4] Add confirmation service tests for same-user consumption, single-use behavior, expiration, and replay prevention in `tests/Elsa.Platform.Deployment.Core.Tests/ConfirmationServiceTests.cs`
-- [ ] T066 [P] [US4] Add deployment run service tests in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentRunServiceTests.cs`
-- [ ] T067 [P] [US4] Add deployment queue worker tests for queued processing, stale claimed run recovery, and no automatic duplicate apply in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentQueueWorkerTests.cs`
-- [ ] T068 [P] [US4] Add deployment run and rollback API tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentApiTests.cs`
-- [ ] T069 [P] [US4] Add deployment and rollback API confirmation tests for same-user, single-use, expiration, and replay rejection in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentMutationAuthorizationTests.cs`
-- [ ] T070 [P] [US4] Add deployment run console tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T065 [P] [US4] Add confirmation service tests for same-user consumption, single-use behavior, expiration, and replay prevention in `tests/Elsa.Platform.Deployment.Core.Tests/ConfirmationServiceTests.cs`
+- [X] T066 [P] [US4] Add deployment run service tests in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentRunServiceTests.cs`
+- [X] T067 [P] [US4] Add deployment queue worker tests for queued processing, stale claimed run recovery, and no automatic duplicate apply in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentQueueWorkerTests.cs`
+- [X] T068 [P] [US4] Add deployment run and rollback API tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentApiTests.cs`
+- [X] T069 [P] [US4] Add deployment and rollback API confirmation tests for same-user, single-use, expiration, and replay rejection in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentMutationAuthorizationTests.cs`
+- [X] T070 [P] [US4] Add deployment run console tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 4
 
-- [ ] T071 [US4] Implement action confirmation creation and consumption with same-user, single-use, expiration, and replay protection in `src/Elsa.Platform.Deployment.Core/Workspace/ConfirmationService.cs`
-- [ ] T072 [US4] Implement confirmation persistence in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [ ] T073 [US4] Implement queued deployment run creation, active-run conflict checks, status updates, and history in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`
-- [ ] T074 [US4] Implement rollback validation and queued rollback run creation in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`
-- [ ] T075 [US4] Implement deployment run persistence and append-only history in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [ ] T076 [US4] Implement in-process queue worker claim/process/recovery flow where queued runs process normally and stale claimed runs move to `RecoveryRequired` without automatic replay in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentQueueWorker.cs`
-- [ ] T077 [US4] Register hosted queue worker in `src/Elsa.Platform.Api/Program.cs`
-- [ ] T078 [US4] Add confirmation, run, rollback, and run-detail endpoints in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [ ] T079 [US4] Add confirmation, run, rollback, and run-detail API client calls in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
-- [ ] T080 [US4] Add run history, confirmation, and rollback UI in `src/Elsa.Platform.Console/src/features/deployments/DeploymentRunsPanel.tsx`
-- [ ] T081 [US4] Wire run history and rollback UI into `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [ ] T082 [US4] Run focused US4 checks documented in `specs/022-deployment-ux/quickstart.md`
+- [X] T071 [US4] Implement action confirmation creation and consumption with same-user, single-use, expiration, and replay protection in `src/Elsa.Platform.Deployment.Core/Workspace/ConfirmationService.cs`
+- [X] T072 [US4] Implement confirmation persistence in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T073 [US4] Implement queued deployment run creation, active-run conflict checks, status updates, and history in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`
+- [X] T074 [US4] Implement rollback validation and queued rollback run creation in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`
+- [X] T075 [US4] Implement deployment run persistence and append-only history in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T076 [US4] Implement in-process queue worker claim/process/recovery flow where queued runs process normally and stale claimed runs move to `RecoveryRequired` without automatic replay in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentQueueWorker.cs`
+- [X] T077 [US4] Register hosted queue worker in `src/Elsa.Platform.Api/Program.cs`
+- [X] T078 [US4] Add confirmation, run, rollback, and run-detail endpoints in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T079 [US4] Add confirmation, run, rollback, and run-detail API client calls in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
+- [X] T080 [US4] Add run history, confirmation, and rollback UI in `src/Elsa.Platform.Console/src/features/deployments/DeploymentRunsPanel.tsx`
+- [X] T081 [US4] Wire run history and rollback UI into `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T082 [US4] Run focused US4 checks documented in `specs/022-deployment-ux/quickstart.md`
 
 **Checkpoint**: User Story 4 is independently functional and run history persists after refresh/restart.
 

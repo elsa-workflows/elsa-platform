@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models;
@@ -5,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
 
-public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWorkspaceDeploymentStore, IWorkspacePermissionStore
+public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWorkspaceDeploymentStore, IWorkspacePermissionStore, IWorkspaceDeploymentMutationStore
 {
     public async Task<DeploymentCockpit> GetCockpitAsync(Guid workspaceId, CancellationToken cancellationToken = default)
     {
@@ -120,6 +121,249 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         return ToPermissionGrant(entity);
     }
 
+    public async Task<ActionConfirmation> CreateConfirmationAsync(
+        Guid workspaceId,
+        CreateActionConfirmationRequest request,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = new ActionConfirmationEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            ActionType = request.ActionType,
+            TargetId = request.TargetId,
+            ConfirmedByAccountId = request.ConfirmedByAccountId,
+            ConfirmedAt = now,
+            ExpiresAt = now.Add(request.Lifetime ?? TimeSpan.FromMinutes(5))
+        };
+
+        await dbContext.ActionConfirmations.AddAsync(entity, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToActionConfirmation(entity);
+    }
+
+    public async Task<ActionConfirmation?> GetConfirmationAsync(
+        Guid workspaceId,
+        Guid confirmationId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.ActionConfirmations
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == confirmationId, cancellationToken);
+        return entity is null ? null : ToActionConfirmation(entity);
+    }
+
+    public async Task<ActionConfirmation> MarkConfirmationUsedAsync(
+        Guid workspaceId,
+        Guid confirmationId,
+        DateTimeOffset usedAt,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.ActionConfirmations
+            .SingleAsync(x => x.WorkspaceId == workspaceId && x.Id == confirmationId, cancellationToken);
+        if (entity.UsedAt is null)
+            entity.UsedAt = usedAt;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToActionConfirmation(entity);
+    }
+
+    public Task<bool> HasActiveRunAsync(
+        Guid workspaceId,
+        Guid environmentId,
+        CancellationToken cancellationToken = default) =>
+        dbContext.DeploymentRuns.AnyAsync(
+            x => x.WorkspaceId == workspaceId
+                && x.EnvironmentId == environmentId
+                && (x.Status == WorkspaceDeploymentRunStatus.Queued || x.Status == WorkspaceDeploymentRunStatus.Running),
+            cancellationToken);
+
+    public async Task<WorkspaceDeploymentRun> CreateRunAsync(
+        Guid workspaceId,
+        QueueWorkspaceDeploymentRunRequest request,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var sourceRevision = await dbContext.DesiredStateRevisions
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == request.SourceRevisionId, cancellationToken);
+        if (sourceRevision is null)
+            throw new InvalidOperationException("Source revision does not exist in the workspace.");
+
+        var environment = await dbContext.DeploymentEnvironments
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == request.TargetEnvironmentId, cancellationToken);
+        if (environment is null)
+            throw new InvalidOperationException("Target environment does not exist in the workspace.");
+
+        var engineExists = await dbContext.WorkflowEngines
+            .AnyAsync(x => x.WorkspaceId == workspaceId && x.Id == request.TargetEngineId && x.EnvironmentId == request.TargetEnvironmentId, cancellationToken);
+        if (!engineExists)
+            throw new InvalidOperationException("Target engine does not exist in the target environment.");
+
+        var runId = Guid.NewGuid();
+        var run = new DeploymentRunEntity
+        {
+            Id = runId,
+            WorkspaceId = workspaceId,
+            ApplicationId = sourceRevision.ApplicationId,
+            EnvironmentId = request.TargetEnvironmentId,
+            EngineId = request.TargetEngineId,
+            SourceRevisionId = request.SourceRevisionId,
+            PreviousDeployedRevisionId = environment.DeployedRevisionId,
+            RollbackSourceRunId = request.RollbackSourceRunId,
+            Status = WorkspaceDeploymentRunStatus.Queued,
+            ValidationOutcome = DeploymentValidationOutcome.Passed,
+            ConfirmationId = request.ConfirmationId,
+            ActorAccountId = request.ActorAccountId,
+            QueuedAt = now,
+            CreatedAt = now,
+            AttemptNumber = 1,
+            History =
+            [
+                new DeploymentRunHistoryEventEntity
+                {
+                    Id = Guid.NewGuid(),
+                    WorkspaceId = workspaceId,
+                    RunId = runId,
+                    Status = WorkspaceDeploymentRunStatus.Queued,
+                    Message = request.RollbackSourceRunId is null ? "Deployment run queued." : "Rollback run queued.",
+                    CreatedAt = now
+                }
+            ]
+        };
+
+        environment.DeploymentStatus = DeploymentStatus.Running;
+        environment.UpdatedAt = now;
+        await dbContext.DeploymentRuns.AddAsync(run, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceDeploymentRun(run);
+    }
+
+    public async Task<WorkspaceDeploymentRun?> GetRunAsync(
+        Guid workspaceId,
+        Guid runId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.DeploymentRuns
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == runId, cancellationToken);
+        return entity is null ? null : ToWorkspaceDeploymentRun(entity);
+    }
+
+    public async Task<IReadOnlyList<DeploymentRunHistoryEvent>> GetRunHistoryAsync(
+        Guid workspaceId,
+        Guid runId,
+        CancellationToken cancellationToken = default)
+    {
+        return await dbContext.DeploymentRunHistoryEvents
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.RunId == runId)
+            .OrderBy(x => x.CreatedAt)
+            .Select(x => ToDeploymentRunHistoryEvent(x))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<WorkspaceDeploymentRun?> ClaimNextQueuedRunAsync(
+        string workerId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var run = await dbContext.DeploymentRuns
+            .Where(x => x.Status == WorkspaceDeploymentRunStatus.Queued)
+            .OrderBy(x => x.QueuedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (run is null)
+            return null;
+
+        run.Status = WorkspaceDeploymentRunStatus.Running;
+        run.StartedAt = now;
+        run.WorkerId = workerId;
+        run.WorkerHeartbeatAt = now;
+        await dbContext.DeploymentRunHistoryEvents.AddAsync(new DeploymentRunHistoryEventEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = run.WorkspaceId,
+            RunId = run.Id,
+            Status = WorkspaceDeploymentRunStatus.Running,
+            Message = "Deployment run claimed by worker.",
+            CreatedAt = now
+        }, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceDeploymentRun(run);
+    }
+
+    public async Task<WorkspaceDeploymentRun> UpdateRunStatusAsync(
+        Guid workspaceId,
+        Guid runId,
+        WorkspaceDeploymentRunStatus status,
+        string message,
+        DateTimeOffset now,
+        string? failureMessage = null,
+        CancellationToken cancellationToken = default)
+    {
+        var run = await dbContext.DeploymentRuns
+            .Include(x => x.Environment)
+            .SingleAsync(x => x.WorkspaceId == workspaceId && x.Id == runId, cancellationToken);
+        run.Status = status;
+        run.FailureMessage = failureMessage;
+        if (status is WorkspaceDeploymentRunStatus.Succeeded or WorkspaceDeploymentRunStatus.Failed or WorkspaceDeploymentRunStatus.Blocked or WorkspaceDeploymentRunStatus.Cancelled or WorkspaceDeploymentRunStatus.RolledBack or WorkspaceDeploymentRunStatus.RecoveryRequired)
+            run.CompletedAt = now;
+
+        if (run.Environment is not null)
+        {
+            run.Environment.UpdatedAt = now;
+            run.Environment.DeploymentStatus = status is WorkspaceDeploymentRunStatus.Succeeded or WorkspaceDeploymentRunStatus.RolledBack
+                ? DeploymentStatus.Succeeded
+                : status == WorkspaceDeploymentRunStatus.Running
+                    ? DeploymentStatus.Running
+                    : DeploymentStatus.Blocked;
+            if (status is WorkspaceDeploymentRunStatus.Succeeded or WorkspaceDeploymentRunStatus.RolledBack)
+                run.Environment.DeployedRevisionId = run.SourceRevisionId;
+        }
+
+        await dbContext.DeploymentRunHistoryEvents.AddAsync(new DeploymentRunHistoryEventEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            RunId = run.Id,
+            Status = status,
+            Message = message,
+            CreatedAt = now
+        }, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceDeploymentRun(run);
+    }
+
+    public async Task<int> MarkStaleRunningRunsRecoveryRequiredAsync(
+        DateTimeOffset now,
+        TimeSpan staleAfter,
+        CancellationToken cancellationToken = default)
+    {
+        var staleBefore = now.Subtract(staleAfter);
+        var runs = await dbContext.DeploymentRuns
+            .Where(x => x.Status == WorkspaceDeploymentRunStatus.Running
+                && (x.WorkerHeartbeatAt ?? x.StartedAt ?? x.QueuedAt) < staleBefore)
+            .ToListAsync(cancellationToken);
+
+        foreach (var run in runs)
+        {
+            run.Status = WorkspaceDeploymentRunStatus.RecoveryRequired;
+            run.CompletedAt = now;
+            run.RecoveryReason = "Worker heartbeat became stale.";
+            await dbContext.DeploymentRunHistoryEvents.AddAsync(new DeploymentRunHistoryEventEntity
+            {
+                Id = Guid.NewGuid(),
+                WorkspaceId = run.WorkspaceId,
+                RunId = run.Id,
+                Status = WorkspaceDeploymentRunStatus.RecoveryRequired,
+                Message = "Deployment run requires recovery after stale worker heartbeat.",
+                CreatedAt = now
+            }, cancellationToken);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return runs.Count;
+    }
+
     public async Task<WorkspaceDeploymentApplication> CreateApplicationAsync(
         Guid workspaceId,
         CreateWorkflowApplicationRequest request,
@@ -223,9 +467,10 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             .Select(x => (int?)x.RevisionNumber)
             .MaxAsync(cancellationToken) + 1 ?? 1;
         var now = DateTimeOffset.UtcNow;
+        var revisionId = Guid.NewGuid();
         var entity = new DesiredStateRevisionEntity
         {
-            Id = Guid.NewGuid(),
+            Id = revisionId,
             WorkspaceId = workspaceId,
             ApplicationId = request.ApplicationId,
             EnvironmentId = request.EnvironmentId,
@@ -236,7 +481,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             DesiredStateJson = request.DesiredStateJson,
             AuthoredAt = now,
             CreatedAt = now,
-            CreatedByAccountId = request.ActorAccountId
+            CreatedByAccountId = request.ActorAccountId,
+            Records = ParseStructuredRecords(workspaceId, revisionId, request.DesiredStateJson)
         };
 
         await dbContext.DesiredStateRevisions.AddAsync(entity, cancellationToken);
@@ -244,6 +490,41 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         environment.UpdatedAt = now;
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToWorkspaceDesiredStateRevision(entity);
+    }
+
+    public async Task<WorkspaceDesiredStateRevision?> GetRevisionAsync(
+        Guid workspaceId,
+        Guid revisionId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.DesiredStateRevisions
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == revisionId, cancellationToken);
+        return entity is null ? null : ToWorkspaceDesiredStateRevision(entity);
+    }
+
+    public async Task<WorkspaceDesiredStateRevision?> GetLatestRevisionAsync(
+        Guid workspaceId,
+        Guid environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.DesiredStateRevisions
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.EnvironmentId == environmentId)
+            .OrderByDescending(x => x.RevisionNumber)
+            .FirstOrDefaultAsync(cancellationToken);
+        return entity is null ? null : ToWorkspaceDesiredStateRevision(entity);
+    }
+
+    public async Task<WorkspaceWorkflowEngine?> GetEngineAsync(
+        Guid workspaceId,
+        Guid engineId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.WorkflowEngines
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == engineId, cancellationToken);
+        return entity is null ? null : ToWorkspaceWorkflowEngine(entity);
     }
 
     private async Task<WorkspaceDeploymentEnvironment> CreateEnvironmentCoreAsync(
@@ -364,6 +645,37 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             entity.CreatedAt,
             entity.CreatedByAccountId);
 
+    private static List<StructuredDesiredStateRecordEntity> ParseStructuredRecords(Guid workspaceId, Guid revisionId, string desiredStateJson)
+    {
+        using var document = JsonDocument.Parse(desiredStateJson);
+        if (!document.RootElement.TryGetProperty("records", out var recordsElement) || recordsElement.ValueKind != JsonValueKind.Array)
+            return [];
+
+        return recordsElement.EnumerateArray()
+            .Select(record =>
+            {
+                var kindName = record.TryGetProperty("kind", out var kindElement) ? kindElement.GetString() : null;
+                var name = record.TryGetProperty("name", out var nameElement) ? nameElement.GetString() : null;
+                if (!Enum.TryParse<DesiredStateRecordKind>(kindName, true, out var kind) || string.IsNullOrWhiteSpace(name))
+                    return null;
+
+                var payloadJson = record.TryGetProperty("payload", out var payloadElement) ? payloadElement.GetRawText() : "{}";
+                return new StructuredDesiredStateRecordEntity
+                {
+                    Id = Guid.NewGuid(),
+                    WorkspaceId = workspaceId,
+                    RevisionId = revisionId,
+                    Kind = kind,
+                    Name = name,
+                    PayloadJson = payloadJson,
+                    ContentHash = WorkspaceDeploymentService.ComputeDesiredStateHash(payloadJson)
+                };
+            })
+            .Where(record => record is not null)
+            .Cast<StructuredDesiredStateRecordEntity>()
+            .ToList();
+    }
+
     private static WorkspacePermissionGrant ToPermissionGrant(WorkspacePermissionGrantEntity entity) =>
         new(
             entity.Id,
@@ -374,6 +686,50 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             entity.CreatedAt,
             entity.UpdatedAt,
             entity.RevokedAt);
+
+    private static ActionConfirmation ToActionConfirmation(ActionConfirmationEntity entity) =>
+        new(
+            entity.Id,
+            entity.WorkspaceId,
+            entity.ActionType,
+            entity.TargetId,
+            entity.ConfirmedByAccountId,
+            entity.ConfirmedAt,
+            entity.ExpiresAt,
+            entity.UsedAt);
+
+    private static WorkspaceDeploymentRun ToWorkspaceDeploymentRun(DeploymentRunEntity entity) =>
+        new(
+            entity.Id,
+            entity.WorkspaceId,
+            entity.ApplicationId,
+            entity.EnvironmentId,
+            entity.EngineId,
+            entity.SourceRevisionId,
+            entity.PreviousDeployedRevisionId,
+            entity.RollbackSourceRunId,
+            entity.Status,
+            entity.ValidationOutcome,
+            entity.ConfirmationId,
+            entity.ActorAccountId,
+            entity.QueuedAt,
+            entity.StartedAt,
+            entity.CompletedAt,
+            entity.CreatedAt,
+            entity.WorkerId,
+            entity.WorkerHeartbeatAt,
+            entity.AttemptNumber,
+            entity.RecoveryReason,
+            entity.FailureMessage);
+
+    private static DeploymentRunHistoryEvent ToDeploymentRunHistoryEvent(DeploymentRunHistoryEventEntity entity) =>
+        new(
+            entity.Id,
+            entity.WorkspaceId,
+            entity.RunId,
+            entity.Status,
+            entity.Message,
+            entity.CreatedAt);
 
     private static DeploymentHealth EnvironmentHealth(DeploymentEnvironmentEntity environment, IReadOnlyList<WorkflowEngineEntity> engines)
     {

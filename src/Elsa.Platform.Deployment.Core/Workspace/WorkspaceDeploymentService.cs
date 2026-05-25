@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Elsa.Platform.Deployment.Core.Cockpit;
 
 namespace Elsa.Platform.Deployment.Core.Workspace;
@@ -58,7 +59,43 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
 
     public static string ComputeDesiredStateHash(string desiredStateJson)
     {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(desiredStateJson));
+        var canonicalJson = CanonicalizeJson(desiredStateJson);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonicalJson));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static string CanonicalizeJson(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+            WriteCanonicalJson(writer, document.RootElement);
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void WriteCanonicalJson(Utf8JsonWriter writer, JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (var property in element.EnumerateObject().OrderBy(x => x.Name, StringComparer.Ordinal))
+                {
+                    writer.WritePropertyName(property.Name);
+                    WriteCanonicalJson(writer, property.Value);
+                }
+                writer.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (var item in element.EnumerateArray())
+                    WriteCanonicalJson(writer, item);
+                writer.WriteEndArray();
+                break;
+            default:
+                element.WriteTo(writer);
+                break;
+        }
     }
 }

@@ -18,6 +18,13 @@ public sealed record CreateActionConfirmationRequest(
     Guid ConfirmedByAccountId,
     TimeSpan? Lifetime = null);
 
+public sealed record ConfirmationConsumptionResult(
+    ActionConfirmation? Confirmation,
+    DeploymentValidation Validation)
+{
+    public bool Succeeded => Validation.Severity == ValidationSeverity.Pass;
+}
+
 public sealed record WorkspaceDeploymentRun(
     Guid Id,
     Guid WorkspaceId,
@@ -48,6 +55,18 @@ public sealed record DeploymentRunHistoryEvent(
     WorkspaceDeploymentRunStatus Status,
     string Message,
     DateTimeOffset CreatedAt);
+
+public sealed record QueueWorkspaceDeploymentRunRequest(
+    Guid SourceRevisionId,
+    Guid TargetEnvironmentId,
+    Guid TargetEngineId,
+    Guid ConfirmationId,
+    Guid ActorAccountId,
+    Guid? RollbackSourceRunId = null);
+
+public sealed record WorkspaceDeploymentRunDetail(
+    WorkspaceDeploymentRun Run,
+    IReadOnlyList<DeploymentRunHistoryEvent> History);
 
 public enum ConfirmationActionType
 {
