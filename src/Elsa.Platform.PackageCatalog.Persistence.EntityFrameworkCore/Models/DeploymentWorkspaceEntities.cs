@@ -1,4 +1,5 @@
 using Elsa.Platform.Deployment.Core.Cockpit;
+using Elsa.Platform.Deployment.Core.Workspace;
 
 namespace Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models;
 
@@ -31,6 +32,8 @@ internal sealed class DeploymentEnvironmentEntity
     public DateTimeOffset UpdatedAt { get; set; }
     public List<WorkflowEngineEntity> Engines { get; set; } = [];
     public List<DesiredStateRevisionEntity> Revisions { get; set; } = [];
+    public List<ObservabilityBindingEntity> ObservabilityBindings { get; set; } = [];
+    public List<DriftReportItemEntity> DriftReports { get; set; } = [];
 }
 
 internal sealed class WorkflowEngineEntity
@@ -96,4 +99,108 @@ internal sealed class DesiredStateRevisionEntity
     public DateTimeOffset AuthoredAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public Guid? CreatedByAccountId { get; set; }
+    public List<StructuredDesiredStateRecordEntity> Records { get; set; } = [];
+}
+
+internal sealed class StructuredDesiredStateRecordEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid RevisionId { get; set; }
+    public DesiredStateRevisionEntity? Revision { get; set; }
+    public DesiredStateRecordKind Kind { get; set; }
+    public string Name { get; set; } = "";
+    public string PayloadJson { get; set; } = "{}";
+    public string ContentHash { get; set; } = "";
+}
+
+internal sealed class WorkspacePermissionGrantEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid AccountId { get; set; }
+    public string Permission { get; set; } = "";
+    public Guid? GrantedByAccountId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? RevokedAt { get; set; }
+}
+
+internal sealed class ActionConfirmationEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public ConfirmationActionType ActionType { get; set; }
+    public string TargetId { get; set; } = "";
+    public Guid ConfirmedByAccountId { get; set; }
+    public DateTimeOffset ConfirmedAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? UsedAt { get; set; }
+}
+
+internal sealed class DeploymentRunEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid ApplicationId { get; set; }
+    public Guid EnvironmentId { get; set; }
+    public DeploymentEnvironmentEntity? Environment { get; set; }
+    public Guid EngineId { get; set; }
+    public Guid SourceRevisionId { get; set; }
+    public Guid? PreviousDeployedRevisionId { get; set; }
+    public Guid? RollbackSourceRunId { get; set; }
+    public WorkspaceDeploymentRunStatus Status { get; set; }
+    public DeploymentValidationOutcome ValidationOutcome { get; set; }
+    public Guid ConfirmationId { get; set; }
+    public Guid ActorAccountId { get; set; }
+    public DateTimeOffset QueuedAt { get; set; }
+    public DateTimeOffset? StartedAt { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public string? WorkerId { get; set; }
+    public DateTimeOffset? WorkerHeartbeatAt { get; set; }
+    public int AttemptNumber { get; set; }
+    public string? RecoveryReason { get; set; }
+    public string? FailureMessage { get; set; }
+    public List<DeploymentRunHistoryEventEntity> History { get; set; } = [];
+}
+
+internal sealed class DeploymentRunHistoryEventEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid RunId { get; set; }
+    public DeploymentRunEntity? Run { get; set; }
+    public WorkspaceDeploymentRunStatus Status { get; set; }
+    public string Message { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+internal sealed class ObservabilityBindingEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid EnvironmentId { get; set; }
+    public DeploymentEnvironmentEntity? Environment { get; set; }
+    public Guid? EngineId { get; set; }
+    public ObservabilityBindingKind Kind { get; set; }
+    public string Provider { get; set; } = "";
+    public ObservabilityBindingStatus Status { get; set; }
+    public string Scope { get; set; } = "";
+    public Guid? CorrelatedRevisionId { get; set; }
+    public string? Sample { get; set; }
+}
+
+internal sealed class DriftReportItemEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid EnvironmentId { get; set; }
+    public DeploymentEnvironmentEntity? Environment { get; set; }
+    public Guid EngineId { get; set; }
+    public string Area { get; set; } = "";
+    public string Desired { get; set; } = "";
+    public string Observed { get; set; } = "";
+    public DriftAction Action { get; set; }
+    public DateTimeOffset DetectedAt { get; set; }
 }

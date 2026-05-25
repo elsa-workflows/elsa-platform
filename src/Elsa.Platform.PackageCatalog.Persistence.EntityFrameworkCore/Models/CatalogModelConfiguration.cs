@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Elsa.Platform.Deployment.Core.Cockpit;
+using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Elsa.Platform.PackageCatalog.Core.Manifests;
 using Elsa.Platform.PackageCatalog.Core.Packages;
@@ -251,6 +252,8 @@ internal sealed class DeploymentEnvironmentConfiguration : IEntityTypeConfigurat
         builder.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.Name }).IsUnique();
         builder.HasMany(x => x.Engines).WithOne(x => x.Environment).HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.Revisions).WithOne(x => x.Environment).HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.ObservabilityBindings).WithOne(x => x.Environment).HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.DriftReports).WithOne(x => x.Environment).HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Cascade);
     }
 }
 
@@ -316,5 +319,111 @@ internal sealed class DesiredStateRevisionConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.EnvironmentId, x.RevisionNumber }).IsUnique();
         builder.HasIndex(x => new { x.WorkspaceId, x.ContentHash });
+        builder.HasMany(x => x.Records).WithOne(x => x.Revision).HasForeignKey(x => x.RevisionId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class StructuredDesiredStateRecordConfiguration : IEntityTypeConfiguration<StructuredDesiredStateRecordEntity>
+{
+    public void Configure(EntityTypeBuilder<StructuredDesiredStateRecordEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Kind).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.Name).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.PayloadJson).IsRequired();
+        builder.Property(x => x.ContentHash).HasMaxLength(128).IsRequired();
+        builder.HasIndex(x => new { x.RevisionId, x.Kind, x.Name }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.ContentHash });
+    }
+}
+
+internal sealed class WorkspacePermissionGrantConfiguration : IEntityTypeConfiguration<WorkspacePermissionGrantEntity>
+{
+    public void Configure(EntityTypeBuilder<WorkspacePermissionGrantEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Permission).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.RevokedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.HasIndex(x => new { x.WorkspaceId, x.AccountId, x.Permission, x.RevokedAt });
+        builder.HasOne<Workspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Account>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class ActionConfirmationConfiguration : IEntityTypeConfiguration<ActionConfirmationEntity>
+{
+    public void Configure(EntityTypeBuilder<ActionConfirmationEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.ActionType).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.TargetId).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.ConfirmedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.ExpiresAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UsedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.HasIndex(x => new { x.WorkspaceId, x.ActionType, x.TargetId, x.ConfirmedByAccountId });
+        builder.HasOne<Workspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class DeploymentRunConfiguration : IEntityTypeConfiguration<DeploymentRunEntity>
+{
+    public void Configure(EntityTypeBuilder<DeploymentRunEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.ValidationOutcome).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.QueuedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.StartedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.CompletedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.WorkerId).HasMaxLength(200);
+        builder.Property(x => x.WorkerHeartbeatAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.RecoveryReason).HasMaxLength(1000);
+        builder.Property(x => x.FailureMessage).HasMaxLength(2000);
+        builder.HasIndex(x => new { x.WorkspaceId, x.EnvironmentId, x.Status });
+        builder.HasOne(x => x.Environment).WithMany().HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasMany(x => x.History).WithOne(x => x.Run).HasForeignKey(x => x.RunId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class DeploymentRunHistoryEventConfiguration : IEntityTypeConfiguration<DeploymentRunHistoryEventEntity>
+{
+    public void Configure(EntityTypeBuilder<DeploymentRunHistoryEventEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.Message).HasMaxLength(2000).IsRequired();
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.WorkspaceId, x.RunId, x.CreatedAt });
+    }
+}
+
+internal sealed class ObservabilityBindingConfiguration : IEntityTypeConfiguration<ObservabilityBindingEntity>
+{
+    public void Configure(EntityTypeBuilder<ObservabilityBindingEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Kind).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.Provider).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.Scope).HasMaxLength(1024).IsRequired();
+        builder.Property(x => x.Sample).HasMaxLength(2000);
+        builder.HasIndex(x => new { x.WorkspaceId, x.EnvironmentId, x.Kind });
+    }
+}
+
+internal sealed class DriftReportItemConfiguration : IEntityTypeConfiguration<DriftReportItemEntity>
+{
+    public void Configure(EntityTypeBuilder<DriftReportItemEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Area).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Desired).HasMaxLength(2000).IsRequired();
+        builder.Property(x => x.Observed).HasMaxLength(2000).IsRequired();
+        builder.Property(x => x.Action).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.DetectedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.WorkspaceId, x.EnvironmentId, x.EngineId, x.DetectedAt });
     }
 }

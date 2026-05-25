@@ -6,6 +6,15 @@ export type CapabilityBoundary = "Workflow" | "EngineApi" | "Shell" | "Hosting";
 export type ValidationSeverity = "Pass" | "Warning" | "Blocker";
 export type DiffCategory = "Workflows" | "Features" | "ShellConfiguration" | "RuntimeConfiguration" | "SecretReferences" | "Observability" | "EngineBindings";
 export type AssistantPlanStatus = "Proposed" | "Approved" | "Rejected" | "Executed";
+export type DeploymentPermission =
+  | "deployments.read"
+  | "deployments.setup.manage"
+  | "deployments.desired-state.manage"
+  | "deployments.promotion.preview"
+  | "deployments.run.execute"
+  | "deployments.rollback.execute"
+  | "deployments.controls.execute"
+  | "deployments.observability.manage";
 
 export type RuntimeControl = {
   id: string;
@@ -152,6 +161,10 @@ export type DeploymentCockpit = {
   history: DeploymentHistoryEvent[];
   driftReport: DriftReportItem[];
   assistantPlans: AssistantPlan[];
+};
+
+export type WorkspaceDeploymentPermissionsResponse = {
+  permissions: DeploymentPermission[];
 };
 
 export function environmentLabel(environmentId: string, applications: WorkflowApplication[]) {

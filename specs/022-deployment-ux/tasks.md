@@ -18,11 +18,11 @@
 
 **Purpose**: Prepare references, contracts, and test scaffolding for durable deployment UX work.
 
-- [ ] T001 Add deployment core project reference to `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.csproj`
-- [ ] T002 [P] Add shared deployment API test helpers in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTestFixtures.cs`
-- [ ] T003 [P] Add deployment core test fixture helpers in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceDeploymentTestFixtures.cs`
-- [ ] T004 [P] Add deployment permissions contract examples in `specs/022-deployment-ux/contracts/workspace-deployment-api.md`
-- [ ] T005 [P] Add confirmation and queued-run UX notes in `specs/022-deployment-ux/contracts/console-deployments-ux.md`
+- [X] T001 Add deployment core project reference to `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.csproj`
+- [X] T002 [P] Add shared deployment API test helpers in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTestFixtures.cs`
+- [X] T003 [P] Add deployment core test fixture helpers in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceDeploymentTestFixtures.cs`
+- [X] T004 [P] Add deployment permissions contract examples in `specs/022-deployment-ux/contracts/workspace-deployment-api.md`
+- [X] T005 [P] Add confirmation and queued-run UX notes in `specs/022-deployment-ux/contracts/console-deployments-ux.md`
 
 ---
 
@@ -32,23 +32,23 @@
 
 **Checkpoint**: Workspace deployment records, permission grants, confirmations, and queued runs can be persisted and checked by service code.
 
-- [ ] T006 Define workspace deployment domain models in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`
-- [ ] T007 Define workspace permission models and permission IDs in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspacePermissionModels.cs`
-- [ ] T008 Define confirmation and queue/run models in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunModels.cs`
-- [ ] T009 Define structured desired-state models in `src/Elsa.Platform.Deployment.Core/Workspace/DesiredStateModels.cs`
-- [ ] T010 Define observability binding and drift report metadata models in `src/Elsa.Platform.Deployment.Core/Workspace/ObservabilityDriftModels.cs`
-- [ ] T011 Define workspace deployment store contract in `src/Elsa.Platform.Deployment.Core/Workspace/IWorkspaceDeploymentStore.cs`
-- [ ] T012 Define permission store contract in `src/Elsa.Platform.Deployment.Core/Workspace/IWorkspacePermissionStore.cs`
-- [ ] T013 Add workspace permission service skeleton in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspacePermissionService.cs`
-- [ ] T014 Add workspace deployment service skeleton in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
-- [ ] T015 Add validation/run/queue/control/confirmation/observability service skeletons in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentValidationService.cs`, `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`, `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentQueueWorker.cs`, `src/Elsa.Platform.Deployment.Core/Workspace/RuntimeControlService.cs`, `src/Elsa.Platform.Deployment.Core/Workspace/ConfirmationService.cs`, and `src/Elsa.Platform.Deployment.Core/Workspace/ObservabilityDriftService.cs`
-- [ ] T016 Update cockpit service to use workspace deployment store projections in `src/Elsa.Platform.Deployment.Core/Cockpit/DeploymentCockpitService.cs`
-- [ ] T017 Add EF deployment workspace, observability binding, and drift report entities in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`
-- [ ] T018 Add EF deployment, observability, and drift entity mappings in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
-- [ ] T019 Add EF workspace deployment, permission, observability, and drift store in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [ ] T020 Add deployment `DbSet` properties in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/CatalogDbContext.cs`
-- [ ] T021 Register deployment workspace services, permission services, confirmation services, queue worker, and stores in `src/Elsa.Platform.Api/Program.cs`
-- [ ] T022 Add SQLite and SQL Server deployment, observability, drift, permission, confirmation, and queued-run migrations in `src/Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/Migrations/` and `src/Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
+- [X] T006 Define workspace deployment domain models in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`
+- [X] T007 Define workspace permission models and permission IDs in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspacePermissionModels.cs`
+- [X] T008 Define confirmation and queue/run models in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunModels.cs`
+- [X] T009 Define structured desired-state models in `src/Elsa.Platform.Deployment.Core/Workspace/DesiredStateModels.cs`
+- [X] T010 Define observability binding and drift report metadata models in `src/Elsa.Platform.Deployment.Core/Workspace/ObservabilityDriftModels.cs`
+- [X] T011 Define workspace deployment store contract in `src/Elsa.Platform.Deployment.Core/Workspace/IWorkspaceDeploymentStore.cs`
+- [X] T012 Define permission store contract in `src/Elsa.Platform.Deployment.Core/Workspace/IWorkspacePermissionStore.cs`
+- [X] T013 Add workspace permission service skeleton in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspacePermissionService.cs`
+- [X] T014 Add workspace deployment service skeleton in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
+- [X] T015 Add validation/run/queue/control/confirmation/observability service skeletons in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentValidationService.cs`, `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`, `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentQueueWorker.cs`, `src/Elsa.Platform.Deployment.Core/Workspace/RuntimeControlService.cs`, `src/Elsa.Platform.Deployment.Core/Workspace/ConfirmationService.cs`, and `src/Elsa.Platform.Deployment.Core/Workspace/ObservabilityDriftService.cs`
+- [X] T016 Update cockpit service to use workspace deployment store projections in `src/Elsa.Platform.Deployment.Core/Cockpit/DeploymentCockpitService.cs`
+- [X] T017 Add EF deployment workspace, observability binding, and drift report entities in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`
+- [X] T018 Add EF deployment, observability, and drift entity mappings in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
+- [X] T019 Add EF workspace deployment, permission, observability, and drift store in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T020 Add deployment `DbSet` properties in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/CatalogDbContext.cs`
+- [X] T021 Register deployment workspace services, permission services, confirmation services, queue worker, and stores in `src/Elsa.Platform.Api/Program.cs`
+- [X] T022 Add SQLite and SQL Server deployment, observability, drift, permission, confirmation, and queued-run migrations in `src/Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/Migrations/` and `src/Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
 
 ---
 
@@ -60,24 +60,24 @@
 
 ### Tests for User Story 1
 
-- [ ] T023 [P] [US1] Add core cockpit projection tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceDeploymentServiceTests.cs`
-- [ ] T024 [P] [US1] Add EF persistence round-trip tests in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
-- [ ] T025 [P] [US1] Add workspace cockpit isolation API tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentIsolationTests.cs`
-- [ ] T026 [P] [US1] Add persisted observability and drift metadata API/persistence tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentApiTests.cs` and `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
-- [ ] T027 [P] [US1] Add normal-dataset cockpit load bounded-query and under-3-second test in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentApiTests.cs`
-- [ ] T028 [P] [US1] Add console cockpit live-data tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T023 [P] [US1] Add core cockpit projection tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceDeploymentServiceTests.cs`
+- [X] T024 [P] [US1] Add EF persistence round-trip tests in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
+- [X] T025 [P] [US1] Add workspace cockpit isolation API tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentIsolationTests.cs`
+- [X] T026 [P] [US1] Add persisted observability and drift metadata API/persistence tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentApiTests.cs` and `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
+- [X] T027 [P] [US1] Add normal-dataset cockpit load bounded-query and under-3-second test in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentApiTests.cs`
+- [X] T028 [P] [US1] Add console cockpit live-data tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 1
 
-- [ ] T029 [US1] Implement cockpit projection from persisted workspace deployment records in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
-- [ ] T030 [US1] Implement cockpit read methods in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [ ] T031 [US1] Replace in-memory cockpit registration in `src/Elsa.Platform.Api/Program.cs`
-- [ ] T032 [US1] Add cockpit response contracts in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentContracts.cs`
-- [ ] T033 [US1] Update cockpit endpoint to use durable service and read permission checks in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [ ] T034 [US1] Implement persisted observability binding and drift report metadata projection in `src/Elsa.Platform.Deployment.Core/Workspace/ObservabilityDriftService.cs`, `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [ ] T035 [US1] Update console deployment API models for durable cockpit and permission fields in `src/Elsa.Platform.Console/src/features/deployments/deploymentModels.ts`
-- [ ] T036 [US1] Update Deployments page empty/loading/error states for live cockpit data in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [ ] T037 [US1] Run focused US1 checks documented in `specs/022-deployment-ux/quickstart.md`
+- [X] T029 [US1] Implement cockpit projection from persisted workspace deployment records in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
+- [X] T030 [US1] Implement cockpit read methods in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T031 [US1] Replace in-memory cockpit registration in `src/Elsa.Platform.Api/Program.cs`
+- [X] T032 [US1] Add cockpit response contracts in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentContracts.cs`
+- [X] T033 [US1] Update cockpit endpoint to use durable service and read permission checks in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T034 [US1] Implement persisted observability binding and drift report metadata projection in `src/Elsa.Platform.Deployment.Core/Workspace/ObservabilityDriftService.cs`, `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T035 [US1] Update console deployment API models for durable cockpit and permission fields in `src/Elsa.Platform.Console/src/features/deployments/deploymentModels.ts`
+- [X] T036 [US1] Update Deployments page empty/loading/error states for live cockpit data in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T037 [US1] Run focused US1 checks documented in `specs/022-deployment-ux/quickstart.md`
 
 **Checkpoint**: User Story 1 is independently functional and the cockpit no longer depends on seeded demo data.
 

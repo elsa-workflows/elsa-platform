@@ -1,4 +1,5 @@
 using Elsa.Platform.Api.Authentication;
+using Elsa.Platform.Api.Workspace;
 
 namespace Elsa.Platform.Api.Tests;
 

@@ -105,7 +105,19 @@ export function DeploymentsPage() {
   if (!workspaceId) {
     return <RequestStateView state="empty" title="No workspace selected" description="Sign in with a workspace membership to view deployments." />;
   }
-  if (cockpit.isError || !data || !selectedApplication || !selectedEngine) {
+  if (cockpit.isError || !data) {
+    return <RequestStateView state="unexpected" title="Deployments could not load" />;
+  }
+  if (data.applications.length === 0) {
+    return (
+      <RequestStateView
+        state="empty"
+        title="No deployment setup"
+        description="Create a workflow application, environment, and engine registration to start managing deployments."
+      />
+    );
+  }
+  if (!selectedApplication || !selectedEngine) {
     return <RequestStateView state="unexpected" title="Deployments could not load" />;
   }
 

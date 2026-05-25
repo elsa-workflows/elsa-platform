@@ -8,11 +8,14 @@
 **/*.tsbuildinfo
 .git/
 .github/
+Dockerfile*
+.dockerignore
 .vs/
 .idea/
 .azure/
 artifacts/
 .artifacts/
+*.log*
 *.user
 *.suo
 *.rsuser

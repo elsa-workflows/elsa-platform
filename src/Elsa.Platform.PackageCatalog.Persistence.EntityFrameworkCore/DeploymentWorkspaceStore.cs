@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
 
-public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWorkspaceDeploymentStore
+public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWorkspaceDeploymentStore, IWorkspacePermissionStore
 {
     public async Task<DeploymentCockpit> GetCockpitAsync(Guid workspaceId, CancellationToken cancellationToken = default)
     {
@@ -31,6 +31,19 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             .OrderBy(x => x.Name)
             .ToListAsync(cancellationToken);
 
+        var observabilityBindings = await dbContext.ObservabilityBindings
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId)
+            .OrderBy(x => x.Provider)
+            .ThenBy(x => x.Kind)
+            .ToListAsync(cancellationToken);
+
+        var driftReport = await dbContext.DriftReportItems
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId)
+            .OrderByDescending(x => x.DetectedAt)
+            .ToListAsync(cancellationToken);
+
         var cockpitApplications = applications
             .Select(application => new WorkflowApplication(
                 application.Id.ToString("D"),
@@ -47,10 +60,64 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             cockpitApplications,
             engines.Select(ToEngineRegistration).ToList(),
             [],
+            observabilityBindings.Select(ToObservabilityBinding).ToList(),
             [],
-            [],
-            [],
+            driftReport.Select(ToDriftReportItem).ToList(),
             []);
+    }
+
+    public async Task<IReadOnlyList<WorkspacePermissionGrant>> GetPermissionGrantsAsync(
+        Guid workspaceId,
+        Guid accountId,
+        CancellationToken cancellationToken = default)
+    {
+        return await dbContext.WorkspacePermissionGrants
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.AccountId == accountId)
+            .OrderBy(x => x.Permission)
+            .Select(x => new WorkspacePermissionGrant(
+                x.Id,
+                x.WorkspaceId,
+                x.AccountId,
+                x.Permission,
+                x.GrantedByAccountId,
+                x.CreatedAt,
+                x.UpdatedAt,
+                x.RevokedAt))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<WorkspacePermissionGrant> GrantPermissionAsync(
+        Guid workspaceId,
+        GrantWorkspacePermissionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var existing = await dbContext.WorkspacePermissionGrants
+            .SingleOrDefaultAsync(
+                x => x.WorkspaceId == workspaceId
+                    && x.AccountId == request.AccountId
+                    && x.Permission == request.Permission
+                    && x.RevokedAt == null,
+                cancellationToken);
+
+        if (existing is not null)
+            return ToPermissionGrant(existing);
+
+        var entity = new WorkspacePermissionGrantEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            AccountId = request.AccountId,
+            Permission = request.Permission,
+            GrantedByAccountId = request.GrantedByAccountId,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+        await dbContext.WorkspacePermissionGrants.AddAsync(entity, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToPermissionGrant(entity);
     }
 
     public async Task<WorkspaceDeploymentApplication> CreateApplicationAsync(
@@ -242,6 +309,26 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             engine.Controls.OrderBy(x => x.ControlId).Select(x => new RuntimeControl(x.ControlId, x.Label, x.Boundary, x.RequiredCapabilityId, x.Description)).ToList(),
             engine.HostingProvider);
 
+    private static ObservabilityBinding ToObservabilityBinding(ObservabilityBindingEntity binding) =>
+        new(
+            binding.Id.ToString("D"),
+            binding.Kind,
+            binding.Provider,
+            binding.Status,
+            binding.Scope,
+            0,
+            binding.Sample ?? "");
+
+    private static DriftReportItem ToDriftReportItem(DriftReportItemEntity item) =>
+        new(
+            item.Id.ToString("D"),
+            item.EnvironmentId.ToString("D"),
+            item.EngineId.ToString("D"),
+            item.Area,
+            item.Desired,
+            item.Observed,
+            item.Action);
+
     private static WorkspaceWorkflowEngine ToWorkspaceWorkflowEngine(WorkflowEngineEntity engine) =>
         new(
             engine.Id,
@@ -276,6 +363,17 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             entity.AuthoredAt,
             entity.CreatedAt,
             entity.CreatedByAccountId);
+
+    private static WorkspacePermissionGrant ToPermissionGrant(WorkspacePermissionGrantEntity entity) =>
+        new(
+            entity.Id,
+            entity.WorkspaceId,
+            entity.AccountId,
+            entity.Permission,
+            entity.GrantedByAccountId,
+            entity.CreatedAt,
+            entity.UpdatedAt,
+            entity.RevokedAt);
 
     private static DeploymentHealth EnvironmentHealth(DeploymentEnvironmentEntity environment, IReadOnlyList<WorkflowEngineEntity> engines)
     {

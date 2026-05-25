@@ -1,5 +1,5 @@
 import { apiRequest } from "@/lib/api/httpClient";
-import type { DeploymentCockpit } from "@/features/deployments/deploymentModels";
+import type { DeploymentCockpit, WorkspaceDeploymentPermissionsResponse } from "@/features/deployments/deploymentModels";
 
 export type DeploymentWorkspaceContext = {
   account: {
@@ -21,4 +21,8 @@ export function getDeploymentWorkspaceContext() {
 
 export function getDeploymentCockpit(workspaceId: string) {
   return apiRequest<DeploymentCockpit>(`/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/cockpit`);
+}
+
+export function getDeploymentPermissions(workspaceId: string) {
+  return apiRequest<WorkspaceDeploymentPermissionsResponse>(`/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/permissions`);
 }

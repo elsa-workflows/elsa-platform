@@ -22,6 +22,22 @@ describe("DeploymentsPage", () => {
     expect(screen.queryByText(/password|token|secret value/i)).not.toBeInTheDocument();
   });
 
+  it("shows an empty setup state when the live cockpit has no applications", async () => {
+    renderDeployments({
+      applications: [],
+      engines: [],
+      comparisons: [],
+      observabilityBindings: [],
+      history: [],
+      driftReport: [],
+      assistantPlans: []
+    });
+
+    expect(await screen.findByText("No deployment setup")).toBeInTheDocument();
+    expect(screen.getByText("Create a workflow application, environment, and engine registration to start managing deployments.")).toBeInTheDocument();
+    expect(screen.queryByText("Claims Operations")).not.toBeInTheDocument();
+  });
+
   it("shows only capability-supported engine controls and records selected operations", async () => {
     renderDeployments();
 
