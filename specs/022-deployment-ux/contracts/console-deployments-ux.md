@@ -58,7 +58,9 @@ Shows:
 Actions:
 
 - Preview promotion.
-- Start dry-run or deployment only when no blockers exist, `deployments.run.execute` is granted, and the user explicitly confirms the action.
+- Refresh preview through the live promotion preview API.
+- Start deployment only when no blockers exist, `deployments.run.execute` is granted, and the user explicitly confirms the action.
+- Refresh cockpit history after deployment is queued.
 
 ### Deployment Runs
 
@@ -70,8 +72,9 @@ Shows:
 
 Actions:
 
-- Open run details.
+- Show queued, running, succeeded, failed, cancelled, rolled-back, and recovery-required statuses from persisted cockpit history.
 - Roll back from a compatible successful run only when `deployments.rollback.execute` is granted and the user explicitly confirms the action.
+- Refresh cockpit history after rollback is queued.
 
 ### Runtime Controls
 
@@ -105,14 +108,14 @@ Does not:
 - Validation blocked: deploy and rollback controls disabled with blocker details visible.
 - Permission blocked: action controls disabled when the caller lacks the required permission grant.
 - Confirmation required: deploy, rollback, and runtime controls show a confirmation step before the API mutation is submitted.
-- Running: active deployment run status visible after start and on refresh.
-- Succeeded/failed: final state visible in history.
+- Queued/running: active deployment run status visible after start and on refresh.
+- Succeeded/failed/recovery-required: final or review-required state visible in history.
 - Unexpected: safe error message without sensitive response details.
 
 ## Refresh Rules
 
 - Creating application, environment, engine, structured revision, queued run, rollback, or runtime control invalidates cockpit data.
-- Starting deployment or rollback invalidates run detail and history data.
+- Starting deployment or rollback invalidates cockpit history data.
 - Preview does not mutate cockpit state.
 
 ## Accessibility And Interaction

@@ -35,6 +35,9 @@ public sealed class RuntimeControlService(
         if (control is null)
             throw new InvalidOperationException("Runtime control is not registered for the selected engine.");
 
+        if (engine.Health == DeploymentHealth.Unreachable)
+            throw new InvalidOperationException("Runtime control cannot execute while the selected engine is unreachable.");
+
         var controlValidation = ValidateControl(control, engine.Capabilities);
         if (controlValidation.Severity == ValidationSeverity.Blocker)
             throw new InvalidOperationException(controlValidation.Message);

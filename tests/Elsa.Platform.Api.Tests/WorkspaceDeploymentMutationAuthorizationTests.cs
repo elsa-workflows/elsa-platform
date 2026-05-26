@@ -3,7 +3,9 @@ using Elsa.Platform.Api.Workspace;
 using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
+using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using FluentAssertions;
 
 namespace Elsa.Platform.Api.Tests;
@@ -64,6 +66,25 @@ public sealed class WorkspaceDeploymentMutationAuthorizationTests
     }
 
     [Fact]
+    public async Task Runtime_control_rejects_unreachable_engine_without_consuming_confirmation()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var (_, _, engine) = await SeedControlTopologyAsync(app, workspaceId, hasCapability: true, health: DeploymentHealth.Unreachable);
+        var confirmation = await CreateConfirmationAsync(owner, workspaceId, engine.Id, "reload-configuration");
+
+        var response = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}/controls/reload-configuration/run",
+            new WorkspaceRuntimeControlRunRequest(confirmation.Id));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var usedAt = await ConfirmationUsedAtAsync(app, workspaceId, confirmation.Id);
+        usedAt.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Runtime_control_consumes_same_user_confirmation_once()
     {
         await using var app = new PlatformApiTestApplication();
@@ -109,7 +130,8 @@ public sealed class WorkspaceDeploymentMutationAuthorizationTests
     private static async Task<(WorkspaceDeploymentApplication Application, WorkspaceDeploymentEnvironment Environment, WorkspaceWorkflowEngine Engine)> SeedControlTopologyAsync(
         PlatformApiTestApplication app,
         Guid workspaceId,
-        bool hasCapability)
+        bool hasCapability,
+        DeploymentHealth health = DeploymentHealth.Healthy)
     {
         await using var scope = app.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IWorkspaceDeploymentStore>();
@@ -127,6 +149,12 @@ public sealed class WorkspaceDeploymentMutationAuthorizationTests
                 hasCapability ? [new EngineCapability("engine.reload-configuration", "Reload engine configuration", CapabilityBoundary.EngineApi)] : [],
                 [new RuntimeControl("reload-configuration", "Reload Configuration", CapabilityBoundary.EngineApi, "engine.reload-configuration", "Reloads engine API configuration.")],
                 null));
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            UPDATE WorkflowEngines
+            SET Health = {health.ToString()}, LastHeartbeatAt = {DateTimeOffset.Parse("2026-05-26T10:00:00Z")}
+            WHERE WorkspaceId = {workspaceId} AND Id = {engine.Id};
+            """);
         return (application, environment, engine);
     }
 

@@ -229,17 +229,17 @@
 
 **Purpose**: Final hardening, docs, and broad verification.
 
-- [ ] T100 [P] Update quickstart results and known limitations in `specs/022-deployment-ux/quickstart.md`
-- [ ] T101 [P] Update deployment contracts for final response shapes in `specs/022-deployment-ux/contracts/workspace-deployment-api.md`
-- [ ] T102 [P] Update console UX contract for final states in `specs/022-deployment-ux/contracts/console-deployments-ux.md`
-- [ ] T103 Review secret redaction, permission checks, observability/drift metadata safety, confirmation checks, and audit metadata across `src/Elsa.Platform.Deployment.Core/Workspace/`, `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [ ] T104 Run `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj` and record result in `specs/022-deployment-ux/quickstart.md`
-- [ ] T105 Run `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj` and record result in `specs/022-deployment-ux/quickstart.md`
-- [ ] T106 Run `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceDeployment` and record result in `specs/022-deployment-ux/quickstart.md`
-- [ ] T107 Run `cd src/Elsa.Platform.Console && npm test -- --run deployments` and record result in `specs/022-deployment-ux/quickstart.md`
-- [ ] T108 Run `cd src/Elsa.Platform.Console && npm run typecheck` and record result in `specs/022-deployment-ux/quickstart.md`
-- [ ] T109 Run `dotnet test Elsa.Platform.sln` and record result in `specs/022-deployment-ux/quickstart.md`
-- [ ] T110 Run `git diff --check` and record result in `specs/022-deployment-ux/quickstart.md`
+- [X] T100 [P] Update quickstart results and known limitations in `specs/022-deployment-ux/quickstart.md`
+- [X] T101 [P] Update deployment contracts for final response shapes in `specs/022-deployment-ux/contracts/workspace-deployment-api.md`
+- [X] T102 [P] Update console UX contract for final states in `specs/022-deployment-ux/contracts/console-deployments-ux.md`
+- [X] T103 Review secret redaction, permission checks, observability/drift metadata safety, confirmation checks, and audit metadata across `src/Elsa.Platform.Deployment.Core/Workspace/`, `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T104 Run `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj` and record result in `specs/022-deployment-ux/quickstart.md`
+- [X] T105 Run `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj` and record result in `specs/022-deployment-ux/quickstart.md`
+- [X] T106 Run `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceDeployment` and record result in `specs/022-deployment-ux/quickstart.md`
+- [X] T107 Run `cd src/Elsa.Platform.Console && npm test -- --run deployments` and record result in `specs/022-deployment-ux/quickstart.md`
+- [X] T108 Run `cd src/Elsa.Platform.Console && npm run typecheck` and record result in `specs/022-deployment-ux/quickstart.md`
+- [X] T109 Run `dotnet test Elsa.Platform.sln` and record result in `specs/022-deployment-ux/quickstart.md`
+- [X] T110 Run `git diff --check` and record result in `specs/022-deployment-ux/quickstart.md`
 
 ---
 

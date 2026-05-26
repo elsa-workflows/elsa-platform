@@ -67,4 +67,36 @@ dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.T
 dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceDeployment
 cd src/Elsa.Platform.Console && npm test -- --run deployments
 cd src/Elsa.Platform.Console && npm run typecheck
+cd tests/Elsa.Platform.Console.E2E && ADMIN_UI_BASE_URL=http://127.0.0.1:5173 npm run e2e -- deployments.spec.ts
 ```
+
+## Current Implementation Notes
+
+- Engine registrations start as `Unreachable` until a future engine heartbeat or verification endpoint updates health metadata.
+- Observability and drift views render persisted metadata only; this slice does not call live telemetry providers or perform live drift detection.
+- Deployment, rollback, and runtime controls create single-user confirmations immediately before queueing or execution.
+- Deployment and rollback run history is projected from persisted run records into the cockpit response.
+
+## Verification Results
+
+Results are recorded during implementation and final verification.
+
+| Command | Result | Notes |
+| --- | --- | --- |
+| `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --no-restore` | Passed | 26 tests |
+| `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --no-restore` | Passed | 31 tests |
+| `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --no-restore --filter WorkspaceDeployment` | Passed | 19 tests |
+| `cd src/Elsa.Platform.Console && npm test -- --run deployments` | Passed | 13 tests |
+| `cd src/Elsa.Platform.Console && npm run typecheck` | Passed | TypeScript project build |
+| `cd tests/Elsa.Platform.Console.E2E && ADMIN_UI_BASE_URL=http://127.0.0.1:5173 npm run e2e -- deployments.spec.ts` | Passed | 1 Chromium smoke test; requires console dev server |
+| `dotnet test Elsa.Platform.sln --no-restore -m:1 /nr:false` | Passed | Existing `NU1903` warning for `Microsoft.Build.Utilities.Core` in package manifest generator projects |
+| `git diff --check` | Passed | No whitespace errors |
+
+## Safety Review Results
+
+- Secret handling: cockpit and console render credential provider/reference metadata only; no raw secret values or provider tokens are returned by deployment responses.
+- Permission checks: every deployment route resolves workspace access and checks the operation-specific deployment permission before mutation.
+- Confirmation checks: deploy, rollback, and runtime control execution consume same-user single-use confirmations using action and target matching.
+- Runtime control gating: controls require advertised matching capability and now fail closed on `Unreachable` engine health before confirmation is consumed.
+- Observability/drift: cockpit renders persisted metadata only and does not call live telemetry providers or registered engines.
+- Audit metadata: deployment runs, run history, and runtime control executions persist actor, target, confirmation, status, and timestamps.

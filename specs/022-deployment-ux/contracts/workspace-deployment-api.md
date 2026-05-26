@@ -117,17 +117,27 @@ Response:
   "observabilityBindings": [
     {
       "id": "obs-prod-logs",
-      "environmentId": "env-prod",
-      "engineId": "engine-prod",
       "kind": "Logs",
       "provider": "Azure Monitor",
       "status": "Connected",
       "scope": "workspace:/subscriptions/.../resourceGroups/acme-prod",
-      "correlatedRevisionId": "rev-prod-40",
+      "correlatedRevision": 40,
       "sample": "Last status imported at 2026-05-25T09:30:00Z"
     }
   ],
-  "history": [],
+  "history": [
+    {
+      "id": "run-410",
+      "status": "Queued",
+      "revision": 41,
+      "actor": "account-id",
+      "environmentId": "env-prod",
+      "engineId": "engine-prod",
+      "validationOutcome": "Passed",
+      "occurredAt": "2026-05-25T10:15:00Z",
+      "rollbackSourceRevision": null
+    }
+  ],
   "driftReport": [
     {
       "id": "drift-prod-001",
@@ -136,8 +146,7 @@ Response:
       "area": "RuntimeConfiguration",
       "desired": "Concurrency limit 32",
       "observed": "Concurrency limit 16",
-      "action": "Review",
-      "detectedAt": "2026-05-25T09:30:00Z"
+      "action": "Review"
     }
   ],
   "assistantPlans": []
@@ -260,6 +269,7 @@ Response:
 {
   "sourceEnvironmentId": "env-stage",
   "targetEnvironmentId": "env-prod",
+  "sourceRevisionId": "rev-stage-41",
   "sourceRevision": 41,
   "targetRevision": 40,
   "diff": [
@@ -277,12 +287,11 @@ Response:
       "id": "secret-payment-api",
       "severity": "Blocker",
       "scope": "Secret references",
-      "message": "Payment API secret reference is missing or not verified in Prod.",
-      "code": "deployment.secret.missing"
+      "message": "Payment API secret reference is missing or not verified in Prod."
     }
   ],
   "rollbackRevision": 39,
-  "canDeploy": false
+  "rollbackRevisionId": "rev-prod-39"
 }
 ```
 
@@ -302,17 +311,35 @@ Request:
 }
 ```
 
-Response: `202 Accepted` with deployment run summary. `RecoveryRequired` is a terminal review state for stale claimed runs and is not automatically replayed.
+Response: `201 Created` with deployment run summary. `RecoveryRequired` is a terminal review state for stale claimed runs and is not automatically replayed.
 
 ```json
 {
   "id": "run-410",
+  "workspaceId": "workspace-123",
+  "applicationId": "app-claims",
+  "environmentId": "env-prod",
+  "engineId": "engine-prod",
+  "sourceRevisionId": "rev-stage-41",
+  "previousDeployedRevisionId": "rev-prod-40",
+  "rollbackSourceRunId": null,
   "status": "Queued",
-  "queuedAt": "2026-05-25T10:15:00Z"
+  "validationOutcome": "Passed",
+  "confirmationId": "confirm-123",
+  "actorAccountId": "account-123",
+  "queuedAt": "2026-05-25T10:15:00Z",
+  "startedAt": null,
+  "completedAt": null,
+  "createdAt": "2026-05-25T10:15:00Z",
+  "workerId": null,
+  "workerHeartbeatAt": null,
+  "attemptNumber": 1,
+  "recoveryReason": null,
+  "failureMessage": null
 }
 ```
 
-## `POST /api/workspaces/{workspaceId}/deployments/runs/{runId}/rollback`
+## `POST /api/workspaces/{workspaceId}/deployments/rollbacks`
 
 Enqueues a rollback deployment run from a prior compatible successful run.
 
@@ -320,12 +347,16 @@ Request:
 
 ```json
 {
+  "sourceRevisionId": "rev-prod-39",
+  "targetEnvironmentId": "env-prod",
   "targetEngineId": "engine-prod",
-  "confirmationId": "confirm-456"
+  "confirmationId": "confirm-456",
+  "rollbackSourceRunId": "run-409",
+  "mode": "Apply"
 }
 ```
 
-Response: `202 Accepted` with rollback run summary.
+Response: `201 Created` with rollback run summary.
 
 ## `GET /api/workspaces/{workspaceId}/deployments/runs/{runId}`
 
@@ -340,14 +371,14 @@ Request:
 ```json
 {
   "actionType": "Deploy",
-  "targetId": "env-prod",
-  "summary": "Deploy revision 41 to Prod"
+  "targetId": "rev-stage-41",
+  "lifetimeSeconds": null
 }
 ```
 
 Response: `201 Created` with confirmation metadata. The confirmation can only be consumed once, before expiry, by the same account that created it, and only for the requested workspace/action/target tuple.
 
-## `POST /api/workspaces/{workspaceId}/deployments/engines/{engineId}/controls/{controlId}`
+## `POST /api/workspaces/{workspaceId}/deployments/engines/{engineId}/controls/{controlId}/run`
 
 Executes a supported runtime control.
 
@@ -355,12 +386,29 @@ Request:
 
 ```json
 {
-  "reason": "Reload after approved configuration deployment",
   "confirmationId": "confirm-789"
 }
 ```
 
-Response: `202 Accepted` with action audit summary.
+Response: `200 OK` with action audit summary.
+
+```json
+{
+  "id": "control-execution-1",
+  "workspaceId": "workspace-123",
+  "engineId": "engine-prod",
+  "environmentId": "env-prod",
+  "controlId": "reload-configuration",
+  "controlLabel": "Reload Configuration",
+  "boundary": "EngineApi",
+  "requiredCapabilityId": "engine.reload-configuration",
+  "confirmationId": "confirm-789",
+  "actorAccountId": "account-123",
+  "status": "Succeeded",
+  "createdAt": "2026-05-25T10:20:00Z",
+  "message": "Reload Configuration executed for claims-prod-weu-01."
+}
+```
 
 Failure cases:
 
@@ -368,4 +416,4 @@ Failure cases:
 - `403 Forbidden`: not a workspace member or insufficient permission grant/entitlement.
 - `404 NotFound`: workspace-owned record is not visible to caller.
 - `409 Conflict`: active deployment run conflict or immutable revision conflict.
-- `422 UnprocessableEntity`: validation blockers, missing confirmation, unsupported capability, unsafe secret state, or unreachable engine.
+- `409 Conflict`: active deployment run conflict, missing confirmation, reused confirmation, unsupported capability, unsafe secret state, or unreachable engine.

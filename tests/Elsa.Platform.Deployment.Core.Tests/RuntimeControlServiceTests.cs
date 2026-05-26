@@ -76,6 +76,32 @@ public sealed class RuntimeControlServiceTests
     }
 
     [Fact]
+    public async Task Rejects_unreachable_engine_without_consuming_confirmation()
+    {
+        _store.Cockpit = Cockpit(
+            [WorkspaceDeploymentTestFixtures.Capability()],
+            [WorkspaceDeploymentTestFixtures.Control()],
+            DeploymentHealth.Unreachable);
+        var confirmations = new ConfirmationService(_store, new StaticTimeProvider(_now));
+        var confirmation = await confirmations.CreateConfirmationAsync(
+            _workspaceId,
+            new CreateActionConfirmationRequest(
+                ConfirmationActionType.RuntimeControl,
+                RuntimeControlService.RuntimeControlTargetId(_engineId, "reload-configuration"),
+                _accountId));
+        var service = new RuntimeControlService(_store, _store, confirmations, new StaticTimeProvider(_now));
+
+        var act = () => service.ExecuteControlAsync(
+            _workspaceId,
+            new RuntimeControlExecutionRequest(_engineId, "reload-configuration", confirmation.Id, _accountId));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Runtime control cannot execute while the selected engine is unreachable.");
+        _store.Confirmations[confirmation.Id].UsedAt.Should().BeNull();
+        _store.Executions.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Rejects_missing_or_replayed_confirmation()
     {
         _store.Cockpit = Cockpit([WorkspaceDeploymentTestFixtures.Capability()], [WorkspaceDeploymentTestFixtures.Control()]);
@@ -97,7 +123,10 @@ public sealed class RuntimeControlServiceTests
             .WithMessage("Confirmation has already been used.");
     }
 
-    private DeploymentCockpit Cockpit(IReadOnlyList<EngineCapability> capabilities, IReadOnlyList<RuntimeControl> controls) =>
+    private DeploymentCockpit Cockpit(
+        IReadOnlyList<EngineCapability> capabilities,
+        IReadOnlyList<RuntimeControl> controls,
+        DeploymentHealth health = DeploymentHealth.Healthy) =>
         new(
             [],
             [
@@ -107,8 +136,8 @@ public sealed class RuntimeControlServiceTests
                     _environmentId.ToString("D"),
                     new EngineEndpointMetadata("https://engine.example.test/elsa", "weu", "Elsa 4", CertificateStatus.Trusted),
                     new EngineCredentialReference("Vault", "kv://engine", CredentialVerificationStatus.Verified, _now),
-                    DeploymentHealth.Healthy,
-                    _now,
+                    health,
+                    health == DeploymentHealth.Unreachable ? null : _now,
                     capabilities,
                     controls,
                     null)
