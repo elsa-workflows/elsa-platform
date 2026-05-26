@@ -149,7 +149,9 @@ public sealed record WorkflowEngineRegistration(
     DateTimeOffset? LastHeartbeatAt,
     IReadOnlyList<EngineCapability> Capabilities,
     IReadOnlyList<RuntimeControl> Controls,
-    string? HostingProvider);
+    string? HostingProvider,
+    DateTimeOffset? LastVerificationAt = null,
+    string VerificationMessage = "");
 
 public sealed record DesiredStateRevision(
     string Id,

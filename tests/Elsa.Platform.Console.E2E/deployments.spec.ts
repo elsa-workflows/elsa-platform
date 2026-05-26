@@ -208,6 +208,8 @@ function populatedCockpit() {
         },
         health: "Healthy",
         lastHeartbeatAt: "2026-05-22T08:16:30Z",
+        lastVerificationAt: "2026-05-22T08:12:30Z",
+        verificationMessage: "Endpoint responded successfully.",
         capabilities: [{ id: "engine.reload-configuration", label: "Reload engine configuration", boundary: "EngineApi" }],
         controls: [
           {

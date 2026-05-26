@@ -49,9 +49,24 @@ export type WorkflowEngineRegistration = {
   };
   health: DeploymentHealth;
   lastHeartbeatAt: string | null;
+  lastVerificationAt: string | null;
+  verificationMessage: string;
   capabilities: EngineCapability[];
   controls: RuntimeControl[];
   hostingProvider: string | null;
+};
+
+export type EngineHealthResult = {
+  engineId: string;
+  environmentId: string;
+  health: DeploymentHealth;
+  version: string | null;
+  certificateStatus: WorkflowEngineRegistration["endpoint"]["certificateStatus"];
+  credentialVerificationStatus: CredentialVerificationStatus;
+  credentialLastVerifiedAt: string | null;
+  lastHeartbeatAt: string | null;
+  lastVerificationAt: string | null;
+  message: string;
 };
 
 export type DesiredStateRevision = {

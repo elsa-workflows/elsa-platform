@@ -75,6 +75,94 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Persists_engine_health_verification_metadata()
+    {
+        var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));
+        var environment = await _store.CreateEnvironmentAsync(_workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production));
+        var engine = await _store.RegisterEngineAsync(
+            _workspaceId,
+            new RegisterWorkflowEngineRequest(
+                environment.Id,
+                "claims-prod",
+                "https://workflows.example.test/elsa",
+                "westeurope",
+                "Azure Key Vault",
+                "kv://claims/prod/elsa-api",
+                [new EngineCapability("engine.reload-configuration", "Reload engine configuration", CapabilityBoundary.EngineApi)],
+                [new RuntimeControl("reload-configuration", "Reload Configuration", CapabilityBoundary.EngineApi, "engine.reload-configuration", "Reloads engine API configuration.")],
+                null));
+        var verifiedAt = DateTimeOffset.Parse("2026-05-26T10:00:00Z");
+
+        await _store.UpdateEngineHealthAsync(
+            _workspaceId,
+            new EngineHealthUpdate(
+                engine.Id,
+                environment.Id,
+                DeploymentHealth.Healthy,
+                "Elsa 4.1.0",
+                CertificateStatus.Trusted,
+                CredentialVerificationStatus.Verified,
+                verifiedAt,
+                verifiedAt,
+                verifiedAt,
+                "Endpoint responded successfully."));
+
+        _db.ChangeTracker.Clear();
+        var cockpit = await _store.GetCockpitAsync(_workspaceId);
+
+        cockpit.Engines.Should().ContainSingle(x =>
+            x.Id == engine.Id.ToString("D")
+            && x.Health == DeploymentHealth.Healthy
+            && x.Endpoint.Version == "Elsa 4.1.0"
+            && x.CredentialReference.LastVerifiedAt == verifiedAt
+            && x.LastHeartbeatAt == verifiedAt
+            && x.LastVerificationAt == verifiedAt
+            && x.VerificationMessage == "Endpoint responded successfully.");
+    }
+
+    [Fact]
+    public async Task Heartbeat_updates_health_without_replacing_controls_when_capabilities_are_omitted()
+    {
+        var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));
+        var environment = await _store.CreateEnvironmentAsync(_workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production));
+        var engine = await _store.RegisterEngineAsync(
+            _workspaceId,
+            new RegisterWorkflowEngineRequest(
+                environment.Id,
+                "claims-prod",
+                "https://workflows.example.test/elsa",
+                "westeurope",
+                "Azure Key Vault",
+                "kv://claims/prod/elsa-api",
+                [new EngineCapability("engine.reload-configuration", "Reload engine configuration", CapabilityBoundary.EngineApi)],
+                [new RuntimeControl("reload-configuration", "Reload Configuration", CapabilityBoundary.EngineApi, "engine.reload-configuration", "Reloads engine API configuration.")],
+                null));
+        var heartbeatAt = DateTimeOffset.Parse("2026-05-26T10:00:00Z");
+
+        await _store.ApplyEngineHeartbeatAsync(
+            _workspaceId,
+            new EngineHealthUpdate(
+                engine.Id,
+                environment.Id,
+                DeploymentHealth.Healthy,
+                "Elsa 4.1.0",
+                CertificateStatus.Trusted,
+                CredentialVerificationStatus.Verified,
+                heartbeatAt,
+                heartbeatAt,
+                null,
+                "Heartbeat accepted."));
+
+        _db.ChangeTracker.Clear();
+        var cockpit = await _store.GetCockpitAsync(_workspaceId);
+
+        var registration = cockpit.Engines.Single(x => x.Id == engine.Id.ToString("D"));
+        registration.Controls.Should().ContainSingle(x => x.Id == "reload-configuration");
+        registration.Capabilities.Should().ContainSingle(x => x.Id == "engine.reload-configuration");
+        registration.LastHeartbeatAt.Should().Be(heartbeatAt);
+    }
+
+    [Fact]
     public async Task Persists_structured_desired_state_records_and_keeps_revisions_immutable()
     {
         var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));

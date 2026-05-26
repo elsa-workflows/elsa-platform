@@ -44,6 +44,7 @@ export function RuntimeControlsPanel({
         </div>
       ))}
       <p className="text-xs text-muted-foreground">Unavailable controls stay hidden unless a matching engine or hosting capability is advertised.</p>
+      {engine.health === "Unreachable" ? <p className="text-xs text-muted-foreground">Verify the engine or wait for a fresh heartbeat before running controls.</p> : null}
       {!canExecuteControls ? <p className="text-xs text-muted-foreground">Runtime control permission is required.</p> : null}
       {notice ? <div role="status" className="rounded-ui border border-primary/30 bg-primary/10 px-3 py-2 text-sm">{notice}</div> : null}
       {error ? <div role="alert" className="rounded-ui border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div> : null}

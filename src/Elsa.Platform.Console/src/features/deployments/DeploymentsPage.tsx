@@ -32,7 +32,8 @@ import {
   runRuntimeControl,
   updateDeploymentApplication,
   updateDeploymentEngine,
-  updateDeploymentEnvironment
+  updateDeploymentEnvironment,
+  verifyDeploymentEngine
 } from "@/features/deployments/deploymentApi";
 import { DeploymentSetupPanel, setupEngineRequest, type DeploymentSetupValues } from "@/features/deployments/DeploymentSetupPanel";
 import { DeploymentRunsPanel } from "@/features/deployments/DeploymentRunsPanel";
@@ -139,6 +140,13 @@ export function DeploymentsPage() {
     }),
     onSuccess: () => {
       setEditingEngine(false);
+      void refreshDeploymentCockpit();
+    }
+  });
+  const verifyEngine = useMutation({
+    mutationFn: (engine: WorkflowEngineRegistration) => verifyDeploymentEngine(workspaceId, engine.id),
+    onSuccess: (result) => {
+      setOperationNotice(result.message);
       void refreshDeploymentCockpit();
     }
   });
@@ -452,6 +460,8 @@ export function DeploymentsPage() {
           isEditingEngine={editingEngine}
           isSavingEngine={updateEngine.isPending}
           engineError={updateEngine.error instanceof Error ? updateEngine.error.message : undefined}
+          isVerifyingEngine={verifyEngine.isPending}
+          verifyError={verifyEngine.error instanceof Error ? verifyEngine.error.message : undefined}
           canExecuteControls={canExecuteControls}
           isRunningControl={runControl.isPending}
           controlError={runControl.error instanceof Error ? runControl.error.message : undefined}
@@ -470,6 +480,7 @@ export function DeploymentsPage() {
           onEditEngine={() => setEditingEngine((current) => !current)}
           onCancelEngineEdit={() => setEditingEngine(false)}
           onSaveEngine={(engine) => updateEngine.mutate(engine)}
+          onVerifyEngine={() => verifyEngine.mutate(selectedEngine)}
           onRunControl={(control) => runControl.mutate({ engine: selectedEngine, control })}
         />
       ) : null}
@@ -790,6 +801,8 @@ function EngineView({
   isEditingEngine,
   isSavingEngine,
   engineError,
+  isVerifyingEngine,
+  verifyError,
   canExecuteControls,
   isRunningControl,
   controlError,
@@ -798,6 +811,7 @@ function EngineView({
   onEditEngine,
   onCancelEngineEdit,
   onSaveEngine,
+  onVerifyEngine,
   onRunControl
 }: {
   data: DeploymentCockpit;
@@ -808,6 +822,8 @@ function EngineView({
   isEditingEngine: boolean;
   isSavingEngine: boolean;
   engineError?: string;
+  isVerifyingEngine: boolean;
+  verifyError?: string;
   canExecuteControls: boolean;
   isRunningControl: boolean;
   controlError?: string;
@@ -816,6 +832,7 @@ function EngineView({
   onEditEngine: () => void;
   onCancelEngineEdit: () => void;
   onSaveEngine: (engine: WorkflowEngineRegistration) => void;
+  onVerifyEngine: () => void;
   onRunControl: (control: RuntimeControl) => void;
 }) {
   const environmentOptions = data.applications.flatMap((application) => application.environments);
@@ -842,7 +859,11 @@ function EngineView({
         </label>
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <SecondaryButton disabled={!canManageSetup || isVerifyingEngine} onClick={onVerifyEngine}>
+          <RefreshCw className="h-4 w-4" />
+          {isVerifyingEngine ? "Verifying" : "Verify"}
+        </SecondaryButton>
         <SecondaryButton disabled={!canManageSetup} onClick={onEditEngine}>
           <Pencil className="h-4 w-4" />
           Edit engine
@@ -869,6 +890,8 @@ function EngineView({
             <Detail label="Certificate" value={selectedEngine.endpoint.certificateStatus} />
             <Detail label="Health" value={<StatusBadge value={selectedEngine.health} tone={healthTone(selectedEngine.health)} />} />
             <Detail label="Last heartbeat" value={formatDateTime(selectedEngine.lastHeartbeatAt)} />
+            <Detail label="Last verification" value={formatDateTime(selectedEngine.lastVerificationAt)} />
+            <Detail label="Diagnostic" value={selectedEngine.verificationMessage || "No verification has run yet."} />
           </dl>
         </Panel>
         <Panel title="Credential reference" icon={<KeyRound className="h-4 w-4" />}>
@@ -880,6 +903,7 @@ function EngineView({
           </dl>
         </Panel>
       </div>
+      {verifyError ? <div role="alert" className="rounded-ui border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{verifyError}</div> : null}
 
       <div className="grid gap-3 lg:grid-cols-2">
         <Panel title="Advertised capabilities" icon={<ClipboardCheck className="h-4 w-4" />}>

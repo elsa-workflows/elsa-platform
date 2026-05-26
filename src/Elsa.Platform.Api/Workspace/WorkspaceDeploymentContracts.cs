@@ -20,6 +20,15 @@ public sealed record WorkspaceWorkflowEngineRequest(
     IReadOnlyList<RuntimeControl> Controls,
     string? HostingProvider);
 
+public sealed record WorkspaceEngineHeartbeatRequest(
+    Guid EnvironmentId,
+    string? Version,
+    CertificateStatus CertificateStatus,
+    CredentialVerificationStatus CredentialVerificationStatus,
+    DateTimeOffset HeartbeatAt,
+    IReadOnlyList<EngineCapability>? Capabilities,
+    string? Message);
+
 public sealed record WorkspaceDesiredStateRevisionRequest(
     string Label,
     string? Commit,

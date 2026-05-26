@@ -1289,6 +1289,9 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Property<DateTimeOffset?>("LastHeartbeatAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset?>("LastVerificationAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -1303,6 +1306,11 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.Property<string>("Version")
                         .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("VerificationMessage")
+                        .IsRequired()
+                        .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("WorkspaceId")

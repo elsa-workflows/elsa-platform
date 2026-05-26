@@ -171,6 +171,8 @@ builder.Services.AddScoped<IWorkspaceDeploymentMutationStore, DeploymentWorkspac
 builder.Services.AddScoped<WorkspaceDeploymentService>();
 builder.Services.AddScoped<WorkspacePermissionService>();
 builder.Services.AddScoped<DeploymentValidationService>();
+builder.Services.AddHttpClient<IEngineHealthProbe, HttpEngineHealthProbe>(client => client.Timeout = TimeSpan.FromSeconds(3));
+builder.Services.AddScoped<EngineHealthService>();
 builder.Services.AddScoped<DeploymentRunService>();
 builder.Services.AddScoped<DeploymentQueueWorker>();
 builder.Services.AddScoped<RuntimeControlService>();

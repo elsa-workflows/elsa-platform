@@ -58,4 +58,16 @@ public interface IWorkspaceDeploymentStore
         Guid workspaceId,
         Guid engineId,
         CancellationToken cancellationToken = default);
+
+    Task<EngineHealthResult> UpdateEngineHealthAsync(
+        Guid workspaceId,
+        EngineHealthUpdate update,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Engine health updates are not supported by this store.");
+
+    Task<EngineHealthResult> ApplyEngineHeartbeatAsync(
+        Guid workspaceId,
+        EngineHealthUpdate update,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Engine heartbeats are not supported by this store.");
 }

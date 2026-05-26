@@ -226,6 +226,79 @@ public static class WorkspaceDeploymentEndpoints
             }
         });
 
+        group.MapPost("/engines/{engineId:guid}/verify", async (
+            Guid workspaceId,
+            Guid engineId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            EngineHealthService health,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await health.VerifyEngineAsync(
+                    workspaceId,
+                    new EngineHealthVerificationRequest(engineId, access.Access!.AccountId),
+                    cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        group.MapPost("/engines/{engineId:guid}/heartbeat", async (
+            Guid workspaceId,
+            Guid engineId,
+            WorkspaceEngineHeartbeatRequest request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            EngineHealthService health,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await health.ApplyHeartbeatAsync(
+                    workspaceId,
+                    new EngineHeartbeatRequest(
+                        engineId,
+                        request.EnvironmentId,
+                        request.Version,
+                        request.CertificateStatus,
+                        request.CredentialVerificationStatus,
+                        request.HeartbeatAt,
+                        request.Capabilities,
+                        request.Message),
+                    cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
         group.MapPost("/applications/{applicationId:guid}/environments/{environmentId:guid}/revisions", async (
             Guid workspaceId,
             Guid applicationId,

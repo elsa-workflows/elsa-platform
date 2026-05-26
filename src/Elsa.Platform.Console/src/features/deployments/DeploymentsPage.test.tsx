@@ -131,6 +131,22 @@ describe("DeploymentsPage", () => {
     );
   });
 
+  it("verifies a selected workflow engine through the live API", async () => {
+    const fetchMock = renderDeployments();
+
+    await screen.findByRole("heading", { name: "Deployments" });
+    await userEvent.click(screen.getByRole("button", { name: "Engine Registration" }));
+    await userEvent.click(screen.getByRole("button", { name: "Verify" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/engines/dev-engine/verify`),
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent("Endpoint responded successfully.");
+  });
+
   it("shows only capability-supported engine controls and records selected operations", async () => {
     renderDeployments();
 
@@ -339,6 +355,39 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
         )
       };
       return jsonResponse({ id: "dev-engine", name: "claims-dev-weu-01", environmentId: "claims-dev" });
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/engines/dev-engine/verify`)) {
+      currentCockpit = {
+        ...currentCockpit,
+        engines: currentCockpit.engines.map((item) =>
+          item.id === "dev-engine"
+            ? {
+                ...item,
+                health: "Healthy",
+                lastHeartbeatAt: "2026-05-26T10:05:00Z",
+                lastVerificationAt: "2026-05-26T10:05:00Z",
+                verificationMessage: "Endpoint responded successfully.",
+                credentialReference: {
+                  ...item.credentialReference,
+                  verificationStatus: "Verified",
+                  lastVerifiedAt: "2026-05-26T10:05:00Z"
+                }
+              }
+            : item
+        )
+      };
+      return jsonResponse({
+        engineId: "dev-engine",
+        environmentId: "claims-dev",
+        health: "Healthy",
+        version: "Elsa 4.0.1",
+        certificateStatus: "Trusted",
+        credentialVerificationStatus: "Verified",
+        credentialLastVerifiedAt: "2026-05-26T10:05:00Z",
+        lastHeartbeatAt: "2026-05-26T10:05:00Z",
+        lastVerificationAt: "2026-05-26T10:05:00Z",
+        message: "Endpoint responded successfully."
+      });
     }
     if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/confirmations`)) {
       const body = JSON.parse(init?.body?.toString() ?? "{}") as { actionType?: string; targetId?: string };
@@ -644,6 +693,8 @@ function engine(
     },
     health,
     lastHeartbeatAt: health === "Unreachable" ? null : "2026-05-22T08:16:30Z",
+    lastVerificationAt: health === "Unreachable" ? null : "2026-05-22T08:12:30Z",
+    verificationMessage: health === "Unreachable" ? "Engine has not been verified." : "Endpoint responded successfully.",
     capabilities,
     controls: [
       { id: "pause-processing", label: "Pause Processing", boundary: "Workflow", capabilityId: "workflow.pause-processing", description: "Stops new workflow dispatch without touching host infrastructure." },

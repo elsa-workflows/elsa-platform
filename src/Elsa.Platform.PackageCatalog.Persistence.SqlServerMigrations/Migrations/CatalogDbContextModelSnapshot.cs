@@ -1294,6 +1294,9 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                     b.Property<DateTimeOffset?>("LastHeartbeatAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<DateTimeOffset?>("LastVerificationAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -1309,6 +1312,11 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                     b.Property<string>("Version")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("VerificationMessage")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
 
                     b.Property<Guid>("WorkspaceId")
                         .HasColumnType("uniqueidentifier");

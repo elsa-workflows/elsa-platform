@@ -42,7 +42,9 @@ public sealed record WorkspaceWorkflowEngine(
     DateTimeOffset? LastHeartbeatAt,
     string? HostingProvider,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    DateTimeOffset? LastVerificationAt = null,
+    string VerificationMessage = "");
 
 public sealed record WorkspaceEngineCapability(
     Guid Id,

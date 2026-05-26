@@ -23,10 +23,14 @@ internal sealed class PlatformApiTestApplication : WebApplicationFactory<Program
 
     private readonly string _databasePath = Path.Combine(Path.GetTempPath(), $"elsa-catalog-{Guid.NewGuid():N}.db");
     private readonly IReadOnlyDictionary<string, string?> _configuration;
+    private readonly Action<IServiceCollection>? _configureServices;
 
-    public PlatformApiTestApplication(IReadOnlyDictionary<string, string?>? configuration = null)
+    public PlatformApiTestApplication(
+        IReadOnlyDictionary<string, string?>? configuration = null,
+        Action<IServiceCollection>? configureServices = null)
     {
         _configuration = configuration ?? new Dictionary<string, string?>();
+        _configureServices = configureServices;
     }
 
     public static JsonSerializerOptions JsonOptions { get; } = CreateJsonOptions();
@@ -69,6 +73,7 @@ internal sealed class PlatformApiTestApplication : WebApplicationFactory<Program
                 {
                     sqlite.MigrationsAssembly(CatalogDatabaseServiceCollectionExtensions.SqliteMigrationsAssembly);
                 }));
+            _configureServices?.Invoke(services);
         });
     }
 

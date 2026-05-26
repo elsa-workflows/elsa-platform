@@ -53,6 +53,8 @@ internal sealed class WorkflowEngineEntity
     public DateTimeOffset? CredentialLastVerifiedAt { get; set; }
     public DeploymentHealth Health { get; set; }
     public DateTimeOffset? LastHeartbeatAt { get; set; }
+    public DateTimeOffset? LastVerificationAt { get; set; }
+    public string VerificationMessage { get; set; } = "";
     public string? HostingProvider { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

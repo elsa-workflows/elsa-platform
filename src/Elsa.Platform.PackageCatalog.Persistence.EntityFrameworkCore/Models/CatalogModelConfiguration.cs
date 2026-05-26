@@ -271,6 +271,7 @@ internal sealed class WorkflowEngineConfiguration : IEntityTypeConfiguration<Wor
         builder.Property(x => x.CredentialReference).HasMaxLength(1024).IsRequired();
         builder.Property(x => x.CredentialVerificationStatus).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.Health).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.VerificationMessage).HasMaxLength(1024).IsRequired();
         builder.Property(x => x.HostingProvider).HasMaxLength(200);
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));

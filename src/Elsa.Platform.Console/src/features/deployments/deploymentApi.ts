@@ -8,6 +8,7 @@ import type {
   CreateDeploymentApplicationRequest,
   CreateDeploymentEnvironmentRequest,
   DeploymentCockpit,
+  EngineHealthResult,
   PromotionComparison,
   PromotionPreviewRequest,
   QueueDeploymentRunRequest,
@@ -110,6 +111,13 @@ export function updateDeploymentEngine(workspaceId: string, engineId: string, re
       method: "PUT",
       body: JSON.stringify(request)
     }
+  );
+}
+
+export function verifyDeploymentEngine(workspaceId: string, engineId: string) {
+  return apiRequest<EngineHealthResult>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/engines/${encodeURIComponent(engineId)}/verify`,
+    { method: "POST" }
   );
 }
 

@@ -506,6 +506,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             CredentialReference = request.CredentialReference,
             CredentialVerificationStatus = CredentialVerificationStatus.Unverified,
             Health = DeploymentHealth.Unreachable,
+            VerificationMessage = "Engine has not been verified.",
             HostingProvider = request.HostingProvider,
             CreatedAt = now,
             UpdatedAt = now,
@@ -550,6 +551,14 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         engine.Region = request.Region;
         engine.CredentialProvider = request.CredentialProvider;
         engine.CredentialReference = request.CredentialReference;
+        engine.Version = "";
+        engine.CertificateStatus = CertificateStatus.Trusted;
+        engine.CredentialVerificationStatus = CredentialVerificationStatus.Unverified;
+        engine.CredentialLastVerifiedAt = null;
+        engine.Health = DeploymentHealth.Unreachable;
+        engine.LastHeartbeatAt = null;
+        engine.LastVerificationAt = null;
+        engine.VerificationMessage = "Engine settings changed; verification is required.";
         engine.HostingProvider = request.HostingProvider;
         engine.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.EngineCapabilities
@@ -663,6 +672,59 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         return entity is null ? null : ToWorkspaceWorkflowEngine(entity);
     }
 
+    public async Task<EngineHealthResult> UpdateEngineHealthAsync(
+        Guid workspaceId,
+        EngineHealthUpdate update,
+        CancellationToken cancellationToken = default)
+    {
+        var engine = await dbContext.WorkflowEngines
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == update.EngineId, cancellationToken);
+        if (engine is null)
+            throw new KeyNotFoundException("Workflow engine does not exist in the workspace.");
+        if (engine.EnvironmentId != update.EnvironmentId)
+            throw new InvalidOperationException("Health update environment does not match the registered engine.");
+
+        ApplyHealthUpdate(engine, update);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToEngineHealthResult(engine);
+    }
+
+    public async Task<EngineHealthResult> ApplyEngineHeartbeatAsync(
+        Guid workspaceId,
+        EngineHealthUpdate update,
+        CancellationToken cancellationToken = default)
+    {
+        var engine = await dbContext.WorkflowEngines
+            .Include(x => x.Capabilities)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == update.EngineId, cancellationToken);
+        if (engine is null)
+            throw new KeyNotFoundException("Workflow engine does not exist in the workspace.");
+        if (engine.EnvironmentId != update.EnvironmentId)
+            throw new InvalidOperationException("Heartbeat environment does not match the registered engine.");
+        if (engine.LastHeartbeatAt.HasValue && update.LastHeartbeatAt.HasValue && update.LastHeartbeatAt <= engine.LastHeartbeatAt)
+            throw new InvalidOperationException("Heartbeat is stale.");
+
+        ApplyHealthUpdate(engine, update);
+        if (update.Capabilities is not null)
+        {
+            await dbContext.EngineCapabilities
+                .Where(x => x.WorkspaceId == workspaceId && x.EngineId == engine.Id)
+                .ExecuteDeleteAsync(cancellationToken);
+            await dbContext.EngineCapabilities.AddRangeAsync(update.Capabilities.Select(capability => new EngineCapabilityEntity
+            {
+                Id = Guid.NewGuid(),
+                WorkspaceId = workspaceId,
+                EngineId = engine.Id,
+                CapabilityId = capability.Id,
+                Label = capability.Label,
+                Boundary = capability.Boundary
+            }), cancellationToken);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToEngineHealthResult(engine);
+    }
+
     private async Task<WorkspaceDeploymentEnvironment> CreateEnvironmentCoreAsync(
         Guid workspaceId,
         CreateDeploymentEnvironmentRequest request,
@@ -745,7 +807,9 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             engine.LastHeartbeatAt,
             engine.Capabilities.OrderBy(x => x.CapabilityId).Select(x => new EngineCapability(x.CapabilityId, x.Label, x.Boundary)).ToList(),
             engine.Controls.OrderBy(x => x.ControlId).Select(x => new RuntimeControl(x.ControlId, x.Label, x.Boundary, x.RequiredCapabilityId, x.Description)).ToList(),
-            engine.HostingProvider);
+            engine.HostingProvider,
+            engine.LastVerificationAt,
+            engine.VerificationMessage);
 
     private static ObservabilityBinding ToObservabilityBinding(ObservabilityBindingEntity binding) =>
         new(
@@ -785,7 +849,35 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             engine.LastHeartbeatAt,
             engine.HostingProvider,
             engine.CreatedAt,
-            engine.UpdatedAt);
+            engine.UpdatedAt,
+            engine.LastVerificationAt,
+            engine.VerificationMessage);
+
+    private static void ApplyHealthUpdate(WorkflowEngineEntity engine, EngineHealthUpdate update)
+    {
+        engine.Version = update.Version;
+        engine.CertificateStatus = update.CertificateStatus;
+        engine.CredentialVerificationStatus = update.CredentialVerificationStatus;
+        engine.CredentialLastVerifiedAt = update.CredentialLastVerifiedAt;
+        engine.Health = update.Health;
+        engine.LastHeartbeatAt = update.LastHeartbeatAt;
+        engine.LastVerificationAt = update.LastVerificationAt;
+        engine.VerificationMessage = update.VerificationMessage;
+        engine.UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    private static EngineHealthResult ToEngineHealthResult(WorkflowEngineEntity engine) =>
+        new(
+            engine.Id,
+            engine.EnvironmentId,
+            engine.Health,
+            engine.Version,
+            engine.CertificateStatus,
+            engine.CredentialVerificationStatus,
+            engine.CredentialLastVerifiedAt,
+            engine.LastHeartbeatAt,
+            engine.LastVerificationAt,
+            engine.VerificationMessage);
 
     private static WorkspaceDesiredStateRevision ToWorkspaceDesiredStateRevision(DesiredStateRevisionEntity entity) =>
         new(
