@@ -1,7 +1,7 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-specs/023-engine-health-verification/plan.md
+specs/024-artifact-registry/plan.md
 <!-- SPECKIT END -->
 
 ## Active Technologies

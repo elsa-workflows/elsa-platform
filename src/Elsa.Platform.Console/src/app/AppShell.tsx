@@ -36,7 +36,7 @@ const navSections: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { to: "/admin/overview", label: "Overview", icon: Home },
       { to: "/admin/deployments", label: "Deployments", icon: Rocket },
-      { to: "/admin/artifacts", label: "Artifacts", icon: Archive, disabled: true },
+      { to: "/admin/artifacts", label: "Artifacts", icon: Archive },
       { to: "/admin/runtime-builder", label: "Runtime Builder", icon: Layers3 }
     ]
   },

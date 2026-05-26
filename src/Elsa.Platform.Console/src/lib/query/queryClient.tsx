@@ -27,6 +27,8 @@ export const queryKeys = {
   deploymentWorkspaceContext: ["deployments", "workspace-context"] as const,
   deploymentCockpit: (workspaceId: string) => ["deployments", workspaceId, "cockpit"] as const,
   deploymentPermissions: (workspaceId: string) => ["deployments", workspaceId, "permissions"] as const,
+  artifacts: (workspaceId: string) => ["artifacts", workspaceId] as const,
+  artifactDetails: (workspaceId: string, artifactId: string) => ["artifacts", workspaceId, artifactId] as const,
   overview: ["overview"] as const,
   workspaceContext: ["workspace-context"] as const,
   runtimeBuilderCatalog: (workspaceId: string) => ["runtime-builder", workspaceId, "catalog"] as const,

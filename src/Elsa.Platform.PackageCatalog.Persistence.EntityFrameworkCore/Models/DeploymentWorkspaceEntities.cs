@@ -62,6 +62,32 @@ internal sealed class WorkflowEngineEntity
     public List<RuntimeControlEntity> Controls { get; set; } = [];
 }
 
+internal sealed class WorkspaceDeploymentArtifactEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public string ArtifactId { get; set; } = "";
+    public string LayoutVersion { get; set; } = "";
+    public string ContentDigestAlgorithm { get; set; } = "";
+    public string ContentDigest { get; set; } = "";
+    public WorkspaceArtifactFormat Format { get; set; }
+    public string ReferenceProvider { get; set; } = "";
+    public string Reference { get; set; } = "";
+    public string? ManifestName { get; set; }
+    public string? ManifestVersion { get; set; }
+    public string? ManifestEnvironment { get; set; }
+    public int ResourceCount { get; set; }
+    public string ResourceSummaryJson { get; set; } = "[]";
+    public WorkspaceArtifactChecksumStatus ChecksumStatus { get; set; }
+    public WorkspaceArtifactInspectionStatus InspectionStatus { get; set; }
+    public string DiagnosticsJson { get; set; } = "[]";
+    public DateTimeOffset RegisteredAt { get; set; }
+    public Guid RegisteredByAccountId { get; set; }
+    public DateTimeOffset? LastInspectedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 internal sealed class EngineCapabilityEntity
 {
     public Guid Id { get; set; }

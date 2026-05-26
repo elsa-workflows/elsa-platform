@@ -281,6 +281,33 @@ internal sealed class WorkflowEngineConfiguration : IEntityTypeConfiguration<Wor
     }
 }
 
+internal sealed class WorkspaceDeploymentArtifactConfiguration : IEntityTypeConfiguration<WorkspaceDeploymentArtifactEntity>
+{
+    public void Configure(EntityTypeBuilder<WorkspaceDeploymentArtifactEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.ArtifactId).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.LayoutVersion).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.ContentDigestAlgorithm).HasMaxLength(32).IsRequired();
+        builder.Property(x => x.ContentDigest).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.Format).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.ReferenceProvider).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.Reference).HasMaxLength(2048).IsRequired();
+        builder.Property(x => x.ManifestName).HasMaxLength(256);
+        builder.Property(x => x.ManifestVersion).HasMaxLength(128);
+        builder.Property(x => x.ManifestEnvironment).HasMaxLength(128);
+        builder.Property(x => x.ResourceSummaryJson).IsRequired();
+        builder.Property(x => x.ChecksumStatus).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.InspectionStatus).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.DiagnosticsJson).IsRequired();
+        builder.Property(x => x.RegisteredAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.WorkspaceId, x.ArtifactId }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.RegisteredAt });
+    }
+}
+
 internal sealed class EngineCapabilityConfiguration : IEntityTypeConfiguration<EngineCapabilityEntity>
 {
     public void Configure(EntityTypeBuilder<EngineCapabilityEntity> builder)

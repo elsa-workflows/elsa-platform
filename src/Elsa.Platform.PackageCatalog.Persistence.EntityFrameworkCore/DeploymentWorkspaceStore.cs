@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
 
-public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWorkspaceDeploymentStore, IWorkspacePermissionStore, IWorkspaceDeploymentMutationStore
+public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWorkspaceDeploymentStore, IWorkspacePermissionStore, IWorkspaceDeploymentMutationStore, IWorkspaceArtifactStore
 {
     public async Task<DeploymentCockpit> GetCockpitAsync(Guid workspaceId, CancellationToken cancellationToken = default)
     {
@@ -689,6 +689,109 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         return ToEngineHealthResult(engine);
     }
 
+    public async Task<IReadOnlyList<WorkspaceArtifact>> ListArtifactsAsync(
+        Guid workspaceId,
+        CancellationToken cancellationToken = default)
+    {
+        var artifacts = await dbContext.WorkspaceDeploymentArtifacts
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId)
+            .OrderByDescending(x => x.RegisteredAt)
+            .ThenBy(x => x.ArtifactId)
+            .ToListAsync(cancellationToken);
+        return artifacts.Select(ToWorkspaceArtifact).ToList();
+    }
+
+    public async Task<WorkspaceArtifact?> GetArtifactAsync(
+        Guid workspaceId,
+        Guid artifactRecordId,
+        CancellationToken cancellationToken = default)
+    {
+        var artifact = await dbContext.WorkspaceDeploymentArtifacts
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == artifactRecordId, cancellationToken);
+        return artifact is null ? null : ToWorkspaceArtifact(artifact);
+    }
+
+    public async Task<WorkspaceArtifact?> FindArtifactByIdentityAsync(
+        Guid workspaceId,
+        string artifactId,
+        CancellationToken cancellationToken = default)
+    {
+        var artifact = await dbContext.WorkspaceDeploymentArtifacts
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.ArtifactId == artifactId, cancellationToken);
+        return artifact is null ? null : ToWorkspaceArtifact(artifact);
+    }
+
+    public async Task<WorkspaceArtifact> RegisterArtifactAsync(
+        Guid workspaceId,
+        RegisterWorkspaceArtifactRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var artifact = new WorkspaceDeploymentArtifactEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            ArtifactId = request.ArtifactId,
+            LayoutVersion = request.LayoutVersion,
+            ContentDigestAlgorithm = request.ContentDigest.Algorithm,
+            ContentDigest = request.ContentDigest.Value,
+            Format = request.Format,
+            ReferenceProvider = request.ReferenceProvider,
+            Reference = request.Reference,
+            ManifestName = request.Manifest.Name,
+            ManifestVersion = request.Manifest.Version,
+            ManifestEnvironment = request.Manifest.Environment,
+            ResourceCount = request.Resources.Count,
+            ResourceSummaryJson = JsonSerializer.Serialize(request.Resources),
+            ChecksumStatus = WorkspaceArtifactChecksumStatus.Unverified,
+            InspectionStatus = WorkspaceArtifactInspectionStatus.NeverInspected,
+            DiagnosticsJson = JsonSerializer.Serialize(request.Diagnostics),
+            RegisteredAt = now,
+            RegisteredByAccountId = request.ActorAccountId,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+        await dbContext.WorkspaceDeploymentArtifacts.AddAsync(artifact, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceArtifact(artifact);
+    }
+
+    public async Task<WorkspaceArtifactInspectionResult> UpdateArtifactInspectionAsync(
+        Guid workspaceId,
+        WorkspaceArtifactInspectionUpdate update,
+        CancellationToken cancellationToken = default)
+    {
+        var artifact = await dbContext.WorkspaceDeploymentArtifacts
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == update.ArtifactRecordId, cancellationToken);
+        if (artifact is null)
+            throw new KeyNotFoundException("Artifact does not exist in the workspace.");
+        if (!artifact.ArtifactId.Equals(update.ArtifactId, StringComparison.Ordinal))
+            throw new InvalidOperationException("Artifact inspection update cannot change the registered artifact identity.");
+
+        artifact.ChecksumStatus = update.ChecksumStatus;
+        artifact.InspectionStatus = update.InspectionStatus;
+        artifact.LastInspectedAt = update.LastInspectedAt;
+        artifact.ResourceCount = update.Resources.Count;
+        artifact.ResourceSummaryJson = JsonSerializer.Serialize(update.Resources);
+        artifact.DiagnosticsJson = JsonSerializer.Serialize(update.Diagnostics);
+        artifact.UpdatedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return new WorkspaceArtifactInspectionResult(
+            artifact.Id,
+            artifact.ArtifactId,
+            artifact.ChecksumStatus,
+            artifact.InspectionStatus,
+            artifact.LastInspectedAt,
+            artifact.ResourceCount,
+            DeserializeArtifactResources(artifact.ResourceSummaryJson),
+            DeserializeArtifactDiagnostics(artifact.DiagnosticsJson));
+    }
+
     public async Task<EngineHealthResult> ApplyEngineHeartbeatAsync(
         Guid workspaceId,
         EngineHealthUpdate update,
@@ -852,6 +955,33 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             engine.UpdatedAt,
             engine.LastVerificationAt,
             engine.VerificationMessage);
+
+    private static WorkspaceArtifact ToWorkspaceArtifact(WorkspaceDeploymentArtifactEntity artifact) =>
+        new(
+            artifact.Id,
+            artifact.WorkspaceId,
+            artifact.ArtifactId,
+            artifact.LayoutVersion,
+            new WorkspaceArtifactDigest(artifact.ContentDigestAlgorithm, artifact.ContentDigest),
+            artifact.Format,
+            artifact.ReferenceProvider,
+            artifact.Reference,
+            new WorkspaceArtifactManifestSummary(artifact.ManifestName, artifact.ManifestVersion, artifact.ManifestEnvironment),
+            DeserializeArtifactResources(artifact.ResourceSummaryJson),
+            artifact.ChecksumStatus,
+            artifact.InspectionStatus,
+            DeserializeArtifactDiagnostics(artifact.DiagnosticsJson),
+            artifact.RegisteredAt,
+            artifact.RegisteredByAccountId,
+            artifact.LastInspectedAt,
+            artifact.CreatedAt,
+            artifact.UpdatedAt);
+
+    private static IReadOnlyList<WorkspaceArtifactResourceSummary> DeserializeArtifactResources(string json) =>
+        JsonSerializer.Deserialize<IReadOnlyList<WorkspaceArtifactResourceSummary>>(json) ?? [];
+
+    private static IReadOnlyList<WorkspaceArtifactDiagnostic> DeserializeArtifactDiagnostics(string json) =>
+        JsonSerializer.Deserialize<IReadOnlyList<WorkspaceArtifactDiagnostic>>(json) ?? [];
 
     private static void ApplyHealthUpdate(WorkflowEngineEntity engine, EngineHealthUpdate update)
     {

@@ -9,6 +9,7 @@
     <ProjectReference Include="..\Elsa.Platform.PackageCatalog.Sources.NuGet\Elsa.Platform.PackageCatalog.Sources.NuGet.csproj" />
     <ProjectReference Include="..\Elsa.Platform.ServiceDefaults\Elsa.Platform.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Elsa.Platform.Deployment.Core\Elsa.Platform.Deployment.Core.csproj" />
+    <ProjectReference Include="..\Elsa.Platform.Deployment.Artifacts\Elsa.Platform.Deployment.Artifacts.csproj" />
     <ProjectReference Include="..\Elsa.Platform.RuntimeBuilder.Abstractions\Elsa.Platform.RuntimeBuilder.Abstractions.csproj" />
     <ProjectReference Include="..\Elsa.Platform.RuntimeBuilder.Core\Elsa.Platform.RuntimeBuilder.Core.csproj" />
     <ProjectReference Include="..\Elsa.Platform.RuntimeBuilder.DeploymentTemplates\Elsa.Platform.RuntimeBuilder.DeploymentTemplates.csproj" />
