@@ -75,6 +75,26 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Grant_permission_tolerates_duplicate_active_grants()
+    {
+        var firstGrantId = Guid.NewGuid();
+        var secondGrantId = Guid.NewGuid();
+        var createdAt = DateTimeOffset.UtcNow.UtcTicks;
+        await _db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO WorkspacePermissionGrants (Id, WorkspaceId, AccountId, Permission, GrantedByAccountId, CreatedAt, UpdatedAt, RevokedAt)
+            VALUES ({firstGrantId}, {_workspaceId}, {_accountId}, {WorkspaceDeploymentPermissions.Read}, NULL, {createdAt}, {createdAt}, NULL)
+            """);
+        await _db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO WorkspacePermissionGrants (Id, WorkspaceId, AccountId, Permission, GrantedByAccountId, CreatedAt, UpdatedAt, RevokedAt)
+            VALUES ({secondGrantId}, {_workspaceId}, {_accountId}, {WorkspaceDeploymentPermissions.Read}, NULL, {createdAt + 1}, {createdAt + 1}, NULL)
+            """);
+
+        var grant = await _store.GrantPermissionAsync(_workspaceId, new GrantWorkspacePermissionRequest(_accountId, WorkspaceDeploymentPermissions.Read, null));
+
+        grant.Id.Should().Be(firstGrantId);
+    }
+
+    [Fact]
     public async Task Persists_engine_health_verification_metadata()
     {
         var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));

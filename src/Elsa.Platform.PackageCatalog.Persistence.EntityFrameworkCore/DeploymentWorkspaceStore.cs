@@ -114,12 +114,13 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
     {
         var now = DateTimeOffset.UtcNow;
         var existing = await dbContext.WorkspacePermissionGrants
-            .SingleOrDefaultAsync(
-                x => x.WorkspaceId == workspaceId
+            .Where(x => x.WorkspaceId == workspaceId
                     && x.AccountId == request.AccountId
                     && x.Permission == request.Permission
-                    && x.RevokedAt == null,
-                cancellationToken);
+                    && x.RevokedAt == null)
+            .OrderBy(x => x.CreatedAt)
+            .ThenBy(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (existing is not null)
             return ToPermissionGrant(existing);
