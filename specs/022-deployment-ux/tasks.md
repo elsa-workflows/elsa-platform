@@ -210,16 +210,16 @@
 
 ### Tests for User Story 6
 
-- [ ] T093 [P] [US6] Add console integration coverage for complete deployment flow in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
-- [ ] T094 [P] [US6] Add E2E deployment smoke test in `tests/Elsa.Platform.Console.E2E/deployments.spec.ts`
+- [X] T093 [P] [US6] Add console integration coverage for complete deployment flow in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T094 [P] [US6] Add E2E deployment smoke test in `tests/Elsa.Platform.Console.E2E/deployments.spec.ts`
 
 ### Implementation for User Story 6
 
-- [ ] T095 [US6] Remove remaining demo-only notices and seeded assumptions from `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [ ] T096 [US6] Add query invalidation and mutation refresh paths in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
-- [ ] T097 [US6] Add permission-blocked, confirmation-required, queued, running, succeeded, failed, and recovery states in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [ ] T098 [US6] Add metadata-only observability and drift rendering in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [ ] T099 [US6] Run console and E2E checks documented in `specs/022-deployment-ux/quickstart.md`
+- [X] T095 [US6] Remove remaining demo-only notices and seeded assumptions from `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T096 [US6] Add query invalidation and mutation refresh paths in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
+- [X] T097 [US6] Add permission-blocked, confirmation-required, queued, running, succeeded, failed, and recovery states in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T098 [US6] Add metadata-only observability and drift rendering in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T099 [US6] Run console and E2E checks documented in `specs/022-deployment-ux/quickstart.md`
 
 **Checkpoint**: User Story 6 completes the live deployment UX.
 

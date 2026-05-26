@@ -55,6 +55,7 @@ export type WorkflowEngineRegistration = {
 };
 
 export type DesiredStateRevision = {
+  id: string;
   revision: number;
   commit: string;
   label: string;
@@ -99,11 +100,13 @@ export type DeploymentValidation = {
 export type PromotionComparison = {
   sourceEnvironmentId: string;
   targetEnvironmentId: string;
+  sourceRevisionId: string;
   sourceRevision: number;
   targetRevision: number;
   diff: DeploymentDiffItem[];
   validations: DeploymentValidation[];
   rollbackRevision: number | null;
+  rollbackRevisionId: string | null;
 };
 
 export type DesiredStateRecordKind =
@@ -248,7 +251,7 @@ export type ObservabilityBinding = {
 
 export type DeploymentHistoryEvent = {
   id: string;
-  status: DeploymentStatus;
+  status: DeploymentStatus | WorkspaceDeploymentRunStatus;
   revision: number;
   actor: string;
   environmentId: string;

@@ -175,6 +175,38 @@ describe("DeploymentsPage", () => {
     expect(screen.getByRole("button", { name: "Deploy Revision" })).toBeEnabled();
   });
 
+  it("refreshes live preview and queues deployment and rollback with confirmations", async () => {
+    const fetchMock = renderDeployments();
+
+    await screen.findByRole("heading", { name: "Deployments" });
+    await userEvent.click(screen.getByRole("button", { name: "Promotion Diff" }));
+    await userEvent.selectOptions(screen.getByLabelText("Source revision"), "claims-dev");
+    await userEvent.selectOptions(screen.getByLabelText("Target revision"), "claims-test");
+    await userEvent.click(screen.getByRole("button", { name: "Refresh Preview" }));
+
+    expect(await screen.findByText("Live validation passed for Test.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Deploy Revision" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Deployment run queued");
+
+    await userEvent.selectOptions(screen.getByLabelText("Source revision"), "claims-stage");
+    await userEvent.selectOptions(screen.getByLabelText("Target revision"), "claims-prod");
+    await userEvent.click(screen.getByRole("button", { name: /Roll Back to r39/i }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Rollback run queued");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/promotions/preview`),
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/runs`),
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/rollbacks`),
+      expect.objectContaining({ method: "POST" })
+    );
+  });
+
   it("shows an empty promotion preview state when the cockpit has no comparison", async () => {
     renderDeployments({ ...deploymentCockpitFixture, comparisons: [] });
 
@@ -221,8 +253,8 @@ describe("DeploymentsPage", () => {
 
     expect(screen.getByText("Run history")).toBeInTheDocument();
     expect(screen.getByText("Mira Chen")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Confirm Deployment" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Confirm Rollback" })).toBeDisabled();
+    expect(screen.getByText("Latest Blocked")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm Deployment" })).not.toBeInTheDocument();
   });
 });
 
@@ -249,7 +281,16 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
       });
     }
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/permissions`)) {
-      return jsonResponse({ permissions: ["deployments.read", "deployments.setup.manage", "deployments.controls.execute"] });
+      return jsonResponse({
+        permissions: [
+          "deployments.read",
+          "deployments.setup.manage",
+          "deployments.promotion.preview",
+          "deployments.run.execute",
+          "deployments.rollback.execute",
+          "deployments.controls.execute"
+        ]
+      });
     }
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/cockpit`)) {
       return jsonResponse(currentCockpit);
@@ -300,7 +341,101 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
       return jsonResponse({ id: "dev-engine", name: "claims-dev-weu-01", environmentId: "claims-dev" });
     }
     if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/confirmations`)) {
-      return jsonResponse({ id: "confirmation-1", workspaceId, actionType: "RuntimeControl", targetId: "stage-engine:reload-configuration" }, 201);
+      const body = JSON.parse(init?.body?.toString() ?? "{}") as { actionType?: string; targetId?: string };
+      return jsonResponse({ id: `${body.actionType ?? "action"}-confirmation-1`, workspaceId, actionType: body.actionType, targetId: body.targetId }, 201);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/promotions/preview`)) {
+      return jsonResponse({
+        ...deploymentCockpitFixture.comparisons[1],
+        validations: [
+          { id: "secret-payment-test", severity: "Pass", scope: "Secret references", message: "Live validation passed for Test." },
+          { id: "capability-test", severity: "Pass", scope: "Engine capabilities", message: "claims-test-weu-01 supports required engine operations." }
+        ]
+      });
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/runs`)) {
+      currentCockpit = {
+        ...currentCockpit,
+        history: [
+          {
+            id: "00000000-0000-0000-0000-000000000777",
+            status: "Queued",
+            revision: 42,
+            actor: "account-1",
+            environmentId: "claims-test",
+            engineId: "test-engine",
+            validationOutcome: "Passed",
+            occurredAt: "2026-05-26T10:01:00Z",
+            rollbackSourceRevision: null
+          },
+          ...currentCockpit.history
+        ]
+      };
+      return jsonResponse({
+        id: "00000000-0000-0000-0000-000000000777",
+        workspaceId,
+        applicationId: "claims-ops",
+        environmentId: "claims-test",
+        engineId: "test-engine",
+        sourceRevisionId: "00000000-0000-0000-0000-000000000142",
+        previousDeployedRevisionId: null,
+        rollbackSourceRunId: null,
+        status: "Queued",
+        validationOutcome: "Passed",
+        confirmationId: "Deploy-confirmation-1",
+        actorAccountId: "account-1",
+        queuedAt: "2026-05-26T10:01:00Z",
+        startedAt: null,
+        completedAt: null,
+        createdAt: "2026-05-26T10:01:00Z",
+        workerId: null,
+        workerHeartbeatAt: null,
+        attemptNumber: 1,
+        recoveryReason: null,
+        failureMessage: null
+      }, 201);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/rollbacks`)) {
+      currentCockpit = {
+        ...currentCockpit,
+        history: [
+          {
+            id: "00000000-0000-0000-0000-000000000778",
+            status: "Queued",
+            revision: 39,
+            actor: "account-1",
+            environmentId: "claims-prod",
+            engineId: "prod-engine",
+            validationOutcome: "Warnings",
+            occurredAt: "2026-05-26T10:02:00Z",
+            rollbackSourceRevision: 41
+          },
+          ...currentCockpit.history
+        ]
+      };
+      return jsonResponse({
+        id: "00000000-0000-0000-0000-000000000778",
+        workspaceId,
+        applicationId: "claims-ops",
+        environmentId: "claims-prod",
+        engineId: "prod-engine",
+        sourceRevisionId: "00000000-0000-0000-0000-000000000139",
+        previousDeployedRevisionId: "00000000-0000-0000-0000-000000000141",
+        rollbackSourceRunId: "00000000-0000-0000-0000-000000000410",
+        status: "Queued",
+        validationOutcome: "Warnings",
+        confirmationId: "Rollback-confirmation-1",
+        actorAccountId: "account-1",
+        queuedAt: "2026-05-26T10:02:00Z",
+        startedAt: null,
+        completedAt: null,
+        createdAt: "2026-05-26T10:02:00Z",
+        workerId: null,
+        workerHeartbeatAt: null,
+        attemptNumber: 1,
+        recoveryReason: null,
+        failureMessage: null
+      }, 201);
     }
     if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/engines/stage-engine/controls/reload-configuration/run`)) {
       return jsonResponse({
@@ -352,7 +487,7 @@ const deploymentCockpitFixture: DeploymentCockpit = {
           name: "Dev",
           tier: "Dev",
           health: "Healthy",
-          desiredRevision: { revision: 42, commit: "8f6a9c1", label: "Payment retry workflow", authoredAt: "2026-05-21T08:30:00Z" },
+          desiredRevision: { id: "00000000-0000-0000-0000-000000000142", revision: 42, commit: "8f6a9c1", label: "Payment retry workflow", authoredAt: "2026-05-21T08:30:00Z" },
           deployedRevision: 42,
           deploymentStatus: "Succeeded",
           driftStatus: "InSync",
@@ -363,7 +498,7 @@ const deploymentCockpitFixture: DeploymentCockpit = {
           name: "Test",
           tier: "Test",
           health: "Healthy",
-          desiredRevision: { revision: 39, commit: "79d1b07", label: "Fraud review tuning", authoredAt: "2026-05-20T13:20:00Z" },
+          desiredRevision: { id: "00000000-0000-0000-0000-000000000139", revision: 39, commit: "79d1b07", label: "Fraud review tuning", authoredAt: "2026-05-20T13:20:00Z" },
           deployedRevision: 39,
           deploymentStatus: "Succeeded",
           driftStatus: "InSync",
@@ -374,7 +509,7 @@ const deploymentCockpitFixture: DeploymentCockpit = {
           name: "Stage",
           tier: "Stage",
           health: "Degraded",
-          desiredRevision: { revision: 41, commit: "c174f2a", label: "Policy document sync", authoredAt: "2026-05-21T06:10:00Z" },
+          desiredRevision: { id: "00000000-0000-0000-0000-000000000141", revision: 41, commit: "c174f2a", label: "Policy document sync", authoredAt: "2026-05-21T06:10:00Z" },
           deployedRevision: 40,
           deploymentStatus: "Running",
           driftStatus: "DriftDetected",
@@ -385,7 +520,7 @@ const deploymentCockpitFixture: DeploymentCockpit = {
           name: "Prod",
           tier: "Production",
           health: "Unreachable",
-          desiredRevision: { revision: 40, commit: "11ec9d4", label: "Baseline production", authoredAt: "2026-05-19T15:45:00Z" },
+          desiredRevision: { id: "00000000-0000-0000-0000-000000000140", revision: 40, commit: "11ec9d4", label: "Baseline production", authoredAt: "2026-05-19T15:45:00Z" },
           deployedRevision: 40,
           deploymentStatus: "Blocked",
           driftStatus: "Unknown",
@@ -415,8 +550,10 @@ const deploymentCockpitFixture: DeploymentCockpit = {
     {
       sourceEnvironmentId: "claims-stage",
       targetEnvironmentId: "claims-prod",
+      sourceRevisionId: "00000000-0000-0000-0000-000000000141",
       sourceRevision: 41,
       targetRevision: 40,
+      rollbackRevisionId: "00000000-0000-0000-0000-000000000139",
       rollbackRevision: 39,
       diff: [
         { id: "workflow-payment-retry", category: "Workflows", name: "Payment Retry", sourceValue: "v7 with idempotent retry", targetValue: "v6", impact: "Changed" },
@@ -430,8 +567,10 @@ const deploymentCockpitFixture: DeploymentCockpit = {
     {
       sourceEnvironmentId: "claims-dev",
       targetEnvironmentId: "claims-test",
+      sourceRevisionId: "00000000-0000-0000-0000-000000000142",
       sourceRevision: 42,
       targetRevision: 39,
+      rollbackRevisionId: "00000000-0000-0000-0000-000000000138",
       rollbackRevision: 38,
       diff: [
         { id: "workflow-payment-retry-test", category: "Workflows", name: "Payment Retry", sourceValue: "v8", targetValue: "v6", impact: "Changed" },
@@ -447,7 +586,7 @@ const deploymentCockpitFixture: DeploymentCockpit = {
     { id: "prod-logs", kind: "Logs", provider: "Azure Monitor", status: "Connected", scope: "claims-prod / rev 40", correlatedRevision: 40, sample: "143 structured events in the last 30 minutes" }
   ],
   history: [
-    { id: "deploy-410", status: "Blocked", revision: 41, actor: "Mira Chen", environmentId: "claims-prod", engineId: "prod-engine", validationOutcome: "Blocked", occurredAt: "2026-05-22T08:05:00Z", rollbackSourceRevision: null }
+    { id: "00000000-0000-0000-0000-000000000410", status: "Blocked", revision: 41, actor: "Mira Chen", environmentId: "claims-prod", engineId: "prod-engine", validationOutcome: "Blocked", occurredAt: "2026-05-22T08:05:00Z", rollbackSourceRevision: null }
   ],
   driftReport: [
     { id: "drift-shell", environmentId: "claims-stage", engineId: "stage-engine", area: "Shell concurrency", desired: "16 workers", observed: "12 workers", action: "Review" }

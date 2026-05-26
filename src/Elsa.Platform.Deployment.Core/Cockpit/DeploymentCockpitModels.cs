@@ -152,6 +152,7 @@ public sealed record WorkflowEngineRegistration(
     string? HostingProvider);
 
 public sealed record DesiredStateRevision(
+    string Id,
     int Revision,
     string Commit,
     string Label,
@@ -191,11 +192,13 @@ public sealed record DeploymentValidation(
 public sealed record PromotionComparison(
     string SourceEnvironmentId,
     string TargetEnvironmentId,
+    string SourceRevisionId,
     int SourceRevision,
     int TargetRevision,
     IReadOnlyList<DeploymentDiffItem> Diff,
     IReadOnlyList<DeploymentValidation> Validations,
-    int? RollbackRevision);
+    int? RollbackRevision,
+    string? RollbackRevisionId);
 
 public sealed record ObservabilityBinding(
     string Id,
@@ -208,7 +211,7 @@ public sealed record ObservabilityBinding(
 
 public sealed record DeploymentHistoryEvent(
     string Id,
-    DeploymentStatus Status,
+    string Status,
     int Revision,
     string Actor,
     string EnvironmentId,

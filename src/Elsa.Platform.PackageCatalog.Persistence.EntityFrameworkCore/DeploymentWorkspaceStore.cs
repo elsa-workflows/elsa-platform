@@ -45,6 +45,25 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             .OrderByDescending(x => x.DetectedAt)
             .ToListAsync(cancellationToken);
 
+        var deploymentRuns = await dbContext.DeploymentRuns
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId)
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(25)
+            .ToListAsync(cancellationToken);
+
+        var runRevisionIds = deploymentRuns
+            .SelectMany(x => new[] { x.SourceRevisionId, x.PreviousDeployedRevisionId })
+            .OfType<Guid>()
+            .Distinct()
+            .ToList();
+        var runRevisions = runRevisionIds.Count == 0
+            ? new Dictionary<Guid, DesiredStateRevisionEntity>()
+            : await dbContext.DesiredStateRevisions
+                .AsNoTracking()
+                .Where(x => x.WorkspaceId == workspaceId && runRevisionIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, cancellationToken);
+
         var cockpitApplications = applications
             .Select(application => new WorkflowApplication(
                 application.Id.ToString("D"),
@@ -62,7 +81,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             engines.Select(ToEngineRegistration).ToList(),
             [],
             observabilityBindings.Select(ToObservabilityBinding).ToList(),
-            [],
+            deploymentRuns.Select(run => ToDeploymentHistoryEvent(run, runRevisions)).ToList(),
             driftReport.Select(ToDriftReportItem).ToList(),
             []);
     }
@@ -686,12 +705,33 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             environment.Tier,
             EnvironmentHealth(environment, engines),
             desiredRevision is null
-                ? new DesiredStateRevision(0, "", "No desired revision", environment.CreatedAt)
-                : new DesiredStateRevision(desiredRevision.RevisionNumber, desiredRevision.Commit ?? "", desiredRevision.Label, desiredRevision.AuthoredAt),
+                ? new DesiredStateRevision("", 0, "", "No desired revision", environment.CreatedAt)
+                : new DesiredStateRevision(desiredRevision.Id.ToString("D"), desiredRevision.RevisionNumber, desiredRevision.Commit ?? "", desiredRevision.Label, desiredRevision.AuthoredAt),
             deployedRevision?.RevisionNumber,
             environment.DeploymentStatus,
             environment.DriftStatus,
             engines.Where(x => x.EnvironmentId == environment.Id).Select(x => x.Id.ToString("D")).ToList());
+    }
+
+    private static DeploymentHistoryEvent ToDeploymentHistoryEvent(
+        DeploymentRunEntity run,
+        IReadOnlyDictionary<Guid, DesiredStateRevisionEntity> revisions)
+    {
+        revisions.TryGetValue(run.SourceRevisionId, out var sourceRevision);
+        DesiredStateRevisionEntity? rollbackSourceRevision = null;
+        if (run.PreviousDeployedRevisionId.HasValue)
+            revisions.TryGetValue(run.PreviousDeployedRevisionId.Value, out rollbackSourceRevision);
+
+        return new DeploymentHistoryEvent(
+            run.Id.ToString("D"),
+            run.Status.ToString(),
+            sourceRevision?.RevisionNumber ?? 0,
+            run.ActorAccountId.ToString("N")[..8],
+            run.EnvironmentId.ToString("D"),
+            run.EngineId.ToString("D"),
+            run.ValidationOutcome,
+            run.CompletedAt ?? run.StartedAt ?? run.QueuedAt,
+            rollbackSourceRevision?.RevisionNumber);
     }
 
     private static WorkflowEngineRegistration ToEngineRegistration(WorkflowEngineEntity engine) =>

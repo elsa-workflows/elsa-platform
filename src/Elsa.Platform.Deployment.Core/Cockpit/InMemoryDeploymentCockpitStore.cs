@@ -95,7 +95,7 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore, IW
                     "Dev",
                     EnvironmentTier.Dev,
                     DeploymentHealth.Healthy,
-                    new DesiredStateRevision(42, "8f6a9c1", "Payment retry workflow", Parse("2026-05-21T08:30:00Z")),
+                    new DesiredStateRevision("00000000-0000-0000-0000-000000000142", 42, "8f6a9c1", "Payment retry workflow", Parse("2026-05-21T08:30:00Z")),
                     42,
                     DeploymentStatus.Succeeded,
                     DriftStatus.InSync,
@@ -105,7 +105,7 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore, IW
                     "Test",
                     EnvironmentTier.Test,
                     DeploymentHealth.Healthy,
-                    new DesiredStateRevision(39, "79d1b07", "Fraud review tuning", Parse("2026-05-20T13:20:00Z")),
+                    new DesiredStateRevision("00000000-0000-0000-0000-000000000139", 39, "79d1b07", "Fraud review tuning", Parse("2026-05-20T13:20:00Z")),
                     39,
                     DeploymentStatus.Succeeded,
                     DriftStatus.InSync,
@@ -115,7 +115,7 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore, IW
                     "Stage",
                     EnvironmentTier.Stage,
                     DeploymentHealth.Degraded,
-                    new DesiredStateRevision(41, "c174f2a", "Policy document sync", Parse("2026-05-21T06:10:00Z")),
+                    new DesiredStateRevision("00000000-0000-0000-0000-000000000141", 41, "c174f2a", "Policy document sync", Parse("2026-05-21T06:10:00Z")),
                     40,
                     DeploymentStatus.Running,
                     DriftStatus.DriftDetected,
@@ -125,7 +125,7 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore, IW
                     "Prod",
                     EnvironmentTier.Production,
                     DeploymentHealth.Unreachable,
-                    new DesiredStateRevision(40, "11ec9d4", "Baseline production", Parse("2026-05-19T15:45:00Z")),
+                    new DesiredStateRevision("00000000-0000-0000-0000-000000000140", 40, "11ec9d4", "Baseline production", Parse("2026-05-19T15:45:00Z")),
                     40,
                     DeploymentStatus.Blocked,
                     DriftStatus.Unknown,
@@ -141,7 +141,7 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore, IW
                     "Dev",
                     EnvironmentTier.Dev,
                     DeploymentHealth.Healthy,
-                    new DesiredStateRevision(18, "6ad11a3", "Chat escalation route", Parse("2026-05-20T09:15:00Z")),
+                    new DesiredStateRevision("00000000-0000-0000-0000-000000000118", 18, "6ad11a3", "Chat escalation route", Parse("2026-05-20T09:15:00Z")),
                     18,
                     DeploymentStatus.Succeeded,
                     DriftStatus.InSync,
@@ -151,7 +151,7 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore, IW
                     "Prod",
                     EnvironmentTier.Production,
                     DeploymentHealth.Healthy,
-                    new DesiredStateRevision(16, "3d920bc", "Baseline care routing", Parse("2026-05-18T11:00:00Z")),
+                    new DesiredStateRevision("00000000-0000-0000-0000-000000000116", 16, "3d920bc", "Baseline care routing", Parse("2026-05-18T11:00:00Z")),
                     16,
                     DeploymentStatus.Succeeded,
                     DriftStatus.InSync,
@@ -275,6 +275,7 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore, IW
         new(
             "claims-stage",
             "claims-prod",
+            "00000000-0000-0000-0000-000000000141",
             41,
             40,
             [
@@ -293,10 +294,12 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore, IW
                 Validation("entitlement-prod-deploy", ValidationSeverity.Pass, "Workspace entitlement", "Deployment entitlement active for this workspace."),
                 Validation("engine-reachability", ValidationSeverity.Blocker, "Engine health", "claims-prod-weu-01 is unreachable; validation fails closed.")
             ],
-            39),
+            39,
+            "00000000-0000-0000-0000-000000000139"),
         new(
             "claims-dev",
             "claims-test",
+            "00000000-0000-0000-0000-000000000142",
             42,
             39,
             [
@@ -309,7 +312,8 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore, IW
                 Validation("capability-test", ValidationSeverity.Pass, "Engine capabilities", "claims-test-weu-01 supports required engine operations."),
                 Validation("entitlement-test", ValidationSeverity.Pass, "Workspace entitlement", "Deployment entitlement active for this workspace.")
             ],
-            38)
+            38,
+            "00000000-0000-0000-0000-000000000138")
     ];
 
     private static IReadOnlyList<ObservabilityBinding> ObservabilityBindings() =>
@@ -322,10 +326,10 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore, IW
 
     private static IReadOnlyList<DeploymentHistoryEvent> History() =>
     [
-        new("deploy-410", DeploymentStatus.Blocked, 41, "Mira Chen", "claims-prod", "prod-engine", DeploymentValidationOutcome.Blocked, Parse("2026-05-22T08:05:00Z"), null),
-        new("deploy-409", DeploymentStatus.Succeeded, 40, "Owen Diaz", "claims-prod", "prod-engine", DeploymentValidationOutcome.Passed, Parse("2026-05-21T17:20:00Z"), null),
-        new("deploy-388", DeploymentStatus.RolledBack, 39, "Priya Shah", "claims-prod", "prod-engine", DeploymentValidationOutcome.Warnings, Parse("2026-05-20T19:45:00Z"), 38),
-        new("deploy-342", DeploymentStatus.Succeeded, 42, "Mira Chen", "claims-test", "test-engine", DeploymentValidationOutcome.Passed, Parse("2026-05-22T07:35:00Z"), null)
+        new("00000000-0000-0000-0000-000000000410", DeploymentStatus.Blocked.ToString(), 41, "Mira Chen", "claims-prod", "prod-engine", DeploymentValidationOutcome.Blocked, Parse("2026-05-22T08:05:00Z"), null),
+        new("00000000-0000-0000-0000-000000000409", DeploymentStatus.Succeeded.ToString(), 40, "Owen Diaz", "claims-prod", "prod-engine", DeploymentValidationOutcome.Passed, Parse("2026-05-21T17:20:00Z"), null),
+        new("00000000-0000-0000-0000-000000000388", DeploymentStatus.RolledBack.ToString(), 39, "Priya Shah", "claims-prod", "prod-engine", DeploymentValidationOutcome.Warnings, Parse("2026-05-20T19:45:00Z"), 38),
+        new("00000000-0000-0000-0000-000000000342", DeploymentStatus.Succeeded.ToString(), 42, "Mira Chen", "claims-test", "test-engine", DeploymentValidationOutcome.Passed, Parse("2026-05-22T07:35:00Z"), null)
     ];
 
     private static IReadOnlyList<DriftReportItem> DriftReport() =>

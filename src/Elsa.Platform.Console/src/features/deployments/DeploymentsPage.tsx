@@ -25,6 +25,9 @@ import {
   getDeploymentCockpit,
   getDeploymentPermissions,
   getDeploymentWorkspaceContext,
+  previewPromotion,
+  queueDeploymentRun,
+  queueRollbackRun,
   registerDeploymentEngine,
   runRuntimeControl,
   updateDeploymentApplication,
@@ -46,6 +49,7 @@ import {
   type EnvironmentSummary,
   type RuntimeControl,
   type ValidationSeverity,
+  type WorkspaceDeploymentRunStatus,
   type WorkflowEngineRegistration
 } from "@/features/deployments/deploymentModels";
 import { formatDateTime } from "@/lib/formatters";
@@ -78,6 +82,7 @@ export function DeploymentsPage() {
     queryFn: () => getDeploymentCockpit(workspaceId),
     enabled: Boolean(workspaceId)
   });
+  const refreshDeploymentCockpit = () => queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
   const setup = useMutation({
     mutationFn: async (values: DeploymentSetupValues) => {
       const application = await createDeploymentApplication(workspaceId, {
@@ -91,7 +96,7 @@ export function DeploymentsPage() {
       await registerDeploymentEngine(workspaceId, environment.id, setupEngineRequest(values));
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
+      void refreshDeploymentCockpit();
       setShowNewSetup(false);
     }
   });
@@ -100,7 +105,7 @@ export function DeploymentsPage() {
       updateDeploymentApplication(workspaceId, applicationId, { name, description: null }),
     onSuccess: () => {
       setEditingApplication(false);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
+      void refreshDeploymentCockpit();
     }
   });
   const updateEnvironment = useMutation({
@@ -117,7 +122,7 @@ export function DeploymentsPage() {
     }) => updateDeploymentEnvironment(workspaceId, applicationId, environmentId, { name, tier }),
     onSuccess: () => {
       setEditingEnvironmentId("");
-      void queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
+      void refreshDeploymentCockpit();
     }
   });
   const updateEngine = useMutation({
@@ -131,10 +136,10 @@ export function DeploymentsPage() {
         capabilities: engine.capabilities,
         controls: engine.controls,
         hostingProvider: engine.hostingProvider
-      }),
+    }),
     onSuccess: () => {
       setEditingEngine(false);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
+      void refreshDeploymentCockpit();
     }
   });
   const runControl = useMutation({
@@ -148,7 +153,80 @@ export function DeploymentsPage() {
     },
     onSuccess: (execution) => {
       setOperationNotice(execution.message);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
+      void refreshDeploymentCockpit();
+    }
+  });
+  const preview = useMutation({
+    mutationFn: () => {
+      const source = getEnvironment(sourceEnvironmentId);
+      const targetEngine = getTargetEngine(targetEnvironmentId);
+      if (!source?.desiredRevision.id || !targetEngine)
+        throw new Error("Choose a source revision and target engine before refreshing preview.");
+
+      return previewPromotion(workspaceId, {
+        sourceEnvironmentId,
+        targetEnvironmentId,
+        sourceRevisionId: source.desiredRevision.id,
+        targetEngineId: targetEngine.id
+      });
+    },
+    onSuccess: (comparison) => {
+      setPreviewComparison(comparison);
+      setPromotionNotice("Promotion preview refreshed from live validation.");
+    }
+  });
+  const deployRevision = useMutation({
+    mutationFn: async () => {
+      const currentComparison = getActiveComparison();
+      const targetEngine = getTargetEngine(currentComparison?.targetEnvironmentId ?? targetEnvironmentId);
+      const sourceRevisionId = currentComparison?.sourceRevisionId || getEnvironment(sourceEnvironmentId)?.desiredRevision.id;
+      if (!currentComparison || !targetEngine || !sourceRevisionId)
+        throw new Error("Refresh a valid promotion preview before deployment.");
+
+      const confirmation = await createActionConfirmation(workspaceId, {
+        actionType: "Deploy",
+        targetId: sourceRevisionId,
+        lifetimeSeconds: null
+      });
+      return queueDeploymentRun(workspaceId, {
+        sourceRevisionId,
+        targetEnvironmentId: currentComparison.targetEnvironmentId,
+        targetEngineId: targetEngine.id,
+        confirmationId: confirmation.id,
+        mode: "Apply"
+      });
+    },
+    onSuccess: (run) => {
+      setPromotionNotice(`Deployment run ${run.status.toLowerCase()} for revision ${run.sourceRevisionId}.`);
+      void refreshDeploymentCockpit();
+    }
+  });
+  const rollbackRevision = useMutation({
+    mutationFn: async () => {
+      const currentComparison = getActiveComparison();
+      const targetEngine = getTargetEngine(currentComparison?.targetEnvironmentId ?? targetEnvironmentId);
+      const rollbackSourceRun = getLatestTargetRun(currentComparison?.targetEnvironmentId ?? targetEnvironmentId, targetEngine?.id ?? "");
+      const sourceRevisionId = currentComparison?.rollbackRevisionId;
+      if (!currentComparison || !targetEngine || !rollbackSourceRun || !sourceRevisionId)
+        throw new Error("A previous compatible run is required before rollback can be queued.");
+
+      const confirmation = await createActionConfirmation(workspaceId, {
+        actionType: "Rollback",
+        targetId: sourceRevisionId,
+        lifetimeSeconds: null
+      });
+      return queueRollbackRun(workspaceId, {
+        sourceRevisionId,
+        targetEnvironmentId: currentComparison.targetEnvironmentId,
+        targetEngineId: targetEngine.id,
+        confirmationId: confirmation.id,
+        rollbackSourceRunId: rollbackSourceRun.id,
+        mode: "Apply"
+      });
+    },
+    onSuccess: (run) => {
+      setPromotionNotice(`Rollback run ${run.status.toLowerCase()} for revision ${run.sourceRevisionId}.`);
+      void refreshDeploymentCockpit();
     }
   });
   const [activeView, setActiveView] = useState<ViewId>("fleet");
@@ -162,6 +240,8 @@ export function DeploymentsPage() {
   const [sourceEnvironmentId, setSourceEnvironmentId] = useState("");
   const [targetEnvironmentId, setTargetEnvironmentId] = useState("");
   const [operationNotice, setOperationNotice] = useState("");
+  const [promotionNotice, setPromotionNotice] = useState("");
+  const [previewComparison, setPreviewComparison] = useState<DeploymentCockpit["comparisons"][number] | null>(null);
   const [assistantOutcome, setAssistantOutcome] = useState<"Proposed" | "Approved" | "Rejected">("Proposed");
 
   const data = cockpit.data;
@@ -194,12 +274,34 @@ export function DeploymentsPage() {
   }, [data, selectedApplicationId, selectedEngineId, selectedEnvironmentId, sourceEnvironmentId, targetEnvironmentId]);
 
   const comparison = useMemo(() => {
-    return data?.comparisons.find(
+    const cockpitComparison = data?.comparisons.find(
       (item) => item.sourceEnvironmentId === sourceEnvironmentId && item.targetEnvironmentId === targetEnvironmentId
     ) ?? data?.comparisons[0];
-  }, [data?.comparisons, sourceEnvironmentId, targetEnvironmentId]);
+    return previewComparison?.sourceEnvironmentId === sourceEnvironmentId && previewComparison.targetEnvironmentId === targetEnvironmentId
+      ? previewComparison
+      : cockpitComparison;
+  }, [data?.comparisons, previewComparison, sourceEnvironmentId, targetEnvironmentId]);
   const canManageSetup = Boolean(permissions.data?.permissions.includes("deployments.setup.manage"));
+  const canPreviewPromotion = Boolean(permissions.data?.permissions.includes("deployments.promotion.preview"));
+  const canExecuteDeployment = Boolean(permissions.data?.permissions.includes("deployments.run.execute"));
+  const canExecuteRollback = Boolean(permissions.data?.permissions.includes("deployments.rollback.execute"));
   const canExecuteControls = Boolean(permissions.data?.permissions.includes("deployments.controls.execute"));
+
+  function getEnvironment(environmentId: string) {
+    return data?.applications.flatMap((application) => application.environments).find((environment) => environment.id === environmentId);
+  }
+
+  function getTargetEngine(environmentId: string) {
+    return data?.engines.find((engine) => engine.environmentId === environmentId);
+  }
+
+  function getLatestTargetRun(environmentId: string, engineId: string) {
+    return data?.history.find((event) => event.environmentId === environmentId && event.engineId === engineId);
+  }
+
+  function getActiveComparison() {
+    return comparison;
+  }
 
   if (workspaceContext.isLoading || cockpit.isLoading) return <RequestStateView state="loading" title="Loading deployments" />;
   if (workspaceContext.isError) return <RequestStateView state="unexpected" title="Workspace context could not load" />;
@@ -376,9 +478,36 @@ export function DeploymentsPage() {
           data={data}
           sourceEnvironmentId={sourceEnvironmentId}
           targetEnvironmentId={targetEnvironmentId}
-          onSourceEnvironmentChange={setSourceEnvironmentId}
-          onTargetEnvironmentChange={setTargetEnvironmentId}
+          onSourceEnvironmentChange={(environmentId) => {
+            setSourceEnvironmentId(environmentId);
+            setPreviewComparison(null);
+            setPromotionNotice("");
+          }}
+          onTargetEnvironmentChange={(environmentId) => {
+            setTargetEnvironmentId(environmentId);
+            setPreviewComparison(null);
+            setPromotionNotice("");
+          }}
           comparison={comparison}
+          canPreview={canPreviewPromotion}
+          canDeploy={canExecuteDeployment}
+          canRollback={canExecuteRollback}
+          isPreviewing={preview.isPending}
+          isQueueingDeployment={deployRevision.isPending}
+          isQueueingRollback={rollbackRevision.isPending}
+          notice={promotionNotice}
+          error={
+            preview.error instanceof Error
+              ? preview.error.message
+              : deployRevision.error instanceof Error
+                ? deployRevision.error.message
+                : rollbackRevision.error instanceof Error
+                  ? rollbackRevision.error.message
+                  : undefined
+          }
+          onRefreshPreview={() => preview.mutate()}
+          onDeploy={() => deployRevision.mutate()}
+          onRollback={() => rollbackRevision.mutate()}
         />
       ) : null}
       {activeView === "governance" ? <GovernanceView data={data} /> : null}
@@ -783,15 +912,37 @@ function PromotionView({
   sourceEnvironmentId,
   targetEnvironmentId,
   comparison,
+  canPreview,
+  canDeploy,
+  canRollback,
+  isPreviewing,
+  isQueueingDeployment,
+  isQueueingRollback,
+  notice,
+  error,
   onSourceEnvironmentChange,
-  onTargetEnvironmentChange
+  onTargetEnvironmentChange,
+  onRefreshPreview,
+  onDeploy,
+  onRollback
 }: {
   data: DeploymentCockpit;
   sourceEnvironmentId: string;
   targetEnvironmentId: string;
   comparison: DeploymentCockpit["comparisons"][number] | undefined;
+  canPreview: boolean;
+  canDeploy: boolean;
+  canRollback: boolean;
+  isPreviewing: boolean;
+  isQueueingDeployment: boolean;
+  isQueueingRollback: boolean;
+  notice: string;
+  error?: string;
   onSourceEnvironmentChange: (environmentId: string) => void;
   onTargetEnvironmentChange: (environmentId: string) => void;
+  onRefreshPreview: () => void;
+  onDeploy: () => void;
+  onRollback: () => void;
 }) {
   return (
     <PromotionPreviewPanel
@@ -799,8 +950,19 @@ function PromotionView({
       sourceEnvironmentId={sourceEnvironmentId}
       targetEnvironmentId={targetEnvironmentId}
       comparison={comparison}
+      canPreview={canPreview}
+      canDeploy={canDeploy}
+      canRollback={canRollback}
+      isPreviewing={isPreviewing}
+      isQueueingDeployment={isQueueingDeployment}
+      isQueueingRollback={isQueueingRollback}
+      notice={notice}
+      error={error}
       onSourceEnvironmentChange={onSourceEnvironmentChange}
       onTargetEnvironmentChange={onTargetEnvironmentChange}
+      onRefreshPreview={onRefreshPreview}
+      onDeploy={onDeploy}
+      onRollback={onRollback}
     />
   );
 }
@@ -808,39 +970,53 @@ function PromotionView({
 function GovernanceView({ data }: { data: DeploymentCockpit }) {
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {data.observabilityBindings.map((binding) => (
-          <Panel key={binding.id} title={binding.kind} icon={<Activity className="h-4 w-4" />}>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium">{binding.provider}</span>
-                <StatusBadge value={binding.status} tone={binding.status === "Connected" ? "success" : binding.status === "Degraded" ? "warning" : "destructive"} />
+      {data.observabilityBindings.length === 0 ? (
+        <RequestStateView
+          state="empty"
+          title="No observability metadata"
+          description="Persisted log, trace, metric, and console bindings will appear here without opening provider credentials."
+        />
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {data.observabilityBindings.map((binding) => (
+            <Panel key={binding.id} title={binding.kind} icon={<Activity className="h-4 w-4" />}>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{binding.provider}</span>
+                  <StatusBadge value={binding.status} tone={binding.status === "Connected" ? "success" : binding.status === "Degraded" ? "warning" : "destructive"} />
+                </div>
+                <p className="text-muted-foreground">{binding.scope}</p>
+                <p className="text-xs text-muted-foreground">Revision r{binding.correlatedRevision} · {binding.sample}</p>
               </div>
-              <p className="text-muted-foreground">{binding.scope}</p>
-              <p className="text-xs text-muted-foreground">Revision r{binding.correlatedRevision} · {binding.sample}</p>
-            </div>
-          </Panel>
-        ))}
-      </div>
+            </Panel>
+          ))}
+        </div>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-2">
         <DeploymentRunsPanel data={data} />
         <Panel title="Drift report" icon={<AlertTriangle className="h-4 w-4" />}>
-          <div className="space-y-2">
-            {data.driftReport.map((item) => (
-              <div key={item.id} className="rounded-ui border border-border p-3 text-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-medium">{item.area}</span>
-                  <StatusBadge value={item.action} tone={item.action === "Redeploy" ? "warning" : "neutral"} />
+          {data.driftReport.length === 0 ? (
+            <p className="rounded-ui border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+              No drift metadata has been recorded for this workspace.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {data.driftReport.map((item) => (
+                <div key={item.id} className="rounded-ui border border-border p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium">{item.area}</span>
+                    <StatusBadge value={item.action} tone={item.action === "Redeploy" ? "warning" : "neutral"} />
+                  </div>
+                  <div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                    <div>Desired: {item.desired}</div>
+                    <div>Observed: {item.observed}</div>
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">{environmentLabel(item.environmentId, data.applications)} / {engineLabel(item.engineId, data.engines)}</div>
                 </div>
-                <div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                  <div>Desired: {item.desired}</div>
-                  <div>Observed: {item.observed}</div>
-                </div>
-                <div className="mt-2 text-xs text-muted-foreground">{environmentLabel(item.environmentId, data.applications)} / {engineLabel(item.engineId, data.engines)}</div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </Panel>
       </div>
     </div>

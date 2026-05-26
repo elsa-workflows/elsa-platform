@@ -27,11 +27,13 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
         return new PromotionComparison(
             request.SourceEnvironmentId.ToString("D"),
             request.TargetEnvironmentId.ToString("D"),
+            source.Id.ToString("D"),
             source.RevisionNumber,
             target?.RevisionNumber ?? 0,
             diff,
             validations,
-            target?.RevisionNumber);
+            target?.RevisionNumber,
+            target?.Id.ToString("D"));
     }
 
     public PromotionComparison PreviewPromotion(WorkspacePromotionPreviewRequest request)
@@ -39,10 +41,12 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
         return new PromotionComparison(
             request.SourceEnvironmentId.ToString("D"),
             request.TargetEnvironmentId.ToString("D"),
+            request.SourceRevisionId.ToString("D"),
             0,
             0,
             [],
             [new DeploymentValidation("deployment.preview.not-implemented", ValidationSeverity.Blocker, "Deployment preview", "Promotion preview is not implemented yet.")],
+            null,
             null);
     }
 
@@ -50,10 +54,12 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
         new(
             request.SourceEnvironmentId.ToString("D"),
             request.TargetEnvironmentId.ToString("D"),
+            request.SourceRevisionId.ToString("D"),
             0,
             0,
             [],
             [new DeploymentValidation(id, ValidationSeverity.Blocker, "Deployment preview", message)],
+            null,
             null);
 
     private static IReadOnlyList<DesiredRecord> ParseRecords(string json)
