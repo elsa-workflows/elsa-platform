@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -58,9 +58,11 @@ describe("DeploymentsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Create setup" }));
 
     await screen.findByText("Claims Operations");
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications`),
-      expect.objectContaining({ method: "POST" })
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications`),
+        expect.objectContaining({ method: "POST" })
+      )
     );
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/app-created/environments`),
@@ -69,6 +71,63 @@ describe("DeploymentsPage", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/environments/env-created/engines`),
       expect.objectContaining({ method: "POST" })
+    );
+  });
+
+  it("creates another deployment setup from a populated cockpit", async () => {
+    const fetchMock = renderDeployments();
+
+    await screen.findByRole("heading", { name: "Deployments" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "New Deployment" })).toBeEnabled());
+    await userEvent.click(screen.getByRole("button", { name: "New Deployment" }));
+    await userEvent.type(screen.getByLabelText("Application"), "Customer Care");
+    await userEvent.clear(screen.getByLabelText("Environment"));
+    await userEvent.type(screen.getByLabelText("Environment"), "Prod");
+    await userEvent.type(screen.getByLabelText("Engine"), "care-prod");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://care.example.test/elsa");
+    await userEvent.type(screen.getByLabelText("Credential reference"), "kv://care/prod/elsa-api");
+    await userEvent.click(screen.getByRole("button", { name: "Create setup" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications`),
+      expect.objectContaining({ method: "POST" })
+    );
+  });
+
+  it("edits application environment and engine metadata through live APIs", async () => {
+    const fetchMock = renderDeployments();
+
+    await screen.findByRole("heading", { name: "Deployments" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Edit application" })).toBeEnabled());
+    await userEvent.click(screen.getByRole("button", { name: "Edit application" }));
+    await userEvent.clear(screen.getByLabelText("Application name"));
+    await userEvent.type(screen.getByLabelText("Application name"), "Claims Platform");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await userEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
+    await userEvent.clear(screen.getByLabelText("Environment"));
+    await userEvent.type(screen.getByLabelText("Environment"), "Development");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Engine Registration" }));
+    await userEvent.click(screen.getByRole("button", { name: "Edit engine" }));
+    await userEvent.clear(screen.getByLabelText("Base URL"));
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://dev-workflows-2.acme.example/elsa");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops`),
+        expect.objectContaining({ method: "PUT" })
+      )
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops/environments/claims-dev`),
+      expect.objectContaining({ method: "PUT" })
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/engines/dev-engine`),
+      expect.objectContaining({ method: "PUT" })
     );
   });
 
@@ -88,7 +147,7 @@ describe("DeploymentsPage", () => {
 
     await userEvent.click(screen.getAllByRole("button", { name: "Run" })[1]);
 
-    expect(screen.getByRole("status")).toHaveTextContent("Reload Configuration queued as a EngineApi control");
+    expect(await screen.findByRole("status")).toHaveTextContent("Reload Configuration executed for claims-stage-weu-01.");
   });
 
   it("blocks deployment when promotion validation finds missing secrets and incompatible capabilities", async () => {
@@ -190,7 +249,7 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
       });
     }
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/permissions`)) {
-      return jsonResponse({ permissions: ["deployments.read", "deployments.setup.manage"] });
+      return jsonResponse({ permissions: ["deployments.read", "deployments.setup.manage", "deployments.controls.execute"] });
     }
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/cockpit`)) {
       return jsonResponse(currentCockpit);
@@ -207,6 +266,58 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
         applications: [{ ...deploymentCockpitFixture.applications[0], id: "app-created", name: "Claims Operations" }]
       };
       return jsonResponse({ id: "engine-created", name: "claims-prod", environmentId: "env-created" }, 201);
+    }
+    if (method === "PUT" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops`)) {
+      currentCockpit = {
+        ...currentCockpit,
+        applications: currentCockpit.applications.map((application) =>
+          application.id === "claims-ops" ? { ...application, name: "Claims Platform" } : application
+        )
+      };
+      return jsonResponse({ id: "claims-ops", workspaceId, name: "Claims Platform" });
+    }
+    if (method === "PUT" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops/environments/claims-dev`)) {
+      currentCockpit = {
+        ...currentCockpit,
+        applications: currentCockpit.applications.map((application) => ({
+          ...application,
+          environments: application.environments.map((environment) =>
+            environment.id === "claims-dev" ? { ...environment, name: "Development" } : environment
+          )
+        }))
+      };
+      return jsonResponse({ id: "claims-dev", workspaceId, applicationId: "claims-ops", name: "Development" });
+    }
+    if (method === "PUT" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/engines/dev-engine`)) {
+      currentCockpit = {
+        ...currentCockpit,
+        engines: currentCockpit.engines.map((item) =>
+          item.id === "dev-engine"
+            ? { ...item, endpoint: { ...item.endpoint, baseUrl: "https://dev-workflows-2.acme.example/elsa" } }
+            : item
+        )
+      };
+      return jsonResponse({ id: "dev-engine", name: "claims-dev-weu-01", environmentId: "claims-dev" });
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/confirmations`)) {
+      return jsonResponse({ id: "confirmation-1", workspaceId, actionType: "RuntimeControl", targetId: "stage-engine:reload-configuration" }, 201);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/engines/stage-engine/controls/reload-configuration/run`)) {
+      return jsonResponse({
+        id: "control-execution-1",
+        workspaceId,
+        engineId: "stage-engine",
+        environmentId: "claims-stage",
+        controlId: "reload-configuration",
+        controlLabel: "Reload Configuration",
+        boundary: "EngineApi",
+        requiredCapabilityId: "engine.reload-configuration",
+        confirmationId: "confirmation-1",
+        actorAccountId: "account-1",
+        status: "Succeeded",
+        createdAt: "2026-05-26T10:00:00Z",
+        message: "Reload Configuration executed for claims-stage-weu-01."
+      });
     }
     return jsonResponse({ title: "Not found" }, 404);
   });

@@ -95,6 +95,67 @@ public static class WorkspaceDeploymentEndpoints
             return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/environments/{environment.Id:D}", environment);
         });
 
+        group.MapPut("/applications/{applicationId:guid}", async (
+            Guid workspaceId,
+            Guid applicationId,
+            WorkspaceDeploymentApplicationRequest request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await deployments.UpdateApplicationAsync(
+                    workspaceId,
+                    applicationId,
+                    new UpdateWorkflowApplicationRequest(request.Name, request.Description, access.Access!.AccountId),
+                    cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
+        group.MapPut("/applications/{applicationId:guid}/environments/{environmentId:guid}", async (
+            Guid workspaceId,
+            Guid applicationId,
+            Guid environmentId,
+            WorkspaceDeploymentEnvironmentRequest request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await deployments.UpdateEnvironmentAsync(
+                    workspaceId,
+                    environmentId,
+                    new UpdateDeploymentEnvironmentRequest(applicationId, request.Name, request.Tier),
+                    cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
         group.MapPost("/environments/{environmentId:guid}/engines", async (
             Guid workspaceId,
             Guid environmentId,
@@ -125,6 +186,44 @@ public static class WorkspaceDeploymentEndpoints
                     request.HostingProvider),
                 cancellationToken);
             return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/engines/{engine.Id:D}", engine);
+        });
+
+        group.MapPut("/engines/{engineId:guid}", async (
+            Guid workspaceId,
+            Guid engineId,
+            WorkspaceWorkflowEngineRequest request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await deployments.UpdateEngineAsync(
+                    workspaceId,
+                    engineId,
+                    new UpdateWorkflowEngineRequest(
+                        request.Name,
+                        request.BaseUrl,
+                        request.Region,
+                        request.CredentialProvider,
+                        request.CredentialReference,
+                        request.Capabilities,
+                        request.Controls,
+                        request.HostingProvider),
+                    cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
         });
 
         group.MapPost("/applications/{applicationId:guid}/environments/{environmentId:guid}/revisions", async (
@@ -280,6 +379,37 @@ public static class WorkspaceDeploymentEndpoints
             return detail is null
                 ? Results.NotFound()
                 : Results.Ok(new WorkspaceDeploymentRunDetailResponse(detail.Run, detail.History));
+        });
+
+        group.MapPost("/engines/{engineId:guid}/controls/{controlId}/run", async (
+            Guid workspaceId,
+            Guid engineId,
+            string controlId,
+            WorkspaceRuntimeControlRunRequest request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            RuntimeControlService controls,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ExecuteControls, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                var execution = await controls.ExecuteControlAsync(
+                    workspaceId,
+                    new RuntimeControlExecutionRequest(engineId, controlId, request.ConfirmationId, access.Access!.AccountId),
+                    cancellationToken);
+                return Results.Ok(execution);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
         });
 
         return endpoints;

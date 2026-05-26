@@ -19,6 +19,16 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
         return store.CreateApplicationAsync(workspaceId, request, cancellationToken);
     }
 
+    public Task<WorkspaceDeploymentApplication> UpdateApplicationAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        UpdateWorkflowApplicationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
+        return store.UpdateApplicationAsync(workspaceId, applicationId, request, cancellationToken);
+    }
+
     public Task<WorkspaceDeploymentEnvironment> CreateEnvironmentAsync(
         Guid workspaceId,
         CreateDeploymentEnvironmentRequest request,
@@ -26,6 +36,16 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
         return store.CreateEnvironmentAsync(workspaceId, request, cancellationToken);
+    }
+
+    public Task<WorkspaceDeploymentEnvironment> UpdateEnvironmentAsync(
+        Guid workspaceId,
+        Guid environmentId,
+        UpdateDeploymentEnvironmentRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
+        return store.UpdateEnvironmentAsync(workspaceId, environmentId, request, cancellationToken);
     }
 
     public Task<WorkspaceWorkflowEngine> RegisterEngineAsync(
@@ -42,6 +62,23 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
             throw new ArgumentException("Engine base URL must be an absolute URI.", nameof(request));
 
         return store.RegisterEngineAsync(workspaceId, request, cancellationToken);
+    }
+
+    public Task<WorkspaceWorkflowEngine> UpdateEngineAsync(
+        Guid workspaceId,
+        Guid engineId,
+        UpdateWorkflowEngineRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.BaseUrl);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.CredentialProvider);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.CredentialReference);
+
+        if (!Uri.TryCreate(request.BaseUrl, UriKind.Absolute, out _))
+            throw new ArgumentException("Engine base URL must be an absolute URI.", nameof(request));
+
+        return store.UpdateEngineAsync(workspaceId, engineId, request, cancellationToken);
     }
 
     public Task<WorkspaceDesiredStateRevision> CreateRevisionAsync(

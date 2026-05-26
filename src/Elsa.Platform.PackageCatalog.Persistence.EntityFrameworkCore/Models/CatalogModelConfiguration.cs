@@ -306,6 +306,23 @@ internal sealed class RuntimeControlConfiguration : IEntityTypeConfiguration<Run
     }
 }
 
+internal sealed class RuntimeControlExecutionConfiguration : IEntityTypeConfiguration<RuntimeControlExecutionEntity>
+{
+    public void Configure(EntityTypeBuilder<RuntimeControlExecutionEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.ControlId).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.ControlLabel).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Boundary).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.RequiredCapabilityId).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.Message).HasMaxLength(2000).IsRequired();
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.WorkspaceId, x.EngineId, x.ControlId, x.CreatedAt });
+        builder.HasOne(x => x.Engine).WithMany().HasForeignKey(x => x.EngineId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 internal sealed class DesiredStateRevisionConfiguration : IEntityTypeConfiguration<DesiredStateRevisionEntity>
 {
     public void Configure(EntityTypeBuilder<DesiredStateRevisionEntity> builder)

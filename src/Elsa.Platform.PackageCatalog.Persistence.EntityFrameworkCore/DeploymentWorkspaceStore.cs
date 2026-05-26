@@ -364,6 +364,36 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         return runs.Count;
     }
 
+    public async Task<RuntimeControlExecution> RecordRuntimeControlExecutionAsync(
+        Guid workspaceId,
+        RuntimeControlExecution execution,
+        CancellationToken cancellationToken = default)
+    {
+        if (execution.WorkspaceId != workspaceId)
+            throw new InvalidOperationException("Runtime control execution workspace does not match the request workspace.");
+
+        var entity = new RuntimeControlExecutionEntity
+        {
+            Id = execution.Id,
+            WorkspaceId = execution.WorkspaceId,
+            EngineId = execution.EngineId,
+            EnvironmentId = execution.EnvironmentId,
+            ControlId = execution.ControlId,
+            ControlLabel = execution.ControlLabel,
+            Boundary = execution.Boundary,
+            RequiredCapabilityId = execution.RequiredCapabilityId,
+            ConfirmationId = execution.ConfirmationId,
+            ActorAccountId = execution.ActorAccountId,
+            Status = execution.Status,
+            CreatedAt = execution.CreatedAt,
+            Message = execution.Message
+        };
+
+        await dbContext.RuntimeControlExecutions.AddAsync(entity, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToRuntimeControlExecution(entity);
+    }
+
     public async Task<WorkspaceDeploymentApplication> CreateApplicationAsync(
         Guid workspaceId,
         CreateWorkflowApplicationRequest request,
@@ -387,12 +417,49 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         return new WorkspaceDeploymentApplication(entity.Id, entity.WorkspaceId, entity.Name, entity.Description, entity.CreatedAt, entity.UpdatedAt, entity.CreatedByAccountId, entity.UpdatedByAccountId);
     }
 
+    public async Task<WorkspaceDeploymentApplication> UpdateApplicationAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        UpdateWorkflowApplicationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.DeploymentApplications
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == applicationId, cancellationToken);
+        if (entity is null)
+            throw new KeyNotFoundException("Deployment application does not exist in the workspace.");
+
+        entity.Name = request.Name;
+        entity.Description = request.Description;
+        entity.UpdatedAt = DateTimeOffset.UtcNow;
+        entity.UpdatedByAccountId = request.ActorAccountId;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new WorkspaceDeploymentApplication(entity.Id, entity.WorkspaceId, entity.Name, entity.Description, entity.CreatedAt, entity.UpdatedAt, entity.CreatedByAccountId, entity.UpdatedByAccountId);
+    }
+
     public Task<WorkspaceDeploymentEnvironment> CreateEnvironmentAsync(
         Guid workspaceId,
         CreateDeploymentEnvironmentRequest request,
         CancellationToken cancellationToken = default)
     {
         return CreateEnvironmentCoreAsync(workspaceId, request, cancellationToken);
+    }
+
+    public async Task<WorkspaceDeploymentEnvironment> UpdateEnvironmentAsync(
+        Guid workspaceId,
+        Guid environmentId,
+        UpdateDeploymentEnvironmentRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.DeploymentEnvironments
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == environmentId && x.ApplicationId == request.ApplicationId, cancellationToken);
+        if (entity is null)
+            throw new KeyNotFoundException("Deployment environment does not exist in the workspace.");
+
+        entity.Name = request.Name;
+        entity.Tier = request.Tier;
+        entity.UpdatedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new WorkspaceDeploymentEnvironment(entity.Id, entity.WorkspaceId, entity.ApplicationId, entity.Name, entity.Tier, entity.DesiredRevisionId, entity.DeployedRevisionId, entity.DeploymentStatus, entity.DriftStatus, entity.CreatedAt, entity.UpdatedAt);
     }
 
     public async Task<WorkspaceWorkflowEngine> RegisterEngineAsync(
@@ -444,6 +511,56 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         };
 
         await dbContext.WorkflowEngines.AddAsync(engine, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceWorkflowEngine(engine);
+    }
+
+    public async Task<WorkspaceWorkflowEngine> UpdateEngineAsync(
+        Guid workspaceId,
+        Guid engineId,
+        UpdateWorkflowEngineRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var engine = await dbContext.WorkflowEngines
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == engineId, cancellationToken);
+        if (engine is null)
+            throw new KeyNotFoundException("Workflow engine does not exist in the workspace.");
+
+        engine.Name = request.Name;
+        engine.BaseUrl = request.BaseUrl;
+        engine.Region = request.Region;
+        engine.CredentialProvider = request.CredentialProvider;
+        engine.CredentialReference = request.CredentialReference;
+        engine.HostingProvider = request.HostingProvider;
+        engine.UpdatedAt = DateTimeOffset.UtcNow;
+        await dbContext.EngineCapabilities
+            .Where(x => x.WorkspaceId == workspaceId && x.EngineId == engine.Id)
+            .ExecuteDeleteAsync(cancellationToken);
+        await dbContext.RuntimeControls
+            .Where(x => x.WorkspaceId == workspaceId && x.EngineId == engine.Id)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        await dbContext.EngineCapabilities.AddRangeAsync(request.Capabilities.Select(capability => new EngineCapabilityEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            EngineId = engine.Id,
+            CapabilityId = capability.Id,
+            Label = capability.Label,
+            Boundary = capability.Boundary
+        }), cancellationToken);
+        await dbContext.RuntimeControls.AddRangeAsync(request.Controls.Select(control => new RuntimeControlEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            EngineId = engine.Id,
+            ControlId = control.Id,
+            Label = control.Label,
+            Boundary = control.Boundary,
+            RequiredCapabilityId = control.CapabilityId,
+            Description = control.Description
+        }), cancellationToken);
+
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToWorkspaceWorkflowEngine(engine);
     }
@@ -730,6 +847,22 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             entity.Status,
             entity.Message,
             entity.CreatedAt);
+
+    private static RuntimeControlExecution ToRuntimeControlExecution(RuntimeControlExecutionEntity entity) =>
+        new(
+            entity.Id,
+            entity.WorkspaceId,
+            entity.EngineId,
+            entity.EnvironmentId,
+            entity.ControlId,
+            entity.ControlLabel,
+            entity.Boundary,
+            entity.RequiredCapabilityId,
+            entity.ConfirmationId,
+            entity.ActorAccountId,
+            entity.Status,
+            entity.CreatedAt,
+            entity.Message);
 
     private static DeploymentHealth EnvironmentHealth(DeploymentEnvironmentEntity environment, IReadOnlyList<WorkflowEngineEntity> engines)
     {

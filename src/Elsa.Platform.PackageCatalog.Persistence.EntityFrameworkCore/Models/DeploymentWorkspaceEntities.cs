@@ -84,6 +84,24 @@ internal sealed class RuntimeControlEntity
     public string Description { get; set; } = "";
 }
 
+internal sealed class RuntimeControlExecutionEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid EngineId { get; set; }
+    public WorkflowEngineEntity? Engine { get; set; }
+    public Guid EnvironmentId { get; set; }
+    public string ControlId { get; set; } = "";
+    public string ControlLabel { get; set; } = "";
+    public CapabilityBoundary Boundary { get; set; }
+    public string RequiredCapabilityId { get; set; } = "";
+    public Guid ConfirmationId { get; set; }
+    public Guid ActorAccountId { get; set; }
+    public RuntimeControlExecutionStatus Status { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public string Message { get; set; } = "";
+}
+
 internal sealed class DesiredStateRevisionEntity
 {
     public Guid Id { get; set; }

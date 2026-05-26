@@ -147,6 +147,7 @@ export type PromotionPreviewRequest = {
 };
 
 export type ConfirmationActionType = "Deploy" | "Rollback" | "RuntimeControl";
+export type RuntimeControlExecutionStatus = "Succeeded" | "Failed";
 
 export type ActionConfirmation = {
   id: string;
@@ -213,6 +214,26 @@ export type DeploymentRunHistoryRecord = {
 export type WorkspaceDeploymentRunDetailResponse = {
   run: WorkspaceDeploymentRun;
   history: DeploymentRunHistoryRecord[];
+};
+
+export type RuntimeControlExecution = {
+  id: string;
+  workspaceId: string;
+  engineId: string;
+  environmentId: string;
+  controlId: string;
+  controlLabel: string;
+  boundary: CapabilityBoundary;
+  requiredCapabilityId: string;
+  confirmationId: string;
+  actorAccountId: string;
+  status: RuntimeControlExecutionStatus;
+  createdAt: string;
+  message: string;
+};
+
+export type RuntimeControlRunRequest = {
+  confirmationId: string;
 };
 
 export type ObservabilityBinding = {
@@ -282,10 +303,14 @@ export type CreateDeploymentApplicationRequest = {
   description: string | null;
 };
 
+export type UpdateDeploymentApplicationRequest = CreateDeploymentApplicationRequest;
+
 export type CreateDeploymentEnvironmentRequest = {
   name: string;
   tier: EnvironmentSummary["tier"];
 };
+
+export type UpdateDeploymentEnvironmentRequest = CreateDeploymentEnvironmentRequest;
 
 export type RegisterDeploymentEngineRequest = {
   name: string;
@@ -297,6 +322,8 @@ export type RegisterDeploymentEngineRequest = {
   controls: RuntimeControl[];
   hostingProvider: string | null;
 };
+
+export type UpdateDeploymentEngineRequest = RegisterDeploymentEngineRequest;
 
 export type CreatedDeploymentApplication = {
   id: string;

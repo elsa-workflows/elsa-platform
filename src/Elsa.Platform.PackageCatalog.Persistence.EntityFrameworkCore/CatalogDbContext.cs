@@ -30,6 +30,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.WorkflowEngineEntity> WorkflowEngines => Set<Models.WorkflowEngineEntity>();
     internal DbSet<Models.EngineCapabilityEntity> EngineCapabilities => Set<Models.EngineCapabilityEntity>();
     internal DbSet<Models.RuntimeControlEntity> RuntimeControls => Set<Models.RuntimeControlEntity>();
+    internal DbSet<Models.RuntimeControlExecutionEntity> RuntimeControlExecutions => Set<Models.RuntimeControlExecutionEntity>();
     internal DbSet<Models.DesiredStateRevisionEntity> DesiredStateRevisions => Set<Models.DesiredStateRevisionEntity>();
     internal DbSet<Models.StructuredDesiredStateRecordEntity> StructuredDesiredStateRecords => Set<Models.StructuredDesiredStateRecordEntity>();
     internal DbSet<Models.WorkspacePermissionGrantEntity> WorkspacePermissionGrants => Set<Models.WorkspacePermissionGrantEntity>();
@@ -62,6 +63,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.WorkflowEngineConfiguration());
         modelBuilder.ApplyConfiguration(new Models.EngineCapabilityConfiguration());
         modelBuilder.ApplyConfiguration(new Models.RuntimeControlConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.RuntimeControlExecutionConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DesiredStateRevisionConfiguration());
         modelBuilder.ApplyConfiguration(new Models.StructuredDesiredStateRecordConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WorkspacePermissionGrantConfiguration());

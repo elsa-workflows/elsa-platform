@@ -68,6 +68,33 @@ public sealed record WorkspaceDeploymentRunDetail(
     WorkspaceDeploymentRun Run,
     IReadOnlyList<DeploymentRunHistoryEvent> History);
 
+public sealed record RuntimeControlExecutionRequest(
+    Guid EngineId,
+    string ControlId,
+    Guid ConfirmationId,
+    Guid ActorAccountId);
+
+public sealed record RuntimeControlExecution(
+    Guid Id,
+    Guid WorkspaceId,
+    Guid EngineId,
+    Guid EnvironmentId,
+    string ControlId,
+    string ControlLabel,
+    CapabilityBoundary Boundary,
+    string RequiredCapabilityId,
+    Guid ConfirmationId,
+    Guid ActorAccountId,
+    RuntimeControlExecutionStatus Status,
+    DateTimeOffset CreatedAt,
+    string Message);
+
+public enum RuntimeControlExecutionStatus
+{
+    Succeeded,
+    Failed
+}
+
 public enum ConfirmationActionType
 {
     Deploy,

@@ -151,6 +151,46 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Persists_runtime_control_audit_records()
+    {
+        var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));
+        var environment = await _store.CreateEnvironmentAsync(_workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production));
+        var engine = await _store.RegisterEngineAsync(
+            _workspaceId,
+            new RegisterWorkflowEngineRequest(
+                environment.Id,
+                "claims-prod",
+                "https://workflows.example.test/elsa",
+                null,
+                "Azure Key Vault",
+                "kv://claims/prod/elsa-api",
+                [new EngineCapability("engine.reload-configuration", "Reload engine configuration", CapabilityBoundary.EngineApi)],
+                [new RuntimeControl("reload-configuration", "Reload Configuration", CapabilityBoundary.EngineApi, "engine.reload-configuration", "Reloads engine API configuration.")],
+                null));
+        var mutationStore = (IWorkspaceDeploymentMutationStore)_store;
+
+        var execution = await mutationStore.RecordRuntimeControlExecutionAsync(
+            _workspaceId,
+            new RuntimeControlExecution(
+                Guid.NewGuid(),
+                _workspaceId,
+                engine.Id,
+                environment.Id,
+                "reload-configuration",
+                "Reload Configuration",
+                CapabilityBoundary.EngineApi,
+                "engine.reload-configuration",
+                Guid.NewGuid(),
+                _accountId,
+                RuntimeControlExecutionStatus.Succeeded,
+                DateTimeOffset.UtcNow,
+                "Reload Configuration executed for claims-prod."));
+
+        execution.Status.Should().Be(RuntimeControlExecutionStatus.Succeeded);
+        (await CountRuntimeControlExecutionsAsync()).Should().Be(1);
+    }
+
+    [Fact]
     public async Task Projects_persisted_observability_and_drift_metadata()
     {
         var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));
@@ -196,6 +236,14 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
     {
         await using var command = _db.Database.GetDbConnection().CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM StructuredDesiredStateRecords";
+        var count = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(count);
+    }
+
+    private async Task<long> CountRuntimeControlExecutionsAsync()
+    {
+        await using var command = _db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM RuntimeControlExecutions";
         var count = await command.ExecuteScalarAsync();
         return Convert.ToInt64(count);
     }

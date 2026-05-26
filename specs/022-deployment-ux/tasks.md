@@ -184,19 +184,19 @@
 
 ### Tests for User Story 5
 
-- [ ] T083 [P] [US5] Add runtime control service tests in `tests/Elsa.Platform.Deployment.Core.Tests/RuntimeControlServiceTests.cs`
-- [ ] T084 [P] [US5] Add runtime control API tests for unsupported capability, missing confirmation, same-user confirmation, single-use confirmation, and unauthorized permission rejection in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentMutationAuthorizationTests.cs`
-- [ ] T085 [P] [US5] Add runtime control console tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T083 [P] [US5] Add runtime control service tests in `tests/Elsa.Platform.Deployment.Core.Tests/RuntimeControlServiceTests.cs`
+- [X] T084 [P] [US5] Add runtime control API tests for unsupported capability, missing confirmation, same-user confirmation, single-use confirmation, and unauthorized permission rejection in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentMutationAuthorizationTests.cs`
+- [X] T085 [P] [US5] Add runtime control console tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 5
 
-- [ ] T086 [US5] Implement capability-gated and confirmation-gated runtime control execution in `src/Elsa.Platform.Deployment.Core/Workspace/RuntimeControlService.cs`
-- [ ] T087 [US5] Implement runtime control audit persistence in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [ ] T088 [US5] Add runtime control endpoint with permission and confirmation checks in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [ ] T089 [US5] Add runtime control API client calls in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
-- [ ] T090 [US5] Add runtime controls UI in `src/Elsa.Platform.Console/src/features/deployments/RuntimeControlsPanel.tsx`
-- [ ] T091 [US5] Wire runtime controls UI into `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [ ] T092 [US5] Run focused US5 checks documented in `specs/022-deployment-ux/quickstart.md`
+- [X] T086 [US5] Implement capability-gated and confirmation-gated runtime control execution in `src/Elsa.Platform.Deployment.Core/Workspace/RuntimeControlService.cs`
+- [X] T087 [US5] Implement runtime control audit persistence in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T088 [US5] Add runtime control endpoint with permission and confirmation checks in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T089 [US5] Add runtime control API client calls in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
+- [X] T090 [US5] Add runtime controls UI in `src/Elsa.Platform.Console/src/features/deployments/RuntimeControlsPanel.tsx`
+- [X] T091 [US5] Wire runtime controls UI into `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T092 [US5] Run focused US5 checks documented in `specs/022-deployment-ux/quickstart.md`
 
 **Checkpoint**: User Story 5 is independently functional and unsupported or unconfirmed controls fail closed.
 

@@ -58,4 +58,9 @@ public interface IWorkspaceDeploymentMutationStore
         DateTimeOffset now,
         TimeSpan staleAfter,
         CancellationToken cancellationToken = default);
+
+    Task<RuntimeControlExecution> RecordRuntimeControlExecutionAsync(
+        Guid workspaceId,
+        RuntimeControlExecution execution,
+        CancellationToken cancellationToken = default);
 }

@@ -6,35 +6,45 @@ import {
   CheckCircle2,
   ClipboardCheck,
   KeyRound,
+  Pencil,
+  Plus,
   RadioTower,
   RefreshCw,
+  Save,
   ShieldCheck,
   XCircle
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Badge, Button, SecondaryButton, Select, Table } from "@/components/ui";
+import { Badge, Button, Input, SecondaryButton, Select, Table } from "@/components/ui";
 import { RequestStateView } from "@/components/states/RequestStateViews";
 import {
   createDeploymentApplication,
   createDeploymentEnvironment,
+  createActionConfirmation,
   getDeploymentCockpit,
   getDeploymentPermissions,
   getDeploymentWorkspaceContext,
-  registerDeploymentEngine
+  registerDeploymentEngine,
+  runRuntimeControl,
+  updateDeploymentApplication,
+  updateDeploymentEngine,
+  updateDeploymentEnvironment
 } from "@/features/deployments/deploymentApi";
 import { DeploymentSetupPanel, setupEngineRequest, type DeploymentSetupValues } from "@/features/deployments/DeploymentSetupPanel";
 import { DeploymentRunsPanel } from "@/features/deployments/DeploymentRunsPanel";
 import { PromotionPreviewPanel } from "@/features/deployments/PromotionPreviewPanel";
+import { RuntimeControlsPanel } from "@/features/deployments/RuntimeControlsPanel";
 import {
   engineLabel,
   environmentLabel,
   hasBlockingValidation,
-  supportedControlIds,
   type DeploymentCockpit,
   type DeploymentHealth,
   type DeploymentStatus,
   type DriftStatus,
+  type EnvironmentSummary,
+  type RuntimeControl,
   type ValidationSeverity,
   type WorkflowEngineRegistration
 } from "@/features/deployments/deploymentModels";
@@ -82,9 +92,70 @@ export function DeploymentsPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
+      setShowNewSetup(false);
+    }
+  });
+  const updateApplication = useMutation({
+    mutationFn: ({ applicationId, name }: { applicationId: string; name: string }) =>
+      updateDeploymentApplication(workspaceId, applicationId, { name, description: null }),
+    onSuccess: () => {
+      setEditingApplication(false);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
+    }
+  });
+  const updateEnvironment = useMutation({
+    mutationFn: ({
+      applicationId,
+      environmentId,
+      name,
+      tier
+    }: {
+      applicationId: string;
+      environmentId: string;
+      name: string;
+      tier: EnvironmentSummary["tier"];
+    }) => updateDeploymentEnvironment(workspaceId, applicationId, environmentId, { name, tier }),
+    onSuccess: () => {
+      setEditingEnvironmentId("");
+      void queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
+    }
+  });
+  const updateEngine = useMutation({
+    mutationFn: (engine: WorkflowEngineRegistration) =>
+      updateDeploymentEngine(workspaceId, engine.id, {
+        name: engine.name,
+        baseUrl: engine.endpoint.baseUrl,
+        region: engine.endpoint.region || null,
+        credentialProvider: engine.credentialReference.provider,
+        credentialReference: engine.credentialReference.reference,
+        capabilities: engine.capabilities,
+        controls: engine.controls,
+        hostingProvider: engine.hostingProvider
+      }),
+    onSuccess: () => {
+      setEditingEngine(false);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
+    }
+  });
+  const runControl = useMutation({
+    mutationFn: async ({ engine, control }: { engine: WorkflowEngineRegistration; control: RuntimeControl }) => {
+      const confirmation = await createActionConfirmation(workspaceId, {
+        actionType: "RuntimeControl",
+        targetId: `${engine.id}:${control.id}`,
+        lifetimeSeconds: null
+      });
+      return runRuntimeControl(workspaceId, engine.id, control.id, { confirmationId: confirmation.id });
+    },
+    onSuccess: (execution) => {
+      setOperationNotice(execution.message);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
     }
   });
   const [activeView, setActiveView] = useState<ViewId>("fleet");
+  const [showNewSetup, setShowNewSetup] = useState(false);
+  const [editingApplication, setEditingApplication] = useState(false);
+  const [editingEnvironmentId, setEditingEnvironmentId] = useState("");
+  const [editingEngine, setEditingEngine] = useState(false);
   const [selectedApplicationId, setSelectedApplicationId] = useState("");
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState("");
   const [selectedEngineId, setSelectedEngineId] = useState("");
@@ -127,6 +198,8 @@ export function DeploymentsPage() {
       (item) => item.sourceEnvironmentId === sourceEnvironmentId && item.targetEnvironmentId === targetEnvironmentId
     ) ?? data?.comparisons[0];
   }, [data?.comparisons, sourceEnvironmentId, targetEnvironmentId]);
+  const canManageSetup = Boolean(permissions.data?.permissions.includes("deployments.setup.manage"));
+  const canExecuteControls = Boolean(permissions.data?.permissions.includes("deployments.controls.execute"));
 
   if (workspaceContext.isLoading || cockpit.isLoading) return <RequestStateView state="loading" title="Loading deployments" />;
   if (workspaceContext.isError) return <RequestStateView state="unexpected" title="Workspace context could not load" />;
@@ -145,7 +218,7 @@ export function DeploymentsPage() {
           description="Create a workflow application, environment, and engine registration to start managing deployments."
         />
         <DeploymentSetupPanel
-          canManageSetup={Boolean(permissions.data?.permissions.includes("deployments.setup.manage"))}
+          canManageSetup={canManageSetup}
           isSubmitting={setup.isPending}
           error={setup.error instanceof Error ? setup.error.message : undefined}
           onSubmit={(values) => setup.mutate(values)}
@@ -183,7 +256,7 @@ export function DeploymentsPage() {
             Workspace-scoped environment cockpit for workflow applications, engine registrations, desired-state promotion, observability, and assistant plan approvals.
           </p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_auto_auto]">
           <label className="text-xs font-medium text-muted-foreground">
             Workflow application
             <Select
@@ -198,12 +271,39 @@ export function DeploymentsPage() {
               ))}
             </Select>
           </label>
+          <SecondaryButton className="mt-5 h-9" disabled={!canManageSetup} onClick={() => setEditingApplication((current) => !current)}>
+            <Pencil className="h-4 w-4" />
+            Edit application
+          </SecondaryButton>
+          <Button className="mt-5 h-9" disabled={!canManageSetup} onClick={() => setShowNewSetup((current) => !current)}>
+            <Plus className="h-4 w-4" />
+            New Deployment
+          </Button>
           <div className="rounded-ui border border-border bg-surface px-3 py-2 text-xs text-muted-foreground">
             <div className="font-medium text-foreground">{selectedApplication.workspaceName}</div>
             <div>Workspace tenant boundary</div>
           </div>
         </div>
       </div>
+
+      {showNewSetup ? (
+        <DeploymentSetupPanel
+          canManageSetup={canManageSetup}
+          isSubmitting={setup.isPending}
+          error={setup.error instanceof Error ? setup.error.message : undefined}
+          onSubmit={(values) => setup.mutate(values)}
+        />
+      ) : null}
+      {editingApplication ? (
+        <ApplicationEditPanel
+          key={selectedApplication.id}
+          application={selectedApplication}
+          isSubmitting={updateApplication.isPending}
+          error={updateApplication.error instanceof Error ? updateApplication.error.message : undefined}
+          onCancel={() => setEditingApplication(false)}
+          onSubmit={(name) => updateApplication.mutate({ applicationId: selectedApplication.id, name })}
+        />
+      ) : null}
 
       <div className="flex gap-1 overflow-x-auto border-b border-border">
         {views.map((view) => (
@@ -228,6 +328,15 @@ export function DeploymentsPage() {
         <FleetView
           application={selectedApplication}
           engines={data.engines}
+          canManageSetup={canManageSetup}
+          editingEnvironmentId={editingEnvironmentId}
+          isSavingEnvironment={updateEnvironment.isPending}
+          environmentError={updateEnvironment.error instanceof Error ? updateEnvironment.error.message : undefined}
+          onEditEnvironment={setEditingEnvironmentId}
+          onCancelEnvironmentEdit={() => setEditingEnvironmentId("")}
+          onSaveEnvironment={(environmentId, name, tier) =>
+            updateEnvironment.mutate({ applicationId: selectedApplication.id, environmentId, name, tier })
+          }
           onInspectEnvironment={inspectEnvironment}
         />
       ) : null}
@@ -237,6 +346,13 @@ export function DeploymentsPage() {
           selectedEnvironmentId={selectedEnvironmentId}
           selectedEngine={selectedEngine}
           operationNotice={operationNotice}
+          canManageSetup={canManageSetup}
+          isEditingEngine={editingEngine}
+          isSavingEngine={updateEngine.isPending}
+          engineError={updateEngine.error instanceof Error ? updateEngine.error.message : undefined}
+          canExecuteControls={canExecuteControls}
+          isRunningControl={runControl.isPending}
+          controlError={runControl.error instanceof Error ? runControl.error.message : undefined}
           onEnvironmentChange={(environmentId) => {
             const nextEngine = data.engines.find((engine) => engine.environmentId === environmentId);
             setSelectedEnvironmentId(environmentId);
@@ -249,7 +365,10 @@ export function DeploymentsPage() {
             setSelectedEngineId(engineId);
             setOperationNotice("");
           }}
-          onRunControl={(label, boundary) => setOperationNotice(`${label} queued as a ${boundary} control for ${selectedEngine.name}.`)}
+          onEditEngine={() => setEditingEngine((current) => !current)}
+          onCancelEngineEdit={() => setEditingEngine(false)}
+          onSaveEngine={(engine) => updateEngine.mutate(engine)}
+          onRunControl={(control) => runControl.mutate({ engine: selectedEngine, control })}
         />
       ) : null}
       {activeView === "promotion" ? (
@@ -275,13 +394,187 @@ export function DeploymentsPage() {
   );
 }
 
+function ApplicationEditPanel({
+  application,
+  isSubmitting,
+  error,
+  onCancel,
+  onSubmit
+}: {
+  application: DeploymentCockpit["applications"][number];
+  isSubmitting: boolean;
+  error?: string;
+  onCancel: () => void;
+  onSubmit: (name: string) => void;
+}) {
+  const [name, setName] = useState(application.name);
+  const canSubmit = name.trim().length > 0 && name !== application.name;
+
+  return (
+    <form
+      className="rounded-ui border border-border bg-surface p-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (canSubmit) onSubmit(name.trim());
+      }}
+    >
+      <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+        <label className="text-sm font-medium">
+          Application name
+          <Input className="mt-1" value={name} onChange={(event) => setName(event.target.value)} />
+        </label>
+        <div className="flex gap-2">
+          <Button type="submit" disabled={!canSubmit || isSubmitting}>
+            <Save className="h-4 w-4" />
+            Save
+          </Button>
+          <SecondaryButton type="button" onClick={onCancel}>Cancel</SecondaryButton>
+        </div>
+      </div>
+      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+    </form>
+  );
+}
+
+function EnvironmentEditPanel({
+  environment,
+  isSubmitting,
+  error,
+  onCancel,
+  onSubmit
+}: {
+  environment: EnvironmentSummary;
+  isSubmitting: boolean;
+  error?: string;
+  onCancel: () => void;
+  onSubmit: (name: string, tier: EnvironmentSummary["tier"]) => void;
+}) {
+  const [name, setName] = useState(environment.name);
+  const [tier, setTier] = useState<EnvironmentSummary["tier"]>(environment.tier);
+  const canSubmit = name.trim().length > 0 && (name !== environment.name || tier !== environment.tier);
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (canSubmit) onSubmit(name.trim(), tier);
+      }}
+    >
+      <div className="grid gap-3 md:grid-cols-[1fr_180px_auto] md:items-end">
+        <label className="text-sm font-medium">
+          Environment
+          <Input className="mt-1" value={name} onChange={(event) => setName(event.target.value)} />
+        </label>
+        <label className="text-sm font-medium">
+          Tier
+          <Select className="mt-1 w-full" value={tier} onChange={(event) => setTier(event.target.value as EnvironmentSummary["tier"])}>
+            <option value="Dev">Dev</option>
+            <option value="Test">Test</option>
+            <option value="Stage">Stage</option>
+            <option value="Production">Production</option>
+          </Select>
+        </label>
+        <div className="flex gap-2">
+          <Button type="submit" disabled={!canSubmit || isSubmitting}>
+            <Save className="h-4 w-4" />
+            Save
+          </Button>
+          <SecondaryButton type="button" onClick={onCancel}>Cancel</SecondaryButton>
+        </div>
+      </div>
+      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+    </form>
+  );
+}
+
+function EngineEditPanel({
+  engine,
+  isSubmitting,
+  error,
+  onCancel,
+  onSubmit
+}: {
+  engine: WorkflowEngineRegistration;
+  isSubmitting: boolean;
+  error?: string;
+  onCancel: () => void;
+  onSubmit: (engine: WorkflowEngineRegistration) => void;
+}) {
+  const [name, setName] = useState(engine.name);
+  const [baseUrl, setBaseUrl] = useState(engine.endpoint.baseUrl);
+  const [region, setRegion] = useState(engine.endpoint.region);
+  const [credentialReference, setCredentialReference] = useState(engine.credentialReference.reference);
+  const canSubmit =
+    name.trim().length > 0 &&
+    baseUrl.trim().length > 0 &&
+    credentialReference.trim().length > 0 &&
+    (name !== engine.name || baseUrl !== engine.endpoint.baseUrl || region !== engine.endpoint.region || credentialReference !== engine.credentialReference.reference);
+
+  return (
+    <form
+      className="rounded-ui border border-border bg-surface p-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!canSubmit) return;
+        onSubmit({
+          ...engine,
+          name: name.trim(),
+          endpoint: { ...engine.endpoint, baseUrl: baseUrl.trim(), region: region.trim() },
+          credentialReference: { ...engine.credentialReference, reference: credentialReference.trim() }
+        });
+      }}
+    >
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="text-sm font-medium">
+          Engine
+          <Input className="mt-1" value={name} onChange={(event) => setName(event.target.value)} />
+        </label>
+        <label className="text-sm font-medium">
+          Base URL
+          <Input className="mt-1" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
+        </label>
+        <label className="text-sm font-medium">
+          Region
+          <Input className="mt-1" value={region} onChange={(event) => setRegion(event.target.value)} />
+        </label>
+        <label className="text-sm font-medium">
+          Credential reference
+          <Input className="mt-1" value={credentialReference} onChange={(event) => setCredentialReference(event.target.value)} />
+        </label>
+      </div>
+      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+      <div className="mt-4 flex gap-2">
+        <Button type="submit" disabled={!canSubmit || isSubmitting}>
+          <Save className="h-4 w-4" />
+          Save
+        </Button>
+        <SecondaryButton type="button" onClick={onCancel}>Cancel</SecondaryButton>
+      </div>
+    </form>
+  );
+}
+
 function FleetView({
   application,
   engines,
+  canManageSetup,
+  editingEnvironmentId,
+  isSavingEnvironment,
+  environmentError,
+  onEditEnvironment,
+  onCancelEnvironmentEdit,
+  onSaveEnvironment,
   onInspectEnvironment
 }: {
   application: DeploymentCockpit["applications"][number];
   engines: WorkflowEngineRegistration[];
+  canManageSetup: boolean;
+  editingEnvironmentId: string;
+  isSavingEnvironment: boolean;
+  environmentError?: string;
+  onEditEnvironment: (environmentId: string) => void;
+  onCancelEnvironmentEdit: () => void;
+  onSaveEnvironment: (environmentId: string, name: string, tier: EnvironmentSummary["tier"]) => void;
   onInspectEnvironment: (environmentId: string) => void;
 }) {
   const applicationEngineIds = new Set(application.environments.flatMap((environment) => environment.engineIds));
@@ -311,26 +604,46 @@ function FleetView({
           </thead>
           <tbody className="divide-y divide-border">
             {application.environments.map((environment) => (
-              <tr key={environment.id}>
-                <td className="px-3 py-3">
-                  <div className="font-medium">{environment.name}</div>
-                  <div className="text-xs text-muted-foreground">{environment.tier}</div>
-                </td>
-                <td className="px-3 py-3"><StatusBadge value={environment.health} tone={healthTone(environment.health)} /></td>
-                <td className="px-3 py-3">
-                  <div>r{environment.desiredRevision.revision}</div>
-                  <div className="text-xs text-muted-foreground">{environment.desiredRevision.commit}</div>
-                </td>
-                <td className="px-3 py-3">{environment.deployedRevision ? `r${environment.deployedRevision}` : "-"}</td>
-                <td className="px-3 py-3"><StatusBadge value={driftLabel(environment.driftStatus)} tone={driftTone(environment.driftStatus)} /></td>
-                <td className="px-3 py-3"><StatusBadge value={environment.deploymentStatus} tone={deploymentTone(environment.deploymentStatus)} /></td>
-                <td className="px-3 py-3 text-muted-foreground">{environment.engineIds.length}</td>
-                <td className="px-3 py-3 text-right">
-                  <SecondaryButton className="h-8" onClick={() => onInspectEnvironment(environment.id)}>
-                    Inspect
-                  </SecondaryButton>
-                </td>
-              </tr>
+              <Fragment key={environment.id}>
+                <tr>
+                  <td className="px-3 py-3">
+                    <div className="font-medium">{environment.name}</div>
+                    <div className="text-xs text-muted-foreground">{environment.tier}</div>
+                  </td>
+                  <td className="px-3 py-3"><StatusBadge value={environment.health} tone={healthTone(environment.health)} /></td>
+                  <td className="px-3 py-3">
+                    <div>r{environment.desiredRevision.revision}</div>
+                    <div className="text-xs text-muted-foreground">{environment.desiredRevision.commit}</div>
+                  </td>
+                  <td className="px-3 py-3">{environment.deployedRevision ? `r${environment.deployedRevision}` : "-"}</td>
+                  <td className="px-3 py-3"><StatusBadge value={driftLabel(environment.driftStatus)} tone={driftTone(environment.driftStatus)} /></td>
+                  <td className="px-3 py-3"><StatusBadge value={environment.deploymentStatus} tone={deploymentTone(environment.deploymentStatus)} /></td>
+                  <td className="px-3 py-3 text-muted-foreground">{environment.engineIds.length}</td>
+                  <td className="px-3 py-3">
+                    <div className="flex justify-end gap-2">
+                      <SecondaryButton className="h-8" disabled={!canManageSetup} onClick={() => onEditEnvironment(environment.id)}>
+                        Edit
+                      </SecondaryButton>
+                      <SecondaryButton className="h-8" onClick={() => onInspectEnvironment(environment.id)}>
+                        Inspect
+                      </SecondaryButton>
+                    </div>
+                  </td>
+                </tr>
+                {editingEnvironmentId === environment.id ? (
+                  <tr>
+                    <td colSpan={8} className="bg-muted/20 px-3 py-3">
+                      <EnvironmentEditPanel
+                        environment={environment}
+                        isSubmitting={isSavingEnvironment}
+                        error={environmentError}
+                        onCancel={onCancelEnvironmentEdit}
+                        onSubmit={(name, tier) => onSaveEnvironment(environment.id, name, tier)}
+                      />
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -344,21 +657,40 @@ function EngineView({
   selectedEnvironmentId,
   selectedEngine,
   operationNotice,
+  canManageSetup,
+  isEditingEngine,
+  isSavingEngine,
+  engineError,
+  canExecuteControls,
+  isRunningControl,
+  controlError,
   onEnvironmentChange,
   onEngineChange,
+  onEditEngine,
+  onCancelEngineEdit,
+  onSaveEngine,
   onRunControl
 }: {
   data: DeploymentCockpit;
   selectedEnvironmentId: string;
   selectedEngine: WorkflowEngineRegistration;
   operationNotice: string;
+  canManageSetup: boolean;
+  isEditingEngine: boolean;
+  isSavingEngine: boolean;
+  engineError?: string;
+  canExecuteControls: boolean;
+  isRunningControl: boolean;
+  controlError?: string;
   onEnvironmentChange: (environmentId: string) => void;
   onEngineChange: (engineId: string) => void;
-  onRunControl: (label: string, boundary: string) => void;
+  onEditEngine: () => void;
+  onCancelEngineEdit: () => void;
+  onSaveEngine: (engine: WorkflowEngineRegistration) => void;
+  onRunControl: (control: RuntimeControl) => void;
 }) {
   const environmentOptions = data.applications.flatMap((application) => application.environments);
   const environmentEngines = data.engines.filter((engine) => engine.environmentId === selectedEnvironmentId);
-  const controls = supportedControlIds(selectedEngine);
 
   return (
     <div className="space-y-4">
@@ -380,6 +712,24 @@ function EngineView({
           </Select>
         </label>
       </div>
+
+      <div className="flex justify-end">
+        <SecondaryButton disabled={!canManageSetup} onClick={onEditEngine}>
+          <Pencil className="h-4 w-4" />
+          Edit engine
+        </SecondaryButton>
+      </div>
+
+      {isEditingEngine ? (
+        <EngineEditPanel
+          key={selectedEngine.id}
+          engine={selectedEngine}
+          isSubmitting={isSavingEngine}
+          error={engineError}
+          onCancel={onCancelEngineEdit}
+          onSubmit={onSaveEngine}
+        />
+      ) : null}
 
       <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
         <Panel title={selectedEngine.name} icon={<RadioTower className="h-4 w-4" />}>
@@ -414,25 +764,14 @@ function EngineView({
           </div>
         </Panel>
         <Panel title="Supported controls" icon={<RefreshCw className="h-4 w-4" />}>
-          <div className="space-y-2">
-            {controls.map((control) => (
-              <div key={control.id} className="flex flex-col gap-2 rounded-ui border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="font-medium">{control.label}</div>
-                  <div className="text-xs text-muted-foreground">{control.boundary} boundary · {control.description}</div>
-                </div>
-                <SecondaryButton
-                  className="h-8 shrink-0"
-                  disabled={selectedEngine.health === "Unreachable"}
-                  onClick={() => onRunControl(control.label, control.boundary)}
-                >
-                  Run
-                </SecondaryButton>
-              </div>
-            ))}
-            <p className="text-xs text-muted-foreground">Unavailable controls stay hidden unless a matching engine or hosting capability is advertised.</p>
-            {operationNotice ? <div role="status" className="rounded-ui border border-primary/30 bg-primary/10 px-3 py-2 text-sm">{operationNotice}</div> : null}
-          </div>
+          <RuntimeControlsPanel
+            engine={selectedEngine}
+            canExecuteControls={canExecuteControls}
+            isRunning={isRunningControl}
+            notice={operationNotice}
+            error={controlError}
+            onRunControl={onRunControl}
+          />
         </Panel>
       </div>
     </div>

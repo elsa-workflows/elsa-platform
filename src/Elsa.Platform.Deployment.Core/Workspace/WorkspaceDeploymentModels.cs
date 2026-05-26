@@ -84,10 +84,24 @@ public sealed record WorkspacePromotionPreviewRequest(
 
 public sealed record CreateWorkflowApplicationRequest(string Name, string? Description, Guid? ActorAccountId);
 
+public sealed record UpdateWorkflowApplicationRequest(string Name, string? Description, Guid? ActorAccountId);
+
 public sealed record CreateDeploymentEnvironmentRequest(Guid ApplicationId, string Name, EnvironmentTier Tier);
+
+public sealed record UpdateDeploymentEnvironmentRequest(Guid ApplicationId, string Name, EnvironmentTier Tier);
 
 public sealed record RegisterWorkflowEngineRequest(
     Guid EnvironmentId,
+    string Name,
+    string BaseUrl,
+    string? Region,
+    string CredentialProvider,
+    string CredentialReference,
+    IReadOnlyList<EngineCapability> Capabilities,
+    IReadOnlyList<RuntimeControl> Controls,
+    string? HostingProvider);
+
+public sealed record UpdateWorkflowEngineRequest(
     string Name,
     string BaseUrl,
     string? Region,

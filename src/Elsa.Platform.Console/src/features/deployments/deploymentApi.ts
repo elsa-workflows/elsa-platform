@@ -13,6 +13,11 @@ import type {
   QueueDeploymentRunRequest,
   QueueRollbackRunRequest,
   RegisterDeploymentEngineRequest,
+  RuntimeControlExecution,
+  RuntimeControlRunRequest,
+  UpdateDeploymentApplicationRequest,
+  UpdateDeploymentEngineRequest,
+  UpdateDeploymentEnvironmentRequest,
   WorkspaceDesiredStateRevision,
   WorkspaceDeploymentRun,
   WorkspaceDeploymentRunDetailResponse,
@@ -53,6 +58,16 @@ export function createDeploymentApplication(workspaceId: string, request: Create
   });
 }
 
+export function updateDeploymentApplication(workspaceId: string, applicationId: string, request: UpdateDeploymentApplicationRequest) {
+  return apiRequest<CreatedDeploymentApplication>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/applications/${encodeURIComponent(applicationId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(request)
+    }
+  );
+}
+
 export function createDeploymentEnvironment(workspaceId: string, applicationId: string, request: CreateDeploymentEnvironmentRequest) {
   return apiRequest<CreatedDeploymentEnvironment>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/applications/${encodeURIComponent(applicationId)}/environments`,
@@ -63,11 +78,36 @@ export function createDeploymentEnvironment(workspaceId: string, applicationId: 
   );
 }
 
+export function updateDeploymentEnvironment(
+  workspaceId: string,
+  applicationId: string,
+  environmentId: string,
+  request: UpdateDeploymentEnvironmentRequest
+) {
+  return apiRequest<CreatedDeploymentEnvironment>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/applications/${encodeURIComponent(applicationId)}/environments/${encodeURIComponent(environmentId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(request)
+    }
+  );
+}
+
 export function registerDeploymentEngine(workspaceId: string, environmentId: string, request: RegisterDeploymentEngineRequest) {
   return apiRequest<WorkflowEngineRegistration>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/environments/${encodeURIComponent(environmentId)}/engines`,
     {
       method: "POST",
+      body: JSON.stringify(request)
+    }
+  );
+}
+
+export function updateDeploymentEngine(workspaceId: string, engineId: string, request: UpdateDeploymentEngineRequest) {
+  return apiRequest<WorkflowEngineRegistration>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/engines/${encodeURIComponent(engineId)}`,
+    {
+      method: "PUT",
       body: JSON.stringify(request)
     }
   );
@@ -119,5 +159,15 @@ export function queueRollbackRun(workspaceId: string, request: QueueRollbackRunR
 export function getDeploymentRun(workspaceId: string, runId: string) {
   return apiRequest<WorkspaceDeploymentRunDetailResponse>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/runs/${encodeURIComponent(runId)}`
+  );
+}
+
+export function runRuntimeControl(workspaceId: string, engineId: string, controlId: string, request: RuntimeControlRunRequest) {
+  return apiRequest<RuntimeControlExecution>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/engines/${encodeURIComponent(engineId)}/controls/${encodeURIComponent(controlId)}/run`,
+    {
+      method: "POST",
+      body: JSON.stringify(request)
+    }
   );
 }
