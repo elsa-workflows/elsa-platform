@@ -99,7 +99,7 @@ public sealed class WorkspaceArtifactService(
                 x.LogicalId,
                 x.Scope,
                 x.Version,
-                x.DesiredStateHash is null ? null : new WorkspaceArtifactDigest(x.DesiredStateHash.Algorithm, x.DesiredStateHash.Value)))
+                x.DesiredStateHash is null ? null : new WorkspaceArtifactDigest(x.DesiredStateHash.Value.Algorithm, x.DesiredStateHash.Value.Value)))
             .ToList() ?? artifact.Resources;
 
         return await store.UpdateArtifactInspectionAsync(

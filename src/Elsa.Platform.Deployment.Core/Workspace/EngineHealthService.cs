@@ -21,7 +21,7 @@ public sealed class EngineHealthService(
         var result = await probe.ProbeAsync(engine, cancellationToken);
         var health = Classify(result.Reachable, result.CertificateStatus, result.CredentialVerificationStatus);
         var credentialLastVerifiedAt = result.CredentialVerificationStatus == CredentialVerificationStatus.Verified
-            ? now
+            ? (DateTimeOffset?)now
             : null;
 
         return await store.UpdateEngineHealthAsync(
@@ -52,7 +52,7 @@ public sealed class EngineHealthService(
 
         var health = Classify(true, request.CertificateStatus, request.CredentialVerificationStatus);
         var credentialLastVerifiedAt = request.CredentialVerificationStatus == CredentialVerificationStatus.Verified
-            ? request.HeartbeatAt
+            ? (DateTimeOffset?)request.HeartbeatAt
             : null;
 
         return await store.ApplyEngineHeartbeatAsync(
