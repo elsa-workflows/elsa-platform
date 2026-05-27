@@ -46,6 +46,7 @@ import {
   engineLabel,
   environmentLabel,
   hasBlockingValidation,
+  deploymentTierCapabilities,
   type DeploymentCockpit,
   type DeploymentHealth,
   type DeploymentStatus,
@@ -312,6 +313,7 @@ export function DeploymentsPage() {
   const canExecuteDeployment = Boolean(permissions.data?.permissions.includes("deployments.run.execute"));
   const canExecuteRollback = Boolean(permissions.data?.permissions.includes("deployments.rollback.execute"));
   const canExecuteControls = Boolean(permissions.data?.permissions.includes("deployments.controls.execute"));
+  const targetAllowsRollback = hasTierCapability(getEnvironment(targetEnvironmentId), deploymentTierCapabilities.rollbackEnabled);
   const canManageTiers = workspaceContext.data?.workspaces[0]?.role === "Owner";
   const deploymentTiers = tiers.data?.tiers ?? [];
   const activeDeploymentTiers = deploymentTiers.filter((tier) => tier.status === "Active");
@@ -527,7 +529,8 @@ export function DeploymentsPage() {
           comparison={comparison}
           canPreview={canPreviewPromotion}
           canDeploy={canExecuteDeployment}
-          canRollback={canExecuteRollback}
+          canRollback={canExecuteRollback && targetAllowsRollback}
+          rollbackBlockedReason={targetAllowsRollback ? undefined : "Rollback is not enabled for the target tier."}
           isPreviewing={preview.isPending}
           isQueueingDeployment={deployRevision.isPending}
           isQueueingRollback={rollbackRevision.isPending}
@@ -612,6 +615,18 @@ function ApplicationEditPanel({
 function legacyTierFromName(name?: string): EnvironmentSummary["tier"] {
   if (name === "Dev" || name === "Test" || name === "Stage" || name === "Production") return name;
   return "Production";
+}
+
+function hasTierCapability(environment: EnvironmentSummary | undefined, capability: string) {
+  if (!environment) return false;
+  if (environment.tierCapabilities) return environment.tierCapabilities.includes(capability);
+
+  if (capability === deploymentTierCapabilities.rollbackEnabled) return environment.tier === "Production";
+  if (capability === deploymentTierCapabilities.promotionSource) return environment.tier !== "Production";
+  if (capability === deploymentTierCapabilities.promotionTarget) return environment.tier !== "Dev";
+  if (capability === deploymentTierCapabilities.confirmationRequired) return environment.tier === "Production";
+  if (capability === deploymentTierCapabilities.productionLike) return environment.tier === "Production";
+  return false;
 }
 
 function EnvironmentEditPanel({
@@ -991,6 +1006,7 @@ function PromotionView({
   canPreview,
   canDeploy,
   canRollback,
+  rollbackBlockedReason,
   isPreviewing,
   isQueueingDeployment,
   isQueueingRollback,
@@ -1009,6 +1025,7 @@ function PromotionView({
   canPreview: boolean;
   canDeploy: boolean;
   canRollback: boolean;
+  rollbackBlockedReason?: string;
   isPreviewing: boolean;
   isQueueingDeployment: boolean;
   isQueueingRollback: boolean;
@@ -1029,6 +1046,7 @@ function PromotionView({
       canPreview={canPreview}
       canDeploy={canDeploy}
       canRollback={canRollback}
+      rollbackBlockedReason={rollbackBlockedReason}
       isPreviewing={isPreviewing}
       isQueueingDeployment={isQueueingDeployment}
       isQueueingRollback={isQueueingRollback}

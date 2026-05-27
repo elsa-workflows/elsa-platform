@@ -65,6 +65,79 @@ public sealed class DeploymentValidationServiceTests
             && x.Message == "Payment API secret reference is missing.");
     }
 
+    [Fact]
+    public async Task Blocks_preview_when_tiers_do_not_allow_promotion_direction()
+    {
+        _store.Revisions[_sourceRevisionId] = Revision(_sourceRevisionId, _sourceEnvironmentId, 4, """{"records":[]}""");
+        _store.Engines[_targetEngineId] = Engine(_targetEngineId, _targetEnvironmentId);
+        _store.Environments.Add(Environment(_sourceEnvironmentId, "Sandbox", EnvironmentTier.Dev, DeploymentTierCapabilities.DevelopmentLike));
+        _store.Environments.Add(Environment(_targetEnvironmentId, "Review", EnvironmentTier.Test, DeploymentTierCapabilities.TestLike));
+        var service = new DeploymentValidationService(_store);
+
+        var comparison = await service.PreviewPromotionAsync(
+            _workspaceId,
+            new WorkspacePromotionPreviewRequest(_sourceEnvironmentId, _targetEnvironmentId, _sourceRevisionId, _targetEngineId));
+
+        comparison.Validations.Should().Contain(x =>
+            x.Id == "deployment.tier.source.unsupported"
+            && x.Severity == ValidationSeverity.Blocker
+            && x.Message == "Sandbox cannot be used as a promotion source.");
+        comparison.Validations.Should().Contain(x =>
+            x.Id == "deployment.tier.target.unsupported"
+            && x.Severity == ValidationSeverity.Blocker
+            && x.Message == "Review cannot be used as a promotion target.");
+    }
+
+    [Fact]
+    public async Task Applies_target_tier_safeguards_from_capabilities()
+    {
+        _store.Revisions[_sourceRevisionId] = Revision(_sourceRevisionId, _sourceEnvironmentId, 5, """
+            {"records":[{"kind":"SecretReference","name":"Payment API","payload":{"reference":"kv://payments/api"}}]}
+            """);
+        _store.Engines[_targetEngineId] = Engine(_targetEngineId, _targetEnvironmentId);
+        _store.Environments.Add(Environment(_sourceEnvironmentId, "UAT", EnvironmentTier.Stage, DeploymentTierCapabilities.PromotionSource));
+        _store.Environments.Add(Environment(
+            _targetEnvironmentId,
+            "Production EU",
+            EnvironmentTier.Production,
+            DeploymentTierCapabilities.PromotionTarget,
+            DeploymentTierCapabilities.ProductionLike,
+            DeploymentTierCapabilities.ConfirmationRequired,
+            DeploymentTierCapabilities.RollbackEnabled,
+            DeploymentTierCapabilities.SecretVerificationRequired,
+            DeploymentTierCapabilities.ObservabilityRequired));
+        var service = new DeploymentValidationService(_store);
+
+        var comparison = await service.PreviewPromotionAsync(
+            _workspaceId,
+            new WorkspacePromotionPreviewRequest(_sourceEnvironmentId, _targetEnvironmentId, _sourceRevisionId, _targetEngineId));
+
+        comparison.Validations.Should().Contain(x => x.Id == "deployment.tier.production-like" && x.Severity == ValidationSeverity.Warning);
+        comparison.Validations.Should().Contain(x => x.Id == "deployment.tier.confirmation-required" && x.Severity == ValidationSeverity.Warning);
+        comparison.Validations.Should().Contain(x => x.Id == "deployment.tier.rollback-enabled" && x.Severity == ValidationSeverity.Pass);
+        comparison.Validations.Should().Contain(x => x.Id == "deployment.tier.observability-required" && x.Severity == ValidationSeverity.Blocker);
+        comparison.Validations.Should().Contain(x => x.Scope == "Secret references" && x.Severity == ValidationSeverity.Pass);
+    }
+
+    [Fact]
+    public async Task Skips_secret_reference_validation_when_target_tier_does_not_require_it()
+    {
+        _store.Revisions[_sourceRevisionId] = Revision(_sourceRevisionId, _sourceEnvironmentId, 6, """
+            {"records":[{"kind":"SecretReference","name":"Payment API","payload":{"reference":""}}]}
+            """);
+        _store.Engines[_targetEngineId] = Engine(_targetEngineId, _targetEnvironmentId);
+        _store.Environments.Add(Environment(_sourceEnvironmentId, "Build", EnvironmentTier.Dev, DeploymentTierCapabilities.PromotionSource));
+        _store.Environments.Add(Environment(_targetEnvironmentId, "QA", EnvironmentTier.Test, DeploymentTierCapabilities.PromotionTarget));
+        var service = new DeploymentValidationService(_store);
+
+        var comparison = await service.PreviewPromotionAsync(
+            _workspaceId,
+            new WorkspacePromotionPreviewRequest(_sourceEnvironmentId, _targetEnvironmentId, _sourceRevisionId, _targetEngineId));
+
+        comparison.Validations.Should().NotContain(x => x.Scope == "Secret references");
+        comparison.Validations.Should().NotContain(x => x.Severity == ValidationSeverity.Blocker);
+    }
+
     private WorkspaceDesiredStateRevision Revision(Guid revisionId, Guid environmentId, int revisionNumber, string desiredStateJson) =>
         new(
             revisionId,
@@ -100,14 +173,37 @@ public sealed class DeploymentValidationServiceTests
             DateTimeOffset.UtcNow,
             DateTimeOffset.UtcNow);
 
+    private EnvironmentSummary Environment(Guid environmentId, string name, EnvironmentTier tier, params string[] capabilities) =>
+        new(
+            environmentId.ToString("D"),
+            name,
+            tier,
+            DeploymentHealth.Healthy,
+            new DesiredStateRevision(_sourceRevisionId.ToString("D"), 1, "abc123", "Revision 1", DateTimeOffset.UtcNow),
+            null,
+            DeploymentStatus.Succeeded,
+            DriftStatus.InSync,
+            [],
+            name,
+            DeploymentTierStatus.Active.ToString(),
+            capabilities);
+
     private sealed class RecordingDeploymentStore : IWorkspaceDeploymentStore
     {
         public Dictionary<Guid, WorkspaceDesiredStateRevision> Revisions { get; } = [];
         public Dictionary<Guid, WorkspaceDesiredStateRevision?> LatestByEnvironment { get; } = [];
         public Dictionary<Guid, WorkspaceWorkflowEngine> Engines { get; } = [];
+        public List<EnvironmentSummary> Environments { get; } = [];
 
         public Task<DeploymentCockpit> GetCockpitAsync(Guid workspaceId, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            Task.FromResult(new DeploymentCockpit(
+                [new WorkflowApplication(Guid.NewGuid().ToString("D"), "Payments", "Workspace", Environments)],
+                [],
+                [],
+                [],
+                [],
+                [],
+                []));
 
         public Task<WorkspaceDeploymentApplication> CreateApplicationAsync(Guid workspaceId, CreateWorkflowApplicationRequest request, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();

@@ -19,6 +19,14 @@ export type DeploymentPermission =
   | "deployments.controls.execute"
   | "deployments.observability.manage";
 
+export const deploymentTierCapabilities = {
+  promotionSource: "deployment.promotion.source",
+  promotionTarget: "deployment.promotion.target",
+  confirmationRequired: "deployment.confirmation.required",
+  rollbackEnabled: "deployment.rollback.enabled",
+  productionLike: "deployment.tier.production-like"
+} as const;
+
 export type RuntimeControl = {
   id: string;
   label: string;

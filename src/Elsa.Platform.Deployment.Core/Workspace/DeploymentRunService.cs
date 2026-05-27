@@ -67,6 +67,9 @@ public sealed class DeploymentRunService(
         if (await store.HasActiveRunAsync(workspaceId, request.TargetEnvironmentId, cancellationToken))
             throw new InvalidOperationException("An active deployment run already exists for the target environment.");
 
+        var targetEnvironment = await GetTargetEnvironmentAsync(workspaceId, request.TargetEnvironmentId, cancellationToken);
+        ValidateTierCapabilities(targetEnvironment, actionType);
+
         var confirmation = await confirmations.ConsumeConfirmationAsync(
             workspaceId,
             confirmationId,
@@ -89,4 +92,30 @@ public sealed class DeploymentRunService(
             _timeProvider.GetUtcNow(),
             cancellationToken);
     }
+
+    private async Task<EnvironmentSummary?> GetTargetEnvironmentAsync(
+        Guid workspaceId,
+        Guid targetEnvironmentId,
+        CancellationToken cancellationToken)
+    {
+        if (store is not IWorkspaceDeploymentStore deploymentStore)
+            return null;
+
+        var cockpit = await deploymentStore.GetCockpitAsync(workspaceId, cancellationToken);
+        return cockpit.Applications
+            .SelectMany(x => x.Environments)
+            .SingleOrDefault(x => string.Equals(x.Id, targetEnvironmentId.ToString("D"), StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void ValidateTierCapabilities(EnvironmentSummary? targetEnvironment, ConfirmationActionType actionType)
+    {
+        if (targetEnvironment is null)
+            return;
+
+        if (actionType == ConfirmationActionType.Rollback && !DeploymentTierService.CanRollback(targetEnvironment))
+            throw new InvalidOperationException($"{TierLabel(targetEnvironment)} does not allow rollback actions.");
+    }
+
+    private static string TierLabel(EnvironmentSummary environment) =>
+        string.IsNullOrWhiteSpace(environment.TierName) ? environment.Tier.ToString() : environment.TierName;
 }

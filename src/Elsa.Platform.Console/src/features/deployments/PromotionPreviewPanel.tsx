@@ -19,6 +19,7 @@ type PromotionPreviewPanelProps = {
   canPreview: boolean;
   canDeploy: boolean;
   canRollback: boolean;
+  rollbackBlockedReason?: string;
   isPreviewing: boolean;
   isQueueingDeployment: boolean;
   isQueueingRollback: boolean;
@@ -39,6 +40,7 @@ export function PromotionPreviewPanel({
   canPreview,
   canDeploy,
   canRollback,
+  rollbackBlockedReason,
   isPreviewing,
   isQueueingDeployment,
   isQueueingRollback,
@@ -129,6 +131,7 @@ export function PromotionPreviewPanel({
                 </SecondaryButton>
               </div>
               {blocked ? <p className="mt-3 text-xs text-destructive">Resolve validation blockers before deployment can start.</p> : null}
+              {rollbackBlockedReason ? <p className="mt-3 text-xs text-muted-foreground">{rollbackBlockedReason}</p> : null}
               {!canDeploy || !canRollback ? <p className="mt-3 text-xs text-muted-foreground">Deployment and rollback actions require execute permissions and single-user confirmation.</p> : null}
             </div>
           </div>

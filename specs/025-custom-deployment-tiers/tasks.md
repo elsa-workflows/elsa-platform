@@ -116,18 +116,18 @@
 
 ### Tests for User Story 3
 
-- [ ] T045 [P] [US3] Add core validation tests for promotion-source, promotion-target, production-like, confirmation-required, rollback-enabled, secret-verification-required, and observability-required capabilities in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentValidationServiceTests.cs`
+- [X] T045 [P] [US3] Add core validation tests for promotion-source, promotion-target, production-like, confirmation-required, rollback-enabled, secret-verification-required, and observability-required capabilities in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentValidationServiceTests.cs`
 - [ ] T046 [P] [US3] Add API tests proving promotion preview and run preparation use tier capabilities rather than tier names in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTierApiTests.cs`
 - [ ] T047 [P] [US3] Add console tests for production-like warnings, promotion-target blockers, confirmation messaging, and rollback availability from capability IDs in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 3
 
 - [X] T048 [US3] Add tier capability lookup helpers for deployment safeguards in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierService.cs`
-- [ ] T049 [US3] Update promotion preview validation to block invalid source or target tier capability combinations in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentValidationService.cs`
-- [ ] T050 [US3] Update deployment run validation to apply confirmation and rollback capability semantics in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`
-- [ ] T051 [US3] Update API promotion preview and run endpoints to include tier capability validation failures in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [ ] T052 [US3] Update console promotion, deployment, and rollback affordances to use tier capability IDs from cockpit data in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [ ] T053 [US3] Update run history and deployment warnings copy to reference tier labels while basing behavior on capability IDs in `src/Elsa.Platform.Console/src/features/deployments/DeploymentRunsPanel.tsx`
+- [X] T049 [US3] Update promotion preview validation to block invalid source or target tier capability combinations in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentValidationService.cs`
+- [X] T050 [US3] Update deployment run validation to apply confirmation and rollback capability semantics in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`
+- [X] T051 [US3] Update API promotion preview and run endpoints to include tier capability validation failures in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T052 [US3] Update console promotion, deployment, and rollback affordances to use tier capability IDs from cockpit data in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T053 [US3] Update run history and deployment warnings copy to reference tier labels while basing behavior on capability IDs in `src/Elsa.Platform.Console/src/features/deployments/DeploymentRunsPanel.tsx`
 
 **Checkpoint**: User Story 3 is independently functional and proves semantics come from coded capabilities, not tier names.
 

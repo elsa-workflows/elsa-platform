@@ -22,7 +22,8 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
         var sourceRecords = ParseRecords(source.DesiredStateJson);
         var targetRecords = target is null ? [] : ParseRecords(target.DesiredStateJson);
         var diff = Diff(sourceRecords, targetRecords);
-        var validations = Validate(sourceRecords, engine);
+        var (sourceEnvironment, targetEnvironment) = await GetPromotionEnvironmentsAsync(workspaceId, request, cancellationToken);
+        var validations = Validate(sourceRecords, engine, sourceEnvironment, targetEnvironment);
 
         return new PromotionComparison(
             request.SourceEnvironmentId.ToString("D"),
@@ -110,25 +111,66 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
             .ToList();
     }
 
-    private static IReadOnlyList<DeploymentValidation> Validate(IReadOnlyList<DesiredRecord> source, WorkspaceWorkflowEngine? engine)
+    private async Task<(EnvironmentSummary? Source, EnvironmentSummary? Target)> GetPromotionEnvironmentsAsync(
+        Guid workspaceId,
+        WorkspacePromotionPreviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var cockpit = await store!.GetCockpitAsync(workspaceId, cancellationToken);
+            var environments = cockpit.Applications.SelectMany(x => x.Environments).ToList();
+            return (
+                environments.SingleOrDefault(x => string.Equals(x.Id, request.SourceEnvironmentId.ToString("D"), StringComparison.OrdinalIgnoreCase)),
+                environments.SingleOrDefault(x => string.Equals(x.Id, request.TargetEnvironmentId.ToString("D"), StringComparison.OrdinalIgnoreCase)));
+        }
+        catch (NotSupportedException)
+        {
+            return (null, null);
+        }
+    }
+
+    private static IReadOnlyList<DeploymentValidation> Validate(
+        IReadOnlyList<DesiredRecord> source,
+        WorkspaceWorkflowEngine? engine,
+        EnvironmentSummary? sourceEnvironment,
+        EnvironmentSummary? targetEnvironment)
     {
         var validations = new List<DeploymentValidation>();
         if (engine is null)
             validations.Add(new DeploymentValidation("deployment.engine.missing", ValidationSeverity.Blocker, "Engine", "Target engine is not visible in this workspace."));
+        if (sourceEnvironment is not null && !DeploymentTierService.IsPromotionSource(sourceEnvironment))
+            validations.Add(new DeploymentValidation("deployment.tier.source.unsupported", ValidationSeverity.Blocker, "Tier", $"{TierLabel(sourceEnvironment)} cannot be used as a promotion source."));
+        if (targetEnvironment is not null && !DeploymentTierService.IsPromotionTarget(targetEnvironment))
+            validations.Add(new DeploymentValidation("deployment.tier.target.unsupported", ValidationSeverity.Blocker, "Tier", $"{TierLabel(targetEnvironment)} cannot be used as a promotion target."));
+        if (targetEnvironment is not null && DeploymentTierService.IsProductionLike(targetEnvironment))
+            validations.Add(new DeploymentValidation("deployment.tier.production-like", ValidationSeverity.Warning, "Tier safeguards", $"{TierLabel(targetEnvironment)} applies production-grade safeguards."));
+        if (targetEnvironment is not null && DeploymentTierService.RequiresConfirmation(targetEnvironment))
+            validations.Add(new DeploymentValidation("deployment.tier.confirmation-required", ValidationSeverity.Warning, "Tier safeguards", $"{TierLabel(targetEnvironment)} requires explicit deployment confirmation."));
+        if (targetEnvironment is not null && DeploymentTierService.CanRollback(targetEnvironment))
+            validations.Add(new DeploymentValidation("deployment.tier.rollback-enabled", ValidationSeverity.Pass, "Tier safeguards", $"{TierLabel(targetEnvironment)} allows rollback actions."));
 
-        foreach (var secret in source.Where(x => string.Equals(x.Kind, "SecretReference", StringComparison.OrdinalIgnoreCase)))
+        if (targetEnvironment is null || DeploymentTierService.RequiresSecretVerification(targetEnvironment))
         {
-            using var payload = JsonDocument.Parse(secret.Payload);
-            var reference = payload.RootElement.TryGetProperty("reference", out var value) ? value.GetString() : null;
-            validations.Add(string.IsNullOrWhiteSpace(reference)
-                ? new DeploymentValidation($"secret-{secret.Name}", ValidationSeverity.Blocker, "Secret references", $"{secret.Name} secret reference is missing.")
-                : new DeploymentValidation($"secret-{secret.Name}", ValidationSeverity.Pass, "Secret references", $"{secret.Name} secret reference is present."));
+            foreach (var secret in source.Where(x => string.Equals(x.Kind, "SecretReference", StringComparison.OrdinalIgnoreCase)))
+            {
+                using var payload = JsonDocument.Parse(secret.Payload);
+                var reference = payload.RootElement.TryGetProperty("reference", out var value) ? value.GetString() : null;
+                validations.Add(string.IsNullOrWhiteSpace(reference)
+                    ? new DeploymentValidation($"secret-{secret.Name}", ValidationSeverity.Blocker, "Secret references", $"{secret.Name} secret reference is missing.")
+                    : new DeploymentValidation($"secret-{secret.Name}", ValidationSeverity.Pass, "Secret references", $"{secret.Name} secret reference is present."));
+            }
         }
+        if (targetEnvironment is not null && DeploymentTierService.RequiresObservability(targetEnvironment) && !source.Any(x => string.Equals(x.Kind, "ObservabilityBinding", StringComparison.OrdinalIgnoreCase)))
+            validations.Add(new DeploymentValidation("deployment.tier.observability-required", ValidationSeverity.Blocker, "Observability", $"{TierLabel(targetEnvironment)} requires at least one observability binding."));
 
         return validations.Count == 0
             ? [new DeploymentValidation("deployment.preview.valid", ValidationSeverity.Pass, "Deployment preview", "Promotion preview has no blockers.")]
             : validations;
     }
+
+    private static string TierLabel(EnvironmentSummary environment) =>
+        string.IsNullOrWhiteSpace(environment.TierName) ? environment.Tier.ToString() : environment.TierName;
 
     private static DiffCategory Category(string kind) =>
         kind switch

@@ -122,6 +122,35 @@ public sealed class DeploymentTierService(IWorkspaceDeploymentTierStore? store =
     public static bool HasCapability(DeploymentTierProfile? tier, string capability) =>
         tier?.Capabilities.Contains(capability, StringComparer.Ordinal) == true;
 
+    public static bool HasCapability(EnvironmentSummary? environment, string capability) =>
+        environment is not null && CapabilitiesFor(environment).Contains(capability, StringComparer.Ordinal);
+
+    public static bool IsPromotionSource(EnvironmentSummary? environment) =>
+        HasCapability(environment, DeploymentTierCapabilities.PromotionSource);
+
+    public static bool IsPromotionTarget(EnvironmentSummary? environment) =>
+        HasCapability(environment, DeploymentTierCapabilities.PromotionTarget);
+
+    public static bool RequiresConfirmation(EnvironmentSummary? environment) =>
+        HasCapability(environment, DeploymentTierCapabilities.ConfirmationRequired);
+
+    public static bool CanRollback(EnvironmentSummary? environment) =>
+        HasCapability(environment, DeploymentTierCapabilities.RollbackEnabled);
+
+    public static bool RequiresSecretVerification(EnvironmentSummary? environment) =>
+        HasCapability(environment, DeploymentTierCapabilities.SecretVerificationRequired);
+
+    public static bool RequiresObservability(EnvironmentSummary? environment) =>
+        HasCapability(environment, DeploymentTierCapabilities.ObservabilityRequired);
+
+    public static bool IsProductionLike(EnvironmentSummary? environment) =>
+        HasCapability(environment, DeploymentTierCapabilities.ProductionLike);
+
+    public static IReadOnlyList<string> CapabilitiesFor(EnvironmentSummary environment) =>
+        environment.TierCapabilities is { Count: > 0 }
+            ? environment.TierCapabilities
+            : DefaultCapabilitiesByLegacyTier[environment.Tier];
+
     public static IReadOnlyList<string> ChangedSafeguards(
         IReadOnlyCollection<string> addedCapabilities,
         IReadOnlyCollection<string> removedCapabilities)

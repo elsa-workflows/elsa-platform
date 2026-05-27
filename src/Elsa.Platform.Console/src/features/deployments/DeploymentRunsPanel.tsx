@@ -41,25 +41,39 @@ export function DeploymentRunsPanel({ data }: DeploymentRunsPanelProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {data.history.map((event) => (
-                <tr key={event.id}>
-                  <td className="px-3 py-3">
-                    r{event.revision}
-                    {event.rollbackSourceRevision ? <div className="text-xs text-muted-foreground">from r{event.rollbackSourceRevision}</div> : null}
-                  </td>
-                  <td className="px-3 py-3"><StatusBadge value={event.status} tone={deploymentTone(event.status)} /></td>
-                  <td className="px-3 py-3">{event.actor}</td>
-                  <td className="px-3 py-3 text-muted-foreground">{environmentLabel(event.environmentId, data.applications)} / {engineLabel(event.engineId, data.engines)}</td>
-                  <td className="px-3 py-3">{event.validationOutcome}</td>
-                  <td className="px-3 py-3">{formatDateTime(event.occurredAt)}</td>
-                </tr>
-              ))}
+              {data.history.map((event) => {
+                const environment = findEnvironment(event.environmentId, data.applications);
+                return (
+                  <tr key={event.id}>
+                    <td className="px-3 py-3">
+                      r{event.revision}
+                      {event.rollbackSourceRevision ? <div className="text-xs text-muted-foreground">from r{event.rollbackSourceRevision}</div> : null}
+                    </td>
+                    <td className="px-3 py-3"><StatusBadge value={event.status} tone={deploymentTone(event.status)} /></td>
+                    <td className="px-3 py-3">{event.actor}</td>
+                    <td className="px-3 py-3 text-muted-foreground">
+                      {environment?.name ?? environmentLabel(event.environmentId, data.applications)} / {engineLabel(event.engineId, data.engines)}
+                      <div className="text-xs">{environment?.tierName ?? environment?.tier ?? "Unknown tier"}</div>
+                    </td>
+                    <td className="px-3 py-3">{event.validationOutcome}</td>
+                    <td className="px-3 py-3">{formatDateTime(event.occurredAt)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </Table>
       )}
     </section>
   );
+}
+
+function findEnvironment(environmentId: string, applications: DeploymentCockpit["applications"]) {
+  for (const application of applications) {
+    const environment = application.environments.find((item) => item.id === environmentId);
+    if (environment) return environment;
+  }
+  return undefined;
 }
 
 function StatusBadge({ value, tone }: { value: string; tone: StatusTone }) {
