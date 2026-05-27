@@ -85,6 +85,7 @@ else
         .WithEnvironment("Authentication__PlatformIdentity__RedirectUri", "/api/auth/callback")
         .WithEnvironment("Authentication__PlatformIdentity__PostLogoutRedirectUri", "/admin")
         .WithEnvironment("Authentication__PlatformIdentity__RequireHttpsMetadata", "false")
+        .WithEnvironment("Authentication__Admin__AllowAuthenticatedCustomerSession", "true")
         .WithEnvironment("Authentication__WorkspaceTrustedHeaders__Enabled", "false")
         .WaitFor(keycloak);
 }
