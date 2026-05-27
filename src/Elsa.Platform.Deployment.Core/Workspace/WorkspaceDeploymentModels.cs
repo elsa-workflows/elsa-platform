@@ -23,7 +23,9 @@ public sealed record WorkspaceDeploymentEnvironment(
     DeploymentStatus DeploymentStatus,
     DriftStatus DriftStatus,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    Guid? TierId = null,
+    DeploymentTierProfile? TierDefinition = null);
 
 public sealed record WorkspaceWorkflowEngine(
     Guid Id,
@@ -88,9 +90,9 @@ public sealed record CreateWorkflowApplicationRequest(string Name, string? Descr
 
 public sealed record UpdateWorkflowApplicationRequest(string Name, string? Description, Guid? ActorAccountId);
 
-public sealed record CreateDeploymentEnvironmentRequest(Guid ApplicationId, string Name, EnvironmentTier Tier);
+public sealed record CreateDeploymentEnvironmentRequest(Guid ApplicationId, string Name, EnvironmentTier Tier, Guid? TierId = null);
 
-public sealed record UpdateDeploymentEnvironmentRequest(Guid ApplicationId, string Name, EnvironmentTier Tier);
+public sealed record UpdateDeploymentEnvironmentRequest(Guid ApplicationId, string Name, EnvironmentTier Tier, Guid? TierId = null);
 
 public sealed record RegisterWorkflowEngineRequest(
     Guid EnvironmentId,

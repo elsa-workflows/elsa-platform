@@ -245,15 +245,61 @@ internal sealed class DeploymentEnvironmentConfiguration : IEntityTypeConfigurat
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Name).HasMaxLength(200).IsRequired();
         builder.Property(x => x.Tier).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.TierRequiresReview).HasDefaultValue(false);
         builder.Property(x => x.DeploymentStatus).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.DriftStatus).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.Name }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.TierId });
+        builder.HasOne(x => x.TierDefinition).WithMany(x => x.Environments).HasForeignKey(x => x.TierId).OnDelete(DeleteBehavior.Restrict);
         builder.HasMany(x => x.Engines).WithOne(x => x.Environment).HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.Revisions).WithOne(x => x.Environment).HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.ObservabilityBindings).WithOne(x => x.Environment).HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.DriftReports).WithOne(x => x.Environment).HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class DeploymentTierDefinitionConfiguration : IEntityTypeConfiguration<DeploymentTierDefinitionEntity>
+{
+    public void Configure(EntityTypeBuilder<DeploymentTierDefinitionEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Description).HasMaxLength(1000);
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.ArchivedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.HasIndex(x => new { x.WorkspaceId, x.Status, x.Name }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.SortOrder });
+        builder.HasOne<Workspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.Capabilities).WithOne(x => x.Tier).HasForeignKey(x => x.TierId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.Changes).WithOne(x => x.Tier).HasForeignKey(x => x.TierId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class DeploymentTierCapabilityAssignmentConfiguration : IEntityTypeConfiguration<DeploymentTierCapabilityAssignmentEntity>
+{
+    public void Configure(EntityTypeBuilder<DeploymentTierCapabilityAssignmentEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.CapabilityId).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.TierId, x.CapabilityId }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.CapabilityId });
+    }
+}
+
+internal sealed class DeploymentTierChangeRecordConfiguration : IEntityTypeConfiguration<DeploymentTierChangeRecordEntity>
+{
+    public void Configure(EntityTypeBuilder<DeploymentTierChangeRecordEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.ChangeType).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.Summary).HasMaxLength(2048).IsRequired();
+        builder.Property(x => x.ChangedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.WorkspaceId, x.TierId, x.ChangedAt });
     }
 }
 

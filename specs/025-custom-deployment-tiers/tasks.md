@@ -18,9 +18,9 @@
 
 **Purpose**: Prepare shared files and establish the implementation surface for custom deployment tiers.
 
-- [ ] T001 Create deployment tier domain file in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierModels.cs`
-- [ ] T002 Create deployment tier service file in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierService.cs`
-- [ ] T003 Create deployment tier store contract in `src/Elsa.Platform.Deployment.Core/Workspace/IWorkspaceDeploymentTierStore.cs`
+- [X] T001 Create deployment tier domain file in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierModels.cs`
+- [X] T002 Create deployment tier service file in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierService.cs`
+- [X] T003 Create deployment tier store contract in `src/Elsa.Platform.Deployment.Core/Workspace/IWorkspaceDeploymentTierStore.cs`
 - [ ] T004 [P] Create core tier test file in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentTierServiceTests.cs`
 - [ ] T005 [P] Create persistence tier test file in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceTierPersistenceTests.cs`
 - [ ] T006 [P] Create API tier test file in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTierApiTests.cs`
@@ -34,16 +34,16 @@
 
 **Critical**: No user story work can begin until this phase is complete.
 
-- [ ] T008 Define `DeploymentTierStatus`, `DeploymentTierCapabilityCategory`, capability ID constants, and capability catalog records in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierModels.cs`
-- [ ] T009 Define tier definition, tier assignment, tier change record, tier impact summary, and tier environment sample records in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierModels.cs`
-- [ ] T010 Define create, update, archive, restore, and impact-preview request records in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierModels.cs`
-- [ ] T011 Define `IWorkspaceDeploymentTierStore` operations for capability catalog, tier list, create, update, archive, restore, impact preview, default seeding, and environment counts in `src/Elsa.Platform.Deployment.Core/Workspace/IWorkspaceDeploymentTierStore.cs`
-- [ ] T012 Implement platform-defined capability catalog and default Dev/Test/Stage/Production tier mappings in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierService.cs`
-- [ ] T013 Update deployment environment and cockpit tier response models to carry tier identity, label, status, and capabilities in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`
-- [ ] T014 Update cockpit environment summary tier shape in `src/Elsa.Platform.Deployment.Core/Cockpit/DeploymentCockpitModels.cs`
-- [ ] T015 [P] Add API DTOs for tier capabilities, tier definitions, tier mutations, impact preview, and tier-aware environment requests in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentContracts.cs`
-- [ ] T016 [P] Add TypeScript tier capability, tier definition, impact preview, and tier-aware environment model types in `src/Elsa.Platform.Console/src/features/deployments/deploymentModels.ts`
-- [ ] T017 Register deployment tier core service only, leaving concrete store wiring until persistence support exists in `src/Elsa.Platform.Api/Program.cs`
+- [X] T008 Define `DeploymentTierStatus`, `DeploymentTierCapabilityCategory`, capability ID constants, and capability catalog records in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierModels.cs`
+- [X] T009 Define tier definition, tier assignment, tier change record, tier impact summary, and tier environment sample records in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierModels.cs`
+- [X] T010 Define create, update, archive, restore, and impact-preview request records in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierModels.cs`
+- [X] T011 Define `IWorkspaceDeploymentTierStore` operations for capability catalog, tier list, create, update, archive, restore, impact preview, default seeding, and environment counts in `src/Elsa.Platform.Deployment.Core/Workspace/IWorkspaceDeploymentTierStore.cs`
+- [X] T012 Implement platform-defined capability catalog and default Dev/Test/Stage/Production tier mappings in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierService.cs`
+- [X] T013 Update deployment environment and cockpit tier response models to carry tier identity, label, status, and capabilities in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`
+- [X] T014 Update cockpit environment summary tier shape in `src/Elsa.Platform.Deployment.Core/Cockpit/DeploymentCockpitModels.cs`
+- [X] T015 [P] Add API DTOs for tier capabilities, tier definitions, tier mutations, impact preview, and tier-aware environment requests in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentContracts.cs`
+- [X] T016 [P] Add TypeScript tier capability, tier definition, impact preview, and tier-aware environment model types in `src/Elsa.Platform.Console/src/features/deployments/deploymentModels.ts`
+- [X] T017 Register deployment tier core service only, leaving concrete store wiring until persistence support exists in `src/Elsa.Platform.Api/Program.cs`
 
 **Checkpoint**: Tier primitives, request/response models, and default semantic catalog are available for backend, API, and console work.
 
@@ -64,16 +64,16 @@
 
 ### Implementation for User Story 1
 
-- [ ] T022 [US1] Implement tier validation, impact-preview generation, changed-safeguard summaries, create, update, archive, restore, and capability assignment orchestration in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierService.cs`
-- [ ] T023 [US1] Add tier entity classes for definitions, capability assignments, and change records in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`
-- [ ] T024 [US1] Configure tier entity mappings, indexes, relationships, value conversions, and delete behavior in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
-- [ ] T025 [US1] Implement tier store methods for list, create, update, archive, restore, environment count, audit persistence, and concrete store registration in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs` and `src/Elsa.Platform.Api/Program.cs`
-- [ ] T026 [US1] Add SQLite migration for deployment tier definitions, capability assignments, and change records in `src/Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/Migrations/`
-- [ ] T027 [US1] Add SQL Server migration for deployment tier definitions, capability assignments, and change records in `src/Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
-- [ ] T028 [US1] Add tier capability and tier management endpoints under workspace deployment routes in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [ ] T029 [US1] Add deployment tier API client functions in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
-- [ ] T030 [US1] Implement admin tier management UI in `src/Elsa.Platform.Console/src/features/deployments/DeploymentTiersPanel.tsx`
-- [ ] T031 [US1] Integrate the tier management panel into the deployments page in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T022 [US1] Implement tier validation, impact-preview generation, changed-safeguard summaries, create, update, archive, restore, and capability assignment orchestration in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierService.cs`
+- [X] T023 [US1] Add tier entity classes for definitions, capability assignments, and change records in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`
+- [X] T024 [US1] Configure tier entity mappings, indexes, relationships, value conversions, and delete behavior in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
+- [X] T025 [US1] Implement tier store methods for list, create, update, archive, restore, environment count, audit persistence, and concrete store registration in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs` and `src/Elsa.Platform.Api/Program.cs`
+- [X] T026 [US1] Add SQLite migration for deployment tier definitions, capability assignments, and change records in `src/Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/Migrations/`
+- [X] T027 [US1] Add SQL Server migration for deployment tier definitions, capability assignments, and change records in `src/Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
+- [X] T028 [US1] Add tier capability and tier management endpoints under workspace deployment routes in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T029 [US1] Add deployment tier API client functions in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
+- [X] T030 [US1] Implement admin tier management UI in `src/Elsa.Platform.Console/src/features/deployments/DeploymentTiersPanel.tsx`
+- [X] T031 [US1] Integrate the tier management panel into the deployments page in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
 
 **Checkpoint**: User Story 1 is independently functional and testable through core tests, persistence tests, API tests, and the console tier management panel.
 
@@ -94,15 +94,15 @@
 
 ### Implementation for User Story 2
 
-- [ ] T036 [US2] Replace environment create/update request tier enum usage with tier ID validation in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
-- [ ] T037 [US2] Add `TierId` and temporary legacy tier fields to deployment environment entity and projection code in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`
-- [ ] T038 [US2] Update deployment environment mapping and indexes for tier references in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
-- [ ] T039 [US2] Update environment create/update persistence to validate same-workspace active tier selection and preserve archived-tier reads in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [ ] T040 [US2] Update cockpit projection to include tier identity, label, status, and capability IDs in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [ ] T041 [US2] Update environment create/update endpoint request handling to accept `tierId` and transition fixed tier compatibility in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [ ] T042 [US2] Update deployment setup API client requests to send `tierId` in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
-- [ ] T043 [US2] Replace fixed tier dropdown with active workspace tier selector in `src/Elsa.Platform.Console/src/features/deployments/DeploymentSetupPanel.tsx`
-- [ ] T044 [US2] Update environment edit controls and cockpit display to show custom tier labels and archived status in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T036 [US2] Replace environment create/update request tier enum usage with tier ID validation in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
+- [X] T037 [US2] Add `TierId` and temporary legacy tier fields to deployment environment entity and projection code in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`
+- [X] T038 [US2] Update deployment environment mapping and indexes for tier references in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
+- [X] T039 [US2] Update environment create/update persistence to validate same-workspace active tier selection and preserve archived-tier reads in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T040 [US2] Update cockpit projection to include tier identity, label, status, and capability IDs in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T041 [US2] Update environment create/update endpoint request handling to accept `tierId` and transition fixed tier compatibility in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T042 [US2] Update deployment setup API client requests to send `tierId` in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
+- [X] T043 [US2] Replace fixed tier dropdown with active workspace tier selector in `src/Elsa.Platform.Console/src/features/deployments/DeploymentSetupPanel.tsx`
+- [X] T044 [US2] Update environment edit controls and cockpit display to show custom tier labels and archived status in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
 
 **Checkpoint**: User Story 2 is independently functional and testable through environment setup/editing and cockpit responses.
 
@@ -122,7 +122,7 @@
 
 ### Implementation for User Story 3
 
-- [ ] T048 [US3] Add tier capability lookup helpers for deployment safeguards in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierService.cs`
+- [X] T048 [US3] Add tier capability lookup helpers for deployment safeguards in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierService.cs`
 - [ ] T049 [US3] Update promotion preview validation to block invalid source or target tier capability combinations in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentValidationService.cs`
 - [ ] T050 [US3] Update deployment run validation to apply confirmation and rollback capability semantics in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`
 - [ ] T051 [US3] Update API promotion preview and run endpoints to include tier capability validation failures in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
@@ -148,12 +148,12 @@
 
 ### Implementation for User Story 4
 
-- [ ] T058 [US4] Implement idempotent default tier seeding for workspaces without tier definitions in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierService.cs`
-- [ ] T059 [US4] Implement persistence default seeding, legacy fixed-tier mapping, and admin-review flagging for fallback-mapped environments in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T058 [US4] Implement idempotent default tier seeding for workspaces without tier definitions in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierService.cs`
+- [X] T059 [US4] Implement persistence default seeding, legacy fixed-tier mapping, and admin-review flagging for fallback-mapped environments in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
 - [ ] T060 [US4] Extend SQLite migrations to backfill default tier definitions and environment tier references in `src/Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/Migrations/`
 - [ ] T061 [US4] Extend SQL Server migrations to backfill default tier definitions and environment tier references in `src/Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
-- [ ] T062 [US4] Add compatibility mapping for old fixed tier request values during the transition period in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [ ] T063 [US4] Update console empty-state setup to rely on server-provided default tiers in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T062 [US4] Add compatibility mapping for old fixed tier request values during the transition period in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T063 [US4] Update console empty-state setup to rely on server-provided default tiers in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
 - [ ] T064 [US4] Update TypeScript tests and fixtures to use tier definitions instead of fixed tier enum strings in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 **Checkpoint**: User Story 4 is independently functional and verifies existing workspaces remain operational after migration.
@@ -170,9 +170,9 @@
 - [ ] T068 Run core tests with `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter DeploymentTier`
 - [ ] T069 Run persistence tests with `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceTier`
 - [ ] T070 Run API tests with `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceDeploymentTier`
-- [ ] T071 Run console deployment tests with `cd src/Elsa.Platform.Console && npm test -- --run deployments`
-- [ ] T072 Run console typecheck with `cd src/Elsa.Platform.Console && npm run typecheck`
-- [ ] T073 Run whitespace validation with `git diff --check`
+- [X] T071 Run console deployment tests with `cd src/Elsa.Platform.Console && npm test -- --run deployments`
+- [X] T072 Run console typecheck with `cd src/Elsa.Platform.Console && npm run typecheck`
+- [X] T073 Run whitespace validation with `git diff --check`
 - [ ] T074 Add and run bounded-query verification for 20 tiers and 250 environments in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceTierPersistenceTests.cs`
 
 ---

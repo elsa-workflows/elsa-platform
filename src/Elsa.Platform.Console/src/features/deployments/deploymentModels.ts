@@ -1,6 +1,8 @@
 export type DeploymentHealth = "Healthy" | "Degraded" | "Unreachable";
 export type DriftStatus = "InSync" | "DriftDetected" | "Unknown";
 export type DeploymentStatus = "Succeeded" | "Running" | "Blocked" | "RolledBack";
+export type DeploymentTierStatus = "Active" | "Archived";
+export type DeploymentTierCapabilityCategory = "Classification" | "Promotion" | "Safeguards" | "Rollback" | "Validation" | "Observability";
 export type WorkspaceDeploymentRunStatus = "Queued" | "Running" | "Succeeded" | "Failed" | "Blocked" | "Cancelled" | "RolledBack" | "RecoveryRequired";
 export type CredentialVerificationStatus = "Verified" | "Missing" | "Expired" | "Unverified";
 export type CapabilityBoundary = "Workflow" | "EngineApi" | "Shell" | "Hosting";
@@ -29,6 +31,50 @@ export type EngineCapability = {
   id: string;
   label: string;
   boundary: CapabilityBoundary;
+};
+
+export type DeploymentTierCapability = {
+  id: string;
+  label: string;
+  description: string;
+  category: DeploymentTierCapabilityCategory;
+  isDeprecated: boolean;
+};
+
+export type WorkspaceDeploymentTier = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  description: string | null;
+  sortOrder: number;
+  isDefault: boolean;
+  status: DeploymentTierStatus;
+  capabilities: string[];
+  environmentCount: number;
+  createdAt: string;
+  updatedAt: string;
+  createdByAccountId: string | null;
+  updatedByAccountId: string | null;
+  archivedAt: string | null;
+  archivedByAccountId: string | null;
+};
+
+export type DeploymentTierEnvironmentSample = {
+  applicationId: string;
+  applicationName: string;
+  environmentId: string;
+  environmentName: string;
+};
+
+export type DeploymentTierImpactSummary = {
+  tierId: string;
+  currentCapabilities: string[];
+  proposedCapabilities: string[];
+  addedCapabilities: string[];
+  removedCapabilities: string[];
+  affectedEnvironmentCount: number;
+  affectedEnvironmentSamples: DeploymentTierEnvironmentSample[];
+  changedSafeguards: string[];
 };
 
 export type WorkflowEngineRegistration = {
@@ -81,6 +127,10 @@ export type EnvironmentSummary = {
   id: string;
   name: string;
   tier: "Dev" | "Test" | "Stage" | "Production";
+  tierId?: string | null;
+  tierName?: string;
+  tierStatus?: DeploymentTierStatus;
+  tierCapabilities?: string[];
   health: DeploymentHealth;
   desiredRevision: DesiredStateRevision;
   deployedRevision: number | null;
@@ -316,6 +366,26 @@ export type WorkspaceDeploymentPermissionsResponse = {
   permissions: DeploymentPermission[];
 };
 
+export type WorkspaceDeploymentTierCapabilitiesResponse = {
+  capabilities: DeploymentTierCapability[];
+};
+
+export type WorkspaceDeploymentTiersResponse = {
+  tiers: WorkspaceDeploymentTier[];
+};
+
+export type WorkspaceDeploymentTierRequest = {
+  name: string;
+  description: string | null;
+  sortOrder: number;
+  capabilities: string[];
+  impactAccepted?: boolean;
+};
+
+export type WorkspaceDeploymentTierImpactPreviewRequest = {
+  capabilities: string[];
+};
+
 export type CreateDeploymentApplicationRequest = {
   name: string;
   description: string | null;
@@ -325,7 +395,8 @@ export type UpdateDeploymentApplicationRequest = CreateDeploymentApplicationRequ
 
 export type CreateDeploymentEnvironmentRequest = {
   name: string;
-  tier: EnvironmentSummary["tier"];
+  tier?: EnvironmentSummary["tier"];
+  tierId?: string | null;
 };
 
 export type UpdateDeploymentEnvironmentRequest = CreateDeploymentEnvironmentRequest;
@@ -354,6 +425,7 @@ export type CreatedDeploymentEnvironment = {
   workspaceId: string;
   applicationId: string;
   name: string;
+  tierId: string | null;
 };
 
 export function environmentLabel(environmentId: string, applications: WorkflowApplication[]) {

@@ -24,6 +24,9 @@ internal sealed class DeploymentEnvironmentEntity
     public DeploymentApplicationEntity? Application { get; set; }
     public string Name { get; set; } = "";
     public EnvironmentTier Tier { get; set; }
+    public Guid? TierId { get; set; }
+    public DeploymentTierDefinitionEntity? TierDefinition { get; set; }
+    public bool TierRequiresReview { get; set; }
     public Guid? DesiredRevisionId { get; set; }
     public Guid? DeployedRevisionId { get; set; }
     public DeploymentStatus DeploymentStatus { get; set; }
@@ -34,6 +37,50 @@ internal sealed class DeploymentEnvironmentEntity
     public List<DesiredStateRevisionEntity> Revisions { get; set; } = [];
     public List<ObservabilityBindingEntity> ObservabilityBindings { get; set; } = [];
     public List<DriftReportItemEntity> DriftReports { get; set; } = [];
+}
+
+internal sealed class DeploymentTierDefinitionEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public string Name { get; set; } = "";
+    public string? Description { get; set; }
+    public int SortOrder { get; set; }
+    public bool IsDefault { get; set; }
+    public DeploymentTierStatus Status { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public Guid? CreatedByAccountId { get; set; }
+    public Guid? UpdatedByAccountId { get; set; }
+    public DateTimeOffset? ArchivedAt { get; set; }
+    public Guid? ArchivedByAccountId { get; set; }
+    public List<DeploymentTierCapabilityAssignmentEntity> Capabilities { get; set; } = [];
+    public List<DeploymentEnvironmentEntity> Environments { get; set; } = [];
+    public List<DeploymentTierChangeRecordEntity> Changes { get; set; } = [];
+}
+
+internal sealed class DeploymentTierCapabilityAssignmentEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid TierId { get; set; }
+    public DeploymentTierDefinitionEntity? Tier { get; set; }
+    public string CapabilityId { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+    public Guid? CreatedByAccountId { get; set; }
+}
+
+internal sealed class DeploymentTierChangeRecordEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid TierId { get; set; }
+    public DeploymentTierDefinitionEntity? Tier { get; set; }
+    public Guid? ActorAccountId { get; set; }
+    public string ChangeType { get; set; } = "";
+    public string Summary { get; set; } = "";
+    public DateTimeOffset ChangedAt { get; set; }
+    public int AffectedEnvironmentCount { get; set; }
 }
 
 internal sealed class WorkflowEngineEntity

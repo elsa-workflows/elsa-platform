@@ -24,6 +24,8 @@ import {
   createActionConfirmation,
   getDeploymentCockpit,
   getDeploymentPermissions,
+  getDeploymentTierCapabilities,
+  getDeploymentTiers,
   getDeploymentWorkspaceContext,
   previewPromotion,
   queueDeploymentRun,
@@ -36,6 +38,7 @@ import {
   verifyDeploymentEngine
 } from "@/features/deployments/deploymentApi";
 import { DeploymentSetupPanel, setupEngineRequest, type DeploymentSetupValues } from "@/features/deployments/DeploymentSetupPanel";
+import { DeploymentTiersPanel } from "@/features/deployments/DeploymentTiersPanel";
 import { DeploymentRunsPanel } from "@/features/deployments/DeploymentRunsPanel";
 import { PromotionPreviewPanel } from "@/features/deployments/PromotionPreviewPanel";
 import { RuntimeControlsPanel } from "@/features/deployments/RuntimeControlsPanel";
@@ -50,6 +53,7 @@ import {
   type EnvironmentSummary,
   type RuntimeControl,
   type ValidationSeverity,
+  type WorkspaceDeploymentTier,
   type WorkspaceDeploymentRunStatus,
   type WorkflowEngineRegistration
 } from "@/features/deployments/deploymentModels";
@@ -58,13 +62,14 @@ import { queryKeys } from "@/lib/query/queryClient";
 import { statusToneClass, type StatusTone } from "@/lib/status/statusBadges";
 import { cn } from "@/lib/utils";
 
-type ViewId = "fleet" | "engine" | "promotion" | "governance" | "assistant";
+type ViewId = "fleet" | "engine" | "promotion" | "governance" | "tiers" | "assistant";
 
 const views: Array<{ id: ViewId; label: string }> = [
   { id: "fleet", label: "Environments" },
   { id: "engine", label: "Engine Registration" },
   { id: "promotion", label: "Promotion Diff" },
   { id: "governance", label: "Observability" },
+  { id: "tiers", label: "Tiers" },
   { id: "assistant", label: "Assistant Review" }
 ];
 
@@ -83,6 +88,16 @@ export function DeploymentsPage() {
     queryFn: () => getDeploymentCockpit(workspaceId),
     enabled: Boolean(workspaceId)
   });
+  const tiers = useQuery({
+    queryKey: queryKeys.deploymentTiers(workspaceId),
+    queryFn: () => getDeploymentTiers(workspaceId),
+    enabled: Boolean(workspaceId)
+  });
+  const tierCapabilities = useQuery({
+    queryKey: queryKeys.deploymentTierCapabilities(workspaceId),
+    queryFn: () => getDeploymentTierCapabilities(workspaceId),
+    enabled: Boolean(workspaceId)
+  });
   const refreshDeploymentCockpit = () => queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
   const setup = useMutation({
     mutationFn: async (values: DeploymentSetupValues) => {
@@ -92,7 +107,8 @@ export function DeploymentsPage() {
       });
       const environment = await createDeploymentEnvironment(workspaceId, application.id, {
         name: values.environmentName,
-        tier: values.environmentTier
+        tier: values.environmentTier,
+        tierId: activeDeploymentTiers.some((tier) => tier.id === values.environmentTierId) ? values.environmentTierId : null
       });
       await registerDeploymentEngine(workspaceId, environment.id, setupEngineRequest(values));
     },
@@ -114,13 +130,15 @@ export function DeploymentsPage() {
       applicationId,
       environmentId,
       name,
+      tierId,
       tier
     }: {
       applicationId: string;
       environmentId: string;
       name: string;
+      tierId: string | null;
       tier: EnvironmentSummary["tier"];
-    }) => updateDeploymentEnvironment(workspaceId, applicationId, environmentId, { name, tier }),
+    }) => updateDeploymentEnvironment(workspaceId, applicationId, environmentId, { name, tier, tierId }),
     onSuccess: () => {
       setEditingEnvironmentId("");
       void refreshDeploymentCockpit();
@@ -294,6 +312,10 @@ export function DeploymentsPage() {
   const canExecuteDeployment = Boolean(permissions.data?.permissions.includes("deployments.run.execute"));
   const canExecuteRollback = Boolean(permissions.data?.permissions.includes("deployments.rollback.execute"));
   const canExecuteControls = Boolean(permissions.data?.permissions.includes("deployments.controls.execute"));
+  const canManageTiers = workspaceContext.data?.workspaces[0]?.role === "Owner";
+  const deploymentTiers = tiers.data?.tiers ?? [];
+  const activeDeploymentTiers = deploymentTiers.filter((tier) => tier.status === "Active");
+  const capabilities = tierCapabilities.data?.capabilities ?? [];
 
   function getEnvironment(environmentId: string) {
     return data?.applications.flatMap((application) => application.environments).find((environment) => environment.id === environmentId);
@@ -329,6 +351,7 @@ export function DeploymentsPage() {
         />
         <DeploymentSetupPanel
           canManageSetup={canManageSetup}
+          tiers={activeDeploymentTiers}
           isSubmitting={setup.isPending}
           error={setup.error instanceof Error ? setup.error.message : undefined}
           onSubmit={(values) => setup.mutate(values)}
@@ -399,6 +422,7 @@ export function DeploymentsPage() {
       {showNewSetup ? (
         <DeploymentSetupPanel
           canManageSetup={canManageSetup}
+          tiers={activeDeploymentTiers}
           isSubmitting={setup.isPending}
           error={setup.error instanceof Error ? setup.error.message : undefined}
           onSubmit={(values) => setup.mutate(values)}
@@ -440,12 +464,13 @@ export function DeploymentsPage() {
           engines={data.engines}
           canManageSetup={canManageSetup}
           editingEnvironmentId={editingEnvironmentId}
+          tiers={activeDeploymentTiers}
           isSavingEnvironment={updateEnvironment.isPending}
           environmentError={updateEnvironment.error instanceof Error ? updateEnvironment.error.message : undefined}
           onEditEnvironment={setEditingEnvironmentId}
           onCancelEnvironmentEdit={() => setEditingEnvironmentId("")}
-          onSaveEnvironment={(environmentId, name, tier) =>
-            updateEnvironment.mutate({ applicationId: selectedApplication.id, environmentId, name, tier })
+          onSaveEnvironment={(environmentId, name, tierId, tier) =>
+            updateEnvironment.mutate({ applicationId: selectedApplication.id, environmentId, name, tierId, tier })
           }
           onInspectEnvironment={inspectEnvironment}
         />
@@ -522,6 +547,14 @@ export function DeploymentsPage() {
         />
       ) : null}
       {activeView === "governance" ? <GovernanceView data={data} /> : null}
+      {activeView === "tiers" ? (
+        <DeploymentTiersPanel
+          workspaceId={workspaceId}
+          canManageTiers={canManageTiers}
+          tiers={deploymentTiers}
+          capabilities={capabilities}
+        />
+      ) : null}
       {activeView === "assistant" ? (
         <AssistantPlanView
           data={data}
@@ -576,28 +609,36 @@ function ApplicationEditPanel({
   );
 }
 
+function legacyTierFromName(name?: string): EnvironmentSummary["tier"] {
+  if (name === "Dev" || name === "Test" || name === "Stage" || name === "Production") return name;
+  return "Production";
+}
+
 function EnvironmentEditPanel({
   environment,
+  tiers,
   isSubmitting,
   error,
   onCancel,
   onSubmit
 }: {
   environment: EnvironmentSummary;
+  tiers: WorkspaceDeploymentTier[];
   isSubmitting: boolean;
   error?: string;
   onCancel: () => void;
-  onSubmit: (name: string, tier: EnvironmentSummary["tier"]) => void;
+  onSubmit: (name: string, tierId: string | null, tier: EnvironmentSummary["tier"]) => void;
 }) {
   const [name, setName] = useState(environment.name);
-  const [tier, setTier] = useState<EnvironmentSummary["tier"]>(environment.tier);
-  const canSubmit = name.trim().length > 0 && (name !== environment.name || tier !== environment.tier);
+  const [tierId, setTierId] = useState(environment.tierId ?? "");
+  const selectedTier = tiers.find((tier) => tier.id === tierId);
+  const canSubmit = name.trim().length > 0 && (name !== environment.name || tierId !== (environment.tierId ?? ""));
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        if (canSubmit) onSubmit(name.trim(), tier);
+        if (canSubmit) onSubmit(name.trim(), tierId || null, legacyTierFromName(selectedTier?.name ?? environment.tierName));
       }}
     >
       <div className="grid gap-3 md:grid-cols-[1fr_180px_auto] md:items-end">
@@ -607,11 +648,11 @@ function EnvironmentEditPanel({
         </label>
         <label className="text-sm font-medium">
           Tier
-          <Select className="mt-1 w-full" value={tier} onChange={(event) => setTier(event.target.value as EnvironmentSummary["tier"])}>
-            <option value="Dev">Dev</option>
-            <option value="Test">Test</option>
-            <option value="Stage">Stage</option>
-            <option value="Production">Production</option>
+          <Select className="mt-1 w-full" value={tierId} onChange={(event) => setTierId(event.target.value)}>
+            <option value="" disabled>Select a tier</option>
+            {tiers.map((tier) => (
+              <option key={tier.id} value={tier.id}>{tier.name}</option>
+            ))}
           </Select>
         </label>
         <div className="flex gap-2">
@@ -699,6 +740,7 @@ function FleetView({
   engines,
   canManageSetup,
   editingEnvironmentId,
+  tiers,
   isSavingEnvironment,
   environmentError,
   onEditEnvironment,
@@ -710,11 +752,12 @@ function FleetView({
   engines: WorkflowEngineRegistration[];
   canManageSetup: boolean;
   editingEnvironmentId: string;
+  tiers: WorkspaceDeploymentTier[];
   isSavingEnvironment: boolean;
   environmentError?: string;
   onEditEnvironment: (environmentId: string) => void;
   onCancelEnvironmentEdit: () => void;
-  onSaveEnvironment: (environmentId: string, name: string, tier: EnvironmentSummary["tier"]) => void;
+  onSaveEnvironment: (environmentId: string, name: string, tierId: string | null, tier: EnvironmentSummary["tier"]) => void;
   onInspectEnvironment: (environmentId: string) => void;
 }) {
   const applicationEngineIds = new Set(application.environments.flatMap((environment) => environment.engineIds));
@@ -748,7 +791,15 @@ function FleetView({
                 <tr>
                   <td className="px-3 py-3">
                     <div className="font-medium">{environment.name}</div>
-                    <div className="text-xs text-muted-foreground">{environment.tier}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {environment.tierName || environment.tier}
+                      {environment.tierStatus === "Archived" ? " (archived)" : ""}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {(environment.tierCapabilities ?? []).slice(0, 3).map((capability) => (
+                        <Badge key={capability}>{capability}</Badge>
+                      ))}
+                    </div>
                   </td>
                   <td className="px-3 py-3"><StatusBadge value={environment.health} tone={healthTone(environment.health)} /></td>
                   <td className="px-3 py-3">
@@ -775,10 +826,11 @@ function FleetView({
                     <td colSpan={8} className="bg-muted/20 px-3 py-3">
                       <EnvironmentEditPanel
                         environment={environment}
+                        tiers={tiers}
                         isSubmitting={isSavingEnvironment}
                         error={environmentError}
                         onCancel={onCancelEnvironmentEdit}
-                        onSubmit={(name, tier) => onSaveEnvironment(environment.id, name, tier)}
+                        onSubmit={(name, tierId, tier) => onSaveEnvironment(environment.id, name, tierId, tier)}
                       />
                     </td>
                   </tr>

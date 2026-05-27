@@ -27,6 +27,9 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     public DbSet<RuntimeConfigurationVersion> RuntimeConfigurationVersions => Set<RuntimeConfigurationVersion>();
     internal DbSet<Models.DeploymentApplicationEntity> DeploymentApplications => Set<Models.DeploymentApplicationEntity>();
     internal DbSet<Models.DeploymentEnvironmentEntity> DeploymentEnvironments => Set<Models.DeploymentEnvironmentEntity>();
+    internal DbSet<Models.DeploymentTierDefinitionEntity> DeploymentTierDefinitions => Set<Models.DeploymentTierDefinitionEntity>();
+    internal DbSet<Models.DeploymentTierCapabilityAssignmentEntity> DeploymentTierCapabilityAssignments => Set<Models.DeploymentTierCapabilityAssignmentEntity>();
+    internal DbSet<Models.DeploymentTierChangeRecordEntity> DeploymentTierChangeRecords => Set<Models.DeploymentTierChangeRecordEntity>();
     internal DbSet<Models.WorkflowEngineEntity> WorkflowEngines => Set<Models.WorkflowEngineEntity>();
     internal DbSet<Models.WorkspaceDeploymentArtifactEntity> WorkspaceDeploymentArtifacts => Set<Models.WorkspaceDeploymentArtifactEntity>();
     internal DbSet<Models.EngineCapabilityEntity> EngineCapabilities => Set<Models.EngineCapabilityEntity>();
@@ -61,6 +64,9 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.RuntimeConfigurationVersionConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DeploymentApplicationConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DeploymentEnvironmentConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentTierDefinitionConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentTierCapabilityAssignmentConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentTierChangeRecordConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WorkflowEngineConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WorkspaceDeploymentArtifactConfiguration());
         modelBuilder.ApplyConfiguration(new Models.EngineCapabilityConfiguration());

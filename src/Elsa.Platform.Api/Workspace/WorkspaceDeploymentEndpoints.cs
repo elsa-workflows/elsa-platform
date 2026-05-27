@@ -50,6 +50,194 @@ public static class WorkspaceDeploymentEndpoints
             return Results.Ok(await cockpit.GetCockpitAsync(workspaceId, cancellationToken));
         });
 
+        group.MapGet("/tier-capabilities", async (
+            Guid workspaceId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            DeploymentTierService tiers,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.Read, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            return Results.Ok(new WorkspaceDeploymentTierCapabilitiesResponse(tiers.GetCapabilityCatalog()));
+        });
+
+        group.MapGet("/tiers", async (
+            Guid workspaceId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            DeploymentTierService tiers,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.Read, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            return Results.Ok(new WorkspaceDeploymentTiersResponse(await tiers.ListTiersAsync(workspaceId, cancellationToken)));
+        });
+
+        group.MapPost("/tiers", async (
+            Guid workspaceId,
+            WorkspaceDeploymentTierRequest request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            DeploymentTierService tiers,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (access.Access!.Role is not WorkspaceRole.Owner)
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                var tier = await tiers.CreateTierAsync(
+                    workspaceId,
+                    new CreateDeploymentTierRequest(request.Name, request.Description, request.SortOrder, request.Capabilities, access.Access.AccountId),
+                    cancellationToken);
+                return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/tiers/{tier.Id:D}", tier);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        group.MapPut("/tiers/{tierId:guid}", async (
+            Guid workspaceId,
+            Guid tierId,
+            WorkspaceDeploymentTierRequest request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            DeploymentTierService tiers,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (access.Access!.Role is not WorkspaceRole.Owner)
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await tiers.UpdateTierAsync(
+                    workspaceId,
+                    tierId,
+                    new UpdateDeploymentTierRequest(request.Name, request.Description, request.SortOrder, request.Capabilities, request.ImpactAccepted, access.Access.AccountId),
+                    cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        group.MapPost("/tiers/{tierId:guid}/impact-preview", async (
+            Guid workspaceId,
+            Guid tierId,
+            WorkspaceDeploymentTierImpactPreviewRequest request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            DeploymentTierService tiers,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (access.Access!.Role is not WorkspaceRole.Owner)
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await tiers.PreviewImpactAsync(workspaceId, tierId, new PreviewDeploymentTierImpactRequest(request.Capabilities), cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+        });
+
+        group.MapPost("/tiers/{tierId:guid}/archive", async (
+            Guid workspaceId,
+            Guid tierId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            DeploymentTierService tiers,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (access.Access!.Role is not WorkspaceRole.Owner)
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await tiers.ArchiveTierAsync(workspaceId, tierId, new ArchiveDeploymentTierRequest(access.Access.AccountId), cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        group.MapPost("/tiers/{tierId:guid}/restore", async (
+            Guid workspaceId,
+            Guid tierId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            DeploymentTierService tiers,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (access.Access!.Role is not WorkspaceRole.Owner)
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await tiers.RestoreTierAsync(workspaceId, tierId, new RestoreDeploymentTierRequest(access.Access.AccountId), cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
         group.MapPost("/applications", async (
             Guid workspaceId,
             WorkspaceDeploymentApplicationRequest request,
@@ -88,11 +276,18 @@ public static class WorkspaceDeploymentEndpoints
             if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
                 return DeploymentPermissionDenied();
 
-            var environment = await deployments.CreateEnvironmentAsync(
-                workspaceId,
-                new CreateDeploymentEnvironmentRequest(applicationId, request.Name, request.Tier),
-                cancellationToken);
-            return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/environments/{environment.Id:D}", environment);
+            try
+            {
+                var environment = await deployments.CreateEnvironmentAsync(
+                    workspaceId,
+                    new CreateDeploymentEnvironmentRequest(applicationId, request.Name, request.Tier ?? EnvironmentTier.Production, request.TierId),
+                    cancellationToken);
+                return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/environments/{environment.Id:D}", environment);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
         });
 
         group.MapPut("/applications/{applicationId:guid}", async (
@@ -123,6 +318,10 @@ public static class WorkspaceDeploymentEndpoints
             {
                 return Results.NotFound();
             }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
         });
 
         group.MapPut("/applications/{applicationId:guid}/environments/{environmentId:guid}", async (
@@ -147,12 +346,16 @@ public static class WorkspaceDeploymentEndpoints
                 return Results.Ok(await deployments.UpdateEnvironmentAsync(
                     workspaceId,
                     environmentId,
-                    new UpdateDeploymentEnvironmentRequest(applicationId, request.Name, request.Tier),
+                    new UpdateDeploymentEnvironmentRequest(applicationId, request.Name, request.Tier ?? EnvironmentTier.Production, request.TierId),
                     cancellationToken));
             }
             catch (KeyNotFoundException)
             {
                 return Results.NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
             }
         });
 

@@ -19,6 +19,12 @@ import type {
   UpdateDeploymentApplicationRequest,
   UpdateDeploymentEngineRequest,
   UpdateDeploymentEnvironmentRequest,
+  WorkspaceDeploymentTierCapabilitiesResponse,
+  WorkspaceDeploymentTierImpactPreviewRequest,
+  WorkspaceDeploymentTierRequest,
+  WorkspaceDeploymentTiersResponse,
+  DeploymentTierImpactSummary,
+  WorkspaceDeploymentTier,
   WorkspaceDesiredStateRevision,
   WorkspaceDeploymentRun,
   WorkspaceDeploymentRunDetailResponse,
@@ -50,6 +56,55 @@ export function getDeploymentCockpit(workspaceId: string) {
 
 export function getDeploymentPermissions(workspaceId: string) {
   return apiRequest<WorkspaceDeploymentPermissionsResponse>(`/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/permissions`);
+}
+
+export function getDeploymentTierCapabilities(workspaceId: string) {
+  return apiRequest<WorkspaceDeploymentTierCapabilitiesResponse>(`/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/tier-capabilities`);
+}
+
+export function getDeploymentTiers(workspaceId: string) {
+  return apiRequest<WorkspaceDeploymentTiersResponse>(`/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/tiers`);
+}
+
+export function createDeploymentTier(workspaceId: string, request: WorkspaceDeploymentTierRequest) {
+  return apiRequest<WorkspaceDeploymentTier>(`/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/tiers`, {
+    method: "POST",
+    body: JSON.stringify(request)
+  });
+}
+
+export function updateDeploymentTier(workspaceId: string, tierId: string, request: WorkspaceDeploymentTierRequest) {
+  return apiRequest<WorkspaceDeploymentTier>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/tiers/${encodeURIComponent(tierId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(request)
+    }
+  );
+}
+
+export function previewDeploymentTierImpact(workspaceId: string, tierId: string, request: WorkspaceDeploymentTierImpactPreviewRequest) {
+  return apiRequest<DeploymentTierImpactSummary>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/tiers/${encodeURIComponent(tierId)}/impact-preview`,
+    {
+      method: "POST",
+      body: JSON.stringify(request)
+    }
+  );
+}
+
+export function archiveDeploymentTier(workspaceId: string, tierId: string) {
+  return apiRequest<WorkspaceDeploymentTier>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/tiers/${encodeURIComponent(tierId)}/archive`,
+    { method: "POST" }
+  );
+}
+
+export function restoreDeploymentTier(workspaceId: string, tierId: string) {
+  return apiRequest<WorkspaceDeploymentTier>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/tiers/${encodeURIComponent(tierId)}/restore`,
+    { method: "POST" }
+  );
 }
 
 export function createDeploymentApplication(workspaceId: string, request: CreateDeploymentApplicationRequest) {

@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Input, Select } from "@/components/ui";
-import type { EnvironmentSummary, RegisterDeploymentEngineRequest } from "@/features/deployments/deploymentModels";
+import type { EnvironmentSummary, RegisterDeploymentEngineRequest, WorkspaceDeploymentTier } from "@/features/deployments/deploymentModels";
 
 export type DeploymentSetupValues = {
   applicationName: string;
   environmentName: string;
   environmentTier: EnvironmentSummary["tier"];
+  environmentTierId: string;
   engineName: string;
   baseUrl: string;
   credentialReference: string;
@@ -13,25 +14,43 @@ export type DeploymentSetupValues = {
 
 export function DeploymentSetupPanel({
   canManageSetup,
+  tiers,
   isSubmitting,
   error,
   onSubmit
 }: {
   canManageSetup: boolean;
+  tiers: WorkspaceDeploymentTier[];
   isSubmitting: boolean;
   error?: string;
   onSubmit: (values: DeploymentSetupValues) => void;
 }) {
+  const activeTiers = tiers.filter((tier) => tier.status === "Active");
+  const tierOptions = activeTiers.length > 0
+    ? activeTiers.map((tier) => ({ id: tier.id, name: tier.name }))
+    : ["Dev", "Test", "Stage", "Production"].map((tier) => ({ id: tier, name: tier }));
   const [values, setValues] = useState<DeploymentSetupValues>({
     applicationName: "",
     environmentName: "Prod",
     environmentTier: "Production",
+    environmentTierId: "",
     engineName: "",
     baseUrl: "",
     credentialReference: ""
   });
+  useEffect(() => {
+    if (values.environmentTierId || tierOptions.length === 0) return;
+    const preferredTier = tierOptions.find((tier) => tier.name === "Production") ?? tierOptions[0];
+    setValues((current) => ({
+      ...current,
+      environmentTierId: preferredTier.id,
+      environmentTier: legacyTierFromName(preferredTier.name)
+    }));
+  }, [activeTiers.length, tierOptions, values.environmentTierId]);
+
   const canSubmit =
     canManageSetup &&
+    (values.environmentTierId.length > 0 || activeTiers.length === 0) &&
     values.applicationName.trim().length > 0 &&
     values.environmentName.trim().length > 0 &&
     values.engineName.trim().length > 0 &&
@@ -57,11 +76,24 @@ export function DeploymentSetupPanel({
         </label>
         <label className="text-sm font-medium">
           Tier
-          <Select className="mt-1 w-full" value={values.environmentTier} onChange={(event) => setValues((current) => ({ ...current, environmentTier: event.target.value as EnvironmentSummary["tier"] }))}>
-            <option value="Dev">Dev</option>
-            <option value="Test">Test</option>
-            <option value="Stage">Stage</option>
-            <option value="Production">Production</option>
+          <Select
+            className="mt-1 w-full"
+            value={values.environmentTierId}
+            onChange={(event) => {
+              const tier = activeTiers.find((item) => item.id === event.target.value);
+              setValues((current) => ({
+                ...current,
+                environmentTierId: event.target.value,
+                environmentTier: legacyTierFromName(tier?.name)
+              }));
+            }}
+          >
+            <option value="" disabled>Select a tier</option>
+            {tierOptions.map((tier) => (
+              <option key={tier.id} value={tier.id}>
+                {tier.name}
+              </option>
+            ))}
           </Select>
         </label>
         <label className="text-sm font-medium">
@@ -79,6 +111,7 @@ export function DeploymentSetupPanel({
       </div>
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
       {!canManageSetup ? <p className="mt-3 text-sm text-muted-foreground">Deployment setup permission is required.</p> : null}
+      {activeTiers.length === 0 ? <p className="mt-3 text-sm text-muted-foreground">Default tiers are used until workspace tiers finish loading.</p> : null}
       <div className="mt-4">
         <Button type="submit" disabled={!canSubmit || isSubmitting}>
           Create setup
@@ -86,6 +119,11 @@ export function DeploymentSetupPanel({
       </div>
     </form>
   );
+}
+
+function legacyTierFromName(name?: string): EnvironmentSummary["tier"] {
+  if (name === "Dev" || name === "Test" || name === "Stage" || name === "Production") return name;
+  return "Production";
 }
 
 export function setupEngineRequest(values: DeploymentSetupValues): RegisterDeploymentEngineRequest {

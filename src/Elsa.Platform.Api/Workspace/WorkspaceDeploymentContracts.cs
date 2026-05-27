@@ -8,7 +8,20 @@ public sealed record WorkspaceDeploymentPermissionsResponse(IReadOnlyList<string
 
 public sealed record WorkspaceDeploymentApplicationRequest(string Name, string? Description);
 
-public sealed record WorkspaceDeploymentEnvironmentRequest(string Name, EnvironmentTier Tier);
+public sealed record WorkspaceDeploymentEnvironmentRequest(string Name, EnvironmentTier? Tier = null, Guid? TierId = null);
+
+public sealed record WorkspaceDeploymentTierCapabilitiesResponse(IReadOnlyList<DeploymentTierCapability> Capabilities);
+
+public sealed record WorkspaceDeploymentTiersResponse(IReadOnlyList<WorkspaceDeploymentTier> Tiers);
+
+public sealed record WorkspaceDeploymentTierRequest(
+    string Name,
+    string? Description,
+    int SortOrder,
+    IReadOnlyList<string> Capabilities,
+    bool ImpactAccepted = false);
+
+public sealed record WorkspaceDeploymentTierImpactPreviewRequest(IReadOnlyList<string> Capabilities);
 
 public sealed record WorkspaceWorkflowEngineRequest(
     string Name,

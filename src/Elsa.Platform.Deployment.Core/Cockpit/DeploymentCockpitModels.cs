@@ -169,7 +169,10 @@ public sealed record EnvironmentSummary(
     int? DeployedRevision,
     DeploymentStatus DeploymentStatus,
     DriftStatus DriftStatus,
-    IReadOnlyList<string> EngineIds);
+    IReadOnlyList<string> EngineIds,
+    string TierName = "",
+    string TierStatus = "",
+    IReadOnlyList<string>? TierCapabilities = null);
 
 public sealed record WorkflowApplication(
     string Id,

@@ -6,10 +6,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
 
-public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWorkspaceDeploymentStore, IWorkspacePermissionStore, IWorkspaceDeploymentMutationStore, IWorkspaceArtifactStore
+public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWorkspaceDeploymentStore, IWorkspacePermissionStore, IWorkspaceDeploymentMutationStore, IWorkspaceArtifactStore, IWorkspaceDeploymentTierStore
 {
     public async Task<DeploymentCockpit> GetCockpitAsync(Guid workspaceId, CancellationToken cancellationToken = default)
     {
+        await EnsureDefaultTiersAsync(workspaceId, cancellationToken: cancellationToken);
+
         var workspaceName = await dbContext.Workspaces
             .AsNoTracking()
             .Where(x => x.Id == workspaceId)
@@ -20,6 +22,9 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             .AsNoTracking()
             .Include(x => x.Environments)
                 .ThenInclude(x => x.Revisions)
+            .Include(x => x.Environments)
+                .ThenInclude(x => x.TierDefinition)
+                    .ThenInclude(x => x!.Capabilities)
             .Where(x => x.WorkspaceId == workspaceId)
             .OrderBy(x => x.Name)
             .ToListAsync(cancellationToken);
@@ -84,6 +89,252 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             deploymentRuns.Select(run => ToDeploymentHistoryEvent(run, runRevisions)).ToList(),
             driftReport.Select(ToDriftReportItem).ToList(),
             []);
+    }
+
+    public async Task<IReadOnlyList<WorkspaceDeploymentTier>> ListTiersAsync(
+        Guid workspaceId,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureDefaultTiersAsync(workspaceId, cancellationToken: cancellationToken);
+        var tiers = await dbContext.DeploymentTierDefinitions
+            .AsNoTracking()
+            .Include(x => x.Capabilities)
+            .Where(x => x.WorkspaceId == workspaceId)
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Name)
+            .ToListAsync(cancellationToken);
+
+        var counts = await dbContext.DeploymentEnvironments
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.TierId != null)
+            .GroupBy(x => x.TierId!.Value)
+            .Select(x => new { TierId = x.Key, Count = x.Count() })
+            .ToDictionaryAsync(x => x.TierId, x => x.Count, cancellationToken);
+
+        return tiers.Select(x => ToWorkspaceDeploymentTier(x, counts.GetValueOrDefault(x.Id))).ToList();
+    }
+
+    public async Task<WorkspaceDeploymentTier?> GetTierAsync(
+        Guid workspaceId,
+        Guid tierId,
+        CancellationToken cancellationToken = default)
+    {
+        var tier = await dbContext.DeploymentTierDefinitions
+            .AsNoTracking()
+            .Include(x => x.Capabilities)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == tierId, cancellationToken);
+        if (tier is null)
+            return null;
+
+        var count = await dbContext.DeploymentEnvironments.CountAsync(x => x.WorkspaceId == workspaceId && x.TierId == tierId, cancellationToken);
+        return ToWorkspaceDeploymentTier(tier, count);
+    }
+
+    public async Task<WorkspaceDeploymentTier> CreateTierAsync(
+        Guid workspaceId,
+        CreateDeploymentTierRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (await ActiveTierNameExistsAsync(workspaceId, request.Name, null, cancellationToken))
+            throw new InvalidOperationException("An active deployment tier with the same name already exists in this workspace.");
+
+        var now = DateTimeOffset.UtcNow;
+        var tier = new DeploymentTierDefinitionEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            Name = request.Name.Trim(),
+            Description = request.Description,
+            SortOrder = request.SortOrder,
+            IsDefault = false,
+            Status = DeploymentTierStatus.Active,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CreatedByAccountId = request.ActorAccountId,
+            UpdatedByAccountId = request.ActorAccountId,
+            Capabilities = CreateCapabilityAssignments(workspaceId, request.Capabilities, request.ActorAccountId, now)
+        };
+        tier.Changes.Add(Change(workspaceId, tier.Id, request.ActorAccountId, "Created", $"Created deployment tier '{tier.Name}'.", now, 0));
+
+        await dbContext.DeploymentTierDefinitions.AddAsync(tier, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceDeploymentTier(tier, 0);
+    }
+
+    public async Task<WorkspaceDeploymentTier> UpdateTierAsync(
+        Guid workspaceId,
+        Guid tierId,
+        UpdateDeploymentTierRequest request,
+        DeploymentTierImpactSummary impact,
+        CancellationToken cancellationToken = default)
+    {
+        var tier = await dbContext.DeploymentTierDefinitions
+            .Include(x => x.Capabilities)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == tierId, cancellationToken);
+        if (tier is null)
+            throw new KeyNotFoundException("Deployment tier does not exist in the workspace.");
+        if (tier.Status == DeploymentTierStatus.Active && await ActiveTierNameExistsAsync(workspaceId, request.Name, tierId, cancellationToken))
+            throw new InvalidOperationException("An active deployment tier with the same name already exists in this workspace.");
+
+        var now = DateTimeOffset.UtcNow;
+        var currentCapabilities = tier.Capabilities.Select(x => x.CapabilityId).Order(StringComparer.Ordinal).ToList();
+        tier.Name = request.Name.Trim();
+        tier.Description = request.Description;
+        tier.SortOrder = request.SortOrder;
+        tier.UpdatedAt = now;
+        tier.UpdatedByAccountId = request.ActorAccountId;
+
+        dbContext.DeploymentTierCapabilityAssignments.RemoveRange(tier.Capabilities);
+        tier.Capabilities = CreateCapabilityAssignments(workspaceId, request.Capabilities, request.ActorAccountId, now);
+        await dbContext.DeploymentTierChangeRecords.AddAsync(Change(
+            workspaceId,
+            tier.Id,
+            request.ActorAccountId,
+            "Updated",
+            $"Updated deployment tier '{tier.Name}'.",
+            now,
+            impact.AffectedEnvironmentCount), cancellationToken);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceDeploymentTier(tier, impact.AffectedEnvironmentCount);
+    }
+
+    public async Task<WorkspaceDeploymentTier> ArchiveTierAsync(
+        Guid workspaceId,
+        Guid tierId,
+        ArchiveDeploymentTierRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var tier = await dbContext.DeploymentTierDefinitions
+            .Include(x => x.Capabilities)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == tierId, cancellationToken);
+        if (tier is null)
+            throw new KeyNotFoundException("Deployment tier does not exist in the workspace.");
+
+        var activeCount = await dbContext.DeploymentTierDefinitions.CountAsync(x => x.WorkspaceId == workspaceId && x.Status == DeploymentTierStatus.Active, cancellationToken);
+        if (tier.Status == DeploymentTierStatus.Active && activeCount <= 1)
+            throw new InvalidOperationException("At least one active deployment tier is required.");
+
+        var now = DateTimeOffset.UtcNow;
+        tier.Status = DeploymentTierStatus.Archived;
+        tier.ArchivedAt = now;
+        tier.ArchivedByAccountId = request.ActorAccountId;
+        tier.UpdatedAt = now;
+        tier.UpdatedByAccountId = request.ActorAccountId;
+        var environmentCount = await dbContext.DeploymentEnvironments.CountAsync(x => x.WorkspaceId == workspaceId && x.TierId == tierId, cancellationToken);
+        await dbContext.DeploymentTierChangeRecords.AddAsync(Change(workspaceId, tier.Id, request.ActorAccountId, "Archived", $"Archived deployment tier '{tier.Name}'.", now, environmentCount), cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceDeploymentTier(tier, environmentCount);
+    }
+
+    public async Task<WorkspaceDeploymentTier> RestoreTierAsync(
+        Guid workspaceId,
+        Guid tierId,
+        RestoreDeploymentTierRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var tier = await dbContext.DeploymentTierDefinitions
+            .Include(x => x.Capabilities)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == tierId, cancellationToken);
+        if (tier is null)
+            throw new KeyNotFoundException("Deployment tier does not exist in the workspace.");
+        if (await ActiveTierNameExistsAsync(workspaceId, tier.Name, tierId, cancellationToken))
+            throw new InvalidOperationException("Another active deployment tier with the same name already exists in this workspace.");
+
+        var now = DateTimeOffset.UtcNow;
+        tier.Status = DeploymentTierStatus.Active;
+        tier.ArchivedAt = null;
+        tier.ArchivedByAccountId = null;
+        tier.UpdatedAt = now;
+        tier.UpdatedByAccountId = request.ActorAccountId;
+        var environmentCount = await dbContext.DeploymentEnvironments.CountAsync(x => x.WorkspaceId == workspaceId && x.TierId == tierId, cancellationToken);
+        await dbContext.DeploymentTierChangeRecords.AddAsync(Change(workspaceId, tier.Id, request.ActorAccountId, "Restored", $"Restored deployment tier '{tier.Name}'.", now, environmentCount), cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceDeploymentTier(tier, environmentCount);
+    }
+
+    public async Task<DeploymentTierImpactSummary> PreviewTierImpactAsync(
+        Guid workspaceId,
+        Guid tierId,
+        IReadOnlyList<string> proposedCapabilities,
+        CancellationToken cancellationToken = default)
+    {
+        var tier = await dbContext.DeploymentTierDefinitions
+            .AsNoTracking()
+            .Include(x => x.Capabilities)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == tierId, cancellationToken);
+        if (tier is null)
+            throw new KeyNotFoundException("Deployment tier does not exist in the workspace.");
+
+        var currentCapabilities = tier.Capabilities.Select(x => x.CapabilityId).Order(StringComparer.Ordinal).ToList();
+        var proposed = DeploymentTierService.NormalizeCapabilities(proposedCapabilities);
+        var added = proposed.Except(currentCapabilities, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+        var removed = currentCapabilities.Except(proposed, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+        var samples = await dbContext.DeploymentEnvironments
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.TierId == tierId)
+            .OrderBy(x => x.Name)
+            .Take(5)
+            .Select(x => new DeploymentTierEnvironmentSample(x.ApplicationId, x.Application!.Name, x.Id, x.Name))
+            .ToListAsync(cancellationToken);
+        var environmentCount = await dbContext.DeploymentEnvironments.CountAsync(x => x.WorkspaceId == workspaceId && x.TierId == tierId, cancellationToken);
+
+        return new DeploymentTierImpactSummary(
+            tierId,
+            currentCapabilities,
+            proposed,
+            added,
+            removed,
+            environmentCount,
+            samples,
+            DeploymentTierService.ChangedSafeguards(added, removed));
+    }
+
+    public async Task<IReadOnlyList<WorkspaceDeploymentTier>> EnsureDefaultTiersAsync(
+        Guid workspaceId,
+        Guid? actorAccountId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await dbContext.DeploymentTierDefinitions
+            .Include(x => x.Capabilities)
+            .Where(x => x.WorkspaceId == workspaceId)
+            .ToListAsync(cancellationToken);
+
+        if (existing.Count == 0)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var defaults = Enum.GetValues<EnvironmentTier>().Select((tier, index) =>
+            {
+                var entity = new DeploymentTierDefinitionEntity
+                {
+                    Id = Guid.NewGuid(),
+                    WorkspaceId = workspaceId,
+                    Name = tier.ToString(),
+                    Description = $"Default {tier} deployment tier.",
+                    SortOrder = (index + 1) * 10,
+                    IsDefault = true,
+                    Status = DeploymentTierStatus.Active,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                    CreatedByAccountId = actorAccountId,
+                    UpdatedByAccountId = actorAccountId,
+                    Capabilities = CreateCapabilityAssignments(workspaceId, DeploymentTierService.DefaultCapabilitiesByLegacyTier[tier], actorAccountId, now)
+                };
+                entity.Changes.Add(Change(workspaceId, entity.Id, actorAccountId, "Created", $"Created default deployment tier '{entity.Name}'.", now, 0));
+                return entity;
+            }).ToList();
+
+            await dbContext.DeploymentTierDefinitions.AddRangeAsync(defaults, cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            existing = defaults;
+        }
+
+        await AssignMissingEnvironmentTierIdsAsync(workspaceId, existing, cancellationToken);
+        return existing
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Name)
+            .Select(x => ToWorkspaceDeploymentTier(x, x.Environments.Count))
+            .ToList();
     }
 
     public async Task<IReadOnlyList<WorkspacePermissionGrant>> GetPermissionGrantsAsync(
@@ -471,15 +722,21 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         CancellationToken cancellationToken = default)
     {
         var entity = await dbContext.DeploymentEnvironments
+            .Include(x => x.TierDefinition)
+                .ThenInclude(x => x!.Capabilities)
             .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == environmentId && x.ApplicationId == request.ApplicationId, cancellationToken);
         if (entity is null)
             throw new KeyNotFoundException("Deployment environment does not exist in the workspace.");
 
+        var tier = await ResolveTierForEnvironmentAsync(workspaceId, request.Tier, request.TierId, requireActive: true, cancellationToken);
         entity.Name = request.Name;
         entity.Tier = request.Tier;
+        entity.TierId = tier.Id;
+        entity.TierDefinition = tier;
+        entity.TierRequiresReview = false;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
-        return new WorkspaceDeploymentEnvironment(entity.Id, entity.WorkspaceId, entity.ApplicationId, entity.Name, entity.Tier, entity.DesiredRevisionId, entity.DeployedRevisionId, entity.DeploymentStatus, entity.DriftStatus, entity.CreatedAt, entity.UpdatedAt);
+        return ToWorkspaceDeploymentEnvironment(entity);
     }
 
     public async Task<WorkspaceWorkflowEngine> RegisterEngineAsync(
@@ -840,6 +1097,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             throw new InvalidOperationException("Deployment application does not exist in the workspace.");
 
         var now = DateTimeOffset.UtcNow;
+        var tier = await ResolveTierForEnvironmentAsync(workspaceId, request.Tier, request.TierId, requireActive: true, cancellationToken);
         var entity = new DeploymentEnvironmentEntity
         {
             Id = Guid.NewGuid(),
@@ -847,6 +1105,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             ApplicationId = request.ApplicationId,
             Name = request.Name,
             Tier = request.Tier,
+            TierId = tier.Id,
+            TierDefinition = tier,
             DeploymentStatus = DeploymentStatus.Blocked,
             DriftStatus = DriftStatus.Unknown,
             CreatedAt = now,
@@ -855,7 +1115,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
 
         await dbContext.DeploymentEnvironments.AddAsync(entity, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
-        return new WorkspaceDeploymentEnvironment(entity.Id, entity.WorkspaceId, entity.ApplicationId, entity.Name, entity.Tier, entity.DesiredRevisionId, entity.DeployedRevisionId, entity.DeploymentStatus, entity.DriftStatus, entity.CreatedAt, entity.UpdatedAt);
+        return ToWorkspaceDeploymentEnvironment(entity);
     }
 
     private static EnvironmentSummary ToEnvironmentSummary(DeploymentEnvironmentEntity environment, IReadOnlyList<WorkflowEngineEntity> engines)
@@ -876,7 +1136,10 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             deployedRevision?.RevisionNumber,
             environment.DeploymentStatus,
             environment.DriftStatus,
-            engines.Where(x => x.EnvironmentId == environment.Id).Select(x => x.Id.ToString("D")).ToList());
+            engines.Where(x => x.EnvironmentId == environment.Id).Select(x => x.Id.ToString("D")).ToList(),
+            environment.TierDefinition?.Name ?? environment.Tier.ToString(),
+            environment.TierDefinition?.Status.ToString() ?? DeploymentTierStatus.Active.ToString(),
+            environment.TierDefinition?.Capabilities.OrderBy(x => x.CapabilityId).Select(x => x.CapabilityId).ToList() ?? DeploymentTierService.DefaultCapabilitiesByLegacyTier[environment.Tier]);
     }
 
     private static DeploymentHistoryEvent ToDeploymentHistoryEvent(
@@ -899,6 +1162,53 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             run.CompletedAt ?? run.StartedAt ?? run.QueuedAt,
             rollbackSourceRevision?.RevisionNumber);
     }
+
+    private static WorkspaceDeploymentEnvironment ToWorkspaceDeploymentEnvironment(DeploymentEnvironmentEntity entity) =>
+        new(
+            entity.Id,
+            entity.WorkspaceId,
+            entity.ApplicationId,
+            entity.Name,
+            entity.Tier,
+            entity.DesiredRevisionId,
+            entity.DeployedRevisionId,
+            entity.DeploymentStatus,
+            entity.DriftStatus,
+            entity.CreatedAt,
+            entity.UpdatedAt,
+            entity.TierId,
+            ToDeploymentTierProfile(entity.TierDefinition, entity.Tier, entity.TierRequiresReview));
+
+    private static DeploymentTierProfile? ToDeploymentTierProfile(DeploymentTierDefinitionEntity? tier, EnvironmentTier legacyTier, bool requiresReview)
+    {
+        if (tier is null)
+            return new DeploymentTierProfile(Guid.Empty, legacyTier.ToString(), DeploymentTierStatus.Active, DeploymentTierService.DefaultCapabilitiesByLegacyTier[legacyTier], requiresReview);
+
+        return new DeploymentTierProfile(
+            tier.Id,
+            tier.Name,
+            tier.Status,
+            tier.Capabilities.OrderBy(x => x.CapabilityId).Select(x => x.CapabilityId).ToList(),
+            requiresReview);
+    }
+
+    private static WorkspaceDeploymentTier ToWorkspaceDeploymentTier(DeploymentTierDefinitionEntity tier, int environmentCount) =>
+        new(
+            tier.Id,
+            tier.WorkspaceId,
+            tier.Name,
+            tier.Description,
+            tier.SortOrder,
+            tier.IsDefault,
+            tier.Status,
+            tier.Capabilities.OrderBy(x => x.CapabilityId).Select(x => x.CapabilityId).ToList(),
+            environmentCount,
+            tier.CreatedAt,
+            tier.UpdatedAt,
+            tier.CreatedByAccountId,
+            tier.UpdatedByAccountId,
+            tier.ArchivedAt,
+            tier.ArchivedByAccountId);
 
     private static WorkflowEngineRegistration ToEngineRegistration(WorkflowEngineEntity engine) =>
         new(
@@ -1126,6 +1436,116 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             entity.Status,
             entity.CreatedAt,
             entity.Message);
+
+    private async Task<DeploymentTierDefinitionEntity> ResolveTierForEnvironmentAsync(
+        Guid workspaceId,
+        EnvironmentTier legacyTier,
+        Guid? tierId,
+        bool requireActive,
+        CancellationToken cancellationToken)
+    {
+        await EnsureDefaultTiersAsync(workspaceId, cancellationToken: cancellationToken);
+        DeploymentTierDefinitionEntity? tier;
+        if (tierId.HasValue)
+        {
+            tier = await dbContext.DeploymentTierDefinitions
+                .Include(x => x.Capabilities)
+                .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == tierId.Value, cancellationToken);
+        }
+        else
+        {
+            tier = await dbContext.DeploymentTierDefinitions
+                .Include(x => x.Capabilities)
+                .Where(x => x.WorkspaceId == workspaceId && x.Name == legacyTier.ToString())
+                .OrderByDescending(x => x.IsDefault)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        if (tier is null)
+            throw new InvalidOperationException("Deployment tier does not exist in the workspace.");
+        if (requireActive && tier.Status != DeploymentTierStatus.Active)
+            throw new InvalidOperationException("Archived deployment tiers cannot be assigned to environments.");
+
+        return tier;
+    }
+
+    private async Task AssignMissingEnvironmentTierIdsAsync(
+        Guid workspaceId,
+        IReadOnlyList<DeploymentTierDefinitionEntity> tiers,
+        CancellationToken cancellationToken)
+    {
+        var environments = await dbContext.DeploymentEnvironments
+            .Where(x => x.WorkspaceId == workspaceId && x.TierId == null)
+            .ToListAsync(cancellationToken);
+        if (environments.Count == 0)
+            return;
+
+        var tiersByName = tiers
+            .GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.OrderByDescending(tier => tier.IsDefault).First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var environment in environments)
+        {
+            if (tiersByName.TryGetValue(environment.Tier.ToString(), out var tier))
+                environment.TierId = tier.Id;
+            else
+            {
+                var fallbackTier = tiers.OrderByDescending(x => x.Status == DeploymentTierStatus.Active).ThenBy(x => x.SortOrder).First();
+                environment.TierId = fallbackTier.Id;
+                environment.TierRequiresReview = true;
+            }
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static List<DeploymentTierCapabilityAssignmentEntity> CreateCapabilityAssignments(
+        Guid workspaceId,
+        IReadOnlyList<string> capabilities,
+        Guid? actorAccountId,
+        DateTimeOffset now) =>
+        capabilities
+            .Select(capability => new DeploymentTierCapabilityAssignmentEntity
+            {
+                Id = Guid.NewGuid(),
+                WorkspaceId = workspaceId,
+                CapabilityId = capability,
+                CreatedAt = now,
+                CreatedByAccountId = actorAccountId
+            })
+            .ToList();
+
+    private static DeploymentTierChangeRecordEntity Change(
+        Guid workspaceId,
+        Guid tierId,
+        Guid? actorAccountId,
+        string changeType,
+        string summary,
+        DateTimeOffset changedAt,
+        int affectedEnvironmentCount) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            TierId = tierId,
+            ActorAccountId = actorAccountId,
+            ChangeType = changeType,
+            Summary = summary,
+            ChangedAt = changedAt,
+            AffectedEnvironmentCount = affectedEnvironmentCount
+        };
+
+    private Task<bool> ActiveTierNameExistsAsync(
+        Guid workspaceId,
+        string name,
+        Guid? excludedTierId,
+        CancellationToken cancellationToken) =>
+        dbContext.DeploymentTierDefinitions.AnyAsync(
+            x => x.WorkspaceId == workspaceId
+                && x.Status == DeploymentTierStatus.Active
+                && x.Name == name.Trim()
+                && (!excludedTierId.HasValue || x.Id != excludedTierId.Value),
+            cancellationToken);
 
     private static DeploymentHealth EnvironmentHealth(DeploymentEnvironmentEntity environment, IReadOnlyList<WorkflowEngineEntity> engines)
     {
