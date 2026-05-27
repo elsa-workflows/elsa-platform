@@ -47,7 +47,7 @@ public sealed class NuGetPackageSourceClient(
             .ToList();
 
         if (packageIds.Count == 0 && searchPrefixes.Count == 0)
-            throw new NotSupportedException("NuGet source discovery requires at least one exact package ID include pattern or prefix wildcard include pattern, for example Elsa.*. Leading wildcard-only sources are not crawled.");
+            throw new NotSupportedException("NuGet source discovery requires at least one exact package ID include pattern, dotted prefix include pattern, or prefix wildcard include pattern, for example Elsa. or Elsa.*. Leading wildcard-only sources are not crawled.");
 
         if (searchPrefixes.Count == 0)
             return packageIds;
@@ -135,7 +135,7 @@ public sealed class NuGetPackageSourceClient(
     }
 
     private static bool IsExactPackageId(string pattern) =>
-        !string.IsNullOrWhiteSpace(pattern) && !pattern.Contains('*') && !pattern.Contains('?');
+        !string.IsNullOrWhiteSpace(pattern) && !PackageSourcePatternMatcher.IsDottedPrefixPattern(pattern.Trim()) && !pattern.Contains('*') && !pattern.Contains('?');
 
     private static bool IsPreviewPrerelease(global::NuGet.Versioning.NuGetVersion version)
     {
@@ -149,10 +149,16 @@ public sealed class NuGetPackageSourceClient(
 
     private static string? GetSearchPrefix(string pattern)
     {
-        if (string.IsNullOrWhiteSpace(pattern) || IsExactPackageId(pattern))
+        if (string.IsNullOrWhiteSpace(pattern))
             return null;
 
         var trimmed = pattern.Trim();
+        if (PackageSourcePatternMatcher.IsDottedPrefixPattern(trimmed))
+            return trimmed;
+
+        if (IsExactPackageId(trimmed))
+            return null;
+
         var wildcardIndex = trimmed.IndexOfAny(['*', '?']);
         if (wildcardIndex <= 0)
             return null;

@@ -9,7 +9,7 @@ public static class PublicCatalogSeedData
     {
         Name = "Test NuGet",
         Url = "https://example.test/v3/index.json",
-        IncludePatterns = ["Elsa.*"],
+        IncludePatterns = ["Elsa."],
         ApprovalPolicy = PackageSourceApprovalPolicy.Manual
     };
 

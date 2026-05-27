@@ -16,9 +16,13 @@ export function isPackageIncluded(packageId: string, includePatterns: string[], 
 }
 
 function matchesGlob(value: string, pattern: string) {
-  if (!pattern.trim()) return false;
-  const escaped = pattern
-    .trim()
+  const trimmed = pattern.trim();
+  if (!trimmed) return false;
+  if (trimmed.endsWith(".") && !trimmed.includes("*") && !trimmed.includes("?")) {
+    return value.toLowerCase().startsWith(trimmed.toLowerCase());
+  }
+
+  const escaped = trimmed
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
     .replace(/\*/g, ".*")
     .replace(/\?/g, ".");

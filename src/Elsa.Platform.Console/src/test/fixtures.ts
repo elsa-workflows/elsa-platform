@@ -4,7 +4,7 @@ export const sourceFixture = {
   type: "NuGetFeed",
   url: "https://api.nuget.org/v3/index.json",
   enabled: true,
-  includePatterns: ["Elsa.*"],
+  includePatterns: ["Elsa."],
   excludePatterns: ["*.Tests"],
   approvalPolicy: "Manual",
   versionDiscoveryPolicy: "AllVersions",

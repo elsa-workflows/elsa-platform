@@ -7,8 +7,13 @@ describe("source pattern tester", () => {
     expect(isPackageIncluded("Elsa.Tests", ["Elsa.*"], ["*.Tests"])).toBe(false);
   });
 
+  it("uses dotted include patterns as package id prefixes", () => {
+    expect(isPackageIncluded("elsa.Persistence.PostgreSql", ["Elsa."], [])).toBe(true);
+    expect(isPackageIncluded("Other.Elsa.Persistence", ["Elsa."], [])).toBe(false);
+  });
+
   it("previews each package id with the same inclusion result", () => {
-    const preview = previewPatterns(["Elsa.*"], ["*.Abstractions"], [
+    const preview = previewPatterns(["Elsa."], ["*.Abstractions"], [
       "Elsa.Messaging.RabbitMQ",
       "Elsa.Abstractions",
       "Other.Package"
