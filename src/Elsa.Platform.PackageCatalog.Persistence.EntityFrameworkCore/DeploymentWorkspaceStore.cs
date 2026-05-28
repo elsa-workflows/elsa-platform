@@ -765,6 +765,12 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             ?? throw new KeyNotFoundException("Deployment command does not exist in the workspace.");
         if (command.EngineId != engineId)
             throw new InvalidOperationException("Command does not target the requested runtime engine.");
+        if (command.Status != DeploymentCommandStatus.Pending)
+            throw new InvalidOperationException("Command is not pending.");
+        if (command.AvailableAt is not null && command.AvailableAt > now)
+            throw new InvalidOperationException("Command is not available.");
+        if (command.ExpiresAt is not null && command.ExpiresAt <= now)
+            throw new InvalidOperationException("Command is expired.");
 
         var notification = new DeploymentCommandWebhookNotificationEntity
         {

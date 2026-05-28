@@ -418,6 +418,30 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
             .WithMessage("Command does not target the requested runtime engine.");
     }
 
+    [Fact]
+    public async Task Webhook_notification_rejects_non_pending_command()
+    {
+        var topology = await SeedTopologyAsync();
+        await QueueRunAsync(topology);
+        var command = (await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow)).Single();
+        await _store.ClaimCommandAsync(
+            _workspaceId,
+            command.Id,
+            new ClaimDeploymentCommandRequest(topology.Engine.Id, "worker-1", TimeSpan.FromMinutes(5)),
+            "lease-1",
+            DateTimeOffset.UtcNow);
+
+        var create = () => _store.CreateWebhookNotificationAsync(
+            _workspaceId,
+            topology.Engine.Id,
+            command.Id,
+            "{\"reason\":\"command-available\"}",
+            DateTimeOffset.UtcNow);
+
+        await create.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Command is not pending.");
+    }
+
     public void Dispose() => _db.Dispose();
 
     private async Task<WorkspaceDeploymentRun> QueueRunAsync(DeploymentTopology topology) =>
