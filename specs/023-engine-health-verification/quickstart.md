@@ -53,12 +53,11 @@ git diff --check
 
 ## Verification Results
 
-- `dotnet build Elsa.Platform.sln --no-restore`: blocked in this Codex desktop shell because `dotnet` is not on `PATH`.
-- `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter EngineHealth`: not run because `dotnet` is not on `PATH`.
-- `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspacePersistenceTests`: not run because `dotnet` is not on `PATH`.
-- `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceDeploymentEngineHealth`: not run because `dotnet` is not on `PATH`.
-- `PATH="/Users/sipke/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ./node_modules/.bin/vitest run deployments`: passed, 14 tests.
-- `PATH="/Applications/Codex.app/Contents/Resources:$PATH" ./node_modules/.bin/tsc -b`: passed.
+- `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter EngineHealth`: passed, 3 tests.
+- `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspacePersistenceTests`: passed, 10 tests.
+- `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceDeploymentEngineHealth`: passed, 4 tests.
+- `cd src/Elsa.Platform.Console && npm test -- --run deployments`: passed, 22 tests.
+- `cd src/Elsa.Platform.Console && npm run typecheck`: passed.
 - `git diff --check`: passed.
 
 ## Known Scope Boundaries

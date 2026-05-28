@@ -31,14 +31,11 @@ For the first-class Elsa workflow path:
 
 ## Current Implementation Baseline
 
-Completed or mostly complete:
+Completed:
 
-- Identity and workspace tenancy: `specs/021-identity-tenancy` has 73 completed tasks and 1 remaining smoke-check task.
+- Identity and workspace tenancy: `specs/021-identity-tenancy` has all tasks completed. Focused smoke coverage is recorded in the quickstart; live external provider browser sign-in remains environment-specific.
 - Deployment UX and durable queued runs: `specs/022-deployment-ux` has 110 completed tasks and no open checklist tasks. It already includes durable deployment runs, confirmations, queue worker, rollback, runtime controls, permissions, persistence, API, and console flows.
-- Engine health verification: `specs/023-engine-health-verification` has 38 completed tasks and 6 remaining verification/check tasks.
-
-Partially implemented:
-
+- Engine health verification: `specs/023-engine-health-verification` has all tasks completed. Core, persistence, API, console, and typecheck results are recorded in the quickstart.
 - Artifact registry: `specs/024-artifact-registry` has all tasks completed. Core, persistence, API, and console focused checks are recorded in the quickstart.
 - Custom deployment tiers: `specs/025-custom-deployment-tiers` has all tasks completed. Tier capability semantics, migration backfill, bounded-query verification, and console/API coverage are recorded in the quickstart.
 
@@ -126,10 +123,10 @@ Goal: stabilize the code already in flight before adding runtime sync.
 
 Tasks:
 
-- Run and record identity quickstart smoke checks for `021`.
-- Complete remaining engine-health verification checks for `023`.
-- Complete artifact-registry missing tests for core validation, EF persistence, API permissions/isolation, refresh behavior, and focused test runs.
-- Complete custom-tier test coverage, migration backfill, bounded-query verification, quickstart updates, and final contract updates.
+- Run and record identity quickstart smoke checks for `021`. Completed.
+- Complete remaining engine-health verification checks for `023`. Completed.
+- Complete artifact-registry missing tests for core validation, EF persistence, API permissions/isolation, refresh behavior, and focused test runs. Completed.
+- Complete custom-tier test coverage, migration backfill, bounded-query verification, quickstart updates, and final contract updates. Completed.
 
 Exit criteria:
 
@@ -228,7 +225,6 @@ Exit criteria:
 
 ## Immediate Next Actions
 
-1. Run remaining smoke/verification checks for `021-identity-tenancy` and `023-engine-health-verification`.
-2. Create `026-artifact-envelope-and-types`.
-3. Create `028-runtime-command-sync` before implementing external runtime workers.
-4. Create `027-studio-submit-to-platform` and `029-workflow-artifact-runtime-applier` once the envelope and command contracts are stable.
+1. Create `026-artifact-envelope-and-types`.
+2. Create `028-runtime-command-sync` before implementing external runtime workers.
+3. Create `027-studio-submit-to-platform` and `029-workflow-artifact-runtime-applier` once the envelope and command contracts are stable.

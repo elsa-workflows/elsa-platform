@@ -61,7 +61,7 @@
 - [x] T018 [US1] Add manual verification endpoint and response contract in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs` and `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentContracts.cs`
 - [x] T019 [US1] Add manual verification API client and models in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts` and `src/Elsa.Platform.Console/src/features/deployments/deploymentModels.ts`
 - [x] T020 [US1] Add Verify action, pending state, safe diagnostics, and cockpit refresh in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [ ] T021 [US1] Run focused US1 checks documented in `specs/023-engine-health-verification/quickstart.md`
+- [x] T021 [US1] Run focused US1 checks documented in `specs/023-engine-health-verification/quickstart.md`
 
 **Checkpoint**: Manual verification is independently functional through API and console.
 
@@ -84,7 +84,7 @@
 - [x] T025 [US2] Implement heartbeat update behavior in `src/Elsa.Platform.Deployment.Core/Workspace/EngineHealthService.cs`
 - [x] T026 [US2] Implement capability preservation and optional capability update persistence in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
 - [x] T027 [US2] Add heartbeat endpoint and request contract in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs` and `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentContracts.cs`
-- [ ] T028 [US2] Run focused US2 checks documented in `specs/023-engine-health-verification/quickstart.md`
+- [x] T028 [US2] Run focused US2 checks documented in `specs/023-engine-health-verification/quickstart.md`
 
 **Checkpoint**: Heartbeats are independently functional and stale/cross-workspace updates fail closed.
 
@@ -106,7 +106,7 @@
 - [x] T031 [US3] Render last verification, heartbeat freshness, and safe diagnostics in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
 - [x] T032 [US3] Update runtime controls messaging for unreachable/unverified engines in `src/Elsa.Platform.Console/src/features/deployments/RuntimeControlsPanel.tsx`
 - [x] T033 [US3] Ensure server-side runtime control health gates use verification metadata in `src/Elsa.Platform.Deployment.Core/Workspace/RuntimeControlService.cs`
-- [ ] T034 [US3] Run focused US3 checks documented in `specs/023-engine-health-verification/quickstart.md`
+- [x] T034 [US3] Run focused US3 checks documented in `specs/023-engine-health-verification/quickstart.md`
 
 **Checkpoint**: Console health states are independently understandable and runtime controls fail closed.
 
@@ -120,9 +120,9 @@
 - [x] T036 [P] Update final API contract examples in `specs/023-engine-health-verification/contracts/engine-health-api.md`
 - [x] T037 [P] Update final console UX contract examples in `specs/023-engine-health-verification/contracts/console-engine-health-ux.md`
 - [x] T038 Review secret redaction, workspace permission checks, stale heartbeat handling, cross-workspace rejection, and runtime-control health gates across `src/Elsa.Platform.Deployment.Core/Workspace/`, `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [ ] T039 Run `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter EngineHealth` and record result in `specs/023-engine-health-verification/quickstart.md`
-- [ ] T040 Run `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspacePersistenceTests` and record result in `specs/023-engine-health-verification/quickstart.md`
-- [ ] T041 Run `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceDeploymentEngineHealth` and record result in `specs/023-engine-health-verification/quickstart.md`
+- [x] T039 Run `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter EngineHealth` and record result in `specs/023-engine-health-verification/quickstart.md`
+- [x] T040 Run `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspacePersistenceTests` and record result in `specs/023-engine-health-verification/quickstart.md`
+- [x] T041 Run `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceDeploymentEngineHealth` and record result in `specs/023-engine-health-verification/quickstart.md`
 - [x] T042 Run `cd src/Elsa.Platform.Console && npm test -- --run deployments` and record result in `specs/023-engine-health-verification/quickstart.md`
 - [x] T043 Run `cd src/Elsa.Platform.Console && npm run typecheck` and record result in `specs/023-engine-health-verification/quickstart.md`
 - [x] T044 Run `git diff --check` and record result in `specs/023-engine-health-verification/quickstart.md`

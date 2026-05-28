@@ -194,7 +194,7 @@
 - [X] T063 Review security-sensitive logs and audit metadata in `src/Elsa.Platform.Api/Authentication/`
 - [X] T064 Run `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj`
 - [X] T065 Run `dotnet test Elsa.Platform.sln`
-- [ ] T066 Execute quickstart smoke checks from `specs/021-identity-tenancy/quickstart.md`
+- [X] T066 Execute quickstart smoke checks from `specs/021-identity-tenancy/quickstart.md`
 
 ---
 
