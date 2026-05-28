@@ -41,6 +41,9 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.ActionConfirmationEntity> ActionConfirmations => Set<Models.ActionConfirmationEntity>();
     internal DbSet<Models.DeploymentRunEntity> DeploymentRuns => Set<Models.DeploymentRunEntity>();
     internal DbSet<Models.DeploymentRunHistoryEventEntity> DeploymentRunHistoryEvents => Set<Models.DeploymentRunHistoryEventEntity>();
+    internal DbSet<Models.DeploymentCommandEntity> DeploymentCommands => Set<Models.DeploymentCommandEntity>();
+    internal DbSet<Models.DeploymentCommandEventEntity> DeploymentCommandEvents => Set<Models.DeploymentCommandEventEntity>();
+    internal DbSet<Models.DeploymentCommandWebhookNotificationEntity> DeploymentCommandWebhookNotifications => Set<Models.DeploymentCommandWebhookNotificationEntity>();
     internal DbSet<Models.ObservabilityBindingEntity> ObservabilityBindings => Set<Models.ObservabilityBindingEntity>();
     internal DbSet<Models.DriftReportItemEntity> DriftReportItems => Set<Models.DriftReportItemEntity>();
 
@@ -78,6 +81,9 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.ActionConfirmationConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DeploymentRunConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DeploymentRunHistoryEventConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentCommandConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentCommandEventConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentCommandWebhookNotificationConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ObservabilityBindingConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DriftReportItemConfiguration());
     }

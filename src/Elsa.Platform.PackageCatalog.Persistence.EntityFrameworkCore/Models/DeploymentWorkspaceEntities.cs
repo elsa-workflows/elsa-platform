@@ -278,6 +278,63 @@ internal sealed class DeploymentRunHistoryEventEntity
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+internal sealed class DeploymentCommandEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid RunId { get; set; }
+    public DeploymentRunEntity? Run { get; set; }
+    public Guid EnvironmentId { get; set; }
+    public Guid EngineId { get; set; }
+    public DeploymentCommandAction Action { get; set; }
+    public DeploymentCommandStatus Status { get; set; }
+    public string ArtifactJson { get; set; } = "";
+    public Guid? RevisionId { get; set; }
+    public string IdempotencyKey { get; set; } = "";
+    public string? WorkerId { get; set; }
+    public string? LeaseToken { get; set; }
+    public DateTimeOffset? ClaimedAt { get; set; }
+    public DateTimeOffset? LeaseExpiresAt { get; set; }
+    public DateTimeOffset? HeartbeatAt { get; set; }
+    public int AttemptNumber { get; set; }
+    public int? PercentComplete { get; set; }
+    public string? ProgressMessage { get; set; }
+    public string? ObservedArtifactDigestAlgorithm { get; set; }
+    public string? ObservedArtifactDigest { get; set; }
+    public string? RuntimeReference { get; set; }
+    public string DiagnosticsJson { get; set; } = "[]";
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? AvailableAt { get; set; }
+    public DateTimeOffset? ExpiresAt { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
+    public List<DeploymentCommandEventEntity> Events { get; set; } = [];
+}
+
+internal sealed class DeploymentCommandEventEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid CommandId { get; set; }
+    public DeploymentCommandEntity? Command { get; set; }
+    public Guid RunId { get; set; }
+    public DeploymentCommandStatus Status { get; set; }
+    public string Message { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+internal sealed class DeploymentCommandWebhookNotificationEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid EngineId { get; set; }
+    public Guid CommandId { get; set; }
+    public WebhookNotificationStatus Status { get; set; }
+    public string SafePayloadJson { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? SentAt { get; set; }
+}
+
 internal sealed class ObservabilityBindingEntity
 {
     public Guid Id { get; set; }

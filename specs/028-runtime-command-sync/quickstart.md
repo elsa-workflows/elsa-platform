@@ -37,7 +37,12 @@ git diff --check
 
 ## Verification Results
 
-- Not run yet. This spec defines the next implementation slice.
+- 2026-05-28: `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter DeploymentCommand --no-restore` passed: 8 tests.
+- 2026-05-28: `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand --no-restore` passed: 5 tests.
+- 2026-05-28: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter RuntimeCommand --no-restore` passed: 3 tests.
+- 2026-05-28: `cd src/Elsa.Platform.Console && npm test -- --run deployments` passed: 22 tests.
+- 2026-05-28: `cd src/Elsa.Platform.Console && npm run typecheck` passed.
+- 2026-05-28: `git diff --check` passed.
 
 ## Known Scope Boundaries
 

@@ -10,9 +10,9 @@ GET /api/workspaces/{workspaceId}/deployments/runtime/engines/{engineId}/command
 
 ```json
 {
-  "items": [
+  "commands": [
     {
-      "commandId": "9f4f44b8-f65c-4c6f-a043-1f818c206c3d",
+      "id": "9f4f44b8-f65c-4c6f-a043-1f818c206c3d",
       "runId": "75e12435-18ec-4c69-8fb6-15d3c04e0b08",
       "action": "deploy",
       "status": "pending",
@@ -44,28 +44,20 @@ Content-Type: application/json
 {
   "engineId": "3c8d5b87-b7d7-42e8-9b4c-17081e39c9a9",
   "workerId": "runtime-sync-01",
-  "leaseDurationSeconds": 120
+  "leaseSeconds": 120
 }
 ```
 
 ```json
 {
-  "commandId": "9f4f44b8-f65c-4c6f-a043-1f818c206c3d",
+  "command": {
+    "id": "9f4f44b8-f65c-4c6f-a043-1f818c206c3d",
+    "status": "claimed",
+    "leaseExpiresAt": "2026-05-28T12:02:00Z",
+    "attemptNumber": 1
+  },
   "leaseToken": "opaque-lease-token",
-  "leaseExpiresAt": "2026-05-28T12:02:00Z",
-  "attemptNumber": 1,
-  "payload": {
-    "action": "deploy",
-    "artifactTypeId": "elsa.workflow-definition",
-    "artifactDigest": {
-      "algorithm": "sha256",
-      "value": "0f4b3d4cf7f7c4d9a3c0d9a829c22d5e6fbf9871bcf14d8d04f1d7e0ee5f4a12"
-    },
-    "safeMetadata": {
-      "name": "Sales Onboarding",
-      "version": "2026.05.28.1"
-    }
-  }
+  "payload": "The command body contains safe artifact/revision references only. Raw payloads and lease tokens are not returned by poll responses."
 }
 ```
 

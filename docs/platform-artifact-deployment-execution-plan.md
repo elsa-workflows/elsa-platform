@@ -39,13 +39,13 @@ Completed:
 - Artifact registry: `specs/024-artifact-registry` has all tasks completed. Core, persistence, API, and console focused checks are recorded in the quickstart.
 - Custom deployment tiers: `specs/025-custom-deployment-tiers` has all tasks completed. Tier capability semantics, migration backfill, bounded-query verification, and console/API coverage are recorded in the quickstart.
 - Artifact envelope and types: `specs/026-artifact-envelope-and-types` has all tasks completed. The envelope/type contracts live in `Elsa.Platform.Deployment.Artifacts`, and the workspace artifact registry now stores type, producer, safe display metadata, compatibility hints, and payload references.
-- Runtime command sync: `specs/028-runtime-command-sync` now defines the platform command contract, runtime pull/sync APIs, claim/lease behavior, heartbeat/progress reporting, stale recovery, idempotency, and webhook-triggered fetch semantics.
+- Runtime command sync: `specs/028-runtime-command-sync` now has backend command models, EF persistence, SQLite/SQL Server migrations, runtime pull/sync APIs, claim/lease behavior, heartbeat/progress/completion reporting, stale recovery, idempotency, webhook notification records, in-process worker compatibility, and focused core/persistence/API coverage.
 
 Architectural delta introduced by the latest product decisions:
 
 - The specs now describe immutable workflow artifacts, Studio **Submit to Platform**, platform-owned deployment commands, runtime pull/sync, webhook-triggered fetch, and direct push as transport alternatives.
-- Existing code still primarily models deployment execution as platform-local durable queued runs with an in-process worker.
-- There is not yet a first-class deployment command API for external runtime sync workers.
+- Deployment execution now creates platform-owned command records linked to deployment runs while keeping the platform-local in-process worker compatible.
+- External runtime sync workers can poll, claim, heartbeat, progress, complete, fail, or reject commands through the runtime command API.
 - There are not yet Studio or runtime integration NuGet packages.
 - Existing desired-state records are structured platform records; they do not yet reference workflow artifacts as the main deployable input.
 
@@ -82,10 +82,8 @@ Focused specs:
    - Keeps direct runtime Publish clearly separate or hidden for platform-integrated installations.
 
 3. `028-runtime-command-sync`
-   - Spec created. Platform deployment command API.
-   - Runtime sync worker contract.
-   - Claim/lease, idempotency, expiration, progress reporting, stale command recovery, duplicate delivery behavior, and safe diagnostics.
-   - Transport model: pull/sync first, webhook-triggered fetch second, direct push as explicit opt-in.
+   - Backend implementation completed for platform deployment command records, runtime pull/sync API, claim/lease, idempotent completion, progress reporting, stale recovery, safe diagnostics, and webhook notification records.
+   - Remaining follow-on work belongs with runtime credential hardening/provider transports and the concrete workflow runtime applier package.
 
 4. `029-workflow-artifact-runtime-applier`
    - NuGet package for Elsa Workflows runtime integration.
@@ -159,17 +157,17 @@ Goal: separate durable deployment intent from transport.
 
 Tasks:
 
-- Add deployment command records linked to deployment runs.
-- Model command action, artifact/revision reference, target runtime, idempotency key, lease/claim state, expiration, progress, and safe diagnostics.
-- Add API endpoints for runtime integrations to poll, claim, heartbeat, complete, fail, or reject commands.
-- Keep existing in-process worker compatible by treating queued runs as an internal command consumer.
-- Add duplicate poll/webhook tests proving no duplicate apply.
+- Add deployment command records linked to deployment runs. Completed.
+- Model command action, artifact/revision reference, target runtime, idempotency key, lease/claim state, expiration, progress, and safe diagnostics. Completed.
+- Add API endpoints for runtime integrations to poll, claim, heartbeat, complete, fail, or reject commands. Completed.
+- Keep existing in-process worker compatible by treating queued runs as an internal command consumer. Completed.
+- Add duplicate poll/claim and stale-recovery tests proving no duplicate apply. Completed for core, persistence, and API claim lifecycle; provider webhook delivery remains a future transport concern.
 
 Exit criteria:
 
-- Runtime pull can claim and complete commands without inbound runtime access.
-- Stale claimed commands move to recovery-required or equivalent without automatic duplicate apply.
-- Deployment history remains the console-facing source of truth.
+- Runtime pull can claim and complete commands without inbound runtime access. Completed.
+- Stale claimed commands move to recovery-required without automatic duplicate apply. Completed.
+- Deployment history remains the console-facing source of truth. Completed through command event projection into run history.
 
 ### Phase 4: Studio Submit Integration
 

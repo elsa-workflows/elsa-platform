@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
 
-public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWorkspaceDeploymentStore, IWorkspacePermissionStore, IWorkspaceDeploymentMutationStore, IWorkspaceArtifactStore, IWorkspaceDeploymentTierStore
+public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWorkspaceDeploymentStore, IWorkspacePermissionStore, IWorkspaceDeploymentMutationStore, IWorkspaceDeploymentCommandStore, IWorkspaceArtifactStore, IWorkspaceDeploymentTierStore
 {
     public async Task<DeploymentCockpit> GetCockpitAsync(Guid workspaceId, CancellationToken cancellationToken = default)
     {
@@ -512,12 +512,258 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
                 }
             ]
         };
+        var command = CreateCommandEntity(
+            workspaceId,
+            new CreateDeploymentCommandRequest(
+                runId,
+                request.TargetEnvironmentId,
+                request.TargetEngineId,
+                request.RollbackSourceRunId is null ? DeploymentCommandAction.Deploy : DeploymentCommandAction.Rollback,
+                null,
+                new DeploymentCommandRevisionReference(request.SourceRevisionId),
+                BuildDeploymentCommandIdempotencyKey(workspaceId, request.TargetEnvironmentId, request.TargetEngineId, request.SourceRevisionId, request.RollbackSourceRunId),
+                now,
+                null),
+            now);
+        await AddCommandEventAsync(command, DeploymentCommandStatus.Pending, "Deployment command created.", now, cancellationToken);
 
         environment.DeploymentStatus = DeploymentStatus.Running;
         environment.UpdatedAt = now;
         await dbContext.DeploymentRuns.AddAsync(run, cancellationToken);
+        await dbContext.DeploymentCommands.AddAsync(command, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToWorkspaceDeploymentRun(run);
+    }
+
+    public async Task<DeploymentCommand> CreateCommandAsync(
+        Guid workspaceId,
+        CreateDeploymentCommandRequest request,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var exists = await dbContext.DeploymentRuns
+            .AnyAsync(x => x.WorkspaceId == workspaceId && x.Id == request.RunId, cancellationToken);
+        if (!exists)
+            throw new InvalidOperationException("Deployment run does not exist in the workspace.");
+
+        var existing = await dbContext.DeploymentCommands
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.IdempotencyKey == request.IdempotencyKey, cancellationToken);
+        if (existing is not null)
+            return ToDeploymentCommand(existing);
+
+        var entity = CreateCommandEntity(workspaceId, request, now);
+        await dbContext.DeploymentCommands.AddAsync(entity, cancellationToken);
+        await AddCommandAndRunEventAsync(entity, DeploymentCommandStatus.Pending, "Deployment command created.", now, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToDeploymentCommand(entity);
+    }
+
+    public async Task<IReadOnlyList<DeploymentCommand>> PollPendingCommandsAsync(
+        Guid workspaceId,
+        Guid engineId,
+        int limit,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var commands = await dbContext.DeploymentCommands
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId
+                && x.EngineId == engineId
+                && x.Status == DeploymentCommandStatus.Pending
+                && (x.AvailableAt == null || x.AvailableAt <= now)
+                && (x.ExpiresAt == null || x.ExpiresAt > now))
+            .OrderBy(x => x.AvailableAt ?? x.CreatedAt)
+            .ThenBy(x => x.CreatedAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+        return commands.Select(ToDeploymentCommand).ToList();
+    }
+
+    public async Task<DeploymentCommand?> GetCommandAsync(
+        Guid workspaceId,
+        Guid commandId,
+        CancellationToken cancellationToken = default)
+    {
+        var command = await dbContext.DeploymentCommands
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == commandId, cancellationToken);
+        return command is null ? null : ToDeploymentCommand(command);
+    }
+
+    public async Task<DeploymentCommand> ClaimCommandAsync(
+        Guid workspaceId,
+        Guid commandId,
+        ClaimDeploymentCommandRequest request,
+        string leaseToken,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var command = await LoadCommandForUpdateAsync(workspaceId, commandId, cancellationToken);
+        if (command.EngineId != request.EngineId)
+            throw new InvalidOperationException("Command does not target the requested runtime engine.");
+        if (IsFinal(command.Status))
+            throw new InvalidOperationException("Command is already final.");
+        if (command.Status != DeploymentCommandStatus.Pending)
+            throw new InvalidOperationException("Command is already leased.");
+        if (command.ExpiresAt is not null && command.ExpiresAt <= now)
+            throw new InvalidOperationException("Command is expired.");
+
+        command.Status = DeploymentCommandStatus.Claimed;
+        command.WorkerId = request.WorkerId;
+        command.LeaseToken = leaseToken;
+        command.ClaimedAt = now;
+        command.HeartbeatAt = now;
+        command.LeaseExpiresAt = now.Add(request.LeaseDuration);
+        command.AttemptNumber += 1;
+        command.UpdatedAt = now;
+
+        var run = await dbContext.DeploymentRuns.SingleAsync(x => x.WorkspaceId == workspaceId && x.Id == command.RunId, cancellationToken);
+        if (run.Status == WorkspaceDeploymentRunStatus.Queued)
+        {
+            run.Status = WorkspaceDeploymentRunStatus.Running;
+            run.StartedAt = now;
+            run.WorkerId = request.WorkerId;
+            run.WorkerHeartbeatAt = now;
+        }
+
+        await AddCommandAndRunEventAsync(command, DeploymentCommandStatus.Claimed, "Deployment command claimed by runtime worker.", now, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToDeploymentCommand(command);
+    }
+
+    public async Task<DeploymentCommand> HeartbeatCommandAsync(
+        Guid workspaceId,
+        Guid commandId,
+        DeploymentCommandHeartbeatRequest request,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var command = await LoadCommandForLeaseMutationAsync(workspaceId, commandId, request.LeaseToken, now, cancellationToken);
+        command.WorkerId = request.WorkerId;
+        command.HeartbeatAt = now;
+        command.UpdatedAt = now;
+        await AddCommandAndRunEventAsync(command, command.Status, "Runtime command heartbeat received.", now, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToDeploymentCommand(command);
+    }
+
+    public async Task<DeploymentCommand> RecordCommandProgressAsync(
+        Guid workspaceId,
+        Guid commandId,
+        DeploymentCommandProgressRequest request,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var command = await LoadCommandForLeaseMutationAsync(workspaceId, commandId, request.LeaseToken, now, cancellationToken);
+        command.Status = DeploymentCommandStatus.Running;
+        command.PercentComplete = request.PercentComplete;
+        command.ProgressMessage = request.Message;
+        command.HeartbeatAt = now;
+        command.UpdatedAt = now;
+        await AddCommandAndRunEventAsync(command, DeploymentCommandStatus.Running, request.Message, now, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToDeploymentCommand(command);
+    }
+
+    public async Task<DeploymentCommand> CompleteCommandAsync(
+        Guid workspaceId,
+        Guid commandId,
+        CompleteDeploymentCommandRequest request,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var command = await LoadCommandForUpdateAsync(workspaceId, commandId, cancellationToken);
+        if (command.Status == DeploymentCommandStatus.Completed)
+            return ToDeploymentCommand(command);
+        ValidateLease(command, request.LeaseToken, now);
+
+        command.Status = DeploymentCommandStatus.Completed;
+        command.ObservedArtifactDigestAlgorithm = request.ObservedArtifactDigest?.Algorithm;
+        command.ObservedArtifactDigest = request.ObservedArtifactDigest?.Value;
+        command.RuntimeReference = request.RuntimeReference;
+        command.DiagnosticsJson = JsonSerializer.Serialize(request.Diagnostics);
+        command.CompletedAt = now;
+        command.UpdatedAt = now;
+        await AddCommandAndRunEventAsync(command, DeploymentCommandStatus.Completed, "Runtime command completed.", now, cancellationToken);
+        await UpdateRunStatusAsync(
+            workspaceId,
+            command.RunId,
+            command.Action == DeploymentCommandAction.Rollback ? WorkspaceDeploymentRunStatus.RolledBack : WorkspaceDeploymentRunStatus.Succeeded,
+            "Deployment command completed by runtime.",
+            now,
+            cancellationToken: cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToDeploymentCommand(command);
+    }
+
+    public Task<DeploymentCommand> FailCommandAsync(
+        Guid workspaceId,
+        Guid commandId,
+        FailDeploymentCommandRequest request,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default) =>
+        FinalizeCommandAsync(workspaceId, commandId, request.LeaseToken, DeploymentCommandStatus.Failed, request.Diagnostics, "Runtime command failed.", now, cancellationToken);
+
+    public Task<DeploymentCommand> RejectCommandAsync(
+        Guid workspaceId,
+        Guid commandId,
+        RejectDeploymentCommandRequest request,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default) =>
+        FinalizeCommandAsync(workspaceId, commandId, request.LeaseToken, DeploymentCommandStatus.Rejected, request.Diagnostics, "Runtime command rejected.", now, cancellationToken);
+
+    public async Task<int> MarkStaleCommandsRecoveryRequiredAsync(
+        DateTimeOffset now,
+        TimeSpan staleAfter,
+        CancellationToken cancellationToken = default)
+    {
+        var staleBefore = now.Subtract(staleAfter);
+        var commands = await dbContext.DeploymentCommands
+            .Where(x => (x.Status == DeploymentCommandStatus.Claimed || x.Status == DeploymentCommandStatus.Running)
+                && (x.HeartbeatAt ?? x.ClaimedAt ?? x.CreatedAt) < staleBefore)
+            .ToListAsync(cancellationToken);
+
+        foreach (var command in commands)
+        {
+            command.Status = DeploymentCommandStatus.RecoveryRequired;
+            command.UpdatedAt = now;
+            command.CompletedAt = now;
+            await AddCommandAndRunEventAsync(command, DeploymentCommandStatus.RecoveryRequired, "Runtime command requires recovery after stale heartbeat.", now, cancellationToken);
+            await UpdateRunStatusAsync(
+                command.WorkspaceId,
+                command.RunId,
+                WorkspaceDeploymentRunStatus.RecoveryRequired,
+                "Deployment command requires recovery after stale runtime heartbeat.",
+                now,
+                cancellationToken: cancellationToken);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return commands.Count;
+    }
+
+    public async Task<DeploymentCommandWebhookNotification> CreateWebhookNotificationAsync(
+        Guid workspaceId,
+        Guid engineId,
+        Guid commandId,
+        string safePayloadJson,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var notification = new DeploymentCommandWebhookNotificationEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            EngineId = engineId,
+            CommandId = commandId,
+            Status = WebhookNotificationStatus.Pending,
+            SafePayloadJson = safePayloadJson,
+            CreatedAt = now
+        };
+        await dbContext.DeploymentCommandWebhookNotifications.AddAsync(notification, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToDeploymentCommandWebhookNotification(notification);
     }
 
     public async Task<WorkspaceDeploymentRun?> GetRunAsync(
@@ -1497,6 +1743,222 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             entity.Status,
             entity.Message,
             entity.CreatedAt);
+
+    private static DeploymentCommandEntity CreateCommandEntity(
+        Guid workspaceId,
+        CreateDeploymentCommandRequest request,
+        DateTimeOffset now) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            RunId = request.RunId,
+            EnvironmentId = request.EnvironmentId,
+            EngineId = request.EngineId,
+            Action = request.Action,
+            Status = DeploymentCommandStatus.Pending,
+            ArtifactJson = JsonSerializer.Serialize(request.Artifact),
+            RevisionId = request.Revision?.RevisionId,
+            IdempotencyKey = request.IdempotencyKey.Trim(),
+            AttemptNumber = 0,
+            DiagnosticsJson = "[]",
+            CreatedAt = now,
+            UpdatedAt = now,
+            AvailableAt = request.AvailableAt,
+            ExpiresAt = request.ExpiresAt
+        };
+
+    private async Task<DeploymentCommand> FinalizeCommandAsync(
+        Guid workspaceId,
+        Guid commandId,
+        string leaseToken,
+        DeploymentCommandStatus status,
+        IReadOnlyList<DeploymentCommandDiagnostic> diagnostics,
+        string message,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var command = await LoadCommandForUpdateAsync(workspaceId, commandId, cancellationToken);
+        if (command.Status == status)
+            return ToDeploymentCommand(command);
+        if (IsFinal(command.Status))
+            throw new InvalidOperationException("Command is already final.");
+
+        ValidateLease(command, leaseToken, now);
+
+        command.Status = status;
+        command.DiagnosticsJson = JsonSerializer.Serialize(diagnostics);
+        command.CompletedAt = now;
+        command.UpdatedAt = now;
+
+        await AddCommandAndRunEventAsync(command, status, message, now, cancellationToken);
+        await UpdateRunStatusAsync(
+            workspaceId,
+            command.RunId,
+            WorkspaceDeploymentRunStatus.Failed,
+            message,
+            now,
+            diagnostics.FirstOrDefault(x => x.Severity == DeploymentCommandDiagnosticSeverity.Error)?.Message,
+            cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToDeploymentCommand(command);
+    }
+
+    private async Task<DeploymentCommandEntity> LoadCommandForUpdateAsync(
+        Guid workspaceId,
+        Guid commandId,
+        CancellationToken cancellationToken) =>
+        await dbContext.DeploymentCommands
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == commandId, cancellationToken)
+        ?? throw new KeyNotFoundException("Deployment command does not exist in the workspace.");
+
+    private async Task<DeploymentCommandEntity> LoadCommandForLeaseMutationAsync(
+        Guid workspaceId,
+        Guid commandId,
+        string leaseToken,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var command = await LoadCommandForUpdateAsync(workspaceId, commandId, cancellationToken);
+        if (IsFinal(command.Status))
+            throw new InvalidOperationException("Command is already final.");
+        ValidateLease(command, leaseToken, now);
+        return command;
+    }
+
+    private static void ValidateLease(DeploymentCommandEntity command, string leaseToken, DateTimeOffset now)
+    {
+        if (!string.Equals(command.LeaseToken, leaseToken, StringComparison.Ordinal))
+            throw new InvalidOperationException("Command lease token is invalid.");
+        if (command.LeaseExpiresAt is not null && command.LeaseExpiresAt <= now)
+            throw new InvalidOperationException("Command lease has expired.");
+        if (command.Status is not DeploymentCommandStatus.Claimed and not DeploymentCommandStatus.Running)
+            throw new InvalidOperationException("Command is not currently leased.");
+    }
+
+    private async Task AddCommandAndRunEventAsync(
+        DeploymentCommandEntity command,
+        DeploymentCommandStatus commandStatus,
+        string message,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await AddCommandEventAsync(command, commandStatus, message, now, cancellationToken);
+        await dbContext.DeploymentRunHistoryEvents.AddAsync(new DeploymentRunHistoryEventEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = command.WorkspaceId,
+            RunId = command.RunId,
+            Status = ToRunStatus(commandStatus),
+            Message = message,
+            CreatedAt = now
+        }, cancellationToken);
+    }
+
+    private async Task AddCommandEventAsync(
+        DeploymentCommandEntity command,
+        DeploymentCommandStatus commandStatus,
+        string message,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await dbContext.DeploymentCommandEvents.AddAsync(new DeploymentCommandEventEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = command.WorkspaceId,
+            CommandId = command.Id,
+            RunId = command.RunId,
+            Status = commandStatus,
+            Message = message,
+            CreatedAt = now
+        }, cancellationToken);
+    }
+
+    private static string BuildDeploymentCommandIdempotencyKey(
+        Guid workspaceId,
+        Guid environmentId,
+        Guid engineId,
+        Guid sourceRevisionId,
+        Guid? rollbackSourceRunId) =>
+        string.Join(
+            ':',
+            "deployment-command",
+            workspaceId.ToString("D"),
+            environmentId.ToString("D"),
+            engineId.ToString("D"),
+            sourceRevisionId.ToString("D"),
+            rollbackSourceRunId?.ToString("D") ?? "deploy");
+
+    private static bool IsFinal(DeploymentCommandStatus status) =>
+        status is DeploymentCommandStatus.Completed
+            or DeploymentCommandStatus.Failed
+            or DeploymentCommandStatus.Rejected
+            or DeploymentCommandStatus.Cancelled
+            or DeploymentCommandStatus.RecoveryRequired
+            or DeploymentCommandStatus.Expired;
+
+    private static WorkspaceDeploymentRunStatus ToRunStatus(DeploymentCommandStatus status) =>
+        status switch
+        {
+            DeploymentCommandStatus.Pending => WorkspaceDeploymentRunStatus.Queued,
+            DeploymentCommandStatus.Claimed or DeploymentCommandStatus.Running => WorkspaceDeploymentRunStatus.Running,
+            DeploymentCommandStatus.Completed => WorkspaceDeploymentRunStatus.Succeeded,
+            DeploymentCommandStatus.RecoveryRequired => WorkspaceDeploymentRunStatus.RecoveryRequired,
+            DeploymentCommandStatus.Cancelled => WorkspaceDeploymentRunStatus.Cancelled,
+            _ => WorkspaceDeploymentRunStatus.Failed
+        };
+
+    private static DeploymentCommand ToDeploymentCommand(DeploymentCommandEntity entity) =>
+        new(
+            entity.Id,
+            entity.WorkspaceId,
+            entity.RunId,
+            entity.EnvironmentId,
+            entity.EngineId,
+            entity.Action,
+            entity.Status,
+            DeserializeArtifactReference(entity.ArtifactJson),
+            new DeploymentCommandRevisionReference(entity.RevisionId),
+            entity.IdempotencyKey,
+            entity.WorkerId,
+            entity.LeaseToken,
+            entity.ClaimedAt,
+            entity.LeaseExpiresAt,
+            entity.HeartbeatAt,
+            entity.AttemptNumber,
+            entity.PercentComplete,
+            entity.ProgressMessage,
+            entity.ObservedArtifactDigestAlgorithm is null || entity.ObservedArtifactDigest is null
+                ? null
+                : new WorkspaceArtifactDigest(entity.ObservedArtifactDigestAlgorithm, entity.ObservedArtifactDigest),
+            entity.RuntimeReference,
+            DeserializeDiagnostics(entity.DiagnosticsJson),
+            entity.CreatedAt,
+            entity.UpdatedAt,
+            entity.AvailableAt,
+            entity.ExpiresAt,
+            entity.CompletedAt);
+
+    private static DeploymentCommandWebhookNotification ToDeploymentCommandWebhookNotification(DeploymentCommandWebhookNotificationEntity entity) =>
+        new(
+            entity.Id,
+            entity.WorkspaceId,
+            entity.EngineId,
+            entity.CommandId,
+            entity.Status,
+            entity.SafePayloadJson,
+            entity.CreatedAt,
+            entity.SentAt);
+
+    private static DeploymentCommandArtifactReference? DeserializeArtifactReference(string artifactJson) =>
+        string.IsNullOrWhiteSpace(artifactJson) || artifactJson == "null"
+            ? null
+            : JsonSerializer.Deserialize<DeploymentCommandArtifactReference>(artifactJson);
+
+    private static IReadOnlyList<DeploymentCommandDiagnostic> DeserializeDiagnostics(string diagnosticsJson) =>
+        string.IsNullOrWhiteSpace(diagnosticsJson)
+            ? []
+            : JsonSerializer.Deserialize<List<DeploymentCommandDiagnostic>>(diagnosticsJson) ?? [];
 
     private static RuntimeControlExecution ToRuntimeControlExecution(RuntimeControlExecutionEntity entity) =>
         new(

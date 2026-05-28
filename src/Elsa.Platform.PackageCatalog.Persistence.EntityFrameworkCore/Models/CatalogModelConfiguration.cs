@@ -500,6 +500,64 @@ internal sealed class DeploymentRunHistoryEventConfiguration : IEntityTypeConfig
     }
 }
 
+internal sealed class DeploymentCommandConfiguration : IEntityTypeConfiguration<DeploymentCommandEntity>
+{
+    public void Configure(EntityTypeBuilder<DeploymentCommandEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Action).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.ArtifactJson).IsRequired();
+        builder.Property(x => x.IdempotencyKey).HasMaxLength(512).IsRequired();
+        builder.Property(x => x.WorkerId).HasMaxLength(256);
+        builder.Property(x => x.LeaseToken).HasMaxLength(256);
+        builder.Property(x => x.ProgressMessage).HasMaxLength(1000);
+        builder.Property(x => x.ObservedArtifactDigestAlgorithm).HasMaxLength(32);
+        builder.Property(x => x.ObservedArtifactDigest).HasMaxLength(256);
+        builder.Property(x => x.RuntimeReference).HasMaxLength(1024);
+        builder.Property(x => x.DiagnosticsJson).IsRequired();
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.AvailableAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.ExpiresAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.ClaimedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.LeaseExpiresAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.HeartbeatAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.CompletedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.HasIndex(x => new { x.WorkspaceId, x.EngineId, x.Status, x.AvailableAt });
+        builder.HasIndex(x => new { x.WorkspaceId, x.IdempotencyKey }).IsUnique();
+        builder.HasMany(x => x.Events).WithOne(x => x.Command).HasForeignKey(x => x.CommandId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(x => x.Run).WithMany().HasForeignKey(x => x.RunId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class DeploymentCommandEventConfiguration : IEntityTypeConfiguration<DeploymentCommandEventEntity>
+{
+    public void Configure(EntityTypeBuilder<DeploymentCommandEventEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.Message).HasMaxLength(2000).IsRequired();
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.WorkspaceId, x.CommandId, x.CreatedAt });
+        builder.HasIndex(x => new { x.WorkspaceId, x.RunId, x.CreatedAt });
+    }
+}
+
+internal sealed class DeploymentCommandWebhookNotificationConfiguration : IEntityTypeConfiguration<DeploymentCommandWebhookNotificationEntity>
+{
+    public void Configure(EntityTypeBuilder<DeploymentCommandWebhookNotificationEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.SafePayloadJson).IsRequired();
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.SentAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.HasIndex(x => new { x.WorkspaceId, x.EngineId, x.CreatedAt });
+        builder.HasIndex(x => x.CommandId);
+    }
+}
+
 internal sealed class ObservabilityBindingConfiguration : IEntityTypeConfiguration<ObservabilityBindingEntity>
 {
     public void Configure(EntityTypeBuilder<ObservabilityBindingEntity> builder)
