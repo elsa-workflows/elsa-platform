@@ -186,12 +186,32 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
                 await using var secondDb = CreateDbContext(connectionString);
                 var firstStore = new DeploymentWorkspaceStore(firstDb);
                 var secondStore = new DeploymentWorkspaceStore(secondDb);
+                var readyCount = 0;
+                var readyGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var startGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-                var claims = await Task.WhenAll(
-                    TryClaimAsync(firstStore, workspace.Id, topology.Engine.Id, command.Id, "worker-1", "lease-1"),
-                    TryClaimAsync(secondStore, workspace.Id, topology.Engine.Id, command.Id, "worker-2", "lease-2"));
+                var firstClaim = StartClaimContender(firstStore, workspace.Id, topology.Engine.Id, command.Id, "worker-1", "lease-1");
+                var secondClaim = StartClaimContender(secondStore, workspace.Id, topology.Engine.Id, command.Id, "worker-2", "lease-2");
+                await readyGate.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                startGate.SetResult();
+                var claims = await Task.WhenAll(firstClaim, secondClaim);
 
                 claims.Count(x => x is not null).Should().Be(1);
+
+                Task<DeploymentCommand?> StartClaimContender(
+                    DeploymentWorkspaceStore store,
+                    Guid contenderWorkspaceId,
+                    Guid contenderEngineId,
+                    Guid contenderCommandId,
+                    string workerId,
+                    string leaseToken) =>
+                    Task.Run(async () =>
+                    {
+                        if (Interlocked.Increment(ref readyCount) == 2)
+                            readyGate.SetResult();
+                        await startGate.Task;
+                        return await TryClaimAsync(store, contenderWorkspaceId, contenderEngineId, contenderCommandId, workerId, leaseToken);
+                    });
             }
         }
         finally
