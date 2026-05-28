@@ -75,7 +75,7 @@ Focused specs:
    - Completed. Shared artifact envelope, artifact type IDs, payload reference model, digest rules, safe metadata, producer metadata, and target capability hints live in `Elsa.Platform.Deployment.Artifacts`.
 
 2. `027-studio-submit-to-platform`
-   - NuGet package for Elsa Studio integration.
+   - Spec created for the NuGet package for Elsa Studio integration.
    - Adds **Submit to Platform** UX.
    - Packages workflow snapshots and safe metadata.
    - Authenticates to Platform and submits artifacts.
@@ -86,7 +86,7 @@ Focused specs:
    - Remaining follow-on work belongs with runtime credential hardening/provider transports and the concrete workflow runtime applier package.
 
 4. `029-workflow-artifact-runtime-applier`
-   - NuGet package for Elsa Workflows runtime integration.
+   - Spec created for the NuGet package for Elsa Workflows runtime integration.
    - Advertises runtime capabilities.
    - Consumes workflow artifact deployment commands.
    - Verifies artifact digest and schema compatibility.
@@ -94,7 +94,7 @@ Focused specs:
    - Reports validation/apply results to Platform.
 
 5. `030-artifact-backed-promotion`
-   - Replace or augment structured workflow desired-state records with artifact references.
+   - Spec created to replace or augment structured workflow desired-state records with artifact references.
    - Promotion preview and deployment validation operate on artifacts plus environment-specific configuration.
    - Rollback redeploys known-good artifact-backed revisions.
 
@@ -224,5 +224,6 @@ Exit criteria:
 
 ## Immediate Next Actions
 
-1. Implement `028-runtime-command-sync` before implementing external runtime workers.
-2. Create `027-studio-submit-to-platform` and `029-workflow-artifact-runtime-applier` once the envelope and command contracts are stable.
+1. Plan and implement `027-studio-submit-to-platform` now that artifact envelope and runtime command contracts are stable.
+2. Plan and implement `029-workflow-artifact-runtime-applier` after the Studio submit and runtime command contracts are agreed.
+3. Plan `030-artifact-backed-promotion` before changing promotion/rollback persistence semantics.

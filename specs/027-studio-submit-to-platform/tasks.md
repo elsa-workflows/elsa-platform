@@ -1,0 +1,32 @@
+# Tasks: Studio Submit To Platform
+
+**Input**: Design documents from `specs/027-studio-submit-to-platform/`
+
+**Tests**: Required because this feature creates a producer integration, security boundary, and user-facing terminology change.
+
+## Phase 1: Contracts
+
+- [ ] T001 Define Studio submit package boundaries and configuration contract.
+- [ ] T002 Define workflow submission request/response contract aligned with the artifact envelope.
+- [ ] T003 Define safe Studio UX states for submitted, duplicate, unauthorized, validation failed, unavailable, and retryable errors.
+
+## Phase 2: Platform Submission API Compatibility
+
+- [ ] T004 Verify existing workspace artifact API can accept Studio-produced `elsa.workflow-definition` envelopes.
+- [ ] T005 Add API tests for Studio producer metadata, source references, duplicate submit, unsafe metadata, and no deployment side effects.
+- [ ] T006 Add any missing Platform contract fields required by Studio submission without storing raw workflow content in catalog tables.
+
+## Phase 3: Studio Integration Package
+
+- [ ] T007 Create the Studio integration package skeleton.
+- [ ] T008 Add configuration options for Platform endpoint, workspace, authentication, and publish separation policy.
+- [ ] T009 Add **Submit to Platform** command and result state model.
+- [ ] T010 Package workflow snapshot, safe metadata, source identifiers, schema version, digest, and payload reference.
+- [ ] T011 Submit artifact envelope to Platform and handle idempotent duplicate results.
+
+## Phase 4: Verification
+
+- [ ] T012 Add unit tests for snapshot packaging and unsafe metadata handling.
+- [ ] T013 Add integration tests for successful submit and duplicate submit.
+- [ ] T014 Add tests proving submit does not create a deployment run or runtime publish side effect.
+- [ ] T015 Run focused checks and record results in `quickstart.md`.
