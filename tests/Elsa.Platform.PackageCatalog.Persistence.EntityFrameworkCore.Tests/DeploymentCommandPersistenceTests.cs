@@ -166,7 +166,7 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
     public async Task Claim_is_atomic_across_db_contexts()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"elsa-command-claim-{Guid.NewGuid():N}.db");
-        var connectionString = $"Data Source={databasePath}";
+        var connectionString = $"Data Source={databasePath};Pooling=False";
         try
         {
             await using (var seedDb = CreateDbContext(connectionString))
