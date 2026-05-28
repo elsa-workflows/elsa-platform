@@ -39,6 +39,7 @@ Completed:
 - Artifact registry: `specs/024-artifact-registry` has all tasks completed. Core, persistence, API, and console focused checks are recorded in the quickstart.
 - Custom deployment tiers: `specs/025-custom-deployment-tiers` has all tasks completed. Tier capability semantics, migration backfill, bounded-query verification, and console/API coverage are recorded in the quickstart.
 - Artifact envelope and types: `specs/026-artifact-envelope-and-types` has all tasks completed. The envelope/type contracts live in `Elsa.Platform.Deployment.Artifacts`, and the workspace artifact registry now stores type, producer, safe display metadata, compatibility hints, and payload references.
+- Runtime command sync: `specs/028-runtime-command-sync` now defines the platform command contract, runtime pull/sync APIs, claim/lease behavior, heartbeat/progress reporting, stale recovery, idempotency, and webhook-triggered fetch semantics.
 
 Architectural delta introduced by the latest product decisions:
 
@@ -68,11 +69,10 @@ Update existing specs:
    - Ensure promotion and deployment safeguards use tier capabilities, not tier names.
    - Keep environment technical capabilities separate from tier policy capabilities.
 
-Create new focused specs:
+Focused specs:
 
 1. `026-artifact-envelope-and-types`
-   - Shared artifact envelope, artifact type IDs, payload reference model, digest rules, safe metadata, producer metadata, and target capability hints.
-   - Decide whether this lives in existing `Elsa.Platform.Deployment.Artifacts` or a new shared package such as `Elsa.Platform.Artifacts`.
+   - Completed. Shared artifact envelope, artifact type IDs, payload reference model, digest rules, safe metadata, producer metadata, and target capability hints live in `Elsa.Platform.Deployment.Artifacts`.
 
 2. `027-studio-submit-to-platform`
    - NuGet package for Elsa Studio integration.
@@ -82,7 +82,7 @@ Create new focused specs:
    - Keeps direct runtime Publish clearly separate or hidden for platform-integrated installations.
 
 3. `028-runtime-command-sync`
-   - Platform deployment command API.
+   - Spec created. Platform deployment command API.
    - Runtime sync worker contract.
    - Claim/lease, idempotency, expiration, progress reporting, stale command recovery, duplicate delivery behavior, and safe diagnostics.
    - Transport model: pull/sync first, webhook-triggered fetch second, direct push as explicit opt-in.
@@ -226,5 +226,5 @@ Exit criteria:
 
 ## Immediate Next Actions
 
-1. Create `028-runtime-command-sync` before implementing external runtime workers.
+1. Implement `028-runtime-command-sync` before implementing external runtime workers.
 2. Create `027-studio-submit-to-platform` and `029-workflow-artifact-runtime-applier` once the envelope and command contracts are stable.
