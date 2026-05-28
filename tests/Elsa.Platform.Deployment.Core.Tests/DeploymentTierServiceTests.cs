@@ -57,6 +57,20 @@ public sealed class DeploymentTierServiceTests
     }
 
     [Fact]
+    public async Task Surfaces_duplicate_active_name_rejection_from_store()
+    {
+        _store.CreateException = new InvalidOperationException("An active deployment tier with the same name already exists in this workspace.");
+        var service = new DeploymentTierService(_store);
+
+        var act = () => service.CreateTierAsync(
+            _workspaceId,
+            new CreateDeploymentTierRequest("Production", null, 10, [DeploymentTierCapabilities.ProductionLike], null));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("An active deployment tier with the same name already exists in this workspace.");
+    }
+
+    [Fact]
     public async Task Normalizes_capabilities_before_create()
     {
         var service = new DeploymentTierService(_store);
@@ -106,6 +120,19 @@ public sealed class DeploymentTierServiceTests
     }
 
     [Fact]
+    public async Task Surfaces_last_active_tier_archive_prevention_from_store()
+    {
+        _store.ArchiveException = new InvalidOperationException("At least one active deployment tier is required.");
+        var service = new DeploymentTierService(_store);
+
+        var act = () => service.ArchiveTierAsync(_workspaceId, _tierId, new ArchiveDeploymentTierRequest(null));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("At least one active deployment tier is required.");
+        _store.ArchivedTierIds.Should().ContainSingle().Which.Should().Be(_tierId);
+    }
+
+    [Fact]
     public void Environment_helpers_use_capability_ids_not_names()
     {
         var environment = new EnvironmentSummary(
@@ -131,7 +158,10 @@ public sealed class DeploymentTierServiceTests
     {
         public List<CreateDeploymentTierRequest> CreatedRequests { get; } = [];
         public List<UpdateDeploymentTierRequest> UpdatedRequests { get; } = [];
+        public List<Guid> ArchivedTierIds { get; } = [];
         public DeploymentTierImpactSummary Impact { get; set; } = new(Guid.Empty, [], [], [], [], 0, [], []);
+        public Exception? CreateException { get; set; }
+        public Exception? ArchiveException { get; set; }
 
         public Task<IReadOnlyList<WorkspaceDeploymentTier>> ListTiersAsync(Guid workspaceId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<WorkspaceDeploymentTier>>([]);
@@ -141,6 +171,8 @@ public sealed class DeploymentTierServiceTests
 
         public Task<WorkspaceDeploymentTier> CreateTierAsync(Guid workspaceId, CreateDeploymentTierRequest request, CancellationToken cancellationToken = default)
         {
+            if (CreateException is not null)
+                return Task.FromException<WorkspaceDeploymentTier>(CreateException);
             CreatedRequests.Add(request);
             return Task.FromResult(Tier(workspaceId, request.Name, request.Capabilities));
         }
@@ -151,8 +183,13 @@ public sealed class DeploymentTierServiceTests
             return Task.FromResult(Tier(workspaceId, request.Name, request.Capabilities));
         }
 
-        public Task<WorkspaceDeploymentTier> ArchiveTierAsync(Guid workspaceId, Guid tierId, ArchiveDeploymentTierRequest request, CancellationToken cancellationToken = default) =>
-            throw new InvalidOperationException("At least one active deployment tier is required.");
+        public Task<WorkspaceDeploymentTier> ArchiveTierAsync(Guid workspaceId, Guid tierId, ArchiveDeploymentTierRequest request, CancellationToken cancellationToken = default)
+        {
+            ArchivedTierIds.Add(tierId);
+            return ArchiveException is not null
+                ? Task.FromException<WorkspaceDeploymentTier>(ArchiveException)
+                : Task.FromResult(Tier(workspaceId, "Archived", []));
+        }
 
         public Task<WorkspaceDeploymentTier> RestoreTierAsync(Guid workspaceId, Guid tierId, RestoreDeploymentTierRequest request, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();

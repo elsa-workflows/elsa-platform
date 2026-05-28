@@ -66,6 +66,41 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Persists_environment_tier_reassignment_and_archived_tier_reads()
+    {
+        var defaults = await _store.EnsureDefaultTiersAsync(_workspaceId);
+        var production = defaults.Single(x => x.Name == EnvironmentTier.Production.ToString());
+        var uat = await _store.CreateTierAsync(
+            _workspaceId,
+            new CreateDeploymentTierRequest(
+                "UAT",
+                null,
+                25,
+                [DeploymentTierCapabilities.PreproductionLike, DeploymentTierCapabilities.PromotionTarget],
+                _accountId));
+        var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));
+        var environment = await _store.CreateEnvironmentAsync(
+            _workspaceId,
+            new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production, production.Id));
+
+        var reassigned = await _store.UpdateEnvironmentAsync(
+            _workspaceId,
+            environment.Id,
+            new UpdateDeploymentEnvironmentRequest(application.Id, "UAT", EnvironmentTier.Stage, uat.Id));
+        await _store.ArchiveTierAsync(_workspaceId, uat.Id, new ArchiveDeploymentTierRequest(_accountId));
+        _db.ChangeTracker.Clear();
+        var cockpit = await _store.GetCockpitAsync(_workspaceId);
+
+        reassigned.TierId.Should().Be(uat.Id);
+        cockpit.Applications.Single().Environments.Should().ContainSingle(x =>
+            x.Id == environment.Id.ToString("D")
+            && x.TierName == "UAT"
+            && x.TierStatus == DeploymentTierStatus.Archived.ToString()
+            && x.TierCapabilities != null
+            && x.TierCapabilities.Contains(DeploymentTierCapabilities.PreproductionLike));
+    }
+
+    [Fact]
     public async Task Persists_workspace_permission_grants()
     {
         await _store.GrantPermissionAsync(_workspaceId, new GrantWorkspacePermissionRequest(_accountId, WorkspaceDeploymentPermissions.Read, null));

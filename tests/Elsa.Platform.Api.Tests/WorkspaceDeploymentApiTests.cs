@@ -72,6 +72,60 @@ public sealed class WorkspaceDeploymentApiTests
     }
 
     [Fact]
+    public async Task Owner_can_create_update_and_read_environment_tier_shape()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("tier-environment-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var defaults = await owner.GetPlatformJsonAsync<WorkspaceDeploymentTiersResponse>($"/api/workspaces/{workspaceId}/deployments/tiers");
+        var production = defaults!.Tiers.Single(x => x.Name == EnvironmentTier.Production.ToString());
+        var uat = await CreateTierAsync(owner, workspaceId, "UAT", DeploymentTierCapabilities.PreproductionLike, DeploymentTierCapabilities.PromotionTarget);
+        var applicationResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications",
+            new WorkspaceDeploymentApplicationRequest("Claims", null));
+        var application = await applicationResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentApplication>();
+        var environmentResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications/{application!.Id}/environments",
+            new WorkspaceDeploymentEnvironmentRequest("Prod", EnvironmentTier.Production, production.Id));
+        var environment = await environmentResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentEnvironment>();
+        var updateResponse = await owner.PutPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications/{application.Id}/environments/{environment!.Id}",
+            new WorkspaceDeploymentEnvironmentRequest("UAT", EnvironmentTier.Stage, uat.Id));
+        var cockpit = await owner.GetPlatformJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
+
+        environmentResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        cockpit!.Applications.Single().Environments.Should().ContainSingle(x =>
+            x.Id == environment.Id.ToString("D")
+            && x.TierName == "UAT"
+            && x.TierCapabilities != null
+            && x.TierCapabilities.Contains(DeploymentTierCapabilities.PreproductionLike));
+    }
+
+    [Fact]
+    public async Task Environment_assignment_rejects_archived_tiers()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("tier-archive-env-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var uat = await CreateTierAsync(owner, workspaceId, "UAT", DeploymentTierCapabilities.PreproductionLike);
+        var archiveResponse = await owner.PostAsync($"/api/workspaces/{workspaceId}/deployments/tiers/{uat.Id}/archive", null);
+        var applicationResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications",
+            new WorkspaceDeploymentApplicationRequest("Claims", null));
+        var application = await applicationResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentApplication>();
+
+        var environmentResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications/{application!.Id}/environments",
+            new WorkspaceDeploymentEnvironmentRequest("UAT", EnvironmentTier.Stage, uat.Id));
+
+        archiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        environmentResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
     public async Task Owner_can_create_desired_state_revision_and_preview_promotion()
     {
         await using var app = new PlatformApiTestApplication();
@@ -274,6 +328,15 @@ public sealed class WorkspaceDeploymentApiTests
             new WorkspaceActionConfirmationRequest(actionType, targetId.ToString("D"), null));
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         return (await response.Content.ReadPlatformJsonAsync<ActionConfirmation>())!;
+    }
+
+    private static async Task<WorkspaceDeploymentTier> CreateTierAsync(HttpClient client, Guid workspaceId, string name, params string[] capabilities)
+    {
+        var response = await client.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/tiers",
+            new WorkspaceDeploymentTierRequest(name, null, 90, capabilities));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return (await response.Content.ReadPlatformJsonAsync<WorkspaceDeploymentTier>())!;
     }
 
     private static async Task CompleteRunAsync(PlatformApiTestApplication app, Guid workspaceId, Guid runId)

@@ -141,6 +141,31 @@ public sealed class WorkspaceDeploymentTierApiTests
     }
 
     [Fact]
+    public async Task Legacy_environment_requests_map_to_default_tiers_during_transition()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("tier-legacy-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var applicationResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications",
+            new WorkspaceDeploymentApplicationRequest("Claims", null));
+        var application = await applicationResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentApplication>();
+
+        var environmentResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications/{application!.Id}/environments",
+            new WorkspaceDeploymentEnvironmentRequest("Prod", EnvironmentTier.Production, null));
+        var environment = await environmentResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentEnvironment>();
+        var tiers = await owner.GetPlatformJsonAsync<WorkspaceDeploymentTiersResponse>($"/api/workspaces/{workspaceId}/deployments/tiers");
+        var production = tiers!.Tiers.Single(x => x.Name == EnvironmentTier.Production.ToString());
+
+        environmentResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        environment!.TierId.Should().Be(production.Id);
+        environment.TierDefinition!.Name.Should().Be(EnvironmentTier.Production.ToString());
+        environment.TierDefinition.Capabilities.Should().Contain(DeploymentTierCapabilities.ProductionLike);
+    }
+
+    [Fact]
     public async Task Promotion_preview_uses_tier_capabilities_rather_than_names()
     {
         await using var app = new PlatformApiTestApplication();

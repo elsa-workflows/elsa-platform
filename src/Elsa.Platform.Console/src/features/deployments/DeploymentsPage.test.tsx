@@ -49,6 +49,7 @@ describe("DeploymentsPage", () => {
       assistantPlans: []
     });
 
+    await waitFor(() => expect(screen.getByLabelText("Tier")).toHaveValue("tier-production"));
     await userEvent.type(await screen.findByLabelText("Application"), "Claims Operations");
     await userEvent.clear(screen.getByLabelText("Environment"));
     await userEvent.type(screen.getByLabelText("Environment"), "Prod");
@@ -68,10 +69,32 @@ describe("DeploymentsPage", () => {
       expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/app-created/environments`),
       expect.objectContaining({ method: "POST" })
     );
+    expect(requestBody(fetchMock, "POST", "/applications/app-created/environments")).toMatchObject({
+      name: "Prod",
+      tier: "Production",
+      tierId: "tier-production"
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/environments/env-created/engines`),
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  it("uses server-provided default tiers in empty setup", async () => {
+    renderDeployments({
+      applications: [],
+      engines: [],
+      comparisons: [],
+      observabilityBindings: [],
+      history: [],
+      driftReport: [],
+      assistantPlans: []
+    });
+
+    expect(await screen.findByText("No deployment setup")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("Tier")).toHaveValue("tier-production"));
+    expect(screen.getByRole("option", { name: "Production" })).toBeInTheDocument();
+    expect(screen.queryByText("Default tiers are used until workspace tiers finish loading.")).not.toBeInTheDocument();
   });
 
   it("creates another deployment setup from a populated cockpit", async () => {
@@ -131,6 +154,48 @@ describe("DeploymentsPage", () => {
     );
   });
 
+  it("shows tier capabilities and sends tier identity when editing an environment", async () => {
+    const fetchMock = renderDeployments({
+      ...deploymentCockpitFixture,
+      applications: [
+        {
+          ...deploymentCockpitFixture.applications[0],
+          environments: deploymentCockpitFixture.applications[0].environments.map((environment) =>
+            environment.id === "claims-prod"
+              ? {
+                  ...environment,
+                  tierId: "tier-legacy-prod",
+                  tierName: "Legacy Production",
+                  tierStatus: "Archived",
+                  tierCapabilities: ["deployment.tier.production-like"]
+                }
+              : environment
+          )
+        }
+      ]
+    });
+
+    await screen.findByRole("heading", { name: "Deployments" });
+
+    expect(screen.getByText("Legacy Production (archived)")).toBeInTheDocument();
+    expect(screen.getAllByText("deployment.tier.production-like").length).toBeGreaterThan(0);
+    await userEvent.click(screen.getAllByRole("button", { name: "Edit" })[3]);
+    await userEvent.selectOptions(screen.getByLabelText("Tier"), "tier-uat");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops/environments/claims-prod`),
+        expect.objectContaining({ method: "PUT" })
+      )
+    );
+    expect(requestBody(fetchMock, "PUT", "/applications/claims-ops/environments/claims-prod")).toMatchObject({
+      name: "Prod",
+      tier: "Production",
+      tierId: "tier-uat"
+    });
+  });
+
   it("verifies a selected workflow engine through the live API", async () => {
     const fetchMock = renderDeployments();
 
@@ -179,6 +244,32 @@ describe("DeploymentsPage", () => {
     expect(screen.getByRole("button", { name: /Roll Back to r39/i })).toBeEnabled();
   });
 
+  it("uses tier capability ids for rollback availability", async () => {
+    renderDeployments({
+      ...deploymentCockpitFixture,
+      applications: [
+        {
+          ...deploymentCockpitFixture.applications[0],
+          environments: deploymentCockpitFixture.applications[0].environments.map((environment) =>
+            environment.id === "claims-prod"
+              ? {
+                  ...environment,
+                  tierName: "Customer Live",
+                  tierCapabilities: ["deployment.tier.production-like", "deployment.promotion.target", "deployment.confirmation.required"]
+                }
+              : environment
+          )
+        }
+      ]
+    });
+
+    await screen.findByRole("heading", { name: "Deployments" });
+    await userEvent.click(screen.getByRole("button", { name: "Promotion Diff" }));
+
+    expect(screen.getByText("Rollback is not enabled for the target tier.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Roll Back to r39/i })).toBeDisabled();
+  });
+
   it("enables deployment for a comparison with passing validations", async () => {
     renderDeployments();
 
@@ -221,7 +312,7 @@ describe("DeploymentsPage", () => {
       expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/rollbacks`),
       expect.objectContaining({ method: "POST" })
     );
-  });
+  }, 10000);
 
   it("shows an empty promotion preview state when the cockpit has no comparison", async () => {
     renderDeployments({ ...deploymentCockpitFixture, comparisons: [] });
@@ -307,6 +398,12 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
           "deployments.controls.execute"
         ]
       });
+    }
+    if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/tier-capabilities`)) {
+      return jsonResponse({ capabilities: tierCapabilities });
+    }
+    if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/tiers`)) {
+      return jsonResponse({ tiers: deploymentTiers });
     }
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/cockpit`)) {
       return jsonResponse(currentCockpit);
@@ -511,6 +608,15 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
+function requestBody(fetchMock: ReturnType<typeof createDeploymentFetchMock>, method: string, urlSuffix: string) {
+  const call = fetchMock.mock.calls.find(([input, init]) => {
+    const url = input instanceof Request ? input.url : input.toString();
+    return url.includes(urlSuffix) && init?.method === method;
+  });
+  expect(call).toBeDefined();
+  return JSON.parse(call![1]?.body?.toString() ?? "{}") as Record<string, unknown>;
+}
+
 function TestQueryProvider({ children }: { children: ReactNode }) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -523,6 +629,33 @@ function TestQueryProvider({ children }: { children: ReactNode }) {
 }
 
 const workspaceId = "00000000-0000-0000-0000-000000000010";
+const tierCapabilities = [
+  capabilityDefinition("deployment.tier.development-like", "Development-like", "Classification"),
+  capabilityDefinition("deployment.tier.test-like", "Test-like", "Classification"),
+  capabilityDefinition("deployment.tier.preproduction-like", "Pre-production-like", "Classification"),
+  capabilityDefinition("deployment.tier.production-like", "Production-like", "Classification"),
+  capabilityDefinition("deployment.promotion.source", "Promotion source", "Promotion"),
+  capabilityDefinition("deployment.promotion.target", "Promotion target", "Promotion"),
+  capabilityDefinition("deployment.confirmation.required", "Confirmation required", "Safeguards"),
+  capabilityDefinition("deployment.rollback.enabled", "Rollback enabled", "Rollback"),
+  capabilityDefinition("deployment.secret-verification.required", "Secret verification required", "Validation"),
+  capabilityDefinition("deployment.observability.required", "Observability required", "Observability")
+];
+const deploymentTiers = [
+  tier("tier-dev", "Dev", 10, ["deployment.tier.development-like", "deployment.promotion.source"]),
+  tier("tier-test", "Test", 20, ["deployment.tier.test-like", "deployment.promotion.source", "deployment.promotion.target"]),
+  tier("tier-stage", "Stage", 30, ["deployment.tier.preproduction-like", "deployment.promotion.source", "deployment.promotion.target", "deployment.secret-verification.required"]),
+  tier("tier-production", "Production", 40, [
+    "deployment.tier.production-like",
+    "deployment.promotion.target",
+    "deployment.confirmation.required",
+    "deployment.rollback.enabled",
+    "deployment.secret-verification.required",
+    "deployment.observability.required"
+  ]),
+  tier("tier-uat", "UAT", 35, ["deployment.tier.preproduction-like", "deployment.promotion.target"]),
+  tier("tier-legacy-prod", "Legacy Production", 50, ["deployment.tier.production-like"], "Archived")
+];
 
 const deploymentCockpitFixture: DeploymentCockpit = {
   applications: [
@@ -535,6 +668,10 @@ const deploymentCockpitFixture: DeploymentCockpit = {
           id: "claims-dev",
           name: "Dev",
           tier: "Dev",
+          tierId: "tier-dev",
+          tierName: "Dev",
+          tierStatus: "Active",
+          tierCapabilities: ["deployment.tier.development-like", "deployment.promotion.source"],
           health: "Healthy",
           desiredRevision: { id: "00000000-0000-0000-0000-000000000142", revision: 42, commit: "8f6a9c1", label: "Payment retry workflow", authoredAt: "2026-05-21T08:30:00Z" },
           deployedRevision: 42,
@@ -546,6 +683,10 @@ const deploymentCockpitFixture: DeploymentCockpit = {
           id: "claims-test",
           name: "Test",
           tier: "Test",
+          tierId: "tier-test",
+          tierName: "Test",
+          tierStatus: "Active",
+          tierCapabilities: ["deployment.tier.test-like", "deployment.promotion.source", "deployment.promotion.target"],
           health: "Healthy",
           desiredRevision: { id: "00000000-0000-0000-0000-000000000139", revision: 39, commit: "79d1b07", label: "Fraud review tuning", authoredAt: "2026-05-20T13:20:00Z" },
           deployedRevision: 39,
@@ -557,6 +698,10 @@ const deploymentCockpitFixture: DeploymentCockpit = {
           id: "claims-stage",
           name: "Stage",
           tier: "Stage",
+          tierId: "tier-stage",
+          tierName: "Stage",
+          tierStatus: "Active",
+          tierCapabilities: ["deployment.tier.preproduction-like", "deployment.promotion.source", "deployment.promotion.target", "deployment.secret-verification.required"],
           health: "Degraded",
           desiredRevision: { id: "00000000-0000-0000-0000-000000000141", revision: 41, commit: "c174f2a", label: "Policy document sync", authoredAt: "2026-05-21T06:10:00Z" },
           deployedRevision: 40,
@@ -568,6 +713,17 @@ const deploymentCockpitFixture: DeploymentCockpit = {
           id: "claims-prod",
           name: "Prod",
           tier: "Production",
+          tierId: "tier-production",
+          tierName: "Production",
+          tierStatus: "Active",
+          tierCapabilities: [
+            "deployment.tier.production-like",
+            "deployment.promotion.target",
+            "deployment.confirmation.required",
+            "deployment.rollback.enabled",
+            "deployment.secret-verification.required",
+            "deployment.observability.required"
+          ],
           health: "Unreachable",
           desiredRevision: { id: "00000000-0000-0000-0000-000000000140", revision: 40, commit: "11ec9d4", label: "Baseline production", authoredAt: "2026-05-19T15:45:00Z" },
           deployedRevision: 40,
@@ -711,4 +867,34 @@ function capability(
   boundary: DeploymentCockpit["engines"][number]["capabilities"][number]["boundary"]
 ) {
   return { id, label, boundary };
+}
+
+function capabilityDefinition(id: string, label: string, category: string) {
+  return {
+    id,
+    label,
+    description: label,
+    category,
+    isDeprecated: false
+  };
+}
+
+function tier(id: string, name: string, sortOrder: number, capabilities: string[], status = "Active") {
+  return {
+    id,
+    workspaceId,
+    name,
+    description: null,
+    sortOrder,
+    isDefault: name === "Dev" || name === "Test" || name === "Stage" || name === "Production",
+    status,
+    capabilities,
+    environmentCount: 0,
+    createdAt: "2026-05-28T10:00:00Z",
+    updatedAt: "2026-05-28T10:00:00Z",
+    createdByAccountId: null,
+    updatedByAccountId: null,
+    archivedAt: status === "Archived" ? "2026-05-28T10:00:00Z" : null,
+    archivedByAccountId: null
+  };
 }
