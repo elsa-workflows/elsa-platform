@@ -35,9 +35,5 @@ internal sealed class DeploymentQueueHostedService(
         await using var scope = scopeFactory.CreateAsyncScope();
         var worker = scope.ServiceProvider.GetRequiredService<DeploymentQueueWorker>();
         await worker.RecoverStaleRunsAsync(StaleRunAfter, cancellationToken);
-
-        while (await worker.ProcessNextQueuedRunAsync(Environment.MachineName, cancellationToken) is not null)
-        {
-        }
     }
 }
