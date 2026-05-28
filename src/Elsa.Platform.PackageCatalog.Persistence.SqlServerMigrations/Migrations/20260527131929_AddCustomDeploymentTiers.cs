@@ -141,6 +141,114 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                 columns: new[] { "WorkspaceId", "Status", "Name" },
                 unique: true);
 
+            migrationBuilder.Sql("""
+                INSERT INTO DeploymentTierDefinitions (
+                    Id,
+                    WorkspaceId,
+                    Name,
+                    Description,
+                    SortOrder,
+                    IsDefault,
+                    Status,
+                    CreatedAt,
+                    UpdatedAt,
+                    CreatedByAccountId,
+                    UpdatedByAccountId,
+                    ArchivedAt,
+                    ArchivedByAccountId
+                )
+                SELECT
+                    NEWID(),
+                    w.Id,
+                    defaults.Name,
+                    NULL,
+                    defaults.SortOrder,
+                    CAST(1 AS bit),
+                    'Active',
+                    0,
+                    0,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL
+                FROM Workspaces w
+                CROSS JOIN (
+                    VALUES
+                        ('Dev', 10),
+                        ('Test', 20),
+                        ('Stage', 30),
+                        ('Production', 40)
+                ) defaults(Name, SortOrder)
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM DeploymentTierDefinitions existing
+                    WHERE existing.WorkspaceId = w.Id
+                      AND existing.Status = 'Active'
+                      AND existing.Name = defaults.Name
+                );
+                """);
+
+            migrationBuilder.Sql("""
+                INSERT INTO DeploymentTierCapabilityAssignments (
+                    Id,
+                    WorkspaceId,
+                    TierId,
+                    CapabilityId,
+                    CreatedAt,
+                    CreatedByAccountId
+                )
+                SELECT
+                    NEWID(),
+                    tiers.WorkspaceId,
+                    tiers.Id,
+                    capabilities.CapabilityId,
+                    0,
+                    NULL
+                FROM DeploymentTierDefinitions tiers
+                JOIN (
+                    VALUES
+                        ('Dev', 'deployment.tier.development-like'),
+                        ('Dev', 'deployment.promotion.source'),
+                        ('Test', 'deployment.tier.test-like'),
+                        ('Test', 'deployment.promotion.source'),
+                        ('Test', 'deployment.promotion.target'),
+                        ('Stage', 'deployment.tier.preproduction-like'),
+                        ('Stage', 'deployment.promotion.source'),
+                        ('Stage', 'deployment.promotion.target'),
+                        ('Stage', 'deployment.secret-verification.required'),
+                        ('Production', 'deployment.tier.production-like'),
+                        ('Production', 'deployment.promotion.target'),
+                        ('Production', 'deployment.confirmation.required'),
+                        ('Production', 'deployment.rollback.enabled'),
+                        ('Production', 'deployment.secret-verification.required'),
+                        ('Production', 'deployment.observability.required')
+                ) capabilities(TierName, CapabilityId) ON capabilities.TierName = tiers.Name
+                WHERE tiers.IsDefault = CAST(1 AS bit)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM DeploymentTierCapabilityAssignments existing
+                      WHERE existing.TierId = tiers.Id
+                        AND existing.CapabilityId = capabilities.CapabilityId
+                  );
+                """);
+
+            migrationBuilder.Sql("""
+                UPDATE environments
+                SET TierId = tiers.Id
+                FROM DeploymentEnvironments environments
+                JOIN DeploymentTierDefinitions tiers
+                  ON tiers.WorkspaceId = environments.WorkspaceId
+                 AND tiers.Status = 'Active'
+                 AND tiers.Name = environments.Tier
+                WHERE environments.TierId IS NULL;
+                """);
+
+            migrationBuilder.Sql("""
+                UPDATE DeploymentEnvironments
+                SET TierRequiresReview = CAST(1 AS bit)
+                WHERE TierId IS NULL;
+                """);
+
             migrationBuilder.AddForeignKey(
                 name: "FK_DeploymentEnvironments_DeploymentTierDefinitions_TierId",
                 table: "DeploymentEnvironments",

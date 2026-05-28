@@ -3,12 +3,12 @@
 ## Entry Points
 
 - Deployment cockpit continues to show applications, environments, engines, revisions, history, drift, and observability.
-- A workspace admin can open deployment tier management from the Deployments area.
+- A workspace owner can open deployment tier management from the Deployments area.
 - Users with deployment setup permission select an active tier when creating or editing an environment.
 
 ## Tier Management View
 
-Visible to workspace admins:
+Visible to workspace owners:
 
 - Tier list sorted by `sortOrder`, then name.
 - Name, description, active or archived status, environment count, and assigned capability labels.
@@ -17,11 +17,11 @@ Visible to workspace admins:
 - Archive and restore actions.
 - Impact preview when capability changes affect existing environments.
 
-Read-only or blocked state for non-admin users:
+Read-only or blocked state for non-owner users:
 
-- Non-admin users may see tier labels where needed for deployment context.
+- Non-owner users may see tier labels where needed for deployment context.
 - Tier create, edit, archive, restore, and capability selection controls are unavailable.
-- Blocked actions explain that workspace administration authority is required.
+- Blocked actions explain that workspace owner access is required.
 
 ## Create/Edit Tier Form
 
@@ -49,7 +49,7 @@ When capability changes affect assigned environments, the console shows:
 - Removed capabilities.
 - Changed deployment safeguards, such as confirmation, rollback, promotion eligibility, secret verification, or observability expectations.
 
-The admin must acknowledge the preview before saving.
+The owner must acknowledge the preview before saving.
 
 ## Environment Setup And Editing
 

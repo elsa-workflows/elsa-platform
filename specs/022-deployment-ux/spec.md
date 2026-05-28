@@ -17,6 +17,7 @@
 - Q: What is the first desired-state storage model? -> A: Structured platform records first.
 - Q: What observability and drift behavior is included in this slice? -> A: Persisted metadata and manual status only.
 - Q: What approval or confirmation is required for risky actions? -> A: Explicit single-user confirmation.
+- Q: How should future runtime integrations receive deployment work? -> A: Platform-owned durable deployment commands with transport-independent delivery; runtime pull/sync is the preferred default, with webhook-triggered fetch and direct push as optional transports.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -74,11 +75,11 @@ A workspace member with deployment execution permission starts a deployment run,
 
 **Why this priority**: Deployment functionality is incomplete until users can execute, audit, and recover from changes.
 
-**Independent Test**: Start a deployment from a valid preview, verify a run is recorded with actor, target environment, engine, validation outcome, status, and deployed revision, then roll back to a previous compatible revision and verify history records both events.
+**Independent Test**: Start a deployment from a valid preview, verify a run is recorded with actor, target environment, engine, validation outcome, status, command metadata, and deployed revision, then roll back to a previous compatible revision and verify history records both events.
 
 **Acceptance Scenarios**:
 
-1. **Given** a deployment preview has no blockers, **When** a member with deployment execution permission starts deployment, **Then** the system records a deployment run with actor, source revision, target environment, target engine, validation result, and status.
+1. **Given** a deployment preview has no blockers, **When** a member with deployment execution permission starts deployment, **Then** the system records a deployment run with actor, source revision, target environment, target engine, validation result, status, and a durable command record or queued-work equivalent.
 2. **Given** a deployment run is in progress or completed, **When** the user opens history, **Then** the cockpit shows immutable run events and resulting environment revision state.
 3. **Given** a previously deployed revision is still compatible with the target environment and engine capabilities, **When** a member with rollback permission chooses rollback, **Then** the system creates a new deployment run that redeploys that known-good revision and records rollback source metadata.
 
@@ -123,6 +124,8 @@ The console Deployments page uses live workspace APIs for loading, creation, pre
 - A rollback target is missing required secrets or engine capabilities; rollback is blocked before changing the target engine state.
 - A user refreshes the console while a deployment is running; the latest run status and history remain visible.
 - The API process restarts after a deployment run is queued or claimed; queued runs remain eligible for processing, stale claimed runs are marked `RecoveryRequired` with append-only history, and no automatic duplicate apply occurs without an explicit new confirmation.
+- A future runtime sync worker polls or receives duplicate webhook notifications for the same deployment command; command idempotency prevents duplicate apply attempts.
+- A future target runtime is reachable only by outbound network access; the runtime pull/sync transport remains compatible with deployment run tracking.
 - A direct API caller submits unsupported runtime control IDs or cross-workspace IDs; the system rejects the request even if the console would not show that action.
 
 ## Requirements *(mandatory)*
@@ -134,7 +137,7 @@ The console Deployments page uses live workspace APIs for loading, creation, pre
 - **FR-003**: System MUST enforce current workspace membership, flexible role/permission grants, entitlement, and operator/customer separation rules for every deployment read and mutation.
 - **FR-004**: System MUST allow authorized users to create and update workflow applications and environments within a workspace.
 - **FR-005**: System MUST allow authorized users to register workflow engines with endpoint metadata, credential references, health status, capability sets, and optional hosting provider metadata.
-- **FR-006**: System MUST never expose raw engine API credentials, provider tokens, or secret values through customer-facing responses, console state, source-controlled desired state, or audit records.
+- **FR-006**: System MUST never expose raw engine API credentials, provider tokens, or secret values through customer-facing responses, console state, workflow artifacts, desired-state revisions, or audit records.
 - **FR-007**: System MUST expose engine controls only when supported by the engine capability set or an explicitly configured hosting provider adapter.
 - **FR-008**: System MUST distinguish workflow, engine API, shell, and hosting control boundaries in API responses, console labels, validation, and audit records.
 - **FR-009**: System MUST allow authorized users to compare desired-state revisions across environments before deployment.
@@ -151,6 +154,8 @@ The console Deployments page uses live workspace APIs for loading, creation, pre
 - **FR-018**: System MUST keep all deployment state scoped under workspace ownership while leaving future runtime tenant or deployment tenant overlays nested under that workspace boundary.
 - **FR-019**: System MUST support flexible workspace permission grants that can be composed into roles for deployment actions, including separate permissions for deployment setup, desired-state management, promotion preview, deployment execution, rollback, runtime controls, observability management, and read-only access.
 - **FR-020**: System MUST execute deployment and rollback runs as durable queued work, with the first implementation allowed to use an in-process worker that records queued, running, completed, failed, and `RecoveryRequired` outcomes in persistent run history; on startup, queued runs are processed normally and stale running runs are moved to `RecoveryRequired` rather than replayed automatically.
+- **FR-021**: System MUST keep deployment run execution compatible with a future durable deployment command contract that supports runtime pull/sync, webhook-triggered fetch, and direct push transports without changing the console-facing run/history model.
+- **FR-022**: System MUST treat webhook notifications as non-authoritative triggers; authoritative deployment state remains the persisted deployment run and command record.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -160,6 +165,7 @@ The console Deployments page uses live workspace APIs for loading, creation, pre
 - **Desired-State Revision**: Immutable versioned snapshot composed from structured platform records for deployable workflow, feature, shell, runtime, secret-reference, observability, and engine-binding intent.
 - **Promotion Comparison**: Reviewable diff and validation result between source and target environment revisions.
 - **Deployment Run**: Auditable attempt to validate, deploy, or roll back a desired-state revision to a target environment and engine.
+- **Deployment Command**: Durable work item or queued-work equivalent linked to a deployment run, carrying target engine, desired revision or artifact reference, action, idempotency, status, and safe diagnostics for runtime integration.
 - **Runtime Control Action**: Capability-gated operation against workflow processing, engine API, shell, or hosting infrastructure.
 - **Observability Binding**: Workspace-owned connection metadata for logs, console streams, traces, or metrics related to environments, engines, workflows, instances, or deployment revisions.
 - **Drift Report**: Persisted metadata describing a known difference between desired state and current engine state with review, redeploy, or import guidance.
@@ -179,6 +185,7 @@ The console Deployments page uses live workspace APIs for loading, creation, pre
 - **SC-008**: Customer-facing responses and console state contain zero raw credential or secret values in automated tests.
 - **SC-009**: Observability and drift views render persisted metadata without requiring live telemetry provider credentials or network calls.
 - **SC-010**: Deploy, rollback, and runtime control tests prove actions cannot execute until the initiating user provides explicit confirmation.
+- **SC-011**: Deployment run persistence can represent queued, claimed/running, completed, failed, and recovery-required command states without duplicate apply after process restart or repeated delivery.
 
 ## Assumptions
 
@@ -186,5 +193,7 @@ The console Deployments page uses live workspace APIs for loading, creation, pre
 - Existing deployment abstractions and engine packages are reused for validation, diff, dry-run, apply, and history where they already fit; manifest parsing and artifact packaging remain available subsystem foundations but are not required for the first desired-state UX.
 - The first implementation may use local/fake engine and control adapters for testable apply behavior; production cloud/provider adapters can follow as separate provider-specific features.
 - Desired-state authoring starts with platform-owned structured records and test fixtures; manifest/artifact import/export, full GitOps, OCI promotion, signatures, and external approval workflows are out of scope for this slice.
+- The first slice can execute queued runs with an in-process worker, but the data model and history should remain compatible with later runtime-side sync workers that claim platform-owned deployment commands.
+- Webhooks are optional notification accelerators, not the source of deployment authority; runtimes should fetch the command from the platform before acting.
 - Full multi-party approval workflows are out of scope for this slice; explicit confirmation by the initiating authorized user is required for risky actions.
 - Runtime tenant overlays remain future nested concerns and do not replace workspace ownership.

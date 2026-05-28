@@ -135,13 +135,15 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         CreateDeploymentTierRequest request,
         CancellationToken cancellationToken = default)
     {
+        await EnsureDefaultTiersAsync(workspaceId, cancellationToken: cancellationToken);
         if (await ActiveTierNameExistsAsync(workspaceId, request.Name, null, cancellationToken))
             throw new InvalidOperationException("An active deployment tier with the same name already exists in this workspace.");
 
         var now = DateTimeOffset.UtcNow;
+        var tierId = Guid.NewGuid();
         var tier = new DeploymentTierDefinitionEntity
         {
-            Id = Guid.NewGuid(),
+            Id = tierId,
             WorkspaceId = workspaceId,
             Name = request.Name.Trim(),
             Description = request.Description,
@@ -152,7 +154,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             UpdatedAt = now,
             CreatedByAccountId = request.ActorAccountId,
             UpdatedByAccountId = request.ActorAccountId,
-            Capabilities = CreateCapabilityAssignments(workspaceId, request.Capabilities, request.ActorAccountId, now)
+            Capabilities = CreateCapabilityAssignments(workspaceId, request.Capabilities, request.ActorAccountId, now, tierId)
         };
         tier.Changes.Add(Change(workspaceId, tier.Id, request.ActorAccountId, "Created", $"Created deployment tier '{tier.Name}'.", now, 0));
 
@@ -168,8 +170,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         DeploymentTierImpactSummary impact,
         CancellationToken cancellationToken = default)
     {
+        await EnsureDefaultTiersAsync(workspaceId, cancellationToken: cancellationToken);
         var tier = await dbContext.DeploymentTierDefinitions
-            .Include(x => x.Capabilities)
             .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == tierId, cancellationToken);
         if (tier is null)
             throw new KeyNotFoundException("Deployment tier does not exist in the workspace.");
@@ -177,15 +179,18 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             throw new InvalidOperationException("An active deployment tier with the same name already exists in this workspace.");
 
         var now = DateTimeOffset.UtcNow;
-        var currentCapabilities = tier.Capabilities.Select(x => x.CapabilityId).Order(StringComparer.Ordinal).ToList();
         tier.Name = request.Name.Trim();
         tier.Description = request.Description;
         tier.SortOrder = request.SortOrder;
         tier.UpdatedAt = now;
         tier.UpdatedByAccountId = request.ActorAccountId;
 
-        dbContext.DeploymentTierCapabilityAssignments.RemoveRange(tier.Capabilities);
-        tier.Capabilities = CreateCapabilityAssignments(workspaceId, request.Capabilities, request.ActorAccountId, now);
+        await dbContext.DeploymentTierCapabilityAssignments
+            .Where(x => x.WorkspaceId == workspaceId && x.TierId == tier.Id)
+            .ExecuteDeleteAsync(cancellationToken);
+        await dbContext.DeploymentTierCapabilityAssignments.AddRangeAsync(
+            CreateCapabilityAssignments(workspaceId, request.Capabilities, request.ActorAccountId, now, tier.Id),
+            cancellationToken);
         await dbContext.DeploymentTierChangeRecords.AddAsync(Change(
             workspaceId,
             tier.Id,
@@ -196,7 +201,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             impact.AffectedEnvironmentCount), cancellationToken);
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        return ToWorkspaceDeploymentTier(tier, impact.AffectedEnvironmentCount);
+        return await GetTierAsync(workspaceId, tier.Id, cancellationToken)
+            ?? throw new KeyNotFoundException("Deployment tier does not exist in the workspace.");
     }
 
     public async Task<WorkspaceDeploymentTier> ArchiveTierAsync(
@@ -205,6 +211,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         ArchiveDeploymentTierRequest request,
         CancellationToken cancellationToken = default)
     {
+        await EnsureDefaultTiersAsync(workspaceId, cancellationToken: cancellationToken);
         var tier = await dbContext.DeploymentTierDefinitions
             .Include(x => x.Capabilities)
             .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == tierId, cancellationToken);
@@ -233,6 +240,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         RestoreDeploymentTierRequest request,
         CancellationToken cancellationToken = default)
     {
+        await EnsureDefaultTiersAsync(workspaceId, cancellationToken: cancellationToken);
         var tier = await dbContext.DeploymentTierDefinitions
             .Include(x => x.Capabilities)
             .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == tierId, cancellationToken);
@@ -259,6 +267,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         IReadOnlyList<string> proposedCapabilities,
         CancellationToken cancellationToken = default)
     {
+        await EnsureDefaultTiersAsync(workspaceId, cancellationToken: cancellationToken);
         var tier = await dbContext.DeploymentTierDefinitions
             .AsNoTracking()
             .Include(x => x.Capabilities)
@@ -305,9 +314,10 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             var now = DateTimeOffset.UtcNow;
             var defaults = Enum.GetValues<EnvironmentTier>().Select((tier, index) =>
             {
+                var tierId = Guid.NewGuid();
                 var entity = new DeploymentTierDefinitionEntity
                 {
-                    Id = Guid.NewGuid(),
+                    Id = tierId,
                     WorkspaceId = workspaceId,
                     Name = tier.ToString(),
                     Description = $"Default {tier} deployment tier.",
@@ -318,7 +328,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
                     UpdatedAt = now,
                     CreatedByAccountId = actorAccountId,
                     UpdatedByAccountId = actorAccountId,
-                    Capabilities = CreateCapabilityAssignments(workspaceId, DeploymentTierService.DefaultCapabilitiesByLegacyTier[tier], actorAccountId, now)
+                    Capabilities = CreateCapabilityAssignments(workspaceId, DeploymentTierService.DefaultCapabilitiesByLegacyTier[tier], actorAccountId, now, tierId)
                 };
                 entity.Changes.Add(Change(workspaceId, entity.Id, actorAccountId, "Created", $"Created default deployment tier '{entity.Name}'.", now, 0));
                 return entity;
@@ -1503,12 +1513,14 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         Guid workspaceId,
         IReadOnlyList<string> capabilities,
         Guid? actorAccountId,
-        DateTimeOffset now) =>
+        DateTimeOffset now,
+        Guid tierId) =>
         capabilities
             .Select(capability => new DeploymentTierCapabilityAssignmentEntity
             {
                 Id = Guid.NewGuid(),
                 WorkspaceId = workspaceId,
+                TierId = tierId,
                 CapabilityId = capability,
                 CreatedAt = now,
                 CreatedByAccountId = actorAccountId

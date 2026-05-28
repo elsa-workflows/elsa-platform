@@ -1,8 +1,8 @@
 # Elsa Platform
 
-Elsa Platform is the control plane for building, packaging, cataloging, and deploying Elsa-based systems. It brings together the pieces needed to govern professional Elsa runtime packages: manifest contracts, safe package inspection, catalog ingestion, runtime bundle planning, deployment artifacts, workspace-scoped APIs, and an operator console.
+Elsa Platform is the control plane for building, packaging, cataloging, and deploying Elsa-based systems. It brings together the pieces needed to govern professional Elsa solutions: manifest contracts, safe package inspection, catalog ingestion, runtime bundle planning, immutable deployment artifacts, workspace-scoped APIs, and an operator console.
 
-The repository is organized as a set of bounded subsystems rather than one large application. Package Catalog owns package governance and workspace-owned catalog data. Runtime Builder turns catalog selections into deployable runtime bundles. Deployment owns environment manifests, artifacts, and reconciliation contracts. The React console provides a shared admin and workspace shell for those capabilities.
+The repository is organized as a set of bounded subsystems rather than one large application. Package Catalog owns package governance and workspace-owned catalog data. Runtime Builder turns catalog selections into deployable runtime bundles. Deployment owns artifact, environment, promotion, deployment-run, and runtime-command contracts. The React console provides a shared admin and workspace shell for those capabilities.
 
 ## What Is Here
 
@@ -32,16 +32,28 @@ tests/
   Elsa.Platform.Console.E2E                     Playwright console smoke tests
 
 specs/
-  001-...021-*                                  Spec Kit feature history and active plans
+  001-...025-*                                  Spec Kit feature history and active plans
 ```
 
-Subsystem boundaries matter. Deployment may consume catalog abstractions or client contracts, but it should not depend on catalog API, persistence, or source-provider internals. Package Catalog and Runtime Builder are sibling subsystems. The console is a platform-level shell, not a catalog-only frontend.
+Subsystem boundaries matter. Deployment may consume catalog abstractions or client contracts, but it should not depend on catalog API, persistence, or source-provider internals. Package Catalog and Runtime Builder are sibling subsystems. The console is a platform-level shell, not a catalog-only frontend. Artifact-specific behavior belongs in producer and consumer integrations, not in the platform core.
 
 ## Platform Model
 
 The current platform model is centered on accounts and workspaces. Workspace is the tenant boundary for customer-owned catalog and builder data. Public catalog endpoints remain anonymous where appropriate, while workspace-scoped endpoints derive account and workspace context from configured platform identity. Operator administration is separate and still supports an admin-key-backed local fallback.
 
-The active identity and tenancy work is documented in [specs/021-identity-tenancy/plan.md](specs/021-identity-tenancy/plan.md).
+Elsa Platform is the source of truth for immutable deployable artifacts and versioned desired-state revisions. Elsa Studio remains the authoring and single-engine inspection surface. Elsa runtimes remain responsible for executing deployed artifacts and owning runtime state such as workflow instances, bookmarks, queues, locks, and execution logs.
+
+For platform-integrated Studio installations, the handoff command is **Submit to Platform**. It creates an immutable artifact in Elsa Platform. It does not release, promote, deploy, or make the workflow immediately executable. Direct runtime **Publish** remains direct-runtime terminology for non-integrated Studio installations or explicitly separated fallback behavior.
+
+The platform is artifact-driven rather than workflow-only:
+
+```text
+producer integration -> artifact registry -> desired-state revision -> deployment run -> runtime/provider integration
+```
+
+The first-class product path is Elsa workflow artifacts, but the architecture is intentionally extensible. Workflow definitions, runtime configurations, container image references, Helm charts, or other application artifacts can all share the same control-plane envelope when they have an artifact type, metadata, digest, reference, target capability requirements, and a deployment adapter.
+
+The active identity and tenancy work is documented in [specs/021-identity-tenancy/plan.md](specs/021-identity-tenancy/plan.md). The current execution plan for the artifact-driven deployment model is documented in [docs/platform-artifact-deployment-execution-plan.md](docs/platform-artifact-deployment-execution-plan.md).
 
 ## Technology
 
@@ -186,8 +198,34 @@ The long-term platform flow is:
 1. Runtime packages publish an `elsa-package.json` manifest.
 2. Package Catalog synchronizes package sources, validates manifests, records approvals, and exposes compatible package/version data.
 3. Runtime Builder creates saved runtime configurations and bundle artifacts from catalog selections.
-4. Deployment templates and artifacts turn those bundles into environment-specific deployment material.
-5. The Deployment engine plans, applies, and records reconciliation activity against supported targets.
+4. Artifact producers submit immutable artifacts to Elsa Platform. The first producer integration is Elsa Studio's **Submit to Platform** command for workflow snapshots.
+5. The artifact registry stores workspace-owned metadata, digests, inspection state, and payload references without storing raw workflow content, provider tokens, credentials, or secret values in catalog tables.
+6. Desired-state revisions reference artifacts plus environment-specific configuration, secret references, observability bindings, and target bindings.
+7. Promotion preview, validation, dry-run, deployment, rollback, and history operate on those platform-owned revisions.
+8. Deployment runs produce durable deployment commands for target runtimes or providers.
+9. Runtime/provider integrations consume commands, fetch or receive artifacts, verify digests and compatibility, apply supported artifact types, and report progress/results back to the deployment run.
+
+Runtime communication is transport-independent. The preferred default for customer-hosted runtimes is outbound runtime pull/sync, because it avoids requiring inbound network access from Elsa Platform. Webhooks are optional advisory notifications that tell a runtime to fetch authoritative commands. Direct platform push is available only for environments that explicitly support inbound connectivity and trust configuration.
+
+```text
+Elsa Studio integration
+  Submit to Platform
+  -> artifact submission
+
+Elsa Platform
+  artifact registry
+  desired-state revision
+  deployment run
+  deployment command
+
+Runtime integration
+  pull/sync or webhook-triggered fetch
+  verify artifact digest and capability compatibility
+  apply artifact through runtime-specific logic
+  report status and safe diagnostics
+```
+
+Elsa Platform stays agnostic about artifact internals. It owns identity, permissions, environment targeting, capabilities, validation lifecycle, run history, idempotency, and audit. Artifact producers and consumers own domain-specific packaging and application behavior.
 
 Several of these pieces are already implemented as contracts and services; others are represented by Spec Kit plans and roadmap affordances in the console until backend contracts are ready.
 
@@ -197,6 +235,7 @@ Several of these pieces are already implemented as contracts and services; other
 - [Manifest generator](src/Elsa.Platform.PackageManifest.Generator/README.md)
 - [Platform console](src/Elsa.Platform.Console/README.md)
 - [Active identity and workspace tenancy plan](specs/021-identity-tenancy/plan.md)
+- [Artifact-driven deployment execution plan](docs/platform-artifact-deployment-execution-plan.md)
 - [Spec Kit feature history](specs/)
 
 Implementation work is tracked through Spec Kit under `specs/`. Start with the current plan for active branch context before making architectural changes.

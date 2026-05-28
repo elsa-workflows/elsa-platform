@@ -59,8 +59,9 @@ public sealed class DeploymentTierService(IWorkspaceDeploymentTierStore? store =
         if (store is null)
             throw new InvalidOperationException("Deployment tier persistence is not configured.");
 
-        ValidateTierMutation(request.Name, request.Capabilities);
-        return await store.CreateTierAsync(workspaceId, request with { Capabilities = NormalizeCapabilities(request.Capabilities) }, cancellationToken);
+        var capabilities = NormalizeCapabilities(request.Capabilities);
+        ValidateTierMutation(request.Name, capabilities);
+        return await store.CreateTierAsync(workspaceId, request with { Capabilities = capabilities }, cancellationToken);
     }
 
     public async Task<WorkspaceDeploymentTier> UpdateTierAsync(

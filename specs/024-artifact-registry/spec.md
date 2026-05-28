@@ -8,6 +8,12 @@
 
 **Input**: User description: "Add a workspace-scoped deployment artifact registry and console inspection slice. Users can register already-built folder or ZIP deployment artifacts by metadata/reference, inspect immutable artifact metadata and checksum status through authorized workspace APIs, and open a real Artifacts console view instead of the placeholder. This must fit the deployment PRD loop manifest -> artifact -> validation -> dry-run -> apply -> history, reuse existing Deployment.Artifacts contracts where appropriate, store metadata and provider/file references only, never store raw artifact payloads or secrets in the catalog database, and must not implement OCI, signing, GitOps, provider apply, live runtime drift, or object storage upload in this slice."
 
+## Product Positioning
+
+Elsa Platform is the source of truth for deployable workflow artifacts, while Elsa Studio remains the authoring surface and Elsa runtimes remain the execution surface. In platform-integrated Studio installations, the user-facing handoff command is **Submit to Platform**. That command creates an immutable platform artifact and does not mean release, promotion, deployment, or immediate runtime execution.
+
+This registry slice stores the workspace-owned artifact record, metadata, digest, inspection state, and payload reference needed for that model. It does not store raw workflow definition content in catalog tables. Studio submission, CLI import, CI automation, package upload, and manual metadata registration should converge on the same artifact registry concepts as their ingestion paths mature.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Register Artifact Metadata (Priority: P1)
@@ -63,6 +69,7 @@ A workspace member with setup permission refreshes inspection status for a regis
 - Artifact reference is malformed, inaccessible, or points outside the allowed local/test reference root.
 - Artifact diagnostics contain file paths or provider errors; responses must keep them safe and avoid raw secret values.
 - Artifact registration attempts to include raw payload, manifest JSON, workflow content, token, password, or secret value fields.
+- A platform-integrated Studio submission uses Publish terminology instead of "Submit to Platform"; the UX must distinguish direct runtime publishing from platform artifact submission.
 - Concurrent users register the same artifact identity in the same workspace.
 - A direct API caller submits a cross-workspace artifact ID.
 - The Artifacts console is opened for a workspace with no registered artifacts.
@@ -85,11 +92,13 @@ A workspace member with setup permission refreshes inspection status for a regis
 - **FR-012**: Console users with setup permission MUST be able to register artifact metadata and refresh inspection status through live workspace APIs.
 - **FR-013**: Artifact records MUST be usable as future inputs to validation, dry-run, apply, and history slices without implementing those actions in this slice.
 - **FR-014**: System MUST stay within metadata registry and inspection scope; OCI, signing, GitOps, provider apply, object storage upload, live runtime drift, and external approval workflows are out of scope.
+- **FR-015**: System MUST treat future Elsa Studio "Submit to Platform" submissions as artifact ingestion events that produce immutable platform artifact records without implying release approval, promotion, deployment, or immediate runtime execution.
 
 ### Key Entities *(include if feature involves data)*
 
 - **Deployment Artifact Record**: Workspace-owned registry entry containing immutable artifact identity, digest, layout version, manifest summary, resource summary, reference metadata, checksum/inspection state, diagnostics, and audit metadata.
 - **Artifact Reference**: Provider/file reference that points to where the artifact payload can be inspected later without storing the payload in the catalog database.
+- **Artifact Submission**: Handoff event from Elsa Studio or another producer that creates or registers an immutable platform artifact record for later validation, promotion, and deployment.
 - **Artifact Inspection State**: Latest verification summary for checksum status, validity, diagnostics, inspected timestamp, and resource counts.
 - **Artifact Diagnostic**: Safe structured message describing registration or inspection issues without raw payload content or secret values.
 
@@ -109,6 +118,7 @@ A workspace member with setup permission refreshes inspection status for a regis
 
 - Existing workspace identity, deployment permissions, and deployment cockpit authorization remain the foundation.
 - Existing `Elsa.Platform.Deployment.Artifacts` contracts are the source of truth for artifact layout, metadata, checksum, and inspection concepts where they fit.
+- The first Studio integration should use "Submit to Platform" for the artifact handoff; "Publish" remains direct-runtime terminology unless a non-integrated Studio installation uses the existing behavior.
 - The first refresh implementation may support local/test filesystem references only; cloud/object storage and OCI references are future provider-specific slices.
 - Artifact upload and payload storage are out of scope; the catalog database stores metadata and references only.
 - Validation, dry-run, apply, artifact signing, GitOps promotion, and external approval workflows are future slices.

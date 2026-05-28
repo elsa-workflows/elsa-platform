@@ -63,7 +63,12 @@ git diff --check
 
 ## Verification Results
 
-- Not run during planning. Record focused backend, console, and whitespace verification results after implementation.
+- 2026-05-28: `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter DeploymentTier` passed: 6 tests.
+- 2026-05-28: `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceTier` passed: 10 tests.
+- 2026-05-28: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceDeploymentTier` passed: 6 tests.
+- 2026-05-28: `cd src/Elsa.Platform.Console && npm test -- --run deployments` passed: 19 tests.
+- 2026-05-28: `cd src/Elsa.Platform.Console && npm run typecheck` passed.
+- 2026-05-28: `git diff --check` passed.
 
 ## Known Scope Boundaries
 

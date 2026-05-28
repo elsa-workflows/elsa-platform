@@ -21,10 +21,10 @@
 - [X] T001 Create deployment tier domain file in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierModels.cs`
 - [X] T002 Create deployment tier service file in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierService.cs`
 - [X] T003 Create deployment tier store contract in `src/Elsa.Platform.Deployment.Core/Workspace/IWorkspaceDeploymentTierStore.cs`
-- [ ] T004 [P] Create core tier test file in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentTierServiceTests.cs`
-- [ ] T005 [P] Create persistence tier test file in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceTierPersistenceTests.cs`
-- [ ] T006 [P] Create API tier test file in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTierApiTests.cs`
-- [ ] T007 [P] Create console tier management component test file in `src/Elsa.Platform.Console/src/features/deployments/DeploymentTiersPanel.test.tsx`
+- [X] T004 [P] Create core tier test file in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentTierServiceTests.cs`
+- [X] T005 [P] Create persistence tier test file in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceTierPersistenceTests.cs`
+- [X] T006 [P] Create API tier test file in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTierApiTests.cs`
+- [X] T007 [P] Create console tier management component test file in `src/Elsa.Platform.Console/src/features/deployments/DeploymentTiersPanel.test.tsx`
 
 ---
 
@@ -58,9 +58,9 @@
 ### Tests for User Story 1
 
 - [ ] T018 [P] [US1] Add core tests for capability catalog, duplicate active names, unknown capability rejection, and last-active-tier archive prevention in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentTierServiceTests.cs`
-- [ ] T019 [P] [US1] Add persistence tests for tier create/update/archive/restore, capability assignments, environment counts, and audit records in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceTierPersistenceTests.cs`
-- [ ] T020 [P] [US1] Add API tests for tier capability listing, tier CRUD, archive/restore, duplicate rejection, and non-admin mutation denial in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTierApiTests.cs`
-- [ ] T021 [P] [US1] Add console tests for tier list, create form, edit form, capability selection, duplicate-name errors, archive/restore, and non-admin blocked state in `src/Elsa.Platform.Console/src/features/deployments/DeploymentTiersPanel.test.tsx`
+- [X] T019 [P] [US1] Add persistence tests for tier create/update/archive/restore, capability assignments, environment counts, and audit records in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceTierPersistenceTests.cs`
+- [X] T020 [P] [US1] Add API tests for tier capability listing, tier CRUD, archive/restore, duplicate rejection, and non-admin mutation denial in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTierApiTests.cs`
+- [X] T021 [P] [US1] Add console tests for tier list, create form, edit form, capability selection, duplicate-name errors, archive/restore, and non-admin blocked state in `src/Elsa.Platform.Console/src/features/deployments/DeploymentTiersPanel.test.tsx`
 
 ### Implementation for User Story 1
 
@@ -117,7 +117,7 @@
 ### Tests for User Story 3
 
 - [X] T045 [P] [US3] Add core validation tests for promotion-source, promotion-target, production-like, confirmation-required, rollback-enabled, secret-verification-required, and observability-required capabilities in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentValidationServiceTests.cs`
-- [ ] T046 [P] [US3] Add API tests proving promotion preview and run preparation use tier capabilities rather than tier names in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTierApiTests.cs`
+- [X] T046 [P] [US3] Add API tests proving promotion preview and run preparation use tier capabilities rather than tier names in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTierApiTests.cs`
 - [ ] T047 [P] [US3] Add console tests for production-like warnings, promotion-target blockers, confirmation messaging, and rollback availability from capability IDs in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 3
@@ -141,8 +141,8 @@
 
 ### Tests for User Story 4
 
-- [ ] T054 [P] [US4] Add core tests for default tier seeding and Dev/Test/Stage/Production capability mappings in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentTierServiceTests.cs`
-- [ ] T055 [P] [US4] Add persistence migration tests for mapping existing environment tier values to default tier records in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceTierPersistenceTests.cs`
+- [X] T054 [P] [US4] Add core tests for default tier seeding and Dev/Test/Stage/Production capability mappings in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentTierServiceTests.cs`
+- [X] T055 [P] [US4] Add persistence migration tests for mapping existing environment tier values to default tier records in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceTierPersistenceTests.cs`
 - [ ] T056 [P] [US4] Add API tests proving workspaces without custom tiers receive defaults and legacy tier requests map during transition in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTierApiTests.cs`
 - [ ] T057 [P] [US4] Add console tests proving default tiers appear in empty-state setup and migrated environments keep readable tier labels in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
@@ -150,8 +150,8 @@
 
 - [X] T058 [US4] Implement idempotent default tier seeding for workspaces without tier definitions in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierService.cs`
 - [X] T059 [US4] Implement persistence default seeding, legacy fixed-tier mapping, and admin-review flagging for fallback-mapped environments in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [ ] T060 [US4] Extend SQLite migrations to backfill default tier definitions and environment tier references in `src/Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/Migrations/`
-- [ ] T061 [US4] Extend SQL Server migrations to backfill default tier definitions and environment tier references in `src/Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
+- [X] T060 [US4] Extend SQLite migrations to backfill default tier definitions and environment tier references in `src/Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/Migrations/`
+- [X] T061 [US4] Extend SQL Server migrations to backfill default tier definitions and environment tier references in `src/Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
 - [X] T062 [US4] Add compatibility mapping for old fixed tier request values during the transition period in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
 - [X] T063 [US4] Update console empty-state setup to rely on server-provided default tiers in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
 - [ ] T064 [US4] Update TypeScript tests and fixtures to use tier definitions instead of fixed tier enum strings in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
@@ -164,16 +164,16 @@
 
 **Purpose**: Verification, cleanup, and documentation that affect multiple stories.
 
-- [ ] T065 [P] Update quickstart verification results in `specs/025-custom-deployment-tiers/quickstart.md`
-- [ ] T066 [P] Update API contract examples if final request or response names changed in `specs/025-custom-deployment-tiers/contracts/workspace-deployment-tiers-api.md`
-- [ ] T067 [P] Update console UX contract notes if final tier management labels changed in `specs/025-custom-deployment-tiers/contracts/console-deployment-tiers-ux.md`
-- [ ] T068 Run core tests with `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter DeploymentTier`
-- [ ] T069 Run persistence tests with `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceTier`
-- [ ] T070 Run API tests with `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceDeploymentTier`
+- [X] T065 [P] Update quickstart verification results in `specs/025-custom-deployment-tiers/quickstart.md`
+- [X] T066 [P] Update API contract examples if final request or response names changed in `specs/025-custom-deployment-tiers/contracts/workspace-deployment-tiers-api.md`
+- [X] T067 [P] Update console UX contract notes if final tier management labels changed in `specs/025-custom-deployment-tiers/contracts/console-deployment-tiers-ux.md`
+- [X] T068 Run core tests with `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter DeploymentTier`
+- [X] T069 Run persistence tests with `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceTier`
+- [X] T070 Run API tests with `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceDeploymentTier`
 - [X] T071 Run console deployment tests with `cd src/Elsa.Platform.Console && npm test -- --run deployments`
 - [X] T072 Run console typecheck with `cd src/Elsa.Platform.Console && npm run typecheck`
 - [X] T073 Run whitespace validation with `git diff --check`
-- [ ] T074 Add and run bounded-query verification for 20 tiers and 250 environments in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceTierPersistenceTests.cs`
+- [X] T074 Add and run bounded-query verification for 20 tiers and 250 environments in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceTierPersistenceTests.cs`
 
 ---
 

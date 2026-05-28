@@ -201,22 +201,21 @@ Errors:
 
 ## Cockpit Environment Shape
 
-Environment summaries include tier identity and capabilities.
+Environment summaries include tier identity, display label, status, and capabilities alongside the temporary legacy tier value.
 
 ```json
 {
   "id": "env-prod-eu",
   "name": "Production EU",
-  "tier": {
-    "id": "tier-prod-eu",
-    "name": "Production EU",
-    "status": "Active",
-    "capabilities": [
-      "deployment.tier.production-like",
-      "deployment.promotion.target",
-      "deployment.confirmation.required"
-    ]
-  },
+  "tier": "Production",
+  "tierId": "tier-prod-eu",
+  "tierName": "Production EU",
+  "tierStatus": "Active",
+  "tierCapabilities": [
+    "deployment.tier.production-like",
+    "deployment.promotion.target",
+    "deployment.confirmation.required"
+  ],
   "health": "Healthy",
   "deployedRevision": 41,
   "deploymentStatus": "Succeeded",
