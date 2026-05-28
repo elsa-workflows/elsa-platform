@@ -11,7 +11,7 @@
 7. Confirm the second claim is rejected while the first lease is active.
 8. Post heartbeat and progress for the first lease.
 9. Complete the command with observed artifact digest and runtime reference.
-10. Reload deployment run detail and confirm command events appear in history.
+10. Reload deployment run detail and confirm command events appear in history and command lifecycle summaries.
 11. Repeat completion with the same lease and verify the final state is idempotent.
 12. Claim another command, let the lease become stale, run recovery, and verify the command is recovery-required or explicitly reclaimable without duplicate apply.
 
@@ -45,6 +45,11 @@ git diff --check
 - 2026-05-28: `git diff --check` passed.
 - 2026-05-29: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter RuntimeCommand --no-restore` passed: 4 tests.
 - 2026-05-29: `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand --no-restore` passed: 15 tests.
+- 2026-05-29: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter RuntimeCommand --no-restore` passed: 4 tests, including run-detail command summaries.
+- 2026-05-29: `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand --no-restore` passed: 15 tests, including cockpit history command summaries.
+- 2026-05-29: `cd src/Elsa.Platform.Console && npm test -- --run deployments` passed: 22 tests, including command summary rendering.
+- 2026-05-29: `cd src/Elsa.Platform.Console && npm run typecheck` passed.
+- 2026-05-29: `git diff --check` passed.
 
 ## Known Scope Boundaries
 

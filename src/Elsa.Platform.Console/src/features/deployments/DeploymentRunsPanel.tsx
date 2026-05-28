@@ -4,6 +4,8 @@ import {
   engineLabel,
   environmentLabel,
   type DeploymentCockpit,
+  type DeploymentCommandStatus,
+  type DeploymentRunCommandSummary,
   type DeploymentStatus,
   type WorkspaceDeploymentRunStatus
 } from "@/features/deployments/deploymentModels";
@@ -36,6 +38,7 @@ export function DeploymentRunsPanel({ data }: DeploymentRunsPanelProps) {
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Actor</th>
                 <th className="px-3 py-2">Target</th>
+                <th className="px-3 py-2">Command</th>
                 <th className="px-3 py-2">Validation</th>
                 <th className="px-3 py-2">When</th>
               </tr>
@@ -54,6 +57,9 @@ export function DeploymentRunsPanel({ data }: DeploymentRunsPanelProps) {
                     <td className="px-3 py-3 text-muted-foreground">
                       {environment?.name ?? environmentLabel(event.environmentId, data.applications)} / {engineLabel(event.engineId, data.engines)}
                       <div className="text-xs">{environment?.tierName ?? environment?.tier ?? "Unknown tier"}</div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <CommandSummary commands={event.commands ?? []} />
                     </td>
                     <td className="px-3 py-3">{event.validationOutcome}</td>
                     <td className="px-3 py-3">{formatDateTime(event.occurredAt)}</td>
@@ -80,9 +86,32 @@ function StatusBadge({ value, tone }: { value: string; tone: StatusTone }) {
   return <Badge className={statusToneClass(tone)}>{value}</Badge>;
 }
 
+function CommandSummary({ commands }: { commands: DeploymentRunCommandSummary[] }) {
+  const command = commands[commands.length - 1];
+  if (!command) return <span className="text-muted-foreground">Not created</span>;
+
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusBadge value={`${command.action} ${command.status}`} tone={commandTone(command.status)} />
+        {command.percentComplete !== null ? <span className="text-xs text-muted-foreground">{command.percentComplete}%</span> : null}
+      </div>
+      {command.progressMessage ? <div className="max-w-64 truncate text-xs text-muted-foreground">{command.progressMessage}</div> : null}
+      {command.runtimeReference ? <div className="max-w-64 truncate text-xs text-muted-foreground">{command.runtimeReference}</div> : null}
+    </div>
+  );
+}
+
 function deploymentTone(status: DeploymentStatus | WorkspaceDeploymentRunStatus): StatusTone {
   if (status === "Succeeded") return "success";
   if (status === "Running" || status === "RolledBack" || status === "Queued" || status === "RecoveryRequired") return "warning";
   if (status === "Cancelled") return "neutral";
+  return "destructive";
+}
+
+function commandTone(status: DeploymentCommandStatus): StatusTone {
+  if (status === "Completed") return "success";
+  if (status === "Pending" || status === "Claimed" || status === "Running" || status === "RecoveryRequired") return "warning";
+  if (status === "Cancelled" || status === "Expired") return "neutral";
   return "destructive";
 }

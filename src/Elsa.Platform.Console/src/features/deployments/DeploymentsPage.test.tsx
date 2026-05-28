@@ -361,6 +361,8 @@ describe("DeploymentsPage", () => {
     expect(screen.getByText("Run history")).toBeInTheDocument();
     expect(screen.getByText("Mira Chen")).toBeInTheDocument();
     expect(screen.getByText("Latest Blocked")).toBeInTheDocument();
+    expect(screen.getByText("Deploy Running")).toBeInTheDocument();
+    expect(screen.getByText("Applying workflow definitions")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm Deployment" })).not.toBeInTheDocument();
   });
 });
@@ -791,7 +793,41 @@ const deploymentCockpitFixture: DeploymentCockpit = {
     { id: "prod-logs", kind: "Logs", provider: "Azure Monitor", status: "Connected", scope: "claims-prod / rev 40", correlatedRevision: 40, sample: "143 structured events in the last 30 minutes" }
   ],
   history: [
-    { id: "00000000-0000-0000-0000-000000000410", status: "Blocked", revision: 41, actor: "Mira Chen", environmentId: "claims-prod", engineId: "prod-engine", validationOutcome: "Blocked", occurredAt: "2026-05-22T08:05:00Z", rollbackSourceRevision: null }
+    {
+      id: "00000000-0000-0000-0000-000000000410",
+      status: "Blocked",
+      revision: 41,
+      actor: "Mira Chen",
+      environmentId: "claims-prod",
+      engineId: "prod-engine",
+      validationOutcome: "Blocked",
+      occurredAt: "2026-05-22T08:05:00Z",
+      rollbackSourceRevision: null,
+      commands: [
+        {
+          id: "command-1",
+          workspaceId,
+          runId: "00000000-0000-0000-0000-000000000410",
+          environmentId: "claims-prod",
+          engineId: "prod-engine",
+          action: "Deploy",
+          status: "Running",
+          workerId: "runtime-worker-1",
+          claimedAt: "2026-05-22T08:06:00Z",
+          leaseExpiresAt: "2026-05-22T08:11:00Z",
+          heartbeatAt: "2026-05-22T08:07:00Z",
+          attemptNumber: 1,
+          percentComplete: 75,
+          progressMessage: "Applying workflow definitions",
+          observedArtifactDigest: null,
+          runtimeReference: "elsa://workflows/payment-retry",
+          diagnostics: [],
+          createdAt: "2026-05-22T08:05:00Z",
+          updatedAt: "2026-05-22T08:07:00Z",
+          completedAt: null
+        }
+      ]
+    }
   ],
   driftReport: [
     { id: "drift-shell", environmentId: "claims-stage", engineId: "stage-engine", area: "Shell concurrency", desired: "16 workers", observed: "12 workers", action: "Review" }

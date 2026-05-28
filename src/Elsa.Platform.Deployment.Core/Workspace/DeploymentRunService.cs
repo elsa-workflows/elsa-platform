@@ -46,7 +46,8 @@ public sealed class DeploymentRunService(
             return null;
 
         var history = await store.GetRunHistoryAsync(workspaceId, runId, cancellationToken);
-        return new WorkspaceDeploymentRunDetail(run, history);
+        var commands = await store.GetRunCommandSummariesAsync(workspaceId, runId, cancellationToken);
+        return new WorkspaceDeploymentRunDetail(run, history, commands);
     }
 
     private async Task<WorkspaceDeploymentRun> QueueRunAsync(

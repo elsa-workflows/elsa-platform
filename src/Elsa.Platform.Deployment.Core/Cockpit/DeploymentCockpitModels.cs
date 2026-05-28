@@ -1,3 +1,5 @@
+using Elsa.Platform.Deployment.Core.Workspace;
+
 namespace Elsa.Platform.Deployment.Core.Cockpit;
 
 public enum DeploymentHealth
@@ -223,7 +225,8 @@ public sealed record DeploymentHistoryEvent(
     string EngineId,
     DeploymentValidationOutcome ValidationOutcome,
     DateTimeOffset OccurredAt,
-    int? RollbackSourceRevision);
+    int? RollbackSourceRevision,
+    IReadOnlyList<DeploymentRunCommandSummary> Commands);
 
 public sealed record DriftReportItem(
     string Id,

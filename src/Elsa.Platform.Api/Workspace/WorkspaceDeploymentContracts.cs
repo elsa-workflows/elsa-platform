@@ -80,6 +80,7 @@ public sealed record WorkspaceRollbackRunRequestDto(
 
 public sealed record WorkspaceDeploymentRunDetailResponse(
     WorkspaceDeploymentRun Run,
-    IReadOnlyList<DeploymentRunHistoryEvent> History);
+    IReadOnlyList<DeploymentRunHistoryEvent> History,
+    IReadOnlyList<DeploymentRunCommandSummary> Commands);
 
 public sealed record WorkspaceRuntimeControlRunRequest(Guid ConfirmationId);

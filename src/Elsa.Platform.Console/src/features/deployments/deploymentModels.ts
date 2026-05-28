@@ -4,6 +4,8 @@ export type DeploymentStatus = "Succeeded" | "Running" | "Blocked" | "RolledBack
 export type DeploymentTierStatus = "Active" | "Archived";
 export type DeploymentTierCapabilityCategory = "Classification" | "Promotion" | "Safeguards" | "Rollback" | "Validation" | "Observability";
 export type WorkspaceDeploymentRunStatus = "Queued" | "Running" | "Succeeded" | "Failed" | "Blocked" | "Cancelled" | "RolledBack" | "RecoveryRequired";
+export type DeploymentCommandAction = "Deploy" | "Rollback" | "Validate" | "RuntimeControl";
+export type DeploymentCommandStatus = "Pending" | "Claimed" | "Running" | "Completed" | "Failed" | "Rejected" | "Cancelled" | "RecoveryRequired" | "Expired";
 export type CredentialVerificationStatus = "Verified" | "Missing" | "Expired" | "Unverified";
 export type CapabilityBoundary = "Workflow" | "EngineApi" | "Shell" | "Hosting";
 export type ValidationSeverity = "Pass" | "Warning" | "Blocker";
@@ -287,9 +289,44 @@ export type DeploymentRunHistoryRecord = {
   createdAt: string;
 };
 
+export type WorkspaceArtifactDigest = {
+  algorithm: string;
+  value: string;
+};
+
+export type DeploymentCommandDiagnostic = {
+  code: string;
+  severity: "Info" | "Warning" | "Error";
+  message: string;
+};
+
+export type DeploymentRunCommandSummary = {
+  id: string;
+  workspaceId: string;
+  runId: string;
+  environmentId: string;
+  engineId: string;
+  action: DeploymentCommandAction;
+  status: DeploymentCommandStatus;
+  workerId: string | null;
+  claimedAt: string | null;
+  leaseExpiresAt: string | null;
+  heartbeatAt: string | null;
+  attemptNumber: number;
+  percentComplete: number | null;
+  progressMessage: string | null;
+  observedArtifactDigest: WorkspaceArtifactDigest | null;
+  runtimeReference: string | null;
+  diagnostics: DeploymentCommandDiagnostic[];
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+};
+
 export type WorkspaceDeploymentRunDetailResponse = {
   run: WorkspaceDeploymentRun;
   history: DeploymentRunHistoryRecord[];
+  commands: DeploymentRunCommandSummary[];
 };
 
 export type RuntimeControlExecution = {
@@ -332,6 +369,7 @@ export type DeploymentHistoryEvent = {
   validationOutcome: "Passed" | "Warnings" | "Blocked";
   occurredAt: string;
   rollbackSourceRevision: number | null;
+  commands?: DeploymentRunCommandSummary[];
 };
 
 export type DriftReportItem = {

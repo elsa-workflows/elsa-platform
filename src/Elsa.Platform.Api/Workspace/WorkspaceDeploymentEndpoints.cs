@@ -654,7 +654,7 @@ public static class WorkspaceDeploymentEndpoints
             var detail = await runs.GetRunDetailAsync(workspaceId, runId, cancellationToken);
             return detail is null
                 ? Results.NotFound()
-                : Results.Ok(new WorkspaceDeploymentRunDetailResponse(detail.Run, detail.History));
+                : Results.Ok(new WorkspaceDeploymentRunDetailResponse(detail.Run, detail.History, detail.Commands));
         });
 
         group.MapPost("/engines/{engineId:guid}/controls/{controlId}/run", async (
