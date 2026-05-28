@@ -114,6 +114,43 @@ public sealed class RuntimeCommandApiTests
         rejectBody.Diagnostics.Single().Message.Should().Be("[redacted] missing");
     }
 
+    [Fact]
+    public async Task Webhook_notification_is_safe_trigger_and_runtime_must_poll_to_claim()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("runtime-webhook-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var seeded = await SeedRunAsync(app, workspaceId, "runtime-webhook-owner");
+        var polled = await owner.GetPlatformJsonAsync<RuntimeCommandListResponse>(
+            $"/api/workspaces/{workspaceId}/deployments/runtime/engines/{seeded.EngineId}/commands");
+        var command = polled!.Commands.Single();
+
+        var firstNotificationResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runtime/commands/{command.Id}/webhook-notifications",
+            new RuntimeCommandWebhookNotificationRequest(seeded.EngineId));
+        var secondNotificationResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runtime/commands/{command.Id}/webhook-notifications",
+            new RuntimeCommandWebhookNotificationRequest(seeded.EngineId));
+        var firstNotification = await firstNotificationResponse.Content.ReadPlatformJsonAsync<RuntimeCommandWebhookNotificationResponse>();
+        var afterWebhookPoll = await owner.GetPlatformJsonAsync<RuntimeCommandListResponse>(
+            $"/api/workspaces/{workspaceId}/deployments/runtime/engines/{seeded.EngineId}/commands");
+        var claimResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runtime/commands/{command.Id}/claim",
+            new RuntimeCommandClaimRequest(seeded.EngineId, "runtime-worker-1", 300));
+
+        firstNotificationResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        secondNotificationResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        firstNotification!.WorkspaceId.Should().Be(workspaceId);
+        firstNotification.EngineId.Should().Be(seeded.EngineId);
+        firstNotification.CommandHint.Should().Be(command.Id);
+        firstNotification.SafePayloadJson.Should().Contain(command.Id.ToString("D"));
+        firstNotification.SafePayloadJson.ToLowerInvariant().Should().NotContain("lease");
+        firstNotification.SafePayloadJson.ToLowerInvariant().Should().NotContain("secret");
+        afterWebhookPoll!.Commands.Should().ContainSingle(x => x.Id == command.Id);
+        claimResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     private static async Task<RuntimeCommandClaimResponse> ClaimNextCommandAsync(
         PlatformApiTestApplication app,
         HttpClient owner,
