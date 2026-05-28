@@ -176,6 +176,7 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
         kind switch
         {
             "Workflow" => DiffCategory.Workflows,
+            "ArtifactReference" => DiffCategory.Workflows,
             "Feature" => DiffCategory.Features,
             "ShellConfiguration" => DiffCategory.ShellConfiguration,
             "RuntimeConfiguration" => DiffCategory.RuntimeConfiguration,

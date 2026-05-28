@@ -481,6 +481,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         if (!engineExists)
             throw new InvalidOperationException("Target engine does not exist in the target environment.");
 
+        var artifactReference = await ResolveArtifactReferenceAsync(workspaceId, sourceRevision.DesiredStateJson, cancellationToken);
         var runId = Guid.NewGuid();
         var run = new DeploymentRunEntity
         {
@@ -519,7 +520,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
                 request.TargetEnvironmentId,
                 request.TargetEngineId,
                 request.RollbackSourceRunId is null ? DeploymentCommandAction.Deploy : DeploymentCommandAction.Rollback,
-                null,
+                artifactReference,
                 new DeploymentCommandRevisionReference(request.SourceRevisionId),
                 BuildDeploymentCommandIdempotencyKey(workspaceId, request.TargetEnvironmentId, request.TargetEngineId, request.SourceRevisionId, request.RollbackSourceRunId),
                 now,
@@ -1687,6 +1688,89 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             .Where(record => record is not null)
             .Cast<StructuredDesiredStateRecordEntity>()
             .ToList();
+    }
+
+    private async Task<DeploymentCommandArtifactReference?> ResolveArtifactReferenceAsync(
+        Guid workspaceId,
+        string desiredStateJson,
+        CancellationToken cancellationToken)
+    {
+        var artifactReference = ParseArtifactReference(desiredStateJson);
+        if (artifactReference is null)
+            return null;
+
+        WorkspaceDeploymentArtifactEntity? artifact = null;
+        if (artifactReference.ArtifactRecordId is not null)
+        {
+            artifact = await dbContext.WorkspaceDeploymentArtifacts
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == artifactReference.ArtifactRecordId.Value, cancellationToken);
+        }
+        else if (!string.IsNullOrWhiteSpace(artifactReference.ArtifactId))
+        {
+            artifact = await dbContext.WorkspaceDeploymentArtifacts
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.ArtifactId == artifactReference.ArtifactId, cancellationToken);
+        }
+
+        if (artifact is null)
+            throw new InvalidOperationException("Artifact-backed revision references an artifact that is not visible in the workspace.");
+
+        return new DeploymentCommandArtifactReference(
+            artifact.Id,
+            artifact.ArtifactId,
+            artifact.ArtifactTypeId,
+            new WorkspaceArtifactDigest(artifact.ContentDigestAlgorithm, artifact.ContentDigest));
+    }
+
+    private static DeploymentCommandArtifactReference? ParseArtifactReference(string desiredStateJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(desiredStateJson);
+            var records = document.RootElement.TryGetProperty("records", out var recordsElement) && recordsElement.ValueKind == JsonValueKind.Array
+                ? recordsElement
+                : document.RootElement;
+            if (records.ValueKind != JsonValueKind.Array)
+                return null;
+
+            foreach (var record in records.EnumerateArray())
+            {
+                var kind = record.TryGetProperty("kind", out var kindElement) ? kindElement.GetString() : null;
+                if (!string.Equals(kind, DesiredStateRecordKind.ArtifactReference.ToString(), StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var payload = record.TryGetProperty("payload", out var payloadElement) && payloadElement.ValueKind == JsonValueKind.Object
+                    ? payloadElement
+                    : record;
+                var artifactRecordId = payload.TryGetProperty("artifactRecordId", out var artifactRecordIdElement)
+                    && artifactRecordIdElement.ValueKind == JsonValueKind.String
+                    && Guid.TryParse(artifactRecordIdElement.GetString(), out var parsedArtifactRecordId)
+                        ? parsedArtifactRecordId
+                        : (Guid?)null;
+                var artifactId = payload.TryGetProperty("artifactId", out var artifactIdElement) ? artifactIdElement.GetString() : null;
+                var artifactTypeId = payload.TryGetProperty("artifactTypeId", out var artifactTypeIdElement) ? artifactTypeIdElement.GetString() : null;
+                var contentDigest = payload.TryGetProperty("contentDigest", out var digestElement) && digestElement.ValueKind == JsonValueKind.Object
+                    ? ParseArtifactDigest(digestElement)
+                    : null;
+                return new DeploymentCommandArtifactReference(artifactRecordId, artifactId, artifactTypeId, contentDigest);
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private static WorkspaceArtifactDigest? ParseArtifactDigest(JsonElement digestElement)
+    {
+        var algorithm = digestElement.TryGetProperty("algorithm", out var algorithmElement) ? algorithmElement.GetString() : null;
+        var value = digestElement.TryGetProperty("value", out var valueElement) ? valueElement.GetString() : null;
+        return string.IsNullOrWhiteSpace(algorithm) || string.IsNullOrWhiteSpace(value)
+            ? null
+            : new WorkspaceArtifactDigest(algorithm, value);
     }
 
     private static WorkspacePermissionGrant ToPermissionGrant(WorkspacePermissionGrantEntity entity) =>

@@ -22,7 +22,8 @@ git diff --check
 
 ## Verification Results
 
-- Not run yet. This spec defines a future implementation slice.
+- 2026-05-28: `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand --no-restore` passed: 7 tests, including artifact-backed command reference projection and missing artifact rejection.
+- 2026-05-28: `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter DeploymentValidation --no-restore` passed: 5 tests.
 
 ## Known Scope Boundaries
 

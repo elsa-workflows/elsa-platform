@@ -24,5 +24,6 @@ public enum DesiredStateRecordKind
     RuntimeConfiguration,
     SecretReference,
     ObservabilityBinding,
-    EngineBinding
+    EngineBinding,
+    ArtifactReference
 }

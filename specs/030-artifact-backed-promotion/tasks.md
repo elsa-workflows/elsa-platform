@@ -6,23 +6,23 @@
 
 ## Phase 1: Data Model And Contracts
 
-- [ ] T001 Define artifact-backed desired-state revision model.
-- [ ] T002 Define artifact reference validation and safe command reference contract.
+- [x] T001 Define artifact-backed desired-state revision model.
+- [x] T002 Define artifact reference validation and safe command reference contract.
 - [ ] T003 Define promotion preview output for artifact identity, digest, type, safe metadata, configuration, tier policy, and runtime compatibility.
 
 ## Phase 2: Persistence
 
-- [ ] T004 Add persistence for artifact references in desired-state revisions or structured desired-state records.
+- [x] T004 Add persistence for artifact references in desired-state revisions or structured desired-state records.
 - [ ] T005 Add SQLite and SQL Server migrations.
 - [ ] T006 Add backfill/read compatibility for existing structured desired-state records.
-- [ ] T007 Add persistence tests for workspace isolation, missing artifact, duplicate references, and no raw payload storage.
+- [x] T007 Add persistence tests for workspace isolation, missing artifact, duplicate references, and no raw payload storage.
 
 ## Phase 3: Promotion And Deployment
 
 - [ ] T008 Update promotion preview to compare artifact-backed revisions.
 - [ ] T009 Update promotion creation to create artifact-backed target revisions.
 - [ ] T010 Update deployment validation to check artifact ownership, type, digest, payload reference availability, tier policy, and runtime capability hints.
-- [ ] T011 Update deployment command creation to include artifact references.
+- [x] T011 Update deployment command creation to include artifact references.
 - [ ] T012 Add rollback selection and validation for artifact-backed revisions.
 
 ## Phase 4: API And Console

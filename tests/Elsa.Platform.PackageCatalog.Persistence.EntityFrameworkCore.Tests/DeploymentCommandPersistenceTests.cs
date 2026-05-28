@@ -1,5 +1,6 @@
 using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
+using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
 using FluentAssertions;
@@ -41,6 +42,73 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
             x.RunId == run.Id
             && x.Action == DeploymentCommandAction.Deploy
             && x.Revision!.RevisionId == topology.Revision.Id);
+    }
+
+    [Fact]
+    public async Task Artifact_backed_revision_projects_artifact_reference_into_command()
+    {
+        var topology = await SeedTopologyAsync(createRevision: false);
+        var artifact = await _store.RegisterArtifactAsync(
+            _workspaceId,
+            ArtifactRegistration("sha256:payment-retry", "/tmp/payment-retry"));
+        var desiredStateJson = $$"""
+            {
+              "records": [
+                {
+                  "kind": "ArtifactReference",
+                  "name": "Payment Retry",
+                  "payload": {
+                    "artifactRecordId": "{{artifact.Id:D}}",
+                    "artifactId": "{{artifact.ArtifactId}}",
+                    "artifactTypeId": "{{artifact.ArtifactTypeId}}",
+                    "contentDigest": {
+                      "algorithm": "{{artifact.ContentDigest.Algorithm}}",
+                      "value": "{{artifact.ContentDigest.Value}}"
+                    }
+                  }
+                }
+              ]
+            }
+            """;
+        var revision = await _store.CreateRevisionAsync(
+            _workspaceId,
+            new CreateDesiredStateRevisionRequest(topology.Application.Id, topology.Environment.Id, "Artifact v1", "abc123", desiredStateJson, _accountId));
+
+        await QueueRunAsync(topology with { Revision = revision });
+        var command = (await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow)).Single();
+
+        command.Artifact.Should().NotBeNull();
+        command.Artifact!.ArtifactRecordId.Should().Be(artifact.Id);
+        command.Artifact.ArtifactId.Should().Be(artifact.ArtifactId);
+        command.Artifact.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
+        command.Artifact.ContentDigest.Should().Be(artifact.ContentDigest);
+    }
+
+    [Fact]
+    public async Task Artifact_backed_revision_rejects_missing_artifact_reference()
+    {
+        var topology = await SeedTopologyAsync(createRevision: false);
+        var desiredStateJson = """
+            {
+              "records": [
+                {
+                  "kind": "ArtifactReference",
+                  "name": "Payment Retry",
+                  "payload": {
+                    "artifactId": "sha256:missing"
+                  }
+                }
+              ]
+            }
+            """;
+        var revision = await _store.CreateRevisionAsync(
+            _workspaceId,
+            new CreateDesiredStateRevisionRequest(topology.Application.Id, topology.Environment.Id, "Missing artifact", "abc123", desiredStateJson, _accountId));
+
+        var act = () => QueueRunAsync(topology with { Revision = revision });
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Artifact-backed revision references an artifact that is not visible in the workspace.");
     }
 
     [Fact]
@@ -156,7 +224,7 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
                 null),
             DateTimeOffset.UtcNow);
 
-    private async Task<DeploymentTopology> SeedTopologyAsync()
+    private async Task<DeploymentTopology> SeedTopologyAsync(bool createRevision = true)
     {
         var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, _accountId));
         var environment = await _store.CreateEnvironmentAsync(_workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production));
@@ -172,11 +240,28 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
                 [new EngineCapability("workflow-definition.apply", "Apply workflow definitions", CapabilityBoundary.EngineApi)],
                 [],
                 "container-apps"));
-        var revision = await _store.CreateRevisionAsync(
-            _workspaceId,
-            new CreateDesiredStateRevisionRequest(application.Id, environment.Id, "v1", "abc123", "{\"records\":[]}", _accountId));
-        return new DeploymentTopology(environment, engine, revision);
+        var revision = createRevision
+            ? await _store.CreateRevisionAsync(
+                _workspaceId,
+                new CreateDesiredStateRevisionRequest(application.Id, environment.Id, "v1", "abc123", "{\"records\":[]}", _accountId))
+            : null;
+        return new DeploymentTopology(application, environment, engine, revision!);
     }
+
+    private RegisterWorkspaceArtifactRequest ArtifactRegistration(string artifactId, string reference) =>
+        new(
+            artifactId,
+            ArtifactLayoutConstants.LayoutVersion,
+            new WorkspaceArtifactDigest("sha256", artifactId.Replace("sha256:", "", StringComparison.Ordinal)),
+            WorkspaceArtifactFormat.Folder,
+            "local",
+            reference,
+            new WorkspaceArtifactManifestSummary("claims", "1.0.0", "prod"),
+            [new WorkspaceArtifactResourceSummary("workflowDefinition", "payment-retry", null, "1", new WorkspaceArtifactDigest("sha256", "workflow-hash"))],
+            [],
+            _accountId,
+            ArtifactEnvelopeConstants.EnvelopeVersion,
+            ArtifactTypeIds.ElsaWorkflowDefinition);
 
     private static CatalogDbContext CreateDbContext()
     {
@@ -187,6 +272,7 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
     }
 
     private sealed record DeploymentTopology(
+        WorkspaceDeploymentApplication Application,
         WorkspaceDeploymentEnvironment Environment,
         WorkspaceWorkflowEngine Engine,
         WorkspaceDesiredStateRevision Revision);
