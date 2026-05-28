@@ -225,6 +225,6 @@ Exit criteria:
 
 ## Immediate Next Actions
 
-1. Create `026-artifact-envelope-and-types`.
+1. Implement `026-artifact-envelope-and-types`.
 2. Create `028-runtime-command-sync` before implementing external runtime workers.
 3. Create `027-studio-submit-to-platform` and `029-workflow-artifact-runtime-applier` once the envelope and command contracts are stable.
