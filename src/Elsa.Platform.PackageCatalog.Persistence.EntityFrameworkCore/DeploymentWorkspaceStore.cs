@@ -607,6 +607,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
                 && x.Id == commandId
                 && x.EngineId == request.EngineId
                 && x.Status == DeploymentCommandStatus.Pending
+                && (x.AvailableAt == null || x.AvailableAt <= now)
                 && (x.ExpiresAt == null || x.ExpiresAt > now))
             .ExecuteUpdateAsync(
                 setters => setters
@@ -1913,6 +1914,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             throw new InvalidOperationException("Command does not target the requested runtime engine.");
         if (IsFinal(command.Status))
             throw new InvalidOperationException("Command is already final.");
+        if (command.AvailableAt is not null && command.AvailableAt > now)
+            throw new InvalidOperationException("Command is not available.");
         if (command.ExpiresAt is not null && command.ExpiresAt <= now)
             throw new InvalidOperationException("Command is expired.");
         throw new InvalidOperationException("Command is already leased.");

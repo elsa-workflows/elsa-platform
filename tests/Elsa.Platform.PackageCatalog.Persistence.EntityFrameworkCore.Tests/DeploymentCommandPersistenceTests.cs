@@ -202,12 +202,43 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Claim_rejects_command_before_available_at()
+    {
+        var topology = await SeedTopologyAsync();
+        var run = await QueueRunAsync(topology);
+        var now = DateTimeOffset.Parse("2026-05-28T10:00:00Z");
+        var delayed = await _store.CreateCommandAsync(
+            _workspaceId,
+            new CreateDeploymentCommandRequest(
+                run.Id,
+                topology.Environment.Id,
+                topology.Engine.Id,
+                DeploymentCommandAction.Deploy,
+                null,
+                new DeploymentCommandRevisionReference(topology.Revision.Id),
+                $"delayed-{Guid.NewGuid():N}",
+                now.AddMinutes(5),
+                null),
+            now);
+
+        var claim = () => _store.ClaimCommandAsync(
+            _workspaceId,
+            delayed.Id,
+            new ClaimDeploymentCommandRequest(topology.Engine.Id, "worker-1", TimeSpan.FromMinutes(5)),
+            "lease-1",
+            now);
+
+        await claim.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Command is not available.");
+    }
+
+    [Fact]
     public async Task Heartbeat_refreshes_parent_run_worker_heartbeat()
     {
         var topology = await SeedTopologyAsync();
         var run = await QueueRunAsync(topology);
         var command = (await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow)).Single();
-        var claimedAt = DateTimeOffset.Parse("2026-05-28T10:00:00Z");
+        var claimedAt = run.QueuedAt.AddSeconds(1);
         var heartbeatAt = claimedAt.AddMinutes(4);
         await _store.ClaimCommandAsync(
             _workspaceId,
@@ -309,7 +340,7 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
         var topology = await SeedTopologyAsync();
         var run = await QueueRunAsync(topology);
         var command = (await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow)).Single();
-        var claimedAt = DateTimeOffset.Parse("2026-05-28T10:00:00Z");
+        var claimedAt = run.QueuedAt.AddSeconds(1);
         await _store.ClaimCommandAsync(
             _workspaceId,
             command.Id,

@@ -207,6 +207,8 @@ The long-term platform flow is:
 
 Runtime communication is transport-independent. The preferred default for customer-hosted runtimes is outbound runtime pull/sync, because it avoids requiring inbound network access from Elsa Platform. Webhooks are optional advisory notifications that tell a runtime to fetch authoritative commands. Direct platform push is available only for environments that explicitly support inbound connectivity and trust configuration.
 
+The legacy in-process deployment queue worker is disabled by default with `Deployment:QueueWorker:Enabled=false`. When enabled, it performs stale-run recovery only; runtime/provider integrations remain responsible for claiming commands, applying artifacts, and reporting results.
+
 ```text
 Elsa Studio integration
   Submit to Platform
