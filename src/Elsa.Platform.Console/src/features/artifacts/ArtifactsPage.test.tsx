@@ -16,6 +16,8 @@ describe("ArtifactsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Artifacts" })).toBeInTheDocument();
     expect(screen.getAllByText("sha256:claims-prod").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("elsa.workflow-definition").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Elsa Studio/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/claims v1.0.0/i)).toBeInTheDocument();
     expect(screen.queryByText(/workflow definition payload|secret value|token/i)).not.toBeInTheDocument();
   });
@@ -82,6 +84,22 @@ function createFetchMock(initial: WorkspaceArtifactListResponse) {
     }
     if (method === "GET" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts`)) {
       return jsonResponse(list);
+    }
+    if (method === "GET" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts/types`)) {
+      return jsonResponse({
+        items: [
+          {
+            typeId: "elsa.workflow-definition",
+            displayName: "Elsa Workflow Definition",
+            description: "Workflow definition artifact",
+            ownedBy: "platform",
+            supportedSchemaVersions: ["1.0"],
+            enabled: true,
+            defaultRuntimeFamily: "elsa-workflows",
+            defaultRequiredCapabilities: ["workflow-definition.apply"]
+          }
+        ]
+      });
     }
     if (method === "GET" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts/artifact-1`)) {
       return jsonResponse(list.items[0]);
@@ -167,5 +185,40 @@ const artifactFixture: WorkspaceArtifact = {
   registeredByAccountId: "account-1",
   lastInspectedAt: "2026-05-26T10:05:00Z",
   createdAt: "2026-05-26T10:00:00Z",
-  updatedAt: "2026-05-26T10:05:00Z"
+  updatedAt: "2026-05-26T10:05:00Z",
+  envelopeVersion: "platform.elsa.io/artifact-envelope/v1alpha1",
+  artifactTypeId: "elsa.workflow-definition",
+  artifactSchemaVersion: "1.0",
+  manifestDigest: { algorithm: "sha256", value: "claims-manifest" },
+  payloadReference: {
+    provider: "producer-managed",
+    uri: "studio://workflows/claims/versions/1.0.0",
+    mediaType: "application/vnd.elsa.workflow-definition+json",
+    sizeBytes: 1234,
+    referenceDigest: null,
+    expiresAt: null
+  },
+  producer: {
+    producerType: "studio",
+    producerName: "Elsa Studio",
+    producerVersion: "4.0.0",
+    sourceReference: "workflow:claims"
+  },
+  displayMetadata: {
+    name: "claims",
+    version: "1.0.0",
+    description: "Claims workflow",
+    labels: { domain: "claims" },
+    annotations: {},
+    source: "prod"
+  },
+  compatibilityHints: [
+    {
+      requiredArtifactType: "elsa.workflow-definition",
+      runtimeFamily: "elsa-workflows",
+      runtimeVersionRange: ">=4.0.0",
+      requiredCapabilities: ["workflow-definition.apply"],
+      environmentConstraints: {}
+    }
+  ]
 };

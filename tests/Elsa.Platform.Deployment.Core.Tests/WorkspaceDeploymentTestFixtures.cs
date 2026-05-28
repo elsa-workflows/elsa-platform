@@ -1,5 +1,6 @@
 using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
+using Elsa.Platform.Deployment.Artifacts;
 
 namespace Elsa.Platform.Deployment.Core.Tests;
 
@@ -45,4 +46,25 @@ internal static class WorkspaceDeploymentTestFixtures
         string type = "workflowDefinition",
         string logicalId = "payment-retry") =>
         new(type, logicalId, null, "8", new WorkspaceArtifactDigest("sha256", "workflow-hash"));
+
+    public static ArtifactProducer StudioArtifactProducer() =>
+        new("studio", "Elsa Studio", "4.0.0", "workflow:claims");
+
+    public static ArtifactDisplayMetadata ArtifactDisplayMetadata() =>
+        new(
+            "claims",
+            "1.0.0",
+            "Claims workflow",
+            new Dictionary<string, string> { ["domain"] = "claims" },
+            new Dictionary<string, string>());
+
+    public static IReadOnlyList<ArtifactCompatibilityHint> WorkflowCompatibilityHints() =>
+    [
+        new ArtifactCompatibilityHint(
+            ArtifactTypeIds.ElsaWorkflowDefinition,
+            "elsa-workflows",
+            ">=4.0.0",
+            ["workflow-definition.apply"],
+            new Dictionary<string, string>())
+    ];
 }

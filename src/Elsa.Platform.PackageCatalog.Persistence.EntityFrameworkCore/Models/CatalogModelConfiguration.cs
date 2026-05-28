@@ -336,6 +336,15 @@ internal sealed class WorkspaceDeploymentArtifactConfiguration : IEntityTypeConf
         builder.Property(x => x.LayoutVersion).HasMaxLength(128).IsRequired();
         builder.Property(x => x.ContentDigestAlgorithm).HasMaxLength(32).IsRequired();
         builder.Property(x => x.ContentDigest).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.EnvelopeVersion).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.ArtifactTypeId).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.ArtifactSchemaVersion).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.ManifestDigestAlgorithm).HasMaxLength(32);
+        builder.Property(x => x.ManifestDigest).HasMaxLength(256);
+        builder.Property(x => x.PayloadReferenceJson).IsRequired();
+        builder.Property(x => x.ProducerJson).IsRequired();
+        builder.Property(x => x.DisplayMetadataJson).IsRequired();
+        builder.Property(x => x.CompatibilityHintsJson).IsRequired();
         builder.Property(x => x.Format).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.ReferenceProvider).HasMaxLength(64).IsRequired();
         builder.Property(x => x.Reference).HasMaxLength(2048).IsRequired();

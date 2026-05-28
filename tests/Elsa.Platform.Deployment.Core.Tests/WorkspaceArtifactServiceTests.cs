@@ -27,6 +27,9 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
 
         result.Created.Should().BeTrue();
         result.Artifact.ArtifactId.Should().Be("sha256:claims-prod");
+        result.Artifact.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
+        result.Artifact.Producer!.ProducerType.Should().Be("manual");
+        result.Artifact.CompatibilityHints.Should().ContainSingle(x => x.RequiredArtifactType == ArtifactTypeIds.ElsaWorkflowDefinition);
         result.Artifact.Resources.Should().ContainSingle(x => x.LogicalId == "payment-retry");
         _store.RegisteredRequests.Should().ContainSingle();
     }
@@ -57,6 +60,32 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("Artifact identity is already registered with different metadata.");
+    }
+
+    [Fact]
+    public async Task Duplicate_registration_rejects_conflicting_envelope_metadata()
+    {
+        var request = WorkspaceDeploymentTestFixtures.ArtifactRegistration();
+        _store.Artifacts.Add(Guid.NewGuid(), RecordingArtifactStore.Artifact(_workspaceId, request with { Producer = new ArtifactProducer("studio", "Elsa Studio") }));
+        var service = new WorkspaceArtifactService(_store, _reader, _time);
+
+        var act = () => service.RegisterArtifactAsync(_workspaceId, request);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Artifact identity is already registered with different metadata.");
+    }
+
+    [Fact]
+    public async Task Rejects_unknown_artifact_type()
+    {
+        var service = new WorkspaceArtifactService(_store, _reader, _time);
+
+        var act = () => service.RegisterArtifactAsync(
+            _workspaceId,
+            WorkspaceDeploymentTestFixtures.ArtifactRegistration() with { ArtifactTypeId = "unknown.type" });
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Artifact type is not supported.");
     }
 
     [Theory]
@@ -269,7 +298,15 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
                 request.ActorAccountId,
                 null,
                 DateTimeOffset.UtcNow,
-                DateTimeOffset.UtcNow);
+                DateTimeOffset.UtcNow,
+                request.EnvelopeVersion,
+                request.ArtifactTypeId,
+                request.ArtifactSchemaVersion,
+                request.ManifestDigest,
+                request.PayloadReference,
+                request.Producer,
+                request.DisplayMetadata,
+                request.CompatibilityHints);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

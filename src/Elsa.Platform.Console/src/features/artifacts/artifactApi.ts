@@ -3,7 +3,8 @@ import type {
   WorkspaceArtifact,
   WorkspaceArtifactInspectionResult,
   WorkspaceArtifactListResponse,
-  WorkspaceArtifactRegistrationRequest
+  WorkspaceArtifactRegistrationRequest,
+  WorkspaceArtifactTypeListResponse
 } from "@/features/artifacts/artifactModels";
 
 export function listWorkspaceArtifacts(workspaceId: string) {
@@ -12,6 +13,10 @@ export function listWorkspaceArtifacts(workspaceId: string) {
 
 export function getWorkspaceArtifact(workspaceId: string, artifactId: string) {
   return apiRequest<WorkspaceArtifact>(`/api/workspaces/${encodeURIComponent(workspaceId)}/artifacts/${encodeURIComponent(artifactId)}`);
+}
+
+export function listWorkspaceArtifactTypes(workspaceId: string) {
+  return apiRequest<WorkspaceArtifactTypeListResponse>(`/api/workspaces/${encodeURIComponent(workspaceId)}/artifacts/types`);
 }
 
 export function registerWorkspaceArtifact(workspaceId: string, request: WorkspaceArtifactRegistrationRequest) {

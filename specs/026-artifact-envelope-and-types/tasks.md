@@ -18,10 +18,10 @@
 
 **Purpose**: Prepare shared contracts and test scaffolding for typed artifact envelopes.
 
-- [ ] T001 [P] Add artifact envelope API examples in `specs/026-artifact-envelope-and-types/contracts/artifact-envelope-contract.md`
-- [ ] T002 [P] Add console envelope UX examples in `specs/026-artifact-envelope-and-types/contracts/console-artifact-envelope-ux.md`
-- [ ] T003 [P] Add envelope core test fixture helpers in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceDeploymentTestFixtures.cs`
-- [ ] T004 [P] Add envelope API test helpers in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTestFixtures.cs`
+- [x] T001 [P] Add artifact envelope API examples in `specs/026-artifact-envelope-and-types/contracts/artifact-envelope-contract.md`
+- [x] T002 [P] Add console envelope UX examples in `specs/026-artifact-envelope-and-types/contracts/console-artifact-envelope-ux.md`
+- [x] T003 [P] Add envelope core test fixture helpers in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceDeploymentTestFixtures.cs`
+- [x] T004 [P] Add envelope API test helpers in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTestFixtures.cs`
 
 ---
 
@@ -31,14 +31,14 @@
 
 **Checkpoint**: Envelopes and artifact types can be represented, validated, stored, and projected from legacy records.
 
-- [ ] T005 Define artifact envelope, artifact type, producer, payload reference, safe metadata, compatibility hint, and diagnostic models in `src/Elsa.Platform.Deployment.Artifacts/ArtifactEnvelopeModels.cs` and `src/Elsa.Platform.Deployment.Artifacts/ArtifactTypeModels.cs`
-- [ ] T006 Implement built-in artifact type registry with `elsa.workflow-definition` in `src/Elsa.Platform.Deployment.Artifacts/ArtifactTypeRegistry.cs`
-- [ ] T007 Implement envelope validation for type IDs, digests, immutable identity, safe metadata, and references in `src/Elsa.Platform.Deployment.Artifacts/ArtifactEnvelopeValidator.cs`
-- [ ] T008 Extend workspace artifact models with envelope fields in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceArtifactModels.cs`
-- [ ] T009 Extend workspace artifact service duplicate and legacy projection behavior in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
-- [ ] T010 Add EF envelope fields and mappings in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs` and `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
-- [ ] T011 Implement envelope persistence and legacy projection in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [ ] T012 Add SQLite and SQL Server migrations for envelope metadata in `src/Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/Migrations/` and `src/Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
+- [x] T005 Define artifact envelope, artifact type, producer, payload reference, safe metadata, compatibility hint, and diagnostic models in `src/Elsa.Platform.Deployment.Artifacts/ArtifactEnvelopeModels.cs` and `src/Elsa.Platform.Deployment.Artifacts/ArtifactTypeModels.cs`
+- [x] T006 Implement built-in artifact type registry with `elsa.workflow-definition` in `src/Elsa.Platform.Deployment.Artifacts/ArtifactTypeRegistry.cs`
+- [x] T007 Implement envelope validation for type IDs, digests, immutable identity, safe metadata, and references in `src/Elsa.Platform.Deployment.Artifacts/ArtifactEnvelopeValidator.cs`
+- [x] T008 Extend workspace artifact models with envelope fields in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceArtifactModels.cs`
+- [x] T009 Extend workspace artifact service duplicate and legacy projection behavior in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
+- [x] T010 Add EF envelope fields and mappings in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs` and `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
+- [x] T011 Implement envelope persistence and legacy projection in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T012 Add SQLite and SQL Server migrations for envelope metadata in `src/Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/Migrations/` and `src/Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
 
 ---
 
@@ -50,16 +50,16 @@
 
 ### Tests for User Story 1
 
-- [ ] T013 [P] [US1] Add envelope validation and duplicate tests in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactEnvelopeValidationTests.cs` and `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceArtifactServiceTests.cs`
-- [ ] T014 [P] [US1] Add envelope persistence round-trip and duplicate conflict tests in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactPersistenceTests.cs`
-- [ ] T015 [P] [US1] Add envelope registration API permission, duplicate, and safe response tests in `tests/Elsa.Platform.Api.Tests/WorkspaceArtifactApiTests.cs`
+- [x] T013 [P] [US1] Add envelope validation and duplicate tests in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactEnvelopeValidationTests.cs` and `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceArtifactServiceTests.cs`
+- [x] T014 [P] [US1] Add envelope persistence round-trip and duplicate conflict tests in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactPersistenceTests.cs`
+- [x] T015 [P] [US1] Add envelope registration API permission, duplicate, and safe response tests in `tests/Elsa.Platform.Api.Tests/WorkspaceArtifactApiTests.cs`
 
 ### Implementation for User Story 1
 
-- [ ] T016 [US1] Wire envelope validation into artifact registration in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
-- [ ] T017 [US1] Persist envelope metadata and reject conflicting immutable fields in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [ ] T018 [US1] Extend workspace artifact registration request/response contracts in `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactContracts.cs` and `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactEndpoints.cs`
-- [ ] T019 [US1] Run focused US1 checks documented in `specs/026-artifact-envelope-and-types/quickstart.md`
+- [x] T016 [US1] Wire envelope validation into artifact registration in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
+- [x] T017 [US1] Persist envelope metadata and reject conflicting immutable fields in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T018 [US1] Extend workspace artifact registration request/response contracts in `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactContracts.cs` and `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactEndpoints.cs`
+- [x] T019 [US1] Run focused US1 checks documented in `specs/026-artifact-envelope-and-types/quickstart.md`
 
 **Checkpoint**: Typed envelope registration is independently functional through API.
 
@@ -73,16 +73,16 @@
 
 ### Tests for User Story 2
 
-- [ ] T020 [P] [US2] Add artifact type registry tests in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactEnvelopeValidationTests.cs`
-- [ ] T021 [P] [US2] Add API artifact type discovery and unknown-type rejection tests in `tests/Elsa.Platform.Api.Tests/WorkspaceArtifactApiTests.cs`
+- [x] T020 [P] [US2] Add artifact type registry tests in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactEnvelopeValidationTests.cs`
+- [x] T021 [P] [US2] Add API artifact type discovery and unknown-type rejection tests in `tests/Elsa.Platform.Api.Tests/WorkspaceArtifactApiTests.cs`
 
 ### Implementation for User Story 2
 
-- [ ] T022 [US2] Register artifact type services in `src/Elsa.Platform.Api/Program.cs`
-- [ ] T023 [US2] Add artifact type discovery endpoint in `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactEndpoints.cs`
-- [ ] T024 [US2] Add type and compatibility fields to console artifact models/API client in `src/Elsa.Platform.Console/src/features/artifacts/artifactModels.ts` and `src/Elsa.Platform.Console/src/features/artifacts/artifactApi.ts`
-- [ ] T025 [US2] Render artifact type and compatibility summary in `src/Elsa.Platform.Console/src/features/artifacts/ArtifactsPage.tsx`
-- [ ] T026 [US2] Run focused US2 checks documented in `specs/026-artifact-envelope-and-types/quickstart.md`
+- [x] T022 [US2] Register artifact type services in `src/Elsa.Platform.Api/Program.cs`
+- [x] T023 [US2] Add artifact type discovery endpoint in `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactEndpoints.cs`
+- [x] T024 [US2] Add type and compatibility fields to console artifact models/API client in `src/Elsa.Platform.Console/src/features/artifacts/artifactModels.ts` and `src/Elsa.Platform.Console/src/features/artifacts/artifactApi.ts`
+- [x] T025 [US2] Render artifact type and compatibility summary in `src/Elsa.Platform.Console/src/features/artifacts/ArtifactsPage.tsx`
+- [x] T026 [US2] Run focused US2 checks documented in `specs/026-artifact-envelope-and-types/quickstart.md`
 
 **Checkpoint**: Artifact type semantics are visible and validated without payload inspection.
 
@@ -96,16 +96,16 @@
 
 ### Tests for User Story 3
 
-- [ ] T027 [P] [US3] Add safe metadata validation tests in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactEnvelopeValidationTests.cs`
-- [ ] T028 [P] [US3] Add persistence safety tests for payload and secret exclusion in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactPersistenceTests.cs`
-- [ ] T029 [P] [US3] Add API and console safe metadata tests in `tests/Elsa.Platform.Api.Tests/WorkspaceArtifactApiTests.cs` and `src/Elsa.Platform.Console/src/features/artifacts/ArtifactsPage.test.tsx`
+- [x] T027 [P] [US3] Add safe metadata validation tests in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactEnvelopeValidationTests.cs`
+- [x] T028 [P] [US3] Add persistence safety tests for payload and secret exclusion in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactPersistenceTests.cs`
+- [x] T029 [P] [US3] Add API and console safe metadata tests in `tests/Elsa.Platform.Api.Tests/WorkspaceArtifactApiTests.cs` and `src/Elsa.Platform.Console/src/features/artifacts/ArtifactsPage.test.tsx`
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] Enforce safe metadata key/value rules in `src/Elsa.Platform.Deployment.Artifacts/ArtifactEnvelopeValidator.cs`
-- [ ] T031 [US3] Shape safe envelope responses in `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactContracts.cs`
-- [ ] T032 [US3] Render safe display metadata and diagnostics in `src/Elsa.Platform.Console/src/features/artifacts/ArtifactsPage.tsx`
-- [ ] T033 [US3] Run focused US3 checks documented in `specs/026-artifact-envelope-and-types/quickstart.md`
+- [x] T030 [US3] Enforce safe metadata key/value rules in `src/Elsa.Platform.Deployment.Artifacts/ArtifactEnvelopeValidator.cs`
+- [x] T031 [US3] Shape safe envelope responses in `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactContracts.cs`
+- [x] T032 [US3] Render safe display metadata and diagnostics in `src/Elsa.Platform.Console/src/features/artifacts/ArtifactsPage.tsx`
+- [x] T033 [US3] Run focused US3 checks documented in `specs/026-artifact-envelope-and-types/quickstart.md`
 
 **Checkpoint**: Envelope metadata is useful for users and safe for catalog/API exposure.
 
@@ -119,16 +119,16 @@
 
 ### Tests for User Story 4
 
-- [ ] T034 [P] [US4] Add legacy artifact projection tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceArtifactServiceTests.cs`
-- [ ] T035 [P] [US4] Add migration/backfill persistence tests in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactPersistenceTests.cs`
-- [ ] T036 [P] [US4] Add console legacy artifact rendering tests in `src/Elsa.Platform.Console/src/features/artifacts/ArtifactsPage.test.tsx`
+- [x] T034 [P] [US4] Add legacy artifact projection tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceArtifactServiceTests.cs`
+- [x] T035 [P] [US4] Add migration/backfill persistence tests in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactPersistenceTests.cs`
+- [x] T036 [P] [US4] Add console legacy artifact rendering tests in `src/Elsa.Platform.Console/src/features/artifacts/ArtifactsPage.test.tsx`
 
 ### Implementation for User Story 4
 
-- [ ] T037 [US4] Implement default envelope projection for legacy records in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
-- [ ] T038 [US4] Backfill existing artifact rows with default envelope metadata in SQLite and SQL Server migrations
-- [ ] T039 [US4] Preserve manual registration compatibility in `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactContracts.cs`
-- [ ] T040 [US4] Run focused US4 checks documented in `specs/026-artifact-envelope-and-types/quickstart.md`
+- [x] T037 [US4] Implement default envelope projection for legacy records in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
+- [x] T038 [US4] Backfill existing artifact rows with default envelope metadata in SQLite and SQL Server migrations
+- [x] T039 [US4] Preserve manual registration compatibility in `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactContracts.cs`
+- [x] T040 [US4] Run focused US4 checks documented in `specs/026-artifact-envelope-and-types/quickstart.md`
 
 **Checkpoint**: Existing artifact registry behavior survives the envelope upgrade.
 
@@ -138,16 +138,16 @@
 
 **Purpose**: Final documentation, safety review, and broad verification.
 
-- [ ] T041 [P] Update quickstart results and known limitations in `specs/026-artifact-envelope-and-types/quickstart.md`
-- [ ] T042 [P] Update final API contract examples in `specs/026-artifact-envelope-and-types/contracts/artifact-envelope-contract.md`
-- [ ] T043 [P] Update final console UX contract examples in `specs/026-artifact-envelope-and-types/contracts/console-artifact-envelope-ux.md`
-- [ ] T044 Review payload/secret redaction, type validation, duplicate handling, compatibility hints, cross-workspace rejection, and legacy projection across `src/Elsa.Platform.Deployment.Core/`, `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactEndpoints.cs`
-- [ ] T045 Run `dotnet test tests/Elsa.Platform.Deployment.Artifacts.Tests/Elsa.Platform.Deployment.Artifacts.Tests.csproj --filter ArtifactEnvelope` and record result in `specs/026-artifact-envelope-and-types/quickstart.md`
-- [ ] T046 Run `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceArtifact` and record result in `specs/026-artifact-envelope-and-types/quickstart.md`
-- [ ] T047 Run `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceArtifact` and record result in `specs/026-artifact-envelope-and-types/quickstart.md`
-- [ ] T048 Run `cd src/Elsa.Platform.Console && npm test -- --run artifacts` and record result in `specs/026-artifact-envelope-and-types/quickstart.md`
-- [ ] T049 Run `cd src/Elsa.Platform.Console && npm run typecheck` and record result in `specs/026-artifact-envelope-and-types/quickstart.md`
-- [ ] T050 Run `git diff --check` and record result in `specs/026-artifact-envelope-and-types/quickstart.md`
+- [x] T041 [P] Update quickstart results and known limitations in `specs/026-artifact-envelope-and-types/quickstart.md`
+- [x] T042 [P] Update final API contract examples in `specs/026-artifact-envelope-and-types/contracts/artifact-envelope-contract.md`
+- [x] T043 [P] Update final console UX contract examples in `specs/026-artifact-envelope-and-types/contracts/console-artifact-envelope-ux.md`
+- [x] T044 Review payload/secret redaction, type validation, duplicate handling, compatibility hints, cross-workspace rejection, and legacy projection across `src/Elsa.Platform.Deployment.Core/`, `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactEndpoints.cs`
+- [x] T045 Run `dotnet test tests/Elsa.Platform.Deployment.Artifacts.Tests/Elsa.Platform.Deployment.Artifacts.Tests.csproj --filter ArtifactEnvelope` and record result in `specs/026-artifact-envelope-and-types/quickstart.md`
+- [x] T046 Run `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceArtifact` and record result in `specs/026-artifact-envelope-and-types/quickstart.md`
+- [x] T047 Run `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceArtifact` and record result in `specs/026-artifact-envelope-and-types/quickstart.md`
+- [x] T048 Run `cd src/Elsa.Platform.Console && npm test -- --run artifacts` and record result in `specs/026-artifact-envelope-and-types/quickstart.md`
+- [x] T049 Run `cd src/Elsa.Platform.Console && npm run typecheck` and record result in `specs/026-artifact-envelope-and-types/quickstart.md`
+- [x] T050 Run `git diff --check` and record result in `specs/026-artifact-envelope-and-types/quickstart.md`
 
 ---
 

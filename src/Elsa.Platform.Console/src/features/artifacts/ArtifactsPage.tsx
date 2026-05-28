@@ -5,6 +5,7 @@ import { Badge, Button, EmptyState, Input, SecondaryButton, Select, Table } from
 import { RequestStateView } from "@/components/states/RequestStateViews";
 import {
   getWorkspaceArtifact,
+  listWorkspaceArtifactTypes,
   listWorkspaceArtifacts,
   refreshWorkspaceArtifactInspection,
   registerWorkspaceArtifact
@@ -15,6 +16,8 @@ import { formatDateTime } from "@/lib/formatters";
 import { queryKeys } from "@/lib/query/queryClient";
 
 const layoutVersion = "platform.elsa.io/deployment-artifact/v1alpha1";
+const envelopeVersion = "platform.elsa.io/artifact-envelope/v1alpha1";
+const workflowArtifactType = "elsa.workflow-definition";
 
 export function ArtifactsPage() {
   const queryClient = useQueryClient();
@@ -30,6 +33,11 @@ export function ArtifactsPage() {
   const artifacts = useQuery({
     queryKey: queryKeys.artifacts(workspaceId),
     queryFn: () => listWorkspaceArtifacts(workspaceId),
+    enabled: Boolean(workspaceId)
+  });
+  const artifactTypes = useQuery({
+    queryKey: ["artifact-types", workspaceId],
+    queryFn: () => listWorkspaceArtifactTypes(workspaceId),
     enabled: Boolean(workspaceId)
   });
   const selectedArtifact = useMemo(
@@ -103,7 +111,7 @@ export function ArtifactsPage() {
       ) : null}
 
       {artifacts.data?.items.length === 0 ? (
-        <EmptyState title="No artifacts registered" description="Register metadata for an already-built deployment artifact to make it available for future validation and dry-run slices." />
+        <EmptyState title="No artifacts registered" description="Submitted and manually registered artifacts appear here with type, producer, digest, and compatibility metadata." />
       ) : (
         <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
           <Table>
@@ -111,6 +119,7 @@ export function ArtifactsPage() {
               <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 font-medium">Artifact</th>
+                  <th className="px-3 py-2 font-medium">Type</th>
                   <th className="px-3 py-2 font-medium">Manifest</th>
                   <th className="px-3 py-2 font-medium">Status</th>
                   <th className="px-3 py-2 font-medium">Registered</th>
@@ -125,8 +134,9 @@ export function ArtifactsPage() {
                   >
                     <td className="px-3 py-2">
                       <div className="font-medium">{artifact.artifactId}</div>
-                      <div className="text-xs text-muted-foreground">{artifact.format} · {artifact.resources.length} resources</div>
+                      <div className="text-xs text-muted-foreground">{artifact.producer?.producerName ?? "Manual registration"} · {artifact.resources.length} resources</div>
                     </td>
+                    <td className="px-3 py-2"><Badge>{artifact.artifactTypeId ?? workflowArtifactType}</Badge></td>
                     <td className="px-3 py-2">{artifact.manifest.name || "Unnamed"} {artifact.manifest.version ? `v${artifact.manifest.version}` : ""}</td>
                     <td className="px-3 py-2"><Badge>{artifact.inspectionStatus}</Badge></td>
                     <td className="px-3 py-2 text-muted-foreground">{formatDateTime(artifact.registeredAt)}</td>
@@ -143,6 +153,7 @@ export function ArtifactsPage() {
               isRefreshing={refresh.isPending}
               error={refresh.error instanceof Error ? refresh.error.message : undefined}
               onRefresh={() => refresh.mutate(detail.data)}
+              artifactTypeLabel={artifactTypes.data?.items.find((type) => type.typeId === (detail.data.artifactTypeId ?? workflowArtifactType))?.displayName}
             />
           ) : (
             <RequestStateView state="loading" title="Loading artifact detail" />
@@ -177,6 +188,21 @@ function ArtifactRegistrationPanel({
           artifactId,
           layoutVersion,
           contentDigest: { algorithm: "sha256", value: digest },
+          envelopeVersion,
+          artifactTypeId: workflowArtifactType,
+          artifactSchemaVersion: "1.0",
+          payloadReference: { provider: "local", uri: reference, mediaType: null, sizeBytes: null, referenceDigest: null, expiresAt: null },
+          producer: { producerType: "manual", producerName: "Manual registration", producerVersion: null, sourceReference: null },
+          displayMetadata: { name: manifestName, version: "1.0.0", description: null, labels: {}, annotations: {}, source: "prod" },
+          compatibilityHints: [
+            {
+              requiredArtifactType: workflowArtifactType,
+              runtimeFamily: "elsa-workflows",
+              runtimeVersionRange: null,
+              requiredCapabilities: ["workflow-definition.apply"],
+              environmentConstraints: {}
+            }
+          ],
           format,
           referenceProvider: "local",
           reference,
@@ -225,14 +251,21 @@ function ArtifactDetail({
   canRefresh,
   isRefreshing,
   error,
-  onRefresh
+  onRefresh,
+  artifactTypeLabel
 }: {
   artifact: WorkspaceArtifact;
   canRefresh: boolean;
   isRefreshing: boolean;
   error?: string;
   onRefresh: () => void;
+  artifactTypeLabel?: string;
 }) {
+  const compatibility = artifact.compatibilityHints ?? [];
+  const compatibilityItems = compatibility
+    .flatMap((hint) => [hint.runtimeFamily, ...hint.requiredCapabilities])
+    .filter((item): item is string => Boolean(item));
+  const display = artifact.displayMetadata;
   return (
     <div className="space-y-3 rounded-ui border border-border bg-surface p-4">
       <div className="flex items-start justify-between gap-3">
@@ -246,13 +279,28 @@ function ArtifactDetail({
         </SecondaryButton>
       </div>
       <dl className="grid gap-3 text-sm sm:grid-cols-2">
+        <Detail label="Type" value={`${artifact.artifactTypeId ?? workflowArtifactType}${artifactTypeLabel ? ` · ${artifactTypeLabel}` : ""}`} />
+        <Detail label="Producer" value={artifact.producer?.producerName ?? "Manual registration"} />
+        <Detail label="Display" value={[display?.name ?? artifact.manifest.name, display?.version ?? artifact.manifest.version].filter(Boolean).join(" ")} />
         <Detail label="Layout" value={artifact.layoutVersion} />
+        <Detail label="Envelope" value={artifact.envelopeVersion ?? envelopeVersion} />
+        <Detail label="Schema" value={artifact.artifactSchemaVersion ?? "1.0"} />
         <Detail label="Digest" value={`${artifact.contentDigest.algorithm}:${artifact.contentDigest.value}`} />
-        <Detail label="Reference" value={`${artifact.referenceProvider} · ${artifact.reference}`} />
+        <Detail label="Reference" value={`${artifact.payloadReference?.provider ?? artifact.referenceProvider} · ${artifact.payloadReference?.uri ?? artifact.reference}`} />
         <Detail label="Checksum" value={artifact.checksumStatus} />
         <Detail label="Inspection" value={artifact.inspectionStatus} />
         <Detail label="Last inspected" value={formatDateTime(artifact.lastInspectedAt)} />
       </dl>
+      {compatibility.length > 0 ? (
+        <div>
+          <h3 className="text-sm font-medium">Compatibility</h3>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {compatibilityItems.map((item) => (
+              <Badge key={item}>{item}</Badge>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div>
         <h3 className="text-sm font-medium">Resources</h3>
         <div className="mt-2 flex flex-wrap gap-2">

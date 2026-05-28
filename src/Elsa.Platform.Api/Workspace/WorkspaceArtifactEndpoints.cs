@@ -1,4 +1,5 @@
 using Elsa.Platform.Api.Authentication;
+using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 
@@ -10,6 +11,23 @@ public static class WorkspaceArtifactEndpoints
     {
         var group = endpoints.MapGroup("/api/workspaces/{workspaceId:guid}/artifacts")
             .WithTags("Workspace Artifacts");
+
+        group.MapGet("/types", async (
+            Guid workspaceId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            IArtifactTypeRegistry artifactTypes,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.Read, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            return Results.Ok(new WorkspaceArtifactTypeListResponse(artifactTypes.ListTypes()));
+        });
 
         group.MapGet("", async (
             Guid workspaceId,
@@ -76,7 +94,15 @@ public static class WorkspaceArtifactEndpoints
                         request.Manifest,
                         request.Resources,
                         request.Diagnostics,
-                        access.Access!.AccountId),
+                        access.Access!.AccountId,
+                        request.EnvelopeVersion,
+                        request.ArtifactTypeId,
+                        request.ArtifactSchemaVersion,
+                        request.ManifestDigest,
+                        request.PayloadReference,
+                        request.Producer,
+                        request.DisplayMetadata,
+                        request.CompatibilityHints),
                     cancellationToken);
                 return registration.Created
                     ? Results.Created($"/api/workspaces/{workspaceId:D}/artifacts/{registration.Artifact.Id:D}", registration.Artifact)
@@ -84,7 +110,7 @@ public static class WorkspaceArtifactEndpoints
             }
             catch (InvalidOperationException ex)
             {
-                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+                return Results.Problem(title: ex.Message, statusCode: IsConflict(ex) ? StatusCodes.Status409Conflict : StatusCodes.Status400BadRequest);
             }
         });
 
@@ -137,4 +163,7 @@ public static class WorkspaceArtifactEndpoints
         Results.Problem(
             title: "Deployment permission is required.",
             statusCode: StatusCodes.Status403Forbidden);
+
+    private static bool IsConflict(InvalidOperationException exception) =>
+        exception.Message.Contains("already registered", StringComparison.OrdinalIgnoreCase);
 }

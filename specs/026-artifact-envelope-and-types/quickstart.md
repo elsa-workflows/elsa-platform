@@ -29,6 +29,7 @@
 
 ```sh
 dotnet test tests/Elsa.Platform.Deployment.Artifacts.Tests/Elsa.Platform.Deployment.Artifacts.Tests.csproj --filter ArtifactEnvelope
+dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter WorkspaceArtifact
 dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceArtifact
 dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceArtifact
 cd src/Elsa.Platform.Console && npm test -- --run artifacts
@@ -38,7 +39,13 @@ git diff --check
 
 ## Verification Results
 
-- Not run yet. This spec defines the next implementation slice.
+- `dotnet test tests/Elsa.Platform.Deployment.Artifacts.Tests/Elsa.Platform.Deployment.Artifacts.Tests.csproj --filter ArtifactEnvelope`: passed, 8 tests.
+- `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter WorkspaceArtifact`: passed, 11 tests.
+- `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceArtifact`: passed, 7 tests.
+- `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceArtifact`: passed, 8 tests.
+- `cd src/Elsa.Platform.Console && npm test -- --run artifacts`: passed, 3 tests.
+- `cd src/Elsa.Platform.Console && npm run typecheck`: passed.
+- `git diff --check`: passed.
 
 ## Known Scope Boundaries
 

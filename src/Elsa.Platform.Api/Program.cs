@@ -173,6 +173,8 @@ builder.Services.AddScoped<IWorkspacePermissionStore, DeploymentWorkspaceStore>(
 builder.Services.AddScoped<IWorkspaceDeploymentMutationStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<WorkspaceDeploymentService>();
 builder.Services.AddScoped<DeploymentTierService>();
+builder.Services.AddSingleton<IArtifactTypeRegistry, ArtifactTypeRegistry>();
+builder.Services.AddSingleton<ArtifactEnvelopeValidator>();
 builder.Services.AddScoped<IDeploymentArtifactReader, DeploymentArtifactReader>();
 builder.Services.AddScoped<WorkspaceArtifactService>();
 builder.Services.AddScoped<WorkspacePermissionService>();

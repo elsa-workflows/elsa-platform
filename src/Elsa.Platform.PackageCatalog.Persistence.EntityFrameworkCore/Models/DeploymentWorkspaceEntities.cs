@@ -117,6 +117,15 @@ internal sealed class WorkspaceDeploymentArtifactEntity
     public string LayoutVersion { get; set; } = "";
     public string ContentDigestAlgorithm { get; set; } = "";
     public string ContentDigest { get; set; } = "";
+    public string EnvelopeVersion { get; set; } = "";
+    public string ArtifactTypeId { get; set; } = "";
+    public string ArtifactSchemaVersion { get; set; } = "";
+    public string? ManifestDigestAlgorithm { get; set; }
+    public string? ManifestDigest { get; set; }
+    public string PayloadReferenceJson { get; set; } = "";
+    public string ProducerJson { get; set; } = "";
+    public string DisplayMetadataJson { get; set; } = "";
+    public string CompatibilityHintsJson { get; set; } = "[]";
     public WorkspaceArtifactFormat Format { get; set; }
     public string ReferenceProvider { get; set; } = "";
     public string Reference { get; set; } = "";

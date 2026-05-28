@@ -3,7 +3,7 @@
 ## Envelope Submission
 
 ```http
-POST /api/workspaces/{workspaceId}/deployments/artifacts
+POST /api/workspaces/{workspaceId}/artifacts
 Content-Type: application/json
 ```
 
@@ -70,7 +70,7 @@ Expected responses:
 ## Artifact Type Discovery
 
 ```http
-GET /api/workspaces/{workspaceId}/deployments/artifact-types
+GET /api/workspaces/{workspaceId}/artifacts/types
 ```
 
 ```json
@@ -93,7 +93,7 @@ GET /api/workspaces/{workspaceId}/deployments/artifact-types
 ## Artifact List Projection
 
 ```http
-GET /api/workspaces/{workspaceId}/deployments/artifacts
+GET /api/workspaces/{workspaceId}/artifacts
 ```
 
 ```json

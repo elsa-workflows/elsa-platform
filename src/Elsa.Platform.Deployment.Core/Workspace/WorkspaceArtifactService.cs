@@ -5,10 +5,11 @@ namespace Elsa.Platform.Deployment.Core.Workspace;
 public sealed class WorkspaceArtifactService(
     IWorkspaceArtifactStore store,
     IDeploymentArtifactReader artifactReader,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null,
+    ArtifactEnvelopeValidator? envelopeValidator = null)
 {
-    private static readonly string[] UnsafeTerms = ["password", "token", "secret value", "private key"];
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly ArtifactEnvelopeValidator _envelopeValidator = envelopeValidator ?? new ArtifactEnvelopeValidator(new ArtifactTypeRegistry());
 
     public Task<IReadOnlyList<WorkspaceArtifact>> ListArtifactsAsync(Guid workspaceId, CancellationToken cancellationToken = default) =>
         store.ListArtifactsAsync(workspaceId, cancellationToken);
@@ -21,6 +22,7 @@ public sealed class WorkspaceArtifactService(
         RegisterWorkspaceArtifactRequest request,
         CancellationToken cancellationToken = default)
     {
+        request = NormalizeRegistration(request);
         ValidateRegistration(request);
         var existing = await store.FindArtifactByIdentityAsync(workspaceId, request.ArtifactId, cancellationToken);
         if (existing is not null)
@@ -115,7 +117,35 @@ public sealed class WorkspaceArtifactService(
             cancellationToken);
     }
 
-    private static void ValidateRegistration(RegisterWorkspaceArtifactRequest request)
+    private RegisterWorkspaceArtifactRequest NormalizeRegistration(RegisterWorkspaceArtifactRequest request)
+    {
+        var artifactTypeId = string.IsNullOrWhiteSpace(request.ArtifactTypeId)
+            ? ArtifactTypeIds.ElsaWorkflowDefinition
+            : request.ArtifactTypeId.Trim();
+        var producer = request.Producer ?? new ArtifactProducer("manual", "Manual registration");
+        var displayMetadata = request.DisplayMetadata ?? new ArtifactDisplayMetadata(
+            request.Manifest.Name,
+            request.Manifest.Version,
+            null,
+            new Dictionary<string, string>(),
+            new Dictionary<string, string>(),
+            request.Manifest.Environment);
+        var payloadReference = request.PayloadReference ?? new ArtifactPayloadReference(request.ReferenceProvider, request.Reference);
+        var compatibilityHints = request.CompatibilityHints ?? [new ArtifactCompatibilityHint(artifactTypeId, "elsa-workflows", null, ["workflow-definition.apply"], new Dictionary<string, string>())];
+
+        return request with
+        {
+            EnvelopeVersion = string.IsNullOrWhiteSpace(request.EnvelopeVersion) ? ArtifactEnvelopeConstants.EnvelopeVersion : request.EnvelopeVersion.Trim(),
+            ArtifactTypeId = artifactTypeId,
+            ArtifactSchemaVersion = string.IsNullOrWhiteSpace(request.ArtifactSchemaVersion) ? ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion : request.ArtifactSchemaVersion.Trim(),
+            PayloadReference = payloadReference,
+            Producer = producer,
+            DisplayMetadata = displayMetadata,
+            CompatibilityHints = compatibilityHints
+        };
+    }
+
+    private void ValidateRegistration(RegisterWorkspaceArtifactRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.ArtifactId))
             throw new InvalidOperationException("Artifact identity is required.");
@@ -127,8 +157,7 @@ public sealed class WorkspaceArtifactService(
             throw new InvalidOperationException("Artifact content digest is required.");
         if (string.IsNullOrWhiteSpace(request.ReferenceProvider) || string.IsNullOrWhiteSpace(request.Reference))
             throw new InvalidOperationException("Artifact reference is required.");
-        if (ContainsUnsafeText(request.Reference) || request.Diagnostics.Any(x => ContainsUnsafeText(x.Message)))
-            throw new InvalidOperationException("Artifact metadata contains unsafe secret-like content.");
+        _envelopeValidator.Validate(ToEnvelope(request));
     }
 
     private static bool IsSameArtifact(WorkspaceArtifact existing, RegisterWorkspaceArtifactRequest request) =>
@@ -137,24 +166,28 @@ public sealed class WorkspaceArtifactService(
         && existing.ContentDigest.Value == request.ContentDigest.Value
         && existing.Format == request.Format
         && existing.ReferenceProvider == request.ReferenceProvider
-        && existing.Reference == request.Reference;
+        && existing.Reference == request.Reference
+        && System.Text.Json.JsonSerializer.Serialize(existing.ToEnvelope()) == System.Text.Json.JsonSerializer.Serialize(ToEnvelope(request));
 
-    private static WorkspaceArtifactDiagnostic SafeDiagnostic(WorkspaceArtifactDiagnostic diagnostic) =>
-        diagnostic with { Message = SafeMessage(diagnostic.Message) };
+    private WorkspaceArtifactDiagnostic SafeDiagnostic(WorkspaceArtifactDiagnostic diagnostic) =>
+        diagnostic with { Message = _envelopeValidator.SafeMessage(diagnostic.Message) };
 
-    private static WorkspaceArtifactDiagnostic Diagnostic(string code, WorkspaceArtifactDiagnosticSeverity severity, string message) =>
-        new(code, severity, SafeMessage(message));
+    private WorkspaceArtifactDiagnostic Diagnostic(string code, WorkspaceArtifactDiagnosticSeverity severity, string message) =>
+        new(code, severity, _envelopeValidator.SafeMessage(message));
 
-    private static bool ContainsUnsafeText(string value) =>
-        UnsafeTerms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
-
-    private static string SafeMessage(string value)
-    {
-        var safe = value.Trim();
-        foreach (var term in UnsafeTerms)
-            safe = safe.Replace(term, "[redacted]", StringComparison.OrdinalIgnoreCase);
-        return safe.Length <= 512 ? safe : safe[..512];
-    }
+    private static ArtifactEnvelope ToEnvelope(RegisterWorkspaceArtifactRequest request) =>
+        new(
+            request.ArtifactId,
+            request.EnvelopeVersion ?? ArtifactEnvelopeConstants.EnvelopeVersion,
+            request.ArtifactTypeId ?? ArtifactTypeIds.ElsaWorkflowDefinition,
+            request.ArtifactSchemaVersion ?? ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion,
+            new Elsa.Platform.Deployment.Abstractions.Artifacts.ArtifactDigest(request.ContentDigest.Algorithm, request.ContentDigest.Value),
+            request.ManifestDigest is null ? null : new Elsa.Platform.Deployment.Abstractions.Artifacts.ArtifactDigest(request.ManifestDigest.Algorithm, request.ManifestDigest.Value),
+            request.PayloadReference ?? new ArtifactPayloadReference(request.ReferenceProvider, request.Reference),
+            request.Producer ?? new ArtifactProducer("manual", "Manual registration"),
+            request.DisplayMetadata ?? new ArtifactDisplayMetadata(request.Manifest.Name, request.Manifest.Version, null, new Dictionary<string, string>(), new Dictionary<string, string>(), request.Manifest.Environment),
+            request.CompatibilityHints ?? [new ArtifactCompatibilityHint(request.ArtifactTypeId ?? ArtifactTypeIds.ElsaWorkflowDefinition, "elsa-workflows", null, ["workflow-definition.apply"], new Dictionary<string, string>())],
+            request.Diagnostics.Select(x => new ArtifactEnvelopeDiagnostic(x.Code, x.Severity.ToEnvelopeSeverity(), x.Message)).ToList());
 
     private static string? ResolveLocalPath(string reference)
     {

@@ -38,6 +38,7 @@ Completed:
 - Engine health verification: `specs/023-engine-health-verification` has all tasks completed. Core, persistence, API, console, and typecheck results are recorded in the quickstart.
 - Artifact registry: `specs/024-artifact-registry` has all tasks completed. Core, persistence, API, and console focused checks are recorded in the quickstart.
 - Custom deployment tiers: `specs/025-custom-deployment-tiers` has all tasks completed. Tier capability semantics, migration backfill, bounded-query verification, and console/API coverage are recorded in the quickstart.
+- Artifact envelope and types: `specs/026-artifact-envelope-and-types` has all tasks completed. The envelope/type contracts live in `Elsa.Platform.Deployment.Artifacts`, and the workspace artifact registry now stores type, producer, safe display metadata, compatibility hints, and payload references.
 
 Architectural delta introduced by the latest product decisions:
 
@@ -225,6 +226,5 @@ Exit criteria:
 
 ## Immediate Next Actions
 
-1. Implement `026-artifact-envelope-and-types`.
-2. Create `028-runtime-command-sync` before implementing external runtime workers.
-3. Create `027-studio-submit-to-platform` and `029-workflow-artifact-runtime-applier` once the envelope and command contracts are stable.
+1. Create `028-runtime-command-sync` before implementing external runtime workers.
+2. Create `027-studio-submit-to-platform` and `029-workflow-artifact-runtime-applier` once the envelope and command contracts are stable.

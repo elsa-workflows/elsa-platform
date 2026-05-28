@@ -77,4 +77,31 @@ internal static class WorkspaceDeploymentTestFixtures
                     new WorkspaceArtifactDigest("sha256", "workflow-hash"))
             ],
             []);
+
+    public static WorkspaceArtifactRegistrationRequest WorkflowEnvelopeRegistration(
+        string artifactId = "sha256:claims-prod",
+        string reference = "/tmp/claims-prod") =>
+        ArtifactRegistration(artifactId, reference) with
+        {
+            EnvelopeVersion = ArtifactEnvelopeConstants.EnvelopeVersion,
+            ArtifactTypeId = ArtifactTypeIds.ElsaWorkflowDefinition,
+            ArtifactSchemaVersion = ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion,
+            PayloadReference = new ArtifactPayloadReference("producer-managed", $"studio://workflows/{artifactId}"),
+            Producer = new ArtifactProducer("studio", "Elsa Studio", "4.0.0", $"workflow:{artifactId}"),
+            DisplayMetadata = new ArtifactDisplayMetadata(
+                "claims",
+                "1.0.0",
+                "Claims workflow",
+                new Dictionary<string, string> { ["domain"] = "claims" },
+                new Dictionary<string, string>()),
+            CompatibilityHints =
+            [
+                new ArtifactCompatibilityHint(
+                    ArtifactTypeIds.ElsaWorkflowDefinition,
+                    "elsa-workflows",
+                    ">=4.0.0",
+                    ["workflow-definition.apply"],
+                    new Dictionary<string, string>())
+            ]
+        };
 }

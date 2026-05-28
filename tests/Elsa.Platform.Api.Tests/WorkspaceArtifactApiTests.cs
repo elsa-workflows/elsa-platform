@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using Elsa.Platform.Api.Workspace;
+using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,10 +30,79 @@ public sealed class WorkspaceArtifactApiTests
         registerResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         list!.Items.Should().ContainSingle(x => x.Id == registered.Id);
         detail!.Manifest.Name.Should().Be("claims");
+        detail.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
+        detail.Producer!.ProducerType.Should().Be("manual");
+        detail.CompatibilityHints.Should().ContainSingle(x => x.RequiredArtifactType == ArtifactTypeIds.ElsaWorkflowDefinition);
         detail.Resources.Should().ContainSingle(x => x.LogicalId == "payment-retry");
         responseText.Should().NotContain("workflow definition payload");
         responseText.Should().NotContain("secret value");
         responseText.Should().NotContain("token");
+    }
+
+    [Fact]
+    public async Task Owner_can_register_envelope_metadata_and_discover_artifact_types()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("artifact-envelope-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+
+        var types = await owner.GetPlatformJsonAsync<WorkspaceArtifactTypeListResponse>($"/api/workspaces/{workspaceId}/artifacts/types");
+        var registerResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/artifacts",
+            WorkspaceDeploymentTestFixtures.ArtifactRegistration() with
+            {
+                Producer = new ArtifactProducer("studio", "Elsa Studio", "4.0.0", "workflow:claims"),
+                DisplayMetadata = new ArtifactDisplayMetadata(
+                    "Claims",
+                    "1.0.0",
+                    "Claims workflow",
+                    new Dictionary<string, string> { ["domain"] = "claims" },
+                    new Dictionary<string, string>()),
+                CompatibilityHints =
+                [
+                    new ArtifactCompatibilityHint(
+                        ArtifactTypeIds.ElsaWorkflowDefinition,
+                        "elsa-workflows",
+                        ">=4.0.0",
+                        ["workflow-definition.apply"],
+                        new Dictionary<string, string>())
+                ]
+            });
+        var registered = await registerResponse.Content.ReadPlatformJsonAsync<WorkspaceArtifact>();
+
+        types!.Items.Should().ContainSingle(x => x.TypeId == ArtifactTypeIds.ElsaWorkflowDefinition);
+        registerResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        registered!.Producer!.ProducerType.Should().Be("studio");
+        registered.DisplayMetadata!.Labels.Should().ContainKey("domain");
+        registered.CompatibilityHints.Should().ContainSingle(x => x.RuntimeFamily == "elsa-workflows");
+    }
+
+    [Fact]
+    public async Task Envelope_registration_rejects_unknown_type_and_unsafe_metadata()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("artifact-envelope-invalid-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+
+        var unknownType = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/artifacts",
+            WorkspaceDeploymentTestFixtures.ArtifactRegistration() with { ArtifactTypeId = "unknown.type" });
+        var unsafeMetadata = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/artifacts",
+            WorkspaceDeploymentTestFixtures.ArtifactRegistration("sha256:unsafe") with
+            {
+                DisplayMetadata = new ArtifactDisplayMetadata(
+                    "Claims",
+                    "1.0.0",
+                    null,
+                    new Dictionary<string, string> { ["password"] = "redacted" },
+                    new Dictionary<string, string>())
+            });
+
+        unknownType.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        unsafeMetadata.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]

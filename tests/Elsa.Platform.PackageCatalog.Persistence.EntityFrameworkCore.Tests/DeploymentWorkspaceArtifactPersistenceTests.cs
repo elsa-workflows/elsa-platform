@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
@@ -43,12 +44,54 @@ public sealed class DeploymentWorkspaceArtifactPersistenceTests : IDisposable
 
         loaded.Should().NotBeNull();
         loaded!.ArtifactId.Should().Be("sha256:claims-prod");
+        loaded.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
+        loaded.Producer!.ProducerType.Should().Be("manual");
+        loaded.DisplayMetadata!.Name.Should().Be("claims");
+        loaded.CompatibilityHints.Should().ContainSingle(x => x.RequiredArtifactType == ArtifactTypeIds.ElsaWorkflowDefinition);
         loaded.Manifest.Name.Should().Be("claims");
         loaded.Resources.Should().ContainSingle(x => x.LogicalId == "payment-retry");
         listed.Should().ContainSingle(x => x.Id == artifact.Id);
         rawJson.Should().NotContain("workflow definition payload");
         rawJson.Should().NotContain("secret value");
         rawJson.Should().NotContain("token");
+    }
+
+    [Fact]
+    public async Task Persists_envelope_metadata_without_payload_or_secrets()
+    {
+        var artifact = await _store.RegisterArtifactAsync(
+            _workspaceId,
+            ArtifactRegistration() with
+            {
+                Producer = new ArtifactProducer("studio", "Elsa Studio", "4.0.0", "workflow:claims"),
+                DisplayMetadata = new ArtifactDisplayMetadata(
+                    "Claims",
+                    "1.0.0",
+                    "Claims workflow",
+                    new Dictionary<string, string> { ["domain"] = "claims" },
+                    new Dictionary<string, string> { ["studio.workflowId"] = "claims" }),
+                CompatibilityHints =
+                [
+                    new ArtifactCompatibilityHint(
+                        ArtifactTypeIds.ElsaWorkflowDefinition,
+                        "elsa-workflows",
+                        ">=4.0.0",
+                        ["workflow-definition.apply"],
+                        new Dictionary<string, string>())
+                ]
+            });
+        _db.ChangeTracker.Clear();
+
+        var loaded = await _store.GetArtifactAsync(_workspaceId, artifact.Id);
+        var rawJson = await ReadScalarAsync<string>("SELECT PayloadReferenceJson || ProducerJson || DisplayMetadataJson || CompatibilityHintsJson FROM WorkspaceDeploymentArtifacts LIMIT 1");
+
+        loaded!.Producer!.ProducerType.Should().Be("studio");
+        loaded.DisplayMetadata!.Labels.Should().ContainKey("domain");
+        loaded.CompatibilityHints.Should().ContainSingle(x => x.RuntimeFamily == "elsa-workflows");
+        rawJson.Should().NotContain("workflow definition payload");
+        rawJson.Should().NotContain("secret value");
+        rawJson.Should().NotContain("token");
+        rawJson.Should().NotContain("password");
     }
 
     [Fact]
