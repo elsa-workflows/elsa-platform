@@ -522,7 +522,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
                 request.RollbackSourceRunId is null ? DeploymentCommandAction.Deploy : DeploymentCommandAction.Rollback,
                 artifactReference,
                 new DeploymentCommandRevisionReference(request.SourceRevisionId),
-                BuildDeploymentCommandIdempotencyKey(workspaceId, request.TargetEnvironmentId, request.TargetEngineId, request.SourceRevisionId, request.RollbackSourceRunId),
+                BuildDeploymentCommandIdempotencyKey(workspaceId, runId, request.TargetEnvironmentId, request.TargetEngineId, request.SourceRevisionId, request.RollbackSourceRunId),
                 now,
                 null),
             now);
@@ -600,36 +600,36 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
+        var leaseExpiresAt = now.Add(request.LeaseDuration);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var updated = await dbContext.DeploymentCommands
+            .Where(x => x.WorkspaceId == workspaceId
+                && x.Id == commandId
+                && x.EngineId == request.EngineId
+                && x.Status == DeploymentCommandStatus.Pending
+                && (x.ExpiresAt == null || x.ExpiresAt > now))
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(x => x.Status, DeploymentCommandStatus.Claimed)
+                    .SetProperty(x => x.WorkerId, request.WorkerId)
+                    .SetProperty(x => x.LeaseToken, leaseToken)
+                    .SetProperty(x => x.ClaimedAt, now)
+                    .SetProperty(x => x.HeartbeatAt, now)
+                    .SetProperty(x => x.LeaseExpiresAt, leaseExpiresAt)
+                    .SetProperty(x => x.AttemptNumber, x => x.AttemptNumber + 1)
+                    .SetProperty(x => x.UpdatedAt, now),
+                cancellationToken);
+        if (updated == 0)
+            await ThrowClaimConflictAsync(workspaceId, commandId, request.EngineId, now, cancellationToken);
+
+        DetachTrackedCommand(commandId);
         var command = await LoadCommandForUpdateAsync(workspaceId, commandId, cancellationToken);
-        if (command.EngineId != request.EngineId)
-            throw new InvalidOperationException("Command does not target the requested runtime engine.");
-        if (IsFinal(command.Status))
-            throw new InvalidOperationException("Command is already final.");
-        if (command.Status != DeploymentCommandStatus.Pending)
-            throw new InvalidOperationException("Command is already leased.");
-        if (command.ExpiresAt is not null && command.ExpiresAt <= now)
-            throw new InvalidOperationException("Command is expired.");
 
-        command.Status = DeploymentCommandStatus.Claimed;
-        command.WorkerId = request.WorkerId;
-        command.LeaseToken = leaseToken;
-        command.ClaimedAt = now;
-        command.HeartbeatAt = now;
-        command.LeaseExpiresAt = now.Add(request.LeaseDuration);
-        command.AttemptNumber += 1;
-        command.UpdatedAt = now;
-
-        var run = await dbContext.DeploymentRuns.SingleAsync(x => x.WorkspaceId == workspaceId && x.Id == command.RunId, cancellationToken);
-        if (run.Status == WorkspaceDeploymentRunStatus.Queued)
-        {
-            run.Status = WorkspaceDeploymentRunStatus.Running;
-            run.StartedAt = now;
-            run.WorkerId = request.WorkerId;
-            run.WorkerHeartbeatAt = now;
-        }
+        await TouchCommandRunHeartbeatAsync(command, request.WorkerId, now, cancellationToken);
 
         await AddCommandAndRunEventAsync(command, DeploymentCommandStatus.Claimed, "Deployment command claimed by runtime worker.", now, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return ToDeploymentCommand(command);
     }
 
@@ -644,6 +644,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         command.WorkerId = request.WorkerId;
         command.HeartbeatAt = now;
         command.UpdatedAt = now;
+        await TouchCommandRunHeartbeatAsync(command, request.WorkerId, now, cancellationToken);
         await AddCommandAndRunEventAsync(command, command.Status, "Runtime command heartbeat received.", now, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToDeploymentCommand(command);
@@ -662,6 +663,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         command.ProgressMessage = request.Message;
         command.HeartbeatAt = now;
         command.UpdatedAt = now;
+        await TouchCommandRunHeartbeatAsync(command, command.WorkerId, now, cancellationToken);
         await AddCommandAndRunEventAsync(command, DeploymentCommandStatus.Running, request.Message, now, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToDeploymentCommand(command);
@@ -676,8 +678,12 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
     {
         var command = await LoadCommandForUpdateAsync(workspaceId, commandId, cancellationToken);
         if (command.Status == DeploymentCommandStatus.Completed)
+        {
+            ValidateFinalLease(command, request.LeaseToken);
             return ToDeploymentCommand(command);
+        }
         ValidateLease(command, request.LeaseToken, now);
+        ValidateObservedArtifactDigest(command, request.ObservedArtifactDigest);
 
         command.Status = DeploymentCommandStatus.Completed;
         command.ObservedArtifactDigestAlgorithm = request.ObservedArtifactDigest?.Algorithm;
@@ -1864,7 +1870,10 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
     {
         var command = await LoadCommandForUpdateAsync(workspaceId, commandId, cancellationToken);
         if (command.Status == status)
+        {
+            ValidateFinalLease(command, leaseToken);
             return ToDeploymentCommand(command);
+        }
         if (IsFinal(command.Status))
             throw new InvalidOperationException("Command is already final.");
 
@@ -1888,6 +1897,27 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         return ToDeploymentCommand(command);
     }
 
+    private async Task ThrowClaimConflictAsync(
+        Guid workspaceId,
+        Guid commandId,
+        Guid engineId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var command = await dbContext.DeploymentCommands
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == commandId, cancellationToken);
+        if (command is null)
+            throw new KeyNotFoundException("Deployment command does not exist in the workspace.");
+        if (command.EngineId != engineId)
+            throw new InvalidOperationException("Command does not target the requested runtime engine.");
+        if (IsFinal(command.Status))
+            throw new InvalidOperationException("Command is already final.");
+        if (command.ExpiresAt is not null && command.ExpiresAt <= now)
+            throw new InvalidOperationException("Command is expired.");
+        throw new InvalidOperationException("Command is already leased.");
+    }
+
     private async Task<DeploymentCommandEntity> LoadCommandForUpdateAsync(
         Guid workspaceId,
         Guid commandId,
@@ -1895,6 +1925,13 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         await dbContext.DeploymentCommands
             .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == commandId, cancellationToken)
         ?? throw new KeyNotFoundException("Deployment command does not exist in the workspace.");
+
+    private void DetachTrackedCommand(Guid commandId)
+    {
+        var tracked = dbContext.DeploymentCommands.Local.FirstOrDefault(x => x.Id == commandId);
+        if (tracked is not null)
+            dbContext.Entry(tracked).State = EntityState.Detached;
+    }
 
     private async Task<DeploymentCommandEntity> LoadCommandForLeaseMutationAsync(
         Guid workspaceId,
@@ -1918,6 +1955,45 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             throw new InvalidOperationException("Command lease has expired.");
         if (command.Status is not DeploymentCommandStatus.Claimed and not DeploymentCommandStatus.Running)
             throw new InvalidOperationException("Command is not currently leased.");
+    }
+
+    private static void ValidateFinalLease(DeploymentCommandEntity command, string leaseToken)
+    {
+        if (!string.Equals(command.LeaseToken, leaseToken, StringComparison.Ordinal))
+            throw new InvalidOperationException("Command lease token is invalid.");
+    }
+
+    private static void ValidateObservedArtifactDigest(DeploymentCommandEntity command, WorkspaceArtifactDigest? observed)
+    {
+        var artifact = DeserializeArtifactReference(command.ArtifactJson);
+        if (artifact?.ContentDigest is null)
+            return;
+
+        if (observed is null
+            || !string.Equals(observed.Algorithm, artifact.ContentDigest.Algorithm, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(observed.Value, artifact.ContentDigest.Value, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Observed artifact digest does not match command artifact digest.");
+    }
+
+    private async Task TouchCommandRunHeartbeatAsync(
+        DeploymentCommandEntity command,
+        string? workerId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var run = await dbContext.DeploymentRuns.SingleAsync(x => x.WorkspaceId == command.WorkspaceId && x.Id == command.RunId, cancellationToken);
+        if (run.Status == WorkspaceDeploymentRunStatus.Queued)
+        {
+            run.Status = WorkspaceDeploymentRunStatus.Running;
+            run.StartedAt = now;
+        }
+
+        if (run.Status == WorkspaceDeploymentRunStatus.Running)
+        {
+            if (!string.IsNullOrWhiteSpace(workerId))
+                run.WorkerId = workerId;
+            run.WorkerHeartbeatAt = now;
+        }
     }
 
     private async Task AddCommandAndRunEventAsync(
@@ -1960,6 +2036,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
 
     private static string BuildDeploymentCommandIdempotencyKey(
         Guid workspaceId,
+        Guid runId,
         Guid environmentId,
         Guid engineId,
         Guid sourceRevisionId,
@@ -1968,6 +2045,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             ':',
             "deployment-command",
             workspaceId.ToString("D"),
+            runId.ToString("D"),
             environmentId.ToString("D"),
             engineId.ToString("D"),
             sourceRevisionId.ToString("D"),

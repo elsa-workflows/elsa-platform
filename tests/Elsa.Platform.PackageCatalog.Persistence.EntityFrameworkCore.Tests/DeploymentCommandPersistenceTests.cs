@@ -112,6 +112,33 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Completing_artifact_command_rejects_observed_digest_mismatch()
+    {
+        var topology = await SeedTopologyAsync(createRevision: false);
+        var artifact = await _store.RegisterArtifactAsync(
+            _workspaceId,
+            ArtifactRegistration("sha256:payment-retry", "/tmp/payment-retry"));
+        var revision = await CreateArtifactBackedRevisionAsync(topology, artifact);
+        await QueueRunAsync(topology with { Revision = revision });
+        var command = (await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow)).Single();
+        await _store.ClaimCommandAsync(
+            _workspaceId,
+            command.Id,
+            new ClaimDeploymentCommandRequest(topology.Engine.Id, "worker-1", TimeSpan.FromMinutes(5)),
+            "lease-1",
+            DateTimeOffset.UtcNow);
+
+        var complete = () => _store.CompleteCommandAsync(
+            _workspaceId,
+            command.Id,
+            new CompleteDeploymentCommandRequest("lease-1", new WorkspaceArtifactDigest("sha256", "wrong"), "elsa://workflow/payment-retry", []),
+            DateTimeOffset.UtcNow);
+
+        await complete.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Observed artifact digest does not match command artifact digest.");
+    }
+
+    [Fact]
     public async Task Claim_enforces_single_active_lease()
     {
         var topology = await SeedTopologyAsync();
@@ -133,6 +160,84 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
 
         claimed.Status.Should().Be(DeploymentCommandStatus.Claimed);
         await duplicate.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task Claim_is_atomic_across_db_contexts()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"elsa-command-claim-{Guid.NewGuid():N}.db");
+        var connectionString = $"Data Source={databasePath}";
+        try
+        {
+            await using (var seedDb = CreateDbContext(connectionString))
+            {
+                await seedDb.Database.EnsureCreatedAsync();
+                var workspace = new Workspace { Name = "Runtime Command Workspace" };
+                var account = new Account { DisplayName = "Runtime User", Email = "runtime-concurrent@example.test" };
+                seedDb.Workspaces.Add(workspace);
+                seedDb.Accounts.Add(account);
+                await seedDb.SaveChangesAsync();
+                var seedStore = new DeploymentWorkspaceStore(seedDb);
+                var topology = await SeedTopologyAsync(seedStore, workspace.Id, account.Id);
+                await QueueRunAsync(seedStore, workspace.Id, account.Id, topology);
+                var command = (await seedStore.PollPendingCommandsAsync(workspace.Id, topology.Engine.Id, 10, DateTimeOffset.UtcNow)).Single();
+
+                await using var firstDb = CreateDbContext(connectionString);
+                await using var secondDb = CreateDbContext(connectionString);
+                var firstStore = new DeploymentWorkspaceStore(firstDb);
+                var secondStore = new DeploymentWorkspaceStore(secondDb);
+
+                var claims = await Task.WhenAll(
+                    TryClaimAsync(firstStore, workspace.Id, topology.Engine.Id, command.Id, "worker-1", "lease-1"),
+                    TryClaimAsync(secondStore, workspace.Id, topology.Engine.Id, command.Id, "worker-2", "lease-2"));
+
+                claims.Count(x => x is not null).Should().Be(1);
+            }
+        }
+        finally
+        {
+            if (File.Exists(databasePath))
+                File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task Heartbeat_refreshes_parent_run_worker_heartbeat()
+    {
+        var topology = await SeedTopologyAsync();
+        var run = await QueueRunAsync(topology);
+        var command = (await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow)).Single();
+        var claimedAt = DateTimeOffset.Parse("2026-05-28T10:00:00Z");
+        var heartbeatAt = claimedAt.AddMinutes(4);
+        await _store.ClaimCommandAsync(
+            _workspaceId,
+            command.Id,
+            new ClaimDeploymentCommandRequest(topology.Engine.Id, "worker-1", TimeSpan.FromMinutes(10)),
+            "lease-1",
+            claimedAt);
+
+        await _store.HeartbeatCommandAsync(
+            _workspaceId,
+            command.Id,
+            new DeploymentCommandHeartbeatRequest("lease-1", "worker-1"),
+            heartbeatAt);
+        var refreshed = await _store.GetRunAsync(_workspaceId, run.Id);
+
+        refreshed!.WorkerHeartbeatAt.Should().Be(heartbeatAt);
+        refreshed.WorkerId.Should().Be("worker-1");
+    }
+
+    [Fact]
+    public async Task Redeploying_same_revision_creates_distinct_command_idempotency_keys()
+    {
+        var topology = await SeedTopologyAsync();
+
+        await QueueRunAsync(topology);
+        await QueueRunAsync(topology);
+        var commands = await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow);
+
+        commands.Should().HaveCount(2);
+        commands.Select(x => x.IdempotencyKey).Should().OnlyHaveUniqueItems();
     }
 
     [Fact]
@@ -162,6 +267,40 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
         completedRun!.Status.Should().Be(WorkspaceDeploymentRunStatus.Succeeded);
         history.Should().Contain(x => x.Message == "Runtime command completed.");
         cockpit.Applications.Single().Environments.Single().DeployedRevision.Should().Be(topology.Revision.RevisionNumber);
+    }
+
+    [Fact]
+    public async Task Completed_command_requires_same_lease_for_idempotent_replay()
+    {
+        var topology = await SeedTopologyAsync();
+        await QueueRunAsync(topology);
+        var command = (await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow)).Single();
+        await _store.ClaimCommandAsync(
+            _workspaceId,
+            command.Id,
+            new ClaimDeploymentCommandRequest(topology.Engine.Id, "worker-1", TimeSpan.FromMinutes(5)),
+            "lease-1",
+            DateTimeOffset.UtcNow);
+        await _store.CompleteCommandAsync(
+            _workspaceId,
+            command.Id,
+            new CompleteDeploymentCommandRequest("lease-1", null, "elsa://workflow/payment-retry", []),
+            DateTimeOffset.UtcNow);
+
+        var replay = await _store.CompleteCommandAsync(
+            _workspaceId,
+            command.Id,
+            new CompleteDeploymentCommandRequest("lease-1", null, "elsa://workflow/payment-retry", []),
+            DateTimeOffset.UtcNow);
+        var wrongLease = () => _store.CompleteCommandAsync(
+            _workspaceId,
+            command.Id,
+            new CompleteDeploymentCommandRequest("lease-2", null, "elsa://workflow/payment-retry", []),
+            DateTimeOffset.UtcNow);
+
+        replay.Status.Should().Be(DeploymentCommandStatus.Completed);
+        await wrongLease.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Command lease token is invalid.");
     }
 
     [Fact]
@@ -213,23 +352,67 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
     public void Dispose() => _db.Dispose();
 
     private async Task<WorkspaceDeploymentRun> QueueRunAsync(DeploymentTopology topology) =>
-        await _store.CreateRunAsync(
+        await QueueRunAsync(_store, _workspaceId, _accountId, topology);
+
+    private async Task<DeploymentTopology> SeedTopologyAsync(bool createRevision = true)
+    {
+        return await SeedTopologyAsync(_store, _workspaceId, _accountId, createRevision);
+    }
+
+    private async Task<WorkspaceDesiredStateRevision> CreateArtifactBackedRevisionAsync(
+        DeploymentTopology topology,
+        WorkspaceArtifact artifact)
+    {
+        var desiredStateJson = $$"""
+            {
+              "records": [
+                {
+                  "kind": "ArtifactReference",
+                  "name": "Payment Retry",
+                  "payload": {
+                    "artifactRecordId": "{{artifact.Id:D}}",
+                    "artifactId": "{{artifact.ArtifactId}}",
+                    "artifactTypeId": "{{artifact.ArtifactTypeId}}",
+                    "contentDigest": {
+                      "algorithm": "{{artifact.ContentDigest.Algorithm}}",
+                      "value": "{{artifact.ContentDigest.Value}}"
+                    }
+                  }
+                }
+              ]
+            }
+            """;
+        return await _store.CreateRevisionAsync(
             _workspaceId,
+            new CreateDesiredStateRevisionRequest(topology.Application.Id, topology.Environment.Id, "Artifact v1", "abc123", desiredStateJson, _accountId));
+    }
+
+    private static async Task<WorkspaceDeploymentRun> QueueRunAsync(
+        DeploymentWorkspaceStore store,
+        Guid workspaceId,
+        Guid accountId,
+        DeploymentTopology topology) =>
+        await store.CreateRunAsync(
+            workspaceId,
             new QueueWorkspaceDeploymentRunRequest(
                 topology.Revision.Id,
                 topology.Environment.Id,
                 topology.Engine.Id,
                 Guid.NewGuid(),
-                _accountId,
+                accountId,
                 null),
             DateTimeOffset.UtcNow);
 
-    private async Task<DeploymentTopology> SeedTopologyAsync(bool createRevision = true)
+    private static async Task<DeploymentTopology> SeedTopologyAsync(
+        DeploymentWorkspaceStore store,
+        Guid workspaceId,
+        Guid accountId,
+        bool createRevision = true)
     {
-        var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, _accountId));
-        var environment = await _store.CreateEnvironmentAsync(_workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production));
-        var engine = await _store.RegisterEngineAsync(
-            _workspaceId,
+        var application = await store.CreateApplicationAsync(workspaceId, new CreateWorkflowApplicationRequest("Claims", null, accountId));
+        var environment = await store.CreateEnvironmentAsync(workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production));
+        var engine = await store.RegisterEngineAsync(
+            workspaceId,
             new RegisterWorkflowEngineRequest(
                 environment.Id,
                 "claims-prod",
@@ -241,11 +424,34 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
                 [],
                 "container-apps"));
         var revision = createRevision
-            ? await _store.CreateRevisionAsync(
-                _workspaceId,
-                new CreateDesiredStateRevisionRequest(application.Id, environment.Id, "v1", "abc123", "{\"records\":[]}", _accountId))
+            ? await store.CreateRevisionAsync(
+                workspaceId,
+                new CreateDesiredStateRevisionRequest(application.Id, environment.Id, "v1", "abc123", "{\"records\":[]}", accountId))
             : null;
         return new DeploymentTopology(application, environment, engine, revision!);
+    }
+
+    private static async Task<DeploymentCommand?> TryClaimAsync(
+        DeploymentWorkspaceStore store,
+        Guid workspaceId,
+        Guid engineId,
+        Guid commandId,
+        string workerId,
+        string leaseToken)
+    {
+        try
+        {
+            return await store.ClaimCommandAsync(
+                workspaceId,
+                commandId,
+                new ClaimDeploymentCommandRequest(engineId, workerId, TimeSpan.FromMinutes(5)),
+                leaseToken,
+                DateTimeOffset.UtcNow);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     private RegisterWorkspaceArtifactRequest ArtifactRegistration(string artifactId, string reference) =>
@@ -265,8 +471,13 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
 
     private static CatalogDbContext CreateDbContext()
     {
+        return CreateDbContext("Data Source=:memory:");
+    }
+
+    private static CatalogDbContext CreateDbContext(string connectionString)
+    {
         var options = new DbContextOptionsBuilder<CatalogDbContext>()
-            .UseSqlite("Data Source=:memory:")
+            .UseSqlite(connectionString)
             .Options;
         return new CatalogDbContext(options);
     }
