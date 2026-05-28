@@ -21,7 +21,7 @@ git diff --check
 
 ## Verification Results
 
-- Not run yet. This spec defines a future implementation slice.
+- 2026-05-28: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter Studio_submit --no-restore` passed: 1 test. This verifies the existing workspace artifact API accepts a Studio-shaped `elsa.workflow-definition` envelope, duplicate submission is idempotent, and artifact submission does not create deployment run history.
 
 ## Known Scope Boundaries
 

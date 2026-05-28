@@ -12,8 +12,8 @@
 
 ## Phase 2: Platform Submission API Compatibility
 
-- [ ] T004 Verify existing workspace artifact API can accept Studio-produced `elsa.workflow-definition` envelopes.
-- [ ] T005 Add API tests for Studio producer metadata, source references, duplicate submit, unsafe metadata, and no deployment side effects.
+- [x] T004 Verify existing workspace artifact API can accept Studio-produced `elsa.workflow-definition` envelopes.
+- [x] T005 Add API tests for Studio producer metadata, source references, duplicate submit, unsafe metadata, and no deployment side effects.
 - [ ] T006 Add any missing Platform contract fields required by Studio submission without storing raw workflow content in catalog tables.
 
 ## Phase 3: Studio Integration Package
@@ -28,5 +28,5 @@
 
 - [ ] T012 Add unit tests for snapshot packaging and unsafe metadata handling.
 - [ ] T013 Add integration tests for successful submit and duplicate submit.
-- [ ] T014 Add tests proving submit does not create a deployment run or runtime publish side effect.
+- [x] T014 Add tests proving submit does not create a deployment run or runtime publish side effect.
 - [ ] T015 Run focused checks and record results in `quickstart.md`.

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using Elsa.Platform.Api.Workspace;
 using Elsa.Platform.Deployment.Artifacts;
+using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Microsoft.Extensions.DependencyInjection;
@@ -76,6 +77,30 @@ public sealed class WorkspaceArtifactApiTests
         registered!.Producer!.ProducerType.Should().Be("studio");
         registered.DisplayMetadata!.Labels.Should().ContainKey("domain");
         registered.CompatibilityHints.Should().ContainSingle(x => x.RuntimeFamily == "elsa-workflows");
+    }
+
+    [Fact]
+    public async Task Studio_submit_artifact_registration_does_not_create_deployment_run()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("studio-submit-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+
+        var registerResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/artifacts",
+            WorkspaceDeploymentTestFixtures.WorkflowEnvelopeRegistration("sha256:studio-submit"));
+        var duplicateResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/artifacts",
+            WorkspaceDeploymentTestFixtures.WorkflowEnvelopeRegistration("sha256:studio-submit"));
+        var artifact = await registerResponse.Content.ReadPlatformJsonAsync<WorkspaceArtifact>();
+        var cockpit = await owner.GetPlatformJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
+
+        registerResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        duplicateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        artifact!.Producer!.ProducerType.Should().Be("studio");
+        artifact.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
+        cockpit!.History.Should().BeEmpty();
     }
 
     [Fact]
