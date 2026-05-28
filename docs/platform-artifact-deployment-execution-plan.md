@@ -160,7 +160,7 @@ Tasks:
 - Add deployment command records linked to deployment runs. Completed.
 - Model command action, artifact/revision reference, target runtime, idempotency key, lease/claim state, expiration, progress, and safe diagnostics. Completed.
 - Add API endpoints for runtime integrations to poll, claim, heartbeat, complete, fail, or reject commands. Completed.
-- Keep existing in-process worker compatible by treating queued runs as an internal command consumer. Completed.
+- Keep the legacy in-process queue worker from applying command-backed deployments. Completed by disabling it by default and limiting it to stale-run recovery when enabled.
 - Add duplicate poll/claim and stale-recovery tests proving no duplicate apply. Completed for core, persistence, and API claim lifecycle; provider webhook delivery remains a future transport concern.
 
 Exit criteria:

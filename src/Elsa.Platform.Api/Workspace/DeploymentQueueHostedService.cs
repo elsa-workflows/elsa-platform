@@ -15,7 +15,7 @@ internal sealed class DeploymentQueueHostedService(
         {
             try
             {
-                await ProcessQueueAsync(stoppingToken);
+                await RecoverStaleRunsAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -30,14 +30,10 @@ internal sealed class DeploymentQueueHostedService(
         }
     }
 
-    private async Task ProcessQueueAsync(CancellationToken cancellationToken)
+    private async Task RecoverStaleRunsAsync(CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var worker = scope.ServiceProvider.GetRequiredService<DeploymentQueueWorker>();
         await worker.RecoverStaleRunsAsync(StaleRunAfter, cancellationToken);
-
-        while (await worker.ProcessNextQueuedRunAsync(Environment.MachineName, cancellationToken) is not null)
-        {
-        }
     }
 }

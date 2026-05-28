@@ -13,30 +13,6 @@ public sealed class DeploymentQueueWorkerTests
     private readonly RecordingMutationStore _store = new();
 
     [Fact]
-    public async Task Processes_one_queued_run_to_succeeded()
-    {
-        _store.QueuedRun = Run(WorkspaceDeploymentRunStatus.Queued);
-        var worker = new DeploymentQueueWorker(_store, _clock);
-
-        var processed = await worker.ProcessNextQueuedRunAsync("worker-1");
-
-        processed!.Status.Should().Be(WorkspaceDeploymentRunStatus.Succeeded);
-        _store.ClaimedWorkerId.Should().Be("worker-1");
-        _store.UpdatedStatuses.Should().Equal(WorkspaceDeploymentRunStatus.Succeeded);
-    }
-
-    [Fact]
-    public async Task Does_not_apply_duplicate_when_no_queued_run_exists()
-    {
-        var worker = new DeploymentQueueWorker(_store, _clock);
-
-        var processed = await worker.ProcessNextQueuedRunAsync("worker-1");
-
-        processed.Should().BeNull();
-        _store.UpdatedStatuses.Should().BeEmpty();
-    }
-
-    [Fact]
     public async Task Recovers_stale_running_runs_without_replaying_them()
     {
         _store.RecoveredCount = 2;
@@ -46,6 +22,7 @@ public sealed class DeploymentQueueWorkerTests
 
         recovered.Should().Be(2);
         _store.LastRecoveryCutoff.Should().Be(TimeSpan.FromMinutes(10));
+        _store.ClaimedWorkerId.Should().BeNull();
         _store.UpdatedStatuses.Should().BeEmpty();
     }
 

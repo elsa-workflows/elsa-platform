@@ -40,6 +40,13 @@ public sealed class RuntimeCommandApiTests
                 []));
         var duplicateCompleteResponse = await owner.PostPlatformJsonAsync(
             $"/api/workspaces/{workspaceId}/deployments/runtime/commands/{command.Id}/complete",
+            new RuntimeCommandCompleteRequest(
+                claim.LeaseToken,
+                new WorkspaceArtifactDigest("sha256", "observed"),
+                "elsa://workflows/payment-retry",
+                []));
+        var wrongLeaseCompleteResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runtime/commands/{command.Id}/complete",
             new RuntimeCommandCompleteRequest("duplicate-delivery", null, "elsa://workflows/payment-retry", []));
         var detail = await owner.GetPlatformJsonAsync<WorkspaceDeploymentRunDetailResponse>(
             $"/api/workspaces/{workspaceId}/deployments/runs/{seeded.RunId}");
@@ -48,6 +55,7 @@ public sealed class RuntimeCommandApiTests
         progressResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         completeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         duplicateCompleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        wrongLeaseCompleteResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
         detail!.Run.Status.Should().Be(WorkspaceDeploymentRunStatus.Succeeded);
         detail.History.Should().Contain(x => x.Message == "Runtime command completed.");
     }

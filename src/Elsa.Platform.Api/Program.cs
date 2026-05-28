@@ -188,7 +188,8 @@ builder.Services.AddScoped<DeploymentQueueWorker>();
 builder.Services.AddScoped<RuntimeControlService>();
 builder.Services.AddScoped<ConfirmationService>();
 builder.Services.AddScoped<ObservabilityDriftService>();
-if (!builder.Environment.IsEnvironment("Testing"))
+var deploymentQueueWorkerEnabled = builder.Configuration.GetValue("Deployment:QueueWorker:Enabled", false);
+if (deploymentQueueWorkerEnabled && !builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<DeploymentQueueHostedService>();
 builder.Services.AddScoped<IPackageVersionDiscoveryClient, NuGetPackageSourceClient>();
 builder.Services.AddScoped<IPackageArchiveDownloader, NuGetSyncPackageDownloader>();
