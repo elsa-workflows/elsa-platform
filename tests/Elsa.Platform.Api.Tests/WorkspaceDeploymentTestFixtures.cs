@@ -1,6 +1,7 @@
 using Elsa.Platform.Api.Authentication;
 using Elsa.Platform.Api.Workspace;
 using Elsa.Platform.Deployment.Core.Workspace;
+using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,4 +55,26 @@ internal static class WorkspaceDeploymentTestFixtures
         var store = scope.ServiceProvider.GetRequiredService<IWorkspacePermissionStore>();
         await store.GrantPermissionAsync(workspaceId, new GrantWorkspacePermissionRequest(accountId, permission, null));
     }
+
+    public static WorkspaceArtifactRegistrationRequest ArtifactRegistration(
+        string artifactId = "sha256:claims-prod",
+        string reference = "/tmp/claims-prod",
+        string referenceProvider = "local") =>
+        new(
+            artifactId,
+            ArtifactLayoutConstants.LayoutVersion,
+            new WorkspaceArtifactDigest("sha256", "claims-prod"),
+            WorkspaceArtifactFormat.Folder,
+            referenceProvider,
+            reference,
+            new WorkspaceArtifactManifestSummary("claims", "1.0.0", "prod"),
+            [
+                new WorkspaceArtifactResourceSummary(
+                    "workflowDefinition",
+                    "payment-retry",
+                    null,
+                    "8",
+                    new WorkspaceArtifactDigest("sha256", "workflow-hash"))
+            ],
+            []);
 }

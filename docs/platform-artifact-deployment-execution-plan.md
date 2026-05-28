@@ -39,8 +39,8 @@ Completed or mostly complete:
 
 Partially implemented:
 
-- Artifact registry: `specs/024-artifact-registry` has 31 completed tasks and 15 remaining tasks. Core/API/console implementation exists, but focused core, persistence, API, and refresh tests still need to be added/run.
-- Custom deployment tiers: `specs/025-custom-deployment-tiers` has 46 completed tasks and 28 remaining tasks. Domain/API/persistence/console implementation is in progress, but test coverage, migration backfill, bounded-query verification, and final contract/quickstart updates remain.
+- Artifact registry: `specs/024-artifact-registry` has all tasks completed. Core, persistence, API, and console focused checks are recorded in the quickstart.
+- Custom deployment tiers: `specs/025-custom-deployment-tiers` has all tasks completed. Tier capability semantics, migration backfill, bounded-query verification, and console/API coverage are recorded in the quickstart.
 
 Architectural delta introduced by the latest product decisions:
 
@@ -228,9 +228,7 @@ Exit criteria:
 
 ## Immediate Next Actions
 
-1. Finish `024-artifact-registry` tests and verification.
-2. Finish `025-custom-deployment-tiers` tests, migration backfill, and verification.
-3. Create `026-artifact-envelope-and-types`.
-4. Create `028-runtime-command-sync` before implementing external runtime workers.
-5. Create `027-studio-submit-to-platform` and `029-workflow-artifact-runtime-applier` once the envelope and command contracts are stable.
-
+1. Run remaining smoke/verification checks for `021-identity-tenancy` and `023-engine-health-verification`.
+2. Create `026-artifact-envelope-and-types`.
+3. Create `028-runtime-command-sync` before implementing external runtime workers.
+4. Create `027-studio-submit-to-platform` and `029-workflow-artifact-runtime-applier` once the envelope and command contracts are stable.

@@ -20,8 +20,8 @@
 
 - [x] T001 [P] Add artifact API contract examples in `specs/024-artifact-registry/contracts/artifact-registry-api.md`
 - [x] T002 [P] Add console Artifacts UX contract examples in `specs/024-artifact-registry/contracts/console-artifacts-ux.md`
-- [ ] T003 [P] Add artifact core test fixture helpers in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceDeploymentTestFixtures.cs`
-- [ ] T004 [P] Add artifact API test helpers in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTestFixtures.cs`
+- [x] T003 [P] Add artifact core test fixture helpers in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceDeploymentTestFixtures.cs`
+- [x] T004 [P] Add artifact API test helpers in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTestFixtures.cs`
 
 ---
 
@@ -50,16 +50,16 @@
 
 ### Tests for User Story 1
 
-- [ ] T013 [P] [US1] Add core artifact registration validation tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceArtifactServiceTests.cs`
-- [ ] T014 [P] [US1] Add artifact persistence round-trip and duplicate tests in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactPersistenceTests.cs`
-- [ ] T015 [P] [US1] Add artifact registration API permission, duplicate, and safe response tests in `tests/Elsa.Platform.Api.Tests/WorkspaceArtifactApiTests.cs`
+- [x] T013 [P] [US1] Add core artifact registration validation tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceArtifactServiceTests.cs`
+- [x] T014 [P] [US1] Add artifact persistence round-trip and duplicate tests in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactPersistenceTests.cs`
+- [x] T015 [P] [US1] Add artifact registration API permission, duplicate, and safe response tests in `tests/Elsa.Platform.Api.Tests/WorkspaceArtifactApiTests.cs`
 
 ### Implementation for User Story 1
 
 - [x] T016 [US1] Implement artifact registration validation and duplicate metadata behavior in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
 - [x] T017 [US1] Implement artifact persistence registration behavior in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
 - [x] T018 [US1] Add artifact registration endpoint and request/response contracts in `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactEndpoints.cs` and `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactContracts.cs`
-- [ ] T019 [US1] Run focused US1 checks documented in `specs/024-artifact-registry/quickstart.md`
+- [x] T019 [US1] Run focused US1 checks documented in `specs/024-artifact-registry/quickstart.md`
 
 **Checkpoint**: Artifact registration is independently functional through API.
 
@@ -73,7 +73,7 @@
 
 ### Tests for User Story 2
 
-- [ ] T020 [P] [US2] Add artifact list/detail API isolation and performance tests in `tests/Elsa.Platform.Api.Tests/WorkspaceArtifactApiTests.cs`
+- [x] T020 [P] [US2] Add artifact list/detail API isolation and performance tests in `tests/Elsa.Platform.Api.Tests/WorkspaceArtifactApiTests.cs`
 - [x] T021 [P] [US2] Add Artifacts page list/detail/empty tests in `src/Elsa.Platform.Console/src/features/artifacts/ArtifactsPage.test.tsx`
 
 ### Implementation for User Story 2
@@ -83,7 +83,7 @@
 - [x] T024 [US2] Add artifact API client and models in `src/Elsa.Platform.Console/src/features/artifacts/artifactApi.ts` and `src/Elsa.Platform.Console/src/features/artifacts/artifactModels.ts`
 - [x] T025 [US2] Implement Artifacts page list/detail/register shell in `src/Elsa.Platform.Console/src/features/artifacts/ArtifactsPage.tsx`
 - [x] T026 [US2] Enable Artifacts navigation and route in `src/Elsa.Platform.Console/src/app/AppShell.tsx` and `src/Elsa.Platform.Console/src/app/routes.tsx`
-- [ ] T027 [US2] Run focused US2 checks documented in `specs/024-artifact-registry/quickstart.md`
+- [x] T027 [US2] Run focused US2 checks documented in `specs/024-artifact-registry/quickstart.md`
 
 **Checkpoint**: Artifact inspection is independently functional through API and console.
 
@@ -97,9 +97,9 @@
 
 ### Tests for User Story 3
 
-- [ ] T028 [P] [US3] Add core inspection refresh service tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceArtifactServiceTests.cs`
-- [ ] T029 [P] [US3] Add persistence tests for inspection status updates preserving identity in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactPersistenceTests.cs`
-- [ ] T030 [P] [US3] Add refresh API permission, invalid reference, and unsupported provider tests in `tests/Elsa.Platform.Api.Tests/WorkspaceArtifactApiTests.cs`
+- [x] T028 [P] [US3] Add core inspection refresh service tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceArtifactServiceTests.cs`
+- [x] T029 [P] [US3] Add persistence tests for inspection status updates preserving identity in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactPersistenceTests.cs`
+- [x] T030 [P] [US3] Add refresh API permission, invalid reference, and unsupported provider tests in `tests/Elsa.Platform.Api.Tests/WorkspaceArtifactApiTests.cs`
 - [x] T031 [P] [US3] Add console refresh inspection tests in `src/Elsa.Platform.Console/src/features/artifacts/ArtifactsPage.test.tsx`
 
 ### Implementation for User Story 3
@@ -108,7 +108,7 @@
 - [x] T033 [US3] Implement inspection status update persistence in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
 - [x] T034 [US3] Add artifact refresh endpoint in `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactEndpoints.cs`
 - [x] T035 [US3] Add refresh action and invalid/unsupported states in `src/Elsa.Platform.Console/src/features/artifacts/ArtifactsPage.tsx`
-- [ ] T036 [US3] Run focused US3 checks documented in `specs/024-artifact-registry/quickstart.md`
+- [x] T036 [US3] Run focused US3 checks documented in `specs/024-artifact-registry/quickstart.md`
 
 **Checkpoint**: Artifact inspection refresh is independently functional and fail-closed.
 
@@ -122,9 +122,9 @@
 - [x] T038 [P] Update final API contract examples in `specs/024-artifact-registry/contracts/artifact-registry-api.md`
 - [x] T039 [P] Update final console UX contract examples in `specs/024-artifact-registry/contracts/console-artifacts-ux.md`
 - [x] T040 Review payload/secret redaction, workspace permission checks, duplicate handling, cross-workspace rejection, and unsupported-reference handling across `src/Elsa.Platform.Deployment.Core/Workspace/`, `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactEndpoints.cs`
-- [ ] T041 Run `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter WorkspaceArtifact` and record result in `specs/024-artifact-registry/quickstart.md`
-- [ ] T042 Run `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceArtifact` and record result in `specs/024-artifact-registry/quickstart.md`
-- [ ] T043 Run `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceArtifact` and record result in `specs/024-artifact-registry/quickstart.md`
+- [x] T041 Run `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter WorkspaceArtifact` and record result in `specs/024-artifact-registry/quickstart.md`
+- [x] T042 Run `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceArtifact` and record result in `specs/024-artifact-registry/quickstart.md`
+- [x] T043 Run `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceArtifact` and record result in `specs/024-artifact-registry/quickstart.md`
 - [x] T044 Run `cd src/Elsa.Platform.Console && npm test -- --run artifacts` and record result in `specs/024-artifact-registry/quickstart.md`
 - [x] T045 Run `cd src/Elsa.Platform.Console && npm run typecheck` and record result in `specs/024-artifact-registry/quickstart.md`
 - [x] T046 Run `git diff --check` and record result in `specs/024-artifact-registry/quickstart.md`

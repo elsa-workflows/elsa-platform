@@ -59,15 +59,16 @@ git diff --check
 
 ## Verification Results
 
-- `PATH="/Users/sipke/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ./node_modules/.bin/vitest run artifacts` from `src/Elsa.Platform.Console`: passed, 3 tests.
-- `PATH="/Users/sipke/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" ./node_modules/.bin/tsc -b` from `src/Elsa.Platform.Console`: passed.
-- `git diff --check`: passed.
-- `.specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks`: passed for `specs/024-artifact-registry`.
-- `dotnet test ... --filter WorkspaceArtifact` and related .NET verification commands: not run because `dotnet` is not available on `PATH` in this environment.
+- 2026-05-28: `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter WorkspaceArtifact` passed: 9 tests.
+- 2026-05-28: `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceArtifact` passed: 6 tests.
+- 2026-05-28: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceArtifact` passed: 6 tests.
+- 2026-05-28: `cd src/Elsa.Platform.Console && npm test -- --run artifacts` passed: 3 tests.
+- 2026-05-28: `cd src/Elsa.Platform.Console && npm run typecheck` passed.
+- 2026-05-28: `git diff --check` passed.
 
 ## Known Scope Boundaries
 
 - Artifact upload and payload storage are out of scope.
 - OCI, signing, GitOps, provider apply, live runtime drift, object storage, and external approval workflows are out of scope.
 - The first inspection refresh adapter may support local/test references only.
-- Current implementation includes console coverage and source-level review for API/core/persistence. Core, persistence, and API automated tests remain the next verification gap once the .NET SDK is available.
+- Current implementation includes focused console, core, persistence, and API coverage for the metadata registry and local/test refresh adapter.

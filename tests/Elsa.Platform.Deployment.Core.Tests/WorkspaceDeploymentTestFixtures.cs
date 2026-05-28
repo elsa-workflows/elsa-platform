@@ -1,4 +1,5 @@
 using Elsa.Platform.Deployment.Core.Cockpit;
+using Elsa.Platform.Deployment.Core.Workspace;
 
 namespace Elsa.Platform.Deployment.Core.Tests;
 
@@ -22,4 +23,26 @@ internal static class WorkspaceDeploymentTestFixtures
         string id = "secret-missing",
         string scope = "Secret references") =>
         new(id, ValidationSeverity.Blocker, scope, "A required secret reference is missing.");
+
+    public static RegisterWorkspaceArtifactRequest ArtifactRegistration(
+        string artifactId = "sha256:claims-prod",
+        string reference = "/tmp/claims-prod",
+        string referenceProvider = "local",
+        Guid? actorAccountId = null) =>
+        new(
+            artifactId,
+            "platform.elsa.io/deployment-artifact/v1alpha1",
+            new WorkspaceArtifactDigest("sha256", "claims-prod"),
+            WorkspaceArtifactFormat.Folder,
+            referenceProvider,
+            reference,
+            new WorkspaceArtifactManifestSummary("claims", "1.0.0", "prod"),
+            [ArtifactResource()],
+            [],
+            actorAccountId ?? Guid.Parse("20000000-0000-0000-0000-000000000001"));
+
+    public static WorkspaceArtifactResourceSummary ArtifactResource(
+        string type = "workflowDefinition",
+        string logicalId = "payment-retry") =>
+        new(type, logicalId, null, "8", new WorkspaceArtifactDigest("sha256", "workflow-hash"));
 }
