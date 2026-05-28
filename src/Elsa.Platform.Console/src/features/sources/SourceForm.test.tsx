@@ -46,6 +46,7 @@ describe("SourceForm", () => {
 
   it("shows pattern tester preview while editing patterns", async () => {
     renderForm();
+    expect(screen.getByLabelText("Include Patterns")).toHaveValue("Elsa.");
     expect(screen.getByText("Elsa.Persistence.PostgreSql")).toBeInTheDocument();
     expect(screen.getByText("Elsa.Tests").previousSibling).toHaveTextContent("OK");
 

@@ -25,6 +25,27 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     public DbSet<WorkspaceEntitlementSnapshot> WorkspaceEntitlementSnapshots => Set<WorkspaceEntitlementSnapshot>();
     public DbSet<RuntimeConfiguration> RuntimeConfigurations => Set<RuntimeConfiguration>();
     public DbSet<RuntimeConfigurationVersion> RuntimeConfigurationVersions => Set<RuntimeConfigurationVersion>();
+    internal DbSet<Models.DeploymentApplicationEntity> DeploymentApplications => Set<Models.DeploymentApplicationEntity>();
+    internal DbSet<Models.DeploymentEnvironmentEntity> DeploymentEnvironments => Set<Models.DeploymentEnvironmentEntity>();
+    internal DbSet<Models.DeploymentTierDefinitionEntity> DeploymentTierDefinitions => Set<Models.DeploymentTierDefinitionEntity>();
+    internal DbSet<Models.DeploymentTierCapabilityAssignmentEntity> DeploymentTierCapabilityAssignments => Set<Models.DeploymentTierCapabilityAssignmentEntity>();
+    internal DbSet<Models.DeploymentTierChangeRecordEntity> DeploymentTierChangeRecords => Set<Models.DeploymentTierChangeRecordEntity>();
+    internal DbSet<Models.WorkflowEngineEntity> WorkflowEngines => Set<Models.WorkflowEngineEntity>();
+    internal DbSet<Models.WorkspaceDeploymentArtifactEntity> WorkspaceDeploymentArtifacts => Set<Models.WorkspaceDeploymentArtifactEntity>();
+    internal DbSet<Models.EngineCapabilityEntity> EngineCapabilities => Set<Models.EngineCapabilityEntity>();
+    internal DbSet<Models.RuntimeControlEntity> RuntimeControls => Set<Models.RuntimeControlEntity>();
+    internal DbSet<Models.RuntimeControlExecutionEntity> RuntimeControlExecutions => Set<Models.RuntimeControlExecutionEntity>();
+    internal DbSet<Models.DesiredStateRevisionEntity> DesiredStateRevisions => Set<Models.DesiredStateRevisionEntity>();
+    internal DbSet<Models.StructuredDesiredStateRecordEntity> StructuredDesiredStateRecords => Set<Models.StructuredDesiredStateRecordEntity>();
+    internal DbSet<Models.WorkspacePermissionGrantEntity> WorkspacePermissionGrants => Set<Models.WorkspacePermissionGrantEntity>();
+    internal DbSet<Models.ActionConfirmationEntity> ActionConfirmations => Set<Models.ActionConfirmationEntity>();
+    internal DbSet<Models.DeploymentRunEntity> DeploymentRuns => Set<Models.DeploymentRunEntity>();
+    internal DbSet<Models.DeploymentRunHistoryEventEntity> DeploymentRunHistoryEvents => Set<Models.DeploymentRunHistoryEventEntity>();
+    internal DbSet<Models.DeploymentCommandEntity> DeploymentCommands => Set<Models.DeploymentCommandEntity>();
+    internal DbSet<Models.DeploymentCommandEventEntity> DeploymentCommandEvents => Set<Models.DeploymentCommandEventEntity>();
+    internal DbSet<Models.DeploymentCommandWebhookNotificationEntity> DeploymentCommandWebhookNotifications => Set<Models.DeploymentCommandWebhookNotificationEntity>();
+    internal DbSet<Models.ObservabilityBindingEntity> ObservabilityBindings => Set<Models.ObservabilityBindingEntity>();
+    internal DbSet<Models.DriftReportItemEntity> DriftReportItems => Set<Models.DriftReportItemEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,5 +65,26 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.WorkspaceEntitlementSnapshotConfiguration());
         modelBuilder.ApplyConfiguration(new Models.RuntimeConfigurationConfiguration());
         modelBuilder.ApplyConfiguration(new Models.RuntimeConfigurationVersionConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentApplicationConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentEnvironmentConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentTierDefinitionConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentTierCapabilityAssignmentConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentTierChangeRecordConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.WorkflowEngineConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.WorkspaceDeploymentArtifactConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.EngineCapabilityConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.RuntimeControlConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.RuntimeControlExecutionConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DesiredStateRevisionConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.StructuredDesiredStateRecordConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.WorkspacePermissionGrantConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.ActionConfirmationConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentRunConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentRunHistoryEventConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentCommandConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentCommandEventConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentCommandWebhookNotificationConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.ObservabilityBindingConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DriftReportItemConfiguration());
     }
 }

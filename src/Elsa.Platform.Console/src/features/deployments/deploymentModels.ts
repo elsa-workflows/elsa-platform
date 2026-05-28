@@ -1,11 +1,31 @@
 export type DeploymentHealth = "Healthy" | "Degraded" | "Unreachable";
 export type DriftStatus = "InSync" | "DriftDetected" | "Unknown";
 export type DeploymentStatus = "Succeeded" | "Running" | "Blocked" | "RolledBack";
+export type DeploymentTierStatus = "Active" | "Archived";
+export type DeploymentTierCapabilityCategory = "Classification" | "Promotion" | "Safeguards" | "Rollback" | "Validation" | "Observability";
+export type WorkspaceDeploymentRunStatus = "Queued" | "Running" | "Succeeded" | "Failed" | "Blocked" | "Cancelled" | "RolledBack" | "RecoveryRequired";
 export type CredentialVerificationStatus = "Verified" | "Missing" | "Expired" | "Unverified";
 export type CapabilityBoundary = "Workflow" | "EngineApi" | "Shell" | "Hosting";
 export type ValidationSeverity = "Pass" | "Warning" | "Blocker";
 export type DiffCategory = "Workflows" | "Features" | "ShellConfiguration" | "RuntimeConfiguration" | "SecretReferences" | "Observability" | "EngineBindings";
 export type AssistantPlanStatus = "Proposed" | "Approved" | "Rejected" | "Executed";
+export type DeploymentPermission =
+  | "deployments.read"
+  | "deployments.setup.manage"
+  | "deployments.desired-state.manage"
+  | "deployments.promotion.preview"
+  | "deployments.run.execute"
+  | "deployments.rollback.execute"
+  | "deployments.controls.execute"
+  | "deployments.observability.manage";
+
+export const deploymentTierCapabilities = {
+  promotionSource: "deployment.promotion.source",
+  promotionTarget: "deployment.promotion.target",
+  confirmationRequired: "deployment.confirmation.required",
+  rollbackEnabled: "deployment.rollback.enabled",
+  productionLike: "deployment.tier.production-like"
+} as const;
 
 export type RuntimeControl = {
   id: string;
@@ -19,6 +39,50 @@ export type EngineCapability = {
   id: string;
   label: string;
   boundary: CapabilityBoundary;
+};
+
+export type DeploymentTierCapability = {
+  id: string;
+  label: string;
+  description: string;
+  category: DeploymentTierCapabilityCategory;
+  isDeprecated: boolean;
+};
+
+export type WorkspaceDeploymentTier = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  description: string | null;
+  sortOrder: number;
+  isDefault: boolean;
+  status: DeploymentTierStatus;
+  capabilities: string[];
+  environmentCount: number;
+  createdAt: string;
+  updatedAt: string;
+  createdByAccountId: string | null;
+  updatedByAccountId: string | null;
+  archivedAt: string | null;
+  archivedByAccountId: string | null;
+};
+
+export type DeploymentTierEnvironmentSample = {
+  applicationId: string;
+  applicationName: string;
+  environmentId: string;
+  environmentName: string;
+};
+
+export type DeploymentTierImpactSummary = {
+  tierId: string;
+  currentCapabilities: string[];
+  proposedCapabilities: string[];
+  addedCapabilities: string[];
+  removedCapabilities: string[];
+  affectedEnvironmentCount: number;
+  affectedEnvironmentSamples: DeploymentTierEnvironmentSample[];
+  changedSafeguards: string[];
 };
 
 export type WorkflowEngineRegistration = {
@@ -39,12 +103,28 @@ export type WorkflowEngineRegistration = {
   };
   health: DeploymentHealth;
   lastHeartbeatAt: string | null;
+  lastVerificationAt: string | null;
+  verificationMessage: string;
   capabilities: EngineCapability[];
   controls: RuntimeControl[];
   hostingProvider: string | null;
 };
 
+export type EngineHealthResult = {
+  engineId: string;
+  environmentId: string;
+  health: DeploymentHealth;
+  version: string | null;
+  certificateStatus: WorkflowEngineRegistration["endpoint"]["certificateStatus"];
+  credentialVerificationStatus: CredentialVerificationStatus;
+  credentialLastVerifiedAt: string | null;
+  lastHeartbeatAt: string | null;
+  lastVerificationAt: string | null;
+  message: string;
+};
+
 export type DesiredStateRevision = {
+  id: string;
   revision: number;
   commit: string;
   label: string;
@@ -55,6 +135,10 @@ export type EnvironmentSummary = {
   id: string;
   name: string;
   tier: "Dev" | "Test" | "Stage" | "Production";
+  tierId?: string | null;
+  tierName?: string;
+  tierStatus?: DeploymentTierStatus;
+  tierCapabilities?: string[];
   health: DeploymentHealth;
   desiredRevision: DesiredStateRevision;
   deployedRevision: number | null;
@@ -89,11 +173,143 @@ export type DeploymentValidation = {
 export type PromotionComparison = {
   sourceEnvironmentId: string;
   targetEnvironmentId: string;
+  sourceRevisionId: string;
   sourceRevision: number;
   targetRevision: number;
   diff: DeploymentDiffItem[];
   validations: DeploymentValidation[];
   rollbackRevision: number | null;
+  rollbackRevisionId: string | null;
+};
+
+export type DesiredStateRecordKind =
+  | "Workflow"
+  | "Feature"
+  | "ShellConfiguration"
+  | "RuntimeConfiguration"
+  | "SecretReference"
+  | "ObservabilityBinding"
+  | "EngineBinding";
+
+export type WorkspaceDesiredStateRecordRequest = {
+  kind: DesiredStateRecordKind;
+  name: string;
+  payload: unknown;
+};
+
+export type CreateDesiredStateRevisionRequest = {
+  label: string;
+  commit: string | null;
+  records: WorkspaceDesiredStateRecordRequest[];
+};
+
+export type WorkspaceDesiredStateRevision = {
+  id: string;
+  workspaceId: string;
+  applicationId: string;
+  environmentId: string;
+  revisionNumber: number;
+  label: string;
+  commit: string | null;
+  contentHash: string;
+  desiredStateJson: string;
+};
+
+export type PromotionPreviewRequest = {
+  sourceEnvironmentId: string;
+  targetEnvironmentId: string;
+  sourceRevisionId: string;
+  targetEngineId: string;
+};
+
+export type ConfirmationActionType = "Deploy" | "Rollback" | "RuntimeControl";
+export type RuntimeControlExecutionStatus = "Succeeded" | "Failed";
+
+export type ActionConfirmation = {
+  id: string;
+  workspaceId: string;
+  actionType: ConfirmationActionType;
+  targetId: string;
+  confirmedByAccountId: string;
+  confirmedAt: string;
+  expiresAt: string;
+  usedAt: string | null;
+};
+
+export type CreateActionConfirmationRequest = {
+  actionType: ConfirmationActionType;
+  targetId: string;
+  lifetimeSeconds: number | null;
+};
+
+export type QueueDeploymentRunRequest = {
+  sourceRevisionId: string;
+  targetEnvironmentId: string;
+  targetEngineId: string;
+  confirmationId: string;
+  mode: "DryRun" | "Apply";
+};
+
+export type QueueRollbackRunRequest = QueueDeploymentRunRequest & {
+  rollbackSourceRunId: string;
+};
+
+export type WorkspaceDeploymentRun = {
+  id: string;
+  workspaceId: string;
+  applicationId: string;
+  environmentId: string;
+  engineId: string;
+  sourceRevisionId: string;
+  previousDeployedRevisionId: string | null;
+  rollbackSourceRunId: string | null;
+  status: WorkspaceDeploymentRunStatus;
+  validationOutcome: "Passed" | "Warnings" | "Blocked";
+  confirmationId: string;
+  actorAccountId: string;
+  queuedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  workerId: string | null;
+  workerHeartbeatAt: string | null;
+  attemptNumber: number;
+  recoveryReason: string | null;
+  failureMessage: string | null;
+};
+
+export type DeploymentRunHistoryRecord = {
+  id: string;
+  workspaceId: string;
+  runId: string;
+  status: WorkspaceDeploymentRunStatus;
+  message: string;
+  createdAt: string;
+};
+
+export type WorkspaceDeploymentRunDetailResponse = {
+  run: WorkspaceDeploymentRun;
+  history: DeploymentRunHistoryRecord[];
+};
+
+export type RuntimeControlExecution = {
+  id: string;
+  workspaceId: string;
+  engineId: string;
+  environmentId: string;
+  controlId: string;
+  controlLabel: string;
+  boundary: CapabilityBoundary;
+  requiredCapabilityId: string;
+  confirmationId: string;
+  actorAccountId: string;
+  status: RuntimeControlExecutionStatus;
+  createdAt: string;
+  message: string;
+};
+
+export type RuntimeControlRunRequest = {
+  confirmationId: string;
 };
 
 export type ObservabilityBinding = {
@@ -108,7 +324,7 @@ export type ObservabilityBinding = {
 
 export type DeploymentHistoryEvent = {
   id: string;
-  status: DeploymentStatus;
+  status: DeploymentStatus | WorkspaceDeploymentRunStatus;
   revision: number;
   actor: string;
   environmentId: string;
@@ -152,6 +368,72 @@ export type DeploymentCockpit = {
   history: DeploymentHistoryEvent[];
   driftReport: DriftReportItem[];
   assistantPlans: AssistantPlan[];
+};
+
+export type WorkspaceDeploymentPermissionsResponse = {
+  permissions: DeploymentPermission[];
+};
+
+export type WorkspaceDeploymentTierCapabilitiesResponse = {
+  capabilities: DeploymentTierCapability[];
+};
+
+export type WorkspaceDeploymentTiersResponse = {
+  tiers: WorkspaceDeploymentTier[];
+};
+
+export type WorkspaceDeploymentTierRequest = {
+  name: string;
+  description: string | null;
+  sortOrder: number;
+  capabilities: string[];
+  impactAccepted?: boolean;
+};
+
+export type WorkspaceDeploymentTierImpactPreviewRequest = {
+  capabilities: string[];
+};
+
+export type CreateDeploymentApplicationRequest = {
+  name: string;
+  description: string | null;
+};
+
+export type UpdateDeploymentApplicationRequest = CreateDeploymentApplicationRequest;
+
+export type CreateDeploymentEnvironmentRequest = {
+  name: string;
+  tier?: EnvironmentSummary["tier"];
+  tierId?: string | null;
+};
+
+export type UpdateDeploymentEnvironmentRequest = CreateDeploymentEnvironmentRequest;
+
+export type RegisterDeploymentEngineRequest = {
+  name: string;
+  baseUrl: string;
+  region: string | null;
+  credentialProvider: string;
+  credentialReference: string;
+  capabilities: EngineCapability[];
+  controls: RuntimeControl[];
+  hostingProvider: string | null;
+};
+
+export type UpdateDeploymentEngineRequest = RegisterDeploymentEngineRequest;
+
+export type CreatedDeploymentApplication = {
+  id: string;
+  workspaceId: string;
+  name: string;
+};
+
+export type CreatedDeploymentEnvironment = {
+  id: string;
+  workspaceId: string;
+  applicationId: string;
+  name: string;
+  tierId: string | null;
 };
 
 export function environmentLabel(environmentId: string, applications: WorkflowApplication[]) {

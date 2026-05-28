@@ -1,35 +1,61 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   AlertTriangle,
   Bot,
   CheckCircle2,
   ClipboardCheck,
-  GitCompareArrows,
-  History,
   KeyRound,
+  Pencil,
+  Plus,
   RadioTower,
   RefreshCw,
-  RotateCcw,
+  Save,
   ShieldCheck,
   XCircle
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Badge, Button, SecondaryButton, Select, Table } from "@/components/ui";
+import { Badge, Button, Input, SecondaryButton, Select, Table } from "@/components/ui";
 import { RequestStateView } from "@/components/states/RequestStateViews";
-import { getDeploymentCockpit, getDeploymentWorkspaceContext } from "@/features/deployments/deploymentApi";
 import {
-  type DiffCategory,
+  createDeploymentApplication,
+  createDeploymentEnvironment,
+  createActionConfirmation,
+  getDeploymentCockpit,
+  getDeploymentPermissions,
+  getDeploymentTierCapabilities,
+  getDeploymentTiers,
+  getDeploymentWorkspaceContext,
+  previewPromotion,
+  queueDeploymentRun,
+  queueRollbackRun,
+  registerDeploymentEngine,
+  runRuntimeControl,
+  updateDeploymentApplication,
+  updateDeploymentEngine,
+  updateDeploymentEnvironment,
+  verifyDeploymentEngine
+} from "@/features/deployments/deploymentApi";
+import { DeploymentSetupPanel, setupEngineRequest, type DeploymentSetupValues } from "@/features/deployments/DeploymentSetupPanel";
+import { DeploymentTiersPanel } from "@/features/deployments/DeploymentTiersPanel";
+import { DeploymentRunsPanel } from "@/features/deployments/DeploymentRunsPanel";
+import { PromotionPreviewPanel } from "@/features/deployments/PromotionPreviewPanel";
+import { RuntimeControlsPanel } from "@/features/deployments/RuntimeControlsPanel";
+import {
   engineLabel,
   environmentLabel,
   hasBlockingValidation,
-  supportedControlIds,
+  deploymentTierCapabilities,
   type DeploymentCockpit,
   type DeploymentHealth,
   type DeploymentStatus,
   type DriftStatus,
+  type EnvironmentSummary,
+  type RuntimeControl,
   type ValidationSeverity,
+  type WorkspaceDeploymentTier,
+  type WorkspaceDeploymentRunStatus,
   type WorkflowEngineRegistration
 } from "@/features/deployments/deploymentModels";
 import { formatDateTime } from "@/lib/formatters";
@@ -37,32 +63,212 @@ import { queryKeys } from "@/lib/query/queryClient";
 import { statusToneClass, type StatusTone } from "@/lib/status/statusBadges";
 import { cn } from "@/lib/utils";
 
-type ViewId = "fleet" | "engine" | "promotion" | "governance" | "assistant";
+type ViewId = "fleet" | "engine" | "promotion" | "governance" | "tiers" | "assistant";
 
 const views: Array<{ id: ViewId; label: string }> = [
   { id: "fleet", label: "Environments" },
   { id: "engine", label: "Engine Registration" },
   { id: "promotion", label: "Promotion Diff" },
   { id: "governance", label: "Observability" },
+  { id: "tiers", label: "Tiers" },
   { id: "assistant", label: "Assistant Review" }
 ];
 
 export function DeploymentsPage() {
+  const queryClient = useQueryClient();
   const workspaceContext = useQuery({ queryKey: queryKeys.deploymentWorkspaceContext, queryFn: getDeploymentWorkspaceContext });
   // TODO: support workspace selection when users have multiple workspace memberships.
   const workspaceId = workspaceContext.data?.workspaces[0]?.id ?? "";
+  const permissions = useQuery({
+    queryKey: queryKeys.deploymentPermissions(workspaceId),
+    queryFn: () => getDeploymentPermissions(workspaceId),
+    enabled: Boolean(workspaceId)
+  });
   const cockpit = useQuery({
     queryKey: queryKeys.deploymentCockpit(workspaceId),
     queryFn: () => getDeploymentCockpit(workspaceId),
     enabled: Boolean(workspaceId)
   });
+  const tiers = useQuery({
+    queryKey: queryKeys.deploymentTiers(workspaceId),
+    queryFn: () => getDeploymentTiers(workspaceId),
+    enabled: Boolean(workspaceId)
+  });
+  const tierCapabilities = useQuery({
+    queryKey: queryKeys.deploymentTierCapabilities(workspaceId),
+    queryFn: () => getDeploymentTierCapabilities(workspaceId),
+    enabled: Boolean(workspaceId)
+  });
+  const refreshDeploymentCockpit = () => queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
+  const setup = useMutation({
+    mutationFn: async (values: DeploymentSetupValues) => {
+      const application = await createDeploymentApplication(workspaceId, {
+        name: values.applicationName,
+        description: null
+      });
+      const environment = await createDeploymentEnvironment(workspaceId, application.id, {
+        name: values.environmentName,
+        tier: values.environmentTier,
+        tierId: activeDeploymentTiers.some((tier) => tier.id === values.environmentTierId) ? values.environmentTierId : null
+      });
+      await registerDeploymentEngine(workspaceId, environment.id, setupEngineRequest(values));
+    },
+    onSuccess: () => {
+      void refreshDeploymentCockpit();
+      setShowNewSetup(false);
+    }
+  });
+  const updateApplication = useMutation({
+    mutationFn: ({ applicationId, name }: { applicationId: string; name: string }) =>
+      updateDeploymentApplication(workspaceId, applicationId, { name, description: null }),
+    onSuccess: () => {
+      setEditingApplication(false);
+      void refreshDeploymentCockpit();
+    }
+  });
+  const updateEnvironment = useMutation({
+    mutationFn: ({
+      applicationId,
+      environmentId,
+      name,
+      tierId,
+      tier
+    }: {
+      applicationId: string;
+      environmentId: string;
+      name: string;
+      tierId: string | null;
+      tier: EnvironmentSummary["tier"];
+    }) => updateDeploymentEnvironment(workspaceId, applicationId, environmentId, { name, tier, tierId }),
+    onSuccess: () => {
+      setEditingEnvironmentId("");
+      void refreshDeploymentCockpit();
+    }
+  });
+  const updateEngine = useMutation({
+    mutationFn: (engine: WorkflowEngineRegistration) =>
+      updateDeploymentEngine(workspaceId, engine.id, {
+        name: engine.name,
+        baseUrl: engine.endpoint.baseUrl,
+        region: engine.endpoint.region || null,
+        credentialProvider: engine.credentialReference.provider,
+        credentialReference: engine.credentialReference.reference,
+        capabilities: engine.capabilities,
+        controls: engine.controls,
+        hostingProvider: engine.hostingProvider
+    }),
+    onSuccess: () => {
+      setEditingEngine(false);
+      void refreshDeploymentCockpit();
+    }
+  });
+  const verifyEngine = useMutation({
+    mutationFn: (engine: WorkflowEngineRegistration) => verifyDeploymentEngine(workspaceId, engine.id),
+    onSuccess: (result) => {
+      setOperationNotice(result.message);
+      void refreshDeploymentCockpit();
+    }
+  });
+  const runControl = useMutation({
+    mutationFn: async ({ engine, control }: { engine: WorkflowEngineRegistration; control: RuntimeControl }) => {
+      const confirmation = await createActionConfirmation(workspaceId, {
+        actionType: "RuntimeControl",
+        targetId: `${engine.id}:${control.id}`,
+        lifetimeSeconds: null
+      });
+      return runRuntimeControl(workspaceId, engine.id, control.id, { confirmationId: confirmation.id });
+    },
+    onSuccess: (execution) => {
+      setOperationNotice(execution.message);
+      void refreshDeploymentCockpit();
+    }
+  });
+  const preview = useMutation({
+    mutationFn: () => {
+      const source = getEnvironment(sourceEnvironmentId);
+      const targetEngine = getTargetEngine(targetEnvironmentId);
+      if (!source?.desiredRevision.id || !targetEngine)
+        throw new Error("Choose a source revision and target engine before refreshing preview.");
+
+      return previewPromotion(workspaceId, {
+        sourceEnvironmentId,
+        targetEnvironmentId,
+        sourceRevisionId: source.desiredRevision.id,
+        targetEngineId: targetEngine.id
+      });
+    },
+    onSuccess: (comparison) => {
+      setPreviewComparison(comparison);
+      setPromotionNotice("Promotion preview refreshed from live validation.");
+    }
+  });
+  const deployRevision = useMutation({
+    mutationFn: async () => {
+      const currentComparison = getActiveComparison();
+      const targetEngine = getTargetEngine(currentComparison?.targetEnvironmentId ?? targetEnvironmentId);
+      const sourceRevisionId = currentComparison?.sourceRevisionId || getEnvironment(sourceEnvironmentId)?.desiredRevision.id;
+      if (!currentComparison || !targetEngine || !sourceRevisionId)
+        throw new Error("Refresh a valid promotion preview before deployment.");
+
+      const confirmation = await createActionConfirmation(workspaceId, {
+        actionType: "Deploy",
+        targetId: sourceRevisionId,
+        lifetimeSeconds: null
+      });
+      return queueDeploymentRun(workspaceId, {
+        sourceRevisionId,
+        targetEnvironmentId: currentComparison.targetEnvironmentId,
+        targetEngineId: targetEngine.id,
+        confirmationId: confirmation.id,
+        mode: "Apply"
+      });
+    },
+    onSuccess: (run) => {
+      setPromotionNotice(`Deployment run ${run.status.toLowerCase()} for revision ${run.sourceRevisionId}.`);
+      void refreshDeploymentCockpit();
+    }
+  });
+  const rollbackRevision = useMutation({
+    mutationFn: async () => {
+      const currentComparison = getActiveComparison();
+      const targetEngine = getTargetEngine(currentComparison?.targetEnvironmentId ?? targetEnvironmentId);
+      const rollbackSourceRun = getLatestTargetRun(currentComparison?.targetEnvironmentId ?? targetEnvironmentId, targetEngine?.id ?? "");
+      const sourceRevisionId = currentComparison?.rollbackRevisionId;
+      if (!currentComparison || !targetEngine || !rollbackSourceRun || !sourceRevisionId)
+        throw new Error("A previous compatible run is required before rollback can be queued.");
+
+      const confirmation = await createActionConfirmation(workspaceId, {
+        actionType: "Rollback",
+        targetId: sourceRevisionId,
+        lifetimeSeconds: null
+      });
+      return queueRollbackRun(workspaceId, {
+        sourceRevisionId,
+        targetEnvironmentId: currentComparison.targetEnvironmentId,
+        targetEngineId: targetEngine.id,
+        confirmationId: confirmation.id,
+        rollbackSourceRunId: rollbackSourceRun.id,
+        mode: "Apply"
+      });
+    },
+    onSuccess: (run) => {
+      setPromotionNotice(`Rollback run ${run.status.toLowerCase()} for revision ${run.sourceRevisionId}.`);
+      void refreshDeploymentCockpit();
+    }
+  });
   const [activeView, setActiveView] = useState<ViewId>("fleet");
+  const [showNewSetup, setShowNewSetup] = useState(false);
+  const [editingApplication, setEditingApplication] = useState(false);
+  const [editingEnvironmentId, setEditingEnvironmentId] = useState("");
+  const [editingEngine, setEditingEngine] = useState(false);
   const [selectedApplicationId, setSelectedApplicationId] = useState("");
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState("");
   const [selectedEngineId, setSelectedEngineId] = useState("");
   const [sourceEnvironmentId, setSourceEnvironmentId] = useState("");
   const [targetEnvironmentId, setTargetEnvironmentId] = useState("");
   const [operationNotice, setOperationNotice] = useState("");
+  const [promotionNotice, setPromotionNotice] = useState("");
+  const [previewComparison, setPreviewComparison] = useState<DeploymentCockpit["comparisons"][number] | null>(null);
   const [assistantOutcome, setAssistantOutcome] = useState<"Proposed" | "Approved" | "Rejected">("Proposed");
 
   const data = cockpit.data;
@@ -95,17 +301,67 @@ export function DeploymentsPage() {
   }, [data, selectedApplicationId, selectedEngineId, selectedEnvironmentId, sourceEnvironmentId, targetEnvironmentId]);
 
   const comparison = useMemo(() => {
-    return data?.comparisons.find(
+    const cockpitComparison = data?.comparisons.find(
       (item) => item.sourceEnvironmentId === sourceEnvironmentId && item.targetEnvironmentId === targetEnvironmentId
     ) ?? data?.comparisons[0];
-  }, [data?.comparisons, sourceEnvironmentId, targetEnvironmentId]);
+    return previewComparison?.sourceEnvironmentId === sourceEnvironmentId && previewComparison.targetEnvironmentId === targetEnvironmentId
+      ? previewComparison
+      : cockpitComparison;
+  }, [data?.comparisons, previewComparison, sourceEnvironmentId, targetEnvironmentId]);
+  const canManageSetup = Boolean(permissions.data?.permissions.includes("deployments.setup.manage"));
+  const canPreviewPromotion = Boolean(permissions.data?.permissions.includes("deployments.promotion.preview"));
+  const canExecuteDeployment = Boolean(permissions.data?.permissions.includes("deployments.run.execute"));
+  const canExecuteRollback = Boolean(permissions.data?.permissions.includes("deployments.rollback.execute"));
+  const canExecuteControls = Boolean(permissions.data?.permissions.includes("deployments.controls.execute"));
+  const targetAllowsRollback = hasTierCapability(getEnvironment(targetEnvironmentId), deploymentTierCapabilities.rollbackEnabled);
+  const canManageTiers = workspaceContext.data?.workspaces[0]?.role === "Owner";
+  const deploymentTiers = tiers.data?.tiers ?? [];
+  const activeDeploymentTiers = deploymentTiers.filter((tier) => tier.status === "Active");
+  const capabilities = tierCapabilities.data?.capabilities ?? [];
+
+  function getEnvironment(environmentId: string) {
+    return data?.applications.flatMap((application) => application.environments).find((environment) => environment.id === environmentId);
+  }
+
+  function getTargetEngine(environmentId: string) {
+    return data?.engines.find((engine) => engine.environmentId === environmentId);
+  }
+
+  function getLatestTargetRun(environmentId: string, engineId: string) {
+    return data?.history.find((event) => event.environmentId === environmentId && event.engineId === engineId);
+  }
+
+  function getActiveComparison() {
+    return comparison;
+  }
 
   if (workspaceContext.isLoading || cockpit.isLoading) return <RequestStateView state="loading" title="Loading deployments" />;
   if (workspaceContext.isError) return <RequestStateView state="unexpected" title="Workspace context could not load" />;
   if (!workspaceId) {
     return <RequestStateView state="empty" title="No workspace selected" description="Sign in with a workspace membership to view deployments." />;
   }
-  if (cockpit.isError || !data || !selectedApplication || !selectedEngine) {
+  if (cockpit.isError || !data) {
+    return <RequestStateView state="unexpected" title="Deployments could not load" />;
+  }
+  if (data.applications.length === 0) {
+    return (
+      <section className="space-y-4">
+        <RequestStateView
+          state="empty"
+          title="No deployment setup"
+          description="Create a workflow application, environment, and engine registration to start managing deployments."
+        />
+        <DeploymentSetupPanel
+          canManageSetup={canManageSetup}
+          tiers={activeDeploymentTiers}
+          isSubmitting={setup.isPending}
+          error={setup.error instanceof Error ? setup.error.message : undefined}
+          onSubmit={(values) => setup.mutate(values)}
+        />
+      </section>
+    );
+  }
+  if (!selectedApplication || !selectedEngine) {
     return <RequestStateView state="unexpected" title="Deployments could not load" />;
   }
 
@@ -135,7 +391,7 @@ export function DeploymentsPage() {
             Workspace-scoped environment cockpit for workflow applications, engine registrations, desired-state promotion, observability, and assistant plan approvals.
           </p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_auto_auto]">
           <label className="text-xs font-medium text-muted-foreground">
             Workflow application
             <Select
@@ -150,12 +406,40 @@ export function DeploymentsPage() {
               ))}
             </Select>
           </label>
+          <SecondaryButton className="mt-5 h-9" disabled={!canManageSetup} onClick={() => setEditingApplication((current) => !current)}>
+            <Pencil className="h-4 w-4" />
+            Edit application
+          </SecondaryButton>
+          <Button className="mt-5 h-9" disabled={!canManageSetup} onClick={() => setShowNewSetup((current) => !current)}>
+            <Plus className="h-4 w-4" />
+            New Deployment
+          </Button>
           <div className="rounded-ui border border-border bg-surface px-3 py-2 text-xs text-muted-foreground">
             <div className="font-medium text-foreground">{selectedApplication.workspaceName}</div>
             <div>Workspace tenant boundary</div>
           </div>
         </div>
       </div>
+
+      {showNewSetup ? (
+        <DeploymentSetupPanel
+          canManageSetup={canManageSetup}
+          tiers={activeDeploymentTiers}
+          isSubmitting={setup.isPending}
+          error={setup.error instanceof Error ? setup.error.message : undefined}
+          onSubmit={(values) => setup.mutate(values)}
+        />
+      ) : null}
+      {editingApplication ? (
+        <ApplicationEditPanel
+          key={selectedApplication.id}
+          application={selectedApplication}
+          isSubmitting={updateApplication.isPending}
+          error={updateApplication.error instanceof Error ? updateApplication.error.message : undefined}
+          onCancel={() => setEditingApplication(false)}
+          onSubmit={(name) => updateApplication.mutate({ applicationId: selectedApplication.id, name })}
+        />
+      ) : null}
 
       <div className="flex gap-1 overflow-x-auto border-b border-border">
         {views.map((view) => (
@@ -180,6 +464,16 @@ export function DeploymentsPage() {
         <FleetView
           application={selectedApplication}
           engines={data.engines}
+          canManageSetup={canManageSetup}
+          editingEnvironmentId={editingEnvironmentId}
+          tiers={activeDeploymentTiers}
+          isSavingEnvironment={updateEnvironment.isPending}
+          environmentError={updateEnvironment.error instanceof Error ? updateEnvironment.error.message : undefined}
+          onEditEnvironment={setEditingEnvironmentId}
+          onCancelEnvironmentEdit={() => setEditingEnvironmentId("")}
+          onSaveEnvironment={(environmentId, name, tierId, tier) =>
+            updateEnvironment.mutate({ applicationId: selectedApplication.id, environmentId, name, tierId, tier })
+          }
           onInspectEnvironment={inspectEnvironment}
         />
       ) : null}
@@ -189,6 +483,15 @@ export function DeploymentsPage() {
           selectedEnvironmentId={selectedEnvironmentId}
           selectedEngine={selectedEngine}
           operationNotice={operationNotice}
+          canManageSetup={canManageSetup}
+          isEditingEngine={editingEngine}
+          isSavingEngine={updateEngine.isPending}
+          engineError={updateEngine.error instanceof Error ? updateEngine.error.message : undefined}
+          isVerifyingEngine={verifyEngine.isPending}
+          verifyError={verifyEngine.error instanceof Error ? verifyEngine.error.message : undefined}
+          canExecuteControls={canExecuteControls}
+          isRunningControl={runControl.isPending}
+          controlError={runControl.error instanceof Error ? runControl.error.message : undefined}
           onEnvironmentChange={(environmentId) => {
             const nextEngine = data.engines.find((engine) => engine.environmentId === environmentId);
             setSelectedEnvironmentId(environmentId);
@@ -201,7 +504,11 @@ export function DeploymentsPage() {
             setSelectedEngineId(engineId);
             setOperationNotice("");
           }}
-          onRunControl={(label, boundary) => setOperationNotice(`${label} queued as a ${boundary} control for ${selectedEngine.name}.`)}
+          onEditEngine={() => setEditingEngine((current) => !current)}
+          onCancelEngineEdit={() => setEditingEngine(false)}
+          onSaveEngine={(engine) => updateEngine.mutate(engine)}
+          onVerifyEngine={() => verifyEngine.mutate(selectedEngine)}
+          onRunControl={(control) => runControl.mutate({ engine: selectedEngine, control })}
         />
       ) : null}
       {activeView === "promotion" ? (
@@ -209,12 +516,48 @@ export function DeploymentsPage() {
           data={data}
           sourceEnvironmentId={sourceEnvironmentId}
           targetEnvironmentId={targetEnvironmentId}
-          onSourceEnvironmentChange={setSourceEnvironmentId}
-          onTargetEnvironmentChange={setTargetEnvironmentId}
+          onSourceEnvironmentChange={(environmentId) => {
+            setSourceEnvironmentId(environmentId);
+            setPreviewComparison(null);
+            setPromotionNotice("");
+          }}
+          onTargetEnvironmentChange={(environmentId) => {
+            setTargetEnvironmentId(environmentId);
+            setPreviewComparison(null);
+            setPromotionNotice("");
+          }}
           comparison={comparison}
+          canPreview={canPreviewPromotion}
+          canDeploy={canExecuteDeployment}
+          canRollback={canExecuteRollback && targetAllowsRollback}
+          rollbackBlockedReason={targetAllowsRollback ? undefined : "Rollback is not enabled for the target tier."}
+          isPreviewing={preview.isPending}
+          isQueueingDeployment={deployRevision.isPending}
+          isQueueingRollback={rollbackRevision.isPending}
+          notice={promotionNotice}
+          error={
+            preview.error instanceof Error
+              ? preview.error.message
+              : deployRevision.error instanceof Error
+                ? deployRevision.error.message
+                : rollbackRevision.error instanceof Error
+                  ? rollbackRevision.error.message
+                  : undefined
+          }
+          onRefreshPreview={() => preview.mutate()}
+          onDeploy={() => deployRevision.mutate()}
+          onRollback={() => rollbackRevision.mutate()}
         />
       ) : null}
       {activeView === "governance" ? <GovernanceView data={data} /> : null}
+      {activeView === "tiers" ? (
+        <DeploymentTiersPanel
+          workspaceId={workspaceId}
+          canManageTiers={canManageTiers}
+          tiers={deploymentTiers}
+          capabilities={capabilities}
+        />
+      ) : null}
       {activeView === "assistant" ? (
         <AssistantPlanView
           data={data}
@@ -227,13 +570,209 @@ export function DeploymentsPage() {
   );
 }
 
+function ApplicationEditPanel({
+  application,
+  isSubmitting,
+  error,
+  onCancel,
+  onSubmit
+}: {
+  application: DeploymentCockpit["applications"][number];
+  isSubmitting: boolean;
+  error?: string;
+  onCancel: () => void;
+  onSubmit: (name: string) => void;
+}) {
+  const [name, setName] = useState(application.name);
+  const canSubmit = name.trim().length > 0 && name !== application.name;
+
+  return (
+    <form
+      className="rounded-ui border border-border bg-surface p-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (canSubmit) onSubmit(name.trim());
+      }}
+    >
+      <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+        <label className="text-sm font-medium">
+          Application name
+          <Input className="mt-1" value={name} onChange={(event) => setName(event.target.value)} />
+        </label>
+        <div className="flex gap-2">
+          <Button type="submit" disabled={!canSubmit || isSubmitting}>
+            <Save className="h-4 w-4" />
+            Save
+          </Button>
+          <SecondaryButton type="button" onClick={onCancel}>Cancel</SecondaryButton>
+        </div>
+      </div>
+      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+    </form>
+  );
+}
+
+function legacyTierFromName(name?: string): EnvironmentSummary["tier"] {
+  if (name === "Dev" || name === "Test" || name === "Stage" || name === "Production") return name;
+  return "Production";
+}
+
+function hasTierCapability(environment: EnvironmentSummary | undefined, capability: string) {
+  if (!environment) return false;
+  if (environment.tierCapabilities) return environment.tierCapabilities.includes(capability);
+
+  if (capability === deploymentTierCapabilities.rollbackEnabled) return environment.tier === "Production";
+  if (capability === deploymentTierCapabilities.promotionSource) return environment.tier !== "Production";
+  if (capability === deploymentTierCapabilities.promotionTarget) return environment.tier !== "Dev";
+  if (capability === deploymentTierCapabilities.confirmationRequired) return environment.tier === "Production";
+  if (capability === deploymentTierCapabilities.productionLike) return environment.tier === "Production";
+  return false;
+}
+
+function EnvironmentEditPanel({
+  environment,
+  tiers,
+  isSubmitting,
+  error,
+  onCancel,
+  onSubmit
+}: {
+  environment: EnvironmentSummary;
+  tiers: WorkspaceDeploymentTier[];
+  isSubmitting: boolean;
+  error?: string;
+  onCancel: () => void;
+  onSubmit: (name: string, tierId: string | null, tier: EnvironmentSummary["tier"]) => void;
+}) {
+  const [name, setName] = useState(environment.name);
+  const [tierId, setTierId] = useState(environment.tierId ?? "");
+  const selectedTier = tiers.find((tier) => tier.id === tierId);
+  const canSubmit = name.trim().length > 0 && (name !== environment.name || tierId !== (environment.tierId ?? ""));
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (canSubmit) onSubmit(name.trim(), tierId || null, legacyTierFromName(selectedTier?.name ?? environment.tierName));
+      }}
+    >
+      <div className="grid gap-3 md:grid-cols-[1fr_180px_auto] md:items-end">
+        <label className="text-sm font-medium">
+          Environment
+          <Input className="mt-1" value={name} onChange={(event) => setName(event.target.value)} />
+        </label>
+        <label className="text-sm font-medium">
+          Tier
+          <Select className="mt-1 w-full" value={tierId} onChange={(event) => setTierId(event.target.value)}>
+            <option value="" disabled>Select a tier</option>
+            {tiers.map((tier) => (
+              <option key={tier.id} value={tier.id}>{tier.name}</option>
+            ))}
+          </Select>
+        </label>
+        <div className="flex gap-2">
+          <Button type="submit" disabled={!canSubmit || isSubmitting}>
+            <Save className="h-4 w-4" />
+            Save
+          </Button>
+          <SecondaryButton type="button" onClick={onCancel}>Cancel</SecondaryButton>
+        </div>
+      </div>
+      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+    </form>
+  );
+}
+
+function EngineEditPanel({
+  engine,
+  isSubmitting,
+  error,
+  onCancel,
+  onSubmit
+}: {
+  engine: WorkflowEngineRegistration;
+  isSubmitting: boolean;
+  error?: string;
+  onCancel: () => void;
+  onSubmit: (engine: WorkflowEngineRegistration) => void;
+}) {
+  const [name, setName] = useState(engine.name);
+  const [baseUrl, setBaseUrl] = useState(engine.endpoint.baseUrl);
+  const [region, setRegion] = useState(engine.endpoint.region);
+  const [credentialReference, setCredentialReference] = useState(engine.credentialReference.reference);
+  const canSubmit =
+    name.trim().length > 0 &&
+    baseUrl.trim().length > 0 &&
+    credentialReference.trim().length > 0 &&
+    (name !== engine.name || baseUrl !== engine.endpoint.baseUrl || region !== engine.endpoint.region || credentialReference !== engine.credentialReference.reference);
+
+  return (
+    <form
+      className="rounded-ui border border-border bg-surface p-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!canSubmit) return;
+        onSubmit({
+          ...engine,
+          name: name.trim(),
+          endpoint: { ...engine.endpoint, baseUrl: baseUrl.trim(), region: region.trim() },
+          credentialReference: { ...engine.credentialReference, reference: credentialReference.trim() }
+        });
+      }}
+    >
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="text-sm font-medium">
+          Engine
+          <Input className="mt-1" value={name} onChange={(event) => setName(event.target.value)} />
+        </label>
+        <label className="text-sm font-medium">
+          Base URL
+          <Input className="mt-1" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
+        </label>
+        <label className="text-sm font-medium">
+          Region
+          <Input className="mt-1" value={region} onChange={(event) => setRegion(event.target.value)} />
+        </label>
+        <label className="text-sm font-medium">
+          Credential reference
+          <Input className="mt-1" value={credentialReference} onChange={(event) => setCredentialReference(event.target.value)} />
+        </label>
+      </div>
+      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+      <div className="mt-4 flex gap-2">
+        <Button type="submit" disabled={!canSubmit || isSubmitting}>
+          <Save className="h-4 w-4" />
+          Save
+        </Button>
+        <SecondaryButton type="button" onClick={onCancel}>Cancel</SecondaryButton>
+      </div>
+    </form>
+  );
+}
+
 function FleetView({
   application,
   engines,
+  canManageSetup,
+  editingEnvironmentId,
+  tiers,
+  isSavingEnvironment,
+  environmentError,
+  onEditEnvironment,
+  onCancelEnvironmentEdit,
+  onSaveEnvironment,
   onInspectEnvironment
 }: {
   application: DeploymentCockpit["applications"][number];
   engines: WorkflowEngineRegistration[];
+  canManageSetup: boolean;
+  editingEnvironmentId: string;
+  tiers: WorkspaceDeploymentTier[];
+  isSavingEnvironment: boolean;
+  environmentError?: string;
+  onEditEnvironment: (environmentId: string) => void;
+  onCancelEnvironmentEdit: () => void;
+  onSaveEnvironment: (environmentId: string, name: string, tierId: string | null, tier: EnvironmentSummary["tier"]) => void;
   onInspectEnvironment: (environmentId: string) => void;
 }) {
   const applicationEngineIds = new Set(application.environments.flatMap((environment) => environment.engineIds));
@@ -263,26 +802,55 @@ function FleetView({
           </thead>
           <tbody className="divide-y divide-border">
             {application.environments.map((environment) => (
-              <tr key={environment.id}>
-                <td className="px-3 py-3">
-                  <div className="font-medium">{environment.name}</div>
-                  <div className="text-xs text-muted-foreground">{environment.tier}</div>
-                </td>
-                <td className="px-3 py-3"><StatusBadge value={environment.health} tone={healthTone(environment.health)} /></td>
-                <td className="px-3 py-3">
-                  <div>r{environment.desiredRevision.revision}</div>
-                  <div className="text-xs text-muted-foreground">{environment.desiredRevision.commit}</div>
-                </td>
-                <td className="px-3 py-3">{environment.deployedRevision ? `r${environment.deployedRevision}` : "-"}</td>
-                <td className="px-3 py-3"><StatusBadge value={driftLabel(environment.driftStatus)} tone={driftTone(environment.driftStatus)} /></td>
-                <td className="px-3 py-3"><StatusBadge value={environment.deploymentStatus} tone={deploymentTone(environment.deploymentStatus)} /></td>
-                <td className="px-3 py-3 text-muted-foreground">{environment.engineIds.length}</td>
-                <td className="px-3 py-3 text-right">
-                  <SecondaryButton className="h-8" onClick={() => onInspectEnvironment(environment.id)}>
-                    Inspect
-                  </SecondaryButton>
-                </td>
-              </tr>
+              <Fragment key={environment.id}>
+                <tr>
+                  <td className="px-3 py-3">
+                    <div className="font-medium">{environment.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {environment.tierName || environment.tier}
+                      {environment.tierStatus === "Archived" ? " (archived)" : ""}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {(environment.tierCapabilities ?? []).slice(0, 3).map((capability) => (
+                        <Badge key={capability}>{capability}</Badge>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3"><StatusBadge value={environment.health} tone={healthTone(environment.health)} /></td>
+                  <td className="px-3 py-3">
+                    <div>r{environment.desiredRevision.revision}</div>
+                    <div className="text-xs text-muted-foreground">{environment.desiredRevision.commit}</div>
+                  </td>
+                  <td className="px-3 py-3">{environment.deployedRevision ? `r${environment.deployedRevision}` : "-"}</td>
+                  <td className="px-3 py-3"><StatusBadge value={driftLabel(environment.driftStatus)} tone={driftTone(environment.driftStatus)} /></td>
+                  <td className="px-3 py-3"><StatusBadge value={environment.deploymentStatus} tone={deploymentTone(environment.deploymentStatus)} /></td>
+                  <td className="px-3 py-3 text-muted-foreground">{environment.engineIds.length}</td>
+                  <td className="px-3 py-3">
+                    <div className="flex justify-end gap-2">
+                      <SecondaryButton className="h-8" disabled={!canManageSetup} onClick={() => onEditEnvironment(environment.id)}>
+                        Edit
+                      </SecondaryButton>
+                      <SecondaryButton className="h-8" onClick={() => onInspectEnvironment(environment.id)}>
+                        Inspect
+                      </SecondaryButton>
+                    </div>
+                  </td>
+                </tr>
+                {editingEnvironmentId === environment.id ? (
+                  <tr>
+                    <td colSpan={8} className="bg-muted/20 px-3 py-3">
+                      <EnvironmentEditPanel
+                        environment={environment}
+                        tiers={tiers}
+                        isSubmitting={isSavingEnvironment}
+                        error={environmentError}
+                        onCancel={onCancelEnvironmentEdit}
+                        onSubmit={(name, tierId, tier) => onSaveEnvironment(environment.id, name, tierId, tier)}
+                      />
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -296,21 +864,46 @@ function EngineView({
   selectedEnvironmentId,
   selectedEngine,
   operationNotice,
+  canManageSetup,
+  isEditingEngine,
+  isSavingEngine,
+  engineError,
+  isVerifyingEngine,
+  verifyError,
+  canExecuteControls,
+  isRunningControl,
+  controlError,
   onEnvironmentChange,
   onEngineChange,
+  onEditEngine,
+  onCancelEngineEdit,
+  onSaveEngine,
+  onVerifyEngine,
   onRunControl
 }: {
   data: DeploymentCockpit;
   selectedEnvironmentId: string;
   selectedEngine: WorkflowEngineRegistration;
   operationNotice: string;
+  canManageSetup: boolean;
+  isEditingEngine: boolean;
+  isSavingEngine: boolean;
+  engineError?: string;
+  isVerifyingEngine: boolean;
+  verifyError?: string;
+  canExecuteControls: boolean;
+  isRunningControl: boolean;
+  controlError?: string;
   onEnvironmentChange: (environmentId: string) => void;
   onEngineChange: (engineId: string) => void;
-  onRunControl: (label: string, boundary: string) => void;
+  onEditEngine: () => void;
+  onCancelEngineEdit: () => void;
+  onSaveEngine: (engine: WorkflowEngineRegistration) => void;
+  onVerifyEngine: () => void;
+  onRunControl: (control: RuntimeControl) => void;
 }) {
   const environmentOptions = data.applications.flatMap((application) => application.environments);
   const environmentEngines = data.engines.filter((engine) => engine.environmentId === selectedEnvironmentId);
-  const controls = supportedControlIds(selectedEngine);
 
   return (
     <div className="space-y-4">
@@ -333,6 +926,28 @@ function EngineView({
         </label>
       </div>
 
+      <div className="flex justify-end gap-2">
+        <SecondaryButton disabled={!canManageSetup || isVerifyingEngine} onClick={onVerifyEngine}>
+          <RefreshCw className="h-4 w-4" />
+          {isVerifyingEngine ? "Verifying" : "Verify"}
+        </SecondaryButton>
+        <SecondaryButton disabled={!canManageSetup} onClick={onEditEngine}>
+          <Pencil className="h-4 w-4" />
+          Edit engine
+        </SecondaryButton>
+      </div>
+
+      {isEditingEngine ? (
+        <EngineEditPanel
+          key={selectedEngine.id}
+          engine={selectedEngine}
+          isSubmitting={isSavingEngine}
+          error={engineError}
+          onCancel={onCancelEngineEdit}
+          onSubmit={onSaveEngine}
+        />
+      ) : null}
+
       <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
         <Panel title={selectedEngine.name} icon={<RadioTower className="h-4 w-4" />}>
           <dl className="grid gap-3 sm:grid-cols-2">
@@ -342,6 +957,8 @@ function EngineView({
             <Detail label="Certificate" value={selectedEngine.endpoint.certificateStatus} />
             <Detail label="Health" value={<StatusBadge value={selectedEngine.health} tone={healthTone(selectedEngine.health)} />} />
             <Detail label="Last heartbeat" value={formatDateTime(selectedEngine.lastHeartbeatAt)} />
+            <Detail label="Last verification" value={formatDateTime(selectedEngine.lastVerificationAt)} />
+            <Detail label="Diagnostic" value={selectedEngine.verificationMessage || "No verification has run yet."} />
           </dl>
         </Panel>
         <Panel title="Credential reference" icon={<KeyRound className="h-4 w-4" />}>
@@ -353,6 +970,7 @@ function EngineView({
           </dl>
         </Panel>
       </div>
+      {verifyError ? <div role="alert" className="rounded-ui border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{verifyError}</div> : null}
 
       <div className="grid gap-3 lg:grid-cols-2">
         <Panel title="Advertised capabilities" icon={<ClipboardCheck className="h-4 w-4" />}>
@@ -366,25 +984,14 @@ function EngineView({
           </div>
         </Panel>
         <Panel title="Supported controls" icon={<RefreshCw className="h-4 w-4" />}>
-          <div className="space-y-2">
-            {controls.map((control) => (
-              <div key={control.id} className="flex flex-col gap-2 rounded-ui border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="font-medium">{control.label}</div>
-                  <div className="text-xs text-muted-foreground">{control.boundary} boundary · {control.description}</div>
-                </div>
-                <SecondaryButton
-                  className="h-8 shrink-0"
-                  disabled={selectedEngine.health === "Unreachable"}
-                  onClick={() => onRunControl(control.label, control.boundary)}
-                >
-                  Run
-                </SecondaryButton>
-              </div>
-            ))}
-            <p className="text-xs text-muted-foreground">Unavailable controls stay hidden unless a matching engine or hosting capability is advertised.</p>
-            {operationNotice ? <div role="status" className="rounded-ui border border-primary/30 bg-primary/10 px-3 py-2 text-sm">{operationNotice}</div> : null}
-          </div>
+          <RuntimeControlsPanel
+            engine={selectedEngine}
+            canExecuteControls={canExecuteControls}
+            isRunning={isRunningControl}
+            notice={operationNotice}
+            error={controlError}
+            onRunControl={onRunControl}
+          />
         </Panel>
       </div>
     </div>
@@ -396,162 +1003,114 @@ function PromotionView({
   sourceEnvironmentId,
   targetEnvironmentId,
   comparison,
+  canPreview,
+  canDeploy,
+  canRollback,
+  rollbackBlockedReason,
+  isPreviewing,
+  isQueueingDeployment,
+  isQueueingRollback,
+  notice,
+  error,
   onSourceEnvironmentChange,
-  onTargetEnvironmentChange
+  onTargetEnvironmentChange,
+  onRefreshPreview,
+  onDeploy,
+  onRollback
 }: {
   data: DeploymentCockpit;
   sourceEnvironmentId: string;
   targetEnvironmentId: string;
   comparison: DeploymentCockpit["comparisons"][number] | undefined;
+  canPreview: boolean;
+  canDeploy: boolean;
+  canRollback: boolean;
+  rollbackBlockedReason?: string;
+  isPreviewing: boolean;
+  isQueueingDeployment: boolean;
+  isQueueingRollback: boolean;
+  notice: string;
+  error?: string;
   onSourceEnvironmentChange: (environmentId: string) => void;
   onTargetEnvironmentChange: (environmentId: string) => void;
+  onRefreshPreview: () => void;
+  onDeploy: () => void;
+  onRollback: () => void;
 }) {
-  const environmentOptions = data.applications.flatMap((application) => application.environments);
-  const blocked = comparison ? hasBlockingValidation(comparison.validations) : true;
-
   return (
-    <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
-        <label className="text-xs font-medium text-muted-foreground">
-          Source revision
-          <Select className="mt-1 w-full" value={sourceEnvironmentId} onChange={(event) => onSourceEnvironmentChange(event.target.value)}>
-            {environmentOptions.map((environment) => (
-              <option key={environment.id} value={environment.id}>{environment.name} r{environment.desiredRevision.revision}</option>
-            ))}
-          </Select>
-        </label>
-        <label className="text-xs font-medium text-muted-foreground">
-          Target revision
-          <Select className="mt-1 w-full" value={targetEnvironmentId} onChange={(event) => onTargetEnvironmentChange(event.target.value)}>
-            {environmentOptions.map((environment) => (
-              <option key={environment.id} value={environment.id}>{environment.name} r{environment.deployedRevision ?? environment.desiredRevision.revision}</option>
-            ))}
-          </Select>
-        </label>
-        <div className="rounded-ui border border-border bg-surface px-3 py-2 text-sm">
-          {comparison ? `r${comparison.sourceRevision} → r${comparison.targetRevision}` : "No comparison"}
-        </div>
-      </div>
-
-      {!comparison ? (
-        <RequestStateView state="empty" title="No comparison available" description="Choose a supported source and target environment pair." />
-      ) : (
-        <>
-          <Panel title="Desired-state changes" icon={<GitCompareArrows className="h-4 w-4" />}>
-            <Table>
-              <table className="min-w-full divide-y divide-border text-sm">
-                <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2">Category</th>
-                    <th className="px-3 py-2">Resource</th>
-                    <th className="px-3 py-2">Source</th>
-                    <th className="px-3 py-2">Target</th>
-                    <th className="px-3 py-2">Impact</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {comparison.diff.map((item) => (
-                    <tr key={item.id}>
-                      <td className="px-3 py-3">{diffCategoryLabel(item.category)}</td>
-                      <td className="px-3 py-3 font-medium">{item.name}</td>
-                      <td className="px-3 py-3 text-muted-foreground">{item.sourceValue}</td>
-                      <td className="px-3 py-3 text-muted-foreground">{item.targetValue}</td>
-                      <td className="px-3 py-3"><StatusBadge value={item.impact} tone={item.impact === "Removed" ? "warning" : "neutral"} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Table>
-          </Panel>
-          <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-start">
-            <ValidationPanel validations={comparison.validations} />
-            <div className="rounded-ui border border-border bg-surface p-3">
-              <div className="mb-3 text-sm font-medium">Deployment gate</div>
-              <div className="flex flex-col gap-2">
-                <Button disabled={blocked}>
-                  <CheckCircle2 className="h-4 w-4" />
-                  Deploy Revision
-                </Button>
-                <SecondaryButton disabled={!comparison.rollbackRevision}>
-                  <RotateCcw className="h-4 w-4" />
-                  Roll Back to r{comparison.rollbackRevision ?? "-"}
-                </SecondaryButton>
-              </div>
-              {blocked ? <p className="mt-3 text-xs text-destructive">Resolve validation blockers before deployment can start.</p> : null}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
+    <PromotionPreviewPanel
+      data={data}
+      sourceEnvironmentId={sourceEnvironmentId}
+      targetEnvironmentId={targetEnvironmentId}
+      comparison={comparison}
+      canPreview={canPreview}
+      canDeploy={canDeploy}
+      canRollback={canRollback}
+      rollbackBlockedReason={rollbackBlockedReason}
+      isPreviewing={isPreviewing}
+      isQueueingDeployment={isQueueingDeployment}
+      isQueueingRollback={isQueueingRollback}
+      notice={notice}
+      error={error}
+      onSourceEnvironmentChange={onSourceEnvironmentChange}
+      onTargetEnvironmentChange={onTargetEnvironmentChange}
+      onRefreshPreview={onRefreshPreview}
+      onDeploy={onDeploy}
+      onRollback={onRollback}
+    />
   );
 }
 
 function GovernanceView({ data }: { data: DeploymentCockpit }) {
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {data.observabilityBindings.map((binding) => (
-          <Panel key={binding.id} title={binding.kind} icon={<Activity className="h-4 w-4" />}>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium">{binding.provider}</span>
-                <StatusBadge value={binding.status} tone={binding.status === "Connected" ? "success" : binding.status === "Degraded" ? "warning" : "destructive"} />
+      {data.observabilityBindings.length === 0 ? (
+        <RequestStateView
+          state="empty"
+          title="No observability metadata"
+          description="Persisted log, trace, metric, and console bindings will appear here without opening provider credentials."
+        />
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {data.observabilityBindings.map((binding) => (
+            <Panel key={binding.id} title={binding.kind} icon={<Activity className="h-4 w-4" />}>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{binding.provider}</span>
+                  <StatusBadge value={binding.status} tone={binding.status === "Connected" ? "success" : binding.status === "Degraded" ? "warning" : "destructive"} />
+                </div>
+                <p className="text-muted-foreground">{binding.scope}</p>
+                <p className="text-xs text-muted-foreground">Revision r{binding.correlatedRevision} · {binding.sample}</p>
               </div>
-              <p className="text-muted-foreground">{binding.scope}</p>
-              <p className="text-xs text-muted-foreground">Revision r{binding.correlatedRevision} · {binding.sample}</p>
-            </div>
-          </Panel>
-        ))}
-      </div>
+            </Panel>
+          ))}
+        </div>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <Panel title="Deployment history" icon={<History className="h-4 w-4" />}>
-          <Table>
-            <table className="min-w-full divide-y divide-border text-sm">
-              <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2">Revision</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Actor</th>
-                  <th className="px-3 py-2">Target</th>
-                  <th className="px-3 py-2">Validation</th>
-                  <th className="px-3 py-2">When</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {data.history.map((event) => (
-                  <tr key={event.id}>
-                    <td className="px-3 py-3">
-                      r{event.revision}
-                      {event.rollbackSourceRevision ? <div className="text-xs text-muted-foreground">from r{event.rollbackSourceRevision}</div> : null}
-                    </td>
-                    <td className="px-3 py-3"><StatusBadge value={event.status} tone={deploymentTone(event.status)} /></td>
-                    <td className="px-3 py-3">{event.actor}</td>
-                    <td className="px-3 py-3 text-muted-foreground">{environmentLabel(event.environmentId, data.applications)} / {engineLabel(event.engineId, data.engines)}</td>
-                    <td className="px-3 py-3">{event.validationOutcome}</td>
-                    <td className="px-3 py-3">{formatDateTime(event.occurredAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Table>
-        </Panel>
+        <DeploymentRunsPanel data={data} />
         <Panel title="Drift report" icon={<AlertTriangle className="h-4 w-4" />}>
-          <div className="space-y-2">
-            {data.driftReport.map((item) => (
-              <div key={item.id} className="rounded-ui border border-border p-3 text-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-medium">{item.area}</span>
-                  <StatusBadge value={item.action} tone={item.action === "Redeploy" ? "warning" : "neutral"} />
+          {data.driftReport.length === 0 ? (
+            <p className="rounded-ui border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+              No drift metadata has been recorded for this workspace.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {data.driftReport.map((item) => (
+                <div key={item.id} className="rounded-ui border border-border p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium">{item.area}</span>
+                    <StatusBadge value={item.action} tone={item.action === "Redeploy" ? "warning" : "neutral"} />
+                  </div>
+                  <div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                    <div>Desired: {item.desired}</div>
+                    <div>Observed: {item.observed}</div>
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">{environmentLabel(item.environmentId, data.applications)} / {engineLabel(item.engineId, data.engines)}</div>
                 </div>
-                <div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                  <div>Desired: {item.desired}</div>
-                  <div>Observed: {item.observed}</div>
-                </div>
-                <div className="mt-2 text-xs text-muted-foreground">{environmentLabel(item.environmentId, data.applications)} / {engineLabel(item.engineId, data.engines)}</div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </Panel>
       </div>
     </div>
@@ -736,19 +1295,4 @@ function validationTone(status: ValidationSeverity): StatusTone {
 
 function driftLabel(status: DriftStatus) {
   return status === "InSync" ? "In sync" : status === "DriftDetected" ? "Drift detected" : "Unknown";
-}
-
-function diffCategoryLabel(category: DiffCategory) {
-  switch (category) {
-    case "ShellConfiguration":
-      return "Shell configuration";
-    case "RuntimeConfiguration":
-      return "Runtime configuration";
-    case "SecretReferences":
-      return "Secret references";
-    case "EngineBindings":
-      return "Engine bindings";
-    default:
-      return category;
-  }
 }

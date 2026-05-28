@@ -12,15 +12,17 @@ namespace Elsa.Platform.PackageCatalog.Sources.NuGet.Tests;
 
 public sealed class NuGetPackageSourceClientTests
 {
-    [Fact]
-    public async Task Prefix_wildcard_sources_discover_matching_package_ids()
+    [Theory]
+    [InlineData("Elsa.")]
+    [InlineData("Elsa.*")]
+    public async Task Prefix_sources_discover_matching_package_ids(string includePattern)
     {
         await using var feed = await LoopbackNuGetFeed.StartAsync();
         var client = new NuGetPackageSourceClient(new PackageSourcePatternMatcher());
         var source = new PackageSource
         {
             Url = feed.ServiceIndexUrl,
-            IncludePatterns = ["Elsa.*"],
+            IncludePatterns = [includePattern],
             ExcludePatterns = ["*.Tests"]
         };
 
@@ -57,7 +59,7 @@ public sealed class NuGetPackageSourceClientTests
         var source = new PackageSource
         {
             Url = feed.ServiceIndexUrl,
-            IncludePatterns = ["Elsa.*"]
+            IncludePatterns = ["Elsa."]
         };
 
         var act = () => client.FindPackageVersionsAsync(source);

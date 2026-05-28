@@ -42,7 +42,7 @@ export function toSourceFormValues(source?: PackageSource): SourceFormValues {
     enabled: source?.enabled ?? true,
     approvalPolicy: source?.approvalPolicy ?? "Manual",
     versionDiscoveryPolicy: source?.versionDiscoveryPolicy ?? "AllVersions",
-    includePatterns: source?.includePatterns.join("\n") ?? "Elsa.*",
+    includePatterns: source?.includePatterns.join("\n") ?? "Elsa.",
     excludePatterns: source?.excludePatterns.join("\n") ?? "",
     pollingInterval: source?.pollingInterval ?? "PT30M"
   };

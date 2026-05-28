@@ -8,6 +8,16 @@
 
 **Input**: User description: "Proceed with the proposed plan to get multitenancy done and OIDC/JWT login: make Workspace the platform tenant boundary, add real OIDC/JWT login, replace trusted browser-supplied identity with backend-derived account and workspace context, centralize workspace authorization, preserve operator fallback access, and define the deployment-platform direction for workflow engines, environments, desired state, promotion, secrets, observability, and future runtime tenant reconciliation."
 
+## Settled Product Direction
+
+For platform-integrated installations, Elsa Studio remains the workflow authoring and single-engine runtime inspection surface, while Elsa Platform is the source of truth for immutable deployable workflow artifacts and cross-environment desired-state revisions.
+
+The Studio integration uses the command **Submit to Platform** when a user is ready to hand off a workflow snapshot. This creates a platform-owned artifact; it does not release, promote, deploy, or make the workflow immediately executable. Elsa Platform then owns release readiness, promotion, deployment, rollback, audit, and environment governance. Elsa runtimes remain responsible for executing deployed artifacts and owning runtime state such as instances, bookmarks, queues, and logs.
+
+Direct runtime **Publish** behavior may still exist in non-integrated Studio installations, but platform-integrated UX must not use Publish language for the platform handoff unless it explicitly distinguishes direct runtime publishing from submitting an artifact to Platform.
+
+Runtime deployment communication is modeled as durable platform-owned deployment runs and deployment commands. A runtime integration package may consume those commands by outbound pull/sync, webhook-triggered fetch, or direct platform push, but the deployment run remains the authoritative state and the command/result contract remains transport-independent. Runtime pull is the preferred default for customer-hosted environments because it avoids requiring inbound network access to the runtime.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Sign In With Trusted Identity (Priority: P1)
@@ -109,19 +119,21 @@ A workspace member registers one or more workflow engines as concrete Elsa appli
 
 ---
 
-### User Story 7 - Promote Desired State Across Environments (Priority: P3)
+### User Story 7 - Submit Workflow Artifacts And Promote Desired State Across Environments (Priority: P3)
 
-A workspace member manages workflow definitions, feature flags, shell configuration, runtime configuration, secret references, observability bindings, and engine target bindings as versioned desired state, then promotes reviewed revisions from dev to test, stage, and production.
+A workspace member authors workflows in Elsa Studio, submits published workflow snapshots to Elsa Platform as immutable deployable artifacts, combines those artifacts with feature flags, shell configuration, runtime configuration, secret references, observability bindings, and engine target bindings as versioned desired state, then promotes reviewed revisions from dev to test, stage, and production.
 
-**Why this priority**: Users need a safe deployment flow where the source of truth is not whichever workflow engine was edited most recently, and where production changes can be diffed, validated, approved, deployed, and rolled back.
+**Why this priority**: Users need a safe deployment flow where the source of truth is not whichever workflow engine was edited most recently. Elsa Studio remains the authoring surface and Elsa runtimes remain the execution surface, while Elsa Platform owns the immutable artifacts that can be diffed, validated, approved, deployed, promoted, and rolled back.
 
-**Independent Test**: Can be tested by creating two environment revisions, comparing them, promoting selected changes into a target environment, validating required secrets and engine compatibility, and recording the deployed revision.
+**Independent Test**: Can be tested by submitting a workflow artifact from an Elsa Studio integration, creating two environment revisions that reference artifact versions, comparing them, promoting selected changes into a target environment, validating required secrets and engine compatibility, creating a durable deployment command, having a runtime integration claim/report the command, and recording the deployed revision.
 
 **Acceptance Scenarios**:
 
-1. **Given** a workflow is authored in dev and committed into desired state, **When** the user promotes it to test, **Then** the platform shows the workflow, configuration, feature, shell, secret-reference, and observability differences before deployment.
-2. **Given** a target environment is missing a required secret reference or the registered engine lacks a required capability, **When** the user attempts deployment, **Then** validation fails before any target engine state is changed.
-3. **Given** production is running revision 12 and revision 14 causes a regression, **When** an authorized user chooses rollback, **Then** the platform can redeploy a previously known-good revision and records the rollback as a deployment event.
+1. **Given** a workflow is authored in Elsa Studio, **When** the user chooses "Submit to Platform" from a platform-integrated Studio installation, **Then** Elsa Platform stores an immutable deployable workflow artifact with safe metadata and a content hash without requiring Elsa Studio or the Elsa runtime to change their existing authoring or execution storage behavior.
+2. **Given** a workflow artifact is available in Elsa Platform desired state, **When** the user promotes it to test, **Then** the platform shows the workflow artifact, configuration, feature, shell, secret-reference, and observability differences before deployment.
+3. **Given** a target environment is missing a required secret reference or the registered engine lacks a required capability, **When** the user attempts deployment, **Then** validation fails before any target engine state is changed.
+4. **Given** deployment validation succeeds, **When** the user starts deployment, **Then** Elsa Platform records a deployment run and command that the target runtime integration can claim by pull/sync, fetch after webhook notification, or receive by direct push according to the environment's configured transport.
+5. **Given** production is running revision 12 and revision 14 causes a regression, **When** an authorized user chooses rollback, **Then** the platform can redeploy a previously known-good revision and records the rollback as a deployment event.
 
 ---
 
@@ -175,9 +187,13 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - A workflow engine is unreachable, presents invalid credentials, or has an untrusted certificate; deployment and control operations fail closed while preserving existing desired state.
 - A requested runtime control is not advertised by the workflow engine or a configured hosting adapter; the platform rejects the operation instead of guessing how to perform it.
 - A hosting provider can restart infrastructure but the workflow engine can only reload shells or configuration; the UI and audit trail distinguish host operations from engine API operations.
+- A runtime is behind a firewall or private network; runtime pull/sync remains available without requiring inbound access from Elsa Platform.
+- A webhook notification is delayed, duplicated, or lost; the runtime can still discover pending deployment commands from the platform-owned command queue.
+- A runtime claims a command but stops reporting progress; Elsa Platform marks the run stale or recovery-required without automatically issuing a duplicate apply.
 - Required secret values are missing, inaccessible, or stored in a provider unavailable to the target environment; deployment validation fails before applying changes.
 - Observability storage is unavailable or returns partial results; the environment cockpit reports telemetry degradation without changing engine state.
-- Live workflow engine state drifts from the source-controlled desired state; the platform reports drift and requires an explicit reconcile, import, or redeploy action.
+- Live workflow engine state drifts from the platform-owned desired state; the platform reports drift and requires an explicit reconcile, import, or redeploy action.
+- A platform-integrated Elsa Studio installation still exposes the old direct runtime Publish command; the UI must clearly distinguish direct runtime publishing from "Submit to Platform" and must not imply that submission makes the workflow immediately executable.
 - Runtime tenant manifests and tenant-specific deployment reconciliation are not implemented by the identity foundation; they remain later deployment-platform scope but must fit under the workspace/environment model.
 - The assistant cannot retrieve required context because a provider is unavailable or the user lacks access; it reports the missing context and does not invent state, secrets, approvals, or validation results.
 - An assistant prompt asks for cross-workspace data, operator-only data, raw secrets, hidden credentials, or a role bypass; the platform denies the tool access even if the assistant attempts to request it.
@@ -218,32 +234,38 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **FR-020**: System MUST define a workflow application grouping within a workspace so related environments, workflow engines, desired state, deployments, and observability bindings can be managed together.
 - **FR-021**: System MUST define an environment as a workspace-owned deployment target context, such as dev, test, stage, or production, that can contain workflow engine registrations, desired state, secret references, observability bindings, and deployment history.
 - **FR-022**: System MUST represent a workflow engine as a registered Elsa workflows application deployment with endpoint metadata, credential reference, health status, advertised capabilities, and optional hosting provider metadata.
-- **FR-023**: System MUST store workflow engine credentials as secret references or provider-backed handles and MUST NOT expose raw engine API credentials in customer-facing responses, audit logs, or source-controlled desired state.
+- **FR-023**: System MUST store workflow engine credentials as secret references or provider-backed handles and MUST NOT expose raw engine API credentials in customer-facing responses, audit logs, workflow artifacts, or desired-state revisions.
 - **FR-024**: System MUST categorize runtime controls by boundary: workflow operations, workflow engine API operations, shell operations, and hosting infrastructure operations.
 - **FR-025**: System MUST expose only controls supported by the workflow engine capability set or an explicitly configured hosting provider adapter.
 - **FR-026**: System MUST NOT provide a generic "restart" operation unless the target capability defines whether the action restarts workflow processing, reloads configuration, restarts a shell, or restarts hosting infrastructure.
-- **FR-027**: System MUST treat source-controlled desired state as the canonical deployment source of truth and treat workflow engine state as applied or observed state.
-- **FR-028**: System MUST version environment desired state including workflow definitions, feature settings, shell configuration, runtime configuration, secret references, observability bindings, and engine target bindings.
+- **FR-027**: System MUST treat platform-owned immutable deployable artifacts and desired-state revisions as the canonical deployment source of truth and treat workflow engine state as applied or observed state.
+- **FR-028**: System MUST version environment desired state including workflow artifact references, feature settings, shell configuration, runtime configuration, secret references, observability bindings, and engine target bindings.
 - **FR-029**: System MUST allow authorized users to compare desired-state revisions across environments before promotion or deployment.
 - **FR-030**: System MUST validate required secrets, engine reachability, engine capabilities, workspace entitlements, and operation-specific roles before applying a desired-state revision to an environment.
 - **FR-031**: System MUST record deployment attempts, deployed revisions, validation failures, rollbacks, actor identity, target environment, target engine, and resulting status.
 - **FR-032**: System MUST support rollback by redeploying a previously recorded desired-state revision when the target environment and engine capabilities remain compatible.
-- **FR-033**: System MUST model secrets as provider-backed references with environment scope, provider identity, external key/path, optional version policy, and verification status; secret values MUST remain outside source-controlled desired state unless a future provider explicitly supports encrypted sealed-secret semantics.
-- **FR-034**: System MUST allow environment observability bindings for structured logs, console streams, OpenTelemetry-compatible traces, and metrics without requiring Elsa Platform to own the underlying telemetry stores.
-- **FR-035**: System MUST scope environment observability results to the requesting workspace, environment, workflow engine, shell, workflow definition, workflow instance, or deployment revision where the provider supports those dimensions.
-- **FR-036**: System MUST detect and report drift between source-controlled desired state and observed workflow engine state without silently overwriting either side.
-- **FR-037**: System MUST keep Elsa Studio and Elsa Platform aligned on shared authorization, secret-provider, and audit rules when both surfaces expose workflow, configuration, or secret management.
-- **FR-038**: System MUST position Elsa Studio as the single-engine authoring and runtime inspection surface, while Elsa Platform owns cross-environment promotion, deployment, governance, fleet visibility, and workspace-level controls.
-- **FR-039**: System MUST leave room for future runtime tenant and deployment tenant concepts as nested or environment-specific concerns under workspace ownership, rather than replacing workspace as the platform tenant boundary.
-- **FR-040**: System MUST expose an AI assistant boundary that can read, reason over, and summarize workspace-authorized platform context including workspaces, environments, engines, desired-state revisions, deployment history, drift, validation results, and observability metadata.
-- **FR-041**: System MUST enforce the same current account, workspace membership, role, entitlement, and operator/customer separation rules for every assistant tool call as for direct API calls.
-- **FR-042**: System MUST require explicit platform-mediated approval before an assistant can execute any mutation to desired state, deployments, runtime controls, engine registrations, secret references, observability bindings, entitlements, or workspace membership.
-- **FR-043**: System MUST present assistant-generated action plans in a reviewable, versioned, immutable form that identifies target workspace, environment, engine, affected resources, validation checks, expected impact, required approvals, all-or-nothing execution boundary, and rollback or undo path where applicable.
-- **FR-044**: System MUST audit assistant sessions that perform or prepare security-sensitive operations, including prompt/session identity, account, workspace, environment, proposed actions, tool calls, approvals, validation failures, executed mutations, and final outcomes.
-- **FR-045**: System MUST prevent the assistant from exposing raw secrets, engine credentials, provider tokens, or data outside the user's authorized workspace scope.
-- **FR-046**: System MUST distinguish assistant recommendations from executed platform state changes so users and auditors can tell whether the system only suggested an action or actually applied it.
-- **FR-047**: System MUST treat workspace content supplied to the assistant as untrusted input and validate assistant responses so prompt injection in workflow definitions, environment metadata, deployment descriptions, or observability data cannot cause disclosure beyond the requesting user's authorized scope.
-- **FR-048**: System MUST enforce the all-or-nothing execution boundary for an approved assistant mutation plan; if any step fails, the platform MUST stop remaining steps, roll back or compensate already-applied steps where possible, and audit/report any residual partial state before allowing another plan execution.
+- **FR-033**: System MUST represent runtime deployment work as durable platform-owned deployment commands linked to deployment runs, with command identity, target runtime, artifact identity, action, idempotency key, expiration, status, and safe diagnostics.
+- **FR-034**: System MUST allow runtime integrations to consume deployment commands through transport-independent mechanisms including runtime pull/sync, webhook-triggered fetch, and direct platform push where explicitly configured.
+- **FR-035**: System MUST prefer runtime pull/sync as the default transport for customer-hosted runtimes that cannot or should not expose inbound endpoints to Elsa Platform.
+- **FR-036**: System MUST require runtime integrations to report command acceptance, progress, validation result, apply result, final status, observed artifact digest, and safe diagnostics back to the platform deployment run.
+- **FR-037**: System MUST make deployment commands idempotent and MUST NOT automatically issue duplicate apply commands when a claimed command becomes stale without explicit recovery handling.
+- **FR-038**: System MUST model secrets as provider-backed references with environment scope, provider identity, external key/path, optional version policy, and verification status; secret values MUST remain outside workflow artifacts and desired-state revisions unless a future provider explicitly supports encrypted sealed-secret semantics.
+- **FR-039**: System MUST allow environment observability bindings for structured logs, console streams, OpenTelemetry-compatible traces, and metrics without requiring Elsa Platform to own the underlying telemetry stores.
+- **FR-040**: System MUST scope environment observability results to the requesting workspace, environment, workflow engine, shell, workflow artifact, workflow instance, or deployment revision where the provider supports those dimensions.
+- **FR-041**: System MUST detect and report drift between platform-owned desired state and observed workflow engine state without silently overwriting either side.
+- **FR-042**: System MUST support an opt-in Elsa Studio integration that handles the Studio publish lifecycle by offering a "Submit to Platform" command that creates a platform-owned deployable workflow artifact.
+- **FR-043**: System MUST keep Elsa Studio and Elsa Platform aligned on shared authorization, secret-provider, and audit rules when both surfaces expose workflow, configuration, or secret management.
+- **FR-044**: System MUST position Elsa Studio as the single-engine authoring and runtime inspection surface, while Elsa Platform owns deployable workflow artifacts, release readiness, cross-environment promotion, deployment, governance, fleet visibility, and workspace-level controls.
+- **FR-045**: System MUST leave room for future runtime tenant and deployment tenant concepts as nested or environment-specific concerns under workspace ownership, rather than replacing workspace as the platform tenant boundary.
+- **FR-046**: System MUST expose an AI assistant boundary that can read, reason over, and summarize workspace-authorized platform context including workspaces, environments, engines, workflow artifacts, desired-state revisions, deployment history, drift, validation results, and observability metadata.
+- **FR-047**: System MUST enforce the same current account, workspace membership, role, entitlement, and operator/customer separation rules for every assistant tool call as for direct API calls.
+- **FR-048**: System MUST require explicit platform-mediated approval before an assistant can execute any mutation to desired state, deployments, runtime controls, engine registrations, secret references, observability bindings, entitlements, or workspace membership.
+- **FR-049**: System MUST present assistant-generated action plans in a reviewable, versioned, immutable form that identifies target workspace, environment, engine, affected resources, validation checks, expected impact, required approvals, all-or-nothing execution boundary, and rollback or undo path where applicable.
+- **FR-050**: System MUST audit assistant sessions that perform or prepare security-sensitive operations, including prompt/session identity, account, workspace, environment, proposed actions, tool calls, approvals, validation failures, executed mutations, and final outcomes.
+- **FR-051**: System MUST prevent the assistant from exposing raw secrets, engine credentials, provider tokens, or data outside the user's authorized workspace scope.
+- **FR-052**: System MUST distinguish assistant recommendations from executed platform state changes so users and auditors can tell whether the system only suggested an action or actually applied it.
+- **FR-053**: System MUST treat workspace content supplied to the assistant as untrusted input and validate assistant responses so prompt injection in workflow artifacts, environment metadata, deployment descriptions, or observability data cannot cause disclosure beyond the requesting user's authorized scope.
+- **FR-054**: System MUST enforce the all-or-nothing execution boundary for an approved assistant mutation plan; if any step fails, the platform MUST stop remaining steps, roll back or compensate already-applied steps where possible, and audit/report any residual partial state before allowing another plan execution.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -264,8 +286,13 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **Workflow Engine**: Registered Elsa workflows application instance running in any hosting environment, reachable through an endpoint and credential reference and described by health and capability metadata.
 - **Engine Capability**: Advertised operation or feature supported by a workflow engine or hosting adapter, such as pause processing, reload configuration, restart shell, drain workers, or host restart.
 - **Shell**: Runtime isolation unit inside a workflow engine that can have its own service configuration, feature set, and operational lifecycle when supported by the engine.
-- **Desired-State Revision**: Versioned source of truth for an environment, including workflows, feature settings, shell configuration, runtime configuration, secret references, observability bindings, and target bindings.
+- **Workflow Artifact**: Platform-owned immutable deployable snapshot produced by a platform-integrated Elsa Studio "Submit to Platform" command or equivalent future ingestion path, containing opaque workflow definition content, safe metadata, source identifiers, schema/version information, and a content hash.
+- **Artifact Submission**: Audited handoff from Elsa Studio or another producer into Elsa Platform that creates a workflow artifact without making that artifact immediately executable in a runtime.
+- **Desired-State Revision**: Versioned source of truth for an environment, including workflow artifact references, feature settings, shell configuration, runtime configuration, secret references, observability bindings, and target bindings.
 - **Deployment**: Attempt to apply a desired-state revision to one environment and one or more workflow engines, with validation results, actor metadata, status, and rollback relationship.
+- **Deployment Command**: Durable platform-owned instruction linked to a deployment run that asks a specific runtime integration to validate, dry-run, apply, or roll back one artifact or desired-state revision with idempotency and expiration metadata.
+- **Runtime Sync Worker**: Optional runtime-side integration component that authenticates outbound to Elsa Platform, discovers pending deployment commands, claims work, fetches artifacts, applies supported artifact types, and reports progress/results.
+- **Deployment Webhook Notification**: Optional non-authoritative notification that tells a runtime integration a command may be available; the runtime still fetches the authoritative command from Elsa Platform before acting.
 - **Secret Reference**: Environment-scoped pointer to a secret stored in a provider such as engine storage, Azure Key Vault, or another configured provider, including verification and version policy metadata but not the raw secret value.
 - **Observability Binding**: Environment-scoped connection to structured logs, console streams, OpenTelemetry-compatible traces, or metrics providers used by the platform cockpit.
 - **AI Assistant Session**: Workspace-scoped copilot interaction that can inspect authorized platform context, produce explanations and action plans, invoke approved platform tools, and emit audit records for proposed and executed actions.
@@ -286,14 +313,16 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **SC-010**: Security-sensitive operations produce audit metadata that distinguishes account/workspace customer actions from operator actions.
 - **SC-011**: A workspace administrator can register a workflow engine in an environment using a secret reference and see health plus supported capabilities without exposing raw credentials.
 - **SC-012**: Unsupported runtime or hosting operations are unavailable or rejected with a clear capability error rather than executed through a guessed provider-specific action.
-- **SC-013**: A user can compare two environment desired-state revisions and identify changed workflows, feature settings, shell configuration, runtime configuration, secret references, observability bindings, and target bindings before deployment.
+- **SC-013**: A user can compare two environment desired-state revisions and identify changed workflow artifacts, feature settings, shell configuration, runtime configuration, secret references, observability bindings, and target bindings before deployment.
 - **SC-014**: Deployment validation blocks applying a revision when required secrets are missing, target engines are unreachable, capabilities are incompatible, or workspace entitlements are insufficient.
 - **SC-015**: Deployment history identifies the applied revision, actor, environment, workflow engine, validation outcome, final status, and rollback source when applicable.
-- **SC-016**: Environment observability views can retrieve structured logs, console streams, OpenTelemetry-compatible traces, or metrics from configured providers and correlate results to a workspace environment and deployment revision.
-- **SC-017**: Drift detection can report differences between desired state and observed engine state without mutating either source automatically.
-- **SC-018**: Assistant access tests prove the assistant can summarize and compare only data visible to the requesting account's current workspace membership, role, and entitlement state.
-- **SC-019**: Assistant mutation tests prove deployment, rollback, runtime control, secret-reference, and desired-state changes require explicit approval of the exact immutable plan artifact, enforce all-or-nothing plan execution on step failure, and produce audit records that distinguish proposed actions from executed actions.
-- **SC-020**: Prompt-injection tests prove adversarial workspace content cannot cause assistant responses to expose raw secrets, hidden credentials, operator-only data, or data from another workspace.
+- **SC-016**: Runtime sync tests prove a runtime integration can claim a deployment command by outbound pull, verify the referenced artifact digest, report progress, and complete the deployment run without requiring inbound network access.
+- **SC-017**: Duplicate webhook notifications or repeated command polls do not create duplicate apply attempts because deployment commands are idempotent.
+- **SC-018**: Environment observability views can retrieve structured logs, console streams, OpenTelemetry-compatible traces, or metrics from configured providers and correlate results to a workspace environment and deployment revision.
+- **SC-019**: Drift detection can report differences between desired state and observed engine state without mutating either source automatically.
+- **SC-020**: Assistant access tests prove the assistant can summarize and compare only data visible to the requesting account's current workspace membership, role, and entitlement state.
+- **SC-021**: Assistant mutation tests prove deployment, rollback, runtime control, secret-reference, and desired-state changes require explicit approval of the exact immutable plan artifact, enforce all-or-nothing plan execution on step failure, and produce audit records that distinguish proposed actions from executed actions.
+- **SC-022**: Prompt-injection tests prove adversarial workspace content cannot cause assistant responses to expose raw secrets, hidden credentials, operator-only data, or data from another workspace.
 
 ## Assumptions
 
@@ -305,15 +334,20 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - Customer-facing login should prefer a backend-for-frontend session built on a standards-based OIDC authorization-code flow, with direct SPA bearer-token ownership reserved for deployments that explicitly require it; both patterns must produce the same trusted identity contract for workspace tenancy.
 - The console is allowed to improve UX by hiding unavailable workspace actions, but backend membership, role, entitlement, and identity checks remain authoritative.
 - Provider-specific app registration, client secret storage, and redirect URI ownership are deployment responsibilities; Elsa Platform stores only configuration required to validate provider responses and establish customer-authenticated API access.
-- Elsa Platform owns desired state, deployment orchestration, environment governance, and fleet visibility; workflow engines own runtime execution and expose runtime controls through explicit capabilities.
+- Elsa Platform owns immutable deployable workflow artifacts, desired-state revisions, deployment orchestration, environment governance, and fleet visibility; workflow engines own runtime execution and expose runtime controls through explicit capabilities.
 - The live workflow engine is observed or applied state, not the canonical source of truth for cross-environment deployment.
-- Desired state is expected to be stored in a workspace-controlled source repository or equivalent versioned store so environment state can be diffed, promoted, audited, and rolled back.
+- Workflow artifacts are created by an opt-in Elsa Studio integration that replaces direct-runtime publishing in platform-integrated installations with the command "Submit to Platform"; future producers such as CLI import, CI automation, or package upload should create the same artifact type.
+- "Submit to Platform" means creating an immutable deployable artifact in Elsa Platform; it does not mean release approval, promotion, deployment, or immediate runtime execution.
+- Desired state is expected to be stored as platform-owned versioned records or an equivalent workspace-controlled versioned store so environment state can be diffed, promoted, audited, and rolled back.
+- Deployment runs and commands are the authoritative coordination records. Webhooks, direct runtime endpoints, polling, and long-polling are interchangeable transports around that command contract, not independent sources of deployment truth.
+- Runtime pull/sync is the preferred default for customer-hosted environments; direct platform push is reserved for environments with explicit inbound connectivity and trust configuration.
+- Webhook notifications are advisory triggers only and should carry enough information to fetch a command, not enough information to apply an artifact without consulting Elsa Platform.
 - Environment names such as dev, test, stage, and production are conventions, not hard-coded tenant semantics.
 - There is no canonical workflow engine environment; canonical state is the versioned desired state that can be deployed to any compatible environment.
-- Secret values are managed by configured providers; source-controlled desired state stores references, requirements, and policies rather than plaintext values.
-- Elsa Studio remains the preferred single-engine workflow authoring and runtime inspection experience, while Elsa Platform provides the central cockpit for environment promotion, governance, deployment, observability, and fleet operations.
+- Secret values are managed by configured providers; workflow artifacts and desired-state revisions store references, requirements, and policies rather than plaintext values.
+- Elsa Studio remains the preferred single-engine workflow authoring and runtime inspection experience, while Elsa Platform provides the central cockpit for artifact management, release readiness, environment promotion, governance, deployment, observability, and fleet operations.
 - Elsa runtime tenant concepts and deployment tenant overlays are separate nested concerns and are intentionally deferred from the identity foundation, but future deployment features must preserve workspace ownership as the outer platform boundary.
 - The AI assistant is a copilot for platform operations, not an independent authority; it acts through the same workspace-scoped APIs, validation, approval, and audit controls as a user-driven workflow.
 - Assistant memory, retrieval, and tool execution are scoped by workspace and current user authorization, and any future cross-workspace or operator assistant mode requires separate operator authorization.
-- Assistant-generated mutation plans are approved and executed as one atomic plan by default under FR-048; partial step approval is out of scope unless a future requirement defines compensating rollback behavior and per-step audit semantics.
+- Assistant-generated mutation plans are approved and executed as one atomic plan by default under FR-054; partial step approval is out of scope unless a future requirement defines compensating rollback behavior and per-step audit semantics.
 - Assistant-generated mutation plans are frozen when presented for approval; execution uses that same plan artifact and must not regenerate or alter the action set after approval.

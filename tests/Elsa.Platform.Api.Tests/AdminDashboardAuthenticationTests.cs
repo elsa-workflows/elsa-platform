@@ -173,6 +173,22 @@ public sealed class AdminDashboardAuthenticationTests
     }
 
     [Fact]
+    public async Task Configured_local_customer_session_can_authorize_admin_api()
+    {
+        await using var app = new PlatformApiTestApplication(new Dictionary<string, string?>
+        {
+            ["Authentication:Admin:AllowAuthenticatedCustomerSession"] = "true"
+        });
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateClient(new() { AllowAutoRedirect = false });
+        AddPlatformSessionCookie(app, client);
+
+        var response = await client.GetAsync("/api/admin/sources");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task Platform_admin_api_mutation_rejects_cross_origin_request()
     {
         await using var app = new PlatformApiTestApplication();

@@ -70,3 +70,12 @@ Expected result: role and entitlement checks are enforced server-side.
 4. Call `GET /api/me/workspaces` with only the operator fallback credential.
 
 Expected result: operator-only work remains available, but the operator fallback credential does not create a customer account or workspace membership.
+
+## Verification Results
+
+- `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter "FullyQualifiedName~WorkspaceProvisioningTests|FullyQualifiedName~CustomerAuthenticationTests|FullyQualifiedName~PlatformIdentityTests|FullyQualifiedName~WorkspaceIsolationTests|FullyQualifiedName~WorkspaceAuthorizationTests|FullyQualifiedName~OperatorAuthorizationTests"`: passed, 49 tests.
+
+## Scope Notes
+
+- The automated smoke run covers local Generic OIDC/JWT identity, bearer token access, invalid identity rejection, workspace isolation, role and entitlement enforcement, and operator/customer separation.
+- Live Microsoft Entra, Auth0, Keycloak, or custom IdP browser sign-in remains environment-specific and should be repeated when provider credentials and callback URLs are available.

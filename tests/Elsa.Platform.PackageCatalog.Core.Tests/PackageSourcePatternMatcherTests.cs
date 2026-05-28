@@ -14,8 +14,14 @@ public sealed class PackageSourcePatternMatcherTests
     }
 
     [Fact]
+    public void Matches_dotted_prefix_patterns_case_insensitively()
+    {
+        _matcher.IsMatch("elsa.email", ["Elsa."], []).Should().BeTrue();
+    }
+
+    [Fact]
     public void Exclude_patterns_win_over_includes()
     {
-        _matcher.IsMatch("Elsa.Experimental.Email", ["Elsa.*"], ["Elsa.Experimental.*"]).Should().BeFalse();
+        _matcher.IsMatch("Elsa.Experimental.Email", ["Elsa."], ["Elsa.Experimental.*"]).Should().BeFalse();
     }
 }

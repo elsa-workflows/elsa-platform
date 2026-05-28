@@ -514,80 +514,6 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                     b.ToTable("PackageVersions");
                 });
 
-            modelBuilder.Entity("Elsa.Platform.RuntimeBuilder.Core.RuntimeConfigurations.RuntimeConfiguration", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<long>("CreatedAt")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<string>("IntentJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<long?>("SoftDeletedAt")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("UpdatedAt")
-                        .HasColumnType("bigint");
-
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("WorkspaceId", "SoftDeletedAt");
-
-                    b.ToTable("RuntimeConfigurations");
-                });
-
-            modelBuilder.Entity("Elsa.Platform.RuntimeBuilder.Core.RuntimeConfigurations.RuntimeConfigurationVersion", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<long>("CreatedAt")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<string>("IntentJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<Guid>("RuntimeConfigurationId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("VersionNumber")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RuntimeConfigurationId", "VersionNumber")
-                        .IsUnique();
-
-                    b.ToTable("RuntimeConfigurationVersions");
-                });
-
             modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Sync.ApprovalRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -733,6 +659,1261 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                     b.ToTable("SyncRunItems");
                 });
 
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.ActionConfirmationEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActionType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long>("ConfirmedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("ConfirmedByAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("ExpiresAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("TargetId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long?>("UsedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId", "ActionType", "TargetId", "ConfirmedByAccountId");
+
+                    b.ToTable("ActionConfirmations");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentApplicationEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("CreatedByAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("UpdatedByAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("DeploymentApplications");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentCommandEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ArtifactJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("AttemptNumber")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("AvailableAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("ClaimedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("CompletedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("DiagnosticsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("EngineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("ExpiresAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("HeartbeatAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<long?>("LeaseExpiresAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("LeaseToken")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ObservedArtifactDigest")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ObservedArtifactDigestAlgorithm")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int?>("PercentComplete")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ProgressMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid?>("RevisionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RuntimeReference")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("WorkerId")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId");
+
+                    b.HasIndex("WorkspaceId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("WorkspaceId", "EngineId", "Status", "AvailableAt");
+
+                    b.ToTable("DeploymentCommands");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentCommandEventEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CommandId");
+
+                    b.HasIndex("WorkspaceId", "CommandId", "CreatedAt");
+
+                    b.HasIndex("WorkspaceId", "RunId", "CreatedAt");
+
+                    b.ToTable("DeploymentCommandEvents");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentCommandWebhookNotificationEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CommandId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("EngineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SafePayloadJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long?>("SentAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CommandId");
+
+                    b.HasIndex("WorkspaceId", "EngineId", "CreatedAt");
+
+                    b.ToTable("DeploymentCommandWebhookNotifications");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentEnvironmentEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("DeployedRevisionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DeploymentStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid?>("DesiredRevisionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DriftStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Tier")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid?>("TierId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("TierRequiresReview")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApplicationId");
+
+                    b.HasIndex("TierId");
+
+                    b.HasIndex("WorkspaceId", "TierId");
+
+                    b.HasIndex("WorkspaceId", "ApplicationId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("DeploymentEnvironments");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentRunEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ActorAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AttemptNumber")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("CompletedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("ConfirmationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("EngineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FailureMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid?>("PreviousDeployedRevisionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("QueuedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("RecoveryReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid?>("RollbackSourceRunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SourceRevisionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("StartedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ValidationOutcome")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long?>("WorkerHeartbeatAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("WorkerId")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId");
+
+                    b.HasIndex("WorkspaceId", "EnvironmentId", "Status");
+
+                    b.ToTable("DeploymentRuns");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentRunHistoryEventEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId");
+
+                    b.HasIndex("WorkspaceId", "RunId", "CreatedAt");
+
+                    b.ToTable("DeploymentRunHistoryEvents");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentTierCapabilityAssignmentEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CapabilityId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("CreatedByAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TierId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TierId", "CapabilityId")
+                        .IsUnique();
+
+                    b.HasIndex("WorkspaceId", "CapabilityId");
+
+                    b.ToTable("DeploymentTierCapabilityAssignments");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentTierChangeRecordEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ActorAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AffectedEnvironmentCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ChangeType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long>("ChangedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<Guid>("TierId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TierId");
+
+                    b.HasIndex("WorkspaceId", "TierId", "ChangedAt");
+
+                    b.ToTable("DeploymentTierChangeRecords");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentTierDefinitionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("ArchivedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("ArchivedByAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("CreatedByAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("UpdatedByAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId", "SortOrder");
+
+                    b.HasIndex("WorkspaceId", "Status", "Name")
+                        .IsUnique();
+
+                    b.ToTable("DeploymentTierDefinitions");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DesiredStateRevisionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("AuthoredAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Commit")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("CreatedByAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DesiredStateJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId", "RevisionNumber")
+                        .IsUnique();
+
+                    b.HasIndex("WorkspaceId", "ContentHash");
+
+                    b.ToTable("DesiredStateRevisions");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DriftReportItemEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Area")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Desired")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<long>("DetectedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("EngineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Observed")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId");
+
+                    b.HasIndex("WorkspaceId", "EnvironmentId", "EngineId", "DetectedAt");
+
+                    b.ToTable("DriftReportItems");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.EngineCapabilityEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Boundary")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("CapabilityId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("EngineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EngineId", "CapabilityId")
+                        .IsUnique();
+
+                    b.ToTable("EngineCapabilities");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.ObservabilityBindingEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CorrelatedRevisionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("EngineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Sample")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId");
+
+                    b.HasIndex("WorkspaceId", "EnvironmentId", "Kind");
+
+                    b.ToTable("ObservabilityBindings");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.RuntimeControlEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Boundary")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ControlId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("EngineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("RequiredCapabilityId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EngineId", "ControlId")
+                        .IsUnique();
+
+                    b.ToTable("RuntimeControls");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.RuntimeControlExecutionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ActorAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Boundary")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid>("ConfirmationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ControlId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ControlLabel")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("EngineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("RequiredCapabilityId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EngineId");
+
+                    b.HasIndex("WorkspaceId", "EngineId", "ControlId", "CreatedAt");
+
+                    b.ToTable("RuntimeControlExecutions");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.StructuredDesiredStateRecordEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("RevisionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId", "ContentHash");
+
+                    b.HasIndex("RevisionId", "Kind", "Name")
+                        .IsUnique();
+
+                    b.ToTable("StructuredDesiredStateRecords");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkflowEngineEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BaseUrl")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<string>("CertificateStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("CredentialLastVerifiedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CredentialProvider")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("CredentialReference")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<string>("CredentialVerificationStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Health")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("HostingProvider")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("LastHeartbeatAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("LastVerificationAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Region")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("VerificationMessage")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<string>("Version")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId");
+
+                    b.HasIndex("WorkspaceId", "EnvironmentId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("WorkflowEngines");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkspaceDeploymentArtifactEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ArtifactId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ArtifactSchemaVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ArtifactTypeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ChecksumStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("CompatibilityHintsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ContentDigest")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ContentDigestAlgorithm")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("DiagnosticsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DisplayMetadataJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("EnvelopeVersion")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Format")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("InspectionStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset?>("LastInspectedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LayoutVersion")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ManifestDigest")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ManifestDigestAlgorithm")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ManifestEnvironment")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ManifestName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ManifestVersion")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("PayloadReferenceJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProducerJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<string>("ReferenceProvider")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long>("RegisteredAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("RegisteredByAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ResourceCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ResourceSummaryJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId", "ArtifactId")
+                        .IsUnique();
+
+                    b.HasIndex("WorkspaceId", "RegisteredAt");
+
+                    b.ToTable("WorkspaceDeploymentArtifacts");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkspacePermissionGrantEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("GrantedByAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Permission")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long?>("RevokedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("WorkspaceId", "AccountId", "Permission", "RevokedAt");
+
+                    b.ToTable("WorkspacePermissionGrants");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.RuntimeBuilder.Abstractions.RuntimeConfigurations.RuntimeConfiguration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("IntentJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long?>("SoftDeletedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId", "SoftDeletedAt");
+
+                    b.ToTable("RuntimeConfigurations");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.RuntimeBuilder.Abstractions.RuntimeConfigurations.RuntimeConfigurationVersion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("IntentJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("RuntimeConfigurationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("VersionNumber")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RuntimeConfigurationId", "VersionNumber")
+                        .IsUnique();
+
+                    b.ToTable("RuntimeConfigurationVersions");
+                });
+
             modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Accounts.ExternalIdentity", b =>
                 {
                     b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Account", "Account")
@@ -828,26 +2009,6 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                     b.Navigation("Package");
                 });
 
-            modelBuilder.Entity("Elsa.Platform.RuntimeBuilder.Core.RuntimeConfigurations.RuntimeConfiguration", b =>
-                {
-                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Workspace", null)
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Elsa.Platform.RuntimeBuilder.Core.RuntimeConfigurations.RuntimeConfigurationVersion", b =>
-                {
-                    b.HasOne("Elsa.Platform.RuntimeBuilder.Core.RuntimeConfigurations.RuntimeConfiguration", "RuntimeConfiguration")
-                        .WithMany("Versions")
-                        .HasForeignKey("RuntimeConfigurationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("RuntimeConfiguration");
-                });
-
             modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Sync.ManifestValidationResultRecord", b =>
                 {
                     b.HasOne("Elsa.Platform.PackageCatalog.Core.Packages.PackageVersion", "PackageVersion")
@@ -875,6 +2036,240 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                     b.Navigation("PackageVersion");
 
                     b.Navigation("SyncRun");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.ActionConfirmationEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Workspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentApplicationEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Workspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentCommandEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentRunEntity", "Run")
+                        .WithMany()
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Run");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentCommandEventEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentCommandEntity", "Command")
+                        .WithMany("Events")
+                        .HasForeignKey("CommandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Command");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentEnvironmentEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentApplicationEntity", "Application")
+                        .WithMany("Environments")
+                        .HasForeignKey("ApplicationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentTierDefinitionEntity", "TierDefinition")
+                        .WithMany("Environments")
+                        .HasForeignKey("TierId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Application");
+
+                    b.Navigation("TierDefinition");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentRunEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentEnvironmentEntity", "Environment")
+                        .WithMany()
+                        .HasForeignKey("EnvironmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Environment");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentRunHistoryEventEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentRunEntity", "Run")
+                        .WithMany("History")
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Run");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentTierCapabilityAssignmentEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentTierDefinitionEntity", "Tier")
+                        .WithMany("Capabilities")
+                        .HasForeignKey("TierId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tier");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentTierChangeRecordEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentTierDefinitionEntity", "Tier")
+                        .WithMany("Changes")
+                        .HasForeignKey("TierId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tier");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentTierDefinitionEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Workspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DesiredStateRevisionEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentEnvironmentEntity", "Environment")
+                        .WithMany("Revisions")
+                        .HasForeignKey("EnvironmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Environment");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DriftReportItemEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentEnvironmentEntity", "Environment")
+                        .WithMany("DriftReports")
+                        .HasForeignKey("EnvironmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Environment");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.EngineCapabilityEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkflowEngineEntity", "Engine")
+                        .WithMany("Capabilities")
+                        .HasForeignKey("EngineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Engine");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.ObservabilityBindingEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentEnvironmentEntity", "Environment")
+                        .WithMany("ObservabilityBindings")
+                        .HasForeignKey("EnvironmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Environment");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.RuntimeControlEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkflowEngineEntity", "Engine")
+                        .WithMany("Controls")
+                        .HasForeignKey("EngineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Engine");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.RuntimeControlExecutionEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkflowEngineEntity", "Engine")
+                        .WithMany()
+                        .HasForeignKey("EngineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Engine");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.StructuredDesiredStateRecordEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DesiredStateRevisionEntity", "Revision")
+                        .WithMany("Records")
+                        .HasForeignKey("RevisionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Revision");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkflowEngineEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentEnvironmentEntity", "Environment")
+                        .WithMany("Engines")
+                        .HasForeignKey("EnvironmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Environment");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkspacePermissionGrantEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Account", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Workspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elsa.Platform.RuntimeBuilder.Abstractions.RuntimeConfigurations.RuntimeConfiguration", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Workspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elsa.Platform.RuntimeBuilder.Abstractions.RuntimeConfigurations.RuntimeConfigurationVersion", b =>
+                {
+                    b.HasOne("Elsa.Platform.RuntimeBuilder.Abstractions.RuntimeConfigurations.RuntimeConfiguration", "RuntimeConfiguration")
+                        .WithMany("Versions")
+                        .HasForeignKey("RuntimeConfigurationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("RuntimeConfiguration");
                 });
 
             modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Accounts.Account", b =>
@@ -911,14 +2306,61 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                     b.Navigation("Features");
                 });
 
-            modelBuilder.Entity("Elsa.Platform.RuntimeBuilder.Core.RuntimeConfigurations.RuntimeConfiguration", b =>
-                {
-                    b.Navigation("Versions");
-                });
-
             modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Sync.SyncRun", b =>
                 {
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentApplicationEntity", b =>
+                {
+                    b.Navigation("Environments");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentCommandEntity", b =>
+                {
+                    b.Navigation("Events");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentEnvironmentEntity", b =>
+                {
+                    b.Navigation("DriftReports");
+
+                    b.Navigation("Engines");
+
+                    b.Navigation("ObservabilityBindings");
+
+                    b.Navigation("Revisions");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentRunEntity", b =>
+                {
+                    b.Navigation("History");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentTierDefinitionEntity", b =>
+                {
+                    b.Navigation("Capabilities");
+
+                    b.Navigation("Changes");
+
+                    b.Navigation("Environments");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.DesiredStateRevisionEntity", b =>
+                {
+                    b.Navigation("Records");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkflowEngineEntity", b =>
+                {
+                    b.Navigation("Capabilities");
+
+                    b.Navigation("Controls");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.RuntimeBuilder.Abstractions.RuntimeConfigurations.RuntimeConfiguration", b =>
+                {
+                    b.Navigation("Versions");
                 });
 #pragma warning restore 612, 618
         }

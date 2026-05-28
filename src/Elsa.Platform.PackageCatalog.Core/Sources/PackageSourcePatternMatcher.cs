@@ -17,7 +17,14 @@ public sealed class PackageSourcePatternMatcher
         if (string.IsNullOrWhiteSpace(pattern))
             return false;
 
-        var regex = "^" + Regex.Escape(pattern.Trim()).Replace("\\*", ".*").Replace("\\?", ".") + "$";
+        var trimmed = pattern.Trim();
+        if (IsDottedPrefixPattern(trimmed))
+            return value.StartsWith(trimmed, StringComparison.OrdinalIgnoreCase);
+
+        var regex = "^" + Regex.Escape(trimmed).Replace("\\*", ".*").Replace("\\?", ".") + "$";
         return Regex.IsMatch(value, regex, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
+
+    public static bool IsDottedPrefixPattern(string pattern) =>
+        pattern.EndsWith('.') && !pattern.Contains('*') && !pattern.Contains('?');
 }
