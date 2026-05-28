@@ -400,6 +400,24 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
         rawPayload.Should().Be("{\"reason\":\"command-available\"}");
     }
 
+    [Fact]
+    public async Task Webhook_notification_rejects_wrong_engine()
+    {
+        var topology = await SeedTopologyAsync();
+        await QueueRunAsync(topology);
+        var command = (await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow)).Single();
+
+        var create = () => _store.CreateWebhookNotificationAsync(
+            _workspaceId,
+            Guid.NewGuid(),
+            command.Id,
+            "{\"reason\":\"command-available\"}",
+            DateTimeOffset.UtcNow);
+
+        await create.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Command does not target the requested runtime engine.");
+    }
+
     public void Dispose() => _db.Dispose();
 
     private async Task<WorkspaceDeploymentRun> QueueRunAsync(DeploymentTopology topology) =>

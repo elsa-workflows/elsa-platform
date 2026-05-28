@@ -130,6 +130,32 @@ Both accept safe diagnostics and require the current lease token. Fail means the
 
 Webhook payloads are intentionally small:
 
+```http
+POST /api/workspaces/{workspaceId}/deployments/runtime/commands/{commandId}/webhook-notifications
+Content-Type: application/json
+```
+
+```json
+{
+  "engineId": "3c8d5b87-b7d7-42e8-9b4c-17081e39c9a9"
+}
+```
+
+```json
+{
+  "id": "31c3faca-b812-4e5b-95cb-1b17c66be8a6",
+  "workspaceId": "10000000-0000-0000-0000-000000000001",
+  "engineId": "3c8d5b87-b7d7-42e8-9b4c-17081e39c9a9",
+  "commandHint": "9f4f44b8-f65c-4c6f-a043-1f818c206c3d",
+  "status": "pending",
+  "safePayloadJson": "{\"workspaceId\":\"10000000-0000-0000-0000-000000000001\",\"engineId\":\"3c8d5b87-b7d7-42e8-9b4c-17081e39c9a9\",\"commandHint\":\"9f4f44b8-f65c-4c6f-a043-1f818c206c3d\",\"reason\":\"command-available\"}",
+  "createdAt": "2026-05-28T12:00:00Z",
+  "sentAt": null
+}
+```
+
+The serialized webhook payload remains a safe command-available hint:
+
 ```json
 {
   "workspaceId": "10000000-0000-0000-0000-000000000001",

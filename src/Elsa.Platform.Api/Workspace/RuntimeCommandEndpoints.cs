@@ -181,6 +181,35 @@ public static class RuntimeCommandEndpoints
                     cancellationToken),
                 cancellationToken));
 
+        group.MapPost("/commands/{commandId:guid}/webhook-notifications", async (
+            Guid workspaceId,
+            Guid commandId,
+            RuntimeCommandWebhookNotificationRequest request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            DeploymentCommandService commands,
+            CancellationToken cancellationToken) =>
+        {
+            var permission = await RequireRuntimeCommandAccessAsync(context, accessResolver, permissions, workspaceId, cancellationToken);
+            if (permission is not null)
+                return permission;
+
+            try
+            {
+                var notification = await commands.CreateWebhookNotificationAsync(workspaceId, request.EngineId, commandId, cancellationToken);
+                return Results.Ok(RuntimeCommandWebhookNotificationResponse.FromNotification(notification));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
         return endpoints;
     }
 

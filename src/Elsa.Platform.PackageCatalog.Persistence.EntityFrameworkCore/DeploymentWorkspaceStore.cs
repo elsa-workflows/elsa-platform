@@ -759,6 +759,13 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
+        var command = await dbContext.DeploymentCommands
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == commandId, cancellationToken)
+            ?? throw new KeyNotFoundException("Deployment command does not exist in the workspace.");
+        if (command.EngineId != engineId)
+            throw new InvalidOperationException("Command does not target the requested runtime engine.");
+
         var notification = new DeploymentCommandWebhookNotificationEntity
         {
             Id = Guid.NewGuid(),

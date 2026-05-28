@@ -43,6 +43,8 @@ git diff --check
 - 2026-05-28: `cd src/Elsa.Platform.Console && npm test -- --run deployments` passed: 22 tests.
 - 2026-05-28: `cd src/Elsa.Platform.Console && npm run typecheck` passed.
 - 2026-05-28: `git diff --check` passed.
+- 2026-05-29: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter RuntimeCommand --no-restore` passed: 4 tests.
+- 2026-05-29: `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand --no-restore` passed: 14 tests.
 
 ## Known Scope Boundaries
 

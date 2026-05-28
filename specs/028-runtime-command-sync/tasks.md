@@ -123,14 +123,14 @@
 
 - [x] T036 [P] [US4] Add webhook trigger record tests in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentCommandServiceTests.cs`
 - [x] T037 [P] [US4] Add webhook notification persistence tests in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentCommandPersistenceTests.cs`
-- [ ] T038 [P] [US4] Add webhook-triggered fetch API/contract tests in `tests/Elsa.Platform.Api.Tests/RuntimeCommandApiTests.cs`
+- [x] T038 [P] [US4] Add webhook-triggered fetch API/contract tests in `tests/Elsa.Platform.Api.Tests/RuntimeCommandApiTests.cs`
 
 ### Implementation for User Story 4
 
 - [x] T039 [US4] Add webhook notification models and creation behavior in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentCommandModels.cs` and `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentCommandService.cs`
 - [x] T040 [US4] Persist webhook notification records/events in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [ ] T041 [US4] Expose safe webhook trigger metadata where needed in `src/Elsa.Platform.Api/Workspace/RuntimeCommandContracts.cs`
-- [ ] T042 [US4] Run focused US4 checks documented in `specs/028-runtime-command-sync/quickstart.md`
+- [x] T041 [US4] Expose safe webhook trigger metadata where needed in `src/Elsa.Platform.Api/Workspace/RuntimeCommandContracts.cs`
+- [x] T042 [US4] Run focused US4 checks documented in `specs/028-runtime-command-sync/quickstart.md`
 
 **Checkpoint**: Webhook-triggered fetch is modeled as notification only.
 

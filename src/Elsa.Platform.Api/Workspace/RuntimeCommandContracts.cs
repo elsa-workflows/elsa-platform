@@ -22,6 +22,30 @@ public sealed record RuntimeCommandFailRequest(string LeaseToken, IReadOnlyList<
 
 public sealed record RuntimeCommandRejectRequest(string LeaseToken, IReadOnlyList<DeploymentCommandDiagnostic> Diagnostics);
 
+public sealed record RuntimeCommandWebhookNotificationRequest(Guid EngineId);
+
+public sealed record RuntimeCommandWebhookNotificationResponse(
+    Guid Id,
+    Guid WorkspaceId,
+    Guid EngineId,
+    Guid CommandHint,
+    WebhookNotificationStatus Status,
+    string SafePayloadJson,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? SentAt)
+{
+    public static RuntimeCommandWebhookNotificationResponse FromNotification(DeploymentCommandWebhookNotification notification) =>
+        new(
+            notification.Id,
+            notification.WorkspaceId,
+            notification.EngineId,
+            notification.CommandId,
+            notification.Status,
+            notification.SafePayloadJson,
+            notification.CreatedAt,
+            notification.SentAt);
+}
+
 public sealed record RuntimeCommandDto(
     Guid Id,
     Guid WorkspaceId,
