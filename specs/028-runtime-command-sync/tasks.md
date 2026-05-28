@@ -140,9 +140,9 @@
 
 **Purpose**: Surface command lifecycle safely and run focused verification.
 
-- [ ] T043 [P] Update deployment run models/API response contracts with command lifecycle summary in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentContracts.cs`
-- [ ] T044 [P] Update console deployment history rendering if command events are not already visible in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [ ] T045 [P] Add console command history tests if UI changes are needed in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [x] T043 [P] Update deployment run models/API response contracts with command lifecycle summary in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentContracts.cs`
+- [x] T044 [P] Update console deployment history rendering if command events are not already visible in `src/Elsa.Platform.Console/src/features/deployments/DeploymentRunsPanel.tsx`
+- [x] T045 [P] Add console command history tests if UI changes are needed in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
 - [x] T046 Review payload/secret redaction, command authorization, lease token handling, duplicate delivery, stale recovery, and run history projection across `src/Elsa.Platform.Deployment.Core/Workspace/`, `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/Elsa.Platform.Api/Workspace/RuntimeCommandEndpoints.cs`
 - [x] T047 Run `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter DeploymentCommand` and record result in `specs/028-runtime-command-sync/quickstart.md`
 - [x] T048 Run `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand` and record result in `specs/028-runtime-command-sync/quickstart.md`

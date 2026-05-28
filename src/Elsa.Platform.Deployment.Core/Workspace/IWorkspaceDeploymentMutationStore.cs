@@ -40,6 +40,12 @@ public interface IWorkspaceDeploymentMutationStore
         Guid runId,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<DeploymentRunCommandSummary>> GetRunCommandSummariesAsync(
+        Guid workspaceId,
+        Guid runId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<DeploymentRunCommandSummary>>([]);
+
     Task<WorkspaceDeploymentRun?> ClaimNextQueuedRunAsync(
         string workerId,
         DateTimeOffset now,

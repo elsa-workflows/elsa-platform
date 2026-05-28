@@ -66,7 +66,30 @@ public sealed record QueueWorkspaceDeploymentRunRequest(
 
 public sealed record WorkspaceDeploymentRunDetail(
     WorkspaceDeploymentRun Run,
-    IReadOnlyList<DeploymentRunHistoryEvent> History);
+    IReadOnlyList<DeploymentRunHistoryEvent> History,
+    IReadOnlyList<DeploymentRunCommandSummary> Commands);
+
+public sealed record DeploymentRunCommandSummary(
+    Guid Id,
+    Guid WorkspaceId,
+    Guid RunId,
+    Guid EnvironmentId,
+    Guid EngineId,
+    DeploymentCommandAction Action,
+    DeploymentCommandStatus Status,
+    string? WorkerId,
+    DateTimeOffset? ClaimedAt,
+    DateTimeOffset? LeaseExpiresAt,
+    DateTimeOffset? HeartbeatAt,
+    int AttemptNumber,
+    int? PercentComplete,
+    string? ProgressMessage,
+    WorkspaceArtifactDigest? ObservedArtifactDigest,
+    string? RuntimeReference,
+    IReadOnlyList<DeploymentCommandDiagnostic> Diagnostics,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    DateTimeOffset? CompletedAt);
 
 public sealed record RuntimeControlExecutionRequest(
     Guid EngineId,

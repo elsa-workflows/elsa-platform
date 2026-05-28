@@ -326,10 +326,10 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore, IW
 
     private static IReadOnlyList<DeploymentHistoryEvent> History() =>
     [
-        new("00000000-0000-0000-0000-000000000410", DeploymentStatus.Blocked.ToString(), 41, "Mira Chen", "claims-prod", "prod-engine", DeploymentValidationOutcome.Blocked, Parse("2026-05-22T08:05:00Z"), null),
-        new("00000000-0000-0000-0000-000000000409", DeploymentStatus.Succeeded.ToString(), 40, "Owen Diaz", "claims-prod", "prod-engine", DeploymentValidationOutcome.Passed, Parse("2026-05-21T17:20:00Z"), null),
-        new("00000000-0000-0000-0000-000000000388", DeploymentStatus.RolledBack.ToString(), 39, "Priya Shah", "claims-prod", "prod-engine", DeploymentValidationOutcome.Warnings, Parse("2026-05-20T19:45:00Z"), 38),
-        new("00000000-0000-0000-0000-000000000342", DeploymentStatus.Succeeded.ToString(), 42, "Mira Chen", "claims-test", "test-engine", DeploymentValidationOutcome.Passed, Parse("2026-05-22T07:35:00Z"), null)
+        new("00000000-0000-0000-0000-000000000410", DeploymentStatus.Blocked.ToString(), 41, "Mira Chen", "claims-prod", "prod-engine", DeploymentValidationOutcome.Blocked, Parse("2026-05-22T08:05:00Z"), null, []),
+        new("00000000-0000-0000-0000-000000000409", DeploymentStatus.Succeeded.ToString(), 40, "Owen Diaz", "claims-prod", "prod-engine", DeploymentValidationOutcome.Passed, Parse("2026-05-21T17:20:00Z"), null, []),
+        new("00000000-0000-0000-0000-000000000388", DeploymentStatus.RolledBack.ToString(), 39, "Priya Shah", "claims-prod", "prod-engine", DeploymentValidationOutcome.Warnings, Parse("2026-05-20T19:45:00Z"), 38, []),
+        new("00000000-0000-0000-0000-000000000342", DeploymentStatus.Succeeded.ToString(), 42, "Mira Chen", "claims-test", "test-engine", DeploymentValidationOutcome.Passed, Parse("2026-05-22T07:35:00Z"), null, [])
     ];
 
     private static IReadOnlyList<DriftReportItem> DriftReport() =>

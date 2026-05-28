@@ -63,12 +63,24 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             .OfType<Guid>()
             .Distinct()
             .ToList();
+        var runIds = deploymentRuns.Select(x => x.Id).ToList();
         var runRevisions = runRevisionIds.Count == 0
             ? new Dictionary<Guid, DesiredStateRevisionEntity>()
             : await dbContext.DesiredStateRevisions
                 .AsNoTracking()
                 .Where(x => x.WorkspaceId == workspaceId && runRevisionIds.Contains(x.Id))
                 .ToDictionaryAsync(x => x.Id, cancellationToken);
+        var runCommands = runIds.Count == 0
+            ? new Dictionary<Guid, List<DeploymentRunCommandSummary>>()
+            : (await dbContext.DeploymentCommands
+                .AsNoTracking()
+                .Where(x => x.WorkspaceId == workspaceId && runIds.Contains(x.RunId))
+                .OrderBy(x => x.CreatedAt)
+                .ThenBy(x => x.Id)
+                .ToListAsync(cancellationToken))
+            .Select(ToDeploymentRunCommandSummary)
+            .GroupBy(x => x.RunId)
+            .ToDictionary(x => x.Key, x => x.ToList());
 
         var cockpitApplications = applications
             .Select(application => new WorkflowApplication(
@@ -87,7 +99,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             engines.Select(ToEngineRegistration).ToList(),
             [],
             observabilityBindings.Select(ToObservabilityBinding).ToList(),
-            deploymentRuns.Select(run => ToDeploymentHistoryEvent(run, runRevisions)).ToList(),
+            deploymentRuns.Select(run => ToDeploymentHistoryEvent(run, runRevisions, runCommands)).ToList(),
             driftReport.Select(ToDriftReportItem).ToList(),
             []);
     }
@@ -811,6 +823,20 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<DeploymentRunCommandSummary>> GetRunCommandSummariesAsync(
+        Guid workspaceId,
+        Guid runId,
+        CancellationToken cancellationToken = default)
+    {
+        var commands = await dbContext.DeploymentCommands
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.RunId == runId)
+            .OrderBy(x => x.CreatedAt)
+            .ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+        return commands.Select(ToDeploymentRunCommandSummary).ToList();
+    }
+
     public async Task<WorkspaceDeploymentRun?> ClaimNextQueuedRunAsync(
         string workerId,
         DateTimeOffset now,
@@ -1431,12 +1457,14 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
 
     private static DeploymentHistoryEvent ToDeploymentHistoryEvent(
         DeploymentRunEntity run,
-        IReadOnlyDictionary<Guid, DesiredStateRevisionEntity> revisions)
+        IReadOnlyDictionary<Guid, DesiredStateRevisionEntity> revisions,
+        IReadOnlyDictionary<Guid, List<DeploymentRunCommandSummary>> commandsByRunId)
     {
         revisions.TryGetValue(run.SourceRevisionId, out var sourceRevision);
         DesiredStateRevisionEntity? rollbackSourceRevision = null;
         if (run.PreviousDeployedRevisionId.HasValue)
             revisions.TryGetValue(run.PreviousDeployedRevisionId.Value, out rollbackSourceRevision);
+        commandsByRunId.TryGetValue(run.Id, out var commands);
 
         return new DeploymentHistoryEvent(
             run.Id.ToString("D"),
@@ -1447,7 +1475,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             run.EngineId.ToString("D"),
             run.ValidationOutcome,
             run.CompletedAt ?? run.StartedAt ?? run.QueuedAt,
-            rollbackSourceRevision?.RevisionNumber);
+            rollbackSourceRevision?.RevisionNumber,
+            commands ?? []);
     }
 
     private static WorkspaceDeploymentEnvironment ToWorkspaceDeploymentEnvironment(DeploymentEnvironmentEntity entity) =>
@@ -1848,6 +1877,29 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             entity.Message,
             entity.CreatedAt);
 
+    private static DeploymentRunCommandSummary ToDeploymentRunCommandSummary(DeploymentCommandEntity entity) =>
+        new(
+            entity.Id,
+            entity.WorkspaceId,
+            entity.RunId,
+            entity.EnvironmentId,
+            entity.EngineId,
+            entity.Action,
+            entity.Status,
+            entity.WorkerId,
+            entity.ClaimedAt,
+            entity.LeaseExpiresAt,
+            entity.HeartbeatAt,
+            entity.AttemptNumber,
+            entity.PercentComplete,
+            entity.ProgressMessage,
+            GetObservedArtifactDigest(entity),
+            entity.RuntimeReference,
+            DeserializeDiagnostics(entity.DiagnosticsJson),
+            entity.CreatedAt,
+            entity.UpdatedAt,
+            entity.CompletedAt);
+
     private static DeploymentCommandEntity CreateCommandEntity(
         Guid workspaceId,
         CreateDeploymentCommandRequest request,
@@ -2106,9 +2158,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             entity.AttemptNumber,
             entity.PercentComplete,
             entity.ProgressMessage,
-            entity.ObservedArtifactDigestAlgorithm is null || entity.ObservedArtifactDigest is null
-                ? null
-                : new WorkspaceArtifactDigest(entity.ObservedArtifactDigestAlgorithm, entity.ObservedArtifactDigest),
+            GetObservedArtifactDigest(entity),
             entity.RuntimeReference,
             DeserializeDiagnostics(entity.DiagnosticsJson),
             entity.CreatedAt,
@@ -2116,6 +2166,11 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             entity.AvailableAt,
             entity.ExpiresAt,
             entity.CompletedAt);
+
+    private static WorkspaceArtifactDigest? GetObservedArtifactDigest(DeploymentCommandEntity entity) =>
+        entity.ObservedArtifactDigestAlgorithm is null || entity.ObservedArtifactDigest is null
+            ? null
+            : new WorkspaceArtifactDigest(entity.ObservedArtifactDigestAlgorithm, entity.ObservedArtifactDigest);
 
     private static DeploymentCommandWebhookNotification ToDeploymentCommandWebhookNotification(DeploymentCommandWebhookNotificationEntity entity) =>
         new(

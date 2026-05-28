@@ -58,6 +58,15 @@ public sealed class RuntimeCommandApiTests
         wrongLeaseCompleteResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
         detail!.Run.Status.Should().Be(WorkspaceDeploymentRunStatus.Succeeded);
         detail.History.Should().Contain(x => x.Message == "Runtime command completed.");
+        detail.Commands.Should().ContainSingle();
+        var summary = detail.Commands.Single();
+        summary.Id.Should().Be(command.Id);
+        summary.Status.Should().Be(DeploymentCommandStatus.Completed);
+        summary.ProgressMessage.Should().Be("Applying workflow definitions");
+        summary.PercentComplete.Should().Be(75);
+        summary.RuntimeReference.Should().Be("elsa://workflows/payment-retry");
+        summary.ObservedArtifactDigest.Should().Be(new WorkspaceArtifactDigest("sha256", "observed"));
+        summary.WorkerId.Should().Be("runtime-worker-1");
     }
 
     [Fact]

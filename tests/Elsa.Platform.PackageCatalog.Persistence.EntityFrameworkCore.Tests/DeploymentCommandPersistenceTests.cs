@@ -318,6 +318,11 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
         completedRun!.Status.Should().Be(WorkspaceDeploymentRunStatus.Succeeded);
         history.Should().Contain(x => x.Message == "Runtime command completed.");
         cockpit.Applications.Single().Environments.Single().DeployedRevision.Should().Be(topology.Revision.RevisionNumber);
+        var commandSummary = cockpit.History.Single().Commands.Single();
+        commandSummary.Id.Should().Be(command.Id);
+        commandSummary.Status.Should().Be(DeploymentCommandStatus.Completed);
+        commandSummary.ProgressMessage.Should().BeNull();
+        commandSummary.RuntimeReference.Should().Be("elsa://workflow/payment-retry");
     }
 
     [Fact]
