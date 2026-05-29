@@ -24,6 +24,8 @@ public sealed record WorkflowArtifactRuntimeOptions
 
     public TimeSpan RetryMaxDelay { get; init; } = TimeSpan.FromSeconds(30);
 
+    public TimeSpan PayloadRequestTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
     public int MaxRetryAttempts { get; init; } = 3;
 
     public string RuntimeFamily { get; init; } = "elsa-workflows";
@@ -36,6 +38,10 @@ public sealed record WorkflowArtifactRuntimeOptions
     public IReadOnlyList<string> Capabilities { get; init; } = ["workflow-definition.apply"];
 
     public long MaxPayloadBytes { get; init; } = 4 * 1024 * 1024;
+
+    public IReadOnlyList<string> AllowedPayloadReferenceProviders { get; init; } = ["producer-managed"];
+
+    public IReadOnlyList<string> AllowedPayloadHosts { get; init; } = [];
 
     public void Validate()
     {
@@ -61,6 +67,8 @@ public sealed record WorkflowArtifactRuntimeOptions
             throw new InvalidOperationException("Runtime command retry base delay must be positive.");
         if (RetryMaxDelay < RetryBaseDelay)
             throw new InvalidOperationException("Runtime command retry maximum delay must be greater than or equal to the base delay.");
+        if (PayloadRequestTimeout <= TimeSpan.Zero)
+            throw new InvalidOperationException("Workflow artifact payload request timeout must be positive.");
         if (MaxRetryAttempts < 0)
             throw new InvalidOperationException("Runtime command retry attempts must be zero or positive.");
         if (string.IsNullOrWhiteSpace(RuntimeFamily))
@@ -69,7 +77,7 @@ public sealed record WorkflowArtifactRuntimeOptions
             throw new InvalidOperationException("At least one workflow artifact schema version must be supported.");
         if (Capabilities is null || !Capabilities.Any(x => !string.IsNullOrWhiteSpace(x)))
             throw new InvalidOperationException("At least one runtime capability must be advertised.");
-        if (MaxPayloadBytes <= 0)
-            throw new InvalidOperationException("Maximum workflow artifact payload size must be positive.");
+        if (MaxPayloadBytes <= 0 || MaxPayloadBytes > Array.MaxLength)
+            throw new InvalidOperationException("Maximum workflow artifact payload size must be between 1 byte and the maximum supported runtime buffer.");
     }
 }

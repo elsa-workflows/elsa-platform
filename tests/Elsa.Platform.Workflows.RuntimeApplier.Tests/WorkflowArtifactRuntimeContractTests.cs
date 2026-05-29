@@ -76,6 +76,24 @@ public sealed class WorkflowArtifactRuntimeContractTests
     }
 
     [Fact]
+    public void Rejects_non_positive_payload_request_timeout()
+    {
+        var act = () => (_options with { PayloadRequestTimeout = TimeSpan.Zero }).Validate();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload request timeout must be positive.");
+    }
+
+    [Fact]
+    public void Rejects_payload_size_limit_that_cannot_be_buffered()
+    {
+        var act = () => (_options with { MaxPayloadBytes = (long)Array.MaxLength + 1 }).Validate();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Maximum workflow artifact payload size must be between 1 byte and the maximum supported runtime buffer.");
+    }
+
+    [Fact]
     public void Validates_payload_digest_and_schema_contracts()
     {
         var payload = Payload();
