@@ -81,6 +81,31 @@ public sealed class StudioPlatformArtifactSubmitClientTests
         result.Message.Should().Be("Artifact already exists in Platform.");
     }
 
+    [Fact]
+    public async Task Maps_malformed_success_response_to_retryable_state()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.Created, "not-json", "text/plain");
+        var client = new StudioPlatformArtifactSubmitClient(new HttpClient(handler));
+
+        var result = await client.SubmitAsync(Package(), _options);
+
+        result.Status.Should().Be(StudioSubmitStatus.RetryableError);
+        result.Succeeded.Should().BeFalse();
+        result.Message.Should().Be("Platform submission response could not be read.");
+    }
+
+    [Fact]
+    public async Task Maps_non_json_error_response_to_safe_state()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.ServiceUnavailable, "upstream unavailable", "text/plain");
+        var client = new StudioPlatformArtifactSubmitClient(new HttpClient(handler));
+
+        var result = await client.SubmitAsync(Package(), _options);
+
+        result.Status.Should().Be(StudioSubmitStatus.RetryableError);
+        result.Message.Should().Be("Service Unavailable");
+    }
+
     private StudioSubmitPackage Package() =>
         _packager.Package(
             new WorkflowSubmissionSnapshot(
@@ -96,7 +121,7 @@ public sealed class StudioPlatformArtifactSubmitClientTests
                 new Dictionary<string, string>()),
             _options);
 
-    private sealed class RecordingHandler(HttpStatusCode statusCode, string content) : HttpMessageHandler
+    private sealed class RecordingHandler(HttpStatusCode statusCode, string content, string contentType = "application/json") : HttpMessageHandler
     {
         public Uri? RequestUri { get; private set; }
 
@@ -108,7 +133,7 @@ public sealed class StudioPlatformArtifactSubmitClientTests
             RequestBody = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
             return new HttpResponseMessage(statusCode)
             {
-                Content = new StringContent(content, System.Text.Encoding.UTF8, "application/json")
+                Content = new StringContent(content, System.Text.Encoding.UTF8, contentType)
             };
         }
     }

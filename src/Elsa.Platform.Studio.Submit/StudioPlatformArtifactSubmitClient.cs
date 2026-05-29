@@ -75,13 +75,25 @@ public sealed class StudioPlatformArtifactSubmitClient(HttpClient httpClient) : 
         string fallbackMessage,
         CancellationToken cancellationToken)
     {
-        var artifact = await response.Content.ReadFromJsonAsync<WorkspaceArtifactResponse>(JsonOptions, cancellationToken);
+        WorkspaceArtifactResponse? artifact;
+        try
+        {
+            artifact = await response.Content.ReadFromJsonAsync<WorkspaceArtifactResponse>(JsonOptions, cancellationToken);
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            return new StudioSubmitResult(StudioSubmitStatus.RetryableError, "Platform submission response could not be read.");
+        }
+
+        if (artifact is null)
+            return new StudioSubmitResult(StudioSubmitStatus.RetryableError, "Platform submission response could not be read.");
+
         return new StudioSubmitResult(
             status,
             fallbackMessage,
-            artifact?.ArtifactId,
-            artifact?.ContentDigest is null ? null : $"{artifact.ContentDigest.Algorithm}:{artifact.ContentDigest.Value}",
-            artifact?.RegisteredAt);
+            artifact.ArtifactId,
+            $"{artifact.ContentDigest.Algorithm}:{artifact.ContentDigest.Value}",
+            artifact.RegisteredAt);
     }
 
     private static async Task<string> SafeResponseMessageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
