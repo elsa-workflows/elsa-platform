@@ -54,6 +54,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
         var endpoint = await PayloadEndpointAsync(reference, cancellationToken);
         using var request = new HttpRequestMessage(HttpMethod.Get, endpoint.Uri);
         request.Options.Set(ValidatedPayloadAddressKey, endpoint.Address);
+        string? declaredMediaType = null;
         if (!string.IsNullOrWhiteSpace(reference.MediaType))
         {
             if (reference.MediaType.Contains(',')
@@ -62,6 +63,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
                 || mediaType.MediaType.Contains('*'))
                 throw new InvalidOperationException("Workflow artifact payload media type is invalid.");
             request.Headers.Accept.Add(mediaType);
+            declaredMediaType = mediaType.MediaType;
         }
 
         using var response = await SendAsync(request, cancellationToken);
@@ -76,7 +78,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
         return new WorkflowArtifactPayload(
             reference,
             content,
-            reference.MediaType ?? response.Content.Headers.ContentType?.MediaType);
+            declaredMediaType ?? response.Content.Headers.ContentType?.MediaType);
     }
 
     private static WorkflowArtifactRuntimeOptions ValidateOptions(WorkflowArtifactRuntimeOptions options)
@@ -173,10 +175,18 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
         if (!context.InitialRequestMessage.Options.TryGetValue(ValidatedPayloadAddressKey, out var address))
             throw new InvalidOperationException("Workflow artifact payload host has not been validated.");
 
+        return await ConnectToValidatedAddressAsync(context.DnsEndPoint, address, cancellationToken);
+    }
+
+    internal static async ValueTask<Stream> ConnectToValidatedAddressAsync(
+        DnsEndPoint endpoint,
+        IPAddress address,
+        CancellationToken cancellationToken)
+    {
         var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
         try
         {
-            await socket.ConnectAsync(new IPEndPoint(address, context.DnsEndPoint.Port), cancellationToken);
+            await socket.ConnectAsync(new IPEndPoint(address, endpoint.Port), cancellationToken);
             return new NetworkStream(socket, ownsSocket: true);
         }
         catch

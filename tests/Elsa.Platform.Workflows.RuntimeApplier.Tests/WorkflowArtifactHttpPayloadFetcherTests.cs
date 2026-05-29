@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Sockets;
-using System.Reflection;
 using System.Text;
 using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.Workflows.RuntimeApplier;
@@ -39,6 +38,20 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
         payload.MediaType.Should().Be("application/vnd.elsa.workflow-definition+json");
         handler.RequestUri.Should().Be(reference.Uri);
         handler.Accept.Should().Be("application/vnd.elsa.workflow-definition+json");
+    }
+
+    [Fact]
+    public async Task Fetches_response_media_type_when_declared_media_type_is_whitespace()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{}", "application/vnd.elsa.workflow-definition+json");
+        var fetcher = Fetcher(handler);
+
+        var payload = await fetcher.FetchAsync(Reference(
+            "https://payloads.example.test/workflows/payment-retry",
+            mediaType: "   "));
+
+        payload.MediaType.Should().Be("application/vnd.elsa.workflow-definition+json");
+        handler.Accept.Should().BeEmpty();
     }
 
     [Fact]
@@ -343,11 +356,9 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
         {
             var endpoint = (IPEndPoint)listener.LocalEndpoint;
             var acceptConnection = listener.AcceptTcpClientAsync();
-            using var request = new HttpRequestMessage(HttpMethod.Get, "http://payloads.example.test/workflows/payment-retry");
-            request.Options.Set(WorkflowArtifactHttpPayloadFetcher.ValidatedPayloadAddressKey, IPAddress.Loopback);
-
             await using var stream = await WorkflowArtifactHttpPayloadFetcher.ConnectToValidatedAddressAsync(
-                ConnectionContext(new DnsEndPoint("payloads.example.test", endpoint.Port), request),
+                new DnsEndPoint("payloads.example.test", endpoint.Port),
+                IPAddress.Loopback,
                 CancellationToken.None);
             using var connection = await acceptConnection.WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -369,14 +380,6 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
             new StaticTimeProvider(Now),
             resolver ?? new StaticHostResolver(IPAddress.Parse("93.184.216.34")),
             new HttpMessageInvoker(handler));
-
-    private static SocketsHttpConnectionContext ConnectionContext(DnsEndPoint endpoint, HttpRequestMessage request) =>
-        (SocketsHttpConnectionContext)Activator.CreateInstance(
-            typeof(SocketsHttpConnectionContext),
-            BindingFlags.Instance | BindingFlags.NonPublic,
-            binder: null,
-            args: [endpoint, request],
-            culture: null)!;
 
     private static ArtifactPayloadReference Reference(
         string uri,
