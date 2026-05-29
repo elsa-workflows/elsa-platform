@@ -337,6 +337,22 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     }
 
     [Fact]
+    public async Task Rejects_successful_payload_response_with_changed_request_uri()
+    {
+        var handler = new RecordingHandler(
+            HttpStatusCode.OK,
+            "{}",
+            responseRequestUri: "http://127.0.0.1/workflows/payment-retry");
+        var fetcher = Fetcher(handler);
+
+        var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload redirects are not supported.");
+        handler.RequestUri.Should().Be("https://payloads.example.test/workflows/payment-retry");
+    }
+
+    [Fact]
     public void Dispose_does_not_dispose_injected_http_transport()
     {
         var handler = new DisposableRecordingHandler(HttpStatusCode.OK, "{}");
@@ -393,7 +409,8 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
         string content,
         string mediaType = "application/json",
         bool includeContentLength = true,
-        string? location = null) : HttpMessageHandler
+        string? location = null,
+        string? responseRequestUri = null) : HttpMessageHandler
     {
         public string? RequestUri { get; private set; }
 
@@ -407,7 +424,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
             {
                 Content = includeContentLength
                     ? new StringContent(content, Encoding.UTF8, mediaType)
-                    : new StreamingContent(content, mediaType)
+                    : new StreamingContent(content, mediaType),
+                RequestMessage = responseRequestUri is null
+                    ? request
+                    : new HttpRequestMessage(HttpMethod.Get, responseRequestUri)
             };
             if (location is not null)
                 response.Headers.Location = new Uri(location);
