@@ -96,6 +96,67 @@ public sealed class WorkflowRuntimeCommandLeasePolicyTests
     }
 
     [Fact]
+    public void Rejects_claim_without_lease_token()
+    {
+        var act = () => _leasePolicy.Create(new WorkflowRuntimeCommandClaim(Command(Now.AddMinutes(5), heartbeatAt: Now), " "));
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Runtime command claim did not include a lease token.");
+    }
+
+    [Theory]
+    [InlineData(WorkflowRuntimeCommandStatus.Pending, "worker-a", "Runtime command claim did not return a leased command.")]
+    [InlineData(WorkflowRuntimeCommandStatus.Claimed, "worker-b", "Runtime command claim did not prove ownership by this worker.")]
+    public void Rejects_claim_when_lease_ownership_is_not_proven(
+        WorkflowRuntimeCommandStatus status,
+        string workerId,
+        string message)
+    {
+        var act = () => _leasePolicy.Create(new WorkflowRuntimeCommandClaim(
+            Command(Now.AddMinutes(5), heartbeatAt: Now) with
+            {
+                Status = status,
+                WorkerId = workerId
+            },
+            "lease-1"));
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage(message);
+    }
+
+    [Fact]
+    public void Rejects_refresh_when_lease_ownership_is_no_longer_proven()
+    {
+        var lease = _leasePolicy.Create(new WorkflowRuntimeCommandClaim(Command(Now.AddMinutes(5), heartbeatAt: Now), "lease-1"));
+
+        var act = () => _leasePolicy.Refresh(
+            lease,
+            Command(Now.AddMinutes(5), heartbeatAt: Now.AddSeconds(40)) with
+            {
+                Status = WorkflowRuntimeCommandStatus.Completed
+            });
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Runtime command lease cannot be refreshed from an unleased command.");
+    }
+
+    [Fact]
+    public void Rejects_refresh_from_different_worker()
+    {
+        var lease = _leasePolicy.Create(new WorkflowRuntimeCommandClaim(Command(Now.AddMinutes(5), heartbeatAt: Now), "lease-1"));
+
+        var act = () => _leasePolicy.Refresh(
+            lease,
+            Command(Now.AddMinutes(5), heartbeatAt: Now.AddSeconds(40)) with
+            {
+                WorkerId = "worker-b"
+            });
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Runtime command lease cannot be refreshed from a different worker.");
+    }
+
+    [Fact]
     public void Retry_policy_uses_bounded_exponential_backoff()
     {
         _retryPolicy.Decide(WorkflowRuntimeCommandClientStatus.RetryableError, retryAttempt: 0)

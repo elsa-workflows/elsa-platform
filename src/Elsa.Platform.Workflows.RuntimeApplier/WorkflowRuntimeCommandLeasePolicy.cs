@@ -49,6 +49,10 @@ public sealed class WorkflowRuntimeCommandLeasePolicy
     {
         if (string.IsNullOrWhiteSpace(claim.LeaseToken))
             throw new InvalidOperationException("Runtime command claim did not include a lease token.");
+        if (!IsLeasedStatus(claim.Command.Status))
+            throw new InvalidOperationException("Runtime command claim did not return a leased command.");
+        if (!string.Equals(claim.Command.WorkerId, _options.WorkerId, StringComparison.Ordinal))
+            throw new InvalidOperationException("Runtime command claim did not prove ownership by this worker.");
         if (claim.Command.LeaseExpiresAt is null)
             throw new InvalidOperationException("Runtime command claim did not include a lease expiration.");
 
@@ -63,6 +67,10 @@ public sealed class WorkflowRuntimeCommandLeasePolicy
     {
         if (command.Id != lease.CommandId)
             throw new InvalidOperationException("Runtime command lease cannot be refreshed from a different command.");
+        if (!IsLeasedStatus(command.Status))
+            throw new InvalidOperationException("Runtime command lease cannot be refreshed from an unleased command.");
+        if (!string.Equals(command.WorkerId, _options.WorkerId, StringComparison.Ordinal))
+            throw new InvalidOperationException("Runtime command lease cannot be refreshed from a different worker.");
 
         return lease with
         {
@@ -83,6 +91,9 @@ public sealed class WorkflowRuntimeCommandLeasePolicy
 
         return new WorkflowRuntimeCommandLeaseEvaluation(WorkflowRuntimeCommandLeaseState.Active, timeRemaining, true, true, shouldHeartbeat);
     }
+
+    private static bool IsLeasedStatus(WorkflowRuntimeCommandStatus status) =>
+        status is WorkflowRuntimeCommandStatus.Claimed or WorkflowRuntimeCommandStatus.Running;
 }
 
 public sealed class WorkflowRuntimeCommandRetryPolicy
