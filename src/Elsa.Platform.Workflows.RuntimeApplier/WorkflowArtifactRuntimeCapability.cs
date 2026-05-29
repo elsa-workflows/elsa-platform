@@ -31,6 +31,7 @@ public sealed record WorkflowArtifactRuntimeCapability(
     private bool SatisfiesCompatibilityHint(ArtifactCompatibilityHint hint) =>
         hint.RequiredArtifactType.Equals(ArtifactTypeId, StringComparison.OrdinalIgnoreCase)
         && (string.IsNullOrWhiteSpace(hint.RuntimeFamily) || hint.RuntimeFamily.Equals(RuntimeFamily, StringComparison.OrdinalIgnoreCase))
+        && WorkflowArtifactRuntimeVersionRange.Includes(hint.RuntimeVersionRange, RuntimeVersion)
         && hint.RequiredCapabilities.All(required => Capabilities.Contains(required, StringComparer.OrdinalIgnoreCase));
 
     private static IReadOnlyList<string> Normalize(IReadOnlyList<string> values) =>
