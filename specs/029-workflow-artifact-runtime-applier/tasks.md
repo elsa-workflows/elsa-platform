@@ -15,7 +15,7 @@
 - [x] T004 Implement runtime command polling and claim behavior.
 - [x] T005 Implement heartbeat and progress reporting.
 - [x] T006 Implement completion, failure, and rejection reporting.
-- [ ] T007 Add lease-expiration and retry handling.
+- [x] T007 Add lease-expiration and retry handling.
 
 ## Phase 3: Workflow Artifact Applier
 
