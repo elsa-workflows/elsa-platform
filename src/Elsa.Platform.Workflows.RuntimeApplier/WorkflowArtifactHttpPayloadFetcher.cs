@@ -17,6 +17,8 @@ public sealed class WorkflowArtifactHttpPayloadFetcher(
     {
         if (reference.ExpiresAt is not null && reference.ExpiresAt <= _timeProvider.GetUtcNow())
             throw new InvalidOperationException("Workflow artifact payload reference has expired.");
+        if (reference.SizeBytes is < 0)
+            throw new InvalidOperationException("Workflow artifact payload reference size is invalid.");
         if (reference.SizeBytes is > 0 && reference.SizeBytes > _options.MaxPayloadBytes)
             throw new InvalidOperationException("Workflow artifact payload reference exceeds the configured runtime size limit.");
 

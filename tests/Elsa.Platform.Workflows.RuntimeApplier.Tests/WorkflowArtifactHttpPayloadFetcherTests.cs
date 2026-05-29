@@ -65,6 +65,19 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     }
 
     [Fact]
+    public async Task Rejects_invalid_payload_reference_uri()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
+        var fetcher = new WorkflowArtifactHttpPayloadFetcher(new HttpClient(handler), _options, new StaticTimeProvider(Now));
+
+        var act = () => fetcher.FetchAsync(Reference("not a uri"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload reference URI is invalid.");
+        handler.RequestUri.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Rejects_payload_reference_declared_larger_than_limit()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
@@ -74,6 +87,19 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("Workflow artifact payload reference exceeds the configured runtime size limit.");
+        handler.RequestUri.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Rejects_negative_payload_reference_size_without_requesting_remote_payload()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
+        var fetcher = new WorkflowArtifactHttpPayloadFetcher(new HttpClient(handler), _options, new StaticTimeProvider(Now));
+
+        var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry", sizeBytes: -1));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload reference size is invalid.");
         handler.RequestUri.Should().BeNull();
     }
 
@@ -93,9 +119,21 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     }
 
     [Fact]
-    public async Task Rejects_payload_stream_larger_than_limit()
+    public async Task Rejects_payload_content_length_larger_than_limit()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, new string('x', 65));
+        var fetcher = new WorkflowArtifactHttpPayloadFetcher(new HttpClient(handler), _options, new StaticTimeProvider(Now));
+
+        var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload exceeds the configured runtime size limit.");
+    }
+
+    [Fact]
+    public async Task Rejects_payload_stream_larger_than_limit_without_content_length()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, new string('x', 65), includeContentLength: false);
         var fetcher = new WorkflowArtifactHttpPayloadFetcher(new HttpClient(handler), _options, new StaticTimeProvider(Now));
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
@@ -126,7 +164,11 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
         DateTimeOffset? expiresAt = null) =>
         new("producer-managed", uri, mediaType, sizeBytes, null, expiresAt);
 
-    private sealed class RecordingHandler(HttpStatusCode statusCode, string content, string mediaType = "application/json") : HttpMessageHandler
+    private sealed class RecordingHandler(
+        HttpStatusCode statusCode,
+        string content,
+        string mediaType = "application/json",
+        bool includeContentLength = true) : HttpMessageHandler
     {
         public string? RequestUri { get; private set; }
 
@@ -138,8 +180,33 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
             Accept = request.Headers.Accept.ToString();
             return Task.FromResult(new HttpResponseMessage(statusCode)
             {
-                Content = new StringContent(content, Encoding.UTF8, mediaType)
+                Content = includeContentLength
+                    ? new StringContent(content, Encoding.UTF8, mediaType)
+                    : new StreamingContent(content, mediaType)
             });
+        }
+    }
+
+    private sealed class StreamingContent : HttpContent
+    {
+        private readonly string _content;
+
+        public StreamingContent(string content, string mediaType)
+        {
+            _content = content;
+            Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mediaType);
+        }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            var bytes = Encoding.UTF8.GetBytes(_content);
+            return stream.WriteAsync(bytes).AsTask();
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
         }
     }
 
