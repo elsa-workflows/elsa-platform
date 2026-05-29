@@ -14,6 +14,7 @@
 ## Verification Commands
 
 ```sh
+dotnet test tests/Elsa.Platform.Studio.Submit.Tests/Elsa.Platform.Studio.Submit.Tests.csproj
 dotnet test --filter StudioSubmit
 dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceArtifact
 git diff --check
@@ -22,6 +23,10 @@ git diff --check
 ## Verification Results
 
 - 2026-05-28: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter Studio_submit --no-restore` passed: 1 test. This verifies the existing workspace artifact API accepts a Studio-shaped `elsa.workflow-definition` envelope, duplicate submission is idempotent, and artifact submission does not create deployment run history.
+- 2026-05-29: `dotnet test tests/Elsa.Platform.Studio.Submit.Tests/Elsa.Platform.Studio.Submit.Tests.csproj --no-restore` passed: 10 tests. This verifies the Studio submit package contracts, configuration validation, safe result states, deterministic workflow snapshot packaging, unsafe metadata rejection, duplicate result handling, and safe unavailable-Platform messaging.
+- 2026-05-29: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter Studio_submit --no-restore` passed: 1 test.
+- 2026-05-29: `git diff --check` passed.
+- 2026-05-29: `dotnet build Elsa.Platform.sln --no-restore` passed with existing `Microsoft.Build.Utilities.Core` NU1903 warnings.
 
 ## Known Scope Boundaries
 
