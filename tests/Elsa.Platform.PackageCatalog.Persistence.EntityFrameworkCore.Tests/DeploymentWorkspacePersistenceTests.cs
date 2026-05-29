@@ -246,6 +246,71 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Projects_artifact_references_into_structured_desired_state_records()
+    {
+        var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));
+        var environment = await _store.CreateEnvironmentAsync(_workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production));
+        var artifactRecordId = Guid.NewGuid();
+        var desiredStateJson = """
+            {"records":[{
+              "kind":"ArtifactReference",
+              "name":"Payment Retry",
+              "payload":{
+                "artifactRecordId":"__artifactRecordId__",
+                "artifactId":"workflow:payment-retry:v1",
+                "artifactTypeId":"elsa.workflow-definition",
+                "contentDigest":{"algorithm":"sha256","value":"digest-v1"}
+              }}]}
+            """.Replace("__artifactRecordId__", artifactRecordId.ToString("D"), StringComparison.Ordinal);
+
+        await _store.CreateRevisionAsync(
+            _workspaceId,
+            new CreateDesiredStateRevisionRequest(application.Id, environment.Id, "Artifact baseline", "abc123", desiredStateJson, null));
+
+        var projection = await LoadArtifactReferenceProjectionAsync();
+
+        projection.ArtifactRecordId.Should().Be(artifactRecordId);
+        projection.ArtifactId.Should().Be("workflow:payment-retry:v1");
+        projection.ArtifactTypeId.Should().Be("elsa.workflow-definition");
+        projection.ArtifactDigestAlgorithm.Should().Be("sha256");
+        projection.ArtifactDigest.Should().Be("digest-v1");
+    }
+
+    [Fact]
+    public async Task Reads_legacy_artifact_records_without_projected_reference_columns()
+    {
+        var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));
+        var environment = await _store.CreateEnvironmentAsync(_workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production));
+        var revision = await _store.CreateRevisionAsync(
+            _workspaceId,
+            new CreateDesiredStateRevisionRequest(application.Id, environment.Id, "Legacy artifact", "abc123", """
+                {"records":[{
+                  "kind":"ArtifactReference",
+                  "name":"Payment Retry",
+                  "payload":{
+                    "artifactId":"workflow:payment-retry:v1",
+                    "artifactTypeId":"elsa.workflow-definition",
+                    "contentDigest":{"algorithm":"sha256","value":"digest-v1"}
+                  }}]}
+                """, null));
+        await _db.Database.ExecuteSqlRawAsync("""
+            UPDATE StructuredDesiredStateRecords
+            SET ArtifactRecordId = NULL,
+                ArtifactId = NULL,
+                ArtifactTypeId = NULL,
+                ArtifactDigestAlgorithm = NULL,
+                ArtifactDigest = NULL
+            """);
+
+        _db.ChangeTracker.Clear();
+        var loaded = await _store.GetRevisionAsync(_workspaceId, revision.Id);
+
+        loaded.Should().NotBeNull();
+        loaded!.DesiredStateJson.Should().Contain("\"ArtifactReference\"");
+        loaded.DesiredStateJson.Should().Contain("workflow:payment-retry:v1");
+    }
+
+    [Fact]
     public async Task Persists_confirmations_runs_and_append_only_history()
     {
         var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));
@@ -383,6 +448,24 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
         return Convert.ToInt64(count);
     }
 
+    private async Task<ArtifactReferenceProjection> LoadArtifactReferenceProjectionAsync()
+    {
+        await using var command = _db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = """
+            SELECT ArtifactRecordId, ArtifactId, ArtifactTypeId, ArtifactDigestAlgorithm, ArtifactDigest
+            FROM StructuredDesiredStateRecords
+            WHERE Kind = 'ArtifactReference'
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        return new ArtifactReferenceProjection(
+            reader.IsDBNull(0) ? null : Guid.Parse(reader.GetString(0)),
+            reader.IsDBNull(1) ? null : reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2),
+            reader.IsDBNull(3) ? null : reader.GetString(3),
+            reader.IsDBNull(4) ? null : reader.GetString(4));
+    }
+
     private async Task<long> CountRuntimeControlExecutionsAsync()
     {
         await using var command = _db.Database.GetDbConnection().CreateCommand();
@@ -398,4 +481,11 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
             .Options;
         return new CatalogDbContext(options);
     }
+
+    private sealed record ArtifactReferenceProjection(
+        Guid? ArtifactRecordId,
+        string? ArtifactId,
+        string? ArtifactTypeId,
+        string? ArtifactDigestAlgorithm,
+        string? ArtifactDigest);
 }

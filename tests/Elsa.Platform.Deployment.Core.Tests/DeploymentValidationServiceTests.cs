@@ -138,6 +138,57 @@ public sealed class DeploymentValidationServiceTests
         comparison.Validations.Should().NotContain(x => x.Severity == ValidationSeverity.Blocker);
     }
 
+    [Fact]
+    public async Task Previews_artifact_backed_desired_state_with_safe_artifact_contract()
+    {
+        var artifactRecordId = Guid.NewGuid();
+        var desiredStateJson = """
+            {"records":[{
+              "kind":"ArtifactReference",
+              "name":"Payment Retry",
+              "payload":{
+                "artifactRecordId":"__artifactRecordId__",
+                "artifactId":"workflow:payment-retry:v2",
+                "artifactTypeId":"elsa.workflow-definition",
+                "contentDigest":{"algorithm":"sha256","value":"v2"},
+                "safeMetadata":{"displayName":"Payment Retry","version":"2"},
+                "configuration":{"environment":"stage"},
+                "compatibilityHints":[{"requiredCapabilities":["workflow-definition.apply"]}]
+              }}]}
+            """.Replace("__artifactRecordId__", artifactRecordId.ToString("D"), StringComparison.Ordinal);
+        _store.Revisions[_sourceRevisionId] = Revision(_sourceRevisionId, _sourceEnvironmentId, 7, desiredStateJson);
+        _store.LatestByEnvironment[_targetEnvironmentId] = Revision(_targetRevisionId, _targetEnvironmentId, 6, """
+            {"records":[{
+              "kind":"ArtifactReference",
+              "name":"Payment Retry",
+              "payload":{
+                "artifactId":"workflow:payment-retry:v2",
+                "artifactTypeId":"elsa.workflow-definition",
+                "contentDigest":{"algorithm":"sha256","value":"v2"},
+                "configuration":{"environment":"prod"}
+              }}]}
+            """);
+        _store.Engines[_targetEngineId] = Engine(_targetEngineId, _targetEnvironmentId);
+        _store.EngineRegistrations.Add(EngineRegistration(_targetEngineId, _targetEnvironmentId));
+        var service = new DeploymentValidationService(_store);
+
+        var comparison = await service.PreviewPromotionAsync(
+            _workspaceId,
+            new WorkspacePromotionPreviewRequest(_sourceEnvironmentId, _targetEnvironmentId, _sourceRevisionId, _targetEngineId));
+
+        var artifact = comparison.Artifacts.Should().ContainSingle().Subject;
+        artifact.Name.Should().Be("Payment Retry");
+        artifact.Impact.Should().Be(PromotionArtifactImpact.Changed);
+        artifact.Source!.ArtifactRecordId.Should().Be(artifactRecordId.ToString("D"));
+        artifact.Source.ArtifactId.Should().Be("workflow:payment-retry:v2");
+        artifact.Source.ArtifactTypeId.Should().Be("elsa.workflow-definition");
+        artifact.Source.ContentDigest.Should().Be(new PromotionArtifactDigest("sha256", "v2"));
+        artifact.Source.Metadata.Should().Contain("displayName", "Payment Retry");
+        artifact.Source.Configuration.Should().Contain("environment", "stage");
+        artifact.Target!.Configuration.Should().Contain("environment", "prod");
+        artifact.RuntimeCompatibility.Should().ContainSingle(x => x.Severity == ValidationSeverity.Pass);
+    }
+
     private WorkspaceDesiredStateRevision Revision(Guid revisionId, Guid environmentId, int revisionNumber, string desiredStateJson) =>
         new(
             revisionId,
@@ -173,6 +224,19 @@ public sealed class DeploymentValidationServiceTests
             DateTimeOffset.UtcNow,
             DateTimeOffset.UtcNow);
 
+    private WorkflowEngineRegistration EngineRegistration(Guid engineId, Guid environmentId) =>
+        new(
+            engineId.ToString("D"),
+            "target-engine",
+            environmentId.ToString("D"),
+            new EngineEndpointMetadata("https://engine.example.test/elsa", "", "4.1.0", CertificateStatus.Trusted),
+            new EngineCredentialReference("Azure Key Vault", "kv://engine", CredentialVerificationStatus.Verified, DateTimeOffset.UtcNow),
+            DeploymentHealth.Healthy,
+            DateTimeOffset.UtcNow,
+            [new EngineCapability("workflow-definition.apply", "Apply workflow definitions", CapabilityBoundary.EngineApi)],
+            [],
+            null);
+
     private EnvironmentSummary Environment(Guid environmentId, string name, EnvironmentTier tier, params string[] capabilities) =>
         new(
             environmentId.ToString("D"),
@@ -193,12 +257,13 @@ public sealed class DeploymentValidationServiceTests
         public Dictionary<Guid, WorkspaceDesiredStateRevision> Revisions { get; } = [];
         public Dictionary<Guid, WorkspaceDesiredStateRevision?> LatestByEnvironment { get; } = [];
         public Dictionary<Guid, WorkspaceWorkflowEngine> Engines { get; } = [];
+        public List<WorkflowEngineRegistration> EngineRegistrations { get; } = [];
         public List<EnvironmentSummary> Environments { get; } = [];
 
         public Task<DeploymentCockpit> GetCockpitAsync(Guid workspaceId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new DeploymentCockpit(
                 [new WorkflowApplication(Guid.NewGuid().ToString("D"), "Payments", "Workspace", Environments)],
-                [],
+                EngineRegistrations,
                 [],
                 [],
                 [],
