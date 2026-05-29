@@ -41,6 +41,8 @@ public sealed record WorkflowArtifactRuntimeOptions
             throw new InvalidOperationException("Runtime command poll interval must be positive.");
         if (ClaimLeaseDuration <= TimeSpan.Zero)
             throw new InvalidOperationException("Runtime command lease duration must be positive.");
+        if (ClaimLeaseDuration < TimeSpan.FromSeconds(1) || ClaimLeaseDuration.TotalSeconds > int.MaxValue)
+            throw new InvalidOperationException("Runtime command lease duration must be between 1 second and the maximum supported Platform lease.");
         if (string.IsNullOrWhiteSpace(RuntimeFamily))
             throw new InvalidOperationException("Runtime family is required before advertising artifact capabilities.");
         if (SupportedArtifactSchemaVersions is null || !SupportedArtifactSchemaVersions.Any(x => !string.IsNullOrWhiteSpace(x)))

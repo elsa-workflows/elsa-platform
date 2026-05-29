@@ -87,7 +87,8 @@ Focused specs:
 4. `029-workflow-artifact-runtime-applier`
    - Spec created for the NuGet package for Elsa Workflows runtime integration.
    - Package contract slice started with runtime configuration, capability advertisement, payload/digest/schema validation contracts, apply result contracts, and safe diagnostic helpers.
-   - Remaining work consumes workflow artifact deployment commands and applies verified workflow artifacts into the local runtime store.
+   - Runtime command HTTP client now polls, claims, heartbeats, reports progress, completes, fails, and rejects commands through Platform APIs.
+   - Remaining work adds the worker loop, lease-expiration retry behavior, payload loading, and local runtime store apply.
    - Reports validation/apply results to Platform.
 
 5. `030-artifact-backed-promotion`
