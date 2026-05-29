@@ -31,6 +31,15 @@ public sealed class WorkflowArtifactRuntimeContractTests
     }
 
     [Fact]
+    public void Requires_runtime_version_before_advertising_artifact_capabilities()
+    {
+        var act = () => WorkflowArtifactRuntimeCapability.FromOptions(_options with { RuntimeVersion = null });
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Runtime version is required before advertising artifact capabilities.");
+    }
+
+    [Fact]
     public void Requires_platform_endpoint_before_sync()
     {
         var act = () => (_options with { PlatformEndpoint = null }).Validate();
@@ -108,6 +117,27 @@ public sealed class WorkflowArtifactRuntimeContractTests
     }
 
     [Fact]
+    public void Validates_payload_digest_case_insensitively()
+    {
+        var payload = Payload();
+        var envelope = Envelope(payload);
+        var uppercaseDigest = new ArtifactDigest(
+            envelope.ContentDigest.Algorithm.ToUpperInvariant(),
+            envelope.ContentDigest.Value.ToUpperInvariant());
+        envelope = envelope with
+        {
+            ContentDigest = uppercaseDigest,
+            PayloadReference = envelope.PayloadReference with { ReferenceDigest = uppercaseDigest }
+        };
+        var validator = new WorkflowArtifactRuntimeContractValidator(_options);
+
+        var result = validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference));
+
+        result.Status.Should().Be(WorkflowArtifactValidationStatus.Valid);
+        result.ObservedDigest.Should().Be(WorkflowArtifactRuntimeContractValidator.ComputeDigest(payload));
+    }
+
+    [Fact]
     public void Rejects_digest_mismatch_without_exposing_payload()
     {
         var payload = Payload("""{"id":"payment-retry","version":43}""");
@@ -121,6 +151,29 @@ public sealed class WorkflowArtifactRuntimeContractTests
         result.Diagnostics.Should().ContainSingle(x => x.Code == "workflow-artifact.digest-mismatch");
         result.Diagnostics.Single().Message.Should().NotContain("payment-retry");
         result.ObservedDigest.Should().NotBe(envelope.ContentDigest);
+    }
+
+    [Fact]
+    public void Rejects_payload_reference_digest_mismatch_without_exposing_payload()
+    {
+        var payload = Payload();
+        var envelope = Envelope(payload);
+        envelope = envelope with
+        {
+            PayloadReference = envelope.PayloadReference with
+            {
+                ReferenceDigest = new ArtifactDigest("sha256", new string('b', 64))
+            }
+        };
+        var validator = new WorkflowArtifactRuntimeContractValidator(_options);
+
+        var result = validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference));
+
+        result.Status.Should().Be(WorkflowArtifactValidationStatus.DigestMismatch);
+        result.Succeeded.Should().BeFalse();
+        result.Diagnostics.Should().ContainSingle(x => x.Code == "workflow-artifact.reference-digest-mismatch");
+        result.Diagnostics.Single().Message.Should().NotContain("payment-retry");
+        result.ObservedDigest.Should().Be(WorkflowArtifactRuntimeContractValidator.ComputeDigest(payload));
     }
 
     [Fact]
@@ -145,6 +198,71 @@ public sealed class WorkflowArtifactRuntimeContractTests
         validator.Validate(unsupportedSchema, PayloadResult(payload, unsupportedSchema.PayloadReference))
             .Status.Should().Be(WorkflowArtifactValidationStatus.UnsupportedSchema);
         validator.Validate(missingCapability, PayloadResult(payload, missingCapability.PayloadReference))
+            .Status.Should().Be(WorkflowArtifactValidationStatus.MissingCapability);
+    }
+
+    [Theory]
+    [InlineData(">=4.0.0 <5.0.0", WorkflowArtifactValidationStatus.Valid)]
+    [InlineData("[4.0.0,5.0.0)", WorkflowArtifactValidationStatus.Valid)]
+    [InlineData(">4.0.0", WorkflowArtifactValidationStatus.MissingCapability)]
+    [InlineData(">=5.0.0", WorkflowArtifactValidationStatus.MissingCapability)]
+    [InlineData("not-a-range", WorkflowArtifactValidationStatus.MissingCapability)]
+    public void Evaluates_runtime_version_ranges_when_matching_compatibility_hints(
+        string versionRange,
+        WorkflowArtifactValidationStatus expectedStatus)
+    {
+        var payload = Payload();
+        var envelope = Envelope(payload) with
+        {
+            CompatibilityHints =
+            [
+                new ArtifactCompatibilityHint(
+                    ArtifactTypeIds.ElsaWorkflowDefinition,
+                    "elsa-workflows",
+                    versionRange,
+                    ["workflow-definition.apply"],
+                    new Dictionary<string, string>())
+            ]
+        };
+        var validator = new WorkflowArtifactRuntimeContractValidator(_options);
+
+        validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference))
+            .Status.Should().Be(expectedStatus);
+    }
+
+    [Fact]
+    public void Evaluates_runtime_version_ranges_with_build_metadata()
+    {
+        var payload = Payload();
+        var envelope = Envelope(payload);
+        var validator = new WorkflowArtifactRuntimeContractValidator(_options with { RuntimeVersion = "4.0.0+build.1" });
+
+        validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference))
+            .Status.Should().Be(WorkflowArtifactValidationStatus.Valid);
+    }
+
+    [Theory]
+    [InlineData("4.0.0-preview.1", ">=4.0.0")]
+    [InlineData("4.0.0-preview.1", "4.0.0")]
+    [InlineData("4.0.0", ">=4..0")]
+    public void Rejects_prerelease_or_malformed_runtime_version_ranges(string runtimeVersion, string versionRange)
+    {
+        var payload = Payload();
+        var envelope = Envelope(payload) with
+        {
+            CompatibilityHints =
+            [
+                new ArtifactCompatibilityHint(
+                    ArtifactTypeIds.ElsaWorkflowDefinition,
+                    "elsa-workflows",
+                    versionRange,
+                    ["workflow-definition.apply"],
+                    new Dictionary<string, string>())
+            ]
+        };
+        var validator = new WorkflowArtifactRuntimeContractValidator(_options with { RuntimeVersion = runtimeVersion });
+
+        validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference))
             .Status.Should().Be(WorkflowArtifactValidationStatus.MissingCapability);
     }
 

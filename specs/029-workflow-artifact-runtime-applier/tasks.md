@@ -20,7 +20,7 @@
 ## Phase 3: Workflow Artifact Applier
 
 - [x] T008 Implement workflow artifact payload loading.
-- [ ] T009 Implement digest and schema compatibility validation.
+- [x] T009 Implement digest and schema compatibility validation.
 - [ ] T010 Implement local runtime workflow definition apply.
 - [ ] T011 Implement apply journal/idempotency guard.
 - [ ] T012 Implement safe diagnostics and runtime reference reporting.

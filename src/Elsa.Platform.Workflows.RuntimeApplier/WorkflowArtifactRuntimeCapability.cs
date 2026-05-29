@@ -12,13 +12,16 @@ public sealed record WorkflowArtifactRuntimeCapability(
     public static WorkflowArtifactRuntimeCapability FromOptions(WorkflowArtifactRuntimeOptions options)
     {
         options.Validate();
+        if (string.IsNullOrWhiteSpace(options.RuntimeVersion))
+            throw new InvalidOperationException("Runtime version is required before advertising artifact capabilities.");
+
         var schemaVersions = Normalize(options.SupportedArtifactSchemaVersions);
         var capabilities = Normalize(options.Capabilities);
 
         return new WorkflowArtifactRuntimeCapability(
             ArtifactTypeIds.ElsaWorkflowDefinition,
             options.RuntimeFamily.Trim(),
-            string.IsNullOrWhiteSpace(options.RuntimeVersion) ? null : options.RuntimeVersion.Trim(),
+            options.RuntimeVersion.Trim(),
             schemaVersions,
             capabilities);
     }
@@ -31,6 +34,7 @@ public sealed record WorkflowArtifactRuntimeCapability(
     private bool SatisfiesCompatibilityHint(ArtifactCompatibilityHint hint) =>
         hint.RequiredArtifactType.Equals(ArtifactTypeId, StringComparison.OrdinalIgnoreCase)
         && (string.IsNullOrWhiteSpace(hint.RuntimeFamily) || hint.RuntimeFamily.Equals(RuntimeFamily, StringComparison.OrdinalIgnoreCase))
+        && WorkflowArtifactRuntimeVersionRange.Includes(hint.RuntimeVersionRange, RuntimeVersion)
         && hint.RequiredCapabilities.All(required => Capabilities.Contains(required, StringComparer.OrdinalIgnoreCase));
 
     private static IReadOnlyList<string> Normalize(IReadOnlyList<string> values) =>

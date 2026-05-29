@@ -53,11 +53,19 @@ public sealed class WorkflowArtifactRuntimeContractValidator(WorkflowArtifactRun
         }
 
         var observedDigest = ComputeDigest(payload.Content);
-        if (observedDigest != envelope.ContentDigest)
+        if (!DigestEquals(observedDigest, envelope.ContentDigest))
         {
             return WorkflowArtifactValidationResult.Invalid(
                 WorkflowArtifactValidationStatus.DigestMismatch,
                 Error("workflow-artifact.digest-mismatch", "Workflow artifact payload digest does not match the submitted artifact digest."),
+                observedDigest);
+        }
+
+        if (envelope.PayloadReference.ReferenceDigest is { } referenceDigest && !DigestEquals(observedDigest, referenceDigest))
+        {
+            return WorkflowArtifactValidationResult.Invalid(
+                WorkflowArtifactValidationStatus.DigestMismatch,
+                Error("workflow-artifact.reference-digest-mismatch", "Workflow artifact payload digest does not match the payload reference digest."),
                 observedDigest);
         }
 
@@ -83,6 +91,10 @@ public sealed class WorkflowArtifactRuntimeContractValidator(WorkflowArtifactRun
         var hash = SHA256.HashData(payload);
         return new ArtifactDigest("sha256", Convert.ToHexString(hash).ToLowerInvariant());
     }
+
+    private static bool DigestEquals(ArtifactDigest left, ArtifactDigest right) =>
+        left.Algorithm.Equals(right.Algorithm, StringComparison.OrdinalIgnoreCase)
+        && left.Value.Equals(right.Value, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsJsonObject(byte[] payload)
     {
