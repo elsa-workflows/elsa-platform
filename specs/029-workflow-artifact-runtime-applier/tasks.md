@@ -6,9 +6,9 @@
 
 ## Phase 1: Runtime Package Contract
 
-- [ ] T001 Define runtime integration package boundaries and configuration.
-- [ ] T002 Define runtime capability advertisement for workflow artifact support.
-- [ ] T003 Define payload fetch, digest verification, schema validation, and apply result contracts.
+- [x] T001 Define runtime integration package boundaries and configuration.
+- [x] T002 Define runtime capability advertisement for workflow artifact support.
+- [x] T003 Define payload fetch, digest verification, schema validation, and apply result contracts.
 
 ## Phase 2: Sync Worker
 
