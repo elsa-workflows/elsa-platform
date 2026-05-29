@@ -86,10 +86,8 @@ Focused specs:
 
 4. `029-workflow-artifact-runtime-applier`
    - Spec created for the NuGet package for Elsa Workflows runtime integration.
-   - Advertises runtime capabilities.
-   - Consumes workflow artifact deployment commands.
-   - Verifies artifact digest and schema compatibility.
-   - Installs workflow artifacts into the local runtime store.
+   - Package contract slice started with runtime configuration, capability advertisement, payload/digest/schema validation contracts, apply result contracts, and safe diagnostic helpers.
+   - Remaining work consumes workflow artifact deployment commands and applies verified workflow artifacts into the local runtime store.
    - Reports validation/apply results to Platform.
 
 5. `030-artifact-backed-promotion`
