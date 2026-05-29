@@ -35,6 +35,7 @@ public sealed record WorkflowArtifactRuntimeCapability(
 
     private static IReadOnlyList<string> Normalize(IReadOnlyList<string> values) =>
         values
+            .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x.Trim())
             .Where(x => x.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)

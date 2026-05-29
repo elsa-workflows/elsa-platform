@@ -49,6 +49,15 @@ public sealed class WorkflowArtifactRuntimeContractTests
     }
 
     [Fact]
+    public void Rejects_null_capability_advertisement()
+    {
+        var act = () => (_options with { Capabilities = null! }).Validate();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("At least one runtime capability must be advertised.");
+    }
+
+    [Fact]
     public void Validates_payload_digest_and_schema_contracts()
     {
         var payload = Payload();
@@ -107,6 +116,19 @@ public sealed class WorkflowArtifactRuntimeContractTests
     public void Rejects_invalid_json_payload_even_when_digest_matches()
     {
         var payload = Payload("""{"id":""");
+        var envelope = Envelope(payload);
+        var validator = new WorkflowArtifactRuntimeContractValidator(_options);
+
+        var result = validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference));
+
+        result.Status.Should().Be(WorkflowArtifactValidationStatus.InvalidPayload);
+        result.ObservedDigest.Should().Be(envelope.ContentDigest);
+    }
+
+    [Fact]
+    public void Rejects_non_object_json_payload_even_when_digest_matches()
+    {
+        var payload = Payload("""["payment-retry"]""");
         var envelope = Envelope(payload);
         var validator = new WorkflowArtifactRuntimeContractValidator(_options);
 

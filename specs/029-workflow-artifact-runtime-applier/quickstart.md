@@ -21,7 +21,7 @@ git diff --check
 
 ## Verification Results
 
-- 2026-05-29: `dotnet test tests/Elsa.Platform.Workflows.RuntimeApplier.Tests/Elsa.Platform.Workflows.RuntimeApplier.Tests.csproj --no-restore -v minimal` passed: 9 tests. This verifies the runtime applier package contracts, workflow artifact capability advertisement, payload digest validation, unsupported schema and missing capability rejection, JSON payload validation, safe diagnostics, and apply result success semantics.
+- 2026-05-29: `dotnet test tests/Elsa.Platform.Workflows.RuntimeApplier.Tests/Elsa.Platform.Workflows.RuntimeApplier.Tests.csproj --no-restore -v minimal` passed: 11 tests. This verifies the runtime applier package contracts, workflow artifact capability advertisement, payload digest validation, unsupported schema and missing capability rejection, JSON object payload validation, safe diagnostics, and apply result success semantics.
 - 2026-05-29: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter RuntimeCommand --no-restore` passed: 4 tests.
 - 2026-05-29: `dotnet build Elsa.Platform.sln --no-restore` passed with existing `Microsoft.Build.Utilities.Core` NU1903 warnings.
 - 2026-05-29: `git diff --check` passed.

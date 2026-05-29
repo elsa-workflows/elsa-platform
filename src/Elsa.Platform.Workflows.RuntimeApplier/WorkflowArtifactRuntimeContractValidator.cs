@@ -61,11 +61,11 @@ public sealed class WorkflowArtifactRuntimeContractValidator(WorkflowArtifactRun
                 observedDigest);
         }
 
-        if (!IsJson(payload.Content))
+        if (!IsJsonObject(payload.Content))
         {
             return WorkflowArtifactValidationResult.Invalid(
                 WorkflowArtifactValidationStatus.InvalidPayload,
-                Error("workflow-artifact.invalid-payload", "Workflow artifact payload is not valid JSON."),
+                Error("workflow-artifact.invalid-payload", "Workflow artifact payload is not a valid JSON object."),
                 observedDigest);
         }
 
@@ -84,12 +84,12 @@ public sealed class WorkflowArtifactRuntimeContractValidator(WorkflowArtifactRun
         return new ArtifactDigest("sha256", Convert.ToHexString(hash).ToLowerInvariant());
     }
 
-    private static bool IsJson(byte[] payload)
+    private static bool IsJsonObject(byte[] payload)
     {
         try
         {
-            using var _ = JsonDocument.Parse(payload);
-            return true;
+            using var document = JsonDocument.Parse(payload);
+            return document.RootElement.ValueKind == JsonValueKind.Object;
         }
         catch (JsonException)
         {

@@ -43,9 +43,9 @@ public sealed record WorkflowArtifactRuntimeOptions
             throw new InvalidOperationException("Runtime command lease duration must be positive.");
         if (string.IsNullOrWhiteSpace(RuntimeFamily))
             throw new InvalidOperationException("Runtime family is required before advertising artifact capabilities.");
-        if (!SupportedArtifactSchemaVersions.Any(x => !string.IsNullOrWhiteSpace(x)))
+        if (SupportedArtifactSchemaVersions is null || !SupportedArtifactSchemaVersions.Any(x => !string.IsNullOrWhiteSpace(x)))
             throw new InvalidOperationException("At least one workflow artifact schema version must be supported.");
-        if (!Capabilities.Any(x => !string.IsNullOrWhiteSpace(x)))
+        if (Capabilities is null || !Capabilities.Any(x => !string.IsNullOrWhiteSpace(x)))
             throw new InvalidOperationException("At least one runtime capability must be advertised.");
         if (MaxPayloadBytes <= 0)
             throw new InvalidOperationException("Maximum workflow artifact payload size must be positive.");
