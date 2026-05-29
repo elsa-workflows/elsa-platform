@@ -206,6 +206,34 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     }
 
     [Fact]
+    public async Task Rejects_transport_failures_without_exposing_remote_details()
+    {
+        var handler = new ThrowingRequestHandler(new HttpRequestException("payloads.example.test token=secret"));
+        var fetcher = Fetcher(handler);
+
+        var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry?token=secret"));
+
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Be("Workflow artifact payload request failed.");
+        exception.Which.Message.Should().NotContain("payloads.example.test");
+        exception.Which.Message.Should().NotContain("secret");
+    }
+
+    [Fact]
+    public async Task Rejects_payload_stream_failures_without_exposing_remote_details()
+    {
+        var handler = new ThrowingContentHandler();
+        var fetcher = Fetcher(handler);
+
+        var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry?token=secret"));
+
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Be("Workflow artifact payload request failed.");
+        exception.Which.Message.Should().NotContain("payloads.example.test");
+        exception.Which.Message.Should().NotContain("secret");
+    }
+
+    [Fact]
     public async Task Rejects_unapproved_payload_reference_provider_without_requesting_remote_payload()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
@@ -459,6 +487,22 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
         }
     }
 
+    private sealed class ThrowingRequestHandler(Exception exception) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromException<HttpResponseMessage>(exception);
+    }
+
+    private sealed class ThrowingContentHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ThrowingReadContent(),
+                RequestMessage = request
+            });
+    }
+
     private sealed class StreamingContent : HttpContent
     {
         private readonly string _content;
@@ -480,6 +524,27 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
             length = 0;
             return false;
         }
+    }
+
+    private sealed class ThrowingReadContent : HttpContent
+    {
+        protected override Task<Stream> CreateContentReadStreamAsync() =>
+            Task.FromResult<Stream>(new ThrowingReadStream());
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            throw new IOException("payloads.example.test token=secret");
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+    }
+
+    private sealed class ThrowingReadStream : MemoryStream
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            ValueTask.FromException<int>(new IOException("payloads.example.test token=secret"));
     }
 
     private sealed class StaticTimeProvider(DateTimeOffset now) : TimeProvider

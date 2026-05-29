@@ -66,7 +66,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
             declaredMediaType = mediaType.MediaType;
         }
 
-        using var response = await SendAsync(request, cancellationToken);
+        using var response = await SendSafelyAsync(request, cancellationToken);
         if (response.RequestMessage?.RequestUri is { } actualUri && actualUri != endpoint.Uri)
             throw new InvalidOperationException("Workflow artifact payload redirects are not supported.");
         if (IsRedirect(response.StatusCode))
@@ -74,7 +74,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException($"Workflow artifact payload request failed with status {(int)response.StatusCode}.");
 
-        var content = await ReadBoundedAsync(response.Content, cancellationToken);
+        var content = await ReadSafelyAsync(response.Content, cancellationToken);
         return new WorkflowArtifactPayload(
             reference,
             content,
@@ -174,6 +174,30 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
             ? await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             : await _httpClient.SendAsync(request, cancellationToken);
 
+    private async Task<HttpResponseMessage> SendSafelyAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await SendAsync(request, cancellationToken);
+        }
+        catch (Exception ex) when (IsRemoteIoFailure(ex))
+        {
+            throw new InvalidOperationException("Workflow artifact payload request failed.", ex);
+        }
+    }
+
+    private async Task<byte[]> ReadSafelyAsync(HttpContent content, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ReadBoundedAsync(content, cancellationToken);
+        }
+        catch (Exception ex) when (IsRemoteIoFailure(ex))
+        {
+            throw new InvalidOperationException("Workflow artifact payload request failed.", ex);
+        }
+    }
+
     internal static async ValueTask<Stream> ConnectToValidatedAddressAsync(SocketsHttpConnectionContext context, CancellationToken cancellationToken)
     {
         if (!context.InitialRequestMessage.Options.TryGetValue(ValidatedPayloadAddressKey, out var address))
@@ -207,6 +231,9 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
             or HttpStatusCode.SeeOther
             or HttpStatusCode.TemporaryRedirect
             or HttpStatusCode.PermanentRedirect;
+
+    private static bool IsRemoteIoFailure(Exception exception) =>
+        exception is HttpRequestException or IOException;
 
     private async Task<byte[]> ReadBoundedAsync(HttpContent content, CancellationToken cancellationToken)
     {
