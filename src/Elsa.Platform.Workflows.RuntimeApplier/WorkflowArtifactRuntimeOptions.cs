@@ -69,7 +69,7 @@ public sealed record WorkflowArtifactRuntimeOptions
             throw new InvalidOperationException("At least one workflow artifact schema version must be supported.");
         if (Capabilities is null || !Capabilities.Any(x => !string.IsNullOrWhiteSpace(x)))
             throw new InvalidOperationException("At least one runtime capability must be advertised.");
-        if (MaxPayloadBytes <= 0)
-            throw new InvalidOperationException("Maximum workflow artifact payload size must be positive.");
+        if (MaxPayloadBytes <= 0 || MaxPayloadBytes > int.MaxValue)
+            throw new InvalidOperationException("Maximum workflow artifact payload size must be between 1 byte and the maximum supported runtime buffer.");
     }
 }

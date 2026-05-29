@@ -28,6 +28,7 @@ git diff --check
 - 2026-05-29: `dotnet test tests/Elsa.Platform.Workflows.RuntimeApplier.Tests/Elsa.Platform.Workflows.RuntimeApplier.Tests.csproj --no-restore -v minimal` passed: 22 tests. This adds runtime command HTTP client coverage for polling, claiming, conflict handling, progress, completion, failure, rejection, safe diagnostics, malformed success responses, lease duration validation, and forward-compatible unknown command states.
 - 2026-05-29: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter Runtime_applier_client --no-restore` passed: 1 test. This verifies the runtime applier package client can poll, claim, progress, and complete through the real Platform runtime command API.
 - 2026-05-29: `dotnet test tests/Elsa.Platform.Workflows.RuntimeApplier.Tests/Elsa.Platform.Workflows.RuntimeApplier.Tests.csproj --no-restore -v minimal` passed: 39 tests. This adds runtime lease evaluation, ownership proof, safety-margin handling, heartbeat due detection, and bounded retry decision coverage.
+- 2026-05-29: `dotnet test tests/Elsa.Platform.Workflows.RuntimeApplier.Tests/Elsa.Platform.Workflows.RuntimeApplier.Tests.csproj --no-restore -v minimal` passed: 47 tests. This adds HTTP(S) workflow artifact payload loading with expired-reference, unsupported-scheme, media-type, size-limit, remote failure, and safe error handling coverage.
 
 ## Known Scope Boundaries
 
