@@ -250,6 +250,11 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     [InlineData("http://127.0.0.1/workflows/payment-retry")]
     [InlineData("http://169.254.169.254/latest/meta-data")]
     [InlineData("http://10.0.0.1/workflows/payment-retry")]
+    [InlineData("http://100.64.0.1/workflows/payment-retry")]
+    [InlineData("http://192.0.2.1/workflows/payment-retry")]
+    [InlineData("http://198.18.0.1/workflows/payment-retry")]
+    [InlineData("http://198.51.100.1/workflows/payment-retry")]
+    [InlineData("http://203.0.113.1/workflows/payment-retry")]
     [InlineData("http://[fd00::1]/workflows/payment-retry")]
     [InlineData("http://[::ffff:127.0.0.1]/workflows/payment-retry")]
     public async Task Rejects_payload_hosts_that_resolve_to_non_public_addresses(string uri)

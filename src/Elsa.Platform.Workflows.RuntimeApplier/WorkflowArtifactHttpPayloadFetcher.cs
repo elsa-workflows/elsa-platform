@@ -139,9 +139,14 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
             var bytes = address.GetAddressBytes();
             return bytes[0] is 0 or 10 or 127
                 || bytes[0] >= 224
+                || bytes[0] == 100 && bytes[1] is >= 64 and <= 127
                 || bytes[0] == 169 && bytes[1] == 254
                 || bytes[0] == 172 && bytes[1] is >= 16 and <= 31
-                || bytes[0] == 192 && bytes[1] == 168;
+                || bytes[0] == 192 && bytes[1] == 0 && bytes[2] is 0 or 2
+                || bytes[0] == 192 && bytes[1] == 88 && bytes[2] == 99
+                || bytes[0] == 192 && bytes[1] == 168
+                || bytes[0] == 198 && (bytes[1] is 18 or 19 || bytes[1] == 51 && bytes[2] == 100)
+                || bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113;
         }
 
         if (address.AddressFamily == AddressFamily.InterNetworkV6)
