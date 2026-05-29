@@ -3,4 +3,8 @@
     <ProjectReference Include="..\Elsa.Platform.Deployment.Artifacts\Elsa.Platform.Deployment.Artifacts.csproj" />
     <ProjectReference Include="..\Elsa.Platform.Deployment.Abstractions\Elsa.Platform.Deployment.Abstractions.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NuGet.Versioning" />
+  </ItemGroup>
 </Project>

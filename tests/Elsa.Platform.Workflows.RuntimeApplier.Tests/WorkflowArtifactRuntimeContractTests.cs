@@ -31,6 +31,15 @@ public sealed class WorkflowArtifactRuntimeContractTests
     }
 
     [Fact]
+    public void Requires_runtime_version_before_advertising_artifact_capabilities()
+    {
+        var act = () => WorkflowArtifactRuntimeCapability.FromOptions(_options with { RuntimeVersion = null });
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Runtime version is required before advertising artifact capabilities.");
+    }
+
+    [Fact]
     public void Requires_platform_endpoint_before_sync()
     {
         var act = () => (_options with { PlatformEndpoint = null }).Validate();
@@ -230,6 +239,31 @@ public sealed class WorkflowArtifactRuntimeContractTests
 
         validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference))
             .Status.Should().Be(WorkflowArtifactValidationStatus.Valid);
+    }
+
+    [Theory]
+    [InlineData("4.0.0-preview.1", ">=4.0.0")]
+    [InlineData("4.0.0-preview.1", "4.0.0")]
+    [InlineData("4.0.0", ">=4..0")]
+    public void Rejects_prerelease_or_malformed_runtime_version_ranges(string runtimeVersion, string versionRange)
+    {
+        var payload = Payload();
+        var envelope = Envelope(payload) with
+        {
+            CompatibilityHints =
+            [
+                new ArtifactCompatibilityHint(
+                    ArtifactTypeIds.ElsaWorkflowDefinition,
+                    "elsa-workflows",
+                    versionRange,
+                    ["workflow-definition.apply"],
+                    new Dictionary<string, string>())
+            ]
+        };
+        var validator = new WorkflowArtifactRuntimeContractValidator(_options with { RuntimeVersion = runtimeVersion });
+
+        validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference))
+            .Status.Should().Be(WorkflowArtifactValidationStatus.MissingCapability);
     }
 
     [Fact]

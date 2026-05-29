@@ -1,3 +1,5 @@
+using NuGet.Versioning;
+
 namespace Elsa.Platform.Workflows.RuntimeApplier;
 
 internal static class WorkflowArtifactRuntimeVersionRange
@@ -6,7 +8,7 @@ internal static class WorkflowArtifactRuntimeVersionRange
     {
         if (string.IsNullOrWhiteSpace(range))
             return true;
-        if (string.IsNullOrWhiteSpace(version) || !Version.TryParse(Normalize(version), out var candidate))
+        if (!TryParseVersion(version, out var candidate))
             return false;
 
         return range
@@ -14,7 +16,7 @@ internal static class WorkflowArtifactRuntimeVersionRange
             .Any(expression => IncludesExpression(expression, candidate));
     }
 
-    private static bool IncludesExpression(string expression, Version candidate)
+    private static bool IncludesExpression(string expression, NuGetVersion candidate)
     {
         var value = expression.Trim();
         if (value.Length == 0)
@@ -30,7 +32,7 @@ internal static class WorkflowArtifactRuntimeVersionRange
         return IncludesSingle(value, candidate);
     }
 
-    private static bool IncludesSingle(string value, Version candidate)
+    private static bool IncludesSingle(string value, NuGetVersion candidate)
     {
         if (value.StartsWith(">=", StringComparison.Ordinal))
             return TryCompare(value[2..], min => candidate >= min);
@@ -44,10 +46,10 @@ internal static class WorkflowArtifactRuntimeVersionRange
         if (IsBracketRange(value))
             return IncludesBracketRange(value, candidate);
 
-        return TryCompare(value, exact => candidate == exact);
+        return TryCompare(value, exact => candidate.CompareTo(exact) == 0);
     }
 
-    private static bool IncludesBracketRange(string value, Version candidate)
+    private static bool IncludesBracketRange(string value, NuGetVersion candidate)
     {
         var inclusiveMin = value[0] == '[';
         var inclusiveMax = value[^1] == ']';
@@ -57,7 +59,7 @@ internal static class WorkflowArtifactRuntimeVersionRange
 
         if (!string.IsNullOrWhiteSpace(parts[0]))
         {
-            if (!Version.TryParse(Normalize(parts[0]), out var min))
+            if (!TryParseVersion(parts[0], out var min))
                 return false;
 
             var minOk = inclusiveMin ? candidate >= min : candidate > min;
@@ -67,7 +69,7 @@ internal static class WorkflowArtifactRuntimeVersionRange
 
         if (!string.IsNullOrWhiteSpace(parts[1]))
         {
-            if (!Version.TryParse(Normalize(parts[1]), out var max))
+            if (!TryParseVersion(parts[1], out var max))
                 return false;
 
             var maxOk = inclusiveMax ? candidate <= max : candidate < max;
@@ -78,21 +80,37 @@ internal static class WorkflowArtifactRuntimeVersionRange
         return true;
     }
 
-    private static bool TryCompare(string value, Func<Version, bool> compare) =>
-        Version.TryParse(Normalize(value), out var boundary) && compare(boundary);
+    private static bool TryCompare(string value, Func<NuGetVersion, bool> compare) =>
+        TryParseVersion(value, out var boundary) && compare(boundary);
 
     private static bool IsBracketRange(string value) =>
         (value.StartsWith('[') || value.StartsWith('(')) && (value.EndsWith(']') || value.EndsWith(')'));
 
-    private static string Normalize(string value)
+    private static bool TryParseVersion(string? value, out NuGetVersion version)
     {
-        var core = value.Trim().Split('-', 2)[0].Split('+', 2)[0];
-        var parts = core.Split('.', StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length switch
+        version = null!;
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        var trimmed = value.Trim();
+        var suffixIndex = trimmed.IndexOfAny(['-', '+']);
+        var core = suffixIndex < 0 ? trimmed : trimmed[..suffixIndex];
+        var suffix = suffixIndex < 0 ? "" : trimmed[suffixIndex..];
+        var parts = core.Split('.');
+        if (parts.Length == 0 || parts.Any(string.IsNullOrWhiteSpace))
+            return false;
+
+        var normalized = parts.Length switch
         {
-            1 => $"{parts[0]}.0.0",
-            2 => $"{parts[0]}.{parts[1]}.0",
-            _ => core
+            1 => $"{parts[0]}.0.0{suffix}",
+            2 => $"{parts[0]}.{parts[1]}.0{suffix}",
+            _ => trimmed
         };
+
+        if (!NuGetVersion.TryParse(normalized, out var parsed))
+            return false;
+
+        version = parsed;
+        return true;
     }
 }
