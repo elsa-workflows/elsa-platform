@@ -233,6 +233,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     [InlineData("http://169.254.169.254/latest/meta-data")]
     [InlineData("http://10.0.0.1/workflows/payment-retry")]
     [InlineData("http://[fd00::1]/workflows/payment-retry")]
+    [InlineData("http://[::ffff:127.0.0.1]/workflows/payment-retry")]
     public async Task Rejects_payload_hosts_that_resolve_to_non_public_addresses(string uri)
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
@@ -286,11 +287,24 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
         handler.RequestUri.Should().BeNull();
     }
 
+    [Fact]
+    public async Task Rejects_payload_redirects_without_following_remote_location()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.Redirect, "", location: "http://127.0.0.1/workflows/payment-retry");
+        var fetcher = Fetcher(handler);
+
+        var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload redirects are not supported.");
+        handler.RequestUri.Should().Be("https://payloads.example.test/workflows/payment-retry");
+    }
+
     private WorkflowArtifactHttpPayloadFetcher Fetcher(
         HttpMessageHandler handler,
         WorkflowArtifactRuntimeOptions? options = null,
         IWorkflowArtifactPayloadHostResolver? resolver = null) =>
-        new(new HttpClient(handler), options ?? _options, new StaticTimeProvider(Now), resolver ?? new StaticHostResolver(IPAddress.Parse("93.184.216.34")));
+        new(options ?? _options, new StaticTimeProvider(Now), resolver ?? new StaticHostResolver(IPAddress.Parse("93.184.216.34")), new HttpClient(handler));
 
     private static ArtifactPayloadReference Reference(
         string uri,
@@ -303,7 +317,8 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
         HttpStatusCode statusCode,
         string content,
         string mediaType = "application/json",
-        bool includeContentLength = true) : HttpMessageHandler
+        bool includeContentLength = true,
+        string? location = null) : HttpMessageHandler
     {
         public string? RequestUri { get; private set; }
 
@@ -313,12 +328,16 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
         {
             RequestUri = request.RequestUri?.AbsoluteUri;
             Accept = request.Headers.Accept.ToString();
-            return Task.FromResult(new HttpResponseMessage(statusCode)
+            var response = new HttpResponseMessage(statusCode)
             {
                 Content = includeContentLength
                     ? new StringContent(content, Encoding.UTF8, mediaType)
                     : new StreamingContent(content, mediaType)
-            });
+            };
+            if (location is not null)
+                response.Headers.Location = new Uri(location);
+
+            return Task.FromResult(response);
         }
     }
 

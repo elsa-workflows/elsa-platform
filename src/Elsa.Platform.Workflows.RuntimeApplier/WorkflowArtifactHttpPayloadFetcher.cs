@@ -6,15 +6,16 @@ using Elsa.Platform.Deployment.Artifacts;
 namespace Elsa.Platform.Workflows.RuntimeApplier;
 
 public sealed class WorkflowArtifactHttpPayloadFetcher(
-    HttpClient httpClient,
     WorkflowArtifactRuntimeOptions options,
     TimeProvider? timeProvider = null,
-    IWorkflowArtifactPayloadHostResolver? hostResolver = null) : IWorkflowArtifactPayloadFetcher
+    IWorkflowArtifactPayloadHostResolver? hostResolver = null,
+    HttpMessageInvoker? httpClient = null) : IWorkflowArtifactPayloadFetcher, IDisposable
 {
     private const int BufferSize = 81920;
     private readonly WorkflowArtifactRuntimeOptions _options = ValidateOptions(options);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly IWorkflowArtifactPayloadHostResolver _hostResolver = hostResolver ?? DnsWorkflowArtifactPayloadHostResolver.Instance;
+    private readonly HttpMessageInvoker _httpClient = httpClient ?? CreateDefaultHttpClient();
 
     public async Task<WorkflowArtifactPayload> FetchAsync(
         ArtifactPayloadReference reference,
@@ -39,7 +40,11 @@ public sealed class WorkflowArtifactHttpPayloadFetcher(
             request.Headers.Accept.Add(mediaType);
         }
 
-        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await SendAsync(request, cancellationToken);
+        if (response.RequestMessage?.RequestUri is { } actualUri && actualUri != uri)
+            throw new InvalidOperationException("Workflow artifact payload redirects are not supported.");
+        if (IsRedirect(response.StatusCode))
+            throw new InvalidOperationException("Workflow artifact payload redirects are not supported.");
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException($"Workflow artifact payload request failed with status {(int)response.StatusCode}.");
 
@@ -56,16 +61,22 @@ public sealed class WorkflowArtifactHttpPayloadFetcher(
         return options;
     }
 
+    private static HttpMessageInvoker CreateDefaultHttpClient() =>
+        new(new SocketsHttpHandler { AllowAutoRedirect = false });
+
     private async Task<Uri> PayloadUriAsync(ArtifactPayloadReference reference, CancellationToken cancellationToken)
     {
         if (!Uri.TryCreate(reference.Uri, UriKind.Absolute, out var uri))
             throw new InvalidOperationException("Workflow artifact payload reference URI is invalid.");
         if (uri.Scheme is not "http" and not "https")
             throw new InvalidOperationException("Workflow artifact payload reference scheme is not supported by this runtime.");
-        if (_options.AllowedPayloadHosts is not { Count: > 0 } || !_options.AllowedPayloadHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase))
+        var host = uri.Host.Trim('[', ']');
+        if (_options.AllowedPayloadHosts is not { Count: > 0 }
+            || !_options.AllowedPayloadHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase)
+                && !_options.AllowedPayloadHosts.Contains(host, StringComparer.OrdinalIgnoreCase))
             throw new InvalidOperationException("Workflow artifact payload host is not approved by this runtime.");
 
-        var addresses = IPAddress.TryParse(uri.Host, out var literal)
+        var addresses = IPAddress.TryParse(host, out var literal)
             ? [literal]
             : await ResolveHostAsync(uri.IdnHost, cancellationToken);
         if (addresses.Count == 0)
@@ -90,6 +101,8 @@ public sealed class WorkflowArtifactHttpPayloadFetcher(
 
     private static bool IsBlockedAddress(IPAddress address)
     {
+        if (address.IsIPv4MappedToIPv6)
+            return IsBlockedAddress(address.MapToIPv4());
         if (IPAddress.IsLoopback(address))
             return true;
 
@@ -117,6 +130,19 @@ public sealed class WorkflowArtifactHttpPayloadFetcher(
         return true;
     }
 
+    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+        _httpClient is HttpClient client
+            ? await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            : await _httpClient.SendAsync(request, cancellationToken);
+
+    private static bool IsRedirect(HttpStatusCode statusCode) =>
+        statusCode is HttpStatusCode.MultipleChoices
+            or HttpStatusCode.Moved
+            or HttpStatusCode.Found
+            or HttpStatusCode.SeeOther
+            or HttpStatusCode.TemporaryRedirect
+            or HttpStatusCode.PermanentRedirect;
+
     private async Task<byte[]> ReadBoundedAsync(HttpContent content, CancellationToken cancellationToken)
     {
         if (content.Headers.ContentLength is > 0 && content.Headers.ContentLength > _options.MaxPayloadBytes)
@@ -140,6 +166,9 @@ public sealed class WorkflowArtifactHttpPayloadFetcher(
             output.Write(buffer, 0, read);
         }
     }
+
+    public void Dispose() =>
+        _httpClient.Dispose();
 }
 
 public interface IWorkflowArtifactPayloadHostResolver
