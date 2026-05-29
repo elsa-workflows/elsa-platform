@@ -300,11 +300,26 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
         handler.RequestUri.Should().Be("https://payloads.example.test/workflows/payment-retry");
     }
 
+    [Fact]
+    public void Dispose_does_not_dispose_injected_http_transport()
+    {
+        var handler = new DisposableRecordingHandler(HttpStatusCode.OK, "{}");
+        var fetcher = Fetcher(handler);
+
+        fetcher.Dispose();
+
+        handler.IsDisposed.Should().BeFalse();
+    }
+
     private WorkflowArtifactHttpPayloadFetcher Fetcher(
         HttpMessageHandler handler,
         WorkflowArtifactRuntimeOptions? options = null,
         IWorkflowArtifactPayloadHostResolver? resolver = null) =>
-        new(options ?? _options, new StaticTimeProvider(Now), resolver ?? new StaticHostResolver(IPAddress.Parse("93.184.216.34")), new HttpClient(handler));
+        new(
+            options ?? _options,
+            new StaticTimeProvider(Now),
+            resolver ?? new StaticHostResolver(IPAddress.Parse("93.184.216.34")),
+            new HttpMessageInvoker(handler));
 
     private static ArtifactPayloadReference Reference(
         string uri,
@@ -313,7 +328,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
         DateTimeOffset? expiresAt = null) =>
         new("producer-managed", uri, mediaType, sizeBytes, null, expiresAt);
 
-    private sealed class RecordingHandler(
+    private class RecordingHandler(
         HttpStatusCode statusCode,
         string content,
         string mediaType = "application/json",
@@ -338,6 +353,20 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
                 response.Headers.Location = new Uri(location);
 
             return Task.FromResult(response);
+        }
+    }
+
+    private sealed class DisposableRecordingHandler(
+        HttpStatusCode statusCode,
+        string content,
+        string mediaType = "application/json") : RecordingHandler(statusCode, content, mediaType)
+    {
+        public bool IsDisposed { get; private set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = true;
+            base.Dispose(disposing);
         }
     }
 

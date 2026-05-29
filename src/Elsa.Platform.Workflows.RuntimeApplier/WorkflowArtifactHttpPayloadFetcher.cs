@@ -5,17 +5,37 @@ using Elsa.Platform.Deployment.Artifacts;
 
 namespace Elsa.Platform.Workflows.RuntimeApplier;
 
-public sealed class WorkflowArtifactHttpPayloadFetcher(
-    WorkflowArtifactRuntimeOptions options,
-    TimeProvider? timeProvider = null,
-    IWorkflowArtifactPayloadHostResolver? hostResolver = null,
-    HttpMessageInvoker? httpClient = null) : IWorkflowArtifactPayloadFetcher, IDisposable
+public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloadFetcher, IDisposable
 {
     private const int BufferSize = 81920;
-    private readonly WorkflowArtifactRuntimeOptions _options = ValidateOptions(options);
-    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
-    private readonly IWorkflowArtifactPayloadHostResolver _hostResolver = hostResolver ?? DnsWorkflowArtifactPayloadHostResolver.Instance;
-    private readonly HttpMessageInvoker _httpClient = httpClient ?? CreateDefaultHttpClient();
+    private static readonly HttpRequestOptionsKey<IPAddress> ValidatedPayloadAddressKey = new("Elsa.WorkflowArtifact.ValidatedPayloadAddress");
+    private readonly WorkflowArtifactRuntimeOptions _options;
+    private readonly TimeProvider _timeProvider;
+    private readonly IWorkflowArtifactPayloadHostResolver _hostResolver;
+    private readonly HttpMessageInvoker _httpClient;
+    private readonly bool _ownsHttpClient;
+
+    public WorkflowArtifactHttpPayloadFetcher(
+        WorkflowArtifactRuntimeOptions options,
+        TimeProvider? timeProvider = null,
+        IWorkflowArtifactPayloadHostResolver? hostResolver = null)
+        : this(options, timeProvider, hostResolver, CreateDefaultHttpClient(), true)
+    {
+    }
+
+    internal WorkflowArtifactHttpPayloadFetcher(
+        WorkflowArtifactRuntimeOptions options,
+        TimeProvider? timeProvider,
+        IWorkflowArtifactPayloadHostResolver? hostResolver,
+        HttpMessageInvoker httpClient,
+        bool ownsHttpClient = false)
+    {
+        _options = ValidateOptions(options);
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _hostResolver = hostResolver ?? DnsWorkflowArtifactPayloadHostResolver.Instance;
+        _httpClient = httpClient;
+        _ownsHttpClient = ownsHttpClient;
+    }
 
     public async Task<WorkflowArtifactPayload> FetchAsync(
         ArtifactPayloadReference reference,
@@ -31,8 +51,9 @@ public sealed class WorkflowArtifactHttpPayloadFetcher(
         if (reference.SizeBytes is > 0 && reference.SizeBytes > _options.MaxPayloadBytes)
             throw new InvalidOperationException("Workflow artifact payload reference exceeds the configured runtime size limit.");
 
-        var uri = await PayloadUriAsync(reference, cancellationToken);
-        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        var endpoint = await PayloadEndpointAsync(reference, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, endpoint.Uri);
+        request.Options.Set(ValidatedPayloadAddressKey, endpoint.Address);
         if (!string.IsNullOrWhiteSpace(reference.MediaType))
         {
             if (reference.MediaType.Contains(',') || !MediaTypeWithQualityHeaderValue.TryParse(reference.MediaType, out var mediaType))
@@ -41,7 +62,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcher(
         }
 
         using var response = await SendAsync(request, cancellationToken);
-        if (response.RequestMessage?.RequestUri is { } actualUri && actualUri != uri)
+        if (response.RequestMessage?.RequestUri is { } actualUri && actualUri != endpoint.Uri)
             throw new InvalidOperationException("Workflow artifact payload redirects are not supported.");
         if (IsRedirect(response.StatusCode))
             throw new InvalidOperationException("Workflow artifact payload redirects are not supported.");
@@ -62,9 +83,13 @@ public sealed class WorkflowArtifactHttpPayloadFetcher(
     }
 
     private static HttpMessageInvoker CreateDefaultHttpClient() =>
-        new(new SocketsHttpHandler { AllowAutoRedirect = false });
+        new(new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            ConnectCallback = ConnectToValidatedAddressAsync
+        });
 
-    private async Task<Uri> PayloadUriAsync(ArtifactPayloadReference reference, CancellationToken cancellationToken)
+    private async Task<ValidatedPayloadEndpoint> PayloadEndpointAsync(ArtifactPayloadReference reference, CancellationToken cancellationToken)
     {
         if (!Uri.TryCreate(reference.Uri, UriKind.Absolute, out var uri))
             throw new InvalidOperationException("Workflow artifact payload reference URI is invalid.");
@@ -84,7 +109,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcher(
         if (addresses.Any(IsBlockedAddress))
             throw new InvalidOperationException("Workflow artifact payload host resolves to a non-public address.");
 
-        return uri;
+        return new ValidatedPayloadEndpoint(uri, addresses[0]);
     }
 
     private async Task<IReadOnlyList<IPAddress>> ResolveHostAsync(string host, CancellationToken cancellationToken)
@@ -135,6 +160,24 @@ public sealed class WorkflowArtifactHttpPayloadFetcher(
             ? await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             : await _httpClient.SendAsync(request, cancellationToken);
 
+    private static async ValueTask<Stream> ConnectToValidatedAddressAsync(SocketsHttpConnectionContext context, CancellationToken cancellationToken)
+    {
+        if (!context.InitialRequestMessage.Options.TryGetValue(ValidatedPayloadAddressKey, out var address))
+            throw new InvalidOperationException("Workflow artifact payload host has not been validated.");
+
+        var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+        try
+        {
+            await socket.ConnectAsync(new IPEndPoint(address, context.DnsEndPoint.Port), cancellationToken);
+            return new NetworkStream(socket, ownsSocket: true);
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
+        }
+    }
+
     private static bool IsRedirect(HttpStatusCode statusCode) =>
         statusCode is HttpStatusCode.MultipleChoices
             or HttpStatusCode.Moved
@@ -167,8 +210,13 @@ public sealed class WorkflowArtifactHttpPayloadFetcher(
         }
     }
 
-    public void Dispose() =>
-        _httpClient.Dispose();
+    public void Dispose()
+    {
+        if (_ownsHttpClient)
+            _httpClient.Dispose();
+    }
+
+    private sealed record ValidatedPayloadEndpoint(Uri Uri, IPAddress Address);
 }
 
 public interface IWorkflowArtifactPayloadHostResolver
