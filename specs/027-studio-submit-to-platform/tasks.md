@@ -22,11 +22,11 @@
 - [x] T008 Add configuration options for Platform endpoint, workspace, authentication, and publish separation policy.
 - [x] T009 Add **Submit to Platform** command and result state model.
 - [x] T010 Package workflow snapshot, safe metadata, source identifiers, schema version, digest, and payload reference.
-- [ ] T011 Submit artifact envelope to Platform and handle idempotent duplicate results.
+- [x] T011 Submit artifact envelope to Platform and handle idempotent duplicate results.
 
 ## Phase 4: Verification
 
 - [x] T012 Add unit tests for snapshot packaging and unsafe metadata handling.
-- [ ] T013 Add integration tests for successful submit and duplicate submit.
+- [x] T013 Add integration tests for successful submit and duplicate submit.
 - [x] T014 Add tests proving submit does not create a deployment run or runtime publish side effect.
-- [ ] T015 Run focused checks and record results in `quickstart.md`.
+- [x] T015 Run focused checks and record results in `quickstart.md`.

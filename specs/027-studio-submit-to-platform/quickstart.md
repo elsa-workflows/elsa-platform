@@ -27,6 +27,8 @@ git diff --check
 - 2026-05-29: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter Studio_submit --no-restore` passed: 1 test.
 - 2026-05-29: `git diff --check` passed.
 - 2026-05-29: `dotnet build Elsa.Platform.sln --no-restore` passed with existing `Microsoft.Build.Utilities.Core` NU1903 warnings.
+- 2026-05-29: `dotnet test tests/Elsa.Platform.Studio.Submit.Tests/Elsa.Platform.Studio.Submit.Tests.csproj --no-restore` passed: 21 tests. This verifies the concrete Studio Platform HTTP client posts envelope metadata only, maps success/duplicate/error responses to safe submit states, handles unreadable Platform responses safely, and keeps raw workflow JSON out of the artifact registration request.
+- 2026-05-29: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter Studio_submit --no-restore` passed: 2 tests. This verifies the Studio submit client registers and idempotently deduplicates a workflow artifact through the real Platform artifact API without creating deployment run history.
 
 ## Known Scope Boundaries
 

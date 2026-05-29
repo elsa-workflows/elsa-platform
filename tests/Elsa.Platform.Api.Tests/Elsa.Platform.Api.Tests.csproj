@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Elsa.Platform.Api\Elsa.Platform.Api.csproj" />
     <ProjectReference Include="..\..\src\Elsa.Platform.PackageCatalog.Core\Elsa.Platform.PackageCatalog.Core.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Platform.Studio.Submit\Elsa.Platform.Studio.Submit.csproj" />
     <ProjectReference Include="..\Elsa.Platform.PackageCatalog.Testing\Elsa.Platform.PackageCatalog.Testing.csproj" />
   </ItemGroup>
 
