@@ -163,6 +163,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
                 || address.IsIPv6SiteLocal
                 || address.Equals(IPAddress.IPv6None)
                 || address.Equals(IPAddress.IPv6Any)
+                || bytes[..12].All(x => x == 0)
                 || (bytes[0] & 0xfe) == 0xfc;
         }
 
