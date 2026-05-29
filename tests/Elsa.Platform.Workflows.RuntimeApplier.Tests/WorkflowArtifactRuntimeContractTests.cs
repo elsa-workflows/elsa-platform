@@ -78,7 +78,7 @@ public sealed class WorkflowArtifactRuntimeContractTests
     [Fact]
     public void Rejects_payload_size_limit_that_cannot_be_buffered()
     {
-        var act = () => (_options with { MaxPayloadBytes = (long)int.MaxValue + 1 }).Validate();
+        var act = () => (_options with { MaxPayloadBytes = (long)Array.MaxLength + 1 }).Validate();
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("Maximum workflow artifact payload size must be between 1 byte and the maximum supported runtime buffer.");
