@@ -2,7 +2,7 @@
 
 Status: draft execution plan
 
-Last updated: 2026-05-28
+Last updated: 2026-05-29
 
 ## Product Model
 
@@ -46,7 +46,7 @@ Architectural delta introduced by the latest product decisions:
 - The specs now describe immutable workflow artifacts, Studio **Submit to Platform**, platform-owned deployment commands, runtime pull/sync, webhook-triggered fetch, and direct push as transport alternatives.
 - Deployment execution now creates platform-owned command records linked to deployment runs while keeping the platform-local in-process worker compatible.
 - External runtime sync workers can poll, claim, heartbeat, progress, complete, fail, or reject commands through the runtime command API.
-- The first Studio submit package skeleton now exists with configuration, safe result states, deterministic workflow snapshot packaging, and a Platform submit client boundary. It does not yet wire into Elsa Studio UI or provide the concrete Platform HTTP client.
+- The first Studio submit package now exists with configuration, safe result states, deterministic workflow snapshot packaging, and a concrete Platform artifact registration HTTP client. It does not yet wire into the Elsa Studio UI or provide the host-specific authentication configuration module.
 - Existing desired-state records are structured platform records; they do not yet reference workflow artifacts as the main deployable input.
 
 ## Spec Work Needed
@@ -76,8 +76,8 @@ Focused specs:
 
 2. `027-studio-submit-to-platform`
    - Spec created for the NuGet package for Elsa Studio integration.
-   - Package skeleton and contracts exist for **Submit to Platform** configuration, result states, snapshot packaging, and submit client boundaries.
-   - Remaining work adds the concrete Studio UI integration and Platform HTTP submission client.
+   - Package contracts exist for **Submit to Platform** configuration, result states, snapshot packaging, submit client boundaries, and concrete Platform HTTP artifact submission.
+   - Remaining work adds the concrete Studio UI integration and host-specific authentication wiring.
    - Keeps direct runtime Publish clearly separate or hidden for platform-integrated installations.
 
 3. `028-runtime-command-sync`
@@ -223,6 +223,6 @@ Exit criteria:
 
 ## Immediate Next Actions
 
-1. Continue `027-studio-submit-to-platform` by wiring the package into Elsa Studio UI and implementing the concrete Platform artifact submission client.
+1. Continue `027-studio-submit-to-platform` by wiring the package into Elsa Studio UI and host-specific authentication/configuration.
 2. Plan and implement `029-workflow-artifact-runtime-applier` after the Studio submit and runtime command contracts are agreed.
 3. Plan `030-artifact-backed-promotion` before changing promotion/rollback persistence semantics.
