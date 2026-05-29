@@ -88,11 +88,15 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
     }
 
     private static HttpMessageInvoker CreateDefaultHttpClient() =>
-        new(new SocketsHttpHandler
+        new(CreateDefaultHttpHandler());
+
+    internal static SocketsHttpHandler CreateDefaultHttpHandler() =>
+        new()
         {
             AllowAutoRedirect = false,
+            UseProxy = false,
             ConnectCallback = ConnectToValidatedAddressAsync
-        });
+        };
 
     private async Task<ValidatedPayloadEndpoint> PayloadEndpointAsync(ArtifactPayloadReference reference, CancellationToken cancellationToken)
     {

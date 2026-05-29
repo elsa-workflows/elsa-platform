@@ -387,6 +387,15 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
         }
     }
 
+    [Fact]
+    public void Default_http_handler_disables_proxy_usage()
+    {
+        using var handler = WorkflowArtifactHttpPayloadFetcher.CreateDefaultHttpHandler();
+
+        handler.UseProxy.Should().BeFalse();
+        handler.AllowAutoRedirect.Should().BeFalse();
+    }
+
     private WorkflowArtifactHttpPayloadFetcher Fetcher(
         HttpMessageHandler handler,
         WorkflowArtifactRuntimeOptions? options = null,
