@@ -123,7 +123,11 @@ public sealed partial class StudioWorkflowSnapshotPackager(
         var safe = UnsafeIdentityCharacters().Replace(value.Trim(), "-").Trim('-');
         if (string.IsNullOrWhiteSpace(safe))
             throw new InvalidOperationException("Workflow definition identity does not contain a safe artifact identity segment.");
-        return safe.Length <= 96 ? safe : safe[..96];
+        if (safe.Length <= 96)
+            return safe;
+
+        var identityDigest = ComputeDigest(value.Trim()).Value[..16];
+        return $"{safe[..79]}-{identityDigest}";
     }
 
     private static string? TrimToNull(string? value) =>

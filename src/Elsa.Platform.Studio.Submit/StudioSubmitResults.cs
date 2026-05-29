@@ -19,11 +19,12 @@ public sealed record StudioSubmitResult(
 
 public enum StudioSubmitStatus
 {
-    Submitted,
-    Duplicate,
-    ValidationFailed,
-    Unauthorized,
-    Unavailable,
-    RetryableError,
-    Conflict
+    Unknown = 0,
+    Submitted = 1,
+    Duplicate = 2,
+    ValidationFailed = 3,
+    Unauthorized = 4,
+    Unavailable = 5,
+    RetryableError = 6,
+    Conflict = 7
 }

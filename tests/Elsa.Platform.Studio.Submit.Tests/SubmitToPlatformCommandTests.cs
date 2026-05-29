@@ -39,6 +39,15 @@ public sealed class SubmitToPlatformCommandTests
     }
 
     [Fact]
+    public void Default_result_status_is_not_successful()
+    {
+        var result = new StudioSubmitResult(default, "uninitialized");
+
+        result.Status.Should().Be(StudioSubmitStatus.Unknown);
+        result.Succeeded.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Returns_safe_validation_failure_without_calling_platform()
     {
         var client = new RecordingSubmitClient(new StudioSubmitResult(StudioSubmitStatus.Submitted, "Submitted."));

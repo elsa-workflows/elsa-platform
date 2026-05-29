@@ -64,6 +64,22 @@ public sealed class StudioWorkflowSnapshotPackagerTests
     }
 
     [Fact]
+    public void Preserves_long_workflow_identity_uniqueness_in_artifact_id()
+    {
+        var sharedPrefix = new string('a', 120);
+        var snapshotA = Snapshot(workflowDefinitionId: $"{sharedPrefix}-a");
+        var snapshotB = Snapshot(workflowDefinitionId: $"{sharedPrefix}-b");
+
+        var packageA = _packager.Package(snapshotA, _options);
+        var packageB = _packager.Package(snapshotB, _options);
+
+        packageA.Envelope.ContentDigest.Should().Be(packageB.Envelope.ContentDigest);
+        packageA.Envelope.ArtifactId.Should().NotBe(packageB.Envelope.ArtifactId);
+        packageA.Envelope.ArtifactId.Length.Should().BeLessThanOrEqualTo(256);
+        packageB.Envelope.ArtifactId.Length.Should().BeLessThanOrEqualTo(256);
+    }
+
+    [Fact]
     public void Rejects_unsafe_metadata_before_submission()
     {
         var snapshot = Snapshot(labels: new Dictionary<string, string> { ["token"] = "abc" });
@@ -111,10 +127,11 @@ public sealed class StudioWorkflowSnapshotPackagerTests
     }
 
     private static WorkflowSubmissionSnapshot Snapshot(
+        string workflowDefinitionId = "payment-retry",
         string definitionJson = """{"id":"payment-retry","name":"PaymentRetry","version":42}""",
         IReadOnlyDictionary<string, string>? labels = null) =>
         new(
-            "payment-retry",
+            workflowDefinitionId,
             "v42",
             "Payment Retry",
             "42",
