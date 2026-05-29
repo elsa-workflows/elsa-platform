@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.Workflows.RuntimeApplier;
@@ -15,14 +16,15 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
         WorkspaceId = Guid.Parse("10000000-0000-0000-0000-000000000001"),
         EngineId = Guid.Parse("20000000-0000-0000-0000-000000000001"),
         WorkerId = "worker-a",
-        MaxPayloadBytes = 64
+        MaxPayloadBytes = 64,
+        AllowedPayloadHosts = ["payloads.example.test"]
     };
 
     [Fact]
     public async Task Fetches_http_payload_with_media_type_and_accept_header()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, """{"id":"payment-retry"}""", "application/vnd.elsa.workflow-definition+json");
-        var fetcher = new WorkflowArtifactHttpPayloadFetcher(new HttpClient(handler), _options, new StaticTimeProvider(Now));
+        var fetcher = Fetcher(handler);
         var reference = Reference(
             "https://payloads.example.test/workflows/payment-retry?token=secret",
             mediaType: "application/vnd.elsa.workflow-definition+json",
@@ -42,7 +44,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     public async Task Rejects_expired_payload_reference_without_requesting_remote_payload()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
-        var fetcher = new WorkflowArtifactHttpPayloadFetcher(new HttpClient(handler), _options, new StaticTimeProvider(Now));
+        var fetcher = Fetcher(handler);
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry", expiresAt: Now));
 
@@ -55,7 +57,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     public async Task Rejects_unsupported_payload_reference_scheme()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
-        var fetcher = new WorkflowArtifactHttpPayloadFetcher(new HttpClient(handler), _options, new StaticTimeProvider(Now));
+        var fetcher = Fetcher(handler);
 
         var act = () => fetcher.FetchAsync(Reference("studio://workflows/payment-retry/snapshots/42"));
 
@@ -68,7 +70,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     public async Task Rejects_invalid_payload_reference_uri()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
-        var fetcher = new WorkflowArtifactHttpPayloadFetcher(new HttpClient(handler), _options, new StaticTimeProvider(Now));
+        var fetcher = Fetcher(handler);
 
         var act = () => fetcher.FetchAsync(Reference("not a uri"));
 
@@ -81,7 +83,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     public async Task Rejects_payload_reference_declared_larger_than_limit()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
-        var fetcher = new WorkflowArtifactHttpPayloadFetcher(new HttpClient(handler), _options, new StaticTimeProvider(Now));
+        var fetcher = Fetcher(handler);
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry", sizeBytes: 65));
 
@@ -94,7 +96,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     public async Task Rejects_negative_payload_reference_size_without_requesting_remote_payload()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
-        var fetcher = new WorkflowArtifactHttpPayloadFetcher(new HttpClient(handler), _options, new StaticTimeProvider(Now));
+        var fetcher = Fetcher(handler);
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry", sizeBytes: -1));
 
@@ -107,7 +109,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     public async Task Rejects_invalid_payload_media_type_without_requesting_remote_payload()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
-        var fetcher = new WorkflowArtifactHttpPayloadFetcher(new HttpClient(handler), _options, new StaticTimeProvider(Now));
+        var fetcher = Fetcher(handler);
 
         var act = () => fetcher.FetchAsync(Reference(
             "https://payloads.example.test/workflows/payment-retry",
@@ -119,10 +121,25 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     }
 
     [Fact]
+    public async Task Rejects_media_type_lists_without_requesting_remote_payload()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
+        var fetcher = Fetcher(handler);
+
+        var act = () => fetcher.FetchAsync(Reference(
+            "https://payloads.example.test/workflows/payment-retry",
+            mediaType: "application/json, */*"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload media type is invalid.");
+        handler.RequestUri.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Rejects_payload_content_length_larger_than_limit()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, new string('x', 65));
-        var fetcher = new WorkflowArtifactHttpPayloadFetcher(new HttpClient(handler), _options, new StaticTimeProvider(Now));
+        var fetcher = Fetcher(handler);
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
 
@@ -134,7 +151,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     public async Task Rejects_payload_stream_larger_than_limit_without_content_length()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, new string('x', 65), includeContentLength: false);
-        var fetcher = new WorkflowArtifactHttpPayloadFetcher(new HttpClient(handler), _options, new StaticTimeProvider(Now));
+        var fetcher = Fetcher(handler);
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
 
@@ -146,7 +163,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     public async Task Rejects_unsuccessful_response_without_exposing_reference_uri()
     {
         var handler = new RecordingHandler(HttpStatusCode.NotFound, """{"token":"secret"}""");
-        var fetcher = new WorkflowArtifactHttpPayloadFetcher(new HttpClient(handler), _options, new StaticTimeProvider(Now));
+        var fetcher = Fetcher(handler);
         var reference = Reference("https://payloads.example.test/workflows/payment-retry?token=secret");
 
         var act = () => fetcher.FetchAsync(reference);
@@ -156,6 +173,124 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
         exception.Which.Message.Should().NotContain("secret");
         exception.Which.Message.Should().NotContain(reference.Uri);
     }
+
+    [Fact]
+    public async Task Rejects_unapproved_payload_reference_provider_without_requesting_remote_payload()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
+        var fetcher = Fetcher(handler);
+
+        var act = () => fetcher.FetchAsync(new ArtifactPayloadReference(
+            "untrusted-provider",
+            "https://payloads.example.test/workflows/payment-retry"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload reference provider is not approved by this runtime.");
+        handler.RequestUri.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Rejects_when_no_payload_reference_providers_are_approved()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
+        var fetcher = Fetcher(handler, _options with { AllowedPayloadReferenceProviders = [] });
+
+        var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload reference provider is not approved by this runtime.");
+        handler.RequestUri.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Rejects_unapproved_payload_host_without_requesting_remote_payload()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
+        var fetcher = Fetcher(handler);
+
+        var act = () => fetcher.FetchAsync(Reference("https://unapproved.example.test/workflows/payment-retry"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload host is not approved by this runtime.");
+        handler.RequestUri.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Rejects_when_no_payload_hosts_are_approved()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
+        var fetcher = Fetcher(handler, _options with { AllowedPayloadHosts = [] });
+
+        var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload host is not approved by this runtime.");
+        handler.RequestUri.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("http://127.0.0.1/workflows/payment-retry")]
+    [InlineData("http://169.254.169.254/latest/meta-data")]
+    [InlineData("http://10.0.0.1/workflows/payment-retry")]
+    [InlineData("http://[fd00::1]/workflows/payment-retry")]
+    public async Task Rejects_payload_hosts_that_resolve_to_non_public_addresses(string uri)
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
+        var options = _options with { AllowedPayloadHosts = [new Uri(uri).Host] };
+        var fetcher = Fetcher(handler, options);
+
+        var act = () => fetcher.FetchAsync(Reference(uri));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload host resolves to a non-public address.");
+        handler.RequestUri.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Rejects_dns_resolution_to_non_public_address_without_requesting_remote_payload()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
+        var fetcher = Fetcher(handler, resolver: new StaticHostResolver(IPAddress.Parse("192.168.1.25")));
+
+        var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload host resolves to a non-public address.");
+        handler.RequestUri.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Rejects_hosts_that_cannot_be_resolved_without_requesting_remote_payload()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
+        var fetcher = Fetcher(handler, resolver: new StaticHostResolver());
+
+        var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload host could not be resolved.");
+        handler.RequestUri.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Rejects_dns_resolution_errors_without_exposing_payload_host()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
+        var fetcher = Fetcher(handler, resolver: new ThrowingHostResolver());
+
+        var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
+
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Be("Workflow artifact payload host could not be resolved.");
+        exception.Which.Message.Should().NotContain("payloads.example.test");
+        handler.RequestUri.Should().BeNull();
+    }
+
+    private WorkflowArtifactHttpPayloadFetcher Fetcher(
+        HttpMessageHandler handler,
+        WorkflowArtifactRuntimeOptions? options = null,
+        IWorkflowArtifactPayloadHostResolver? resolver = null) =>
+        new(new HttpClient(handler), options ?? _options, new StaticTimeProvider(Now), resolver ?? new StaticHostResolver(IPAddress.Parse("93.184.216.34")));
 
     private static ArtifactPayloadReference Reference(
         string uri,
@@ -213,5 +348,17 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     private sealed class StaticTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class StaticHostResolver(params IPAddress[] addresses) : IWorkflowArtifactPayloadHostResolver
+    {
+        public Task<IReadOnlyList<IPAddress>> ResolveAsync(string host, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<IPAddress>>(addresses);
+    }
+
+    private sealed class ThrowingHostResolver : IWorkflowArtifactPayloadHostResolver
+    {
+        public Task<IReadOnlyList<IPAddress>> ResolveAsync(string host, CancellationToken cancellationToken = default) =>
+            throw new SocketException((int)SocketError.HostNotFound);
     }
 }

@@ -37,6 +37,10 @@ public sealed record WorkflowArtifactRuntimeOptions
 
     public long MaxPayloadBytes { get; init; } = 4 * 1024 * 1024;
 
+    public IReadOnlyList<string> AllowedPayloadReferenceProviders { get; init; } = ["producer-managed"];
+
+    public IReadOnlyList<string> AllowedPayloadHosts { get; init; } = [];
+
     public void Validate()
     {
         if (PlatformEndpoint is null)
