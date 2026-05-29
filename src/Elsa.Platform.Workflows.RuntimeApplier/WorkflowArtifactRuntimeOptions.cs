@@ -16,6 +16,16 @@ public sealed record WorkflowArtifactRuntimeOptions
 
     public TimeSpan ClaimLeaseDuration { get; init; } = TimeSpan.FromMinutes(5);
 
+    public TimeSpan HeartbeatInterval { get; init; } = TimeSpan.FromSeconds(30);
+
+    public TimeSpan LeaseSafetyMargin { get; init; } = TimeSpan.FromSeconds(15);
+
+    public TimeSpan RetryBaseDelay { get; init; } = TimeSpan.FromSeconds(1);
+
+    public TimeSpan RetryMaxDelay { get; init; } = TimeSpan.FromSeconds(30);
+
+    public int MaxRetryAttempts { get; init; } = 3;
+
     public string RuntimeFamily { get; init; } = "elsa-workflows";
 
     public string? RuntimeVersion { get; init; }
@@ -43,6 +53,16 @@ public sealed record WorkflowArtifactRuntimeOptions
             throw new InvalidOperationException("Runtime command lease duration must be positive.");
         if (ClaimLeaseDuration < TimeSpan.FromSeconds(1) || ClaimLeaseDuration.TotalSeconds > int.MaxValue)
             throw new InvalidOperationException("Runtime command lease duration must be between 1 second and the maximum supported Platform lease.");
+        if (HeartbeatInterval <= TimeSpan.Zero || HeartbeatInterval >= ClaimLeaseDuration)
+            throw new InvalidOperationException("Runtime command heartbeat interval must be positive and shorter than the command lease duration.");
+        if (LeaseSafetyMargin < TimeSpan.Zero || LeaseSafetyMargin >= ClaimLeaseDuration)
+            throw new InvalidOperationException("Runtime command lease safety margin must be zero or positive and shorter than the command lease duration.");
+        if (RetryBaseDelay <= TimeSpan.Zero)
+            throw new InvalidOperationException("Runtime command retry base delay must be positive.");
+        if (RetryMaxDelay < RetryBaseDelay)
+            throw new InvalidOperationException("Runtime command retry maximum delay must be greater than or equal to the base delay.");
+        if (MaxRetryAttempts < 0)
+            throw new InvalidOperationException("Runtime command retry attempts must be zero or positive.");
         if (string.IsNullOrWhiteSpace(RuntimeFamily))
             throw new InvalidOperationException("Runtime family is required before advertising artifact capabilities.");
         if (SupportedArtifactSchemaVersions is null || !SupportedArtifactSchemaVersions.Any(x => !string.IsNullOrWhiteSpace(x)))

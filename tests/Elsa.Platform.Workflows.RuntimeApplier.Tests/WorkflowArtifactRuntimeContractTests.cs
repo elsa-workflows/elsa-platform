@@ -67,6 +67,15 @@ public sealed class WorkflowArtifactRuntimeContractTests
     }
 
     [Fact]
+    public void Rejects_retry_and_lease_policy_timing_that_cannot_guard_processing()
+    {
+        var act = () => (_options with { ClaimLeaseDuration = TimeSpan.FromSeconds(10), HeartbeatInterval = TimeSpan.FromSeconds(10) }).Validate();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Runtime command heartbeat interval must be positive and shorter than the command lease duration.");
+    }
+
+    [Fact]
     public void Validates_payload_digest_and_schema_contracts()
     {
         var payload = Payload();
