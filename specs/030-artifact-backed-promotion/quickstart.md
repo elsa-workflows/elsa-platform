@@ -24,6 +24,12 @@ git diff --check
 
 - 2026-05-28: `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand --no-restore` passed: 7 tests, including artifact-backed command reference projection and missing artifact rejection.
 - 2026-05-28: `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter DeploymentValidation --no-restore` passed: 5 tests.
+- 2026-05-29: `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --no-restore -v minimal` passed: 62 tests, including artifact-backed promotion preview output for safe metadata, configuration, and runtime compatibility.
+- 2026-05-29: `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --no-restore -v minimal` passed: 69 tests, including structured artifact-reference projection and legacy record readability.
+- 2026-05-29: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --no-restore -v minimal --filter Owner_can_create_desired_state_revision_and_preview_promotion` passed: 1 test.
+- 2026-05-29: SQLite and SQL Server `dotnet ef migrations script` checks passed for `AddArtifactDesiredStateReferences`, including JSON backfill SQL.
+- 2026-05-29: `dotnet build Elsa.Platform.sln --no-restore` passed with the existing `Microsoft.Build.Utilities.Core` NU1903 warnings.
+- 2026-05-29: `git diff --check` passed.
 
 ## Known Scope Boundaries
 

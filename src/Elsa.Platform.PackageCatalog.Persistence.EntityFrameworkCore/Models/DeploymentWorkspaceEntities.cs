@@ -214,6 +214,11 @@ internal sealed class StructuredDesiredStateRecordEntity
     public string Name { get; set; } = "";
     public string PayloadJson { get; set; } = "{}";
     public string ContentHash { get; set; } = "";
+    public Guid? ArtifactRecordId { get; set; }
+    public string? ArtifactId { get; set; }
+    public string? ArtifactTypeId { get; set; }
+    public string? ArtifactDigestAlgorithm { get; set; }
+    public string? ArtifactDigest { get; set; }
 }
 
 internal sealed class WorkspacePermissionGrantEntity

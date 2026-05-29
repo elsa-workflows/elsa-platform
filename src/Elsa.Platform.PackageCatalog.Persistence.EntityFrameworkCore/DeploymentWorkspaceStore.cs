@@ -1717,12 +1717,16 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         return recordsElement.EnumerateArray()
             .Select(record =>
             {
-                var kindName = record.TryGetProperty("kind", out var kindElement) ? kindElement.GetString() : null;
-                var name = record.TryGetProperty("name", out var nameElement) ? nameElement.GetString() : null;
+                var kindName = record.TryGetProperty("kind", out var kindElement) ? GetString(kindElement) : null;
+                var name = record.TryGetProperty("name", out var nameElement) ? GetString(nameElement) : null;
                 if (!Enum.TryParse<DesiredStateRecordKind>(kindName, true, out var kind) || string.IsNullOrWhiteSpace(name))
                     return null;
 
-                var payloadJson = record.TryGetProperty("payload", out var payloadElement) ? payloadElement.GetRawText() : "{}";
+                var payload = record.TryGetProperty("payload", out var payloadElement) && payloadElement.ValueKind == JsonValueKind.Object
+                    ? payloadElement
+                    : record;
+                var payloadJson = record.TryGetProperty("payload", out var payloadValue) ? payloadValue.GetRawText() : "{}";
+                var artifactReference = kind == DesiredStateRecordKind.ArtifactReference ? ParseArtifactReference(payload) : null;
                 return new StructuredDesiredStateRecordEntity
                 {
                     Id = Guid.NewGuid(),
@@ -1731,7 +1735,12 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
                     Kind = kind,
                     Name = name,
                     PayloadJson = payloadJson,
-                    ContentHash = WorkspaceDeploymentService.ComputeDesiredStateHash(payloadJson)
+                    ContentHash = WorkspaceDeploymentService.ComputeDesiredStateHash(payloadJson),
+                    ArtifactRecordId = artifactReference?.ArtifactRecordId,
+                    ArtifactId = artifactReference?.ArtifactId,
+                    ArtifactTypeId = artifactReference?.ArtifactTypeId,
+                    ArtifactDigestAlgorithm = artifactReference?.ContentDigest?.Algorithm,
+                    ArtifactDigest = artifactReference?.ContentDigest?.Value
                 };
             })
             .Where(record => record is not null)
@@ -1785,24 +1794,14 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
 
             foreach (var record in records.EnumerateArray())
             {
-                var kind = record.TryGetProperty("kind", out var kindElement) ? kindElement.GetString() : null;
+                var kind = record.TryGetProperty("kind", out var kindElement) ? GetString(kindElement) : null;
                 if (!string.Equals(kind, DesiredStateRecordKind.ArtifactReference.ToString(), StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 var payload = record.TryGetProperty("payload", out var payloadElement) && payloadElement.ValueKind == JsonValueKind.Object
                     ? payloadElement
                     : record;
-                var artifactRecordId = payload.TryGetProperty("artifactRecordId", out var artifactRecordIdElement)
-                    && artifactRecordIdElement.ValueKind == JsonValueKind.String
-                    && Guid.TryParse(artifactRecordIdElement.GetString(), out var parsedArtifactRecordId)
-                        ? parsedArtifactRecordId
-                        : (Guid?)null;
-                var artifactId = payload.TryGetProperty("artifactId", out var artifactIdElement) ? artifactIdElement.GetString() : null;
-                var artifactTypeId = payload.TryGetProperty("artifactTypeId", out var artifactTypeIdElement) ? artifactTypeIdElement.GetString() : null;
-                var contentDigest = payload.TryGetProperty("contentDigest", out var digestElement) && digestElement.ValueKind == JsonValueKind.Object
-                    ? ParseArtifactDigest(digestElement)
-                    : null;
-                return new DeploymentCommandArtifactReference(artifactRecordId, artifactId, artifactTypeId, contentDigest);
+                return ParseArtifactReference(payload);
             }
         }
         catch (JsonException)
@@ -1813,14 +1812,32 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         return null;
     }
 
+    private static DeploymentCommandArtifactReference ParseArtifactReference(JsonElement payload)
+    {
+        var artifactRecordId = payload.TryGetProperty("artifactRecordId", out var artifactRecordIdElement)
+            && artifactRecordIdElement.ValueKind == JsonValueKind.String
+            && Guid.TryParse(artifactRecordIdElement.GetString(), out var parsedArtifactRecordId)
+                ? parsedArtifactRecordId
+                : (Guid?)null;
+        var artifactId = payload.TryGetProperty("artifactId", out var artifactIdElement) ? GetString(artifactIdElement) : null;
+        var artifactTypeId = payload.TryGetProperty("artifactTypeId", out var artifactTypeIdElement) ? GetString(artifactTypeIdElement) : null;
+        var contentDigest = payload.TryGetProperty("contentDigest", out var digestElement) && digestElement.ValueKind == JsonValueKind.Object
+            ? ParseArtifactDigest(digestElement)
+            : null;
+        return new DeploymentCommandArtifactReference(artifactRecordId, artifactId, artifactTypeId, contentDigest);
+    }
+
     private static WorkspaceArtifactDigest? ParseArtifactDigest(JsonElement digestElement)
     {
-        var algorithm = digestElement.TryGetProperty("algorithm", out var algorithmElement) ? algorithmElement.GetString() : null;
-        var value = digestElement.TryGetProperty("value", out var valueElement) ? valueElement.GetString() : null;
+        var algorithm = digestElement.TryGetProperty("algorithm", out var algorithmElement) ? GetString(algorithmElement) : null;
+        var value = digestElement.TryGetProperty("value", out var valueElement) ? GetString(valueElement) : null;
         return string.IsNullOrWhiteSpace(algorithm) || string.IsNullOrWhiteSpace(value)
             ? null
             : new WorkspaceArtifactDigest(algorithm, value);
     }
+
+    private static string? GetString(JsonElement element) =>
+        element.ValueKind == JsonValueKind.String ? element.GetString() : null;
 
     private static WorkspacePermissionGrant ToPermissionGrant(WorkspacePermissionGrantEntity entity) =>
         new(

@@ -432,8 +432,14 @@ internal sealed class StructuredDesiredStateRecordConfiguration : IEntityTypeCon
         builder.Property(x => x.Name).HasMaxLength(256).IsRequired();
         builder.Property(x => x.PayloadJson).IsRequired();
         builder.Property(x => x.ContentHash).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.ArtifactId).HasMaxLength(256);
+        builder.Property(x => x.ArtifactTypeId).HasMaxLength(128);
+        builder.Property(x => x.ArtifactDigestAlgorithm).HasMaxLength(32);
+        builder.Property(x => x.ArtifactDigest).HasMaxLength(256);
         builder.HasIndex(x => new { x.RevisionId, x.Kind, x.Name }).IsUnique();
         builder.HasIndex(x => new { x.WorkspaceId, x.ContentHash });
+        builder.HasIndex(x => new { x.WorkspaceId, x.ArtifactRecordId });
+        builder.HasIndex(x => new { x.WorkspaceId, x.ArtifactId });
     }
 }
 

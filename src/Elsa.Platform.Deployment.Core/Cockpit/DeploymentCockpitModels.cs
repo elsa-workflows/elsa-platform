@@ -65,6 +65,14 @@ public enum DiffImpact
     Removed
 }
 
+public enum PromotionArtifactImpact
+{
+    Added,
+    Changed,
+    Removed,
+    Unchanged
+}
+
 public enum AssistantPlanStatus
 {
     Proposed,
@@ -196,6 +204,26 @@ public sealed record DeploymentValidation(
     string Scope,
     string Message);
 
+public sealed record PromotionArtifactDigest(
+    string Algorithm,
+    string Value);
+
+public sealed record PromotionArtifactDescriptor(
+    string? ArtifactRecordId,
+    string? ArtifactId,
+    string? ArtifactTypeId,
+    PromotionArtifactDigest? ContentDigest,
+    IReadOnlyDictionary<string, string> Metadata,
+    IReadOnlyDictionary<string, string> Configuration,
+    IReadOnlyList<string> CompatibilityHints);
+
+public sealed record PromotionArtifactComparison(
+    string Name,
+    PromotionArtifactDescriptor? Source,
+    PromotionArtifactDescriptor? Target,
+    PromotionArtifactImpact Impact,
+    IReadOnlyList<DeploymentValidation> RuntimeCompatibility);
+
 public sealed record PromotionComparison(
     string SourceEnvironmentId,
     string TargetEnvironmentId,
@@ -205,7 +233,10 @@ public sealed record PromotionComparison(
     IReadOnlyList<DeploymentDiffItem> Diff,
     IReadOnlyList<DeploymentValidation> Validations,
     int? RollbackRevision,
-    string? RollbackRevisionId);
+    string? RollbackRevisionId)
+{
+    public IReadOnlyList<PromotionArtifactComparison> Artifacts { get; init; } = [];
+}
 
 public sealed record ObservabilityBinding(
     string Id,

@@ -1537,6 +1537,25 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("ArtifactDigest")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ArtifactDigestAlgorithm")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ArtifactId")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid?>("ArtifactRecordId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ArtifactTypeId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<string>("ContentHash")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -1563,6 +1582,10 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId", "ArtifactId");
+
+                    b.HasIndex("WorkspaceId", "ArtifactRecordId");
 
                     b.HasIndex("WorkspaceId", "ContentHash");
 
