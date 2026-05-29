@@ -46,7 +46,7 @@ Architectural delta introduced by the latest product decisions:
 - The specs now describe immutable workflow artifacts, Studio **Submit to Platform**, platform-owned deployment commands, runtime pull/sync, webhook-triggered fetch, and direct push as transport alternatives.
 - Deployment execution now creates platform-owned command records linked to deployment runs while keeping the platform-local in-process worker compatible.
 - External runtime sync workers can poll, claim, heartbeat, progress, complete, fail, or reject commands through the runtime command API.
-- There are not yet Studio or runtime integration NuGet packages.
+- The first Studio submit package skeleton now exists with configuration, safe result states, deterministic workflow snapshot packaging, and a Platform submit client boundary. It does not yet wire into Elsa Studio UI or provide the concrete Platform HTTP client.
 - Existing desired-state records are structured platform records; they do not yet reference workflow artifacts as the main deployable input.
 
 ## Spec Work Needed
@@ -76,9 +76,8 @@ Focused specs:
 
 2. `027-studio-submit-to-platform`
    - Spec created for the NuGet package for Elsa Studio integration.
-   - Adds **Submit to Platform** UX.
-   - Packages workflow snapshots and safe metadata.
-   - Authenticates to Platform and submits artifacts.
+   - Package skeleton and contracts exist for **Submit to Platform** configuration, result states, snapshot packaging, and submit client boundaries.
+   - Remaining work adds the concrete Studio UI integration and Platform HTTP submission client.
    - Keeps direct runtime Publish clearly separate or hidden for platform-integrated installations.
 
 3. `028-runtime-command-sync`
@@ -224,6 +223,6 @@ Exit criteria:
 
 ## Immediate Next Actions
 
-1. Plan and implement `027-studio-submit-to-platform` now that artifact envelope and runtime command contracts are stable.
+1. Continue `027-studio-submit-to-platform` by wiring the package into Elsa Studio UI and implementing the concrete Platform artifact submission client.
 2. Plan and implement `029-workflow-artifact-runtime-applier` after the Studio submit and runtime command contracts are agreed.
 3. Plan `030-artifact-backed-promotion` before changing promotion/rollback persistence semantics.
