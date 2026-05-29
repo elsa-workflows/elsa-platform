@@ -1,9 +1,11 @@
 using System.Net;
 using Elsa.Platform.Api.Workspace;
+using Elsa.Platform.Deployment.Abstractions.Artifacts;
 using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
+using Elsa.Platform.Workflows.RuntimeApplier;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,6 +14,45 @@ namespace Elsa.Platform.Api.Tests;
 
 public sealed class RuntimeCommandApiTests
 {
+    [Fact]
+    public async Task Runtime_applier_client_can_poll_claim_report_progress_and_complete_command()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("runtime-applier-client-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var seeded = await SeedRunAsync(app, workspaceId, "runtime-applier-client-owner");
+        var client = new WorkflowRuntimeCommandHttpClient(owner, new WorkflowArtifactRuntimeOptions
+        {
+            PlatformEndpoint = owner.BaseAddress!,
+            WorkspaceId = workspaceId,
+            EngineId = seeded.EngineId,
+            WorkerId = "runtime-applier-worker",
+            ClaimLeaseDuration = TimeSpan.FromSeconds(90)
+        });
+
+        var polled = await client.PollAsync();
+        var command = polled.Single();
+        var claim = await client.ClaimAsync(command.Id);
+        var progress = await client.ReportProgressAsync(command.Id, claim.Claim!.LeaseToken, "applying", 50, "Applying workflow artifact");
+        var complete = await client.CompleteAsync(
+            command.Id,
+            claim.Claim.LeaseToken,
+            new ArtifactDigest("sha256", "observed"),
+            "elsa://workflows/payment-retry",
+            []);
+        var detail = await owner.GetPlatformJsonAsync<WorkspaceDeploymentRunDetailResponse>(
+            $"/api/workspaces/{workspaceId}/deployments/runs/{seeded.RunId}");
+
+        claim.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Succeeded);
+        progress.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Succeeded);
+        complete.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Succeeded);
+        complete.Command!.Status.Should().Be(WorkflowRuntimeCommandStatus.Completed);
+        detail!.Run.Status.Should().Be(WorkspaceDeploymentRunStatus.Succeeded);
+        detail.Commands.Single().WorkerId.Should().Be("runtime-applier-worker");
+        detail.Commands.Single().RuntimeReference.Should().Be("elsa://workflows/payment-retry");
+    }
+
     [Fact]
     public async Task Runtime_can_poll_claim_report_progress_and_complete_command()
     {
