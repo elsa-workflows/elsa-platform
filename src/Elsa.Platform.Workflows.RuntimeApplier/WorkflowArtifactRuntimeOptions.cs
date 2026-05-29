@@ -24,6 +24,8 @@ public sealed record WorkflowArtifactRuntimeOptions
 
     public TimeSpan RetryMaxDelay { get; init; } = TimeSpan.FromSeconds(30);
 
+    public TimeSpan PayloadRequestTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
     public int MaxRetryAttempts { get; init; } = 3;
 
     public string RuntimeFamily { get; init; } = "elsa-workflows";
@@ -65,6 +67,8 @@ public sealed record WorkflowArtifactRuntimeOptions
             throw new InvalidOperationException("Runtime command retry base delay must be positive.");
         if (RetryMaxDelay < RetryBaseDelay)
             throw new InvalidOperationException("Runtime command retry maximum delay must be greater than or equal to the base delay.");
+        if (PayloadRequestTimeout <= TimeSpan.Zero)
+            throw new InvalidOperationException("Workflow artifact payload request timeout must be positive.");
         if (MaxRetryAttempts < 0)
             throw new InvalidOperationException("Runtime command retry attempts must be zero or positive.");
         if (string.IsNullOrWhiteSpace(RuntimeFamily))

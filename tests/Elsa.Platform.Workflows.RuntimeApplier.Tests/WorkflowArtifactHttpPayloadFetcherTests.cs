@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -240,6 +241,19 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     }
 
     [Fact]
+    public async Task Rejects_payload_requests_that_exceed_runtime_timeout()
+    {
+        var handler = new HangingHandler();
+        var fetcher = Fetcher(handler, _options with { PayloadRequestTimeout = TimeSpan.FromMilliseconds(10) });
+
+        var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
+
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Be("Workflow artifact payload request timed out.");
+        exception.Which.InnerException.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Rejects_unapproved_payload_reference_provider_without_requesting_remote_payload()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
@@ -354,7 +368,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var exception = await act.Should().ThrowAsync<InvalidOperationException>();
         exception.Which.Message.Should().Be("Workflow artifact payload host could not be resolved.");
+        exception.Which.InnerException.Should().BeNull();
         exception.Which.Message.Should().NotContain("payloads.example.test");
+        exception.Which.ToString().Should().NotContain("payloads.example.test");
+        exception.Which.ToString().Should().NotContain("secret");
         handler.RequestUri.Should().BeNull();
     }
 
@@ -510,6 +527,15 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
             });
     }
 
+    private sealed class HangingHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new UnreachableException();
+        }
+    }
+
     private sealed class StreamingContent : HttpContent
     {
         private readonly string _content;
@@ -568,6 +594,6 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     private sealed class ThrowingHostResolver : IWorkflowArtifactPayloadHostResolver
     {
         public Task<IReadOnlyList<IPAddress>> ResolveAsync(string host, CancellationToken cancellationToken = default) =>
-            throw new SocketException((int)SocketError.HostNotFound);
+            throw new ArgumentException("payloads.example.test token=secret");
     }
 }

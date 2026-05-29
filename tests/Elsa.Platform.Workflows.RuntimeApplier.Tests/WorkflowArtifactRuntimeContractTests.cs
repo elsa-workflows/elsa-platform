@@ -76,6 +76,15 @@ public sealed class WorkflowArtifactRuntimeContractTests
     }
 
     [Fact]
+    public void Rejects_non_positive_payload_request_timeout()
+    {
+        var act = () => (_options with { PayloadRequestTimeout = TimeSpan.Zero }).Validate();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload request timeout must be positive.");
+    }
+
+    [Fact]
     public void Rejects_payload_size_limit_that_cannot_be_buffered()
     {
         var act = () => (_options with { MaxPayloadBytes = (long)Array.MaxLength + 1 }).Validate();

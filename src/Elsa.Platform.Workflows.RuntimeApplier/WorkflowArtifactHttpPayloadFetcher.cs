@@ -41,44 +41,53 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
         ArtifactPayloadReference reference,
         CancellationToken cancellationToken = default)
     {
-        if (_options.AllowedPayloadReferenceProviders is not { Count: > 0 }
-            || !_options.AllowedPayloadReferenceProviders.Contains(reference.Provider, StringComparer.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Workflow artifact payload reference provider is not approved by this runtime.");
-        if (reference.ExpiresAt is not null && reference.ExpiresAt <= _timeProvider.GetUtcNow())
-            throw new InvalidOperationException("Workflow artifact payload reference has expired.");
-        if (reference.SizeBytes is < 0)
-            throw new InvalidOperationException("Workflow artifact payload reference size is invalid.");
-        if (reference.SizeBytes is > 0 && reference.SizeBytes > _options.MaxPayloadBytes)
-            throw new InvalidOperationException("Workflow artifact payload reference exceeds the configured runtime size limit.");
-
-        var endpoint = await PayloadEndpointAsync(reference, cancellationToken);
-        using var request = new HttpRequestMessage(HttpMethod.Get, endpoint.Uri);
-        request.Options.Set(ValidatedPayloadAddressKey, endpoint.Address);
-        string? declaredMediaType = null;
-        if (!string.IsNullOrWhiteSpace(reference.MediaType))
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(_options.PayloadRequestTimeout);
+        try
         {
-            if (reference.MediaType.Contains(',')
-                || !MediaTypeWithQualityHeaderValue.TryParse(reference.MediaType, out var mediaType)
-                || mediaType.MediaType is null
-                || mediaType.MediaType.Contains('*'))
-                throw new InvalidOperationException("Workflow artifact payload media type is invalid.");
-            request.Headers.Accept.Add(mediaType);
-            declaredMediaType = mediaType.MediaType;
+            if (_options.AllowedPayloadReferenceProviders is not { Count: > 0 }
+                || !_options.AllowedPayloadReferenceProviders.Contains(reference.Provider, StringComparer.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Workflow artifact payload reference provider is not approved by this runtime.");
+            if (reference.ExpiresAt is not null && reference.ExpiresAt <= _timeProvider.GetUtcNow())
+                throw new InvalidOperationException("Workflow artifact payload reference has expired.");
+            if (reference.SizeBytes is < 0)
+                throw new InvalidOperationException("Workflow artifact payload reference size is invalid.");
+            if (reference.SizeBytes is > 0 && reference.SizeBytes > _options.MaxPayloadBytes)
+                throw new InvalidOperationException("Workflow artifact payload reference exceeds the configured runtime size limit.");
+
+            var endpoint = await PayloadEndpointAsync(reference, timeout.Token);
+            using var request = new HttpRequestMessage(HttpMethod.Get, endpoint.Uri);
+            request.Options.Set(ValidatedPayloadAddressKey, endpoint.Address);
+            string? declaredMediaType = null;
+            if (!string.IsNullOrWhiteSpace(reference.MediaType))
+            {
+                if (reference.MediaType.Contains(',')
+                    || !MediaTypeWithQualityHeaderValue.TryParse(reference.MediaType, out var mediaType)
+                    || mediaType.MediaType is null
+                    || mediaType.MediaType.Contains('*'))
+                    throw new InvalidOperationException("Workflow artifact payload media type is invalid.");
+                request.Headers.Accept.Add(mediaType);
+                declaredMediaType = mediaType.MediaType;
+            }
+
+            using var response = await SendSafelyAsync(request, timeout.Token);
+            if (response.RequestMessage?.RequestUri is { } actualUri && actualUri != endpoint.Uri)
+                throw new InvalidOperationException("Workflow artifact payload redirects are not supported.");
+            if (IsRedirect(response.StatusCode))
+                throw new InvalidOperationException("Workflow artifact payload redirects are not supported.");
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidOperationException($"Workflow artifact payload request failed with status {(int)response.StatusCode}.");
+
+            var content = await ReadSafelyAsync(response.Content, timeout.Token);
+            return new WorkflowArtifactPayload(
+                reference,
+                content,
+                declaredMediaType ?? response.Content.Headers.ContentType?.MediaType);
         }
-
-        using var response = await SendSafelyAsync(request, cancellationToken);
-        if (response.RequestMessage?.RequestUri is { } actualUri && actualUri != endpoint.Uri)
-            throw new InvalidOperationException("Workflow artifact payload redirects are not supported.");
-        if (IsRedirect(response.StatusCode))
-            throw new InvalidOperationException("Workflow artifact payload redirects are not supported.");
-        if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Workflow artifact payload request failed with status {(int)response.StatusCode}.");
-
-        var content = await ReadSafelyAsync(response.Content, cancellationToken);
-        return new WorkflowArtifactPayload(
-            reference,
-            content,
-            declaredMediaType ?? response.Content.Headers.ContentType?.MediaType);
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeout.IsCancellationRequested)
+        {
+            throw new InvalidOperationException("Workflow artifact payload request timed out.");
+        }
     }
 
     private static WorkflowArtifactRuntimeOptions ValidateOptions(WorkflowArtifactRuntimeOptions options)
@@ -129,7 +138,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
         }
         catch (Exception ex) when (ex is SocketException or ArgumentException)
         {
-            throw new InvalidOperationException("Workflow artifact payload host could not be resolved.", ex);
+            throw new InvalidOperationException("Workflow artifact payload host could not be resolved.");
         }
     }
 
