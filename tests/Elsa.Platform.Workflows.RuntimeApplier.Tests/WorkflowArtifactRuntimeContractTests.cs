@@ -58,6 +58,15 @@ public sealed class WorkflowArtifactRuntimeContractTests
     }
 
     [Fact]
+    public void Rejects_lease_duration_that_cannot_be_sent_to_platform()
+    {
+        var act = () => (_options with { ClaimLeaseDuration = TimeSpan.FromMilliseconds(500) }).Validate();
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Runtime command lease duration must be between 1 second and the maximum supported Platform lease.");
+    }
+
+    [Fact]
     public void Validates_payload_digest_and_schema_contracts()
     {
         var payload = Payload();

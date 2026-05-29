@@ -24,8 +24,9 @@ public sealed class WorkflowRuntimeCommandHttpClient(
             BuildUri($"/deployments/runtime/engines/{_options.EngineId!.Value:D}/commands?limit={limit}"),
             cancellationToken);
         response.EnsureSuccessStatusCode();
-        var body = await response.Content.ReadFromJsonAsync<RuntimeCommandListResponse>(JsonOptions, cancellationToken);
-        return body?.Commands.Select(ToCommand).ToList() ?? [];
+        var body = await ReadJsonAsync<RuntimeCommandListResponse>(response, cancellationToken)
+            ?? throw new InvalidOperationException("Platform runtime command poll response could not be read.");
+        return body.Commands.Select(ToCommand).ToList();
     }
 
     public async Task<WorkflowRuntimeCommandClaimResult> ClaimAsync(

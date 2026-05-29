@@ -25,7 +25,7 @@ git diff --check
 - 2026-05-29: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter RuntimeCommand --no-restore` passed: 5 tests.
 - 2026-05-29: `dotnet build Elsa.Platform.sln --no-restore` passed with existing `Microsoft.Build.Utilities.Core` NU1903 warnings.
 - 2026-05-29: `git diff --check` passed.
-- 2026-05-29: `dotnet test tests/Elsa.Platform.Workflows.RuntimeApplier.Tests/Elsa.Platform.Workflows.RuntimeApplier.Tests.csproj --no-restore -v minimal` passed: 20 tests. This adds runtime command HTTP client coverage for polling, claiming, conflict handling, progress, completion, failure, rejection, safe diagnostics, malformed success responses, and forward-compatible unknown command states.
+- 2026-05-29: `dotnet test tests/Elsa.Platform.Workflows.RuntimeApplier.Tests/Elsa.Platform.Workflows.RuntimeApplier.Tests.csproj --no-restore -v minimal` passed: 22 tests. This adds runtime command HTTP client coverage for polling, claiming, conflict handling, progress, completion, failure, rejection, safe diagnostics, malformed success responses, lease duration validation, and forward-compatible unknown command states.
 - 2026-05-29: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter Runtime_applier_client --no-restore` passed: 1 test. This verifies the runtime applier package client can poll, claim, progress, and complete through the real Platform runtime command API.
 
 ## Known Scope Boundaries

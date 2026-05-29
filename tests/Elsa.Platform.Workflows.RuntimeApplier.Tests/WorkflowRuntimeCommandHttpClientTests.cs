@@ -45,6 +45,18 @@ public sealed class WorkflowRuntimeCommandHttpClientTests
     }
 
     [Fact]
+    public async Task Rejects_malformed_poll_success_response()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "not-json", "text/plain");
+        var client = new WorkflowRuntimeCommandHttpClient(new HttpClient(handler), _options);
+
+        var act = () => client.PollAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Platform runtime command poll response could not be read.");
+    }
+
+    [Fact]
     public async Task Claims_command_with_worker_identity_and_lease()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, $$"""
