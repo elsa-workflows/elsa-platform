@@ -182,7 +182,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
         }
         catch (Exception ex) when (IsRemoteIoFailure(ex))
         {
-            throw new InvalidOperationException("Workflow artifact payload request failed.", ex);
+            throw new InvalidOperationException("Workflow artifact payload request failed.");
         }
     }
 
@@ -194,7 +194,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
         }
         catch (Exception ex) when (IsRemoteIoFailure(ex))
         {
-            throw new InvalidOperationException("Workflow artifact payload request failed.", ex);
+            throw new InvalidOperationException("Workflow artifact payload request failed.");
         }
     }
 

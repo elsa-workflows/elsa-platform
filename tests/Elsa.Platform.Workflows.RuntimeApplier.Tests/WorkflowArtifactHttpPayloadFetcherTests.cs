@@ -215,8 +215,11 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var exception = await act.Should().ThrowAsync<InvalidOperationException>();
         exception.Which.Message.Should().Be("Workflow artifact payload request failed.");
+        exception.Which.InnerException.Should().BeNull();
         exception.Which.Message.Should().NotContain("payloads.example.test");
         exception.Which.Message.Should().NotContain("secret");
+        exception.Which.ToString().Should().NotContain("payloads.example.test");
+        exception.Which.ToString().Should().NotContain("secret");
     }
 
     [Fact]
@@ -229,8 +232,11 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var exception = await act.Should().ThrowAsync<InvalidOperationException>();
         exception.Which.Message.Should().Be("Workflow artifact payload request failed.");
+        exception.Which.InnerException.Should().BeNull();
         exception.Which.Message.Should().NotContain("payloads.example.test");
         exception.Which.Message.Should().NotContain("secret");
+        exception.Which.ToString().Should().NotContain("payloads.example.test");
+        exception.Which.ToString().Should().NotContain("secret");
     }
 
     [Fact]
