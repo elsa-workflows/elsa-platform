@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Text;
 using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.Workflows.RuntimeApplier;
@@ -129,6 +130,23 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
         var act = () => fetcher.FetchAsync(Reference(
             "https://payloads.example.test/workflows/payment-retry",
             mediaType: "application/json, */*"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Workflow artifact payload media type is invalid.");
+        handler.RequestUri.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("*/*")]
+    [InlineData("application/*")]
+    public async Task Rejects_media_type_ranges_without_requesting_remote_payload(string mediaType)
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{}");
+        var fetcher = Fetcher(handler);
+
+        var act = () => fetcher.FetchAsync(Reference(
+            "https://payloads.example.test/workflows/payment-retry",
+            mediaType: mediaType));
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("Workflow artifact payload media type is invalid.");
@@ -311,6 +329,32 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
         handler.IsDisposed.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task Connect_callback_connects_to_validated_address()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            var endpoint = (IPEndPoint)listener.LocalEndpoint;
+            var acceptConnection = listener.AcceptTcpClientAsync();
+            using var request = new HttpRequestMessage(HttpMethod.Get, "http://payloads.example.test/workflows/payment-retry");
+            request.Options.Set(WorkflowArtifactHttpPayloadFetcher.ValidatedPayloadAddressKey, IPAddress.Loopback);
+
+            await using var stream = await WorkflowArtifactHttpPayloadFetcher.ConnectToValidatedAddressAsync(
+                ConnectionContext(new DnsEndPoint("payloads.example.test", endpoint.Port), request),
+                CancellationToken.None);
+            using var connection = await acceptConnection.WaitAsync(TimeSpan.FromSeconds(5));
+
+            stream.CanWrite.Should().BeTrue();
+            connection.Client.RemoteEndPoint.Should().NotBeNull();
+        }
+        finally
+        {
+            listener.Stop();
+        }
+    }
+
     private WorkflowArtifactHttpPayloadFetcher Fetcher(
         HttpMessageHandler handler,
         WorkflowArtifactRuntimeOptions? options = null,
@@ -320,6 +364,14 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
             new StaticTimeProvider(Now),
             resolver ?? new StaticHostResolver(IPAddress.Parse("93.184.216.34")),
             new HttpMessageInvoker(handler));
+
+    private static SocketsHttpConnectionContext ConnectionContext(DnsEndPoint endpoint, HttpRequestMessage request) =>
+        (SocketsHttpConnectionContext)Activator.CreateInstance(
+            typeof(SocketsHttpConnectionContext),
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            args: [endpoint, request],
+            culture: null)!;
 
     private static ArtifactPayloadReference Reference(
         string uri,

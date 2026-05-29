@@ -8,7 +8,7 @@ namespace Elsa.Platform.Workflows.RuntimeApplier;
 public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloadFetcher, IDisposable
 {
     private const int BufferSize = 81920;
-    private static readonly HttpRequestOptionsKey<IPAddress> ValidatedPayloadAddressKey = new("Elsa.WorkflowArtifact.ValidatedPayloadAddress");
+    internal static readonly HttpRequestOptionsKey<IPAddress> ValidatedPayloadAddressKey = new("Elsa.WorkflowArtifact.ValidatedPayloadAddress");
     private readonly WorkflowArtifactRuntimeOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly IWorkflowArtifactPayloadHostResolver _hostResolver;
@@ -56,7 +56,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
         request.Options.Set(ValidatedPayloadAddressKey, endpoint.Address);
         if (!string.IsNullOrWhiteSpace(reference.MediaType))
         {
-            if (reference.MediaType.Contains(',') || !MediaTypeWithQualityHeaderValue.TryParse(reference.MediaType, out var mediaType))
+            if (reference.MediaType.Contains(',')
+                || !MediaTypeWithQualityHeaderValue.TryParse(reference.MediaType, out var mediaType)
+                || mediaType.MediaType is null
+                || mediaType.MediaType.Contains('*'))
                 throw new InvalidOperationException("Workflow artifact payload media type is invalid.");
             request.Headers.Accept.Add(mediaType);
         }
@@ -160,7 +163,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcher : IWorkflowArtifactPayloa
             ? await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             : await _httpClient.SendAsync(request, cancellationToken);
 
-    private static async ValueTask<Stream> ConnectToValidatedAddressAsync(SocketsHttpConnectionContext context, CancellationToken cancellationToken)
+    internal static async ValueTask<Stream> ConnectToValidatedAddressAsync(SocketsHttpConnectionContext context, CancellationToken cancellationToken)
     {
         if (!context.InitialRequestMessage.Options.TryGetValue(ValidatedPayloadAddressKey, out var address))
             throw new InvalidOperationException("Workflow artifact payload host has not been validated.");
