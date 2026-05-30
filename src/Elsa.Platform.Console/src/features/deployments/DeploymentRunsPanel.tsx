@@ -97,6 +97,11 @@ function CommandSummary({ commands }: { commands: DeploymentRunCommandSummary[] 
         {command.percentComplete !== null ? <span className="text-xs text-muted-foreground">{command.percentComplete}%</span> : null}
       </div>
       {command.progressMessage ? <div className="max-w-64 truncate text-xs text-muted-foreground">{command.progressMessage}</div> : null}
+      {command.artifact ? (
+        <div className="max-w-72 truncate text-xs text-muted-foreground">
+          {command.artifact.artifactId} / {command.artifact.artifactTypeId} / {command.artifact.contentDigest.algorithm}:{command.artifact.contentDigest.value}
+        </div>
+      ) : null}
       {command.runtimeReference ? <div className="max-w-64 truncate text-xs text-muted-foreground">{command.runtimeReference}</div> : null}
     </div>
   );

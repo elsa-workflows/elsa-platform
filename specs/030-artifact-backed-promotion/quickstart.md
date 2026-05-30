@@ -35,6 +35,13 @@ git diff --check
 - 2026-05-30: `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --no-restore -v minimal --filter DeploymentCommand` passed: 15 tests.
 - 2026-05-30: `dotnet build Elsa.Platform.sln --no-restore -v minimal` passed with the existing `Microsoft.Build.Utilities.Core` NU1903 warnings.
 - 2026-05-30: `git diff --check` passed.
+- 2026-05-30: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --no-restore -v minimal --filter "WorkspaceDeploymentApiTests|RuntimeCommandApiTests"` passed: 20 tests, including artifact-backed rollback success and missing rollback artifact rejection.
+- 2026-05-30: `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --no-restore -v minimal` passed: 63 tests.
+- 2026-05-30: `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --no-restore -v minimal --filter DeploymentCommand` passed: 15 tests.
+- 2026-05-30: `cd src/Elsa.Platform.Console && npm test -- --run deployments` passed: 22 tests, including artifact metadata in promotion previews and run command summaries.
+- 2026-05-30: `cd src/Elsa.Platform.Console && npm run typecheck` passed.
+- 2026-05-30: `dotnet build Elsa.Platform.sln --no-restore -v minimal` passed with the existing `Microsoft.Build.Utilities.Core` NU1903 warnings.
+- 2026-05-30: `git diff --check` passed.
 
 ## Known Scope Boundaries
 

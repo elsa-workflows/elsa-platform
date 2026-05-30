@@ -116,6 +116,7 @@ export function PromotionPreviewPanel({
               </table>
             </Table>
           </Panel>
+          {comparison.artifacts.length > 0 ? <ArtifactPanel artifacts={comparison.artifacts} /> : null}
           <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-start">
             <ValidationPanel validations={comparison.validations} />
             <div className="rounded-ui border border-border bg-surface p-3">
@@ -139,6 +140,54 @@ export function PromotionPreviewPanel({
       )}
     </div>
   );
+}
+
+function ArtifactPanel({ artifacts }: { artifacts: PromotionComparison["artifacts"] }) {
+  return (
+    <Panel title="Artifact references" icon={<GitCompareArrows className="h-4 w-4" />}>
+      <Table>
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2">Artifact</th>
+              <th className="px-3 py-2">Identity</th>
+              <th className="px-3 py-2">Type</th>
+              <th className="px-3 py-2">Digest</th>
+              <th className="px-3 py-2">Metadata</th>
+              <th className="px-3 py-2">Runtime</th>
+              <th className="px-3 py-2">Impact</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {artifacts.map((artifact) => {
+              const reference = artifact.source ?? artifact.target;
+              return (
+                <tr key={artifact.name}>
+                  <td className="px-3 py-3 font-medium">{artifact.name}</td>
+                  <td className="px-3 py-3 text-muted-foreground">{reference?.artifactId ?? "Unavailable"}</td>
+                  <td className="px-3 py-3 text-muted-foreground">{reference?.artifactTypeId ?? "Unknown"}</td>
+                  <td className="px-3 py-3 text-muted-foreground">{digestLabel(reference?.contentDigest)}</td>
+                  <td className="px-3 py-3 text-muted-foreground">{propertiesLabel(reference?.metadata)}</td>
+                  <td className="px-3 py-3">
+                    <RuntimeCompatibility validations={artifact.runtimeCompatibility} />
+                  </td>
+                  <td className="px-3 py-3"><StatusBadge value={artifact.impact} tone={artifact.impact === "Removed" ? "warning" : "neutral"} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Table>
+    </Panel>
+  );
+}
+
+function RuntimeCompatibility({ validations }: { validations: PromotionComparison["artifacts"][number]["runtimeCompatibility"] }) {
+  if (validations.length === 0) return <span className="text-muted-foreground">Not evaluated</span>;
+  const blocker = validations.find((validation) => validation.severity === "Blocker");
+  const warning = validations.find((validation) => validation.severity === "Warning");
+  const selected = blocker ?? warning ?? validations[0];
+  return <StatusBadge value={selected.severity} tone={validationTone(selected.severity)} />;
 }
 
 function ValidationPanel({ validations }: { validations: PromotionComparison["validations"] }) {
@@ -185,6 +234,17 @@ function validationTone(status: ValidationSeverity): StatusTone {
   if (status === "Pass") return "success";
   if (status === "Warning") return "warning";
   return "destructive";
+}
+
+function digestLabel(digest: { algorithm: string; value: string } | null | undefined) {
+  return digest ? `${digest.algorithm}:${digest.value}` : "Missing";
+}
+
+function propertiesLabel(properties: Record<string, string> | null | undefined) {
+  if (!properties || Object.keys(properties).length === 0) return "None";
+  return Object.entries(properties)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(", ");
 }
 
 function diffCategoryLabel(category: DiffCategory) {

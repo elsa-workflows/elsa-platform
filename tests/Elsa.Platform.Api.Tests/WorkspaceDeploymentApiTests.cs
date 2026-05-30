@@ -306,6 +306,88 @@ public sealed class WorkspaceDeploymentApiTests
     }
 
     [Fact]
+    public async Task Owner_can_roll_back_to_artifact_backed_revision_and_queue_safe_command()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("artifact-rollback-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var (application, sourceEnvironment, targetEnvironment, targetEngine) = await SeedPreviewTopologyAsync(app, workspaceId);
+        var artifactA = await RegisterWorkflowArtifactAsync(owner, workspaceId, "sha256:payment-retry-a");
+        var artifactB = await RegisterWorkflowArtifactAsync(owner, workspaceId, "sha256:payment-retry-b");
+        var revisionA = await CreateRevisionDirectAsync(
+            app,
+            workspaceId,
+            application.Id,
+            sourceEnvironment.Id,
+            "Known good artifact",
+            DesiredStateJson(ArtifactReferenceRecord(artifactA)));
+        var revisionB = await CreateRevisionDirectAsync(
+            app,
+            workspaceId,
+            application.Id,
+            sourceEnvironment.Id,
+            "Bad artifact",
+            DesiredStateJson(ArtifactReferenceRecord(artifactB)));
+        var deployAConfirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Deploy, revisionA.Id);
+        var deployAResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runs",
+            new WorkspaceDeploymentRunRequestDto(revisionA.Id, targetEnvironment.Id, targetEngine.Id, deployAConfirmation.Id, DeploymentRunMode.Apply));
+        var deployA = await deployAResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentRun>();
+        await CompleteRunAsync(app, workspaceId, deployA!.Id);
+        var deployBConfirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Deploy, revisionB.Id);
+        var deployBResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runs",
+            new WorkspaceDeploymentRunRequestDto(revisionB.Id, targetEnvironment.Id, targetEngine.Id, deployBConfirmation.Id, DeploymentRunMode.Apply));
+        var deployB = await deployBResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentRun>();
+        await CompleteRunAsync(app, workspaceId, deployB!.Id);
+        var rollbackConfirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Rollback, revisionA.Id);
+
+        var rollbackResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/rollbacks",
+            new WorkspaceRollbackRunRequestDto(revisionA.Id, targetEnvironment.Id, targetEngine.Id, rollbackConfirmation.Id, deployB.Id, DeploymentRunMode.Apply));
+        var rollback = await rollbackResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentRun>();
+        var detail = await owner.GetPlatformJsonAsync<WorkspaceDeploymentRunDetailResponse>($"/api/workspaces/{workspaceId}/deployments/runs/{rollback!.Id}");
+        var command = detail!.Commands.Should().ContainSingle().Subject;
+
+        deployAResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        deployBResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        rollbackResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        rollback.RollbackSourceRunId.Should().Be(deployB.Id);
+        command.Action.Should().Be(DeploymentCommandAction.Rollback);
+        command.Artifact.Should().NotBeNull();
+        command.Artifact!.ArtifactRecordId.Should().Be(artifactA.Id);
+        command.Artifact.ArtifactId.Should().Be(artifactA.ArtifactId);
+        command.Artifact.ContentDigest.Should().Be(artifactA.ContentDigest);
+    }
+
+    [Fact]
+    public async Task Artifact_backed_rollback_rejects_missing_artifact_before_consuming_confirmation()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("artifact-rollback-missing-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var (application, sourceEnvironment, targetEnvironment, targetEngine) = await SeedPreviewTopologyAsync(app, workspaceId);
+        var revision = await CreateRevisionDirectAsync(
+            app,
+            workspaceId,
+            application.Id,
+            sourceEnvironment.Id,
+            "Missing rollback artifact",
+            DesiredStateJson(MissingArtifactReferenceRecord()));
+        var confirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Rollback, revision.Id);
+
+        var rollbackResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/rollbacks",
+            new WorkspaceRollbackRunRequestDto(revision.Id, targetEnvironment.Id, targetEngine.Id, confirmation.Id, Guid.NewGuid(), DeploymentRunMode.Apply));
+        var storedConfirmation = await ReadConfirmationAsync(app, workspaceId, confirmation.Id);
+
+        rollbackResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        storedConfirmation!.UsedAt.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Owner_can_confirm_queue_inspect_and_rollback_deployment_run()
     {
         await using var app = new PlatformApiTestApplication();
@@ -466,6 +548,15 @@ public sealed class WorkspaceDeploymentApiTests
         return (await response.Content.ReadPlatformJsonAsync<ActionConfirmation>())!;
     }
 
+    private static async Task<WorkspaceArtifact> RegisterWorkflowArtifactAsync(HttpClient client, Guid workspaceId, string artifactId)
+    {
+        var response = await client.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/artifacts",
+            WorkspaceDeploymentTestFixtures.WorkflowEnvelopeRegistration(artifactId));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return (await response.Content.ReadPlatformJsonAsync<WorkspaceArtifact>())!;
+    }
+
     private static async Task<WorkspaceDeploymentTier> CreateTierAsync(HttpClient client, Guid workspaceId, string name, params string[] capabilities)
     {
         var response = await client.PostPlatformJsonAsync(
@@ -499,6 +590,22 @@ public sealed class WorkspaceDeploymentApiTests
               "contentDigest": {
                 "algorithm": "{{(digest ?? artifact.ContentDigest).Algorithm}}",
                 "value": "{{(digest ?? artifact.ContentDigest).Value}}"
+              }
+            }
+            """);
+
+    private static WorkspaceDesiredStateRecordRequest MissingArtifactReferenceRecord() =>
+        Record(
+            DesiredStateRecordKind.ArtifactReference,
+            "Payment Retry",
+            $$"""
+            {
+              "artifactRecordId": "{{Guid.NewGuid():D}}",
+              "artifactId": "sha256:missing-payment-retry",
+              "artifactTypeId": "{{ArtifactTypeIds.ElsaWorkflowDefinition}}",
+              "contentDigest": {
+                "algorithm": "sha256",
+                "value": "missing"
               }
             }
             """);

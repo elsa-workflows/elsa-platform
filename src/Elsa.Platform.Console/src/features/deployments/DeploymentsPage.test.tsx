@@ -237,7 +237,11 @@ describe("DeploymentsPage", () => {
     await screen.findByRole("heading", { name: "Deployments" });
     await userEvent.click(screen.getByRole("button", { name: "Promotion Diff" }));
 
-    expect(screen.getByText("Payment Retry")).toBeInTheDocument();
+    expect(screen.getAllByText("Payment Retry").length).toBeGreaterThan(0);
+    expect(screen.getByText("Artifact references")).toBeInTheDocument();
+    expect(screen.getByText("sha256:payment-retry-stage")).toBeInTheDocument();
+    expect(screen.getAllByText("elsa.workflow-definition").length).toBeGreaterThan(0);
+    expect(screen.getByText("displayName=Payment Retry, version=7")).toBeInTheDocument();
     expect(screen.getAllByText("Secret references").length).toBeGreaterThan(0);
     expect(screen.getByText("Payment API secret reference is missing or not verified in Prod.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Deploy Revision" })).toBeDisabled();
@@ -363,6 +367,7 @@ describe("DeploymentsPage", () => {
     expect(screen.getByText("Latest Blocked")).toBeInTheDocument();
     expect(screen.getByText("Deploy Running")).toBeInTheDocument();
     expect(screen.getByText("Applying workflow definitions")).toBeInTheDocument();
+    expect(screen.getByText("sha256:payment-retry-stage / elsa.workflow-definition / sha256:stage-digest")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm Deployment" })).not.toBeInTheDocument();
   });
 });
@@ -769,6 +774,12 @@ const deploymentCockpitFixture: DeploymentCockpit = {
       validations: [
         { id: "secret-payment-api", severity: "Blocker", scope: "Secret references", message: "Payment API secret reference is missing or not verified in Prod." },
         { id: "capability-reload", severity: "Blocker", scope: "Engine capabilities", message: "claims-prod-weu-01 does not advertise engine.reload-configuration." }
+      ],
+      artifacts: [
+        artifactComparison("Payment Retry", "sha256:payment-retry-stage", "stage-digest", "Changed", {
+          displayName: "Payment Retry",
+          version: "7"
+        })
       ]
     },
     {
@@ -786,6 +797,12 @@ const deploymentCockpitFixture: DeploymentCockpit = {
       validations: [
         { id: "secret-payment-test", severity: "Pass", scope: "Secret references", message: "Required secret references are verified for Test." },
         { id: "capability-test", severity: "Pass", scope: "Engine capabilities", message: "claims-test-weu-01 supports required engine operations." }
+      ],
+      artifacts: [
+        artifactComparison("Payment Retry", "sha256:payment-retry-dev", "dev-digest", "Changed", {
+          displayName: "Payment Retry",
+          version: "8"
+        })
       ]
     }
   ],
@@ -812,6 +829,7 @@ const deploymentCockpitFixture: DeploymentCockpit = {
           engineId: "prod-engine",
           action: "Deploy",
           status: "Running",
+          artifact: commandArtifact("sha256:payment-retry-stage", "stage-digest"),
           workerId: "runtime-worker-1",
           claimedAt: "2026-05-22T08:06:00Z",
           leaseExpiresAt: "2026-05-22T08:11:00Z",
@@ -894,6 +912,47 @@ function engine(
       { id: "restart-shell", label: "Restart Shell", boundary: "Shell", capabilityId: "shell.restart", description: "Hidden until the shell restart capability is advertised." }
     ],
     hostingProvider: null
+  };
+}
+
+function artifactComparison(
+  name: string,
+  artifactId: string,
+  digest: string,
+  impact: DeploymentCockpit["comparisons"][number]["artifacts"][number]["impact"],
+  metadata: Record<string, string>
+): DeploymentCockpit["comparisons"][number]["artifacts"][number] {
+  return {
+    name,
+    source: {
+      artifactRecordId: "00000000-0000-0000-0000-000000000900",
+      artifactId,
+      artifactTypeId: "elsa.workflow-definition",
+      contentDigest: { algorithm: "sha256", value: digest },
+      metadata,
+      configuration: { environment: "stage" },
+      compatibilityHints: ["workflow-definition.apply"]
+    },
+    target: {
+      artifactRecordId: "00000000-0000-0000-0000-000000000899",
+      artifactId: "sha256:payment-retry-prod",
+      artifactTypeId: "elsa.workflow-definition",
+      contentDigest: { algorithm: "sha256", value: "prod-digest" },
+      metadata: { displayName: "Payment Retry", version: "6" },
+      configuration: { environment: "prod" },
+      compatibilityHints: ["workflow-definition.apply"]
+    },
+    impact,
+    runtimeCompatibility: [{ id: `${artifactId}-runtime`, severity: "Pass", scope: "Runtime compatibility", message: "Workflow runtime capability is present." }]
+  };
+}
+
+function commandArtifact(artifactId: string, digest: string): NonNullable<DeploymentCockpit["history"][number]["commands"]>[number]["artifact"] {
+  return {
+    artifactRecordId: "00000000-0000-0000-0000-000000000900",
+    artifactId,
+    artifactTypeId: "elsa.workflow-definition",
+    contentDigest: { algorithm: "sha256", value: digest }
   };
 }
 

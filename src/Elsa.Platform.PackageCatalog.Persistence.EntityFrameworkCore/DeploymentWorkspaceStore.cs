@@ -1923,6 +1923,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             entity.EngineId,
             entity.Action,
             entity.Status,
+            DeserializeArtifactReference(entity.ArtifactJson),
             entity.WorkerId,
             entity.ClaimedAt,
             entity.LeaseExpiresAt,
