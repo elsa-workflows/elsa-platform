@@ -183,6 +183,21 @@ public sealed class WorkspaceDeploymentApiTests
     }
 
     [Fact]
+    public async Task Promotion_with_blank_label_returns_bad_request()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("promotion-label-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+
+        var response = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/promotions",
+            new WorkspacePromotionRequestDto(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), " ", null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task Owner_can_promote_artifact_backed_revision_and_queue_safe_command()
     {
         await using var app = new PlatformApiTestApplication();

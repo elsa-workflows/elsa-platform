@@ -579,6 +579,10 @@ public static class WorkspaceDeploymentEndpoints
                     cancellationToken);
                 return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/revisions/{promotion.TargetRevision.Id:D}", promotion);
             }
+            catch (ArgumentException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
             catch (InvalidOperationException ex)
             {
                 return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
