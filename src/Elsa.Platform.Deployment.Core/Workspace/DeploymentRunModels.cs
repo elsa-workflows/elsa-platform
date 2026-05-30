@@ -77,6 +77,7 @@ public sealed record DeploymentRunCommandSummary(
     Guid EngineId,
     DeploymentCommandAction Action,
     DeploymentCommandStatus Status,
+    DeploymentCommandArtifactReference? Artifact,
     string? WorkerId,
     DateTimeOffset? ClaimedAt,
     DateTimeOffset? LeaseExpiresAt,

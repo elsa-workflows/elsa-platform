@@ -172,6 +172,29 @@ export type DeploymentValidation = {
   message: string;
 };
 
+export type PromotionArtifactDigest = {
+  algorithm: string;
+  value: string;
+};
+
+export type PromotionArtifactDescriptor = {
+  artifactRecordId: string | null;
+  artifactId: string | null;
+  artifactTypeId: string | null;
+  contentDigest: PromotionArtifactDigest | null;
+  metadata: Record<string, string>;
+  configuration: Record<string, string>;
+  compatibilityHints: string[];
+};
+
+export type PromotionArtifactComparison = {
+  name: string;
+  source: PromotionArtifactDescriptor | null;
+  target: PromotionArtifactDescriptor | null;
+  impact: "Added" | "Changed" | "Removed" | "Unchanged";
+  runtimeCompatibility: DeploymentValidation[];
+};
+
 export type PromotionComparison = {
   sourceEnvironmentId: string;
   targetEnvironmentId: string;
@@ -182,6 +205,7 @@ export type PromotionComparison = {
   validations: DeploymentValidation[];
   rollbackRevision: number | null;
   rollbackRevisionId: string | null;
+  artifacts: PromotionArtifactComparison[];
 };
 
 export type DesiredStateRecordKind =
@@ -300,6 +324,13 @@ export type DeploymentCommandDiagnostic = {
   message: string;
 };
 
+export type DeploymentCommandArtifactReference = {
+  artifactRecordId: string | null;
+  artifactId: string;
+  artifactTypeId: string;
+  contentDigest: WorkspaceArtifactDigest;
+};
+
 export type DeploymentRunCommandSummary = {
   id: string;
   workspaceId: string;
@@ -308,6 +339,7 @@ export type DeploymentRunCommandSummary = {
   engineId: string;
   action: DeploymentCommandAction;
   status: DeploymentCommandStatus;
+  artifact: DeploymentCommandArtifactReference | null;
   workerId: string | null;
   claimedAt: string | null;
   leaseExpiresAt: string | null;
