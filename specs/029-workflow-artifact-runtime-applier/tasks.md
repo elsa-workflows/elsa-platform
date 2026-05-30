@@ -21,14 +21,14 @@
 
 - [x] T008 Implement workflow artifact payload loading.
 - [x] T009 Implement digest and schema compatibility validation.
-- [ ] T010 Implement local runtime workflow definition apply.
-- [ ] T011 Implement apply journal/idempotency guard.
-- [ ] T012 Implement safe diagnostics and runtime reference reporting.
+- [x] T010 Implement local runtime workflow definition apply.
+- [x] T011 Implement apply journal/idempotency guard.
+- [x] T012 Implement safe diagnostics and runtime reference reporting.
 
 ## Phase 4: Verification
 
-- [ ] T013 Add tests for successful apply.
-- [ ] T014 Add duplicate-delivery/idempotency tests.
-- [ ] T015 Add digest mismatch, unsupported schema, and local validation failure tests.
-- [ ] T016 Add safe diagnostics tests.
-- [ ] T017 Run focused checks and record results in `quickstart.md`.
+- [x] T013 Add tests for successful apply.
+- [x] T014 Add duplicate-delivery/idempotency tests.
+- [x] T015 Add digest mismatch, unsupported schema, and local validation failure tests.
+- [x] T016 Add safe diagnostics tests.
+- [x] T017 Run focused checks and record results in `quickstart.md`.
