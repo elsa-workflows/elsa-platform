@@ -180,6 +180,7 @@ builder.Services.AddScoped<IDeploymentArtifactReader, DeploymentArtifactReader>(
 builder.Services.AddScoped<WorkspaceArtifactService>();
 builder.Services.AddScoped<WorkspacePermissionService>();
 builder.Services.AddScoped<DeploymentValidationService>();
+builder.Services.AddScoped<DeploymentPromotionService>();
 builder.Services.AddHttpClient<IEngineHealthProbe, HttpEngineHealthProbe>(client => client.Timeout = TimeSpan.FromSeconds(3));
 builder.Services.AddScoped<EngineHealthService>();
 builder.Services.AddScoped<DeploymentRunService>();

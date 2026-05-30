@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using Elsa.Platform.Api.Workspace;
+using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
@@ -182,6 +183,129 @@ public sealed class WorkspaceDeploymentApiTests
     }
 
     [Fact]
+    public async Task Promotion_with_blank_label_returns_bad_request()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("promotion-label-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+
+        var response = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/promotions",
+            new WorkspacePromotionRequestDto(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), " ", null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Owner_can_promote_artifact_backed_revision_and_queue_safe_command()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("artifact-promotion-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var (application, sourceEnvironment, targetEnvironment, targetEngine) = await SeedPreviewTopologyAsync(app, workspaceId);
+        var artifactResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/artifacts",
+            WorkspaceDeploymentTestFixtures.WorkflowEnvelopeRegistration("sha256:payment-retry"));
+        var artifact = await artifactResponse.Content.ReadPlatformJsonAsync<WorkspaceArtifact>();
+        artifact.Should().NotBeNull();
+        var registeredArtifact = artifact!;
+        var sourceRevisionResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications/{application.Id}/environments/{sourceEnvironment.Id}/revisions",
+            new WorkspaceDesiredStateRevisionRequest(
+                "Stage artifact",
+                "stage-artifact",
+                [
+                    ArtifactReferenceRecord(registeredArtifact),
+                    Record(DesiredStateRecordKind.ObservabilityBinding, "OpenTelemetry", "{\"provider\":\"otlp\"}")
+                ]));
+        var sourceRevision = await sourceRevisionResponse.Content.ReadPlatformJsonAsync<WorkspaceDesiredStateRevision>();
+
+        var promotionResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/promotions",
+            new WorkspacePromotionRequestDto(sourceEnvironment.Id, targetEnvironment.Id, sourceRevision!.Id, targetEngine.Id, "Promoted artifact", "prod-artifact"));
+        promotionResponse.StatusCode.Should().Be(HttpStatusCode.Created, await promotionResponse.Content.ReadAsStringAsync());
+        var promotion = await promotionResponse.Content.ReadPlatformJsonAsync<WorkspacePromotionResult>();
+        var confirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Deploy, promotion!.TargetRevision.Id);
+        var runResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runs",
+            new WorkspaceDeploymentRunRequestDto(promotion.TargetRevision.Id, targetEnvironment.Id, targetEngine.Id, confirmation.Id, DeploymentRunMode.Apply));
+        var command = await ReadQueuedCommandAsync(app, workspaceId, targetEngine.Id);
+
+        artifactResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        sourceRevisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        promotion.TargetRevision.EnvironmentId.Should().Be(targetEnvironment.Id);
+        promotion.TargetRevision.DesiredStateJson.Should().Contain(registeredArtifact.ArtifactId);
+        promotion.TargetRevision.DesiredStateJson.Should().NotContain("workflow definition payload");
+        runResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        command.Artifact.Should().NotBeNull();
+        command.Artifact!.ArtifactRecordId.Should().Be(registeredArtifact.Id);
+        command.Artifact.ContentDigest.Should().Be(registeredArtifact.ContentDigest);
+        command.Revision!.RevisionId.Should().Be(promotion.TargetRevision.Id);
+    }
+
+    [Fact]
+    public async Task Deployment_run_rejects_artifact_digest_mismatch_before_consuming_confirmation()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("artifact-run-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var (application, sourceEnvironment, targetEnvironment, targetEngine) = await SeedPreviewTopologyAsync(app, workspaceId);
+        var artifactResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/artifacts",
+            WorkspaceDeploymentTestFixtures.WorkflowEnvelopeRegistration("sha256:payment-retry"));
+        var artifact = await artifactResponse.Content.ReadPlatformJsonAsync<WorkspaceArtifact>();
+        var revision = await CreateRevisionDirectAsync(
+            app,
+            workspaceId,
+            application.Id,
+            sourceEnvironment.Id,
+            "Digest mismatch",
+            DesiredStateJson(ArtifactReferenceRecord(artifact!, new WorkspaceArtifactDigest("sha256", "wrong"))));
+        var confirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Deploy, revision.Id);
+
+        var runResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runs",
+            new WorkspaceDeploymentRunRequestDto(revision.Id, targetEnvironment.Id, targetEngine.Id, confirmation.Id, DeploymentRunMode.Apply));
+        var storedConfirmation = await ReadConfirmationAsync(app, workspaceId, confirmation.Id);
+
+        runResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        storedConfirmation!.UsedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Deployment_run_uses_artifact_type_default_capabilities_when_hints_are_empty()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("artifact-capability-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var (application, sourceEnvironment, targetEnvironment, targetEngine) = await SeedPreviewTopologyAsync(app, workspaceId, includeWorkflowCapability: false);
+        var artifactResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/artifacts",
+            WorkspaceDeploymentTestFixtures.WorkflowEnvelopeRegistration("sha256:payment-retry") with { CompatibilityHints = [] });
+        var artifact = await artifactResponse.Content.ReadPlatformJsonAsync<WorkspaceArtifact>();
+        var revision = await CreateRevisionDirectAsync(
+            app,
+            workspaceId,
+            application.Id,
+            sourceEnvironment.Id,
+            "Missing runtime capability",
+            DesiredStateJson(ArtifactReferenceRecord(artifact!)));
+        var confirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Deploy, revision.Id);
+
+        var runResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runs",
+            new WorkspaceDeploymentRunRequestDto(revision.Id, targetEnvironment.Id, targetEngine.Id, confirmation.Id, DeploymentRunMode.Apply));
+        var storedConfirmation = await ReadConfirmationAsync(app, workspaceId, confirmation.Id);
+
+        runResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        storedConfirmation!.UsedAt.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Owner_can_confirm_queue_inspect_and_rollback_deployment_run()
     {
         await using var app = new PlatformApiTestApplication();
@@ -266,7 +390,10 @@ public sealed class WorkspaceDeploymentApiTests
                 "westeurope",
                 "Azure Key Vault",
                 "kv://claims/prod/elsa-api",
-                [new EngineCapability("engine.reload-configuration", "Reload engine configuration", CapabilityBoundary.EngineApi)],
+                [
+                    new EngineCapability("engine.reload-configuration", "Reload engine configuration", CapabilityBoundary.EngineApi),
+                    new EngineCapability("workflow-definition.apply", "Apply workflow definitions", CapabilityBoundary.EngineApi)
+                ],
                 [new RuntimeControl("reload-configuration", "Reload Configuration", CapabilityBoundary.EngineApi, "engine.reload-configuration", "Reloads engine API configuration.")],
                 null));
         await store.CreateRevisionAsync(workspaceId, new CreateDesiredStateRevisionRequest(application.Id, environment.Id, "Baseline", "abc123", "{\"records\":[]}", null));
@@ -285,7 +412,8 @@ public sealed class WorkspaceDeploymentApiTests
 
     private static async Task<(WorkspaceDeploymentApplication Application, WorkspaceDeploymentEnvironment SourceEnvironment, WorkspaceDeploymentEnvironment TargetEnvironment, WorkspaceWorkflowEngine TargetEngine)> SeedPreviewTopologyAsync(
         PlatformApiTestApplication app,
-        Guid workspaceId)
+        Guid workspaceId,
+        bool includeWorkflowCapability = true)
     {
         await using var scope = app.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IWorkspaceDeploymentStore>();
@@ -301,12 +429,20 @@ public sealed class WorkspaceDeploymentApiTests
                 "westeurope",
                 "Azure Key Vault",
                 "kv://claims/prod/elsa-api",
-                [new EngineCapability("engine.reload-configuration", "Reload engine configuration", CapabilityBoundary.EngineApi)],
+                EngineCapabilities(includeWorkflowCapability),
                 [new RuntimeControl("reload-configuration", "Reload Configuration", CapabilityBoundary.EngineApi, "engine.reload-configuration", "Reloads engine API configuration.")],
                 null));
 
         return (application, sourceEnvironment, targetEnvironment, targetEngine);
     }
+
+    private static IReadOnlyList<EngineCapability> EngineCapabilities(bool includeWorkflowCapability) =>
+        includeWorkflowCapability
+            ? [
+                new EngineCapability("engine.reload-configuration", "Reload engine configuration", CapabilityBoundary.EngineApi),
+                new EngineCapability("workflow-definition.apply", "Apply workflow definitions", CapabilityBoundary.EngineApi)
+            ]
+            : [new EngineCapability("engine.reload-configuration", "Reload engine configuration", CapabilityBoundary.EngineApi)];
 
     private static async Task<WorkspaceDesiredStateRevision> CreateRevisionDirectAsync(
         PlatformApiTestApplication app,
@@ -348,6 +484,55 @@ public sealed class WorkspaceDeploymentApiTests
 
     private static WorkspaceDesiredStateRecordRequest Record(DesiredStateRecordKind kind, string name, string payloadJson) =>
         new(kind, name, JsonSerializer.Deserialize<JsonElement>(payloadJson, PlatformApiTestApplication.JsonOptions));
+
+    private static WorkspaceDesiredStateRecordRequest ArtifactReferenceRecord(
+        WorkspaceArtifact artifact,
+        WorkspaceArtifactDigest? digest = null) =>
+        Record(
+            DesiredStateRecordKind.ArtifactReference,
+            "Payment Retry",
+            $$"""
+            {
+              "artifactRecordId": "{{artifact.Id:D}}",
+              "artifactId": "{{artifact.ArtifactId}}",
+              "artifactTypeId": "{{artifact.ArtifactTypeId}}",
+              "contentDigest": {
+                "algorithm": "{{(digest ?? artifact.ContentDigest).Algorithm}}",
+                "value": "{{(digest ?? artifact.ContentDigest).Value}}"
+              }
+            }
+            """);
+
+    private static string DesiredStateJson(params WorkspaceDesiredStateRecordRequest[] records)
+    {
+        var items = records.Select(record => new
+        {
+            kind = record.Kind.ToString(),
+            name = record.Name,
+            payload = record.Payload
+        });
+        return JsonSerializer.Serialize(new { records = items }, PlatformApiTestApplication.JsonOptions);
+    }
+
+    private static async Task<DeploymentCommand> ReadQueuedCommandAsync(
+        PlatformApiTestApplication app,
+        Guid workspaceId,
+        Guid engineId)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IWorkspaceDeploymentCommandStore>();
+        return (await store.PollPendingCommandsAsync(workspaceId, engineId, 10, DateTimeOffset.UtcNow)).Single();
+    }
+
+    private static async Task<ActionConfirmation?> ReadConfirmationAsync(
+        PlatformApiTestApplication app,
+        Guid workspaceId,
+        Guid confirmationId)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IWorkspaceDeploymentMutationStore>();
+        return await store.GetConfirmationAsync(workspaceId, confirmationId);
+    }
 
     private static async Task SeedNormalDatasetAsync(PlatformApiTestApplication app, Guid workspaceId)
     {

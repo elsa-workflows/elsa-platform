@@ -1773,12 +1773,32 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
 
         if (artifact is null)
             throw new InvalidOperationException("Artifact-backed revision references an artifact that is not visible in the workspace.");
+        ValidateArtifactReference(artifactReference, artifact);
 
         return new DeploymentCommandArtifactReference(
             artifact.Id,
             artifact.ArtifactId,
             artifact.ArtifactTypeId,
             new WorkspaceArtifactDigest(artifact.ContentDigestAlgorithm, artifact.ContentDigest));
+    }
+
+    private static void ValidateArtifactReference(
+        DeploymentCommandArtifactReference reference,
+        WorkspaceDeploymentArtifactEntity artifact)
+    {
+        if (reference.ArtifactRecordId is not null && reference.ArtifactRecordId != artifact.Id)
+            throw new InvalidOperationException("Artifact-backed revision artifact record does not match the registered artifact.");
+        if (!string.IsNullOrWhiteSpace(reference.ArtifactId) && !string.Equals(reference.ArtifactId, artifact.ArtifactId, StringComparison.Ordinal))
+            throw new InvalidOperationException("Artifact-backed revision artifact identity does not match the registered artifact.");
+        if (string.IsNullOrWhiteSpace(reference.ArtifactTypeId))
+            throw new InvalidOperationException("Artifact-backed revision artifact type is missing.");
+        if (!string.Equals(reference.ArtifactTypeId, artifact.ArtifactTypeId, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Artifact-backed revision artifact type does not match the registered artifact.");
+        if (reference.ContentDigest is null)
+            throw new InvalidOperationException("Artifact-backed revision artifact digest is missing.");
+        if (!string.Equals(reference.ContentDigest.Algorithm, artifact.ContentDigestAlgorithm, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(reference.ContentDigest.Value, artifact.ContentDigest, StringComparison.Ordinal))
+            throw new InvalidOperationException("Artifact-backed revision artifact digest does not match the registered artifact.");
     }
 
     private static DeploymentCommandArtifactReference? ParseArtifactReference(string desiredStateJson)
