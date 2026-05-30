@@ -89,6 +89,26 @@ public sealed class DeploymentValidationServiceTests
     }
 
     [Fact]
+    public async Task Blocks_preview_when_target_engine_belongs_to_another_environment()
+    {
+        var otherEnvironmentId = Guid.NewGuid();
+        _store.Revisions[_sourceRevisionId] = Revision(_sourceRevisionId, _sourceEnvironmentId, 4, """{"records":[]}""");
+        _store.Engines[_targetEngineId] = Engine(_targetEngineId, otherEnvironmentId);
+        _store.Environments.Add(Environment(_sourceEnvironmentId, "Stage", EnvironmentTier.Stage, DeploymentTierCapabilities.PromotionSource));
+        _store.Environments.Add(Environment(_targetEnvironmentId, "Prod", EnvironmentTier.Production, DeploymentTierCapabilities.PromotionTarget));
+        _store.EngineRegistrations.Add(EngineRegistration(_targetEngineId, otherEnvironmentId));
+        var service = new DeploymentValidationService(_store);
+
+        var comparison = await service.PreviewPromotionAsync(
+            _workspaceId,
+            new WorkspacePromotionPreviewRequest(_sourceEnvironmentId, _targetEnvironmentId, _sourceRevisionId, _targetEngineId));
+
+        comparison.Validations.Should().ContainSingle(x =>
+            x.Id == "deployment.engine.environment-mismatch"
+            && x.Severity == ValidationSeverity.Blocker);
+    }
+
+    [Fact]
     public async Task Applies_target_tier_safeguards_from_capabilities()
     {
         _store.Revisions[_sourceRevisionId] = Revision(_sourceRevisionId, _sourceEnvironmentId, 5, """

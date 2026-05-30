@@ -86,6 +86,20 @@ public sealed record WorkspacePromotionPreviewRequest(
     Guid SourceRevisionId,
     Guid TargetEngineId);
 
+public sealed record WorkspacePromotionRequest(
+    Guid SourceEnvironmentId,
+    Guid TargetEnvironmentId,
+    Guid SourceRevisionId,
+    Guid TargetEngineId,
+    string Label,
+    string? Commit,
+    Guid? ActorAccountId);
+
+public sealed record WorkspacePromotionResult(
+    WorkspaceDesiredStateRevision SourceRevision,
+    WorkspaceDesiredStateRevision TargetRevision,
+    PromotionComparison Comparison);
+
 public sealed record CreateWorkflowApplicationRequest(string Name, string? Description, Guid? ActorAccountId);
 
 public sealed record UpdateWorkflowApplicationRequest(string Name, string? Description, Guid? ActorAccountId);

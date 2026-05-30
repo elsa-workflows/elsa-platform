@@ -20,14 +20,14 @@
 ## Phase 3: Promotion And Deployment
 
 - [x] T008 Update promotion preview to compare artifact-backed revisions.
-- [ ] T009 Update promotion creation to create artifact-backed target revisions.
-- [ ] T010 Update deployment validation to check artifact ownership, type, digest, payload reference availability, tier policy, and runtime capability hints.
+- [x] T009 Update promotion creation to create artifact-backed target revisions.
+- [x] T010 Update deployment validation to check artifact ownership, type, digest, payload reference availability, tier policy, and runtime capability hints.
 - [x] T011 Update deployment command creation to include artifact references.
 - [ ] T012 Add rollback selection and validation for artifact-backed revisions.
 
 ## Phase 4: API And Console
 
-- [ ] T013 Add API request/response contract changes for artifact-backed revisions.
+- [x] T013 Add API request/response contract changes for artifact-backed revisions.
 - [ ] T014 Update console promotion and run detail views to show safe artifact metadata.
 - [ ] T015 Add API and console tests for preview, promote, deploy, and rollback.
 

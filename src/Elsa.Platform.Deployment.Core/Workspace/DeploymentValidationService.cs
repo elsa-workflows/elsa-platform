@@ -24,7 +24,7 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
         var (sourceEnvironment, targetEnvironment, targetEngineRegistration) = await GetPromotionContextAsync(workspaceId, request, cancellationToken);
         var diff = Diff(sourceRecords, targetRecords);
         var artifactComparisons = CompareArtifacts(sourceRecords, targetRecords, engine, targetEngineRegistration);
-        var validations = Validate(sourceRecords, engine, sourceEnvironment, targetEnvironment);
+        var validations = Validate(sourceRecords, engine, sourceEnvironment, targetEnvironment, request.TargetEnvironmentId);
 
         return new PromotionComparison(
             request.SourceEnvironmentId.ToString("D"),
@@ -312,7 +312,9 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
             return (
                 environments.SingleOrDefault(x => string.Equals(x.Id, request.SourceEnvironmentId.ToString("D"), StringComparison.OrdinalIgnoreCase)),
                 environments.SingleOrDefault(x => string.Equals(x.Id, request.TargetEnvironmentId.ToString("D"), StringComparison.OrdinalIgnoreCase)),
-                cockpit.Engines.SingleOrDefault(x => string.Equals(x.Id, request.TargetEngineId.ToString("D"), StringComparison.OrdinalIgnoreCase)));
+                cockpit.Engines.SingleOrDefault(x =>
+                    string.Equals(x.Id, request.TargetEngineId.ToString("D"), StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(x.EnvironmentId, request.TargetEnvironmentId.ToString("D"), StringComparison.OrdinalIgnoreCase)));
         }
         catch (NotSupportedException)
         {
@@ -324,11 +326,14 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
         IReadOnlyList<DesiredRecord> source,
         WorkspaceWorkflowEngine? engine,
         EnvironmentSummary? sourceEnvironment,
-        EnvironmentSummary? targetEnvironment)
+        EnvironmentSummary? targetEnvironment,
+        Guid targetEnvironmentId)
     {
         var validations = new List<DeploymentValidation>();
         if (engine is null)
             validations.Add(new DeploymentValidation("deployment.engine.missing", ValidationSeverity.Blocker, "Engine", "Target engine is not visible in this workspace."));
+        else if (engine.EnvironmentId != targetEnvironmentId)
+            validations.Add(new DeploymentValidation("deployment.engine.environment-mismatch", ValidationSeverity.Blocker, "Engine", "Target engine does not belong to the target environment."));
         if (sourceEnvironment is not null && !DeploymentTierService.IsPromotionSource(sourceEnvironment))
             validations.Add(new DeploymentValidation("deployment.tier.source.unsupported", ValidationSeverity.Blocker, "Tier", $"{TierLabel(sourceEnvironment)} cannot be used as a promotion source."));
         if (targetEnvironment is not null && !DeploymentTierService.IsPromotionTarget(targetEnvironment))

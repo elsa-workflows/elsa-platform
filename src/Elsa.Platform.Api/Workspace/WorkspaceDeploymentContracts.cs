@@ -58,6 +58,14 @@ public sealed record WorkspacePromotionPreviewRequestDto(
     Guid SourceRevisionId,
     Guid TargetEngineId);
 
+public sealed record WorkspacePromotionRequestDto(
+    Guid SourceEnvironmentId,
+    Guid TargetEnvironmentId,
+    Guid SourceRevisionId,
+    Guid TargetEngineId,
+    string Label,
+    string? Commit);
+
 public sealed record WorkspaceActionConfirmationRequest(
     ConfirmationActionType ActionType,
     string TargetId,

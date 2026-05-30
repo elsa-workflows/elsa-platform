@@ -549,6 +549,42 @@ public static class WorkspaceDeploymentEndpoints
             return Results.Ok(comparison);
         });
 
+        group.MapPost("/promotions", async (
+            Guid workspaceId,
+            WorkspacePromotionRequestDto request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            DeploymentPromotionService promotions,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageDesiredState, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                var promotion = await promotions.PromoteAsync(
+                    workspaceId,
+                    new WorkspacePromotionRequest(
+                        request.SourceEnvironmentId,
+                        request.TargetEnvironmentId,
+                        request.SourceRevisionId,
+                        request.TargetEngineId,
+                        request.Label,
+                        request.Commit,
+                        access.Access!.AccountId),
+                    cancellationToken);
+                return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/revisions/{promotion.TargetRevision.Id:D}", promotion);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
         group.MapPost("/confirmations", async (
             Guid workspaceId,
             WorkspaceActionConfirmationRequest request,
