@@ -239,5 +239,6 @@ Several of these pieces are already implemented as contracts and services; other
 - [Active identity and workspace tenancy plan](specs/021-identity-tenancy/plan.md)
 - [Artifact-driven deployment execution plan](docs/platform-artifact-deployment-execution-plan.md)
 - [Spec Kit feature history](specs/)
+- [Platform integration packaging and host configuration](docs/platform-integration-packaging.md)
 
 Implementation work is tracked through Spec Kit under `specs/`. Start with the current plan for active branch context before making architectural changes.
