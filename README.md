@@ -238,6 +238,7 @@ Several of these pieces are already implemented as contracts and services; other
 - [Platform console](src/Elsa.Platform.Console/README.md)
 - [Active identity and workspace tenancy plan](specs/021-identity-tenancy/plan.md)
 - [Artifact-driven deployment execution plan](docs/platform-artifact-deployment-execution-plan.md)
+- [Platform artifact workflow E2E smoke](docs/platform-artifact-workflow-e2e-smoke.md)
 - [Spec Kit feature history](specs/)
 
 Implementation work is tracked through Spec Kit under `specs/`. Start with the current plan for active branch context before making architectural changes.
