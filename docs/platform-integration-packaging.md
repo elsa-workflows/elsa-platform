@@ -149,6 +149,29 @@ Operational guidance:
 - If artifacts live on private infrastructure, provide a host-owned `IWorkflowArtifactPayloadFetcher` with equivalent trust checks instead of weakening the default fetcher.
 - Heartbeat and claim lease settings must leave enough margin for local validation and apply. Increase `ClaimLeaseDuration` before increasing payload size or apply complexity.
 
+## Advisory Webhook Dispatch
+
+Runtime pull remains the authoritative transport. Platform can optionally deliver advisory webhook notifications to reduce polling latency, but the webhook only says "a command may be available." The runtime must still call the runtime command poll/claim API before applying anything.
+
+Platform host configuration:
+
+```json
+{
+  "Deployment": {
+    "WebhookDispatch": {
+      "Enabled": false,
+      "BatchSize": 25,
+      "PollInterval": "00:00:15",
+      "NotificationPath": "/api/elsa-platform/deployment-command-notifications"
+    }
+  }
+}
+```
+
+When enabled, Platform posts the existing safe notification payload to each target engine's registered `BaseUrl` plus `NotificationPath`. The payload contains workspace ID, engine ID, command hint, and reason only. It never contains lease tokens, raw workflow content, artifact payloads, credentials, or secret values.
+
+Runtime hosts that opt into webhook-triggered fetch should expose `NotificationPath`, validate that the notification came from a trusted Platform instance using host-owned authentication or network policy, and then wake the normal poll/claim loop. The endpoint should be idempotent because duplicate webhook delivery is expected.
+
 ## Configuration Shape
 
 Suggested host configuration keys:
@@ -181,3 +204,4 @@ Before publishing the integration packages externally:
 - Document the same-version compatibility rule in package release notes.
 - Add sample host wiring for Studio and runtime applications through [#42](https://github.com/elsa-workflows/elsa-platform/issues/42).
 - Execute the E2E smoke path through [#43](https://github.com/elsa-workflows/elsa-platform/issues/43) before declaring the packages ready for production use.
+- Keep advisory webhook dispatch disabled until runtime endpoint trust, network reachability, and credential rotation policies are configured for the target environment.

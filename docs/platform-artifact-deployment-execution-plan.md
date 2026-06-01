@@ -2,7 +2,7 @@
 
 Status: current execution baseline
 
-Last updated: 2026-05-31
+Last updated: 2026-06-01
 
 ## Product Model
 
@@ -40,7 +40,7 @@ Completed:
 - Custom deployment tiers: `specs/025-custom-deployment-tiers` has all tasks completed. Tier capability semantics, migration backfill, bounded-query verification, and console/API coverage are recorded in the quickstart.
 - Artifact envelope and types: `specs/026-artifact-envelope-and-types` has all tasks completed. The envelope/type contracts live in `Elsa.Platform.Deployment.Artifacts`, and the workspace artifact registry now stores type, producer, safe display metadata, compatibility hints, and payload references.
 - Studio Submit to Platform: `specs/027-studio-submit-to-platform` has all platform-side tasks completed. The Platform submit package has configuration, safe result states, deterministic workflow snapshot packaging, and a concrete Platform artifact registration HTTP client. The companion Elsa Studio integration is merged to `elsa-studio/main` with **Submit to Platform** actions in the workflow editor toolbar, workflow definition list bulk menu, and workflow definition row menu.
-- Runtime command sync: `specs/028-runtime-command-sync` now has backend command models, EF persistence, SQLite/SQL Server migrations, runtime pull/sync APIs, claim/lease behavior, heartbeat/progress/completion reporting, stale recovery, idempotency, webhook notification records, in-process worker compatibility, and focused core/persistence/API coverage.
+- Runtime command sync: `specs/028-runtime-command-sync` now has backend command models, EF persistence, SQLite/SQL Server migrations, runtime pull/sync APIs, claim/lease behavior, heartbeat/progress/completion reporting, stale recovery, idempotency, webhook notification records, disabled-by-default advisory webhook dispatch, in-process worker compatibility, and focused core/persistence/API coverage.
 - Workflow artifact runtime applier: `specs/029-workflow-artifact-runtime-applier` has all tasks completed. The first runtime consumer package can poll/claim commands, fetch workflow artifact payloads, validate digest/schema/capabilities, apply through a runtime store boundary, guard idempotency with an apply journal, and report safe results to Platform.
 - Artifact-backed promotion: `specs/030-artifact-backed-promotion` has all tasks completed. Desired-state revisions can reference artifacts, promotion previews compare safe artifact metadata/configuration/runtime compatibility, deployment commands carry safe artifact references, and rollback can redeploy a known-good artifact-backed revision.
 
@@ -86,8 +86,8 @@ Focused specs:
    - Host-specific authentication and configuration remain packaging/documentation hardening, not a missing platform model slice.
 
 3. `028-runtime-command-sync`
-   - Backend implementation completed for platform deployment command records, runtime pull/sync API, claim/lease, idempotent completion, progress reporting, stale recovery, safe diagnostics, and webhook notification records.
-   - Remaining follow-on work belongs with runtime credential hardening/provider transports and production deployment samples.
+   - Backend implementation completed for platform deployment command records, runtime pull/sync API, claim/lease, idempotent completion, progress reporting, stale recovery, safe diagnostics, webhook notification records, and the first disabled-by-default HTTP webhook dispatcher.
+   - Remaining follow-on work belongs with runtime credential hardening and production transport policy.
 
 4. `029-workflow-artifact-runtime-applier`
    - Completed for the first Elsa Workflows runtime integration package boundary.
@@ -234,7 +234,7 @@ Tasks:
 - Capture the smoke scenario in `docs/platform-artifact-workflow-e2e-smoke.md` so future changes can validate the complete control-plane path without rediscovering the sequence.
 - Decide the packaging home for the Studio integration and runtime applier packages, including NuGet IDs, host registration examples, auth configuration, and supported Platform API version range.
 - Add samples or quickstart host wiring for a platform-integrated Studio and a runtime-integrated Elsa Workflows app.
-- Harden production transport concerns that are intentionally outside the core model: credential rotation, runtime credential bootstrap, webhook dispatch provider, and deployment-specific network trust policy.
+- Harden production transport concerns that are intentionally outside the core model: credential rotation, runtime credential bootstrap, and deployment-specific network trust policy.
 
 Exit criteria:
 

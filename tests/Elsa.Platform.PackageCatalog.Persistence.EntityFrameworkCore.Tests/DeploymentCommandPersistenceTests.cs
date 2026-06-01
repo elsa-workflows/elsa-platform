@@ -406,6 +406,68 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Webhook_dispatch_targets_include_runtime_endpoint_and_safe_payload()
+    {
+        var topology = await SeedTopologyAsync();
+        await QueueRunAsync(topology);
+        var command = (await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow)).Single();
+        var notification = await _store.CreateWebhookNotificationAsync(
+            _workspaceId,
+            topology.Engine.Id,
+            command.Id,
+            "{\"reason\":\"command-available\"}",
+            DateTimeOffset.UtcNow);
+
+        var targets = await _store.ListPendingWebhookNotificationTargetsAsync(10, DateTimeOffset.UtcNow);
+
+        targets.Should().ContainSingle(x =>
+            x.Id == notification.Id
+            && x.WorkspaceId == _workspaceId
+            && x.EngineId == topology.Engine.Id
+            && x.CommandId == command.Id
+            && x.EngineBaseUrl == topology.Engine.BaseUrl
+            && x.SafePayloadJson == "{\"reason\":\"command-available\"}");
+    }
+
+    [Fact]
+    public async Task Webhook_dispatch_status_transitions_remove_notification_from_pending_targets()
+    {
+        var topology = await SeedTopologyAsync();
+        await QueueRunAsync(topology);
+        var command = (await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow)).Single();
+        var sentAt = DateTimeOffset.Parse("2026-05-28T12:00:00Z");
+        var sent = await _store.CreateWebhookNotificationAsync(
+            _workspaceId,
+            topology.Engine.Id,
+            command.Id,
+            "{\"reason\":\"command-available\"}",
+            DateTimeOffset.UtcNow);
+        var failed = await _store.CreateWebhookNotificationAsync(
+            _workspaceId,
+            topology.Engine.Id,
+            command.Id,
+            "{\"reason\":\"command-available\"}",
+            DateTimeOffset.UtcNow);
+        var skipped = await _store.CreateWebhookNotificationAsync(
+            _workspaceId,
+            topology.Engine.Id,
+            command.Id,
+            "{\"reason\":\"command-available\"}",
+            DateTimeOffset.UtcNow);
+
+        var sentResult = await _store.MarkWebhookNotificationSentAsync(_workspaceId, sent.Id, sentAt);
+        var failedResult = await _store.MarkWebhookNotificationFailedAsync(_workspaceId, failed.Id, sentAt);
+        var skippedResult = await _store.MarkWebhookNotificationSkippedAsync(_workspaceId, skipped.Id, sentAt);
+        var pendingTargets = await _store.ListPendingWebhookNotificationTargetsAsync(10, DateTimeOffset.UtcNow);
+
+        sentResult.Status.Should().Be(WebhookNotificationStatus.Sent);
+        sentResult.SentAt.Should().Be(sentAt);
+        failedResult.Status.Should().Be(WebhookNotificationStatus.Failed);
+        skippedResult.Status.Should().Be(WebhookNotificationStatus.Skipped);
+        pendingTargets.Should().NotContain(x => x.Id == sent.Id || x.Id == failed.Id || x.Id == skipped.Id);
+    }
+
+    [Fact]
     public async Task Webhook_notification_rejects_wrong_engine()
     {
         var topology = await SeedTopologyAsync();

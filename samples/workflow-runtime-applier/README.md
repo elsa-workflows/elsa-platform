@@ -112,6 +112,22 @@ public sealed class WorkflowArtifactCommandWorker(
 
 Production workers should add bounded retry/backoff around poll failures and use the package lease/retry policies when deciding whether a command is still safe to apply.
 
+## Advisory Webhook Endpoint
+
+Polling remains required. If Platform's disabled-by-default webhook dispatcher is enabled, expose the configured notification path and use it only to wake the normal poll/claim loop:
+
+```csharp
+app.MapPost("/api/elsa-platform/deployment-command-notifications", async (
+    PlatformCommandWakeupQueue wakeups,
+    CancellationToken cancellationToken) =>
+{
+    await wakeups.EnqueueAsync(cancellationToken);
+    return Results.Accepted();
+});
+```
+
+The webhook body is a safe command-available hint. Do not apply a workflow from the webhook request. Validate Platform identity with host-owned authentication or network policy before waking the worker.
+
 ## Configuration
 
 Start from [appsettings.example.json](appsettings.example.json).

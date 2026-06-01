@@ -185,6 +185,14 @@ builder.Services.AddHttpClient<IEngineHealthProbe, HttpEngineHealthProbe>(client
 builder.Services.AddScoped<EngineHealthService>();
 builder.Services.AddScoped<DeploymentRunService>();
 builder.Services.AddScoped<DeploymentCommandService>();
+builder.Services.Configure<DeploymentWebhookDispatchOptions>(builder.Configuration.GetSection("Deployment:WebhookDispatch"));
+builder.Services.AddHttpClient<IDeploymentWebhookSender, HttpDeploymentWebhookSender>(client => client.Timeout = TimeSpan.FromSeconds(5));
+builder.Services.AddScoped<DeploymentWebhookDispatchService>(services =>
+    new DeploymentWebhookDispatchService(
+        services.GetRequiredService<IWorkspaceDeploymentCommandStore>(),
+        services.GetRequiredService<IDeploymentWebhookSender>(),
+        services.GetRequiredService<IOptions<DeploymentWebhookDispatchOptions>>().Value,
+        services.GetRequiredService<TimeProvider>()));
 builder.Services.AddScoped<DeploymentQueueWorker>();
 builder.Services.AddScoped<RuntimeControlService>();
 builder.Services.AddScoped<ConfirmationService>();
@@ -192,6 +200,9 @@ builder.Services.AddScoped<ObservabilityDriftService>();
 var deploymentQueueWorkerEnabled = builder.Configuration.GetValue("Deployment:QueueWorker:Enabled", false);
 if (deploymentQueueWorkerEnabled && !builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<DeploymentQueueHostedService>();
+var webhookDispatchEnabled = builder.Configuration.GetValue("Deployment:WebhookDispatch:Enabled", false);
+if (webhookDispatchEnabled && !builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddHostedService<DeploymentWebhookDispatchHostedService>();
 builder.Services.AddScoped<IPackageVersionDiscoveryClient, NuGetPackageSourceClient>();
 builder.Services.AddScoped<IPackageArchiveDownloader, NuGetSyncPackageDownloader>();
 builder.Services.AddScoped<IPackageArchiveManifestReader, PackageArchiveManifestReader>();
