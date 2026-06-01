@@ -1,8 +1,8 @@
 # Platform Artifact Deployment Execution Plan
 
-Status: draft execution plan
+Status: current execution baseline
 
-Last updated: 2026-05-29
+Last updated: 2026-05-31
 
 ## Product Model
 
@@ -39,19 +39,25 @@ Completed:
 - Artifact registry: `specs/024-artifact-registry` has all tasks completed. Core, persistence, API, and console focused checks are recorded in the quickstart.
 - Custom deployment tiers: `specs/025-custom-deployment-tiers` has all tasks completed. Tier capability semantics, migration backfill, bounded-query verification, and console/API coverage are recorded in the quickstart.
 - Artifact envelope and types: `specs/026-artifact-envelope-and-types` has all tasks completed. The envelope/type contracts live in `Elsa.Platform.Deployment.Artifacts`, and the workspace artifact registry now stores type, producer, safe display metadata, compatibility hints, and payload references.
+- Studio Submit to Platform: `specs/027-studio-submit-to-platform` has all platform-side tasks completed. The Platform submit package has configuration, safe result states, deterministic workflow snapshot packaging, and a concrete Platform artifact registration HTTP client. The companion Elsa Studio integration is merged to `elsa-studio/main` with **Submit to Platform** actions in the workflow editor toolbar, workflow definition list bulk menu, and workflow definition row menu.
 - Runtime command sync: `specs/028-runtime-command-sync` now has backend command models, EF persistence, SQLite/SQL Server migrations, runtime pull/sync APIs, claim/lease behavior, heartbeat/progress/completion reporting, stale recovery, idempotency, webhook notification records, in-process worker compatibility, and focused core/persistence/API coverage.
+- Workflow artifact runtime applier: `specs/029-workflow-artifact-runtime-applier` has all tasks completed. The first runtime consumer package can poll/claim commands, fetch workflow artifact payloads, validate digest/schema/capabilities, apply through a runtime store boundary, guard idempotency with an apply journal, and report safe results to Platform.
+- Artifact-backed promotion: `specs/030-artifact-backed-promotion` has all tasks completed. Desired-state revisions can reference artifacts, promotion previews compare safe artifact metadata/configuration/runtime compatibility, deployment commands carry safe artifact references, and rollback can redeploy a known-good artifact-backed revision.
 
-Architectural delta introduced by the latest product decisions:
+Architectural model now implemented by the completed slices:
 
-- The specs now describe immutable workflow artifacts, Studio **Submit to Platform**, platform-owned deployment commands, runtime pull/sync, webhook-triggered fetch, and direct push as transport alternatives.
-- Deployment execution now creates platform-owned command records linked to deployment runs while keeping the platform-local in-process worker compatible.
+- Immutable workflow artifacts can enter Platform from Studio's **Submit to Platform** producer path.
+- Artifact registry records are metadata/reference-only and keep raw workflow payload content outside catalog tables.
+- Desired-state revisions can carry artifact references as deployable input.
+- Deployment execution creates platform-owned command records linked to deployment runs while keeping the platform-local in-process worker compatible.
 - External runtime sync workers can poll, claim, heartbeat, progress, complete, fail, or reject commands through the runtime command API.
-- The first Studio submit package now exists with configuration, safe result states, deterministic workflow snapshot packaging, and a concrete Platform artifact registration HTTP client. It does not yet wire into the Elsa Studio UI or provide the host-specific authentication configuration module.
-- Existing desired-state records are structured platform records; they do not yet reference workflow artifacts as the main deployable input.
+- Runtime applier packages own artifact interpretation and local runtime mutation; Platform remains agnostic about workflow internals beyond artifact type, digest, compatibility hints, and safe metadata.
 
 ## Spec Work Needed
 
-Update existing specs:
+No new platform architecture specs are currently required for the artifact-driven workflow path. The existing focused specs through `030-artifact-backed-promotion` are complete enough for the next validation milestone.
+
+Historical alignment work completed:
 
 1. `specs/024-artifact-registry`
    - Extend from metadata-only registry toward typed artifact ingestion.
@@ -75,24 +81,21 @@ Focused specs:
    - Completed. Shared artifact envelope, artifact type IDs, payload reference model, digest rules, safe metadata, producer metadata, and target capability hints live in `Elsa.Platform.Deployment.Artifacts`.
 
 2. `027-studio-submit-to-platform`
-   - Spec created for the NuGet package for Elsa Studio integration.
-   - Package contracts exist for **Submit to Platform** configuration, result states, snapshot packaging, submit client boundaries, and concrete Platform HTTP artifact submission.
-   - Remaining work adds the concrete Studio UI integration and host-specific authentication wiring.
-   - Keeps direct runtime Publish clearly separate or hidden for platform-integrated installations.
+   - Completed for Platform-side package contracts and HTTP submission behavior.
+   - The companion Studio UI integration is merged in `elsa-studio` and injects **Submit to Platform** beside existing publish surfaces through neutral workflow zones.
+   - Host-specific authentication and configuration remain packaging/documentation hardening, not a missing platform model slice.
 
 3. `028-runtime-command-sync`
    - Backend implementation completed for platform deployment command records, runtime pull/sync API, claim/lease, idempotent completion, progress reporting, stale recovery, safe diagnostics, and webhook notification records.
-   - Remaining follow-on work belongs with runtime credential hardening/provider transports and the concrete workflow runtime applier package.
+   - Remaining follow-on work belongs with runtime credential hardening/provider transports and production deployment samples.
 
 4. `029-workflow-artifact-runtime-applier`
-   - Spec created for the NuGet package for Elsa Workflows runtime integration.
-   - Package contract slice started with runtime configuration, capability advertisement, payload/digest/schema validation contracts, apply result contracts, and safe diagnostic helpers.
-   - Runtime command HTTP client now polls, claims, heartbeats, reports progress, completes, fails, and rejects commands through Platform APIs.
-   - Remaining work adds the worker loop, lease-expiration retry behavior, payload loading, and local runtime store apply.
-   - Reports validation/apply results to Platform.
+   - Completed for the first Elsa Workflows runtime integration package boundary.
+   - Runtime command HTTP client polls, claims, heartbeats, reports progress, completes, fails, and rejects commands through Platform APIs.
+   - Payload loading, digest/schema validation, capability checks, local apply boundary, idempotency journal, and safe diagnostics are covered by focused tests.
 
 5. `030-artifact-backed-promotion`
-   - Spec created to replace or augment structured workflow desired-state records with artifact references.
+   - Completed to replace or augment structured workflow desired-state records with artifact references.
    - Promotion preview and deployment validation operate on artifacts plus environment-specific configuration.
    - Rollback redeploys known-good artifact-backed revisions.
 
@@ -106,7 +109,7 @@ Tasks:
 
 - Keep `README.md`, `specs/021-identity-tenancy`, `specs/022-deployment-ux`, and `specs/024-artifact-registry` aligned with the artifact/control-plane model.
 - Add the new Spec Kit specs listed above.
-- Update `docs/deployment-platform-phased-strategy.md` after the new specs exist, so it reflects the current platform direction rather than the older CLI-first framing.
+- Mark `docs/deployment-platform-phased-strategy.md` as historical and point readers to this current artifact-driven execution plan. Completed.
 
 Exit criteria:
 
@@ -173,17 +176,18 @@ Goal: create the first artifact producer package.
 
 Tasks:
 
-- Create Studio integration package.
-- Add **Submit to Platform** command and configuration.
-- Package workflow definition snapshot, source IDs, display metadata, schema version, and content digest.
-- Submit artifact metadata and payload reference/content according to the artifact envelope spec.
-- Add user-facing states for submitted, failed, unauthorized, and duplicate artifact.
+- Create Studio integration package. Completed.
+- Add **Submit to Platform** command and configuration. Completed.
+- Package workflow definition snapshot, source IDs, display metadata, schema version, and content digest. Completed.
+- Submit artifact metadata and payload reference/content according to the artifact envelope spec. Completed.
+- Add user-facing states for submitted, failed, unauthorized, and duplicate artifact. Completed.
+- Inject **Submit to Platform** in Studio's workflow editor toolbar, definition list bulk menu, and definition row menu through neutral workflow zones. Completed in `elsa-studio/main`.
 
 Exit criteria:
 
-- A workflow authored in Studio can be submitted to Platform as an immutable artifact.
-- Submission does not deploy or make the workflow immediately executable.
-- Direct runtime Publish behavior is clearly separate when present.
+- A workflow authored in Studio can be submitted to Platform as an immutable artifact. Completed.
+- Submission does not deploy or make the workflow immediately executable. Completed.
+- Direct runtime Publish behavior is clearly separate when present. Completed.
 
 ### Phase 5: Runtime Sync And Workflow Artifact Applier
 
@@ -191,17 +195,17 @@ Goal: create the first artifact consumer package.
 
 Tasks:
 
-- Create Elsa Workflows runtime integration package.
-- Add runtime capability registration/heartbeat.
-- Add outbound sync worker for pending deployment commands.
-- Fetch artifact metadata/payload, verify digest, validate runtime compatibility, and apply supported workflow artifacts.
-- Report progress, validation result, apply result, observed digest, runtime reference, and safe diagnostics.
+- Create Elsa Workflows runtime integration package. Completed.
+- Add runtime capability advertisement for workflow artifact support. Completed.
+- Add outbound command client and lease/retry policy for pending deployment commands. Completed.
+- Fetch artifact metadata/payload, verify digest, validate runtime compatibility, and apply supported workflow artifacts through a runtime store boundary. Completed.
+- Report progress, validation result, apply result, observed digest, runtime reference, and safe diagnostics. Completed.
 
 Exit criteria:
 
-- Platform can deploy an `elsa.workflow-definition` artifact to a registered runtime via outbound runtime pull.
-- Runtime does not need to expose an inbound endpoint.
-- Failed validation/apply results are visible in Platform deployment history.
+- Platform can deploy an `elsa.workflow-definition` artifact to a registered runtime via outbound runtime pull at the package-contract level. Completed.
+- Runtime does not need to expose an inbound endpoint. Completed.
+- Failed validation/apply results are visible in Platform deployment history. Completed.
 
 ### Phase 6: Artifact-Backed Promotion And Rollback
 
@@ -209,19 +213,37 @@ Goal: make promotion/deployment flows artifact-first.
 
 Tasks:
 
-- Desired-state revisions reference workflow artifact versions instead of embedding workflow definition intent directly.
-- Promotion preview compares artifact-backed revisions and environment-specific configuration.
-- Tier capabilities drive safeguards.
-- Environment/runtime capabilities drive technical compatibility.
-- Rollback redeploys a known-good artifact-backed revision.
+- Desired-state revisions reference workflow artifact versions instead of embedding workflow definition intent directly. Completed.
+- Promotion preview compares artifact-backed revisions and environment-specific configuration. Completed.
+- Tier capabilities drive safeguards. Completed.
+- Environment/runtime capabilities drive technical compatibility. Completed.
+- Rollback redeploys a known-good artifact-backed revision. Completed.
 
 Exit criteria:
 
-- Users can submit a workflow artifact, promote it across environments, deploy it to a runtime, and roll back from Platform.
-- Platform remains agnostic about workflow internals beyond safe metadata, artifact type, digest, and compatibility hints.
+- Users can submit a workflow artifact, promote it across environments, deploy it to a runtime, and roll back from Platform at the API/package-contract level. Completed.
+- Platform remains agnostic about workflow internals beyond safe metadata, artifact type, digest, and compatibility hints. Completed.
+
+### Phase 7: End-To-End Smoke And Packaging Hardening
+
+Goal: prove the completed slices operate as one product path and prepare the integrations for consumption outside the development workspace.
+
+Tasks:
+
+- Add or run an end-to-end smoke scenario that follows one workflow artifact through Studio submission, artifact registry, artifact-backed desired state, promotion, deployment command creation, runtime applier claim/apply/report, and rollback.
+- Capture the smoke scenario in `docs/platform-artifact-workflow-e2e-smoke.md` so future changes can validate the complete control-plane path without rediscovering the sequence.
+- Decide the packaging home for the Studio integration and runtime applier packages, including NuGet IDs, host registration examples, auth configuration, and supported Platform API version range.
+- Add samples or quickstart host wiring for a platform-integrated Studio and a runtime-integrated Elsa Workflows app.
+- Harden production transport concerns that are intentionally outside the core model: credential rotation, runtime credential bootstrap, webhook dispatch provider, and deployment-specific network trust policy.
+
+Exit criteria:
+
+- A reviewer can follow one documented smoke path from **Submit to Platform** through runtime apply and rollback.
+- Any failure in the E2E path is captured as a specific implementation issue rather than an architectural gap.
+- Package consumers have enough configuration guidance to install the producer and consumer integrations without reading implementation tests.
 
 ## Immediate Next Actions
 
-1. Continue `027-studio-submit-to-platform` by wiring the package into Elsa Studio UI and host-specific authentication/configuration.
-2. Plan and implement `029-workflow-artifact-runtime-applier` after the Studio submit and runtime command contracts are agreed.
-3. Plan `030-artifact-backed-promotion` before changing promotion/rollback persistence semantics.
+1. Execute the E2E smoke path in `docs/platform-artifact-workflow-e2e-smoke.md` and turn any broken seam into a focused issue. Track through [#43](https://github.com/elsa-workflows/elsa-platform/issues/43).
+2. Define packaging/configuration for the Studio producer package and Elsa Workflows runtime applier package. Track through [#41](https://github.com/elsa-workflows/elsa-platform/issues/41).
+3. Add sample host wiring for a platform-integrated Studio and a runtime-integrated Elsa Workflows application. Track through [#42](https://github.com/elsa-workflows/elsa-platform/issues/42).

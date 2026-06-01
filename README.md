@@ -238,6 +238,7 @@ Several of these pieces are already implemented as contracts and services; other
 - [Platform console](src/Elsa.Platform.Console/README.md)
 - [Active identity and workspace tenancy plan](specs/021-identity-tenancy/plan.md)
 - [Artifact-driven deployment execution plan](docs/platform-artifact-deployment-execution-plan.md)
+- [Platform artifact workflow E2E smoke](docs/platform-artifact-workflow-e2e-smoke.md)
 - [Spec Kit feature history](specs/)
 - [Platform integration packaging and host configuration](docs/platform-integration-packaging.md)
 

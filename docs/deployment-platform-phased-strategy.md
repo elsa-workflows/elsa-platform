@@ -2,7 +2,9 @@
 
 Originating PRD: [elsa-workflows/elsa-core#7469](https://github.com/elsa-workflows/elsa-core/issues/7469)
 
-Status: draft implementation strategy
+Status: historical implementation strategy
+
+This document captures the original CLI-first deployment-platform strategy. The current artifact-driven control-plane baseline, including Studio **Submit to Platform**, runtime command sync, workflow artifact runtime application, and artifact-backed promotion, is maintained in [Platform Artifact Deployment Execution Plan](platform-artifact-deployment-execution-plan.md). Use that execution plan for current implementation sequencing.
 
 ## 1. Product Framing
 
