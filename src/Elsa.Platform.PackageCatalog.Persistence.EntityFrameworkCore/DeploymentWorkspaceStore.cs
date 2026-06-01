@@ -799,6 +799,73 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         return ToDeploymentCommandWebhookNotification(notification);
     }
 
+    public async Task<IReadOnlyList<DeploymentWebhookNotificationDispatchTarget>> ListPendingWebhookNotificationTargetsAsync(
+        int limit,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var boundedLimit = Math.Clamp(limit, 1, 100);
+        return await (
+            from notification in dbContext.DeploymentCommandWebhookNotifications.AsNoTracking()
+            join engine in dbContext.WorkflowEngines.AsNoTracking()
+                on new { notification.WorkspaceId, notification.EngineId }
+                equals new { engine.WorkspaceId, EngineId = engine.Id }
+                into engines
+            from engine in engines.DefaultIfEmpty()
+            where notification.Status == WebhookNotificationStatus.Pending
+            orderby notification.CreatedAt, notification.Id
+            select new DeploymentWebhookNotificationDispatchTarget(
+                notification.Id,
+                notification.WorkspaceId,
+                notification.EngineId,
+                notification.CommandId,
+                notification.SafePayloadJson,
+                engine == null ? null : engine.BaseUrl,
+                notification.CreatedAt))
+            .Take(boundedLimit)
+            .ToListAsync(cancellationToken);
+    }
+
+    public Task<DeploymentCommandWebhookNotification> MarkWebhookNotificationSentAsync(
+        Guid workspaceId,
+        Guid notificationId,
+        DateTimeOffset sentAt,
+        CancellationToken cancellationToken = default) =>
+        MarkWebhookNotificationStatusAsync(workspaceId, notificationId, WebhookNotificationStatus.Sent, sentAt, cancellationToken);
+
+    public Task<DeploymentCommandWebhookNotification> MarkWebhookNotificationFailedAsync(
+        Guid workspaceId,
+        Guid notificationId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default) =>
+        MarkWebhookNotificationStatusAsync(workspaceId, notificationId, WebhookNotificationStatus.Failed, null, cancellationToken);
+
+    public Task<DeploymentCommandWebhookNotification> MarkWebhookNotificationSkippedAsync(
+        Guid workspaceId,
+        Guid notificationId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default) =>
+        MarkWebhookNotificationStatusAsync(workspaceId, notificationId, WebhookNotificationStatus.Skipped, null, cancellationToken);
+
+    private async Task<DeploymentCommandWebhookNotification> MarkWebhookNotificationStatusAsync(
+        Guid workspaceId,
+        Guid notificationId,
+        WebhookNotificationStatus status,
+        DateTimeOffset? sentAt,
+        CancellationToken cancellationToken)
+    {
+        var notification = await dbContext.DeploymentCommandWebhookNotifications
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == notificationId, cancellationToken)
+            ?? throw new KeyNotFoundException("Webhook notification does not exist in the workspace.");
+        if (notification.Status != WebhookNotificationStatus.Pending)
+            return ToDeploymentCommandWebhookNotification(notification);
+
+        notification.Status = status;
+        notification.SentAt = sentAt;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToDeploymentCommandWebhookNotification(notification);
+    }
+
     public async Task<WorkspaceDeploymentRun?> GetRunAsync(
         Guid workspaceId,
         Guid runId,

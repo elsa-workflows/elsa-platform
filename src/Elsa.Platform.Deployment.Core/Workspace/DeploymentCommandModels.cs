@@ -96,6 +96,55 @@ public sealed record DeploymentCommandWebhookNotification(
     DateTimeOffset CreatedAt,
     DateTimeOffset? SentAt);
 
+public sealed record DeploymentWebhookNotificationDispatchTarget(
+    Guid Id,
+    Guid WorkspaceId,
+    Guid EngineId,
+    Guid CommandId,
+    string SafePayloadJson,
+    string? EngineBaseUrl,
+    DateTimeOffset CreatedAt);
+
+public sealed record DeploymentWebhookDispatchOptions
+{
+    public bool Enabled { get; init; }
+    public int BatchSize { get; init; } = 25;
+    public TimeSpan PollInterval { get; init; } = TimeSpan.FromSeconds(15);
+    public string NotificationPath { get; init; } = "/api/elsa-platform/deployment-command-notifications";
+}
+
+public sealed record DeploymentWebhookDispatchRequest(
+    DeploymentWebhookNotificationDispatchTarget Target,
+    Uri Endpoint);
+
+public enum DeploymentWebhookDispatchResultStatus
+{
+    Sent,
+    Failed,
+    Skipped
+}
+
+public sealed record DeploymentWebhookDispatchResult(
+    DeploymentWebhookDispatchResultStatus Status,
+    string Message)
+{
+    public static DeploymentWebhookDispatchResult Sent(string message = "Webhook notification sent.") =>
+        new(DeploymentWebhookDispatchResultStatus.Sent, message);
+
+    public static DeploymentWebhookDispatchResult Failed(string message) =>
+        new(DeploymentWebhookDispatchResultStatus.Failed, message);
+
+    public static DeploymentWebhookDispatchResult Skipped(string message) =>
+        new(DeploymentWebhookDispatchResultStatus.Skipped, message);
+}
+
+public interface IDeploymentWebhookSender
+{
+    Task<DeploymentWebhookDispatchResult> SendAsync(
+        DeploymentWebhookDispatchRequest request,
+        CancellationToken cancellationToken = default);
+}
+
 public sealed record CreateDeploymentCommandRequest(
     Guid RunId,
     Guid EnvironmentId,

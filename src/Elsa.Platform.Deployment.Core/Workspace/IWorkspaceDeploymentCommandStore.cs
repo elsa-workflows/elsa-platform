@@ -75,4 +75,27 @@ public interface IWorkspaceDeploymentCommandStore
         string safePayloadJson,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<DeploymentWebhookNotificationDispatchTarget>> ListPendingWebhookNotificationTargetsAsync(
+        int limit,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+
+    Task<DeploymentCommandWebhookNotification> MarkWebhookNotificationSentAsync(
+        Guid workspaceId,
+        Guid notificationId,
+        DateTimeOffset sentAt,
+        CancellationToken cancellationToken = default);
+
+    Task<DeploymentCommandWebhookNotification> MarkWebhookNotificationFailedAsync(
+        Guid workspaceId,
+        Guid notificationId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+
+    Task<DeploymentCommandWebhookNotification> MarkWebhookNotificationSkippedAsync(
+        Guid workspaceId,
+        Guid notificationId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
 }

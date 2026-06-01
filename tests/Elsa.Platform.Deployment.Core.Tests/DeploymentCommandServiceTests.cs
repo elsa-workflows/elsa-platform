@@ -150,6 +150,73 @@ public sealed class DeploymentCommandServiceTests
         notification.SafePayloadJson.Should().NotContain("secret");
     }
 
+    [Fact]
+    public async Task Webhook_dispatch_sends_safe_payload_and_marks_notification_sent()
+    {
+        var notificationId = Guid.Parse("50000000-0000-0000-0000-000000000001");
+        var sender = new RecordingWebhookSender(DeploymentWebhookDispatchResult.Sent());
+        _store.WebhookTargets.Add(WebhookTarget(notificationId, "https://runtime.example.test/elsa"));
+        var dispatcher = new DeploymentWebhookDispatchService(
+            _store,
+            sender,
+            new DeploymentWebhookDispatchOptions { Enabled = true, NotificationPath = "platform/webhooks/commands" },
+            _clock);
+
+        var processed = await dispatcher.DispatchPendingAsync();
+
+        processed.Should().Be(1);
+        sender.Requests.Should().ContainSingle();
+        sender.Requests.Single().Endpoint.Should().Be(new Uri("https://runtime.example.test/elsa/platform/webhooks/commands"));
+        sender.Requests.Single().Target.SafePayloadJson.Should().Contain("command-available");
+        _store.WebhookStatuses[notificationId].Should().Be(WebhookNotificationStatus.Sent);
+    }
+
+    [Fact]
+    public async Task Webhook_dispatch_skips_invalid_runtime_endpoint_without_sending()
+    {
+        var notificationId = Guid.Parse("50000000-0000-0000-0000-000000000002");
+        var sender = new RecordingWebhookSender(DeploymentWebhookDispatchResult.Sent());
+        _store.WebhookTargets.Add(WebhookTarget(notificationId, "ftp://runtime.example.test"));
+        var dispatcher = new DeploymentWebhookDispatchService(
+            _store,
+            sender,
+            new DeploymentWebhookDispatchOptions { Enabled = true },
+            _clock);
+
+        var processed = await dispatcher.DispatchPendingAsync();
+
+        processed.Should().Be(1);
+        sender.Requests.Should().BeEmpty();
+        _store.WebhookStatuses[notificationId].Should().Be(WebhookNotificationStatus.Skipped);
+    }
+
+    [Fact]
+    public async Task Webhook_dispatch_marks_failed_when_sender_fails()
+    {
+        var notificationId = Guid.Parse("50000000-0000-0000-0000-000000000003");
+        var sender = new RecordingWebhookSender(DeploymentWebhookDispatchResult.Failed("Runtime unavailable."));
+        _store.WebhookTargets.Add(WebhookTarget(notificationId, "https://runtime.example.test"));
+        var dispatcher = new DeploymentWebhookDispatchService(
+            _store,
+            sender,
+            new DeploymentWebhookDispatchOptions { Enabled = true },
+            _clock);
+
+        await dispatcher.DispatchPendingAsync();
+
+        _store.WebhookStatuses[notificationId].Should().Be(WebhookNotificationStatus.Failed);
+    }
+
+    private DeploymentWebhookNotificationDispatchTarget WebhookTarget(Guid notificationId, string? engineBaseUrl) =>
+        new(
+            notificationId,
+            _workspaceId,
+            _engineId,
+            _commandId,
+            $$"""{"workspaceId":"{{_workspaceId:D}}","engineId":"{{_engineId:D}}","commandHint":"{{_commandId:D}}","reason":"command-available"}""",
+            engineBaseUrl,
+            _clock.GetUtcNow());
+
     private DeploymentCommand Command(DeploymentCommandStatus status, string? leaseToken = null) =>
         new(
             _commandId,
@@ -187,6 +254,8 @@ public sealed class DeploymentCommandServiceTests
     private sealed class RecordingCommandStore : IWorkspaceDeploymentCommandStore
     {
         public Dictionary<Guid, DeploymentCommand> Commands { get; } = [];
+        public List<DeploymentWebhookNotificationDispatchTarget> WebhookTargets { get; } = [];
+        public Dictionary<Guid, WebhookNotificationStatus> WebhookStatuses { get; } = [];
         public int LastPollLimit { get; private set; }
         public int RecoveredCount { get; set; }
         public TimeSpan? LastStaleAfter { get; private set; }
@@ -273,5 +342,40 @@ public sealed class DeploymentCommandServiceTests
         }
         public Task<DeploymentCommandWebhookNotification> CreateWebhookNotificationAsync(Guid workspaceId, Guid engineId, Guid commandId, string safePayloadJson, DateTimeOffset now, CancellationToken cancellationToken = default) =>
             Task.FromResult(new DeploymentCommandWebhookNotification(Guid.NewGuid(), workspaceId, engineId, commandId, WebhookNotificationStatus.Pending, safePayloadJson, now, null));
+
+        public Task<IReadOnlyList<DeploymentWebhookNotificationDispatchTarget>> ListPendingWebhookNotificationTargetsAsync(int limit, DateTimeOffset now, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<DeploymentWebhookNotificationDispatchTarget>>(WebhookTargets.Take(limit).ToList());
+
+        public Task<DeploymentCommandWebhookNotification> MarkWebhookNotificationSentAsync(Guid workspaceId, Guid notificationId, DateTimeOffset sentAt, CancellationToken cancellationToken = default)
+        {
+            WebhookStatuses[notificationId] = WebhookNotificationStatus.Sent;
+            return Task.FromResult(Notification(notificationId, WebhookNotificationStatus.Sent, sentAt));
+        }
+
+        public Task<DeploymentCommandWebhookNotification> MarkWebhookNotificationFailedAsync(Guid workspaceId, Guid notificationId, DateTimeOffset now, CancellationToken cancellationToken = default)
+        {
+            WebhookStatuses[notificationId] = WebhookNotificationStatus.Failed;
+            return Task.FromResult(Notification(notificationId, WebhookNotificationStatus.Failed, null));
+        }
+
+        public Task<DeploymentCommandWebhookNotification> MarkWebhookNotificationSkippedAsync(Guid workspaceId, Guid notificationId, DateTimeOffset now, CancellationToken cancellationToken = default)
+        {
+            WebhookStatuses[notificationId] = WebhookNotificationStatus.Skipped;
+            return Task.FromResult(Notification(notificationId, WebhookNotificationStatus.Skipped, null));
+        }
+
+        private DeploymentCommandWebhookNotification Notification(Guid notificationId, WebhookNotificationStatus status, DateTimeOffset? sentAt) =>
+            new(notificationId, Guid.Empty, Guid.Empty, Guid.Empty, status, "{}", DateTimeOffset.UtcNow, sentAt);
+    }
+
+    private sealed class RecordingWebhookSender(DeploymentWebhookDispatchResult result) : IDeploymentWebhookSender
+    {
+        public List<DeploymentWebhookDispatchRequest> Requests { get; } = [];
+
+        public Task<DeploymentWebhookDispatchResult> SendAsync(DeploymentWebhookDispatchRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(result);
+        }
     }
 }

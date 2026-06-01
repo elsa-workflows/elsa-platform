@@ -2,7 +2,7 @@
 
 Status: planned smoke path
 
-Last updated: 2026-05-31
+Last updated: 2026-06-01
 
 Tracking issue: [#43](https://github.com/elsa-workflows/elsa-platform/issues/43)
 
@@ -68,6 +68,7 @@ Run these only after the happy path is stable:
 - Queue deployment to a runtime missing `workflow-definition.apply` and verify validation fails before command apply.
 - Corrupt the payload digest and verify the runtime applier rejects the command with safe diagnostics.
 - Let a claimed command lease expire and verify Platform marks recovery state without issuing duplicate apply automatically.
+- Enable advisory webhook dispatch, deliver duplicate command-available notifications, and verify the runtime still performs poll/claim before apply.
 
 ## Verification Artifacts
 
@@ -89,4 +90,4 @@ Record each smoke run with:
 - Package naming and NuGet publishing plan for the Elsa Workflows runtime applier: [#41](https://github.com/elsa-workflows/elsa-platform/issues/41).
 - Host registration samples for Studio and runtime applications: [#42](https://github.com/elsa-workflows/elsa-platform/issues/42).
 - Runtime credential bootstrap and rotation guidance.
-- Optional webhook dispatch provider implementation for advisory fetch triggers.
+- Deployment-specific network trust policy for advisory webhook dispatch.
