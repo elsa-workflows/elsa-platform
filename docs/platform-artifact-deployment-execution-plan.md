@@ -40,7 +40,7 @@ Completed:
 - Custom deployment tiers: `specs/025-custom-deployment-tiers` has all tasks completed. Tier capability semantics, migration backfill, bounded-query verification, and console/API coverage are recorded in the quickstart.
 - Artifact envelope and types: `specs/026-artifact-envelope-and-types` has all tasks completed. The envelope/type contracts live in `Elsa.Platform.Deployment.Artifacts`, and the workspace artifact registry now stores type, producer, safe display metadata, compatibility hints, and payload references.
 - Studio Submit to Platform: `specs/027-studio-submit-to-platform` has all platform-side tasks completed. The Platform submit package has configuration, safe result states, deterministic workflow snapshot packaging, and a concrete Platform artifact registration HTTP client. The companion Elsa Studio integration is merged to `elsa-studio/main` with **Submit to Platform** actions in the workflow editor toolbar, workflow definition list bulk menu, and workflow definition row menu.
-- Runtime command sync: `specs/028-runtime-command-sync` now has backend command models, EF persistence, SQLite/SQL Server migrations, runtime pull/sync APIs, claim/lease behavior, heartbeat/progress/completion reporting, stale recovery, idempotency, webhook notification records, disabled-by-default advisory webhook dispatch, in-process worker compatibility, and focused core/persistence/API coverage.
+- Runtime command sync: `specs/028-runtime-command-sync` now has backend command models, EF persistence, SQLite/SQL Server migrations, runtime pull/sync APIs, claim/lease behavior, heartbeat/progress/completion reporting, stale recovery, idempotency, webhook notification records, disabled-by-default advisory webhook dispatch, runtime transport trust guidance, in-process worker compatibility, and focused core/persistence/API coverage.
 - Workflow artifact runtime applier: `specs/029-workflow-artifact-runtime-applier` has all tasks completed. The first runtime consumer package can poll/claim commands, fetch workflow artifact payloads, validate digest/schema/capabilities, apply through a runtime store boundary, guard idempotency with an apply journal, and report safe results to Platform.
 - Artifact-backed promotion: `specs/030-artifact-backed-promotion` has all tasks completed. Desired-state revisions can reference artifacts, promotion previews compare safe artifact metadata/configuration/runtime compatibility, deployment commands carry safe artifact references, and rollback can redeploy a known-good artifact-backed revision.
 
@@ -87,7 +87,7 @@ Focused specs:
 
 3. `028-runtime-command-sync`
    - Backend implementation completed for platform deployment command records, runtime pull/sync API, claim/lease, idempotent completion, progress reporting, stale recovery, safe diagnostics, webhook notification records, and the first disabled-by-default HTTP webhook dispatcher.
-   - Remaining follow-on work belongs with runtime credential hardening and production transport policy.
+   - Runtime credential bootstrap, rotation expectations, artifact payload trust, and webhook network trust policy are documented in [Runtime Transport Trust Policy](runtime-transport-trust-policy.md).
 
 4. `029-workflow-artifact-runtime-applier`
    - Completed for the first Elsa Workflows runtime integration package boundary.
@@ -234,7 +234,7 @@ Tasks:
 - Capture the smoke scenario in `docs/platform-artifact-workflow-e2e-smoke.md` so future changes can validate the complete control-plane path without rediscovering the sequence.
 - Decide the packaging home for the Studio integration and runtime applier packages, including NuGet IDs, host registration examples, auth configuration, and supported Platform API version range.
 - Add samples or quickstart host wiring for a platform-integrated Studio and a runtime-integrated Elsa Workflows app.
-- Harden production transport concerns that are intentionally outside the core model: credential rotation, runtime credential bootstrap, and deployment-specific network trust policy.
+- Keep production transport guidance current as real providers are added. Initial credential bootstrap, rotation, payload trust, and webhook trust policy are documented in [Runtime Transport Trust Policy](runtime-transport-trust-policy.md).
 
 Exit criteria:
 
@@ -244,6 +244,6 @@ Exit criteria:
 
 ## Immediate Next Actions
 
-1. Execute the E2E smoke path in `docs/platform-artifact-workflow-e2e-smoke.md` and turn any broken seam into a focused issue. Track through [#43](https://github.com/elsa-workflows/elsa-platform/issues/43).
-2. Define packaging/configuration for the Studio producer package and Elsa Workflows runtime applier package. Track through [#41](https://github.com/elsa-workflows/elsa-platform/issues/41).
-3. Add sample host wiring for a platform-integrated Studio and a runtime-integrated Elsa Workflows application. Track through [#42](https://github.com/elsa-workflows/elsa-platform/issues/42).
+1. Use `docs/platform-artifact-workflow-e2e-smoke.md` as the ongoing regression path for artifact-driven workflow deployment.
+2. Keep `docs/platform-integration-packaging.md`, `samples/`, and `docs/runtime-transport-trust-policy.md` aligned as package APIs and provider transports harden.
+3. Open a focused issue/spec before adding provider-specific credential issuers, webhook authentication handlers, direct-push transports, or production artifact payload providers.

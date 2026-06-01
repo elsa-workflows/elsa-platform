@@ -128,6 +128,8 @@ app.MapPost("/api/elsa-platform/deployment-command-notifications", async (
 
 The webhook body is a safe command-available hint. Do not apply a workflow from the webhook request. Validate Platform identity with host-owned authentication or network policy before waking the worker.
 
+See [Runtime Transport Trust Policy](../../docs/runtime-transport-trust-policy.md) before enabling this endpoint outside local validation.
+
 ## Configuration
 
 Start from [appsettings.example.json](appsettings.example.json).

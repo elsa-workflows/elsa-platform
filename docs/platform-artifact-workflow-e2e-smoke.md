@@ -84,10 +84,8 @@ Record each smoke run with:
 - Final run status.
 - Any follow-up issue links.
 
-## Current Follow-Up Candidates
+## Related Packaging Artifacts
 
-- Package naming and NuGet publishing plan for the Studio producer integration: [#41](https://github.com/elsa-workflows/elsa-platform/issues/41).
-- Package naming and NuGet publishing plan for the Elsa Workflows runtime applier: [#41](https://github.com/elsa-workflows/elsa-platform/issues/41).
-- Host registration samples for Studio and runtime applications: [#42](https://github.com/elsa-workflows/elsa-platform/issues/42).
-- Runtime credential bootstrap and rotation guidance.
-- Deployment-specific network trust policy for advisory webhook dispatch.
+- Package naming and host configuration: [Platform Integration Packaging And Host Configuration](platform-integration-packaging.md).
+- Host registration samples for Studio and runtime applications: [samples](../samples/README.md).
+- Runtime credential bootstrap, rotation, and deployment-specific network trust guidance: [Runtime Transport Trust Policy](runtime-transport-trust-policy.md).
