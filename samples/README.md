@@ -7,4 +7,4 @@ These samples show host wiring for the artifact-driven workflow path.
 
 The samples are intentionally host-focused. They show package registration, configuration shape, and host-owned extension points without adding runnable application templates yet.
 
-Use these samples with the E2E smoke tracking issue [#43](https://github.com/elsa-workflows/elsa-platform/issues/43).
+Use these samples with the E2E smoke path in [Platform Artifact Workflow E2E Smoke](../docs/platform-artifact-workflow-e2e-smoke.md).

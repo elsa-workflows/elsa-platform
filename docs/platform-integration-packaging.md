@@ -172,6 +172,8 @@ When enabled, Platform posts the existing safe notification payload to each targ
 
 Runtime hosts that opt into webhook-triggered fetch should expose `NotificationPath`, validate that the notification came from a trusted Platform instance using host-owned authentication or network policy, and then wake the normal poll/claim loop. The endpoint should be idempotent because duplicate webhook delivery is expected.
 
+Use [Runtime Transport Trust Policy](runtime-transport-trust-policy.md) for the credential bootstrap, rotation, payload trust, and webhook network trust checklist.
+
 ## Configuration Shape
 
 Suggested host configuration keys:
@@ -202,6 +204,7 @@ Before publishing the integration packages externally:
 - Publish `Elsa.Platform.Workflows.RuntimeApplier` from `elsa-platform`.
 - Keep `Elsa.Platform.Studio.Submit` internal unless a non-Studio producer or shared-contract extraction needs it.
 - Document the same-version compatibility rule in package release notes.
-- Add sample host wiring for Studio and runtime applications through [#42](https://github.com/elsa-workflows/elsa-platform/issues/42).
-- Execute the E2E smoke path through [#43](https://github.com/elsa-workflows/elsa-platform/issues/43) before declaring the packages ready for production use.
+- Keep sample host wiring for Studio and runtime applications current.
+- Execute the E2E smoke path before declaring the packages ready for production use.
 - Keep advisory webhook dispatch disabled until runtime endpoint trust, network reachability, and credential rotation policies are configured for the target environment.
+- Apply the runtime transport trust checklist before enabling production runtime command sync.

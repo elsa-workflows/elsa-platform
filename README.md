@@ -241,5 +241,6 @@ Several of these pieces are already implemented as contracts and services; other
 - [Platform artifact workflow E2E smoke](docs/platform-artifact-workflow-e2e-smoke.md)
 - [Spec Kit feature history](specs/)
 - [Platform integration packaging and host configuration](docs/platform-integration-packaging.md)
+- [Runtime transport trust policy](docs/runtime-transport-trust-policy.md)
 
 Implementation work is tracked through Spec Kit under `specs/`. Start with the current plan for active branch context before making architectural changes.
