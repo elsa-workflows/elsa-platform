@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button, Input, Select } from "@/components/ui";
 import type { EnvironmentSummary, RegisterDeploymentEngineRequest, WorkspaceDeploymentTier } from "@/features/deployments/deploymentModels";
 
@@ -13,24 +13,28 @@ export type DeploymentSetupValues = {
 };
 
 export function DeploymentSetupPanel({
+  fixedApplicationName,
   canManageSetup,
   tiers,
+  tiersLoading = false,
   isSubmitting,
   error,
+  submitLabel = "Create setup",
   onSubmit
 }: {
+  fixedApplicationName?: string;
   canManageSetup: boolean;
   tiers: WorkspaceDeploymentTier[];
+  tiersLoading?: boolean;
   isSubmitting: boolean;
   error?: string;
+  submitLabel?: string;
   onSubmit: (values: DeploymentSetupValues) => void;
 }) {
-  const activeTiers = tiers.filter((tier) => tier.status === "Active");
-  const tierOptions = activeTiers.length > 0
-    ? activeTiers.map((tier) => ({ id: tier.id, name: tier.name }))
-    : ["Dev", "Test", "Stage", "Production"].map((tier) => ({ id: tier, name: tier }));
+  const activeTiers = useMemo(() => tiers.filter((tier) => tier.status === "Active"), [tiers]);
+  const tierOptions = useMemo(() => activeTiers.map((tier) => ({ id: tier.id, name: tier.name })), [activeTiers]);
   const [values, setValues] = useState<DeploymentSetupValues>({
-    applicationName: "",
+    applicationName: fixedApplicationName ?? "",
     environmentName: "Prod",
     environmentTier: "Production",
     environmentTierId: "",
@@ -39,6 +43,11 @@ export function DeploymentSetupPanel({
     credentialReference: ""
   });
   useEffect(() => {
+    if (!fixedApplicationName) return;
+    setValues((current) => ({ ...current, applicationName: fixedApplicationName }));
+  }, [fixedApplicationName]);
+
+  useEffect(() => {
     if (values.environmentTierId || tierOptions.length === 0) return;
     const preferredTier = tierOptions.find((tier) => tier.name === "Production") ?? tierOptions[0];
     setValues((current) => ({
@@ -46,11 +55,11 @@ export function DeploymentSetupPanel({
       environmentTierId: preferredTier.id,
       environmentTier: legacyTierFromName(preferredTier.name)
     }));
-  }, [activeTiers.length, tierOptions, values.environmentTierId]);
+  }, [tierOptions, values.environmentTierId]);
 
   const canSubmit =
     canManageSetup &&
-    (values.environmentTierId.length > 0 || activeTiers.length === 0) &&
+    values.environmentTierId.length > 0 &&
     values.applicationName.trim().length > 0 &&
     values.environmentName.trim().length > 0 &&
     values.engineName.trim().length > 0 &&
@@ -68,7 +77,11 @@ export function DeploymentSetupPanel({
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-medium">
           Application
-          <Input className="mt-1" value={values.applicationName} onChange={(event) => setValues((current) => ({ ...current, applicationName: event.target.value }))} />
+          {fixedApplicationName ? (
+            <div className="mt-1 rounded-ui border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">{fixedApplicationName}</div>
+          ) : (
+            <Input className="mt-1" value={values.applicationName} onChange={(event) => setValues((current) => ({ ...current, applicationName: event.target.value }))} />
+          )}
         </label>
         <label className="text-sm font-medium">
           Environment
@@ -79,6 +92,7 @@ export function DeploymentSetupPanel({
           <Select
             className="mt-1 w-full"
             value={values.environmentTierId}
+            disabled={!canManageSetup || isSubmitting || tierOptions.length === 0}
             onChange={(event) => {
               const tier = activeTiers.find((item) => item.id === event.target.value);
               setValues((current) => ({
@@ -88,7 +102,7 @@ export function DeploymentSetupPanel({
               }));
             }}
           >
-            <option value="" disabled>Select a tier</option>
+            <option value="" disabled>{tiersLoading ? "Loading tiers" : "Select a tier"}</option>
             {tierOptions.map((tier) => (
               <option key={tier.id} value={tier.id}>
                 {tier.name}
@@ -111,10 +125,11 @@ export function DeploymentSetupPanel({
       </div>
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
       {!canManageSetup ? <p className="mt-3 text-sm text-muted-foreground">Deployment setup permission is required.</p> : null}
-      {activeTiers.length === 0 ? <p className="mt-3 text-sm text-muted-foreground">Default tiers are used until workspace tiers finish loading.</p> : null}
+      {tiersLoading ? <p className="mt-3 text-sm text-muted-foreground">Loading workspace deployment tiers.</p> : null}
+      {!tiersLoading && activeTiers.length === 0 ? <p className="mt-3 text-sm text-muted-foreground">No active deployment tiers are available for this workspace.</p> : null}
       <div className="mt-4">
         <Button type="submit" disabled={!canSubmit || isSubmitting}>
-          Create setup
+          {submitLabel}
         </Button>
       </div>
     </form>

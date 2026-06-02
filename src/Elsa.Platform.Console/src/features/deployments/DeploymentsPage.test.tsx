@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceContextProvider } from "@/app/WorkspaceContextProvider";
 import { DeploymentsPage } from "@/features/deployments/DeploymentsPage";
+import { DeploymentSetupPanel } from "@/features/deployments/DeploymentSetupPanel";
 import type { DeploymentCockpit } from "@/features/deployments/deploymentModels";
 import { AuthProvider } from "@/lib/auth/AuthProvider";
 
@@ -99,12 +100,50 @@ describe("DeploymentsPage", () => {
     expect(screen.queryByText("Default tiers are used until workspace tiers finish loading.")).not.toBeInTheDocument();
   });
 
+  it("renders a recoverable cockpit when setup exists without a registered engine", async () => {
+    renderDeployments({
+      ...deploymentCockpitFixture,
+      engines: [],
+      applications: [
+        {
+          ...deploymentCockpitFixture.applications[0],
+          environments: deploymentCockpitFixture.applications[0].environments.map((environment) => ({ ...environment, engineIds: [] }))
+        }
+      ]
+    });
+
+    expect(await screen.findByRole("heading", { name: "Deployments" })).toBeInTheDocument();
+    expect(screen.queryByText("Deployments could not load")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Engine Registration" }));
+    expect(screen.getByText("No engine registered")).toBeInTheDocument();
+  });
+
+  it("does not offer legacy tier names before workspace tiers are available", async () => {
+    const submit = vi.fn();
+
+    render(
+      <DeploymentSetupPanel
+        canManageSetup
+        tiers={[]}
+        tiersLoading={false}
+        isSubmitting={false}
+        onSubmit={submit}
+      />
+    );
+
+    expect(screen.getByLabelText("Tier")).toBeDisabled();
+    expect(screen.queryByRole("option", { name: "Dev" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Production" })).not.toBeInTheDocument();
+    expect(screen.getByText("No active deployment tiers are available for this workspace.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create setup" })).toBeDisabled();
+  });
+
   it("creates another deployment setup from a populated cockpit", async () => {
     const fetchMock = renderDeployments();
 
     await screen.findByRole("heading", { name: "Deployments" });
-    await waitFor(() => expect(screen.getByRole("button", { name: "New Deployment" })).toBeEnabled());
-    await userEvent.click(screen.getByRole("button", { name: "New Deployment" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "New application" })).toBeEnabled());
+    await userEvent.click(screen.getByRole("button", { name: "New application" }));
     await userEvent.type(screen.getByLabelText("Application"), "Customer Care");
     await userEvent.clear(screen.getByLabelText("Environment"));
     await userEvent.type(screen.getByLabelText("Environment"), "Prod");
@@ -117,6 +156,37 @@ describe("DeploymentsPage", () => {
       expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications`),
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  it("adds an environment and engine to the selected application", async () => {
+    const fetchMock = renderDeployments(applicationWithoutSetupCockpit);
+
+    expect(await screen.findByRole("heading", { name: "Deployments" })).toBeInTheDocument();
+    expect(screen.getByText("No environments registered.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Add environment" }));
+    expect(screen.getAllByText("Policy").length).toBeGreaterThan(0);
+    await userEvent.clear(screen.getByLabelText("Environment"));
+    await userEvent.type(screen.getByLabelText("Environment"), "Prod");
+    await userEvent.type(screen.getByLabelText("Engine"), "policy-prod-weu-01");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://policy-prod.example.test/elsa");
+    await userEvent.type(screen.getByLabelText("Credential reference"), "kv://policy/prod/elsa-api");
+    await userEvent.click(screen.getAllByRole("button", { name: "Add environment" }).at(-1)!);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/policy-app/environments`),
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/environments/policy-prod/engines`),
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(requestBody(fetchMock, "POST", "/applications/policy-app/environments")).toMatchObject({
+      name: "Prod",
+      tier: "Production",
+      tierId: "tier-production"
+    });
   });
 
   it("edits application environment and engine metadata through live APIs", async () => {
@@ -431,6 +501,53 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
         applications: [{ ...deploymentCockpitFixture.applications[0], id: "app-created", name: "Claims Operations" }]
       };
       return jsonResponse({ id: "engine-created", name: "claims-prod", environmentId: "env-created" }, 201);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications/policy-app/environments`)) {
+      return jsonResponse({ id: "policy-prod", workspaceId, applicationId: "policy-app", name: "Prod" }, 201);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/environments/policy-prod/engines`)) {
+      currentCockpit = {
+        ...currentCockpit,
+        applications: currentCockpit.applications.map((application) =>
+          application.id === "policy-app"
+            ? {
+                ...application,
+                environments: [
+                  ...application.environments,
+                  {
+                    id: "policy-prod",
+                    name: "Prod",
+                    tier: "Production",
+                    tierId: "tier-production",
+                    tierName: "Production",
+                    tierStatus: "Active",
+                    tierCapabilities: [
+                      "deployment.tier.production-like",
+                      "deployment.promotion.target",
+                      "deployment.confirmation.required",
+                      "deployment.rollback.enabled",
+                      "deployment.secret-verification.required",
+                      "deployment.observability.required"
+                    ],
+                    health: "Healthy",
+                    desiredRevision: { id: "00000000-0000-0000-0000-000000000250", revision: 1, commit: "initial", label: "Initial desired state", authoredAt: "2026-05-26T10:00:00Z" },
+                    deployedRevision: null,
+                    deploymentStatus: "Succeeded",
+                    driftStatus: "Unknown",
+                    engineIds: ["policy-prod-engine"]
+                  }
+                ]
+              }
+            : application
+        ),
+        engines: [
+          ...currentCockpit.engines,
+          engine("policy-prod-engine", "policy-prod-weu-01", "policy-prod", "Healthy", "Verified", [
+            capability("engine.reload-configuration", "Reload engine configuration", "EngineApi")
+          ])
+        ]
+      };
+      return jsonResponse({ id: "policy-prod-engine", name: "policy-prod-weu-01", environmentId: "policy-prod" }, 201);
     }
     if (method === "PUT" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops`)) {
       currentCockpit = {
@@ -891,6 +1008,23 @@ const deploymentCockpitFixture: DeploymentCockpit = {
       createdAt: "2026-05-22T08:02:00Z"
     }
   ]
+};
+
+const applicationWithoutSetupCockpit: DeploymentCockpit = {
+  applications: [
+    {
+      id: "policy-app",
+      name: "Policy",
+      workspaceName: "Acme Insurance",
+      environments: []
+    }
+  ],
+  engines: [],
+  comparisons: [],
+  observabilityBindings: [],
+  history: [],
+  driftReport: [],
+  assistantPlans: []
 };
 
 function engine(

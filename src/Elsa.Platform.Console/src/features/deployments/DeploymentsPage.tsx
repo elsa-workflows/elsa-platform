@@ -64,6 +64,7 @@ import { cn } from "@/lib/utils";
 import { useWorkspaceContext } from "@/app/WorkspaceContextProvider";
 
 type ViewId = "fleet" | "engine" | "promotion" | "governance" | "tiers" | "assistant";
+type SetupMode = "application" | "environment" | null;
 
 const views: Array<{ id: ViewId; label: string }> = [
   { id: "fleet", label: "Environments" },
@@ -100,12 +101,12 @@ export function DeploymentsPage() {
   });
   const refreshDeploymentCockpit = () => queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
   const setup = useMutation({
-    mutationFn: async (values: DeploymentSetupValues) => {
-      const application = await createDeploymentApplication(workspaceId, {
+    mutationFn: async ({ applicationId, values }: { applicationId?: string; values: DeploymentSetupValues }) => {
+      const targetApplicationId = applicationId ?? (await createDeploymentApplication(workspaceId, {
         name: values.applicationName,
         description: null
-      });
-      const environment = await createDeploymentEnvironment(workspaceId, application.id, {
+      })).id;
+      const environment = await createDeploymentEnvironment(workspaceId, targetApplicationId, {
         name: values.environmentName,
         tier: values.environmentTier,
         tierId: activeDeploymentTiers.some((tier) => tier.id === values.environmentTierId) ? values.environmentTierId : null
@@ -114,7 +115,7 @@ export function DeploymentsPage() {
     },
     onSuccess: () => {
       void refreshDeploymentCockpit();
-      setShowNewSetup(false);
+      setSetupMode(null);
     }
   });
   const updateApplication = useMutation({
@@ -256,7 +257,7 @@ export function DeploymentsPage() {
     }
   });
   const [activeView, setActiveView] = useState<ViewId>("fleet");
-  const [showNewSetup, setShowNewSetup] = useState(false);
+  const [setupMode, setSetupMode] = useState<SetupMode>(null);
   const [editingApplication, setEditingApplication] = useState(false);
   const [editingEnvironmentId, setEditingEnvironmentId] = useState("");
   const [editingEngine, setEditingEngine] = useState(false);
@@ -353,14 +354,15 @@ export function DeploymentsPage() {
         <DeploymentSetupPanel
           canManageSetup={canManageSetup}
           tiers={activeDeploymentTiers}
+          tiersLoading={tiers.isLoading}
           isSubmitting={setup.isPending}
           error={setup.error instanceof Error ? setup.error.message : undefined}
-          onSubmit={(values) => setup.mutate(values)}
+          onSubmit={(values) => setup.mutate({ values })}
         />
       </section>
     );
   }
-  if (!selectedApplication || !selectedEngine) {
+  if (!selectedApplication) {
     return <RequestStateView state="unexpected" title="Deployments could not load" />;
   }
 
@@ -390,7 +392,7 @@ export function DeploymentsPage() {
             Workspace-scoped environment cockpit for workflow applications, engine registrations, desired-state promotion, observability, and assistant plan approvals.
           </p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_auto_auto]">
+        <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_auto_auto_auto]">
           <label className="text-xs font-medium text-muted-foreground">
             Workflow application
             <Select
@@ -409,9 +411,13 @@ export function DeploymentsPage() {
             <Pencil className="h-4 w-4" />
             Edit application
           </SecondaryButton>
-          <Button className="mt-5 h-9" disabled={!canManageSetup} onClick={() => setShowNewSetup((current) => !current)}>
+          <SecondaryButton className="mt-5 h-9" disabled={!canManageSetup} onClick={() => setSetupMode((current) => current === "application" ? null : "application")}>
             <Plus className="h-4 w-4" />
-            New Deployment
+            New application
+          </SecondaryButton>
+          <Button className="mt-5 h-9" disabled={!canManageSetup} onClick={() => setSetupMode((current) => current === "environment" ? null : "environment")}>
+            <Plus className="h-4 w-4" />
+            Add environment
           </Button>
           <div className="rounded-ui border border-border bg-surface px-3 py-2 text-xs text-muted-foreground">
             <div className="font-medium text-foreground">{selectedApplication.workspaceName}</div>
@@ -420,13 +426,16 @@ export function DeploymentsPage() {
         </div>
       </div>
 
-      {showNewSetup ? (
+      {setupMode ? (
         <DeploymentSetupPanel
+          fixedApplicationName={setupMode === "environment" ? selectedApplication.name : undefined}
           canManageSetup={canManageSetup}
           tiers={activeDeploymentTiers}
+          tiersLoading={tiers.isLoading}
           isSubmitting={setup.isPending}
           error={setup.error instanceof Error ? setup.error.message : undefined}
-          onSubmit={(values) => setup.mutate(values)}
+          submitLabel={setupMode === "environment" ? "Add environment" : "Create setup"}
+          onSubmit={(values) => setup.mutate({ applicationId: setupMode === "environment" ? selectedApplication.id : undefined, values })}
         />
       ) : null}
       {editingApplication ? (
@@ -476,7 +485,7 @@ export function DeploymentsPage() {
           onInspectEnvironment={inspectEnvironment}
         />
       ) : null}
-      {activeView === "engine" ? (
+      {activeView === "engine" && selectedEngine ? (
         <EngineView
           data={data}
           selectedEnvironmentId={selectedEnvironmentId}
@@ -508,6 +517,13 @@ export function DeploymentsPage() {
           onSaveEngine={(engine) => updateEngine.mutate(engine)}
           onVerifyEngine={() => verifyEngine.mutate(selectedEngine)}
           onRunControl={(control) => runControl.mutate({ engine: selectedEngine, control })}
+        />
+      ) : null}
+      {activeView === "engine" && !selectedEngine ? (
+        <RequestStateView
+          state="empty"
+          title="No engine registered"
+          description="Create a deployment setup or register an engine before inspecting engine registration."
         />
       ) : null}
       {activeView === "promotion" ? (
@@ -800,6 +816,13 @@ function FleetView({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
+            {application.environments.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  No environments registered.
+                </td>
+              </tr>
+            ) : null}
             {application.environments.map((environment) => (
               <Fragment key={environment.id}>
                 <tr>
