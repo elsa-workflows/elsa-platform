@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, FileCode2, LogIn, PackagePlus, Play, RefreshCw, Save, Search, Settings2, Trash2 } from "lucide-react";
+import { Check, Copy, FileCode2, PackagePlus, Play, RefreshCw, Save, Search, Settings2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, EmptyState, Input, SecondaryButton, Select } from "@/components/ui";
 import { RequestStateView } from "@/components/states/RequestStateViews";
@@ -7,7 +7,6 @@ import {
   createRuntimeConfiguration,
   generateBundle,
   getBuilderCatalog,
-  getWorkspaceContext,
   listRuntimeConfigurations,
   planRuntime
 } from "@/features/runtime-builder/runtimeBuilderApi";
@@ -34,14 +33,12 @@ import {
 import { cn } from "@/lib/utils";
 import { queryKeys } from "@/lib/query/queryClient";
 import { sourceStatusTone, statusToneClass } from "@/lib/status/statusBadges";
-import { ApiError } from "@/lib/api/httpClient";
-import { startCustomerSignIn } from "@/lib/auth/authApi";
+import { useWorkspaceContext } from "@/app/WorkspaceContextProvider";
 
 const defaultTarget: DeploymentTarget = "docker-compose";
 
 export function RuntimeBuilderPage() {
   const queryClient = useQueryClient();
-  const [workspaceId, setWorkspaceId] = useState("");
   const [imageSlug, setImageSlug] = useState("");
   const [imageTag, setImageTag] = useState("");
   const [hostPort, setHostPort] = useState("");
@@ -56,12 +53,9 @@ export function RuntimeBuilderPage() {
   const [configurationDescription, setConfigurationDescription] = useState("");
   const [bundle, setBundle] = useState<BuilderBundleResponse | null>(null);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
+  const workspaceContext = useWorkspaceContext();
+  const effectiveWorkspaceId = workspaceContext.selectedWorkspaceId;
 
-  const workspaces = useQuery({
-    queryKey: queryKeys.workspaceContext,
-    queryFn: getWorkspaceContext
-  });
-  const effectiveWorkspaceId = workspaceId || workspaces.data?.workspaces[0]?.id || "";
   const catalog = useQuery({
     queryKey: queryKeys.runtimeBuilderCatalog(effectiveWorkspaceId),
     queryFn: () => getBuilderCatalog(effectiveWorkspaceId),
@@ -72,12 +66,6 @@ export function RuntimeBuilderPage() {
     queryFn: () => listRuntimeConfigurations(effectiveWorkspaceId),
     enabled: Boolean(effectiveWorkspaceId)
   });
-
-  useEffect(() => {
-    if (!workspaceId && workspaces.data?.workspaces[0]?.id) {
-      setWorkspaceId(workspaces.data.workspaces[0].id);
-    }
-  }, [workspaceId, workspaces.data?.workspaces]);
 
   useEffect(() => {
     if (!catalog.data || imageSlug) return;
@@ -221,27 +209,12 @@ export function RuntimeBuilderPage() {
     setBundle(null);
   }
 
-  if (workspaces.isLoading) return <RequestStateView state="loading" title="Loading workspace context" />;
-  if (workspaces.isError && !workspaces.data) {
-    if (workspaces.error instanceof ApiError && workspaces.error.kind === "Unauthorized") {
-      return (
-        <EmptyState
-          title="Sign in to load workspace context"
-          description="Runtime Builder needs a customer identity before it can resolve workspaces, packages, and saved configurations."
-          action={
-            <Button onClick={() => startCustomerSignIn()}>
-              <LogIn className="h-4 w-4" />
-              Sign in
-            </Button>
-          }
-        />
-      );
-    }
-
-    return <RequestStateView state={workspaceContextErrorState(workspaces.error)} title="Workspace context could not load" />;
+  if (workspaceContext.isLoading) return <RequestStateView state="loading" title="Loading workspace context" />;
+  if (workspaceContext.isError) {
+    return <RequestStateView state="unexpected" title="Workspace context could not load" />;
   }
-  if ((workspaces.data?.workspaces.length ?? 0) === 0) {
-    return <EmptyState title="No workspaces available" description="Runtime Builder needs a workspace before it can resolve packages and save configurations." />;
+  if (!effectiveWorkspaceId) {
+    return <EmptyState title="No workspace selected" description="Select an organization workspace before resolving packages and saved configurations." />;
   }
   if (catalog.isLoading) return <RequestStateView state="loading" title="Loading Runtime Builder catalog" />;
   if (catalog.isError && !catalog.data) return <RequestStateView state="unexpected" title="Runtime Builder catalog could not load" />;
@@ -263,13 +236,6 @@ export function RuntimeBuilderPage() {
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Select value={effectiveWorkspaceId} onChange={(event) => setWorkspaceId(event.target.value)} aria-label="Workspace">
-            {workspaces.data?.workspaces.map((workspace) => (
-              <option key={workspace.id} value={workspace.id}>
-                {workspace.name}
-              </option>
-            ))}
-          </Select>
           <SecondaryButton onClick={() => void catalog.refetch()} title="Refresh Runtime Builder catalog">
             <RefreshCw className="h-4 w-4" />
             Refresh
@@ -843,8 +809,4 @@ function findingTone(level: string) {
 
 function hasAutoAddedItems(autoAdded: BuilderPlanResponse["autoAdded"] | undefined) {
   return Boolean(autoAdded && (autoAdded.packages.length > 0 || autoAdded.features.length > 0 || autoAdded.infrastructure.length > 0));
-}
-
-function workspaceContextErrorState(error: unknown) {
-  return error instanceof ApiError && (error.kind === "Unauthorized" || error.kind === "Forbidden") ? "unauthorized" : "unexpected";
 }

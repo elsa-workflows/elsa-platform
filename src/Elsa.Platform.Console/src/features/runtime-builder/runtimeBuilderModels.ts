@@ -1,24 +1,3 @@
-export type WorkspaceRole = "Owner" | "Admin" | "Member" | "Viewer" | string;
-export type WorkspaceKind = "Personal" | "Team" | string;
-
-export type AccountContext = {
-  id: string;
-  displayName?: string | null;
-  email?: string | null;
-};
-
-export type WorkspaceContext = {
-  id: string;
-  name: string;
-  kind: WorkspaceKind;
-  role: WorkspaceRole;
-};
-
-export type MeWorkspacesResponse = {
-  account: AccountContext;
-  workspaces: WorkspaceContext[];
-};
-
 export type RuntimeImageEnvironmentVariable = {
   name: string;
   displayName: string;

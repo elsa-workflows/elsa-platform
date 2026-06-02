@@ -137,6 +137,7 @@ internal sealed class AccountConfiguration : IEntityTypeConfiguration<Account>
         builder.Property(x => x.DisplayName).HasMaxLength(256);
         builder.Property(x => x.Email).HasMaxLength(320);
         builder.HasMany(x => x.ExternalIdentities).WithOne(x => x.Account).HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.OrganizationMemberships).WithOne(x => x.Account).HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.Memberships).WithOne(x => x.Account).HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Cascade);
     }
 }
@@ -160,8 +161,67 @@ internal sealed class WorkspaceConfiguration : IEntityTypeConfiguration<Workspac
     {
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Name).HasMaxLength(256).IsRequired();
+        builder.HasIndex(x => new { x.OrganizationId, x.SoftDeletedAt, x.Name });
+        builder.HasOne(x => x.Organization).WithMany(x => x.Workspaces).HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.Memberships).WithOne(x => x.Workspace).HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.EntitlementSnapshots).WithOne(x => x.Workspace).HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organization>
+{
+    public void Configure(EntityTypeBuilder<Organization> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Name).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.CustomerReference).HasMaxLength(512);
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.ArchivedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.HasMany(x => x.Memberships).WithOne(x => x.Organization).HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.EntitlementSnapshots).WithOne(x => x.Organization).HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.AuditRecords).WithOne(x => x.Organization).HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class OrganizationMembershipConfiguration : IEntityTypeConfiguration<OrganizationMembership>
+{
+    public void Configure(EntityTypeBuilder<OrganizationMembership> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Role).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.DisabledAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.HasIndex(x => new { x.OrganizationId, x.AccountId }).IsUnique();
+    }
+}
+
+internal sealed class OrganizationEntitlementSnapshotConfiguration : IEntityTypeConfiguration<OrganizationEntitlementSnapshot>
+{
+    public void Configure(EntityTypeBuilder<OrganizationEntitlementSnapshot> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.SyncedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => x.OrganizationId).IsUnique();
+    }
+}
+
+internal sealed class OrganizationAuditRecordConfiguration : IEntityTypeConfiguration<OrganizationAuditRecord>
+{
+    public void Configure(EntityTypeBuilder<OrganizationAuditRecord> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.OperatorSubject).HasMaxLength(512);
+        builder.Property(x => x.Action).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.TargetType).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.TargetId).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.Summary).HasMaxLength(2048).IsRequired();
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.OrganizationId, x.CreatedAt });
     }
 }
 

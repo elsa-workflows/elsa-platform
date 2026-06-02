@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   Archive,
+  Building2,
   Boxes,
   Cloud,
   DatabaseZap,
@@ -20,8 +21,11 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 import { getApplicationInfo } from "@/app/applicationApi";
+import { WorkspaceContextProvider, useWorkspaceContext } from "@/app/WorkspaceContextProvider";
+import { useAuth } from "@/lib/auth/AuthProvider";
 import { queryKeys } from "@/lib/query/queryClient";
 import { cn } from "@/lib/utils";
+import { Select } from "@/components/ui";
 
 type NavItem = {
   to: string;
@@ -65,6 +69,14 @@ export function AppShell() {
   const [theme, setTheme] = useTheme();
 
   return (
+    <WorkspaceContextProvider>
+      <AppShellLayout theme={theme} onThemeChange={setTheme} />
+    </WorkspaceContextProvider>
+  );
+}
+
+function AppShellLayout({ theme, onThemeChange }: { theme: Theme; onThemeChange: (theme: Theme) => void }) {
+  return (
     <div className="min-h-screen bg-background text-foreground">
       <aside className="fixed inset-y-0 left-0 hidden w-72 flex-col border-r border-border bg-surface px-3 py-4 md:flex">
         <div>
@@ -73,8 +85,9 @@ export function AppShell() {
               <p className="font-display text-base font-semibold tracking-normal">Elsa Platform</p>
               <p className="text-xs text-muted-foreground">Platform Console</p>
             </div>
-            <ThemeToggle theme={theme} onThemeChange={setTheme} />
+            <ThemeToggle theme={theme} onThemeChange={onThemeChange} />
           </div>
+          <OrganizationWorkspaceSwitcher className="mb-5" />
           <PrimaryNavigation />
         </div>
         <ApplicationBuildNumber className="mt-auto px-2 pt-4" />
@@ -85,21 +98,22 @@ export function AppShell() {
             <p className="font-display text-sm font-semibold">Elsa Platform</p>
             <div className="flex shrink-0 items-center gap-2">
               <ApplicationBuildNumber className="text-right" />
-              <ThemeToggle theme={theme} onThemeChange={setTheme} />
+              <ThemeToggle theme={theme} onThemeChange={onThemeChange} />
             </div>
           </div>
+          <OrganizationWorkspaceSwitcher compact className="mb-2" />
           <PrimaryNavigation compact />
         </header>
         <header className="sticky top-0 z-10 hidden border-b border-border bg-background/95 px-8 py-3 backdrop-blur md:block">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
               <ShieldCheck aria-hidden className="h-4 w-4 text-primary" />
-              <span className="truncate">Unified control plane for deployments, packages, runtimes, and operations</span>
+              <span className="truncate">Organization control plane for deployments, packages, runtimes, and operations</span>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <TerminalSquare aria-hidden className="h-4 w-4" />
               <span>REST + SignalR ready</span>
-              <ThemeToggle theme={theme} onThemeChange={setTheme} />
+              <ThemeToggle theme={theme} onThemeChange={onThemeChange} />
             </div>
           </div>
         </header>
@@ -227,6 +241,63 @@ function PrimaryNavigation({ compact = false }: { compact?: boolean }) {
         </div>
       ))}
     </nav>
+  );
+}
+
+function OrganizationWorkspaceSwitcher({ compact = false, className }: { compact?: boolean; className?: string }) {
+  const auth = useAuth();
+  const workspaceContext = useWorkspaceContext();
+
+  if (!auth.session?.authenticated) return null;
+
+  if (workspaceContext.isLoading) {
+    return (
+      <div className={cn("rounded-ui border border-border bg-background px-3 py-2 text-xs text-muted-foreground", className)}>
+        Loading context
+      </div>
+    );
+  }
+
+  if (workspaceContext.isError || workspaceContext.organizations.length === 0) {
+    return (
+      <div className={cn("rounded-ui border border-border bg-background px-3 py-2 text-xs text-muted-foreground", className)}>
+        No organization
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("rounded-ui border border-border bg-background p-2", className)}>
+      <div className={cn("flex gap-2", compact ? "items-center" : "flex-col")}>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Building2 aria-hidden className="h-4 w-4 shrink-0 text-primary" />
+          <Select
+            aria-label="Organization"
+            className="min-w-0 flex-1"
+            value={workspaceContext.selectedOrganizationId}
+            onChange={(event) => workspaceContext.setSelectedOrganizationId(event.target.value)}
+          >
+            {workspaceContext.organizations.map((organization) => (
+              <option key={organization.id} value={organization.id}>
+                {organization.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <Select
+          aria-label="Workspace"
+          className="min-w-0 flex-1"
+          value={workspaceContext.selectedWorkspaceId}
+          onChange={(event) => workspaceContext.setSelectedWorkspaceId(event.target.value)}
+        >
+          {workspaceContext.organizationWorkspaces.map((workspace) => (
+            <option key={workspace.id} value={workspace.id}>
+              {workspace.name}
+            </option>
+          ))}
+        </Select>
+      </div>
+    </div>
   );
 }
 

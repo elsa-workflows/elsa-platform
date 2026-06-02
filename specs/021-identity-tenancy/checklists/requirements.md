@@ -32,6 +32,6 @@
 
 ## Notes
 
-- The specification intentionally treats `Workspace` as the platform tenant boundary and defers Elsa runtime tenant overlays and first-class tenant reconciliation to later deployment-platform features.
+- `specs/031-organization-tenancy` supersedes this specification's tenant-boundary choice by introducing Organization as the root customer tenant while preserving workspace resource isolation.
 - The existing admin API-key dashboard flow is preserved as operator fallback, not promoted to customer authentication.
 - The deployment-platform additions define product boundaries for workflow engines, environments, desired state, promotion, secrets, observability, and capability-based operations; detailed deployment implementation planning remains future work.

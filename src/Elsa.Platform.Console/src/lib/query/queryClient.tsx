@@ -24,7 +24,6 @@ export const queryKeys = {
   packageManifest: (packageId: string, version: string) => ["packages", packageId, "versions", version, "manifest"] as const,
   syncRuns: ["sync-runs"] as const,
   syncRun: (runId: string) => ["sync-runs", runId] as const,
-  deploymentWorkspaceContext: ["deployments", "workspace-context"] as const,
   deploymentCockpit: (workspaceId: string) => ["deployments", workspaceId, "cockpit"] as const,
   deploymentPermissions: (workspaceId: string) => ["deployments", workspaceId, "permissions"] as const,
   deploymentTiers: (workspaceId: string) => ["deployments", workspaceId, "tiers"] as const,

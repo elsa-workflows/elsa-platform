@@ -3,8 +3,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { WorkspaceContextProvider } from "@/app/WorkspaceContextProvider";
 import { DeploymentsPage } from "@/features/deployments/DeploymentsPage";
 import type { DeploymentCockpit } from "@/features/deployments/deploymentModels";
+import { AuthProvider } from "@/lib/auth/AuthProvider";
 
 describe("DeploymentsPage", () => {
   afterEach(() => {
@@ -16,7 +18,7 @@ describe("DeploymentsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Deployments" })).toBeInTheDocument();
     expect(screen.getByText("Claims Operations")).toBeInTheDocument();
-    expect(screen.getByText("Workspace tenant boundary")).toBeInTheDocument();
+    expect(screen.getByText("Workspace under Acme Corp")).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: /Prod Production/i })).toBeInTheDocument();
     expect(screen.getAllByText("Drift detected").length).toBeGreaterThan(0);
     expect(screen.queryByText(/password|token|secret value/i)).not.toBeInTheDocument();
@@ -377,7 +379,11 @@ function renderDeployments(cockpit: DeploymentCockpit = deploymentCockpitFixture
   vi.stubGlobal("fetch", fetchMock);
   render(
     <TestQueryProvider>
-      <DeploymentsPage />
+      <AuthProvider>
+        <WorkspaceContextProvider>
+          <DeploymentsPage />
+        </WorkspaceContextProvider>
+      </AuthProvider>
     </TestQueryProvider>
   );
   return fetchMock;
@@ -388,12 +394,10 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : input.toString();
     const method = init?.method ?? (input instanceof Request ? input.method : "GET");
-    if (url.endsWith("/api/me/workspaces")) {
-      return jsonResponse({
-        account: { id: "account-1", displayName: "Test User", email: "test@example.com" },
-        workspaces: [{ id: workspaceId, name: "Acme Insurance", kind: "Personal", role: "Owner" }]
-      });
-    }
+    if (url.endsWith("/api/auth/session"))
+      return jsonResponse({ loginEnabled: true, authenticated: true, displayName: "Test User", email: "test@example.com", loginPath: "/api/auth/login", logoutPath: "/api/auth/logout" });
+    if (url.endsWith("/api/me/organizations"))
+      return jsonResponse(workspaceContextFixture());
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/permissions`)) {
       return jsonResponse({
         permissions: [
@@ -624,6 +628,17 @@ function requestBody(fetchMock: ReturnType<typeof createDeploymentFetchMock>, me
   return JSON.parse(call![1]?.body?.toString() ?? "{}") as Record<string, unknown>;
 }
 
+function workspaceContextFixture() {
+  return {
+    account: { id: "account-1", displayName: "Test User", email: "test@example.com" },
+    organizations: [{ id: organizationId, name: "Acme Corp", role: "Owner" }],
+    workspaces: [
+      { id: workspaceId, name: "Acme Insurance", kind: "Shared", role: "Owner", organizationId, organizationName: "Acme Corp", organizationRole: "Owner" },
+      { id: "00000000-0000-0000-0000-000000000011", name: "Acme Labs", kind: "Shared", role: "Reader", organizationId, organizationName: "Acme Corp", organizationRole: "Owner" }
+    ]
+  };
+}
+
 function TestQueryProvider({ children }: { children: ReactNode }) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -635,6 +650,7 @@ function TestQueryProvider({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
 
+const organizationId = "00000000-0000-0000-0000-000000000001";
 const workspaceId = "00000000-0000-0000-0000-000000000010";
 const tierCapabilities = [
   capabilityDefinition("deployment.tier.development-like", "Development-like", "Classification"),

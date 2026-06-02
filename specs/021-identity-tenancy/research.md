@@ -1,5 +1,7 @@
 # Research: Identity And Workspace Tenancy
 
+> **Forward compatibility note**: `specs/031-organization-tenancy` intentionally revisits the tenant-boundary decision and chooses Organization as the customer tenant boundary while preserving Workspace as the operational isolation boundary.
+
 ## Decision: Use Workspace As The Platform Tenant Boundary
 
 **Rationale**: Existing account-owned custom feed work already models `Account`, `ExternalIdentity`, `Workspace`, `WorkspaceMembership`, and `WorkspaceEntitlementSnapshot`. Saved runtime configurations, BYOC deployment targets, and managed hosting specs all refer to workspace-scoped ownership or authorization. Standardizing on workspace avoids parallel customer, tenant, organization, and account isolation models.

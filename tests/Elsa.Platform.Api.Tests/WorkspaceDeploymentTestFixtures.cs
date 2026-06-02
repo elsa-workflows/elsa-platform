@@ -4,6 +4,7 @@ using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Elsa.Platform.Api.Tests;
@@ -43,7 +44,14 @@ internal static class WorkspaceDeploymentTestFixtures
             DisplayName = subject,
             Email = $"{subject}@example.test"
         });
-        account.Memberships.Add(new WorkspaceMembership { Account = account, WorkspaceId = workspaceId, Role = role });
+        var workspace = await db.Workspaces.Include(x => x.Organization).SingleAsync(x => x.Id == workspaceId);
+        account.OrganizationMemberships.Add(new OrganizationMembership
+        {
+            Account = account,
+            OrganizationId = workspace.OrganizationId,
+            Role = OrganizationRole.Member
+        });
+        account.Memberships.Add(new WorkspaceMembership { Account = account, Workspace = workspace, Role = role });
         db.Accounts.Add(account);
         await db.SaveChangesAsync();
         return account.Id;

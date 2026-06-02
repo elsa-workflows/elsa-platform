@@ -8,6 +8,8 @@
 
 Promote the existing account/workspace foundation into the platform tenant model by adding a pluggable platform identity layer, deriving account/workspace context from trusted identity, centralizing workspace authorization, and preserving the current admin key flow as operator-only fallback. The first implementation should reuse the `Account`, `ExternalIdentity`, `Workspace`, `WorkspaceMembership`, and entitlement model from account-owned custom feeds, replace production use of trusted browser headers with a generic OIDC/JWT adapter plus provider presets/configuration, add an end-to-end customer login path for the React console, and harden workspace-scoped endpoint access with shared authorization helpers and cross-workspace tests.
 
+> **Forward compatibility note**: `specs/031-organization-tenancy` amends this plan by adding a root `Organization` tenant above workspaces. Existing workspace authorization remains the resource isolation layer.
+
 ## Technical Context
 
 **Language/Version**: C# on .NET 10.
@@ -24,7 +26,7 @@ Promote the existing account/workspace foundation into the platform tenant model
 
 **Performance Goals**: Authentication and workspace context resolution should not require more than one account/workspace lookup per request path that needs customer context; public anonymous catalog endpoints keep existing anonymous behavior and cacheability.
 
-**Constraints**: Customer identity must come from a configured platform identity adapter that verifies tokens, OIDC callbacks, backend-mediated sessions, or trusted server-to-server context, never from browser-supplied IDs. Provider secrets must not be exposed to the browser. Workspace is the platform tenant boundary. Existing operator admin access must remain separate. Runtime tenant overlays and first-class tenant reconciliation are out of scope.
+**Constraints**: Customer identity must come from a configured platform identity adapter that verifies tokens, OIDC callbacks, backend-mediated sessions, or trusted server-to-server context, never from browser-supplied IDs. Provider secrets must not be exposed to the browser. Workspace authorization remains the resource isolation layer from this slice; `specs/031-organization-tenancy` supersedes the root customer tenant boundary with Organization. Existing operator admin access must remain separate. Runtime tenant overlays and first-class tenant reconciliation are out of scope.
 
 **Scale/Scope**: One platform API host, many accounts, many workspaces per account, and all existing workspace-owned catalog and builder records. Organization workspace lifecycle, invitations, billing checkout, and deployment tenant overlays are deferred.
 

@@ -1,10 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { WorkspaceContextProvider } from "@/app/WorkspaceContextProvider";
 import { RuntimeBuilderPage } from "@/features/runtime-builder/RuntimeBuilderPage";
 import type { BuilderCatalog, BuilderPlanResponse, RuntimeBuilderIntent } from "@/features/runtime-builder/runtimeBuilderModels";
+import { AuthProvider } from "@/lib/auth/AuthProvider";
 
+const organizationId = "00000000-0000-0000-0000-000000000001";
 const workspaceId = "00000000-0000-0000-0000-000000000010";
 
 const catalogFixture: BuilderCatalog = {
@@ -176,7 +180,9 @@ describe("RuntimeBuilderPage", () => {
   it("shows a generic error state for non-auth workspace failures", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = input instanceof Request ? input.url : input.toString();
-      return url.endsWith("/api/me/workspaces") ? jsonResponse({ title: "API unavailable" }, 500) : jsonResponse({ title: "Not found" }, 404);
+      if (url.endsWith("/api/auth/session"))
+        return jsonResponse({ loginEnabled: true, authenticated: true, displayName: "Test User", email: "test@example.com", loginPath: "/api/auth/login", logoutPath: "/api/auth/logout" });
+      return url.endsWith("/api/me/organizations") ? jsonResponse({ title: "API unavailable" }, 500) : jsonResponse({ title: "Not found" }, 404);
     });
     renderRuntimeBuilder(fetchMock);
 
@@ -191,12 +197,10 @@ const postgresqlInfrastructure = { kind: "Database", providerId: "postgresql", s
 function createRuntimeBuilderFetchMock({ planResponse }: { planResponse: (intent: RuntimeBuilderIntent) => BuilderPlanResponse }) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : input.toString();
-    if (url.endsWith("/api/me/workspaces")) {
-      return jsonResponse({
-        account: { id: "account-1", displayName: "Test User", email: "test@example.com" },
-        workspaces: [{ id: workspaceId, name: "Default workspace", kind: "Personal", role: "Owner" }]
-      });
-    }
+    if (url.endsWith("/api/auth/session"))
+      return jsonResponse({ loginEnabled: true, authenticated: true, displayName: "Test User", email: "test@example.com", loginPath: "/api/auth/login", logoutPath: "/api/auth/logout" });
+    if (url.endsWith("/api/me/organizations"))
+      return jsonResponse(workspaceContextFixture());
     if (url.endsWith(`/api/workspaces/${workspaceId}/builder/catalog`)) {
       return jsonResponse(catalogFixture);
     }
@@ -237,9 +241,23 @@ function renderRuntimeBuilder(fetchMock: unknown) {
 
   render(
     <QueryClientProvider client={queryClient}>
-      <RuntimeBuilderPage />
+      <AuthProvider>
+        <WorkspaceContextProvider>
+          <RuntimeBuilderPage />
+        </WorkspaceContextProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
+}
+
+function workspaceContextFixture() {
+  return {
+    account: { id: "account-1", displayName: "Test User", email: "test@example.com" },
+    organizations: [{ id: organizationId, name: "Acme Corp", role: "Owner" }],
+    workspaces: [
+      { id: workspaceId, name: "Default workspace", kind: "Shared", role: "Owner", organizationId, organizationName: "Acme Corp", organizationRole: "Owner" }
+    ]
+  };
 }
 
 function jsonResponse(body: unknown, status = 200) {

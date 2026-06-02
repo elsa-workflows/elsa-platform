@@ -3,15 +3,10 @@ import type {
   BuilderBundleResponse,
   BuilderCatalog,
   BuilderPlanResponse,
-  MeWorkspacesResponse,
   RuntimeBuilderIntent,
   RuntimeConfiguration,
   RuntimeConfigurationRequest
 } from "@/features/runtime-builder/runtimeBuilderModels";
-
-export function getWorkspaceContext() {
-  return apiRequest<MeWorkspacesResponse>("/api/me/workspaces");
-}
 
 export function getBuilderCatalog(workspaceId: string) {
   return apiRequest<BuilderCatalog>(`/api/workspaces/${encodeURIComponent(workspaceId)}/builder/catalog`);

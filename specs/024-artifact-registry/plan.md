@@ -8,6 +8,8 @@
 
 Add a workspace-scoped deployment artifact registry that stores immutable artifact metadata, safe diagnostics, and payload references without storing artifact payloads in the catalog database. The slice wires authorized API routes and a real Artifacts console view to list, register, inspect, and refresh artifact metadata, reusing existing `Elsa.Platform.Deployment.Artifacts` contracts for layout, digest, metadata, and checksum concepts. It deliberately stops before upload storage, OCI, signing, GitOps, validation, dry-run, apply, and provider-specific artifact transport.
 
+> **Forward compatibility note**: `specs/031-organization-tenancy` keeps artifact records workspace-owned but resolves workspace ownership through a root Organization tenant.
+
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console.
@@ -24,7 +26,7 @@ Add a workspace-scoped deployment artifact registry that stores immutable artifa
 
 **Performance Goals**: Artifact list for a normal workspace with 250 registered artifacts should return in under 3 seconds in the integration test environment with bounded queries.
 
-**Constraints**: Workspace remains the tenant boundary. Deployment core contracts remain persistence- and hosting-free. The registry stores metadata only and never stores raw artifact payloads or raw secrets. Refresh inspection initially supports local/test filesystem references only and must fail closed for unsupported references.
+**Constraints**: Workspace remains the artifact resource isolation boundary, and `specs/031-organization-tenancy` makes Organization the customer tenant boundary above it. Deployment core contracts remain persistence- and hosting-free. The registry stores metadata only and never stores raw artifact payloads or raw secrets. Refresh inspection initially supports local/test filesystem references only and must fail closed for unsupported references.
 
 **Scale/Scope**: First hosted artifact registry slice for many workspaces, many artifacts per workspace, and folder/ZIP artifact metadata produced by the existing artifact package.
 

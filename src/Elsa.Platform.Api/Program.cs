@@ -285,6 +285,7 @@ app.MapPublicFeatureEndpoints();
 app.MapBuilderEndpoints();
 app.MapCompatibilityEndpoints();
 app.MapWorkspaceMeEndpoints();
+app.MapOrganizationWorkspaceEndpoints();
 app.MapWorkspaceSourceEndpoints();
 app.MapWorkspacePackageEndpoints();
 app.MapWorkspaceBuilderEndpoints();

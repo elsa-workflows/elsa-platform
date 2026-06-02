@@ -8,6 +8,8 @@
 
 **Input**: User description: "Proceed with the proposed plan to get multitenancy done and OIDC/JWT login: make Workspace the platform tenant boundary, add real OIDC/JWT login, replace trusted browser-supplied identity with backend-derived account and workspace context, centralize workspace authorization, preserve operator fallback access, and define the deployment-platform direction for workflow engines, environments, desired state, promotion, secrets, observability, and future runtime tenant reconciliation."
 
+> **Forward compatibility note**: `specs/031-organization-tenancy` supersedes this feature's tenant-boundary decision. Workspace remains the operational isolation boundary, while Organization becomes the customer tenant boundary for future work.
+
 ## Settled Product Direction
 
 For platform-integrated installations, Elsa Studio remains the workflow authoring and single-engine runtime inspection surface, while Elsa Platform is the source of truth for immutable deployable workflow artifacts and cross-environment desired-state revisions.
@@ -41,7 +43,7 @@ A customer user signs in through a configured platform identity provider adapter
 
 ### User Story 2 - First Sign-In Creates A Personal Workspace (Priority: P1)
 
-A first-time signed-in user receives a durable personal workspace that becomes the default tenant boundary for customer-owned platform data.
+A first-time signed-in user receives a durable personal workspace that becomes the default resource boundary for customer-owned platform data in this slice; `specs/031-organization-tenancy` later promotes Organization to the root customer tenant boundary.
 
 **Why this priority**: Workspace tenancy must exist before user-owned catalog sources, saved runtime configurations, deployment targets, managed runtimes, and entitlements can share one isolation model.
 
@@ -216,7 +218,7 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **FR-002**: System MUST reject browser-supplied user IDs, account IDs, workspace memberships, roles, or entitlements as authority for customer identity.
 - **FR-003**: System MUST map each trusted `issuer + subject` pair to one catalog-local account through an external identity record.
 - **FR-004**: System MUST create one personal workspace and owner membership for a first-time trusted identity.
-- **FR-005**: System MUST make workspace membership the primary platform tenant boundary for customer-owned records.
+- **FR-005**: System MUST make workspace membership the primary authorization boundary for customer-owned records in this slice; `specs/031-organization-tenancy` supersedes the root tenant boundary with Organization.
 - **FR-006**: System MUST allow authenticated users to list only active workspaces they are members of.
 - **FR-007**: System MUST enforce workspace membership for every customer-owned record read or write.
 - **FR-008**: System MUST enforce workspace role requirements for privileged workspace operations.
@@ -256,7 +258,7 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **FR-042**: System MUST support an opt-in Elsa Studio integration that handles the Studio publish lifecycle by offering a "Submit to Platform" command that creates a platform-owned deployable workflow artifact.
 - **FR-043**: System MUST keep Elsa Studio and Elsa Platform aligned on shared authorization, secret-provider, and audit rules when both surfaces expose workflow, configuration, or secret management.
 - **FR-044**: System MUST position Elsa Studio as the single-engine authoring and runtime inspection surface, while Elsa Platform owns deployable workflow artifacts, release readiness, cross-environment promotion, deployment, governance, fleet visibility, and workspace-level controls.
-- **FR-045**: System MUST leave room for future runtime tenant and deployment tenant concepts as nested or environment-specific concerns under workspace ownership, rather than replacing workspace as the platform tenant boundary.
+- **FR-045**: System MUST leave room for future runtime tenant and deployment tenant concepts as nested or environment-specific concerns under workspace ownership, without preventing Organization from becoming the root customer tenant boundary in `specs/031-organization-tenancy`.
 - **FR-046**: System MUST expose an AI assistant boundary that can read, reason over, and summarize workspace-authorized platform context including workspaces, environments, engines, workflow artifacts, desired-state revisions, deployment history, drift, validation results, and observability metadata.
 - **FR-047**: System MUST enforce the same current account, workspace membership, role, entitlement, and operator/customer separation rules for every assistant tool call as for direct API calls.
 - **FR-048**: System MUST require explicit platform-mediated approval before an assistant can execute any mutation to desired state, deployments, runtime controls, engine registrations, secret references, observability bindings, entitlements, or workspace membership.
@@ -275,7 +277,7 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **OIDC Client Configuration**: Deployment-owned settings for provider authority, client identifier, redirect URIs, logout behavior, scopes, expected audience, issuer, and claim mappings.
 - **Account**: Catalog-local user record linked to trusted external identities and workspace memberships.
 - **External Identity**: Stable mapping from trusted issuer and subject to one account.
-- **Workspace**: Durable tenant boundary for customer-owned platform data; starts as a personal workspace and can support organization workspaces later.
+- **Workspace**: Durable resource boundary for customer-owned platform data; starts as a personal workspace in this slice and becomes nested under Organization in `specs/031-organization-tenancy`.
 - **Workspace Membership**: Relationship between an account and workspace, including active state and role.
 - **Workspace Role**: Permission level for operations within a workspace, such as owner, administrator, source administrator, deployer, or reader.
 - **Workspace Entitlement Snapshot**: Server-enforced capability and limit snapshot for a workspace.
@@ -326,7 +328,7 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 
 ## Assumptions
 
-- Workspace is the platform tenant boundary for this feature.
+- Workspace was the platform tenant boundary for this feature slice; `specs/031-organization-tenancy` supersedes that root-boundary decision with Organization while preserving workspace resource isolation.
 - A customer may belong to multiple workspaces, but personal workspace creation is the first self-service path.
 - Organization workspaces, invitations, billing purchase flows, and central customer-service ownership are later features unless already represented by entitlement snapshots.
 - Existing account/workspace records from the custom-feed feature are reused and normalized instead of creating a second identity model.
