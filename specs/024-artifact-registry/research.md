@@ -2,7 +2,7 @@
 
 ## Decision: Store artifact registry metadata in the catalog workspace database
 
-**Rationale**: Workspace ownership, deployment records, permissions, and cockpit metadata already live in the catalog EF database. Artifact registry records need the same authorization and tenant boundary, so colocating metadata keeps the first hosted slice simple and consistent.
+**Rationale**: Workspace ownership, deployment records, permissions, and cockpit metadata already live in the catalog EF database. Artifact registry records need the same workspace authorization and resource isolation boundary, so colocating metadata keeps the first hosted slice simple and consistent. `specs/031-organization-tenancy` adds Organization as the root customer tenant above this workspace boundary.
 
 **Alternatives considered**:
 

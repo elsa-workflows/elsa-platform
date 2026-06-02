@@ -5,9 +5,31 @@ namespace Elsa.Platform.Api.Workspace;
 
 public sealed record AccountContextResponse(Guid Id, string? DisplayName, string? Email);
 
-public sealed record WorkspaceContextResponse(Guid Id, string Name, WorkspaceKind Kind, WorkspaceRole Role);
+public sealed record OrganizationContextResponse(Guid Id, string Name, OrganizationRole Role);
 
-public sealed record MeWorkspacesResponse(AccountContextResponse Account, IReadOnlyList<WorkspaceContextResponse> Workspaces);
+public sealed record WorkspaceContextResponse(
+    Guid Id,
+    string Name,
+    WorkspaceKind Kind,
+    WorkspaceRole Role,
+    Guid OrganizationId = default,
+    string OrganizationName = "",
+    OrganizationRole OrganizationRole = Elsa.Platform.PackageCatalog.Core.Accounts.OrganizationRole.Member);
+
+public sealed record MeWorkspacesResponse(AccountContextResponse Account, IReadOnlyList<WorkspaceContextResponse> Workspaces)
+{
+    public IReadOnlyList<OrganizationContextResponse> Organizations { get; init; } = [];
+}
+
+public sealed record OrganizationWorkspacesResponse(IReadOnlyList<WorkspaceContextResponse> Workspaces);
+
+public sealed record OrganizationWorkspaceCreateRequest(string Name, IReadOnlyList<OrganizationWorkspaceInitialMemberRequest>? InitialMembers = null);
+
+public sealed record OrganizationWorkspaceInitialMemberRequest(Guid AccountId, WorkspaceRole Role);
+
+public sealed record OrganizationWorkspaceUpdateRequest(string Name, WorkspaceLifecycleStatus Status);
+
+public sealed record OrganizationWorkspaceMembershipRequest(WorkspaceRole Role);
 
 public sealed record WorkspaceSourceResponse(
     Guid Id,

@@ -1,7 +1,7 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-specs/025-custom-deployment-tiers/plan.md
+specs/031-organization-tenancy/plan.md
 <!-- SPECKIT END -->
 
 ## Active Technologies
@@ -15,6 +15,8 @@ specs/025-custom-deployment-tiers/plan.md
 - Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Engine records gain verification metadata; optional append-only verification event records may be added if needed for audit/debugging. (023-engine-health-verification)
 - C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console. + ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `Elsa.Platform.Deployment.Core` workspace services, React Router, TanStack Query, Vitest, Playwright where needed, xUnit, and FluentAssertions. (025-custom-deployment-tiers)
 - Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Deployment tier tables store workspace-owned tier definitions, capability assignments, environment references, and safe audit metadata only. (025-custom-deployment-tiers)
+- C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console. + ASP.NET Core authentication/authorization, EF Core catalog persistence, existing account/workspace services, workspace authorization helpers, React Router, TanStack Query, Vitest, Playwright where needed, xUnit, and FluentAssertions. (031-organization-tenancy)
+- Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Organization tables store customer tenant records, memberships, entitlements, workspace ownership references, and safe audit metadata only. (031-organization-tenancy)
 
 ## Recent Changes
 - codex/021-identity-tenancy: Added C# on .NET 10. + ASP.NET Core authentication/authorization, ASP.NET Core cookies, JWT bearer validation, EF Core, existing `Elsa.Platform.PackageCatalog.*` account/workspace services, xUnit and FluentAssertions for tests.

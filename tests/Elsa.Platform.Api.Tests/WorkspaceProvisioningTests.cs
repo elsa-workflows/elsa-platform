@@ -20,10 +20,14 @@ public sealed class WorkspaceProvisioningTests
 
         context!.Account.Id.Should().NotBeEmpty();
         context.Workspaces.Should().ContainSingle(x => x.Role == WorkspaceRole.Owner && x.Kind == WorkspaceKind.Personal);
+        context.Organizations.Should().ContainSingle(x => x.Role == OrganizationRole.Owner);
+        context.Workspaces.Single().OrganizationId.Should().Be(context.Organizations.Single().Id);
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         db.Accounts.Should().ContainSingle();
         db.ExternalIdentities.Should().ContainSingle(x => x.Subject == "first-user");
+        db.Organizations.Should().ContainSingle();
+        db.OrganizationMemberships.Should().ContainSingle(x => x.Role == OrganizationRole.Owner);
         db.Workspaces.Should().ContainSingle();
         db.WorkspaceMemberships.Should().ContainSingle(x => x.Role == WorkspaceRole.Owner);
     }
@@ -44,8 +48,23 @@ public sealed class WorkspaceProvisioningTests
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         db.Accounts.Should().ContainSingle();
         db.ExternalIdentities.Should().ContainSingle();
+        db.Organizations.Should().ContainSingle();
+        db.OrganizationMemberships.Should().ContainSingle();
         db.Workspaces.Should().ContainSingle();
         db.WorkspaceMemberships.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Organization_context_endpoint_returns_organizations_and_workspaces()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreatePlatformIdentityClient(subject: "organization-context");
+
+        var context = await client.GetPlatformJsonAsync<MeWorkspacesResponse>("/api/me/organizations");
+
+        context!.Organizations.Should().ContainSingle(x => x.Role == OrganizationRole.Owner);
+        context.Workspaces.Should().ContainSingle(x => x.OrganizationId == context.Organizations.Single().Id);
     }
 
     [Fact]
@@ -64,6 +83,8 @@ public sealed class WorkspaceProvisioningTests
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         db.Accounts.Should().ContainSingle();
         db.ExternalIdentities.Should().ContainSingle();
+        db.Organizations.Should().ContainSingle();
+        db.OrganizationMemberships.Should().ContainSingle();
         db.Workspaces.Should().ContainSingle();
         db.WorkspaceMemberships.Should().ContainSingle();
     }
@@ -82,19 +103,46 @@ public sealed class WorkspaceProvisioningTests
 
         context!.Workspaces.Select(x => x.Name).Should().Contain(["Ada Lovelace", "Shared Workspace"]);
         context.Workspaces.Select(x => x.Name).Should().NotContain("Deleted Workspace");
+        context.Organizations.Select(x => x.Name).Should().Contain(["Ada Lovelace", "Shared Workspace"]);
     }
 
-    private static async Task AddWorkspaceAsync(PlatformApiTestApplication app, Guid accountId, string name, bool softDeleted)
+    [Fact]
+    public async Task Workspace_membership_without_organization_membership_is_not_returned()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreatePlatformIdentityClient(subject: "workspace-only");
+        var initial = await client.GetPlatformJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
+        await AddWorkspaceAsync(app, initial!.Account.Id, "Hidden Workspace", softDeleted: false, addOrganizationMembership: false);
+
+        var context = await client.GetPlatformJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
+
+        context!.Workspaces.Select(x => x.Name).Should().NotContain("Hidden Workspace");
+    }
+
+    private static async Task AddWorkspaceAsync(PlatformApiTestApplication app, Guid accountId, string name, bool softDeleted, bool addOrganizationMembership = true)
     {
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         var account = await db.Accounts.SingleAsync(x => x.Id == accountId);
+        var organization = new Organization { Name = name };
         var workspace = new global::Elsa.Platform.PackageCatalog.Core.Accounts.Workspace
         {
             Name = name,
-            Kind = WorkspaceKind.Organization,
+            Kind = WorkspaceKind.Shared,
+            Organization = organization,
             SoftDeletedAt = softDeleted ? DateTimeOffset.UtcNow : null
         };
+        if (addOrganizationMembership)
+        {
+            db.OrganizationMemberships.Add(new OrganizationMembership
+            {
+                Account = account,
+                Organization = organization,
+                Role = OrganizationRole.Member
+            });
+        }
+
         db.Workspaces.Add(workspace);
         db.WorkspaceMemberships.Add(new WorkspaceMembership
         {

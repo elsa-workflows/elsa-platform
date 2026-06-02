@@ -37,6 +37,18 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
             Name = string.IsNullOrWhiteSpace(normalized.DisplayName) ? "Personal Workspace" : normalized.DisplayName,
             Kind = WorkspaceKind.Personal
         };
+        var organization = new Organization
+        {
+            Name = workspace.Name,
+            CreatedByAccountId = account.Id,
+            Workspaces = { workspace }
+        };
+        var organizationMembership = new OrganizationMembership
+        {
+            Account = account,
+            Organization = organization,
+            Role = OrganizationRole.Owner
+        };
         var membership = new WorkspaceMembership
         {
             Account = account,
@@ -45,7 +57,9 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
         };
 
         account.ExternalIdentities.Add(externalIdentity);
+        account.OrganizationMemberships.Add(organizationMembership);
         account.Memberships.Add(membership);
+        organization.Memberships.Add(organizationMembership);
         workspace.Memberships.Add(membership);
 
         await store.AddAccountAsync(account, cancellationToken);
@@ -72,7 +86,10 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
 
         return new AccountWorkspaceContext(
             new AccountSummary(account.Id, account.DisplayName, account.Email),
-            [new WorkspaceSummary(workspace.Id, workspace.Name, workspace.Kind, WorkspaceRole.Owner)]);
+            [new WorkspaceSummary(workspace.Id, workspace.Name, workspace.Kind, WorkspaceRole.Owner, organization.Id, organization.Name, OrganizationRole.Owner)])
+        {
+            Organizations = [new OrganizationSummary(organization.Id, organization.Name, OrganizationRole.Owner)]
+        };
     }
 
     public async Task<WorkspaceAccess?> GetWorkspaceAccessAsync(TrustedWorkspaceIdentity identity, Guid workspaceId, CancellationToken cancellationToken = default)
@@ -87,7 +104,96 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
             return null;
 
         await store.UpdateExternalIdentitySeenAsync(existing.ExternalIdentityId, normalized.DisplayName, normalized.Email, cancellationToken);
-        return new WorkspaceAccess(existing.Context.Account.Id, workspace.Id, workspace.Role);
+        return new WorkspaceAccess(existing.Context.Account.Id, workspace.Id, workspace.Role, workspace.OrganizationId, workspace.OrganizationRole);
+    }
+
+    public async Task<OrganizationWorkspaceListResult> ListOrganizationWorkspacesAsync(TrustedWorkspaceIdentity identity, Guid organizationId, CancellationToken cancellationToken = default)
+    {
+        var accountContext = await GetOrCreateAsync(identity, cancellationToken);
+        var organization = accountContext.Organizations.SingleOrDefault(x => x.Id == organizationId);
+        if (organization is null)
+            return OrganizationWorkspaceListResult.Denied(OrganizationWorkspaceFailure.OrganizationNotAllowed);
+
+        var canSeeAll = OrganizationRolePolicy.Allows(organization.Role, OrganizationOperation.ManageWorkspaces);
+        var workspaces = await store.ListOrganizationWorkspacesAsync(organizationId, accountContext.Account.Id, canSeeAll, cancellationToken);
+        return OrganizationWorkspaceListResult.Success(workspaces);
+    }
+
+    public async Task<OrganizationWorkspaceMutationResult> CreateOrganizationWorkspaceAsync(TrustedWorkspaceIdentity identity, Guid organizationId, CreateOrganizationWorkspaceRequest request, CancellationToken cancellationToken = default)
+    {
+        var access = await ResolveOrganizationAccessAsync(identity, organizationId, OrganizationOperation.CreateWorkspace, cancellationToken);
+        if (!access.Succeeded)
+            return OrganizationWorkspaceMutationResult.Denied(access.Failure!.Value);
+
+        foreach (var accountId in request.InitialMembers.Select(x => x.AccountId).Where(x => x != access.AccountId!.Value).Distinct())
+        {
+            if (!await store.OrganizationAccountMembershipExistsAsync(organizationId, accountId, cancellationToken))
+                return OrganizationWorkspaceMutationResult.Denied(OrganizationWorkspaceFailure.TargetAccountNotOrganizationMember);
+        }
+
+        return await store.CreateOrganizationWorkspaceAsync(organizationId, access.AccountId!.Value, request, cancellationToken);
+    }
+
+    public async Task<OrganizationWorkspaceMutationResult> UpdateOrganizationWorkspaceAsync(TrustedWorkspaceIdentity identity, Guid organizationId, Guid workspaceId, UpdateOrganizationWorkspaceRequest request, CancellationToken cancellationToken = default)
+    {
+        var access = await ResolveOrganizationAccessAsync(identity, organizationId, OrganizationOperation.ManageWorkspaces, cancellationToken);
+        if (!access.Succeeded)
+            return OrganizationWorkspaceMutationResult.Denied(access.Failure!.Value);
+
+        if (!await store.WorkspaceBelongsToOrganizationAsync(organizationId, workspaceId, cancellationToken))
+            return OrganizationWorkspaceMutationResult.Denied(OrganizationWorkspaceFailure.WorkspaceNotFound);
+
+        if (await store.OrganizationWorkspaceNameExistsAsync(organizationId, request.Name, workspaceId, cancellationToken))
+            return OrganizationWorkspaceMutationResult.Denied(OrganizationWorkspaceFailure.DuplicateWorkspaceName);
+
+        var workspace = await store.UpdateOrganizationWorkspaceAsync(organizationId, workspaceId, access.AccountId!.Value, request, cancellationToken);
+        return workspace is null
+            ? OrganizationWorkspaceMutationResult.Denied(OrganizationWorkspaceFailure.WorkspaceNotFound)
+            : OrganizationWorkspaceMutationResult.Success(workspace);
+    }
+
+    public async Task<OrganizationWorkspaceMembershipResult> SetWorkspaceMembershipAsync(TrustedWorkspaceIdentity identity, Guid organizationId, Guid workspaceId, Guid accountId, WorkspaceRole role, CancellationToken cancellationToken = default)
+    {
+        var access = await ResolveOrganizationAccessAsync(identity, organizationId, OrganizationOperation.ManageWorkspaceMembers, cancellationToken);
+        if (!access.Succeeded)
+            return OrganizationWorkspaceMembershipResult.Denied(access.Failure!.Value);
+
+        if (!await store.WorkspaceBelongsToOrganizationAsync(organizationId, workspaceId, cancellationToken))
+            return OrganizationWorkspaceMembershipResult.Denied(OrganizationWorkspaceFailure.WorkspaceNotFound);
+
+        if (!await store.OrganizationAccountMembershipExistsAsync(organizationId, accountId, cancellationToken))
+            return OrganizationWorkspaceMembershipResult.Denied(OrganizationWorkspaceFailure.TargetAccountNotOrganizationMember);
+
+        var membership = await store.SetWorkspaceMembershipAsync(organizationId, workspaceId, accountId, role, cancellationToken);
+        return OrganizationWorkspaceMembershipResult.Success(membership);
+    }
+
+    public async Task<OrganizationWorkspaceMembershipResult> RemoveWorkspaceMembershipAsync(TrustedWorkspaceIdentity identity, Guid organizationId, Guid workspaceId, Guid accountId, CancellationToken cancellationToken = default)
+    {
+        var access = await ResolveOrganizationAccessAsync(identity, organizationId, OrganizationOperation.ManageWorkspaceMembers, cancellationToken);
+        if (!access.Succeeded)
+            return OrganizationWorkspaceMembershipResult.Denied(access.Failure!.Value);
+
+        if (!await store.WorkspaceBelongsToOrganizationAsync(organizationId, workspaceId, cancellationToken))
+            return OrganizationWorkspaceMembershipResult.Denied(OrganizationWorkspaceFailure.WorkspaceNotFound);
+
+        if (!await store.CanRemoveWorkspaceMembershipAsync(workspaceId, accountId, cancellationToken))
+            return OrganizationWorkspaceMembershipResult.Denied(OrganizationWorkspaceFailure.LastWorkspaceOwner);
+
+        await store.RemoveWorkspaceMembershipAsync(workspaceId, accountId, cancellationToken);
+        return OrganizationWorkspaceMembershipResult.Removed();
+    }
+
+    private async Task<OrganizationAccessResult> ResolveOrganizationAccessAsync(TrustedWorkspaceIdentity identity, Guid organizationId, OrganizationOperation operation, CancellationToken cancellationToken)
+    {
+        var accountContext = await GetOrCreateAsync(identity, cancellationToken);
+        var organization = accountContext.Organizations.SingleOrDefault(x => x.Id == organizationId);
+        if (organization is null)
+            return OrganizationAccessResult.Denied(OrganizationWorkspaceFailure.OrganizationNotAllowed);
+
+        return OrganizationRolePolicy.Allows(organization.Role, operation)
+            ? OrganizationAccessResult.Success(accountContext.Account.Id, organization.Role)
+            : OrganizationAccessResult.Denied(OrganizationWorkspaceFailure.OrganizationRoleNotAllowed);
     }
 }
 
@@ -97,6 +203,17 @@ public interface IAccountWorkspaceStore
     Task AddAccountAsync(Account account, CancellationToken cancellationToken = default);
     Task UpdateExternalIdentitySeenAsync(Guid externalIdentityId, string? displayName, string? email, CancellationToken cancellationToken = default);
     Task<bool> WorkspaceExistsAsync(Guid workspaceId, CancellationToken cancellationToken = default);
+    Task<OrganizationEntitlementSnapshot?> GetLatestOrganizationEntitlementAsync(Guid organizationId, CancellationToken cancellationToken = default);
+    Task<int> ActiveWorkspaceCountAsync(Guid organizationId, CancellationToken cancellationToken = default);
+    Task<bool> OrganizationWorkspaceNameExistsAsync(Guid organizationId, string name, Guid? excludingWorkspaceId, CancellationToken cancellationToken = default);
+    Task<bool> WorkspaceBelongsToOrganizationAsync(Guid organizationId, Guid workspaceId, CancellationToken cancellationToken = default);
+    Task<bool> OrganizationAccountMembershipExistsAsync(Guid organizationId, Guid accountId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<WorkspaceSummary>> ListOrganizationWorkspacesAsync(Guid organizationId, Guid accountId, bool includeAllOrganizationWorkspaces, CancellationToken cancellationToken = default);
+    Task<OrganizationWorkspaceMutationResult> CreateOrganizationWorkspaceAsync(Guid organizationId, Guid creatorAccountId, CreateOrganizationWorkspaceRequest request, CancellationToken cancellationToken = default);
+    Task<WorkspaceSummary?> UpdateOrganizationWorkspaceAsync(Guid organizationId, Guid workspaceId, Guid accountId, UpdateOrganizationWorkspaceRequest request, CancellationToken cancellationToken = default);
+    Task<WorkspaceSummary> SetWorkspaceMembershipAsync(Guid organizationId, Guid workspaceId, Guid accountId, WorkspaceRole role, CancellationToken cancellationToken = default);
+    Task<bool> CanRemoveWorkspaceMembershipAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken = default);
+    Task RemoveWorkspaceMembershipAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken = default);
     Task<WorkspaceEntitlementSnapshot?> GetLatestEntitlementAsync(Guid workspaceId, CancellationToken cancellationToken = default);
     Task<WorkspaceEntitlementSnapshot> SaveEntitlementAsync(WorkspaceEntitlementSnapshot entitlement, CancellationToken cancellationToken = default);
     Task<WorkspaceSourceAddResult> TryAddWorkspaceSourceAsync(Packages.PackageSource source, int maxSources, CancellationToken cancellationToken = default);
@@ -118,15 +235,115 @@ public sealed record ExternalIdentityLookup(Guid ExternalIdentityId, AccountWork
 
 public sealed class AccountWorkspaceConflictException(string message, Exception innerException) : Exception(message, innerException);
 
-public sealed record AccountWorkspaceContext(AccountSummary Account, IReadOnlyList<WorkspaceSummary> Workspaces);
+public sealed partial record AccountWorkspaceContext(AccountSummary Account, IReadOnlyList<WorkspaceSummary> Workspaces);
+
+public sealed partial record AccountWorkspaceContext
+{
+    public IReadOnlyList<OrganizationSummary> Organizations { get; init; } = [];
+}
 
 public sealed record AccountSummary(Guid Id, string? DisplayName, string? Email);
 
-public sealed record WorkspaceSummary(Guid Id, string Name, WorkspaceKind Kind, WorkspaceRole Role);
+public sealed record OrganizationSummary(Guid Id, string Name, OrganizationRole Role);
 
-public sealed record WorkspaceAccess(Guid AccountId, Guid WorkspaceId, WorkspaceRole Role)
+public sealed record WorkspaceSummary(
+    Guid Id,
+    string Name,
+    WorkspaceKind Kind,
+    WorkspaceRole Role,
+    Guid OrganizationId = default,
+    string OrganizationName = "",
+    OrganizationRole OrganizationRole = Elsa.Platform.PackageCatalog.Core.Accounts.OrganizationRole.Member);
+
+public sealed record WorkspaceAccess(
+    Guid AccountId,
+    Guid WorkspaceId,
+    WorkspaceRole Role,
+    Guid OrganizationId = default,
+    OrganizationRole OrganizationRole = Elsa.Platform.PackageCatalog.Core.Accounts.OrganizationRole.Member)
 {
     public bool CanAdministerSources => Role is WorkspaceRole.Owner or WorkspaceRole.SourceAdmin;
+}
+
+public sealed record CreateOrganizationWorkspaceRequest(string Name, IReadOnlyList<InitialWorkspaceMember> InitialMembers);
+
+public sealed record InitialWorkspaceMember(Guid AccountId, WorkspaceRole Role);
+
+public sealed record UpdateOrganizationWorkspaceRequest(string Name, WorkspaceLifecycleStatus Status);
+
+public enum WorkspaceLifecycleStatus
+{
+    Active,
+    Archived
+}
+
+public enum OrganizationOperation
+{
+    CreateWorkspace,
+    ManageWorkspaces,
+    ManageWorkspaceMembers
+}
+
+public enum OrganizationWorkspaceFailure
+{
+    OrganizationNotAllowed,
+    OrganizationRoleNotAllowed,
+    EntitlementRequired,
+    WorkspaceLimitReached,
+    DuplicateWorkspaceName,
+    WorkspaceNotFound,
+    TargetAccountNotOrganizationMember,
+    LastWorkspaceOwner
+}
+
+public sealed record OrganizationAccessResult(Guid? AccountId, OrganizationRole? Role, OrganizationWorkspaceFailure? Failure)
+{
+    public bool Succeeded => AccountId.HasValue && Role.HasValue && Failure is null;
+
+    public static OrganizationAccessResult Success(Guid accountId, OrganizationRole role) => new(accountId, role, null);
+
+    public static OrganizationAccessResult Denied(OrganizationWorkspaceFailure failure) => new(null, null, failure);
+}
+
+public sealed record OrganizationWorkspaceListResult(IReadOnlyList<WorkspaceSummary> Workspaces, OrganizationWorkspaceFailure? Failure)
+{
+    public bool Succeeded => Failure is null;
+
+    public static OrganizationWorkspaceListResult Success(IReadOnlyList<WorkspaceSummary> workspaces) => new(workspaces, null);
+
+    public static OrganizationWorkspaceListResult Denied(OrganizationWorkspaceFailure failure) => new([], failure);
+}
+
+public sealed record OrganizationWorkspaceMutationResult(WorkspaceSummary? Workspace, OrganizationWorkspaceFailure? Failure)
+{
+    public bool Succeeded => Workspace is not null && Failure is null;
+
+    public static OrganizationWorkspaceMutationResult Success(WorkspaceSummary workspace) => new(workspace, null);
+
+    public static OrganizationWorkspaceMutationResult Denied(OrganizationWorkspaceFailure failure) => new(null, failure);
+}
+
+public sealed record OrganizationWorkspaceMembershipResult(WorkspaceSummary? Workspace, bool WasRemoved, OrganizationWorkspaceFailure? Failure)
+{
+    public bool Succeeded => Failure is null;
+
+    public static OrganizationWorkspaceMembershipResult Success(WorkspaceSummary workspace) => new(workspace, false, null);
+
+    public static OrganizationWorkspaceMembershipResult Removed() => new(null, true, null);
+
+    public static OrganizationWorkspaceMembershipResult Denied(OrganizationWorkspaceFailure failure) => new(null, false, failure);
+}
+
+public static class OrganizationRolePolicy
+{
+    public static bool Allows(OrganizationRole role, OrganizationOperation operation) =>
+        operation switch
+        {
+            OrganizationOperation.CreateWorkspace => role is OrganizationRole.Owner or OrganizationRole.Administrator or OrganizationRole.WorkspaceCreator,
+            OrganizationOperation.ManageWorkspaces => role is OrganizationRole.Owner or OrganizationRole.Administrator,
+            OrganizationOperation.ManageWorkspaceMembers => role is OrganizationRole.Owner or OrganizationRole.Administrator,
+            _ => false
+        };
 }
 
 public sealed record WorkspaceSourceAddResult(WorkspaceSourceAddStatus Status);

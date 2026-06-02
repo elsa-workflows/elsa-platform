@@ -112,4 +112,4 @@ A workspace member can see whether the selected engine is unverified, verifying,
 - The first implementation may use a deterministic verification/probe adapter suitable for local and automated tests; production engine-specific probe details can be extended later behind the same contract.
 - Heartbeat authentication can initially reuse trusted platform/workspace API authorization patterns available in the repository; long-lived runtime-issued heartbeat credentials are a future hardening slice unless already available locally.
 - Live deployment apply, live observability provider queries, live drift detection, runtime instance state inspection, and provider-specific cloud health checks are out of scope.
-- The outer tenant boundary remains the workspace; future runtime tenant overlays do not replace workspace ownership.
+- Workspace remains the engine/environment resource isolation boundary; `specs/031-organization-tenancy` makes Organization the customer tenant boundary above it.

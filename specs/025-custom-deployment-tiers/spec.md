@@ -8,6 +8,8 @@
 
 **Input**: User description: "Allow workspace admins to configure custom deployment tiers composed from stable coded capabilities, replacing the fixed EnvironmentTier enum semantics with user-defined tier definitions analogous to roles and permissions."
 
+> **Forward compatibility note**: `specs/031-organization-tenancy` places workspaces under organizations. This feature's tier definitions remain workspace-owned; organization-wide shared tier catalogs are still deferred.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Configure Workspace Tiers (Priority: P1)

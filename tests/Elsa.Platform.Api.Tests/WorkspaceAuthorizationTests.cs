@@ -6,6 +6,7 @@ using Elsa.Platform.PackageCatalog.Core.Packages;
 using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
 using Elsa.Platform.RuntimeBuilder.Abstractions;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Elsa.Platform.Api.Tests;
@@ -95,10 +96,17 @@ public sealed class WorkspaceAuthorizationTests
             DisplayName = subject,
             Email = $"{subject}@example.test"
         });
+        var workspace = await db.Workspaces.SingleAsync(x => x.Id == workspaceId);
+        account.OrganizationMemberships.Add(new OrganizationMembership
+        {
+            Account = account,
+            OrganizationId = workspace.OrganizationId,
+            Role = OrganizationRole.Member
+        });
         account.Memberships.Add(new WorkspaceMembership
         {
             Account = account,
-            WorkspaceId = workspaceId,
+            Workspace = workspace,
             Role = role
         });
         db.Accounts.Add(account);

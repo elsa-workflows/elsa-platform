@@ -10,6 +10,8 @@ Add workspace-scoped engine verification and heartbeat metadata for deployment e
 
 This slice stays inside the deployment UX PRD: it updates persisted control-plane metadata only. It does not implement real deployment apply, runtime instance inspection, live drift detection, or telemetry provider integrations.
 
+> **Forward compatibility note**: `specs/031-organization-tenancy` adds Organization as the customer tenant above the workspace/environment engine records described here.
+
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console.
@@ -26,7 +28,7 @@ This slice stays inside the deployment UX PRD: it updates persisted control-plan
 
 **Performance Goals**: Cockpit projection remains under the existing 3-second normal dataset target. Manual verification should complete within a bounded request timeout and never block cockpit reads. Heartbeat updates should be a single-engine metadata mutation.
 
-**Constraints**: Workspace remains the outer tenant boundary. Deployment core must not depend on API, UI, catalog persistence, hosting, or provider SDK internals. Raw secrets, provider tokens, and engine credentials must not appear in responses, console state, desired-state records, verification diagnostics, or audit/history records. Runtime controls fail closed while an engine is unreachable. Live deployment apply, runtime instance state, live observability pulls, and live drift detection remain out of scope.
+**Constraints**: Workspace remains the engine/environment resource isolation boundary, and `specs/031-organization-tenancy` makes Organization the customer tenant boundary above it. Deployment core must not depend on API, UI, catalog persistence, hosting, or provider SDK internals. Raw secrets, provider tokens, and engine credentials must not appear in responses, console state, desired-state records, verification diagnostics, or audit/history records. Runtime controls fail closed while an engine is unreachable. Live deployment apply, runtime instance state, live observability pulls, and live drift detection remain out of scope.
 
 **Scale/Scope**: One platform API host, many workspaces, and many workflow applications/environments/engines. This slice updates one engine per verification or heartbeat request and reuses the existing deployment cockpit response.
 

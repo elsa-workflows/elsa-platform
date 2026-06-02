@@ -10,6 +10,8 @@ Replace the seeded deployment cockpit with durable workspace deployment function
 
 The API exposes authorized workspace routes for setup, cockpit, promotion preview, deploy, rollback, and controls. The existing deployment contracts and engine packages remain dependency-light sibling subsystems; API, persistence, worker, and console adapters compose them through service contracts.
 
+> **Forward compatibility note**: `specs/031-organization-tenancy` places these workspace-owned deployment records under an owning Organization tenant. Workspace remains the deployment resource isolation boundary.
+
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence/worker; TypeScript/React for the hosted console.
@@ -26,7 +28,7 @@ The API exposes authorized workspace routes for setup, cockpit, promotion previe
 
 **Performance Goals**: Cockpit load for a normal workspace with up to 25 applications, 100 environments, 200 engines, 250 recent history events, observability metadata, and drift metadata should complete with bounded database queries and return in under 3 seconds in the integration test environment. Queue polling must avoid hot loops and process at most one active run per target environment at a time.
 
-**Constraints**: Workspace remains the outer tenant boundary. Deployment engine/core packages must not depend on API, UI, catalog persistence, hosting, or provider SDK internals. Raw secrets, provider tokens, and engine credentials must not appear in customer responses, desired-state records, console state, or audit/history records. Only one active deployment run may mutate a target environment at a time. Runtime workflow instance state and live telemetry provider queries are out of scope.
+**Constraints**: Workspace remains the deployment resource isolation boundary, and `specs/031-organization-tenancy` makes Organization the customer tenant boundary above it. Deployment engine/core packages must not depend on API, UI, catalog persistence, hosting, or provider SDK internals. Raw secrets, provider tokens, and engine credentials must not appear in customer responses, desired-state records, console state, or audit/history records. Only one active deployment run may mutate a target environment at a time. Runtime workflow instance state and live telemetry provider queries are out of scope.
 
 **Scale/Scope**: First durable workspace deployment slice for one platform API host, many workspaces, and many workflow applications/environments per workspace. Provider-specific cloud adapters, GitOps/OCI promotion, manifest/artifact import/export, signatures, external approval workflows, live observability pulls, and runtime tenant overlays remain deferred.
 

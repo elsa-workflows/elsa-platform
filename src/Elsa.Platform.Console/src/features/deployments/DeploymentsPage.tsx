@@ -26,7 +26,6 @@ import {
   getDeploymentPermissions,
   getDeploymentTierCapabilities,
   getDeploymentTiers,
-  getDeploymentWorkspaceContext,
   previewPromotion,
   queueDeploymentRun,
   queueRollbackRun,
@@ -62,6 +61,7 @@ import { formatDateTime } from "@/lib/formatters";
 import { queryKeys } from "@/lib/query/queryClient";
 import { statusToneClass, type StatusTone } from "@/lib/status/statusBadges";
 import { cn } from "@/lib/utils";
+import { useWorkspaceContext } from "@/app/WorkspaceContextProvider";
 
 type ViewId = "fleet" | "engine" | "promotion" | "governance" | "tiers" | "assistant";
 
@@ -76,9 +76,8 @@ const views: Array<{ id: ViewId; label: string }> = [
 
 export function DeploymentsPage() {
   const queryClient = useQueryClient();
-  const workspaceContext = useQuery({ queryKey: queryKeys.deploymentWorkspaceContext, queryFn: getDeploymentWorkspaceContext });
-  // TODO: support workspace selection when users have multiple workspace memberships.
-  const workspaceId = workspaceContext.data?.workspaces[0]?.id ?? "";
+  const workspaceContext = useWorkspaceContext();
+  const workspaceId = workspaceContext.selectedWorkspaceId;
   const permissions = useQuery({
     queryKey: queryKeys.deploymentPermissions(workspaceId),
     queryFn: () => getDeploymentPermissions(workspaceId),
@@ -314,7 +313,7 @@ export function DeploymentsPage() {
   const canExecuteRollback = Boolean(permissions.data?.permissions.includes("deployments.rollback.execute"));
   const canExecuteControls = Boolean(permissions.data?.permissions.includes("deployments.controls.execute"));
   const targetAllowsRollback = hasTierCapability(getEnvironment(targetEnvironmentId), deploymentTierCapabilities.rollbackEnabled);
-  const canManageTiers = workspaceContext.data?.workspaces[0]?.role === "Owner";
+  const canManageTiers = workspaceContext.selectedWorkspace?.role === "Owner";
   const deploymentTiers = tiers.data?.tiers ?? [];
   const activeDeploymentTiers = deploymentTiers.filter((tier) => tier.status === "Active");
   const capabilities = tierCapabilities.data?.capabilities ?? [];
@@ -338,7 +337,7 @@ export function DeploymentsPage() {
   if (workspaceContext.isLoading || cockpit.isLoading) return <RequestStateView state="loading" title="Loading deployments" />;
   if (workspaceContext.isError) return <RequestStateView state="unexpected" title="Workspace context could not load" />;
   if (!workspaceId) {
-    return <RequestStateView state="empty" title="No workspace selected" description="Sign in with a workspace membership to view deployments." />;
+    return <RequestStateView state="empty" title="No workspace selected" description="Select an organization workspace to view deployments." />;
   }
   if (cockpit.isError || !data) {
     return <RequestStateView state="unexpected" title="Deployments could not load" />;
@@ -416,7 +415,7 @@ export function DeploymentsPage() {
           </Button>
           <div className="rounded-ui border border-border bg-surface px-3 py-2 text-xs text-muted-foreground">
             <div className="font-medium text-foreground">{selectedApplication.workspaceName}</div>
-            <div>Workspace tenant boundary</div>
+            <div>Workspace under {workspaceContext.selectedOrganization?.name ?? "organization"}</div>
           </div>
         </div>
       </div>

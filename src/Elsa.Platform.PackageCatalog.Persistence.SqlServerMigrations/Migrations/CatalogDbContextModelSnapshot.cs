@@ -93,6 +93,181 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                     b.ToTable("ExternalIdentities");
                 });
 
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Accounts.Organization", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("ArchivedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("CreatedByAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CustomerReference")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Organizations");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Accounts.OrganizationAuditRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid?>("ActorAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("OperatorSubject")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<string>("TargetId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("TargetType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "CreatedAt");
+
+                    b.ToTable("OrganizationAuditRecords");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Accounts.OrganizationEntitlementSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("CanCreateCustomSources")
+                        .HasColumnType("bit");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("DeploymentTargetsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ManagedHostingEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("MaxPackagesIndexed")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MaxSources")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MaxSyncsPerDay")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MaxVersionsPerPackage")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MaxWorkspaces")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("PrivateFeedsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<long>("SyncedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId")
+                        .IsUnique();
+
+                    b.ToTable("OrganizationEntitlementSnapshots");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Accounts.OrganizationMembership", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("DisabledAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("InvitedByAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("OrganizationId", "AccountId")
+                        .IsUnique();
+
+                    b.ToTable("OrganizationMemberships");
+                });
+
             modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Accounts.Workspace", b =>
                 {
                     b.Property<Guid>("Id")
@@ -110,6 +285,9 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset?>("SoftDeletedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -117,6 +295,8 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                         .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "SoftDeletedAt", "Name");
 
                     b.ToTable("Workspaces");
                 });
@@ -1948,6 +2128,58 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                     b.Navigation("Account");
                 });
 
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Accounts.OrganizationAuditRecord", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Organization", "Organization")
+                        .WithMany("AuditRecords")
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Accounts.OrganizationEntitlementSnapshot", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Organization", "Organization")
+                        .WithMany("EntitlementSnapshots")
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Accounts.OrganizationMembership", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Account", "Account")
+                        .WithMany("OrganizationMemberships")
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Organization", "Organization")
+                        .WithMany("Memberships")
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Account");
+
+                    b.Navigation("Organization");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Accounts.Workspace", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Organization", "Organization")
+                        .WithMany("Workspaces")
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+                });
+
             modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Accounts.WorkspaceEntitlementSnapshot", b =>
                 {
                     b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Workspace", "Workspace")
@@ -2300,6 +2532,19 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                     b.Navigation("ExternalIdentities");
 
                     b.Navigation("Memberships");
+
+                    b.Navigation("OrganizationMemberships");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Accounts.Organization", b =>
+                {
+                    b.Navigation("AuditRecords");
+
+                    b.Navigation("EntitlementSnapshots");
+
+                    b.Navigation("Memberships");
+
+                    b.Navigation("Workspaces");
                 });
 
             modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Accounts.Workspace", b =>

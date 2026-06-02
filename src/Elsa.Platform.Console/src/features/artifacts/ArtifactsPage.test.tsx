@@ -3,8 +3,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { WorkspaceContextProvider } from "@/app/WorkspaceContextProvider";
 import { ArtifactsPage } from "@/features/artifacts/ArtifactsPage";
 import type { WorkspaceArtifact, WorkspaceArtifactListResponse } from "@/features/artifacts/artifactModels";
+import { AuthProvider } from "@/lib/auth/AuthProvider";
 
 describe("ArtifactsPage", () => {
   afterEach(() => {
@@ -62,7 +64,11 @@ function renderArtifacts(response: WorkspaceArtifactListResponse = { items: [art
   vi.stubGlobal("fetch", fetchMock);
   render(
     <TestQueryProvider>
-      <ArtifactsPage />
+      <AuthProvider>
+        <WorkspaceContextProvider>
+          <ArtifactsPage />
+        </WorkspaceContextProvider>
+      </AuthProvider>
     </TestQueryProvider>
   );
   return fetchMock;
@@ -73,12 +79,10 @@ function createFetchMock(initial: WorkspaceArtifactListResponse) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : input.toString();
     const method = init?.method ?? (input instanceof Request ? input.method : "GET");
-    if (url.endsWith("/api/me/workspaces")) {
-      return jsonResponse({
-        account: { id: "account-1", displayName: "Test User", email: "test@example.com" },
-        workspaces: [{ id: workspaceId, name: "Acme Insurance", kind: "Personal", role: "Owner" }]
-      });
-    }
+    if (url.endsWith("/api/auth/session"))
+      return jsonResponse({ loginEnabled: true, authenticated: true, displayName: "Test User", email: "test@example.com", loginPath: "/api/auth/login", logoutPath: "/api/auth/logout" });
+    if (url.endsWith("/api/me/organizations"))
+      return jsonResponse(workspaceContextFixture());
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/permissions`)) {
       return jsonResponse({ permissions: ["deployments.read", "deployments.setup.manage"] });
     }
@@ -146,6 +150,16 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
+function workspaceContextFixture() {
+  return {
+    account: { id: "account-1", displayName: "Test User", email: "test@example.com" },
+    organizations: [{ id: organizationId, name: "Acme Corp", role: "Owner" }],
+    workspaces: [
+      { id: workspaceId, name: "Acme Insurance", kind: "Shared", role: "Owner", organizationId, organizationName: "Acme Corp", organizationRole: "Owner" }
+    ]
+  };
+}
+
 function TestQueryProvider({ children }: { children: ReactNode }) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -157,6 +171,7 @@ function TestQueryProvider({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
 
+const organizationId = "00000000-0000-0000-0000-000000000001";
 const workspaceId = "00000000-0000-0000-0000-000000000010";
 
 const artifactFixture: WorkspaceArtifact = {

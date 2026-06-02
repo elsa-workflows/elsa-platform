@@ -10,6 +10,8 @@ Replace the fixed deployment environment tier enum with workspace-owned tier def
 
 Deployment Core owns the tier domain model and capability semantics. The existing catalog EF persistence adapter stores workspace-owned tier definitions and assignments. The Platform API exposes authorized tier-management and environment-assignment routes. The console adds tier management for workspace admins and switches deployment environment setup/editing from fixed enum choices to active workspace tiers.
 
+> **Forward compatibility note**: `specs/031-organization-tenancy` adds Organization above Workspace. This plan remains scoped to workspace-owned tier definitions and does not introduce organization-shared tier catalogs.
+
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console.
@@ -26,7 +28,7 @@ Deployment Core owns the tier domain model and capability semantics. The existin
 
 **Performance Goals**: Cockpit and tier settings load for a normal workspace with 20 tiers, 250 environments, and existing deployment cockpit data should complete with bounded queries and return in under 3 seconds in the integration test environment.
 
-**Constraints**: Workspace remains the tenant boundary. Deployment core remains persistence- and hosting-free. Tier capabilities are stable platform-defined semantics, not workspace-created strings. Existing deployment environments, history, promotion previews, and cockpit visibility must remain readable during migration. No raw secrets, provider tokens, or engine credentials may appear in tier records, responses, or audit entries.
+**Constraints**: Workspace remains the tier and environment resource isolation boundary, and `specs/031-organization-tenancy` makes Organization the customer tenant boundary above it. Deployment core remains persistence- and hosting-free. Tier capabilities are stable platform-defined semantics, not workspace-created strings. Existing deployment environments, history, promotion previews, and cockpit visibility must remain readable during migration. No raw secrets, provider tokens, or engine credentials may appear in tier records, responses, or audit entries.
 
 **Scale/Scope**: Workspace-level tier definition and assignment model for many workspaces and many environments. External approval systems, organization-wide shared tier catalogs, per-tenant runtime overlays, and advanced policy authoring remain deferred.
 

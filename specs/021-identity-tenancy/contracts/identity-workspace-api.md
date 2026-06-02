@@ -2,6 +2,8 @@
 
 This contract documents externally visible behavior for customer identity, workspace context, and workspace authorization.
 
+> **Forward compatibility note**: `specs/031-organization-tenancy/contracts/organization-workspace-api.md` adds organization-aware context and workspace-management routes. Existing workspace routes remain compatibility surfaces during the transition.
+
 ## Accepted Customer Identity Contexts
 
 - A valid JWT/OIDC identity token with trusted issuer, audience, expiration, and subject.

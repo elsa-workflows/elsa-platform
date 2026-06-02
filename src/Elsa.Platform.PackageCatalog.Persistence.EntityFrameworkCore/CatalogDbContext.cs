@@ -20,6 +20,10 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     public DbSet<SyncRunItem> SyncRunItems => Set<SyncRunItem>();
     public DbSet<Account> Accounts => Set<Account>();
     public DbSet<ExternalIdentity> ExternalIdentities => Set<ExternalIdentity>();
+    public DbSet<Organization> Organizations => Set<Organization>();
+    public DbSet<OrganizationMembership> OrganizationMemberships => Set<OrganizationMembership>();
+    public DbSet<OrganizationEntitlementSnapshot> OrganizationEntitlementSnapshots => Set<OrganizationEntitlementSnapshot>();
+    public DbSet<OrganizationAuditRecord> OrganizationAuditRecords => Set<OrganizationAuditRecord>();
     public DbSet<Workspace> Workspaces => Set<Workspace>();
     public DbSet<WorkspaceMembership> WorkspaceMemberships => Set<WorkspaceMembership>();
     public DbSet<WorkspaceEntitlementSnapshot> WorkspaceEntitlementSnapshots => Set<WorkspaceEntitlementSnapshot>();
@@ -60,6 +64,10 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.SyncRunItemConfiguration());
         modelBuilder.ApplyConfiguration(new Models.AccountConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ExternalIdentityConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.OrganizationConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.OrganizationMembershipConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.OrganizationEntitlementSnapshotConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.OrganizationAuditRecordConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WorkspaceConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WorkspaceMembershipConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WorkspaceEntitlementSnapshotConfiguration());
@@ -86,5 +94,38 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.DeploymentCommandWebhookNotificationConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ObservabilityBindingConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DriftReportItemConfiguration());
+    }
+
+    public override int SaveChanges()
+    {
+        EnsureOrganizationsForNewWorkspaces();
+        return base.SaveChanges();
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureOrganizationsForNewWorkspaces();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    private void EnsureOrganizationsForNewWorkspaces()
+    {
+        var workspaceEntries = ChangeTracker.Entries<Workspace>()
+            .Where(x => x.State == EntityState.Added)
+            .ToList();
+
+        foreach (var entry in workspaceEntries)
+        {
+            if (entry.Entity.Organization is not null || entry.Entity.OrganizationId != Guid.Empty)
+                continue;
+
+            var organizationId = Guid.NewGuid();
+            entry.Entity.OrganizationId = organizationId;
+            Organizations.Add(new Organization
+            {
+                Id = organizationId,
+                Name = string.IsNullOrWhiteSpace(entry.Entity.Name) ? "Workspace Organization" : entry.Entity.Name
+            });
+        }
     }
 }

@@ -24,7 +24,7 @@ Upgrade the artifact registry from metadata-only records toward a shared typed a
 
 **Performance Goals**: Artifact list/detail APIs continue to load a normal workspace with 250 artifacts in under 3 seconds in the integration test environment.
 
-**Constraints**: Workspace remains the tenant boundary. Platform core validates envelope shape, registered type IDs, digests, safe metadata, and references but does not interpret workflow payload internals. Catalog persistence never stores raw payloads, workflow definitions, manifest JSON, credentials, tokens, connection strings, or secret values.
+**Constraints**: Workspace remains the artifact resource isolation boundary, and `specs/031-organization-tenancy` makes Organization the customer tenant boundary above it. Platform core validates envelope shape, registered type IDs, digests, safe metadata, and references but does not interpret workflow payload internals. Catalog persistence never stores raw payloads, workflow definitions, manifest JSON, credentials, tokens, connection strings, or secret values.
 
 **Scale/Scope**: Envelope upgrade for the existing hosted artifact registry. Studio submit UX, runtime command sync, workflow runtime application, OCI storage, signing, and object storage upload are later slices.
 

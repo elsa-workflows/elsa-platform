@@ -11,9 +11,10 @@ import {
   registerWorkspaceArtifact
 } from "@/features/artifacts/artifactApi";
 import type { WorkspaceArtifact, WorkspaceArtifactRegistrationRequest } from "@/features/artifacts/artifactModels";
-import { getDeploymentPermissions, getDeploymentWorkspaceContext } from "@/features/deployments/deploymentApi";
+import { getDeploymentPermissions } from "@/features/deployments/deploymentApi";
 import { formatDateTime } from "@/lib/formatters";
 import { queryKeys } from "@/lib/query/queryClient";
+import { useWorkspaceContext } from "@/app/WorkspaceContextProvider";
 
 const layoutVersion = "platform.elsa.io/deployment-artifact/v1alpha1";
 const envelopeVersion = "platform.elsa.io/artifact-envelope/v1alpha1";
@@ -23,8 +24,8 @@ export function ArtifactsPage() {
   const queryClient = useQueryClient();
   const [selectedArtifactId, setSelectedArtifactId] = useState("");
   const [showRegister, setShowRegister] = useState(false);
-  const workspaceContext = useQuery({ queryKey: queryKeys.deploymentWorkspaceContext, queryFn: getDeploymentWorkspaceContext });
-  const workspaceId = workspaceContext.data?.workspaces[0]?.id ?? "";
+  const workspaceContext = useWorkspaceContext();
+  const workspaceId = workspaceContext.selectedWorkspaceId;
   const permissions = useQuery({
     queryKey: queryKeys.deploymentPermissions(workspaceId),
     queryFn: () => getDeploymentPermissions(workspaceId),
@@ -76,7 +77,7 @@ export function ArtifactsPage() {
   if (workspaceContext.isLoading || artifacts.isLoading)
     return <RequestStateView state="loading" title="Loading artifacts" />;
   if (!workspaceId)
-    return <EmptyState title="No workspaces available" description="Artifacts need a workspace before registry metadata can be shown." />;
+    return <EmptyState title="No workspace selected" description="Select an organization workspace before registry metadata can be shown." />;
   if (workspaceContext.isError || artifacts.isError)
     return <RequestStateView state="unexpected" title="Artifacts could not load" />;
 

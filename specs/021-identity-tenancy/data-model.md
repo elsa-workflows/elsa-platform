@@ -1,5 +1,7 @@
 # Data Model: Identity And Workspace Tenancy
 
+> **Forward compatibility note**: `specs/031-organization-tenancy` extends this model with `Organization`, `OrganizationMembership`, and organization-scoped entitlements. The `Workspace` model remains valid as an operational boundary but is no longer the root customer tenant boundary.
+
 ## TrustedIdentityContext
 
 Represents a verified customer sign-in or trusted server-to-server user context.
@@ -80,7 +82,7 @@ Validation:
 
 ## Workspace
 
-Primary tenant boundary for customer-owned platform data.
+Primary resource boundary for customer-owned platform data in this slice; `specs/031-organization-tenancy` adds Organization as the root customer tenant boundary.
 
 Fields:
 
