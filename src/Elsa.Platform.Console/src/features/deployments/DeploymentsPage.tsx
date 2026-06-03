@@ -11,12 +11,14 @@ import {
   RadioTower,
   RefreshCw,
   Save,
+  Settings2,
   ShieldCheck,
   XCircle
 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Badge, Button, Input, SecondaryButton, Select, Table } from "@/components/ui";
+import { Link } from "react-router-dom";
+import { Badge, Button, buttonClassName, Input, SecondaryButton, Select, Table } from "@/components/ui";
 import { RequestStateView } from "@/components/states/RequestStateViews";
 import {
   createDeploymentApplication,
@@ -24,7 +26,6 @@ import {
   createActionConfirmation,
   getDeploymentCockpit,
   getDeploymentPermissions,
-  getDeploymentTierCapabilities,
   getDeploymentTiers,
   previewPromotion,
   queueDeploymentRun,
@@ -36,8 +37,13 @@ import {
   updateDeploymentEnvironment,
   verifyDeploymentEngine
 } from "@/features/deployments/deploymentApi";
-import { DeploymentSetupPanel, setupEngineRequest, type DeploymentSetupValues } from "@/features/deployments/DeploymentSetupPanel";
-import { DeploymentTiersPanel } from "@/features/deployments/DeploymentTiersPanel";
+import {
+  CredentialReferenceInput,
+  DeploymentSetupPanel,
+  setupEngineRequest,
+  type CredentialReferenceOption,
+  type DeploymentSetupValues
+} from "@/features/deployments/DeploymentSetupPanel";
 import { DeploymentRunsPanel } from "@/features/deployments/DeploymentRunsPanel";
 import { PromotionPreviewPanel } from "@/features/deployments/PromotionPreviewPanel";
 import { RuntimeControlsPanel } from "@/features/deployments/RuntimeControlsPanel";
@@ -63,14 +69,20 @@ import { statusToneClass, type StatusTone } from "@/lib/status/statusBadges";
 import { cn } from "@/lib/utils";
 import { useWorkspaceContext } from "@/app/WorkspaceContextProvider";
 
-type ViewId = "fleet" | "engine" | "promotion" | "governance" | "tiers" | "assistant";
+type ViewId = "fleet" | "engine" | "promotion" | "governance" | "assistant";
+type SetupMode = "application" | "environment" | null;
+type EnvironmentEditValues = {
+  name: string;
+  tierId: string | null;
+  tier: EnvironmentSummary["tier"];
+  engine?: WorkflowEngineRegistration;
+};
 
 const views: Array<{ id: ViewId; label: string }> = [
   { id: "fleet", label: "Environments" },
   { id: "engine", label: "Engine Registration" },
   { id: "promotion", label: "Promotion Diff" },
   { id: "governance", label: "Observability" },
-  { id: "tiers", label: "Tiers" },
   { id: "assistant", label: "Assistant Review" }
 ];
 
@@ -93,28 +105,23 @@ export function DeploymentsPage() {
     queryFn: () => getDeploymentTiers(workspaceId),
     enabled: Boolean(workspaceId)
   });
-  const tierCapabilities = useQuery({
-    queryKey: queryKeys.deploymentTierCapabilities(workspaceId),
-    queryFn: () => getDeploymentTierCapabilities(workspaceId),
-    enabled: Boolean(workspaceId)
-  });
   const refreshDeploymentCockpit = () => queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
   const setup = useMutation({
-    mutationFn: async (values: DeploymentSetupValues) => {
-      const application = await createDeploymentApplication(workspaceId, {
+    mutationFn: async ({ applicationId, values }: { applicationId?: string; values: DeploymentSetupValues }) => {
+      const targetApplicationId = applicationId ?? (await createDeploymentApplication(workspaceId, {
         name: values.applicationName,
         description: null
-      });
-      const environment = await createDeploymentEnvironment(workspaceId, application.id, {
+      })).id;
+      const environment = await createDeploymentEnvironment(workspaceId, targetApplicationId, {
         name: values.environmentName,
         tier: values.environmentTier,
-        tierId: activeDeploymentTiers.some((tier) => tier.id === values.environmentTierId) ? values.environmentTierId : null
+        tierId: values.environmentTierId
       });
       await registerDeploymentEngine(workspaceId, environment.id, setupEngineRequest(values));
     },
     onSuccess: () => {
       void refreshDeploymentCockpit();
-      setShowNewSetup(false);
+      setSetupMode(null);
     }
   });
   const updateApplication = useMutation({
@@ -126,19 +133,32 @@ export function DeploymentsPage() {
     }
   });
   const updateEnvironment = useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       applicationId,
       environmentId,
-      name,
-      tierId,
-      tier
+      values
     }: {
       applicationId: string;
       environmentId: string;
-      name: string;
-      tierId: string | null;
-      tier: EnvironmentSummary["tier"];
-    }) => updateDeploymentEnvironment(workspaceId, applicationId, environmentId, { name, tier, tierId }),
+      values: EnvironmentEditValues;
+    }) => {
+      await updateDeploymentEnvironment(workspaceId, applicationId, environmentId, {
+        name: values.name,
+        tier: values.tier,
+        tierId: values.tierId
+      });
+      if (!values.engine) return;
+      await updateDeploymentEngine(workspaceId, values.engine.id, {
+        name: values.engine.name,
+        baseUrl: values.engine.endpoint.baseUrl,
+        region: values.engine.endpoint.region || null,
+        credentialProvider: values.engine.credentialReference.provider,
+        credentialReference: values.engine.credentialReference.reference,
+        capabilities: values.engine.capabilities,
+        controls: values.engine.controls,
+        hostingProvider: values.engine.hostingProvider
+      });
+    },
     onSuccess: () => {
       setEditingEnvironmentId("");
       void refreshDeploymentCockpit();
@@ -256,7 +276,7 @@ export function DeploymentsPage() {
     }
   });
   const [activeView, setActiveView] = useState<ViewId>("fleet");
-  const [showNewSetup, setShowNewSetup] = useState(false);
+  const [setupMode, setSetupMode] = useState<SetupMode>(null);
   const [editingApplication, setEditingApplication] = useState(false);
   const [editingEnvironmentId, setEditingEnvironmentId] = useState("");
   const [editingEngine, setEditingEngine] = useState(false);
@@ -272,22 +292,25 @@ export function DeploymentsPage() {
 
   const data = cockpit.data;
   const selectedApplication = data?.applications.find((application) => application.id === selectedApplicationId) ?? data?.applications[0];
+  const selectedApplicationEnvironmentIds = useMemo(
+    () => new Set(selectedApplication?.environments.map((environment) => environment.id) ?? []),
+    [selectedApplication?.environments]
+  );
   const selectedEnvironment =
     selectedApplication?.environments.find((environment) => environment.id === selectedEnvironmentId) ?? selectedApplication?.environments[0];
   const selectedEngine =
-    data?.engines.find((engine) => engine.id === selectedEngineId && (!selectedEnvironment || engine.environmentId === selectedEnvironment.id)) ??
-    data?.engines.find((engine) => engine.environmentId === selectedEnvironment?.id) ??
-    data?.engines[0];
+    data?.engines.find((engine) => engine.id === selectedEngineId && selectedApplicationEnvironmentIds.has(engine.environmentId)) ??
+    data?.engines.find((engine) => engine.environmentId === selectedEnvironment?.id);
 
   useEffect(() => {
     if (!data) return;
 
     const application = data.applications.find((item) => item.id === selectedApplicationId) ?? data.applications[0];
     const environment = application?.environments.find((item) => item.id === selectedEnvironmentId) ?? application?.environments[0];
+    const applicationEnvironmentIds = new Set(application?.environments.map((item) => item.id) ?? []);
     const engine =
-      data.engines.find((item) => item.id === selectedEngineId && (!environment || item.environmentId === environment.id)) ??
-      data.engines.find((item) => item.environmentId === environment?.id) ??
-      data.engines[0];
+      data.engines.find((item) => item.id === selectedEngineId && applicationEnvironmentIds.has(item.environmentId)) ??
+      data.engines.find((item) => item.environmentId === environment?.id);
     const nextComparison = data.comparisons.find(
       (item) => item.sourceEnvironmentId === sourceEnvironmentId && item.targetEnvironmentId === targetEnvironmentId
     ) ?? data.comparisons[0];
@@ -313,10 +336,9 @@ export function DeploymentsPage() {
   const canExecuteRollback = Boolean(permissions.data?.permissions.includes("deployments.rollback.execute"));
   const canExecuteControls = Boolean(permissions.data?.permissions.includes("deployments.controls.execute"));
   const targetAllowsRollback = hasTierCapability(getEnvironment(targetEnvironmentId), deploymentTierCapabilities.rollbackEnabled);
-  const canManageTiers = workspaceContext.selectedWorkspace?.role === "Owner";
   const deploymentTiers = tiers.data?.tiers ?? [];
   const activeDeploymentTiers = deploymentTiers.filter((tier) => tier.status === "Active");
-  const capabilities = tierCapabilities.data?.capabilities ?? [];
+  const credentialOptions = useMemo(() => credentialReferenceOptions(data?.engines ?? []), [data?.engines]);
 
   function getEnvironment(environmentId: string) {
     return data?.applications.flatMap((application) => application.environments).find((environment) => environment.id === environmentId);
@@ -353,14 +375,16 @@ export function DeploymentsPage() {
         <DeploymentSetupPanel
           canManageSetup={canManageSetup}
           tiers={activeDeploymentTiers}
+          tiersLoading={tiers.isLoading}
+          credentialOptions={credentialOptions}
           isSubmitting={setup.isPending}
           error={setup.error instanceof Error ? setup.error.message : undefined}
-          onSubmit={(values) => setup.mutate(values)}
+          onSubmit={(values) => setup.mutate({ values })}
         />
       </section>
     );
   }
-  if (!selectedApplication || !selectedEngine) {
+  if (!selectedApplication) {
     return <RequestStateView state="unexpected" title="Deployments could not load" />;
   }
 
@@ -387,185 +411,300 @@ export function DeploymentsPage() {
         <div>
           <h1 className="text-xl font-semibold">Deployments</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Workspace-scoped environment cockpit for workflow applications, engine registrations, desired-state promotion, observability, and assistant plan approvals.
+            Manage workflow applications, environments, engine registrations, promotion previews, observability, and assistant plan approvals for the selected workspace.
           </p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_auto_auto]">
-          <label className="text-xs font-medium text-muted-foreground">
-            Workflow application
-            <Select
-              className="mt-1 w-full"
-              value={selectedApplication.id}
-              onChange={(event) => selectApplication(event.target.value)}
-            >
-              {data.applications.map((application) => (
-                <option key={application.id} value={application.id}>
-                  {application.name}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <SecondaryButton className="mt-5 h-9" disabled={!canManageSetup} onClick={() => setEditingApplication((current) => !current)}>
+        <div className="flex flex-wrap gap-2">
+          <SecondaryButton disabled={!canManageSetup} onClick={() => setSetupMode((current) => current === "application" ? null : "application")}>
+            <Plus className="h-4 w-4" />
+            New application
+          </SecondaryButton>
+          <Link to="/admin/deployments/tiers" className={buttonClassName("secondary")}>
+            <Settings2 className="h-4 w-4" />
+            Workspace tiers
+          </Link>
+        </div>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <ApplicationRail
+          applications={data.applications}
+          engines={data.engines}
+          selectedApplicationId={selectedApplication.id}
+          workspaceName={selectedApplication.workspaceName}
+          organizationName={workspaceContext.selectedOrganization?.name ?? "organization"}
+          onSelectApplication={selectApplication}
+        />
+        <div className="space-y-4">
+          <SelectedApplicationHeader
+            application={selectedApplication}
+            engines={data.engines}
+            canManageSetup={canManageSetup}
+            onEditApplication={() => setEditingApplication((current) => !current)}
+            onAddEnvironment={() => setSetupMode((current) => current === "environment" ? null : "environment")}
+          />
+
+          {setupMode ? (
+            <DeploymentSetupPanel
+              fixedApplicationName={setupMode === "environment" ? selectedApplication.name : undefined}
+              canManageSetup={canManageSetup}
+              tiers={activeDeploymentTiers}
+              tiersLoading={tiers.isLoading}
+              credentialOptions={credentialOptions}
+              isSubmitting={setup.isPending}
+              error={setup.error instanceof Error ? setup.error.message : undefined}
+              submitLabel={setupMode === "environment" ? "Add environment" : "Create setup"}
+              onSubmit={(values) => setup.mutate({ applicationId: setupMode === "environment" ? selectedApplication.id : undefined, values })}
+            />
+          ) : null}
+          {editingApplication ? (
+            <ApplicationEditPanel
+              key={selectedApplication.id}
+              application={selectedApplication}
+              isSubmitting={updateApplication.isPending}
+              error={updateApplication.error instanceof Error ? updateApplication.error.message : undefined}
+              onCancel={() => setEditingApplication(false)}
+              onSubmit={(name) => updateApplication.mutate({ applicationId: selectedApplication.id, name })}
+            />
+          ) : null}
+
+          <div className="flex gap-1 overflow-x-auto border-b border-border">
+            {views.map((view) => (
+              <button
+                key={view.id}
+                type="button"
+                aria-pressed={activeView === view.id}
+                className={cn(
+                  "whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors",
+                  activeView === view.id
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => setActiveView(view.id)}
+              >
+                {view.label}
+              </button>
+            ))}
+          </div>
+
+          {activeView === "fleet" ? (
+            <FleetView
+              application={selectedApplication}
+              engines={data.engines}
+              canManageSetup={canManageSetup}
+              editingEnvironmentId={editingEnvironmentId}
+              tiers={activeDeploymentTiers}
+              credentialOptions={credentialOptions}
+              isSavingEnvironment={updateEnvironment.isPending}
+              environmentError={updateEnvironment.error instanceof Error ? updateEnvironment.error.message : undefined}
+              onEditEnvironment={setEditingEnvironmentId}
+              onCancelEnvironmentEdit={() => setEditingEnvironmentId("")}
+              onSaveEnvironment={(environmentId, values) =>
+                updateEnvironment.mutate({ applicationId: selectedApplication.id, environmentId, values })
+              }
+              onInspectEnvironment={inspectEnvironment}
+            />
+          ) : null}
+          {activeView === "engine" && selectedEngine ? (
+            <EngineView
+              application={selectedApplication}
+              data={data}
+              selectedEnvironmentId={selectedEnvironmentId}
+              selectedEngine={selectedEngine}
+              credentialOptions={credentialOptions}
+              operationNotice={operationNotice}
+              canManageSetup={canManageSetup}
+              isEditingEngine={editingEngine}
+              isSavingEngine={updateEngine.isPending}
+              engineError={updateEngine.error instanceof Error ? updateEngine.error.message : undefined}
+              isVerifyingEngine={verifyEngine.isPending}
+              verifyError={verifyEngine.error instanceof Error ? verifyEngine.error.message : undefined}
+              canExecuteControls={canExecuteControls}
+              isRunningControl={runControl.isPending}
+              controlError={runControl.error instanceof Error ? runControl.error.message : undefined}
+              onEnvironmentChange={(environmentId) => {
+                const nextEngine = data.engines.find((engine) => engine.environmentId === environmentId);
+                setSelectedEnvironmentId(environmentId);
+                if (nextEngine) setSelectedEngineId(nextEngine.id);
+                setOperationNotice("");
+              }}
+              onEngineChange={(engineId) => {
+                const engine = data.engines.find((item) => item.id === engineId);
+                if (engine) setSelectedEnvironmentId(engine.environmentId);
+                setSelectedEngineId(engineId);
+                setOperationNotice("");
+              }}
+              onEditEngine={() => setEditingEngine((current) => !current)}
+              onCancelEngineEdit={() => setEditingEngine(false)}
+              onSaveEngine={(engine) => updateEngine.mutate(engine)}
+              onVerifyEngine={() => verifyEngine.mutate(selectedEngine)}
+              onRunControl={(control) => runControl.mutate({ engine: selectedEngine, control })}
+            />
+          ) : null}
+          {activeView === "engine" && !selectedEngine ? (
+            <RequestStateView
+              state="empty"
+              title="No engine registered"
+              description="Create a deployment setup or register an engine before inspecting engine registration."
+            />
+          ) : null}
+          {activeView === "promotion" ? (
+            <PromotionView
+              data={data}
+              sourceEnvironmentId={sourceEnvironmentId}
+              targetEnvironmentId={targetEnvironmentId}
+              onSourceEnvironmentChange={(environmentId) => {
+                setSourceEnvironmentId(environmentId);
+                setPreviewComparison(null);
+                setPromotionNotice("");
+              }}
+              onTargetEnvironmentChange={(environmentId) => {
+                setTargetEnvironmentId(environmentId);
+                setPreviewComparison(null);
+                setPromotionNotice("");
+              }}
+              comparison={comparison}
+              canPreview={canPreviewPromotion}
+              canDeploy={canExecuteDeployment}
+              canRollback={canExecuteRollback && targetAllowsRollback}
+              rollbackBlockedReason={targetAllowsRollback ? undefined : "Rollback is not enabled for the target tier."}
+              isPreviewing={preview.isPending}
+              isQueueingDeployment={deployRevision.isPending}
+              isQueueingRollback={rollbackRevision.isPending}
+              notice={promotionNotice}
+              error={
+                preview.error instanceof Error
+                  ? preview.error.message
+                  : deployRevision.error instanceof Error
+                    ? deployRevision.error.message
+                    : rollbackRevision.error instanceof Error
+                      ? rollbackRevision.error.message
+                      : undefined
+              }
+              onRefreshPreview={() => preview.mutate()}
+              onDeploy={() => deployRevision.mutate()}
+              onRollback={() => rollbackRevision.mutate()}
+            />
+          ) : null}
+          {activeView === "governance" ? <GovernanceView data={data} /> : null}
+          {activeView === "assistant" ? (
+            <AssistantPlanView
+              data={data}
+              outcome={assistantOutcome}
+              onApprove={() => setAssistantOutcome("Approved")}
+              onReject={() => setAssistantOutcome("Rejected")}
+            />
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ApplicationRail({
+  applications,
+  engines,
+  selectedApplicationId,
+  workspaceName,
+  organizationName,
+  onSelectApplication
+}: {
+  applications: DeploymentCockpit["applications"];
+  engines: WorkflowEngineRegistration[];
+  selectedApplicationId: string;
+  workspaceName: string;
+  organizationName: string;
+  onSelectApplication: (applicationId: string) => void;
+}) {
+  return (
+    <aside className="space-y-3 lg:sticky lg:top-20">
+      <div className="rounded-ui border border-border bg-surface p-3">
+        <div className="text-xs text-muted-foreground">Workspace</div>
+        <div className="mt-1 font-medium">{workspaceName}</div>
+        <div className="text-xs text-muted-foreground">Under {organizationName}</div>
+      </div>
+      <div className="rounded-ui border border-border bg-surface">
+        <div className="border-b border-border px-3 py-2">
+          <h2 className="text-sm font-semibold">Workflow applications</h2>
+          <p className="text-xs text-muted-foreground">{applications.length} configured</p>
+        </div>
+        <div className="divide-y divide-border">
+          {applications.map((application) => {
+            const environmentIds = new Set(application.environments.map((environment) => environment.id));
+            const applicationEngines = engines.filter((engine) => environmentIds.has(engine.environmentId));
+            const driftCount = application.environments.filter((environment) => environment.driftStatus === "DriftDetected").length;
+            const isSelected = application.id === selectedApplicationId;
+
+            return (
+              <button
+                key={application.id}
+                type="button"
+                aria-pressed={isSelected}
+                className={cn(
+                  "block w-full px-3 py-3 text-left transition-colors",
+                  isSelected ? "bg-primary/10" : "hover:bg-muted/60"
+                )}
+                onClick={() => onSelectApplication(application.id)}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-sm font-medium">{application.name}</span>
+                  <StatusBadge value={summarizeApplicationHealth(application, engines)} tone={applicationHealthTone(application, engines)} />
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <span>{application.environments.length} environments</span>
+                  <span>{applicationEngines.length} engines</span>
+                  {driftCount > 0 ? <span>{driftCount} drift</span> : null}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function SelectedApplicationHeader({
+  application,
+  engines,
+  canManageSetup,
+  onEditApplication,
+  onAddEnvironment
+}: {
+  application: DeploymentCockpit["applications"][number];
+  engines: WorkflowEngineRegistration[];
+  canManageSetup: boolean;
+  onEditApplication: () => void;
+  onAddEnvironment: () => void;
+}) {
+  const applicationEngineIds = new Set(application.environments.flatMap((environment) => environment.engineIds));
+  const applicationEngines = engines.filter((engine) => applicationEngineIds.has(engine.id));
+  const driftCount = application.environments.filter((environment) => environment.driftStatus === "DriftDetected").length;
+
+  return (
+    <div className="rounded-ui border border-border bg-surface p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">{application.name}</h2>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <span>{application.environments.length} environments</span>
+            <span>{applicationEngines.length} registered engines</span>
+            <span>{applicationEngines.filter((engine) => engine.health === "Healthy").length} healthy</span>
+            <span>{driftCount} drift detected</span>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <SecondaryButton disabled={!canManageSetup} onClick={onEditApplication}>
             <Pencil className="h-4 w-4" />
             Edit application
           </SecondaryButton>
-          <Button className="mt-5 h-9" disabled={!canManageSetup} onClick={() => setShowNewSetup((current) => !current)}>
+          <Button disabled={!canManageSetup} onClick={onAddEnvironment}>
             <Plus className="h-4 w-4" />
-            New Deployment
+            Add environment
           </Button>
-          <div className="rounded-ui border border-border bg-surface px-3 py-2 text-xs text-muted-foreground">
-            <div className="font-medium text-foreground">{selectedApplication.workspaceName}</div>
-            <div>Workspace under {workspaceContext.selectedOrganization?.name ?? "organization"}</div>
-          </div>
         </div>
       </div>
-
-      {showNewSetup ? (
-        <DeploymentSetupPanel
-          canManageSetup={canManageSetup}
-          tiers={activeDeploymentTiers}
-          isSubmitting={setup.isPending}
-          error={setup.error instanceof Error ? setup.error.message : undefined}
-          onSubmit={(values) => setup.mutate(values)}
-        />
-      ) : null}
-      {editingApplication ? (
-        <ApplicationEditPanel
-          key={selectedApplication.id}
-          application={selectedApplication}
-          isSubmitting={updateApplication.isPending}
-          error={updateApplication.error instanceof Error ? updateApplication.error.message : undefined}
-          onCancel={() => setEditingApplication(false)}
-          onSubmit={(name) => updateApplication.mutate({ applicationId: selectedApplication.id, name })}
-        />
-      ) : null}
-
-      <div className="flex gap-1 overflow-x-auto border-b border-border">
-        {views.map((view) => (
-          <button
-            key={view.id}
-            type="button"
-            aria-pressed={activeView === view.id}
-            className={cn(
-              "whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors",
-              activeView === view.id
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-            onClick={() => setActiveView(view.id)}
-          >
-            {view.label}
-          </button>
-        ))}
-      </div>
-
-      {activeView === "fleet" ? (
-        <FleetView
-          application={selectedApplication}
-          engines={data.engines}
-          canManageSetup={canManageSetup}
-          editingEnvironmentId={editingEnvironmentId}
-          tiers={activeDeploymentTiers}
-          isSavingEnvironment={updateEnvironment.isPending}
-          environmentError={updateEnvironment.error instanceof Error ? updateEnvironment.error.message : undefined}
-          onEditEnvironment={setEditingEnvironmentId}
-          onCancelEnvironmentEdit={() => setEditingEnvironmentId("")}
-          onSaveEnvironment={(environmentId, name, tierId, tier) =>
-            updateEnvironment.mutate({ applicationId: selectedApplication.id, environmentId, name, tierId, tier })
-          }
-          onInspectEnvironment={inspectEnvironment}
-        />
-      ) : null}
-      {activeView === "engine" ? (
-        <EngineView
-          data={data}
-          selectedEnvironmentId={selectedEnvironmentId}
-          selectedEngine={selectedEngine}
-          operationNotice={operationNotice}
-          canManageSetup={canManageSetup}
-          isEditingEngine={editingEngine}
-          isSavingEngine={updateEngine.isPending}
-          engineError={updateEngine.error instanceof Error ? updateEngine.error.message : undefined}
-          isVerifyingEngine={verifyEngine.isPending}
-          verifyError={verifyEngine.error instanceof Error ? verifyEngine.error.message : undefined}
-          canExecuteControls={canExecuteControls}
-          isRunningControl={runControl.isPending}
-          controlError={runControl.error instanceof Error ? runControl.error.message : undefined}
-          onEnvironmentChange={(environmentId) => {
-            const nextEngine = data.engines.find((engine) => engine.environmentId === environmentId);
-            setSelectedEnvironmentId(environmentId);
-            if (nextEngine) setSelectedEngineId(nextEngine.id);
-            setOperationNotice("");
-          }}
-          onEngineChange={(engineId) => {
-            const engine = data.engines.find((item) => item.id === engineId);
-            if (engine) setSelectedEnvironmentId(engine.environmentId);
-            setSelectedEngineId(engineId);
-            setOperationNotice("");
-          }}
-          onEditEngine={() => setEditingEngine((current) => !current)}
-          onCancelEngineEdit={() => setEditingEngine(false)}
-          onSaveEngine={(engine) => updateEngine.mutate(engine)}
-          onVerifyEngine={() => verifyEngine.mutate(selectedEngine)}
-          onRunControl={(control) => runControl.mutate({ engine: selectedEngine, control })}
-        />
-      ) : null}
-      {activeView === "promotion" ? (
-        <PromotionView
-          data={data}
-          sourceEnvironmentId={sourceEnvironmentId}
-          targetEnvironmentId={targetEnvironmentId}
-          onSourceEnvironmentChange={(environmentId) => {
-            setSourceEnvironmentId(environmentId);
-            setPreviewComparison(null);
-            setPromotionNotice("");
-          }}
-          onTargetEnvironmentChange={(environmentId) => {
-            setTargetEnvironmentId(environmentId);
-            setPreviewComparison(null);
-            setPromotionNotice("");
-          }}
-          comparison={comparison}
-          canPreview={canPreviewPromotion}
-          canDeploy={canExecuteDeployment}
-          canRollback={canExecuteRollback && targetAllowsRollback}
-          rollbackBlockedReason={targetAllowsRollback ? undefined : "Rollback is not enabled for the target tier."}
-          isPreviewing={preview.isPending}
-          isQueueingDeployment={deployRevision.isPending}
-          isQueueingRollback={rollbackRevision.isPending}
-          notice={promotionNotice}
-          error={
-            preview.error instanceof Error
-              ? preview.error.message
-              : deployRevision.error instanceof Error
-                ? deployRevision.error.message
-                : rollbackRevision.error instanceof Error
-                  ? rollbackRevision.error.message
-                  : undefined
-          }
-          onRefreshPreview={() => preview.mutate()}
-          onDeploy={() => deployRevision.mutate()}
-          onRollback={() => rollbackRevision.mutate()}
-        />
-      ) : null}
-      {activeView === "governance" ? <GovernanceView data={data} /> : null}
-      {activeView === "tiers" ? (
-        <DeploymentTiersPanel
-          workspaceId={workspaceId}
-          canManageTiers={canManageTiers}
-          tiers={deploymentTiers}
-          capabilities={capabilities}
-        />
-      ) : null}
-      {activeView === "assistant" ? (
-        <AssistantPlanView
-          data={data}
-          outcome={assistantOutcome}
-          onApprove={() => setAssistantOutcome("Approved")}
-          onReject={() => setAssistantOutcome("Rejected")}
-        />
-      ) : null}
-    </section>
+    </div>
   );
 }
 
@@ -630,32 +769,73 @@ function hasTierCapability(environment: EnvironmentSummary | undefined, capabili
 
 function EnvironmentEditPanel({
   environment,
+  engine,
   tiers,
+  credentialOptions,
   isSubmitting,
   error,
   onCancel,
   onSubmit
 }: {
   environment: EnvironmentSummary;
+  engine?: WorkflowEngineRegistration;
   tiers: WorkspaceDeploymentTier[];
+  credentialOptions: CredentialReferenceOption[];
   isSubmitting: boolean;
   error?: string;
   onCancel: () => void;
-  onSubmit: (name: string, tierId: string | null, tier: EnvironmentSummary["tier"]) => void;
+  onSubmit: (values: EnvironmentEditValues) => void;
 }) {
   const [name, setName] = useState(environment.name);
   const [tierId, setTierId] = useState(environment.tierId ?? "");
+  const [engineName, setEngineName] = useState(engine?.name ?? "");
+  const [baseUrl, setBaseUrl] = useState(engine?.endpoint.baseUrl ?? "");
+  const [region, setRegion] = useState(engine?.endpoint.region ?? "");
+  const [credentialProvider, setCredentialProvider] = useState(engine?.credentialReference.provider ?? credentialOptions[0]?.provider ?? "");
+  const [credentialReference, setCredentialReference] = useState(engine?.credentialReference.reference ?? "");
   const selectedTier = tiers.find((tier) => tier.id === tierId);
-  const canSubmit = name.trim().length > 0 && (name !== environment.name || tierId !== (environment.tierId ?? ""));
+  const environmentChanged = name !== environment.name || tierId !== (environment.tierId ?? "");
+  const engineChanged = Boolean(
+    engine &&
+      (engineName !== engine.name ||
+        baseUrl !== engine.endpoint.baseUrl ||
+        region !== engine.endpoint.region ||
+        credentialProvider !== engine.credentialReference.provider ||
+        credentialReference !== engine.credentialReference.reference)
+  );
+  const engineFieldsValid =
+    !engine ||
+    (engineName.trim().length > 0 &&
+      baseUrl.trim().length > 0 &&
+      credentialProvider.trim().length > 0 &&
+      credentialReference.trim().length > 0);
+  const canSubmit = name.trim().length > 0 && engineFieldsValid && (environmentChanged || engineChanged);
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        if (canSubmit) onSubmit(name.trim(), tierId || null, legacyTierFromName(selectedTier?.name ?? environment.tierName));
+        if (!canSubmit) return;
+        onSubmit({
+          name: name.trim(),
+          tierId: tierId || null,
+          tier: legacyTierFromName(selectedTier?.name ?? environment.tierName),
+          engine: engine
+            ? {
+                ...engine,
+                name: engineName.trim(),
+                endpoint: { ...engine.endpoint, baseUrl: baseUrl.trim(), region: region.trim() },
+                credentialReference: {
+                  ...engine.credentialReference,
+                  provider: credentialProvider.trim(),
+                  reference: credentialReference.trim()
+                }
+              }
+            : undefined
+        });
       }}
     >
-      <div className="grid gap-3 md:grid-cols-[1fr_180px_auto] md:items-end">
+      <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-medium">
           Environment
           <Input className="mt-1" value={name} onChange={(event) => setName(event.target.value)} />
@@ -669,13 +849,50 @@ function EnvironmentEditPanel({
             ))}
           </Select>
         </label>
-        <div className="flex gap-2">
-          <Button type="submit" disabled={!canSubmit || isSubmitting}>
-            <Save className="h-4 w-4" />
-            Save
-          </Button>
-          <SecondaryButton type="button" onClick={onCancel}>Cancel</SecondaryButton>
-        </div>
+        {engine ? (
+          <>
+            <label className="text-sm font-medium">
+              Engine
+              <Input className="mt-1" value={engineName} onChange={(event) => setEngineName(event.target.value)} />
+            </label>
+            <label className="text-sm font-medium">
+              Base URL
+              <Input className="mt-1" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
+            </label>
+            <label className="text-sm font-medium">
+              Region
+              <Input className="mt-1" value={region} onChange={(event) => setRegion(event.target.value)} />
+            </label>
+            <label className="text-sm font-medium">
+              Credential provider
+              <Input className="mt-1" value={credentialProvider} onChange={(event) => setCredentialProvider(event.target.value)} />
+            </label>
+            <label className="text-sm font-medium md:col-span-2">
+              Credential reference
+              <CredentialReferenceInput
+                className="mt-1"
+                value={credentialReference}
+                options={credentialOptions}
+                onChange={(reference) => {
+                  const option = credentialOptions.find((item) => item.reference === reference);
+                  setCredentialReference(reference);
+                  if (option) setCredentialProvider(option.provider);
+                }}
+              />
+            </label>
+          </>
+        ) : (
+          <p className="rounded-ui border border-dashed border-border px-3 py-2 text-sm text-muted-foreground md:col-span-2">
+            No engine is registered for this environment yet. Use Add environment to create one with an engine registration.
+          </p>
+        )}
+      </div>
+      <div className="mt-3 flex gap-2">
+        <Button type="submit" disabled={!canSubmit || isSubmitting}>
+          <Save className="h-4 w-4" />
+          Save
+        </Button>
+        <SecondaryButton type="button" onClick={onCancel}>Cancel</SecondaryButton>
       </div>
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
     </form>
@@ -684,12 +901,14 @@ function EnvironmentEditPanel({
 
 function EngineEditPanel({
   engine,
+  credentialOptions,
   isSubmitting,
   error,
   onCancel,
   onSubmit
 }: {
   engine: WorkflowEngineRegistration;
+  credentialOptions: CredentialReferenceOption[];
   isSubmitting: boolean;
   error?: string;
   onCancel: () => void;
@@ -698,12 +917,18 @@ function EngineEditPanel({
   const [name, setName] = useState(engine.name);
   const [baseUrl, setBaseUrl] = useState(engine.endpoint.baseUrl);
   const [region, setRegion] = useState(engine.endpoint.region);
+  const [credentialProvider, setCredentialProvider] = useState(engine.credentialReference.provider);
   const [credentialReference, setCredentialReference] = useState(engine.credentialReference.reference);
   const canSubmit =
     name.trim().length > 0 &&
     baseUrl.trim().length > 0 &&
+    credentialProvider.trim().length > 0 &&
     credentialReference.trim().length > 0 &&
-    (name !== engine.name || baseUrl !== engine.endpoint.baseUrl || region !== engine.endpoint.region || credentialReference !== engine.credentialReference.reference);
+    (name !== engine.name ||
+      baseUrl !== engine.endpoint.baseUrl ||
+      region !== engine.endpoint.region ||
+      credentialProvider !== engine.credentialReference.provider ||
+      credentialReference !== engine.credentialReference.reference);
 
   return (
     <form
@@ -715,7 +940,7 @@ function EngineEditPanel({
           ...engine,
           name: name.trim(),
           endpoint: { ...engine.endpoint, baseUrl: baseUrl.trim(), region: region.trim() },
-          credentialReference: { ...engine.credentialReference, reference: credentialReference.trim() }
+          credentialReference: { ...engine.credentialReference, provider: credentialProvider.trim(), reference: credentialReference.trim() }
         });
       }}
     >
@@ -733,8 +958,21 @@ function EngineEditPanel({
           <Input className="mt-1" value={region} onChange={(event) => setRegion(event.target.value)} />
         </label>
         <label className="text-sm font-medium">
+          Credential provider
+          <Input className="mt-1" value={credentialProvider} onChange={(event) => setCredentialProvider(event.target.value)} />
+        </label>
+        <label className="text-sm font-medium">
           Credential reference
-          <Input className="mt-1" value={credentialReference} onChange={(event) => setCredentialReference(event.target.value)} />
+          <CredentialReferenceInput
+            className="mt-1"
+            value={credentialReference}
+            options={credentialOptions}
+            onChange={(reference) => {
+              const option = credentialOptions.find((item) => item.reference === reference);
+              setCredentialReference(reference);
+              if (option) setCredentialProvider(option.provider);
+            }}
+          />
         </label>
       </div>
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
@@ -755,6 +993,7 @@ function FleetView({
   canManageSetup,
   editingEnvironmentId,
   tiers,
+  credentialOptions,
   isSavingEnvironment,
   environmentError,
   onEditEnvironment,
@@ -767,11 +1006,12 @@ function FleetView({
   canManageSetup: boolean;
   editingEnvironmentId: string;
   tiers: WorkspaceDeploymentTier[];
+  credentialOptions: CredentialReferenceOption[];
   isSavingEnvironment: boolean;
   environmentError?: string;
   onEditEnvironment: (environmentId: string) => void;
   onCancelEnvironmentEdit: () => void;
-  onSaveEnvironment: (environmentId: string, name: string, tierId: string | null, tier: EnvironmentSummary["tier"]) => void;
+  onSaveEnvironment: (environmentId: string, values: EnvironmentEditValues) => void;
   onInspectEnvironment: (environmentId: string) => void;
 }) {
   const applicationEngineIds = new Set(application.environments.flatMap((environment) => environment.engineIds));
@@ -800,8 +1040,19 @@ function FleetView({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
+            {application.environments.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  No environments registered.
+                </td>
+              </tr>
+            ) : null}
             {application.environments.map((environment) => (
               <Fragment key={environment.id}>
+                {(() => {
+                  const primaryEngine = engines.find((engine) => environment.engineIds.includes(engine.id));
+                  return (
+                <>
                 <tr>
                   <td className="px-3 py-3">
                     <div className="font-medium">{environment.name}</div>
@@ -840,15 +1091,20 @@ function FleetView({
                     <td colSpan={8} className="bg-muted/20 px-3 py-3">
                       <EnvironmentEditPanel
                         environment={environment}
+                        engine={primaryEngine}
                         tiers={tiers}
+                        credentialOptions={credentialOptions}
                         isSubmitting={isSavingEnvironment}
                         error={environmentError}
                         onCancel={onCancelEnvironmentEdit}
-                        onSubmit={(name, tierId, tier) => onSaveEnvironment(environment.id, name, tierId, tier)}
+                        onSubmit={(values) => onSaveEnvironment(environment.id, values)}
                       />
                     </td>
                   </tr>
                 ) : null}
+                </>
+                  );
+                })()}
               </Fragment>
             ))}
           </tbody>
@@ -859,9 +1115,11 @@ function FleetView({
 }
 
 function EngineView({
+  application,
   data,
   selectedEnvironmentId,
   selectedEngine,
+  credentialOptions,
   operationNotice,
   canManageSetup,
   isEditingEngine,
@@ -880,9 +1138,11 @@ function EngineView({
   onVerifyEngine,
   onRunControl
 }: {
+  application: DeploymentCockpit["applications"][number];
   data: DeploymentCockpit;
   selectedEnvironmentId: string;
   selectedEngine: WorkflowEngineRegistration;
+  credentialOptions: CredentialReferenceOption[];
   operationNotice: string;
   canManageSetup: boolean;
   isEditingEngine: boolean;
@@ -901,7 +1161,7 @@ function EngineView({
   onVerifyEngine: () => void;
   onRunControl: (control: RuntimeControl) => void;
 }) {
-  const environmentOptions = data.applications.flatMap((application) => application.environments);
+  const environmentOptions = application.environments;
   const environmentEngines = data.engines.filter((engine) => engine.environmentId === selectedEnvironmentId);
 
   return (
@@ -940,6 +1200,7 @@ function EngineView({
         <EngineEditPanel
           key={selectedEngine.id}
           engine={selectedEngine}
+          credentialOptions={credentialOptions}
           isSubmitting={isSavingEngine}
           error={engineError}
           onCancel={onCancelEngineEdit}
@@ -1260,6 +1521,41 @@ function Detail({ label, value }: { label: string; value: ReactNode }) {
 
 function StatusBadge({ value, tone }: { value: string; tone: StatusTone }) {
   return <Badge className={statusToneClass(tone)}>{value}</Badge>;
+}
+
+function credentialReferenceOptions(engines: WorkflowEngineRegistration[]): CredentialReferenceOption[] {
+  const options = new Map<string, CredentialReferenceOption>();
+  for (const engine of engines) {
+    const reference = engine.credentialReference.reference;
+    if (!reference || options.has(reference)) continue;
+    options.set(reference, {
+      provider: engine.credentialReference.provider,
+      reference,
+      label: `${engine.credentialReference.provider} - ${reference}`
+    });
+  }
+  return Array.from(options.values()).sort((left, right) => left.reference.localeCompare(right.reference));
+}
+
+function summarizeApplicationHealth(application: DeploymentCockpit["applications"][number], engines: WorkflowEngineRegistration[]) {
+  const applicationEngineIds = new Set(application.environments.flatMap((environment) => environment.engineIds));
+  const applicationEngines = engines.filter((engine) => applicationEngineIds.has(engine.id));
+  if (application.environments.length === 0 || applicationEngines.length === 0) return "Needs setup";
+  if (applicationEngines.some((engine) => engine.health === "Unreachable")) return "Unreachable";
+  if (
+    applicationEngines.some((engine) => engine.health === "Degraded") ||
+    application.environments.some((environment) => environment.driftStatus === "DriftDetected")
+  ) {
+    return "Needs review";
+  }
+  return "Healthy";
+}
+
+function applicationHealthTone(application: DeploymentCockpit["applications"][number], engines: WorkflowEngineRegistration[]): StatusTone {
+  const health = summarizeApplicationHealth(application, engines);
+  if (health === "Healthy") return "success";
+  if (health === "Needs review" || health === "Needs setup") return "warning";
+  return "destructive";
 }
 
 function healthTone(health: DeploymentHealth): StatusTone {

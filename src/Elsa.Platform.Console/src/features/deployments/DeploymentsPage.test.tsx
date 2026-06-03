@@ -2,10 +2,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceContextProvider } from "@/app/WorkspaceContextProvider";
 import { DeploymentsPage } from "@/features/deployments/DeploymentsPage";
-import type { DeploymentCockpit } from "@/features/deployments/deploymentModels";
+import { DeploymentSetupPanel } from "@/features/deployments/DeploymentSetupPanel";
+import type { DeploymentCockpit, WorkspaceDeploymentTier } from "@/features/deployments/deploymentModels";
 import { AuthProvider } from "@/lib/auth/AuthProvider";
 
 describe("DeploymentsPage", () => {
@@ -17,8 +19,8 @@ describe("DeploymentsPage", () => {
     renderDeployments();
 
     expect(await screen.findByRole("heading", { name: "Deployments" })).toBeInTheDocument();
-    expect(screen.getByText("Claims Operations")).toBeInTheDocument();
-    expect(screen.getByText("Workspace under Acme Corp")).toBeInTheDocument();
+    expect(screen.getAllByText("Claims Operations").length).toBeGreaterThan(0);
+    expect(screen.getByText("Under Acme Corp")).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: /Prod Production/i })).toBeInTheDocument();
     expect(screen.getAllByText("Drift detected").length).toBeGreaterThan(0);
     expect(screen.queryByText(/password|token|secret value/i)).not.toBeInTheDocument();
@@ -60,7 +62,7 @@ describe("DeploymentsPage", () => {
     await userEvent.type(screen.getByLabelText("Credential reference"), "kv://claims/prod/elsa-api");
     await userEvent.click(screen.getByRole("button", { name: "Create setup" }));
 
-    await screen.findByText("Claims Operations");
+    await waitFor(() => expect(screen.getAllByText("Claims Operations").length).toBeGreaterThan(0));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications`),
@@ -99,12 +101,96 @@ describe("DeploymentsPage", () => {
     expect(screen.queryByText("Default tiers are used until workspace tiers finish loading.")).not.toBeInTheDocument();
   });
 
+  it("renders a recoverable cockpit when setup exists without a registered engine", async () => {
+    renderDeployments({
+      ...deploymentCockpitFixture,
+      engines: [],
+      applications: [
+        {
+          ...deploymentCockpitFixture.applications[0],
+          environments: deploymentCockpitFixture.applications[0].environments.map((environment) => ({ ...environment, engineIds: [] }))
+        }
+      ]
+    });
+
+    expect(await screen.findByRole("heading", { name: "Deployments" })).toBeInTheDocument();
+    expect(screen.queryByText("Deployments could not load")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Engine Registration" }));
+    expect(screen.getByText("No engine registered")).toBeInTheDocument();
+  });
+
+  it("switches between multiple workflow applications from the application rail", async () => {
+    renderDeployments(multipleApplicationsCockpit);
+
+    expect(await screen.findByRole("heading", { name: "Deployments" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Claims Operations/i })).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(screen.getByRole("button", { name: /Policy/i }));
+
+    expect(screen.getByRole("button", { name: /Policy/i })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("heading", { name: "Policy" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: /Prod Production/i })).toBeInTheDocument();
+  });
+
+  it("does not offer legacy tier names before workspace tiers are available", async () => {
+    const submit = vi.fn();
+
+    render(
+      <DeploymentSetupPanel
+        canManageSetup
+        tiers={[]}
+        tiersLoading={false}
+        isSubmitting={false}
+        onSubmit={submit}
+      />
+    );
+
+    expect(screen.getByLabelText("Tier")).toBeDisabled();
+    expect(screen.queryByRole("option", { name: "Dev" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Production" })).not.toBeInTheDocument();
+    expect(screen.getByText("No active deployment tiers are available for this workspace.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create setup" })).toBeDisabled();
+  });
+
+  it("replaces a stale selected tier id when workspace tiers change", async () => {
+    const submit = vi.fn();
+    const firstProductionTier = tier("tier-production-old", "Production", 40, ["deployment.tier.production-like"]);
+    const currentProductionTier = tier("tier-production-current", "Production", 40, ["deployment.tier.production-like"]);
+    const { rerender } = render(
+      <DeploymentSetupPanel
+        canManageSetup
+        tiers={[firstProductionTier]}
+        isSubmitting={false}
+        onSubmit={submit}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByLabelText("Tier")).toHaveValue("tier-production-old"));
+    rerender(
+      <DeploymentSetupPanel
+        canManageSetup
+        tiers={[currentProductionTier]}
+        isSubmitting={false}
+        onSubmit={submit}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByLabelText("Tier")).toHaveValue("tier-production-current"));
+    await userEvent.type(screen.getByLabelText("Application"), "Policy");
+    await userEvent.type(screen.getByLabelText("Engine"), "dev-01");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://localhost:5001");
+    await userEvent.type(screen.getByLabelText("Credential reference"), "foo");
+    await userEvent.click(screen.getByRole("button", { name: "Create setup" }));
+
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ environmentTierId: "tier-production-current" }));
+  });
+
   it("creates another deployment setup from a populated cockpit", async () => {
     const fetchMock = renderDeployments();
 
     await screen.findByRole("heading", { name: "Deployments" });
-    await waitFor(() => expect(screen.getByRole("button", { name: "New Deployment" })).toBeEnabled());
-    await userEvent.click(screen.getByRole("button", { name: "New Deployment" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "New application" })).toBeEnabled());
+    await userEvent.click(screen.getByRole("button", { name: "New application" }));
     await userEvent.type(screen.getByLabelText("Application"), "Customer Care");
     await userEvent.clear(screen.getByLabelText("Environment"));
     await userEvent.type(screen.getByLabelText("Environment"), "Prod");
@@ -117,6 +203,63 @@ describe("DeploymentsPage", () => {
       expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications`),
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  it("adds an environment and engine to the selected application", async () => {
+    const fetchMock = renderDeployments(applicationWithoutSetupCockpit);
+
+    expect(await screen.findByRole("heading", { name: "Deployments" })).toBeInTheDocument();
+    expect(screen.getByText("No environments registered.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Add environment" }));
+    expect(screen.getAllByText("Policy").length).toBeGreaterThan(0);
+    await userEvent.clear(screen.getByLabelText("Environment"));
+    await userEvent.type(screen.getByLabelText("Environment"), "Prod");
+    await userEvent.type(screen.getByLabelText("Engine"), "policy-prod-weu-01");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://policy-prod.example.test/elsa");
+    await userEvent.type(screen.getByLabelText("Credential reference"), "kv://policy/prod/elsa-api");
+    await userEvent.click(screen.getAllByRole("button", { name: "Add environment" }).at(-1)!);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/policy-app/environments`),
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/environments/policy-prod/engines`),
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(requestBody(fetchMock, "POST", "/applications/policy-app/environments")).toMatchObject({
+      name: "Prod",
+      tier: "Production",
+      tierId: "tier-production"
+    });
+  });
+
+  it("sends custom tier identity when adding an environment", async () => {
+    const fetchMock = renderDeployments(applicationWithoutSetupCockpit);
+
+    await screen.findByRole("heading", { name: "Deployments" });
+    await userEvent.click(screen.getByRole("button", { name: "Add environment" }));
+    await userEvent.selectOptions(screen.getByLabelText("Tier"), "tier-uat");
+    await userEvent.clear(screen.getByLabelText("Environment"));
+    await userEvent.type(screen.getByLabelText("Environment"), "UAT");
+    await userEvent.type(screen.getByLabelText("Engine"), "policy-uat-weu-01");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://policy-uat.example.test/elsa");
+    await userEvent.type(screen.getByLabelText("Credential reference"), "kv://policy/uat/elsa-api");
+    await userEvent.click(screen.getAllByRole("button", { name: "Add environment" }).at(-1)!);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/policy-app/environments`),
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+    expect(requestBody(fetchMock, "POST", "/applications/policy-app/environments")).toMatchObject({
+      name: "UAT",
+      tier: "Production",
+      tierId: "tier-uat"
+    });
   });
 
   it("edits application environment and engine metadata through live APIs", async () => {
@@ -154,6 +297,30 @@ describe("DeploymentsPage", () => {
       expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/engines/dev-engine`),
       expect.objectContaining({ method: "PUT" })
     );
+  });
+
+  it("edits an environment endpoint and credential reference from the environment row", async () => {
+    const fetchMock = renderDeployments();
+
+    await screen.findByRole("heading", { name: "Deployments" });
+    await userEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
+    await userEvent.clear(screen.getByLabelText("Base URL"));
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://dev-workflows-row-edit.acme.example/elsa");
+    await userEvent.clear(screen.getByLabelText("Credential reference"));
+    await userEvent.type(screen.getByLabelText("Credential reference"), "kv://acme-platform/dev/elsa-api-v2");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/engines/dev-engine`),
+        expect.objectContaining({ method: "PUT" })
+      )
+    );
+    expect(requestBody(fetchMock, "PUT", "/deployments/engines/dev-engine")).toMatchObject({
+      baseUrl: "https://dev-workflows-row-edit.acme.example/elsa",
+      credentialProvider: "Azure Key Vault",
+      credentialReference: "kv://acme-platform/dev/elsa-api-v2"
+    });
   });
 
   it("shows tier capabilities and sends tier identity when editing an environment", async () => {
@@ -379,11 +546,13 @@ function renderDeployments(cockpit: DeploymentCockpit = deploymentCockpitFixture
   vi.stubGlobal("fetch", fetchMock);
   render(
     <TestQueryProvider>
-      <AuthProvider>
-        <WorkspaceContextProvider>
-          <DeploymentsPage />
-        </WorkspaceContextProvider>
-      </AuthProvider>
+      <MemoryRouter>
+        <AuthProvider>
+          <WorkspaceContextProvider>
+            <DeploymentsPage />
+          </WorkspaceContextProvider>
+        </AuthProvider>
+      </MemoryRouter>
     </TestQueryProvider>
   );
   return fetchMock;
@@ -431,6 +600,53 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
         applications: [{ ...deploymentCockpitFixture.applications[0], id: "app-created", name: "Claims Operations" }]
       };
       return jsonResponse({ id: "engine-created", name: "claims-prod", environmentId: "env-created" }, 201);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications/policy-app/environments`)) {
+      return jsonResponse({ id: "policy-prod", workspaceId, applicationId: "policy-app", name: "Prod" }, 201);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/environments/policy-prod/engines`)) {
+      currentCockpit = {
+        ...currentCockpit,
+        applications: currentCockpit.applications.map((application) =>
+          application.id === "policy-app"
+            ? {
+                ...application,
+                environments: [
+                  ...application.environments,
+                  {
+                    id: "policy-prod",
+                    name: "Prod",
+                    tier: "Production",
+                    tierId: "tier-production",
+                    tierName: "Production",
+                    tierStatus: "Active",
+                    tierCapabilities: [
+                      "deployment.tier.production-like",
+                      "deployment.promotion.target",
+                      "deployment.confirmation.required",
+                      "deployment.rollback.enabled",
+                      "deployment.secret-verification.required",
+                      "deployment.observability.required"
+                    ],
+                    health: "Healthy",
+                    desiredRevision: { id: "00000000-0000-0000-0000-000000000250", revision: 1, commit: "initial", label: "Initial desired state", authoredAt: "2026-05-26T10:00:00Z" },
+                    deployedRevision: null,
+                    deploymentStatus: "Succeeded",
+                    driftStatus: "Unknown",
+                    engineIds: ["policy-prod-engine"]
+                  }
+                ]
+              }
+            : application
+        ),
+        engines: [
+          ...currentCockpit.engines,
+          engine("policy-prod-engine", "policy-prod-weu-01", "policy-prod", "Healthy", "Verified", [
+            capability("engine.reload-configuration", "Reload engine configuration", "EngineApi")
+          ])
+        ]
+      };
+      return jsonResponse({ id: "policy-prod-engine", name: "policy-prod-weu-01", environmentId: "policy-prod" }, 201);
     }
     if (method === "PUT" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops`)) {
       currentCockpit = {
@@ -893,6 +1109,58 @@ const deploymentCockpitFixture: DeploymentCockpit = {
   ]
 };
 
+const applicationWithoutSetupCockpit: DeploymentCockpit = {
+  applications: [
+    {
+      id: "policy-app",
+      name: "Policy",
+      workspaceName: "Acme Insurance",
+      environments: []
+    }
+  ],
+  engines: [],
+  comparisons: [],
+  observabilityBindings: [],
+  history: [],
+  driftReport: [],
+  assistantPlans: []
+};
+
+const multipleApplicationsCockpit: DeploymentCockpit = {
+  ...deploymentCockpitFixture,
+  applications: [
+    ...deploymentCockpitFixture.applications,
+    {
+      id: "policy-app",
+      name: "Policy",
+      workspaceName: "Acme Insurance",
+      environments: [
+        {
+          id: "policy-prod",
+          name: "Prod",
+          tier: "Production",
+          tierId: "tier-production",
+          tierName: "Production",
+          tierStatus: "Active",
+          tierCapabilities: ["deployment.tier.production-like", "deployment.promotion.target"],
+          health: "Healthy",
+          desiredRevision: { id: "00000000-0000-0000-0000-000000000250", revision: 1, commit: "initial", label: "Initial desired state", authoredAt: "2026-05-26T10:00:00Z" },
+          deployedRevision: 1,
+          deploymentStatus: "Succeeded",
+          driftStatus: "InSync",
+          engineIds: ["policy-prod-engine"]
+        }
+      ]
+    }
+  ],
+  engines: [
+    ...deploymentCockpitFixture.engines,
+    engine("policy-prod-engine", "policy-prod-weu-01", "policy-prod", "Healthy", "Verified", [
+      capability("engine.reload-configuration", "Reload engine configuration", "EngineApi")
+    ])
+  ]
+};
+
 function engine(
   id: string,
   name: string,
@@ -990,7 +1258,7 @@ function capabilityDefinition(id: string, label: string, category: string) {
   };
 }
 
-function tier(id: string, name: string, sortOrder: number, capabilities: string[], status = "Active") {
+function tier(id: string, name: string, sortOrder: number, capabilities: string[], status: WorkspaceDeploymentTier["status"] = "Active"): WorkspaceDeploymentTier {
   return {
     id,
     workspaceId,
