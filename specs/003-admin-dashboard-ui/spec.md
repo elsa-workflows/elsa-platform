@@ -491,6 +491,79 @@ Behavior:
 - Recent activity should be a short list, not a chart.
 - The page should fit comfortably above the fold on common desktop screens.
 
+#### Future: CShell Feature Management
+
+The Control Plane Modules area should evolve from a static roadmap list into a
+runtime feature-management surface backed by CShells
+([valence-works/cshells](https://github.com/valence-works/cshells)). This is a
+post-MVP capability because it requires backend and application-hosting changes,
+not only console UI work.
+
+Product goal:
+
+- Administrators can see which platform features are available for the selected
+  shell, organization, or workspace context.
+- Administrators can enable or disable supported CShell features without editing
+  configuration files directly.
+- Administrators can configure public, runtime-safe feature properties through
+  typed forms generated from backend metadata.
+- The platform exposes enough dependency, validation, audit, and restart-impact
+  information for operators to understand the effect of enabling, disabling, or
+  reconfiguring a feature.
+
+Architecture requirements:
+
+- The Elsa Platform application MUST be hosted through CShells before this
+  feature-management UI is implemented. If the platform is not already powered by
+  CShells, a prerequisite backend slice MUST migrate platform modules into
+  CShell-compatible shell features.
+- The backend MUST expose a REST API to list available CShell features for the
+  current shell/scope, including feature identity, display metadata, category,
+  source assembly/package, enabled state, dependencies, conflicts, capability
+  tags, and whether the feature supports runtime enable/disable without process
+  restart.
+- The backend MUST expose public configurable properties for each feature using
+  schema-like metadata: property name, display name, description, type,
+  validation rules, default value, current value when safe, sensitivity flags,
+  whether changes require restart, and whether the property can be changed after
+  the feature is enabled.
+- The backend MUST expose commands to enable, disable, and update feature
+  configuration for the selected shell/scope. Commands MUST validate
+  dependencies and conflicts before applying changes.
+- The backend MUST persist feature state and feature property values in a
+  provider-backed configuration store rather than treating appsettings.json as
+  the only source of truth.
+- The backend MUST never return raw secret values. Secret-like feature
+  properties MUST use secret references or write-only update semantics.
+- The backend MUST emit audit/history records for feature enablement,
+  disablement, configuration changes, validation failures, and restart-required
+  outcomes.
+- If a CShell feature cannot be applied at runtime, the API response MUST report
+  the required restart or redeploy action instead of pretending the change is
+  live.
+
+Console requirements:
+
+- Control Plane Modules MUST become a real feature list/detail workflow when the
+  backend feature API exists.
+- The overview module cards MUST reflect live feature availability and status
+  rather than static roadmap copy.
+- A dedicated feature detail page SHOULD show dependencies, conflicts, public
+  configuration properties, current runtime status, recent changes, and the
+  exact validation result of a pending enable/disable/configuration action.
+- Enable/disable controls MUST be explicit commands with validation feedback and
+  confirmation for disruptive changes.
+- Configuration editing MUST use dedicated forms, not inline edits inside the
+  read-only feature overview.
+
+Out of scope for this PRD amendment:
+
+- Arbitrary third-party plugin installation.
+- Editing raw shell JSON or appsettings files in the browser.
+- Displaying or editing raw secret values.
+- Claiming runtime enablement for features that require application restart or
+  redeploy.
+
 #### Sources
 
 Sources is the primary operational screen.

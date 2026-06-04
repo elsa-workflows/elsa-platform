@@ -17,6 +17,26 @@
   --success: 160 64% 34%;
 }
 
+:root[data-theme-accent="blue"] {
+  --primary: 211 85% 44%;
+  --primary-foreground: 0 0% 100%;
+}
+
+:root[data-theme-accent="violet"] {
+  --primary: 262 72% 52%;
+  --primary-foreground: 0 0% 100%;
+}
+
+:root[data-theme-accent="amber"] {
+  --primary: 38 86% 42%;
+  --primary-foreground: 222 32% 10%;
+}
+
+:root[data-theme-accent="rose"] {
+  --primary: 347 72% 46%;
+  --primary-foreground: 0 0% 100%;
+}
+
 .dark {
   color-scheme: dark;
   --background: 222 32% 7%;
@@ -30,6 +50,26 @@
   --destructive: 0 72% 55%;
   --warning: 38 92% 60%;
   --success: 168 78% 52%;
+}
+
+.dark[data-theme-accent="blue"] {
+  --primary: 207 90% 64%;
+  --primary-foreground: 222 40% 8%;
+}
+
+.dark[data-theme-accent="violet"] {
+  --primary: 262 84% 70%;
+  --primary-foreground: 222 40% 8%;
+}
+
+.dark[data-theme-accent="amber"] {
+  --primary: 41 92% 62%;
+  --primary-foreground: 222 40% 8%;
+}
+
+.dark[data-theme-accent="rose"] {
+  --primary: 347 86% 68%;
+  --primary-foreground: 222 40% 8%;
 }
 
 body {
@@ -48,6 +88,11 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+select option {
+  background: hsl(var(--surface));
+  color: hsl(var(--foreground));
 }
 
 :focus-visible {

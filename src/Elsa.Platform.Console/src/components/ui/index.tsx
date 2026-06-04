@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 export function buttonClassName(variant: "primary" | "secondary" = "primary", className?: string) {
   return cn(
-    "inline-flex h-9 items-center justify-center gap-2 rounded-ui border border-border px-3 text-sm font-medium transition-colors hover:opacity-90 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50",
+    "inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-ui border border-border px-3 text-sm font-medium transition-colors hover:opacity-90 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50",
     variant === "primary" ? "bg-foreground text-background" : "bg-background text-foreground hover:bg-muted",
     className
   );

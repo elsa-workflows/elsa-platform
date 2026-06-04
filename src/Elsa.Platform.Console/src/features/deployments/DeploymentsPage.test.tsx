@@ -1,32 +1,69 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceContextProvider } from "@/app/WorkspaceContextProvider";
-import { DeploymentsPage } from "@/features/deployments/DeploymentsPage";
+import {
+  DeploymentApplicationEditPage,
+  DeploymentApplicationsPage,
+  DeploymentApplicationPage,
+  DeploymentEngineEditPage,
+  DeploymentEnginePage,
+  DeploymentEngineRegisterPage,
+  DeploymentEnvironmentCreatePage,
+  DeploymentEnvironmentEditPage,
+  DeploymentEnvironmentPage,
+  DeploymentRevisionCreatePage,
+  DeploymentsPage,
+  NewDeploymentSetupPage
+} from "@/features/deployments/DeploymentsPage";
 import { DeploymentSetupPanel } from "@/features/deployments/DeploymentSetupPanel";
 import type { DeploymentCockpit, WorkspaceDeploymentTier } from "@/features/deployments/deploymentModels";
 import { AuthProvider } from "@/lib/auth/AuthProvider";
 
 describe("DeploymentsPage", () => {
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
   });
 
-  it("renders workflow applications and environment health without exposing credential values", async () => {
+  it("renders a workspace deployment overview without the application list", async () => {
     renderDeployments();
 
-    expect(await screen.findByRole("heading", { name: "Deployments" })).toBeInTheDocument();
-    expect(screen.getAllByText("Claims Operations").length).toBeGreaterThan(0);
-    expect(screen.getByText("Under Acme Corp")).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: /Prod Production/i })).toBeInTheDocument();
-    expect(screen.getAllByText("Drift detected").length).toBeGreaterThan(0);
+    expect(await screen.findByRole("heading", { name: "Deployment overview" }, { timeout: 15000 })).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/applications")).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/new")).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/tiers")).toBeInTheDocument();
+    expect(screen.getAllByText("4").length).toBeGreaterThan(0);
+    expect(screen.getByText("Deployment posture")).toBeInTheDocument();
+    expect(screen.getByText("Operational shortcuts")).toBeInTheDocument();
+    expect(screen.queryByText("Workflow applications")).not.toBeInTheDocument();
+    expect(screen.queryByText("Claims Operations")).not.toBeInTheDocument();
+    expect(screen.getByText("Healthy engines")).toBeInTheDocument();
     expect(screen.queryByText(/password|token|secret value/i)).not.toBeInTheDocument();
   });
 
-  it("shows an empty setup state when the live cockpit has no applications", async () => {
+  it("renders application list on a dedicated route", async () => {
+    renderDeployments(multipleApplicationsCockpit, "/admin/deployments/applications");
+
+    expect(await screen.findByRole("heading", { name: "Applications" })).toBeInTheDocument();
+    expect(screen.getByText("Workflow applications")).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/applications/claims-ops")).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/applications/policy-app")).toBeInTheDocument();
+    expect(screen.getByText("Claims Operations")).toBeInTheDocument();
+    expect(screen.getByLabelText("Sort applications")).toHaveValue("name");
+    expect(within(screen.getByRole("table")).getByRole("columnheader", { name: "Application" })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("Search applications"), "Policy");
+
+    expect(screen.getByRole("link", { name: "Policy" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Claims Operations" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Deployment posture")).not.toBeInTheDocument();
+  });
+
+  it("shows an empty application list state when no deployment setup exists", async () => {
     renderDeployments({
       applications: [],
       engines: [],
@@ -35,14 +72,14 @@ describe("DeploymentsPage", () => {
       history: [],
       driftReport: [],
       assistantPlans: []
-    });
+    }, "/admin/deployments/applications");
 
     expect(await screen.findByText("No deployment setup")).toBeInTheDocument();
-    expect(screen.getByText("Create a workflow application, environment, and engine registration to start managing deployments.")).toBeInTheDocument();
-    expect(screen.queryByText("Claims Operations")).not.toBeInTheDocument();
+    expect(screen.getByText("Create a workflow application, first environment, and first engine registration to start managing deployments.")).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/new")).toBeInTheDocument();
   });
 
-  it("creates deployment setup from the empty state through live APIs", async () => {
+  it("creates deployment setup from the guided setup route", async () => {
     const fetchMock = renderDeployments({
       applications: [],
       engines: [],
@@ -51,10 +88,11 @@ describe("DeploymentsPage", () => {
       history: [],
       driftReport: [],
       assistantPlans: []
-    });
+    }, "/admin/deployments/new");
 
+    expect(await screen.findByRole("heading", { name: "New application setup" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByLabelText("Tier")).toHaveValue("tier-production"));
-    await userEvent.type(await screen.findByLabelText("Application"), "Claims Operations");
+    await userEvent.type(screen.getByLabelText("Application"), "Claims Operations");
     await userEvent.clear(screen.getByLabelText("Environment"));
     await userEvent.type(screen.getByLabelText("Environment"), "Prod");
     await userEvent.type(screen.getByLabelText("Engine"), "claims-prod");
@@ -62,16 +100,11 @@ describe("DeploymentsPage", () => {
     await userEvent.type(screen.getByLabelText("Credential reference"), "kv://claims/prod/elsa-api");
     await userEvent.click(screen.getByRole("button", { name: "Create setup" }));
 
-    await waitFor(() => expect(screen.getAllByText("Claims Operations").length).toBeGreaterThan(0));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications`),
         expect.objectContaining({ method: "POST" })
       )
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/app-created/environments`),
-      expect.objectContaining({ method: "POST" })
     );
     expect(requestBody(fetchMock, "POST", "/applications/app-created/environments")).toMatchObject({
       name: "Prod",
@@ -82,77 +115,291 @@ describe("DeploymentsPage", () => {
       expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/environments/env-created/engines`),
       expect.objectContaining({ method: "POST" })
     );
+  }, 15000);
+
+  it("renders application detail with an environment table", async () => {
+    renderDeployments(multipleApplicationsCockpit, "/admin/deployments/applications/claims-ops");
+
+    expect(await screen.findByRole("heading", { name: "Claims Operations" })).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/applications/claims-ops/environments/new")).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-dev")).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-prod")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Policy/i })).not.toBeInTheDocument();
   });
 
-  it("uses server-provided default tiers in empty setup", async () => {
-    renderDeployments({
-      applications: [],
-      engines: [],
-      comparisons: [],
-      observabilityBindings: [],
-      history: [],
-      driftReport: [],
-      assistantPlans: []
-    });
+  it("renders environment detail with engine cards that link to detail pages", async () => {
+    renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-dev");
 
-    expect(await screen.findByText("No deployment setup")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByLabelText("Tier")).toHaveValue("tier-production"));
-    expect(screen.getByRole("option", { name: "Production" })).toBeInTheDocument();
-    expect(screen.queryByText("Default tiers are used until workspace tiers finish loading.")).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Dev" })).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-dev/revisions/new")).toBeInTheDocument();
+    expect(screen.getByText("Engine registrations")).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-dev/engines/dev-engine")).toBeInTheDocument();
+    expect(screen.queryByText("Engine details")).not.toBeInTheDocument();
+    expect(screen.getByText("Promotion")).toBeInTheDocument();
+    expect(screen.getByText("Observability")).toBeInTheDocument();
+    expect(screen.getAllByText("Run history").length).toBeGreaterThan(0);
   });
 
-  it("renders a recoverable cockpit when setup exists without a registered engine", async () => {
-    renderDeployments({
+  it("links promotion blocker to source revision creation when valid artifacts exist", async () => {
+    const cockpit = {
       ...deploymentCockpitFixture,
-      engines: [],
-      applications: [
+      applications: deploymentCockpitFixture.applications.map((application) => ({
+        ...application,
+        environments: application.environments.map((environment) =>
+          environment.id === "claims-dev"
+            ? { ...environment, desiredRevision: { id: "", revision: 0, commit: "", label: "", authoredAt: "" } }
+            : environment)
+      }))
+    };
+    renderDeployments(cockpit, "/admin/deployments/applications/claims-ops/environments/claims-test");
+
+    expect(await screen.findByText("Source revision")).toBeInTheDocument();
+    expect(screen.getByText("Dev does not have a desired-state revision yet. Create or choose a source revision before previewing promotion.")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-dev/revisions/new")).toBeInTheDocument()
+    );
+  });
+
+  it("renders not-found states for unknown hierarchy ids", async () => {
+    renderDeployments(undefined, "/admin/deployments/applications/missing-app");
+
+    expect(await screen.findByText("Application not found")).toBeInTheDocument();
+  });
+
+  it("creates an environment and first engine from the application route", async () => {
+    const fetchMock = renderDeployments(applicationWithoutSetupCockpit, "/admin/deployments/applications/policy-app/environments/new");
+
+    expect(await screen.findByRole("heading", { name: "Add environment" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("Tier")).toHaveValue("tier-production"));
+    await userEvent.clear(screen.getByLabelText("Environment"));
+    await userEvent.type(screen.getByLabelText("Environment"), "Prod");
+    await userEvent.type(screen.getByLabelText("Engine"), "policy-prod-weu-01");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://policy-prod.example.test/elsa");
+    await userEvent.type(screen.getByLabelText("Credential reference"), "kv://policy/prod/elsa-api");
+    await userEvent.click(screen.getByRole("button", { name: "Add environment" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/policy-app/environments`),
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/environments/policy-prod/engines`),
+      expect.objectContaining({ method: "POST" })
+    );
+  }, 15000);
+
+  it("edits application metadata through a dedicated route", async () => {
+    const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops/edit");
+
+    expect(await screen.findByRole("heading", { name: "Edit application" })).toBeInTheDocument();
+    await userEvent.clear(screen.getByLabelText("Application name"));
+    await userEvent.type(screen.getByLabelText("Application name"), "Claims Platform");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops`),
+        expect.objectContaining({ method: "PUT" })
+      )
+    );
+  }, 15000);
+
+  it("edits environment metadata through a dedicated route", async () => {
+    const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-dev/edit");
+
+    expect(await screen.findByRole("heading", { name: "Edit environment" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Tier")).toHaveValue("tier-dev");
+    await userEvent.clear(screen.getByLabelText("Environment"));
+    await userEvent.type(screen.getByLabelText("Environment"), "Development");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops/environments/claims-dev`),
+        expect.objectContaining({ method: "PUT" })
+      )
+    );
+  });
+
+  it("creates a desired-state revision from a registered artifact", async () => {
+    const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-dev/revisions/new");
+
+    expect(await screen.findByRole("heading", { name: "New revision" })).toBeInTheDocument();
+    expect((await screen.findAllByText("Payment Retry 8")).length).toBeGreaterThan(0);
+    await userEvent.type(screen.getByLabelText("Revision label"), "Payment retry v8");
+    await userEvent.type(screen.getByLabelText("Commit"), "8f6a9c1");
+    await userEvent.click(screen.getByRole("button", { name: "Create revision" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops/environments/claims-dev/revisions`),
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+    expect(requestBody(fetchMock, "POST", "/environments/claims-dev/revisions")).toMatchObject({
+      label: "Payment retry v8",
+      commit: "8f6a9c1",
+      records: [
         {
-          ...deploymentCockpitFixture.applications[0],
-          environments: deploymentCockpitFixture.applications[0].environments.map((environment) => ({ ...environment, engineIds: [] }))
+          kind: "ArtifactReference",
+          name: "Payment Retry 8",
+          payload: {
+            artifactRecordId: "11111111-1111-1111-1111-111111111111",
+            artifactId: "sha256:payment-retry-dev",
+            artifactTypeId: "elsa.workflow-definition",
+            contentDigest: { algorithm: "sha256", value: "dev-digest" }
+          }
         }
       ]
     });
+  }, 15000);
 
-    expect(await screen.findByRole("heading", { name: "Deployments" })).toBeInTheDocument();
-    expect(screen.queryByText("Deployments could not load")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Engine Registration" }));
-    expect(screen.getByText("No engine registered")).toBeInTheDocument();
-  });
+  it("edits engine metadata through a dedicated route", async () => {
+    const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-dev/engines/dev-engine/edit");
 
-  it("switches between multiple workflow applications from the application rail", async () => {
-    renderDeployments(multipleApplicationsCockpit);
+    expect(await screen.findByRole("heading", { name: "Edit engine" })).toBeInTheDocument();
+    await userEvent.clear(screen.getByLabelText("Base URL"));
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://dev-workflows-2.acme.example/elsa");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(await screen.findByRole("heading", { name: "Deployments" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Claims Operations/i })).toHaveAttribute("aria-pressed", "true");
-
-    await userEvent.click(screen.getByRole("button", { name: /Policy/i }));
-
-    expect(screen.getByRole("button", { name: /Policy/i })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("heading", { name: "Policy" })).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: /Prod Production/i })).toBeInTheDocument();
-  });
-
-  it("does not offer legacy tier names before workspace tiers are available", async () => {
-    const submit = vi.fn();
-
-    render(
-      <DeploymentSetupPanel
-        canManageSetup
-        tiers={[]}
-        tiersLoading={false}
-        isSubmitting={false}
-        onSubmit={submit}
-      />
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/engines/dev-engine`),
+        expect.objectContaining({ method: "PUT" })
+      )
     );
+  }, 15000);
 
-    expect(screen.getByLabelText("Tier")).toBeDisabled();
-    expect(screen.queryByRole("option", { name: "Dev" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "Production" })).not.toBeInTheDocument();
-    expect(screen.getByText("No active deployment tiers are available for this workspace.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Create setup" })).toBeDisabled();
+  it("registers another workflow engine for an existing environment", async () => {
+    const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-dev/engines/new");
+
+    expect(await screen.findByRole("heading", { name: "Register engine" })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("Engine"), "claims-dev-weu-02");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://claims-dev-weu-02.example/elsa");
+    await userEvent.type(screen.getByLabelText("Credential reference"), "kv://acme-platform/dev/elsa-api-secondary");
+    await userEvent.click(screen.getByRole("button", { name: "Register engine" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/environments/claims-dev/engines`),
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+    expect(requestBody(fetchMock, "POST", "/deployments/environments/claims-dev/engines")).toMatchObject({
+      name: "claims-dev-weu-02",
+      baseUrl: "https://claims-dev-weu-02.example/elsa",
+      credentialProvider: "Azure Key Vault",
+      credentialReference: "kv://acme-platform/dev/elsa-api-secondary"
+    });
+  }, 15000);
+
+  it("verifies a selected workflow engine through the live API", async () => {
+    const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-dev/engines/dev-engine");
+
+    expect((await screen.findAllByRole("heading", { name: "claims-dev-weu-01" })).length).toBeGreaterThan(0);
+    expect(screen.getByText("Engine details")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Verify" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/engines/dev-engine/verify`),
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent("Endpoint responded successfully.");
   });
 
-  it("replaces a stale selected tier id when workspace tiers change", async () => {
+  it("runs supported engine controls from an environment detail", async () => {
+    renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-stage/engines/stage-engine");
+
+    expect((await screen.findAllByRole("heading", { name: "claims-stage-weu-01" })).length).toBeGreaterThan(0);
+    expect(screen.getByText("Engine details")).toBeInTheDocument();
+    expect(screen.getAllByText("claims-stage-weu-01").length).toBeGreaterThan(0);
+    expect(screen.getByText("Pause Processing")).toBeInTheDocument();
+    expect(screen.getAllByText("Reload Configuration").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Restart Shell")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getAllByRole("button", { name: "Run" })[1]);
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Reload Configuration executed for claims-stage-weu-01.");
+  }, 15000);
+
+  it("keeps promotion validation and deployment actions on environment detail", async () => {
+    const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-prod");
+
+    expect(await screen.findByRole("heading", { name: "Prod" })).toBeInTheDocument();
+    expect(screen.getAllByText("Secret references").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Payment API secret reference is missing or not verified in Prod.").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Deploy Target Revision" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Roll Back to r39/i })).toBeEnabled();
+
+    await userEvent.selectOptions(screen.getByLabelText("Promote from"), "claims-dev");
+    await userEvent.selectOptions(screen.getByLabelText("Promote into"), "claims-test");
+    await userEvent.click(screen.getByRole("button", { name: "Preview promotion" }));
+    expect(await screen.findByText("Live validation passed for Test.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Create Target Revision" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Target revision r43 created");
+    await userEvent.click(screen.getByRole("button", { name: "Deploy Target Revision" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Deployment run queued");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/promotions/preview`),
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/promotions`),
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/runs`),
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(requestBody(fetchMock, "POST", "/deployments/runs")).toMatchObject({
+      sourceRevisionId: "00000000-0000-0000-0000-000000000243"
+    });
+  }, 10000);
+
+  it("explains why promotion preview is unavailable when the source revision is missing", async () => {
+    renderDeployments(cockpitWithMissingSourceRevision(), "/admin/deployments/applications/claims-ops/environments/claims-dev");
+
+    expect(await screen.findByRole("heading", { name: "Dev" })).toBeInTheDocument();
+    expect(screen.getByText("Promotion requirements")).toBeInTheDocument();
+    expect(screen.getByText("Dev does not have a desired-state revision yet. Create or choose a source revision before previewing promotion.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Preview promotion" })).toBeDisabled();
+  });
+
+  it("keeps assistant plans immutable and scoped to environment detail", async () => {
+    renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-prod");
+
+    expect(await screen.findByRole("heading", { name: "Prod" })).toBeInTheDocument();
+    expect(screen.getByText("Assistant plan plan-20260522-001 v3")).toBeInTheDocument();
+    expect(screen.getByText("Proposed actions")).toBeInTheDocument();
+    expect(screen.getByText("Executed actions")).toBeInTheDocument();
+    expect(screen.getByText("No platform mutations executed.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve Plan" })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Reject Plan" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Plan marked Rejected");
+  }, 15000);
+
+  it("shows deployment run history and drift on environment detail", async () => {
+    renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-prod");
+
+    expect(await screen.findByRole("heading", { name: "Prod" })).toBeInTheDocument();
+    expect(screen.getByText("Deployment blockers")).toBeInTheDocument();
+    expect(screen.getAllByText("Payment API secret reference is missing or not verified in Prod.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("claims-prod-weu-01 does not advertise engine.reload-configuration.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/claims-prod-weu-01 is unreachable/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Run history").length).toBeGreaterThan(0);
+    expect(screen.getByText("Mira Chen")).toBeInTheDocument();
+    expect(screen.getByText("Latest Blocked")).toBeInTheDocument();
+    expect(screen.getByText("Deploy Running")).toBeInTheDocument();
+    expect(screen.getByText("Applying workflow definitions")).toBeInTheDocument();
+  });
+
+  it("keeps setup panel tier behavior independent of routed pages", async () => {
     const submit = vi.fn();
     const firstProductionTier = tier("tier-production-old", "Production", 40, ["deployment.tier.production-like"]);
     const currentProductionTier = tier("tier-production-current", "Production", 40, ["deployment.tier.production-like"]);
@@ -176,380 +423,31 @@ describe("DeploymentsPage", () => {
     );
 
     await waitFor(() => expect(screen.getByLabelText("Tier")).toHaveValue("tier-production-current"));
-    await userEvent.type(screen.getByLabelText("Application"), "Policy");
-    await userEvent.type(screen.getByLabelText("Engine"), "dev-01");
-    await userEvent.type(screen.getByLabelText("Base URL"), "https://localhost:5001");
-    await userEvent.type(screen.getByLabelText("Credential reference"), "foo");
-    await userEvent.click(screen.getByRole("button", { name: "Create setup" }));
-
-    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ environmentTierId: "tier-production-current" }));
-  });
-
-  it("creates another deployment setup from a populated cockpit", async () => {
-    const fetchMock = renderDeployments();
-
-    await screen.findByRole("heading", { name: "Deployments" });
-    await waitFor(() => expect(screen.getByRole("button", { name: "New application" })).toBeEnabled());
-    await userEvent.click(screen.getByRole("button", { name: "New application" }));
-    await userEvent.type(screen.getByLabelText("Application"), "Customer Care");
-    await userEvent.clear(screen.getByLabelText("Environment"));
-    await userEvent.type(screen.getByLabelText("Environment"), "Prod");
-    await userEvent.type(screen.getByLabelText("Engine"), "care-prod");
-    await userEvent.type(screen.getByLabelText("Base URL"), "https://care.example.test/elsa");
-    await userEvent.type(screen.getByLabelText("Credential reference"), "kv://care/prod/elsa-api");
-    await userEvent.click(screen.getByRole("button", { name: "Create setup" }));
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications`),
-      expect.objectContaining({ method: "POST" })
-    );
-  });
-
-  it("adds an environment and engine to the selected application", async () => {
-    const fetchMock = renderDeployments(applicationWithoutSetupCockpit);
-
-    expect(await screen.findByRole("heading", { name: "Deployments" })).toBeInTheDocument();
-    expect(screen.getByText("No environments registered.")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Add environment" }));
-    expect(screen.getAllByText("Policy").length).toBeGreaterThan(0);
-    await userEvent.clear(screen.getByLabelText("Environment"));
-    await userEvent.type(screen.getByLabelText("Environment"), "Prod");
-    await userEvent.type(screen.getByLabelText("Engine"), "policy-prod-weu-01");
-    await userEvent.type(screen.getByLabelText("Base URL"), "https://policy-prod.example.test/elsa");
-    await userEvent.type(screen.getByLabelText("Credential reference"), "kv://policy/prod/elsa-api");
-    await userEvent.click(screen.getAllByRole("button", { name: "Add environment" }).at(-1)!);
-
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/policy-app/environments`),
-        expect.objectContaining({ method: "POST" })
-      )
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/environments/policy-prod/engines`),
-      expect.objectContaining({ method: "POST" })
-    );
-    expect(requestBody(fetchMock, "POST", "/applications/policy-app/environments")).toMatchObject({
-      name: "Prod",
-      tier: "Production",
-      tierId: "tier-production"
-    });
-  });
-
-  it("sends custom tier identity when adding an environment", async () => {
-    const fetchMock = renderDeployments(applicationWithoutSetupCockpit);
-
-    await screen.findByRole("heading", { name: "Deployments" });
-    await userEvent.click(screen.getByRole("button", { name: "Add environment" }));
-    await userEvent.selectOptions(screen.getByLabelText("Tier"), "tier-uat");
-    await userEvent.clear(screen.getByLabelText("Environment"));
-    await userEvent.type(screen.getByLabelText("Environment"), "UAT");
-    await userEvent.type(screen.getByLabelText("Engine"), "policy-uat-weu-01");
-    await userEvent.type(screen.getByLabelText("Base URL"), "https://policy-uat.example.test/elsa");
-    await userEvent.type(screen.getByLabelText("Credential reference"), "kv://policy/uat/elsa-api");
-    await userEvent.click(screen.getAllByRole("button", { name: "Add environment" }).at(-1)!);
-
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/policy-app/environments`),
-        expect.objectContaining({ method: "POST" })
-      )
-    );
-    expect(requestBody(fetchMock, "POST", "/applications/policy-app/environments")).toMatchObject({
-      name: "UAT",
-      tier: "Production",
-      tierId: "tier-uat"
-    });
-  });
-
-  it("edits application environment and engine metadata through live APIs", async () => {
-    const fetchMock = renderDeployments();
-
-    await screen.findByRole("heading", { name: "Deployments" });
-    await waitFor(() => expect(screen.getByRole("button", { name: "Edit application" })).toBeEnabled());
-    await userEvent.click(screen.getByRole("button", { name: "Edit application" }));
-    await userEvent.clear(screen.getByLabelText("Application name"));
-    await userEvent.type(screen.getByLabelText("Application name"), "Claims Platform");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await userEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
-    await userEvent.clear(screen.getByLabelText("Environment"));
-    await userEvent.type(screen.getByLabelText("Environment"), "Development");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await userEvent.click(screen.getByRole("button", { name: "Engine Registration" }));
-    await userEvent.click(screen.getByRole("button", { name: "Edit engine" }));
-    await userEvent.clear(screen.getByLabelText("Base URL"));
-    await userEvent.type(screen.getByLabelText("Base URL"), "https://dev-workflows-2.acme.example/elsa");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops`),
-        expect.objectContaining({ method: "PUT" })
-      )
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops/environments/claims-dev`),
-      expect.objectContaining({ method: "PUT" })
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/engines/dev-engine`),
-      expect.objectContaining({ method: "PUT" })
-    );
-  });
-
-  it("edits an environment endpoint and credential reference from the environment row", async () => {
-    const fetchMock = renderDeployments();
-
-    await screen.findByRole("heading", { name: "Deployments" });
-    await userEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
-    await userEvent.clear(screen.getByLabelText("Base URL"));
-    await userEvent.type(screen.getByLabelText("Base URL"), "https://dev-workflows-row-edit.acme.example/elsa");
-    await userEvent.clear(screen.getByLabelText("Credential reference"));
-    await userEvent.type(screen.getByLabelText("Credential reference"), "kv://acme-platform/dev/elsa-api-v2");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/engines/dev-engine`),
-        expect.objectContaining({ method: "PUT" })
-      )
-    );
-    expect(requestBody(fetchMock, "PUT", "/deployments/engines/dev-engine")).toMatchObject({
-      baseUrl: "https://dev-workflows-row-edit.acme.example/elsa",
-      credentialProvider: "Azure Key Vault",
-      credentialReference: "kv://acme-platform/dev/elsa-api-v2"
-    });
-  });
-
-  it("shows tier capabilities and sends tier identity when editing an environment", async () => {
-    const fetchMock = renderDeployments({
-      ...deploymentCockpitFixture,
-      applications: [
-        {
-          ...deploymentCockpitFixture.applications[0],
-          environments: deploymentCockpitFixture.applications[0].environments.map((environment) =>
-            environment.id === "claims-prod"
-              ? {
-                  ...environment,
-                  tierId: "tier-legacy-prod",
-                  tierName: "Legacy Production",
-                  tierStatus: "Archived",
-                  tierCapabilities: ["deployment.tier.production-like"]
-                }
-              : environment
-          )
-        }
-      ]
-    });
-
-    await screen.findByRole("heading", { name: "Deployments" });
-
-    expect(screen.getByText("Legacy Production (archived)")).toBeInTheDocument();
-    expect(screen.getAllByText("deployment.tier.production-like").length).toBeGreaterThan(0);
-    await userEvent.click(screen.getAllByRole("button", { name: "Edit" })[3]);
-    await userEvent.selectOptions(screen.getByLabelText("Tier"), "tier-uat");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops/environments/claims-prod`),
-        expect.objectContaining({ method: "PUT" })
-      )
-    );
-    expect(requestBody(fetchMock, "PUT", "/applications/claims-ops/environments/claims-prod")).toMatchObject({
-      name: "Prod",
-      tier: "Production",
-      tierId: "tier-uat"
-    });
-  });
-
-  it("verifies a selected workflow engine through the live API", async () => {
-    const fetchMock = renderDeployments();
-
-    await screen.findByRole("heading", { name: "Deployments" });
-    await userEvent.click(screen.getByRole("button", { name: "Engine Registration" }));
-    await userEvent.click(screen.getByRole("button", { name: "Verify" }));
-
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/engines/dev-engine/verify`),
-        expect.objectContaining({ method: "POST" })
-      )
-    );
-    expect(await screen.findByRole("status")).toHaveTextContent("Endpoint responded successfully.");
-  });
-
-  it("shows only capability-supported engine controls and records selected operations", async () => {
-    renderDeployments();
-
-    await screen.findByRole("heading", { name: "Deployments" });
-    await userEvent.click(screen.getByRole("button", { name: "Engine Registration" }));
-    await userEvent.selectOptions(screen.getByLabelText("Environment"), "claims-stage");
-
-    expect(screen.getAllByText("claims-stage-weu-01").length).toBeGreaterThan(0);
-    expect(screen.getByText("kv://acme-platform/stage/elsa-api")).toBeInTheDocument();
-    expect(screen.getByText("Pause Processing")).toBeInTheDocument();
-    expect(screen.getAllByText("Reload Configuration").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Restart Shell")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Restart$/i })).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getAllByRole("button", { name: "Run" })[1]);
-
-    expect(await screen.findByRole("status")).toHaveTextContent("Reload Configuration executed for claims-stage-weu-01.");
-  });
-
-  it("blocks deployment when promotion validation finds missing secrets and incompatible capabilities", async () => {
-    renderDeployments();
-
-    await screen.findByRole("heading", { name: "Deployments" });
-    await userEvent.click(screen.getByRole("button", { name: "Promotion Diff" }));
-
-    expect(screen.getAllByText("Payment Retry").length).toBeGreaterThan(0);
-    expect(screen.getByText("Artifact references")).toBeInTheDocument();
-    expect(screen.getByText("sha256:payment-retry-stage")).toBeInTheDocument();
-    expect(screen.getAllByText("elsa.workflow-definition").length).toBeGreaterThan(0);
-    expect(screen.getByText("displayName=Payment Retry, version=7")).toBeInTheDocument();
-    expect(screen.getAllByText("Secret references").length).toBeGreaterThan(0);
-    expect(screen.getByText("Payment API secret reference is missing or not verified in Prod.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Deploy Revision" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Roll Back to r39/i })).toBeEnabled();
-  });
-
-  it("uses tier capability ids for rollback availability", async () => {
-    renderDeployments({
-      ...deploymentCockpitFixture,
-      applications: [
-        {
-          ...deploymentCockpitFixture.applications[0],
-          environments: deploymentCockpitFixture.applications[0].environments.map((environment) =>
-            environment.id === "claims-prod"
-              ? {
-                  ...environment,
-                  tierName: "Customer Live",
-                  tierCapabilities: ["deployment.tier.production-like", "deployment.promotion.target", "deployment.confirmation.required"]
-                }
-              : environment
-          )
-        }
-      ]
-    });
-
-    await screen.findByRole("heading", { name: "Deployments" });
-    await userEvent.click(screen.getByRole("button", { name: "Promotion Diff" }));
-
-    expect(screen.getByText("Rollback is not enabled for the target tier.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Roll Back to r39/i })).toBeDisabled();
-  });
-
-  it("enables deployment for a comparison with passing validations", async () => {
-    renderDeployments();
-
-    await screen.findByRole("heading", { name: "Deployments" });
-    await userEvent.click(screen.getByRole("button", { name: "Promotion Diff" }));
-    await userEvent.selectOptions(screen.getByLabelText("Source revision"), "claims-dev");
-    await userEvent.selectOptions(screen.getByLabelText("Target revision"), "claims-test");
-
-    expect(screen.getByText("Required secret references are verified for Test.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Deploy Revision" })).toBeEnabled();
-  });
-
-  it("refreshes live preview and queues deployment and rollback with confirmations", async () => {
-    const fetchMock = renderDeployments();
-
-    await screen.findByRole("heading", { name: "Deployments" });
-    await userEvent.click(screen.getByRole("button", { name: "Promotion Diff" }));
-    await userEvent.selectOptions(screen.getByLabelText("Source revision"), "claims-dev");
-    await userEvent.selectOptions(screen.getByLabelText("Target revision"), "claims-test");
-    await userEvent.click(screen.getByRole("button", { name: "Refresh Preview" }));
-
-    expect(await screen.findByText("Live validation passed for Test.")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Deploy Revision" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Deployment run queued");
-
-    await userEvent.selectOptions(screen.getByLabelText("Source revision"), "claims-stage");
-    await userEvent.selectOptions(screen.getByLabelText("Target revision"), "claims-prod");
-    await userEvent.click(screen.getByRole("button", { name: /Roll Back to r39/i }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Rollback run queued");
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/promotions/preview`),
-      expect.objectContaining({ method: "POST" })
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/runs`),
-      expect.objectContaining({ method: "POST" })
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/rollbacks`),
-      expect.objectContaining({ method: "POST" })
-    );
-  }, 10000);
-
-  it("shows an empty promotion preview state when the cockpit has no comparison", async () => {
-    renderDeployments({ ...deploymentCockpitFixture, comparisons: [] });
-
-    await screen.findByRole("heading", { name: "Deployments" });
-    await userEvent.click(screen.getByRole("button", { name: "Promotion Diff" }));
-
-    expect(screen.getByText("No comparison available")).toBeInTheDocument();
-    expect(screen.getByText("Choose a supported source and target environment pair.")).toBeInTheDocument();
-    expect(screen.getByText("No comparison")).toBeInTheDocument();
-  });
-
-  it("keeps assistant plans immutable and distinguishes proposed from executed actions", async () => {
-    renderDeployments();
-
-    await screen.findByRole("heading", { name: "Deployments" });
-    await userEvent.click(screen.getByRole("button", { name: "Assistant Review" }));
-
-    expect(screen.getByText("Immutable plan plan-20260522-001 v3")).toBeInTheDocument();
-    expect(screen.getByText("Proposed actions")).toBeInTheDocument();
-    expect(screen.getByText("Executed actions")).toBeInTheDocument();
-    expect(screen.getByText("No platform mutations executed.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Approve Plan" })).toBeDisabled();
-
-    await userEvent.click(screen.getByRole("button", { name: "Reject Plan" }));
-    expect(screen.getByRole("status")).toHaveTextContent("Plan marked Rejected");
-    expect(screen.getByText("No platform mutations executed.")).toBeInTheDocument();
-  });
-
-  it("shows an empty assistant review state when no plan is available", async () => {
-    renderDeployments({ ...deploymentCockpitFixture, assistantPlans: [] });
-
-    await screen.findByRole("heading", { name: "Deployments" });
-    await userEvent.click(screen.getByRole("button", { name: "Assistant Review" }));
-
-    expect(screen.getByText("No assistant plan available")).toBeInTheDocument();
-    expect(screen.getByText("Assistant review will appear after a deployment plan is generated for this workspace.")).toBeInTheDocument();
-  });
-
-  it("shows deployment run history and confirmation actions", async () => {
-    renderDeployments();
-
-    await screen.findByRole("heading", { name: "Deployments" });
-    await userEvent.click(screen.getByRole("button", { name: "Observability" }));
-
-    expect(screen.getByText("Run history")).toBeInTheDocument();
-    expect(screen.getByText("Mira Chen")).toBeInTheDocument();
-    expect(screen.getByText("Latest Blocked")).toBeInTheDocument();
-    expect(screen.getByText("Deploy Running")).toBeInTheDocument();
-    expect(screen.getByText("Applying workflow definitions")).toBeInTheDocument();
-    expect(screen.getByText("sha256:payment-retry-stage / elsa.workflow-definition / sha256:stage-digest")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Confirm Deployment" })).not.toBeInTheDocument();
   });
 });
 
-function renderDeployments(cockpit: DeploymentCockpit = deploymentCockpitFixture) {
+function renderDeployments(cockpit: DeploymentCockpit = deploymentCockpitFixture, initialEntry = "/admin/deployments") {
   const fetchMock = createDeploymentFetchMock(cockpit);
   vi.stubGlobal("fetch", fetchMock);
   render(
     <TestQueryProvider>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <WorkspaceContextProvider>
-            <DeploymentsPage />
+            <Routes>
+              <Route path="/admin/deployments" element={<DeploymentsPage />} />
+              <Route path="/admin/deployments/new" element={<NewDeploymentSetupPage />} />
+              <Route path="/admin/deployments/applications" element={<DeploymentApplicationsPage />} />
+              <Route path="/admin/deployments/applications/:applicationId" element={<DeploymentApplicationPage />} />
+              <Route path="/admin/deployments/applications/:applicationId/edit" element={<DeploymentApplicationEditPage />} />
+              <Route path="/admin/deployments/applications/:applicationId/environments/new" element={<DeploymentEnvironmentCreatePage />} />
+              <Route path="/admin/deployments/applications/:applicationId/environments/:environmentId" element={<DeploymentEnvironmentPage />} />
+              <Route path="/admin/deployments/applications/:applicationId/environments/:environmentId/edit" element={<DeploymentEnvironmentEditPage />} />
+              <Route path="/admin/deployments/applications/:applicationId/environments/:environmentId/revisions/new" element={<DeploymentRevisionCreatePage />} />
+              <Route path="/admin/deployments/applications/:applicationId/environments/:environmentId/engines/new" element={<DeploymentEngineRegisterPage />} />
+              <Route path="/admin/deployments/applications/:applicationId/environments/:environmentId/engines/:engineId" element={<DeploymentEnginePage />} />
+              <Route path="/admin/deployments/applications/:applicationId/environments/:environmentId/engines/:engineId/edit" element={<DeploymentEngineEditPage />} />
+            </Routes>
           </WorkspaceContextProvider>
         </AuthProvider>
       </MemoryRouter>
@@ -572,6 +470,7 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
         permissions: [
           "deployments.read",
           "deployments.setup.manage",
+          "deployments.desired-state.manage",
           "deployments.promotion.preview",
           "deployments.run.execute",
           "deployments.rollback.execute",
@@ -584,6 +483,9 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
     }
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/tiers`)) {
       return jsonResponse({ tiers: deploymentTiers });
+    }
+    if (url.endsWith(`/api/workspaces/${workspaceId}/artifacts`)) {
+      return jsonResponse({ items: workspaceArtifacts });
     }
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/cockpit`)) {
       return jsonResponse(currentCockpit);
@@ -648,6 +550,30 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
       };
       return jsonResponse({ id: "policy-prod-engine", name: "policy-prod-weu-01", environmentId: "policy-prod" }, 201);
     }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/environments/claims-dev/engines`)) {
+      currentCockpit = {
+        ...currentCockpit,
+        applications: currentCockpit.applications.map((application) =>
+          application.id === "claims-ops"
+            ? {
+                ...application,
+                environments: application.environments.map((environment) =>
+                  environment.id === "claims-dev"
+                    ? { ...environment, engineIds: [...environment.engineIds, "dev-engine-secondary"] }
+                    : environment
+                )
+              }
+            : application
+        ),
+        engines: [
+          ...currentCockpit.engines,
+          engine("dev-engine-secondary", "claims-dev-weu-02", "claims-dev", "Healthy", "Verified", [
+            capability("engine.reload-configuration", "Reload engine configuration", "EngineApi")
+          ])
+        ]
+      };
+      return jsonResponse({ id: "dev-engine-secondary", name: "claims-dev-weu-02", environmentId: "claims-dev" }, 201);
+    }
     if (method === "PUT" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops`)) {
       currentCockpit = {
         ...currentCockpit,
@@ -668,6 +594,43 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
         }))
       };
       return jsonResponse({ id: "claims-dev", workspaceId, applicationId: "claims-ops", name: "Development" });
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops/environments/claims-dev/revisions`)) {
+      currentCockpit = {
+        ...currentCockpit,
+        applications: currentCockpit.applications.map((application) =>
+          application.id === "claims-ops"
+            ? {
+                ...application,
+                environments: application.environments.map((environment) =>
+                  environment.id === "claims-dev"
+                    ? {
+                        ...environment,
+                        desiredRevision: {
+                          id: "00000000-0000-0000-0000-000000000242",
+                          revision: 43,
+                          commit: "8f6a9c1",
+                          label: "Payment retry v8",
+                          authoredAt: "2026-05-26T11:00:00Z"
+                        }
+                      }
+                    : environment
+                )
+              }
+            : application
+        )
+      };
+      return jsonResponse({
+        id: "00000000-0000-0000-0000-000000000242",
+        workspaceId,
+        applicationId: "claims-ops",
+        environmentId: "claims-dev",
+        revisionNumber: 43,
+        label: "Payment retry v8",
+        commit: "8f6a9c1",
+        contentHash: "hash-v43",
+        desiredStateJson: "{}"
+      }, 201);
     }
     if (method === "PUT" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/engines/dev-engine`)) {
       currentCockpit = {
@@ -725,6 +688,39 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
           { id: "capability-test", severity: "Pass", scope: "Engine capabilities", message: "claims-test-weu-01 supports required engine operations." }
         ]
       });
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/promotions`)) {
+      return jsonResponse({
+        sourceRevision: {
+          id: "00000000-0000-0000-0000-000000000142",
+          workspaceId,
+          applicationId: "claims-ops",
+          environmentId: "claims-dev",
+          revisionNumber: 42,
+          label: "Payment retry workflow",
+          commit: "8f6a9c1",
+          contentHash: "source-hash",
+          desiredStateJson: "{}"
+        },
+        targetRevision: {
+          id: "00000000-0000-0000-0000-000000000243",
+          workspaceId,
+          applicationId: "claims-ops",
+          environmentId: "claims-test",
+          revisionNumber: 43,
+          label: "Promoted from Dev r42",
+          commit: "8f6a9c1",
+          contentHash: "target-hash",
+          desiredStateJson: "{}"
+        },
+        comparison: {
+          ...deploymentCockpitFixture.comparisons[1],
+          validations: [
+            { id: "secret-payment-test", severity: "Pass", scope: "Secret references", message: "Live validation passed for Test." },
+            { id: "capability-test", severity: "Pass", scope: "Engine capabilities", message: "claims-test-weu-01 supports required engine operations." }
+          ]
+        }
+      }, 201);
     }
     if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/runs`)) {
       currentCockpit = {
@@ -844,6 +840,12 @@ function requestBody(fetchMock: ReturnType<typeof createDeploymentFetchMock>, me
   return JSON.parse(call![1]?.body?.toString() ?? "{}") as Record<string, unknown>;
 }
 
+function linkByHref(href: string) {
+  const link = screen.getAllByRole("link").find((item) => item.getAttribute("href") === href);
+  expect(link).toBeDefined();
+  return link!;
+}
+
 function workspaceContextFixture() {
   return {
     account: { id: "account-1", displayName: "Test User", email: "test@example.com" },
@@ -895,6 +897,43 @@ const deploymentTiers = [
   tier("tier-uat", "UAT", 35, ["deployment.tier.preproduction-like", "deployment.promotion.target"]),
   tier("tier-legacy-prod", "Legacy Production", 50, ["deployment.tier.production-like"], "Archived")
 ];
+const workspaceArtifacts = [
+  {
+    id: "11111111-1111-1111-1111-111111111111",
+    workspaceId,
+    artifactId: "sha256:payment-retry-dev",
+    layoutVersion: "platform.elsa.io/deployment-artifact/v1alpha1",
+    contentDigest: { algorithm: "sha256", value: "dev-digest" },
+    format: "Zip",
+    referenceProvider: "local",
+    reference: "local:///tmp/payment-retry-dev.zip",
+    manifest: { name: "Payment Retry", version: "8", environment: "Dev" },
+    resources: [],
+    checksumStatus: "Verified",
+    inspectionStatus: "Valid",
+    diagnostics: [],
+    registeredAt: "2026-05-26T10:00:00Z",
+    registeredByAccountId: "account-1",
+    lastInspectedAt: "2026-05-26T10:00:00Z",
+    createdAt: "2026-05-26T10:00:00Z",
+    updatedAt: "2026-05-26T10:00:00Z",
+    envelopeVersion: "platform.elsa.io/artifact-envelope/v1alpha1",
+    artifactTypeId: "elsa.workflow-definition",
+    artifactSchemaVersion: "1.0",
+    manifestDigest: { algorithm: "sha256", value: "manifest-digest" },
+    payloadReference: null,
+    producer: null,
+    displayMetadata: {
+      name: "Payment Retry",
+      version: "8",
+      description: "Payment retry workflow",
+      labels: { workflow: "payment-retry" },
+      annotations: {},
+      source: null
+    },
+    compatibilityHints: null
+  }
+] as const;
 
 const deploymentCockpitFixture: DeploymentCockpit = {
   applications: [
@@ -1125,6 +1164,29 @@ const applicationWithoutSetupCockpit: DeploymentCockpit = {
   driftReport: [],
   assistantPlans: []
 };
+
+function cockpitWithMissingSourceRevision(): DeploymentCockpit {
+  return {
+    ...deploymentCockpitFixture,
+    applications: deploymentCockpitFixture.applications.map((application) => application.id !== "claims-ops"
+      ? application
+      : {
+        ...application,
+        environments: application.environments.map((environment) => environment.id === "claims-dev"
+          ? {
+            ...environment,
+            desiredRevision: {
+              ...environment.desiredRevision,
+              id: "",
+              revision: 0,
+              commit: "",
+              label: "No desired revision"
+            }
+          }
+          : environment)
+      })
+  };
+}
 
 const multipleApplicationsCockpit: DeploymentCockpit = {
   ...deploymentCockpitFixture,

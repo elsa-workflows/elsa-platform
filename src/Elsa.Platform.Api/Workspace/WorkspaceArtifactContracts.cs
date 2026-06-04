@@ -25,3 +25,7 @@ public sealed record WorkspaceArtifactRegistrationRequest(
     ArtifactProducer? Producer = null,
     ArtifactDisplayMetadata? DisplayMetadata = null,
     IReadOnlyList<ArtifactCompatibilityHint>? CompatibilityHints = null);
+
+public sealed record WorkspaceArtifactUploadCapabilitiesResponse(
+    long MaxUploadBytes,
+    bool SampleArtifactGenerationEnabled);

@@ -67,6 +67,14 @@ export type PublicPackageInfrastructureRequirement = {
   configurationKeys: string[];
 };
 
+export type PublicPackageFeatureDependency = {
+  packageId?: string | null;
+  versionRange?: string | null;
+  featureId?: string | null;
+  optional: boolean;
+  reason?: string | null;
+};
+
 export type PublicPackageFeature = {
   featureId: string;
   typeName: string;
@@ -74,6 +82,7 @@ export type PublicPackageFeature = {
   description?: string | null;
   category?: string | null;
   requiredCapabilities: string[];
+  dependencies?: PublicPackageFeatureDependency[] | null;
   infrastructure: PublicPackageInfrastructureRequirement[];
   advanced: boolean;
   experimental: boolean;

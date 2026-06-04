@@ -2,10 +2,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceContextProvider } from "@/app/WorkspaceContextProvider";
-import { RuntimeBuilderPage } from "@/features/runtime-builder/RuntimeBuilderPage";
-import type { BuilderCatalog, BuilderPlanResponse, RuntimeBuilderIntent } from "@/features/runtime-builder/runtimeBuilderModels";
+import { EditRuntimeBuilderPage, NewRuntimeBuilderPage, RuntimeBuilderPage } from "@/features/runtime-builder/RuntimeBuilderPage";
+import type { BuilderCatalog, BuilderPlanResponse, RuntimeBuilderIntent, RuntimeConfiguration } from "@/features/runtime-builder/runtimeBuilderModels";
 import { AuthProvider } from "@/lib/auth/AuthProvider";
 
 const organizationId = "00000000-0000-0000-0000-000000000001";
@@ -139,14 +140,18 @@ describe("RuntimeBuilderPage", () => {
 
     expect((await screen.findAllByText("Elsa Runtime")).length).toBeGreaterThan(0);
 
-    await userEvent.click(screen.getByRole("button", { name: "Add Elsa.Persistence.PostgreSql" }));
-    expect(screen.getAllByText("PostgreSQL Persistence").length).toBeGreaterThan(1);
+    await userEvent.click(screen.getByRole("checkbox", { name: /PostgreSQL Persistence/i }));
+    expect(screen.getByText("Package inferred: Elsa.Persistence.PostgreSql 1.0.2")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Plan Runtime" }));
+    await clickWizardFooterButton("Runtime");
+    await clickWizardFooterButton("Infrastructure");
+    await clickWizardFooterButton("Review");
+
+    await userEvent.click(screen.getByRole("button", { name: "Plan build" }));
     await screen.findByText("Planner additions");
     expect(screen.getByText("PostgreSQL provider added.")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Generate Bundle" }));
+    await userEvent.click(screen.getByRole("button", { name: "Generate bundle" }));
     expect(await screen.findByText("Bundle bundle-1")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "docker-compose.yml" })).toBeInTheDocument();
     expect(screen.getByText(/image: elsa\/runtime:4\.0\.1/)).toBeInTheDocument();
@@ -171,10 +176,180 @@ describe("RuntimeBuilderPage", () => {
     renderRuntimeBuilder(fetchMock);
 
     expect((await screen.findAllByText("Elsa Runtime")).length).toBeGreaterThan(0);
-    await userEvent.click(screen.getByRole("button", { name: "Plan Runtime" }));
+    await clickWizardFooterButton("Runtime");
+    await clickWizardFooterButton("Infrastructure");
+    await clickWizardFooterButton("Review");
+    await userEvent.click(screen.getByRole("button", { name: "Plan build" }));
 
     await waitFor(() => expect(findPlanCall(fetchMock)).toBeDefined());
     expect(screen.queryByText("Planner additions")).not.toBeInTheDocument();
+  });
+
+  it("finds features by technical identifiers used in findings", async () => {
+    const fetchMock = createRuntimeBuilderFetchMock({
+      planResponse: (intent) => ({
+        resolved: intent,
+        autoAdded: { packages: [], features: [], infrastructure: [] },
+        findings: []
+      })
+    });
+    renderRuntimeBuilder(fetchMock);
+
+    expect((await screen.findAllByText("Elsa Runtime")).length).toBeGreaterThan(0);
+
+    await userEvent.type(screen.getByLabelText("Search runtime features"), "Elsa.Persistence.PostgreSql.PostgreSqlFeature");
+
+    expect(screen.getByRole("checkbox", { name: /PostgreSQL Persistence/i })).toBeInTheDocument();
+    expect(screen.queryByText("No features match the current search.")).not.toBeInTheDocument();
+  });
+
+  it("lists saved build configurations without rendering the builder wizard", async () => {
+    const fetchMock = createRuntimeBuilderFetchMock({
+      configurations: [
+        savedConfigurationFixture()
+      ],
+      planResponse: (intent) => ({
+        resolved: intent,
+        autoAdded: { packages: [], features: [], infrastructure: [] },
+        findings: []
+      })
+    });
+    renderRuntimeBuilder(fetchMock, { page: "list" });
+
+    expect(await screen.findByRole("heading", { name: "Saved build configurations" })).toBeInTheDocument();
+    const configurationName = await screen.findByRole("button", { name: "Claims runtime" });
+    expect(screen.getByText("Runtime build for claims processing.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "New configuration" })).toHaveAttribute("href", "/admin/runtime-builder/new");
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Choose features" })).not.toBeInTheDocument();
+
+    await userEvent.click(configurationName);
+
+    expect(await screen.findByRole("heading", { name: "Edit build configuration" })).toBeInTheDocument();
+  });
+
+  it("loads an existing configuration into the edit builder and updates it", async () => {
+    const fetchMock = createRuntimeBuilderFetchMock({
+      configurations: [savedConfigurationFixture()],
+      planResponse: (intent) => ({
+        resolved: intent,
+        autoAdded: { packages: [], features: [], infrastructure: [] },
+        findings: []
+      })
+    });
+    renderRuntimeBuilder(fetchMock, { page: "edit", route: "/admin/runtime-builder/configuration-1/edit" });
+
+    expect(await screen.findByRole("heading", { name: "Edit build configuration" })).toBeInTheDocument();
+    expect(await screen.findByText("Claims runtime")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /PostgreSQL Persistence/i })).toBeChecked();
+
+    await clickWizardFooterButton("Runtime");
+    await clickWizardFooterButton("Infrastructure");
+    await clickWizardFooterButton("Review");
+
+    expect(screen.getByDisplayValue("Claims runtime")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Runtime build for claims processing.")).toBeInTheDocument();
+    expect(screen.getByText("PostgreSQL Persistence")).toBeInTheDocument();
+    expect(screen.getByText("Elsa.Persistence.PostgreSql 1.0.2")).toBeInTheDocument();
+
+    await userEvent.clear(screen.getByDisplayValue("Claims runtime"));
+    await userEvent.type(screen.getByLabelText("Name"), "Claims runtime updated");
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      const updateCall = findUpdateConfigurationCall(fetchMock);
+      expect(updateCall).toBeDefined();
+      const body = readBody<{ name: string; intent: RuntimeBuilderIntent }>(updateCall?.[1]);
+      expect(body.name).toBe("Claims runtime updated");
+      expect(body.intent.packages[0].selectedFeatures).toEqual(["postgresql"]);
+    });
+  });
+
+  it("shows edit quick actions in the summary rail", async () => {
+    const fetchMock = createRuntimeBuilderFetchMock({
+      configurations: [savedConfigurationFixture()],
+      planResponse: (intent) => ({
+        resolved: intent,
+        autoAdded: { packages: [], features: [], infrastructure: [] },
+        findings: []
+      })
+    });
+    renderRuntimeBuilder(fetchMock, { page: "edit", route: "/admin/runtime-builder/configuration-1/edit" });
+
+    expect(await screen.findByRole("heading", { name: "Edit build configuration" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Quick actions" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Plan build" }));
+    await waitFor(() => expect(findPlanCall(fetchMock)).toBeDefined());
+
+    await userEvent.click(screen.getByRole("button", { name: "Generate bundle" }));
+    expect(await screen.findByText("Bundle bundle-1")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(findUpdateConfigurationCall(fetchMock)).toBeDefined());
+
+    await clickWizardFooterButton("Runtime");
+    await clickWizardFooterButton("Infrastructure");
+    await clickWizardFooterButton("Review");
+    expect(screen.queryByRole("heading", { name: "Quick actions" })).not.toBeInTheDocument();
+  });
+
+  it("surfaces bundle request diagnostics when generation fails", async () => {
+    const fetchMock = createRuntimeBuilderFetchMock({
+      bundleFailure: {
+        error: "Local package path ./packages was not found."
+      },
+      planResponse: (intent) => ({
+        resolved: intent,
+        autoAdded: { packages: [], features: [], infrastructure: [] },
+        findings: []
+      })
+    });
+    renderRuntimeBuilder(fetchMock);
+
+    expect((await screen.findAllByText("Elsa Runtime")).length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("checkbox", { name: /PostgreSQL Persistence/i }));
+    await clickWizardFooterButton("Runtime");
+    await clickWizardFooterButton("Infrastructure");
+    await clickWizardFooterButton("Review");
+
+    await userEvent.click(screen.getByLabelText("Include local packages directory"));
+    await userEvent.click(screen.getByRole("button", { name: "Generate bundle" }));
+
+    expect(await screen.findByRole("heading", { name: "Bundle generation failed" })).toBeInTheDocument();
+    expect(screen.getAllByText("Local package path ./packages was not found.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("bundle.request").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("HTTP 400 · Validation").length).toBeGreaterThan(0);
+  });
+
+  it("selects required feature dependencies when a feature is selected", async () => {
+    const fetchMock = createRuntimeBuilderFetchMock({
+      catalog: catalogWithFeatureDependencies(),
+      planResponse: (intent) => ({
+        resolved: intent,
+        autoAdded: { packages: [], features: [], infrastructure: [] },
+        findings: []
+      })
+    });
+    renderRuntimeBuilder(fetchMock);
+
+    expect((await screen.findAllByText("Elsa Runtime")).length).toBeGreaterThan(0);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: /PostgreSQL Persistence/i }));
+
+    expect(screen.getByRole("checkbox", { name: /Persistence Core/i })).toBeChecked();
+
+    await clickWizardFooterButton("Runtime");
+    await clickWizardFooterButton("Infrastructure");
+    await clickWizardFooterButton("Review");
+    await userEvent.click(screen.getByRole("button", { name: "Plan build" }));
+
+    await waitFor(() => {
+      const planCall = findPlanCall(fetchMock);
+      expect(planCall).toBeDefined();
+      const planBody = readBody<{ intent: RuntimeBuilderIntent }>(planCall?.[1]);
+      expect(planBody.intent.packages[0].selectedFeatures).toEqual(["persistence-core", "postgresql"]);
+    });
   });
 
   it("shows a generic error state for non-auth workspace failures", async () => {
@@ -194,7 +369,17 @@ describe("RuntimeBuilderPage", () => {
 
 const postgresqlInfrastructure = { kind: "Database", providerId: "postgresql", strategy: "Managed", settings: null };
 
-function createRuntimeBuilderFetchMock({ planResponse }: { planResponse: (intent: RuntimeBuilderIntent) => BuilderPlanResponse }) {
+function createRuntimeBuilderFetchMock({
+  catalog = catalogFixture,
+  configurations = [],
+  bundleFailure,
+  planResponse
+}: {
+  catalog?: BuilderCatalog;
+  configurations?: RuntimeConfiguration[];
+  bundleFailure?: unknown;
+  planResponse: (intent: RuntimeBuilderIntent) => BuilderPlanResponse;
+}) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : input.toString();
     if (url.endsWith("/api/auth/session"))
@@ -202,16 +387,43 @@ function createRuntimeBuilderFetchMock({ planResponse }: { planResponse: (intent
     if (url.endsWith("/api/me/organizations"))
       return jsonResponse(workspaceContextFixture());
     if (url.endsWith(`/api/workspaces/${workspaceId}/builder/catalog`)) {
-      return jsonResponse(catalogFixture);
+      return jsonResponse(catalog);
     }
     if (url.endsWith(`/api/workspaces/${workspaceId}/runtime-configurations`) && (!init?.method || init.method === "GET")) {
-      return jsonResponse([]);
+      return jsonResponse(configurations);
+    }
+    if (url.endsWith(`/api/workspaces/${workspaceId}/runtime-configurations`) && init?.method === "POST") {
+      const body = readBody<{ name: string; description?: string | null; intent: RuntimeBuilderIntent }>(init);
+      return jsonResponse({
+        id: "configuration-created",
+        workspaceId,
+        name: body.name,
+        description: body.description ?? null,
+        intent: body.intent,
+        createdAt: "2026-06-01T10:00:00Z",
+        updatedAt: "2026-06-01T10:00:00Z"
+      });
+    }
+    const configurationMatch = url.match(new RegExp(`/api/workspaces/${workspaceId}/runtime-configurations/([^/]+)$`));
+    if (configurationMatch && (!init?.method || init.method === "GET")) {
+      const configuration = configurations.find((item) => item.id === decodeURIComponent(configurationMatch[1]));
+      return configuration ? jsonResponse(configuration) : jsonResponse({ title: "Not found" }, 404);
+    }
+    if (configurationMatch && init?.method === "PUT") {
+      const source = configurations.find((item) => item.id === decodeURIComponent(configurationMatch[1]));
+      const body = readBody<{ name: string; description?: string | null; intent: RuntimeBuilderIntent }>(init);
+      return source
+        ? jsonResponse({ ...source, name: body.name, description: body.description ?? null, intent: body.intent, updatedAt: "2026-06-01T10:00:00Z" })
+        : jsonResponse({ title: "Not found" }, 404);
     }
     if (url.endsWith(`/api/workspaces/${workspaceId}/builder/plan`)) {
       const body = readBody<{ intent: RuntimeBuilderIntent }>(init);
       return jsonResponse(planResponse(body.intent));
     }
     if (url.endsWith(`/api/workspaces/${workspaceId}/builder/bundle`)) {
+      if (bundleFailure) {
+        return jsonResponse(bundleFailure, 400);
+      }
       return jsonResponse({
         bundleId: "bundle-1",
         files: [
@@ -231,23 +443,123 @@ function createRuntimeBuilderFetchMock({ planResponse }: { planResponse: (intent
   });
 }
 
+function catalogWithFeatureDependencies(): BuilderCatalog {
+  return {
+    ...catalogFixture,
+    packages: catalogFixture.packages.map((packageItem) => ({
+      ...packageItem,
+      versions: packageItem.versions.map((version) => ({
+        ...version,
+        features: [
+          {
+            featureId: "persistence-core",
+            typeName: "Elsa.Persistence.PersistenceFeature",
+            displayName: "Persistence Core",
+            description: "Base persistence services.",
+            category: "Persistence",
+            requiredCapabilities: ["persistence"],
+            dependencies: [],
+            infrastructure: [],
+            advanced: false,
+            experimental: false,
+            settings: []
+          },
+          {
+            ...version.features[0],
+            dependencies: [
+              {
+                packageId: "Elsa.Persistence.PostgreSql",
+                versionRange: null,
+                featureId: "persistence-core",
+                optional: false,
+                reason: "PostgreSQL persistence requires base persistence services."
+              }
+            ]
+          }
+        ]
+      }))
+    }))
+  };
+}
+
 function findPlanCall(fetchMock: ReturnType<typeof createRuntimeBuilderFetchMock>) {
   return fetchMock.mock.calls.find((call) => call[0].toString().endsWith(`/api/workspaces/${workspaceId}/builder/plan`));
 }
 
-function renderRuntimeBuilder(fetchMock: unknown) {
+function findUpdateConfigurationCall(fetchMock: ReturnType<typeof createRuntimeBuilderFetchMock>) {
+  return fetchMock.mock.calls.find((call) => {
+    const url = call[0].toString();
+    return call[1]?.method === "PUT" && url.endsWith(`/api/workspaces/${workspaceId}/runtime-configurations/configuration-1`);
+  });
+}
+
+function savedConfigurationFixture(): RuntimeConfiguration {
+  return {
+    id: "configuration-1",
+    workspaceId,
+    name: "Claims runtime",
+    description: "Runtime build for claims processing.",
+    intent: {
+      image: { slug: "elsa-runtime", tag: "4.0.0", hostPort: 14000, envOverrides: null },
+      packages: [
+        {
+          sourceId: "00000000-0000-0000-0000-000000000001",
+          packageId: "Elsa.Persistence.PostgreSql",
+          version: "1.0.2",
+          selectedFeatures: ["postgresql"]
+        }
+      ],
+      packageSources: [],
+      infrastructure: [postgresqlInfrastructure],
+      localPackages: { enabled: false, directoryPath: null },
+      target: "docker-compose"
+    },
+    createdAt: "2026-06-01T08:00:00Z",
+    updatedAt: "2026-06-01T09:00:00Z"
+  };
+}
+
+function renderRuntimeBuilder(
+  fetchMock: unknown,
+  { page = "new", route }: { page?: "list" | "new" | "edit"; route?: string } = {}
+) {
   vi.stubGlobal("fetch", fetchMock);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const routeConfig = runtimeBuilderRouteConfig(page, route);
 
   render(
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <WorkspaceContextProvider>
-          <RuntimeBuilderPage />
-        </WorkspaceContextProvider>
-      </AuthProvider>
+      <MemoryRouter initialEntries={[routeConfig.route]}>
+        <AuthProvider>
+          <WorkspaceContextProvider>
+            <Routes>
+              <Route path="/admin/runtime-builder" element={<RuntimeBuilderPage />} />
+              <Route path="/admin/runtime-builder/new" element={<NewRuntimeBuilderPage />} />
+              <Route path="/admin/runtime-builder/:configurationId/edit" element={<EditRuntimeBuilderPage />} />
+            </Routes>
+          </WorkspaceContextProvider>
+        </AuthProvider>
+      </MemoryRouter>
     </QueryClientProvider>
   );
+}
+
+function runtimeBuilderRouteConfig(page: "list" | "new" | "edit", route?: string) {
+  switch (page) {
+    case "list":
+      return { route: route ?? "/admin/runtime-builder" };
+    case "edit":
+      return {
+        route: route ?? "/admin/runtime-builder/configuration-1/edit"
+      };
+    default:
+      return { route: route ?? "/admin/runtime-builder/new" };
+  }
+}
+
+async function clickWizardFooterButton(name: string) {
+  const buttons = screen.getAllByRole("button", { name });
+  await userEvent.click(buttons[buttons.length - 1]);
 }
 
 function workspaceContextFixture() {

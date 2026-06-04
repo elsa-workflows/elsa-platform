@@ -169,6 +169,7 @@ builder.Services.AddScoped<DeploymentCockpitService>();
 builder.Services.AddScoped<IWorkspaceDeploymentStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<IWorkspaceDeploymentTierStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<IWorkspaceArtifactStore, DeploymentWorkspaceStore>();
+builder.Services.AddScoped<IWorkspaceArtifactUploadStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<IWorkspacePermissionStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<IWorkspaceDeploymentMutationStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<IWorkspaceDeploymentCommandStore, DeploymentWorkspaceStore>();
@@ -177,12 +178,29 @@ builder.Services.AddScoped<DeploymentTierService>();
 builder.Services.AddSingleton<IArtifactTypeRegistry, ArtifactTypeRegistry>();
 builder.Services.AddSingleton<ArtifactEnvelopeValidator>();
 builder.Services.AddScoped<IDeploymentArtifactReader, DeploymentArtifactReader>();
+builder.Services.AddScoped<IDeploymentArtifactBuilder, DeploymentArtifactBuilder>();
 builder.Services.AddScoped<WorkspaceArtifactService>();
+builder.Services.Configure<ArtifactUploadOptions>(builder.Configuration.GetSection("ArtifactUploads"));
+builder.Services.PostConfigure<ArtifactUploadOptions>(options =>
+{
+    var section = builder.Configuration.GetSection("ArtifactUploads");
+    if (!section.GetSection(nameof(ArtifactUploadOptions.SampleGenerationEnabled)).Exists())
+        options.SampleGenerationEnabled = builder.Environment.IsDevelopment();
+});
+builder.Services.AddScoped(services => new WorkspaceArtifactUploadService(
+    services.GetRequiredService<IWorkspaceArtifactUploadStore>(),
+    services.GetRequiredService<IWorkspaceArtifactStore>(),
+    services.GetRequiredService<WorkspaceArtifactService>(),
+    services.GetRequiredService<IDeploymentArtifactReader>(),
+    services.GetRequiredService<IDeploymentArtifactBuilder>(),
+    services.GetRequiredService<IOptions<ArtifactUploadOptions>>().Value,
+    services.GetRequiredService<TimeProvider>()));
 builder.Services.AddScoped<WorkspacePermissionService>();
 builder.Services.AddScoped<DeploymentValidationService>();
 builder.Services.AddScoped<DeploymentPromotionService>();
 builder.Services.AddHttpClient<IEngineHealthProbe, HttpEngineHealthProbe>(client => client.Timeout = TimeSpan.FromSeconds(3));
 builder.Services.AddScoped<EngineHealthService>();
+builder.Services.Configure<EngineVerificationOptions>(builder.Configuration.GetSection("Deployment:EngineVerification"));
 builder.Services.AddScoped<DeploymentRunService>();
 builder.Services.AddScoped<DeploymentCommandService>();
 builder.Services.Configure<DeploymentWebhookDispatchOptions>(builder.Configuration.GetSection("Deployment:WebhookDispatch"));
@@ -203,6 +221,9 @@ if (deploymentQueueWorkerEnabled && !builder.Environment.IsEnvironment("Testing"
 var webhookDispatchEnabled = builder.Configuration.GetValue("Deployment:WebhookDispatch:Enabled", false);
 if (webhookDispatchEnabled && !builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<DeploymentWebhookDispatchHostedService>();
+var engineVerificationEnabled = builder.Configuration.GetValue("Deployment:EngineVerification:Enabled", true);
+if (engineVerificationEnabled && !builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddHostedService<EngineVerificationHostedService>();
 builder.Services.AddScoped<IPackageVersionDiscoveryClient, NuGetPackageSourceClient>();
 builder.Services.AddScoped<IPackageArchiveDownloader, NuGetSyncPackageDownloader>();
 builder.Services.AddScoped<IPackageArchiveManifestReader, PackageArchiveManifestReader>();

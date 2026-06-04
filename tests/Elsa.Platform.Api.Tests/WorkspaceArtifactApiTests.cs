@@ -1,9 +1,11 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http.Headers;
 using Elsa.Platform.Api.Workspace;
 using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
+using Elsa.Platform.Deployment.Manifest;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Microsoft.Extensions.DependencyInjection;
 using FluentAssertions;
@@ -241,6 +243,38 @@ public sealed class WorkspaceArtifactApiTests
         stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
     }
 
+    [Fact]
+    public async Task Owner_can_upload_zip_and_server_computes_artifact_identity()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("artifact-upload-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        await using var zip = await BuildValidArtifactZipAsync();
+
+        var create = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/artifact-uploads",
+            new CreateArtifactUploadRequest("claims-prod.zip", "application/zip", zip.Bytes.Length));
+        var session = await create.Content.ReadPlatformJsonAsync<CreateArtifactUploadResponse>();
+        using var content = new ByteArrayContent(zip.Bytes);
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse("application/zip");
+        var upload = await owner.PutAsync($"/api/workspaces/{workspaceId}/artifact-uploads/{session!.UploadId}/content", content);
+        var complete = await owner.PostAsync($"/api/workspaces/{workspaceId}/artifact-uploads/{session.UploadId}/complete", null);
+        var completed = await complete.Content.ReadPlatformJsonAsync<CompleteArtifactUploadResponse>();
+
+        create.StatusCode.Should().Be(HttpStatusCode.Created);
+        upload.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        complete.StatusCode.Should().Be(HttpStatusCode.Created);
+        completed!.Status.Should().Be(WorkspaceArtifactUploadStatus.Completed);
+        completed.Artifact.Should().NotBeNull();
+        completed.Artifact!.ArtifactId.Should().Be(zip.ArtifactId);
+        completed.Artifact.ReferenceProvider.Should().Be("local");
+        completed.Artifact.Format.Should().Be(WorkspaceArtifactFormat.Zip);
+        completed.Artifact.ChecksumStatus.Should().Be(WorkspaceArtifactChecksumStatus.Verified);
+        completed.Artifact.InspectionStatus.Should().Be(WorkspaceArtifactInspectionStatus.Valid);
+        completed.Artifact.Resources.Should().ContainSingle(x => x.LogicalId == "order-approval");
+    }
+
     private static async Task<WorkspaceArtifact> RegisterArtifactAsync(
         HttpClient client,
         Guid workspaceId,
@@ -281,6 +315,48 @@ public sealed class WorkspaceArtifactApiTests
                     ],
                     [],
                     Guid.NewGuid()));
+        }
+    }
+
+    private static async Task<ArtifactZipFixture> BuildValidArtifactZipAsync()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"elsa-platform-api-artifact-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "workflows"));
+        await File.WriteAllTextAsync(Path.Combine(root, "workflows", "order-approval.json"), """{"id":"order-approval"}""");
+        var outputPath = Path.Combine(root, "artifact.zip");
+        var manifest = """
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: claims-prod
+              version: 1.0.0
+              environment: prod
+            resources:
+              workflows:
+                - id: order-approval
+                  path: workflows/order-approval.json
+            """;
+        var build = await new DeploymentArtifactBuilder().BuildZipAsync(
+            new DeploymentArtifactBuildOptions(
+                manifest,
+                ManifestFormat.Yaml,
+                root,
+                outputPath,
+                overwrite: true,
+                builtAt: new DateTimeOffset(2026, 6, 4, 12, 0, 0, TimeSpan.Zero),
+                builder: "api-tests",
+                source: "fixture"));
+        build.Succeeded.Should().BeTrue();
+        return new ArtifactZipFixture(root, build.ArtifactId!, await File.ReadAllBytesAsync(outputPath));
+    }
+
+    private sealed record ArtifactZipFixture(string Root, string ArtifactId, byte[] Bytes) : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync()
+        {
+            if (Directory.Exists(Root))
+                Directory.Delete(Root, recursive: true);
+            return ValueTask.CompletedTask;
         }
     }
 }

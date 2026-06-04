@@ -36,6 +36,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.DeploymentTierChangeRecordEntity> DeploymentTierChangeRecords => Set<Models.DeploymentTierChangeRecordEntity>();
     internal DbSet<Models.WorkflowEngineEntity> WorkflowEngines => Set<Models.WorkflowEngineEntity>();
     internal DbSet<Models.WorkspaceDeploymentArtifactEntity> WorkspaceDeploymentArtifacts => Set<Models.WorkspaceDeploymentArtifactEntity>();
+    internal DbSet<Models.WorkspaceArtifactUploadSessionEntity> WorkspaceArtifactUploadSessions => Set<Models.WorkspaceArtifactUploadSessionEntity>();
     internal DbSet<Models.EngineCapabilityEntity> EngineCapabilities => Set<Models.EngineCapabilityEntity>();
     internal DbSet<Models.RuntimeControlEntity> RuntimeControls => Set<Models.RuntimeControlEntity>();
     internal DbSet<Models.RuntimeControlExecutionEntity> RuntimeControlExecutions => Set<Models.RuntimeControlExecutionEntity>();
@@ -80,6 +81,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.DeploymentTierChangeRecordConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WorkflowEngineConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WorkspaceDeploymentArtifactConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.WorkspaceArtifactUploadSessionConfiguration());
         modelBuilder.ApplyConfiguration(new Models.EngineCapabilityConfiguration());
         modelBuilder.ApplyConfiguration(new Models.RuntimeControlConfiguration());
         modelBuilder.ApplyConfiguration(new Models.RuntimeControlExecutionConfiguration());

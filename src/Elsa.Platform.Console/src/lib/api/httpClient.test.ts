@@ -34,6 +34,17 @@ describe("apiRequest", () => {
     });
   });
 
+  it("surfaces simple API error messages", async () => {
+    stubErrorResponse({
+      error: "Local package path ./packages was not found."
+    });
+
+    await expect(apiRequest("/api/workspaces/workspace-1/builder/bundle")).rejects.toMatchObject({
+      kind: "Validation",
+      message: "Local package path ./packages was not found."
+    });
+  });
+
   it("sends same-origin credentials for cookie-backed customer sessions", async () => {
     const fetchMock = vi.fn(async () => Response.json({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);

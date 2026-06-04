@@ -30,11 +30,27 @@ export function listRuntimeConfigurations(workspaceId: string) {
   return apiRequest<RuntimeConfiguration[]>(`/api/workspaces/${encodeURIComponent(workspaceId)}/runtime-configurations`);
 }
 
+export function getRuntimeConfiguration(workspaceId: string, configurationId: string) {
+  return apiRequest<RuntimeConfiguration>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/runtime-configurations/${encodeURIComponent(configurationId)}`
+  );
+}
+
 export function createRuntimeConfiguration(workspaceId: string, request: RuntimeConfigurationRequest) {
   return apiRequest<RuntimeConfiguration>(`/api/workspaces/${encodeURIComponent(workspaceId)}/runtime-configurations`, {
     method: "POST",
     body: JSON.stringify(request)
   });
+}
+
+export function updateRuntimeConfiguration(workspaceId: string, configurationId: string, request: RuntimeConfigurationRequest) {
+  return apiRequest<RuntimeConfiguration>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/runtime-configurations/${encodeURIComponent(configurationId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(request)
+    }
+  );
 }
 
 function toBundleRequest(intent: RuntimeBuilderIntent) {

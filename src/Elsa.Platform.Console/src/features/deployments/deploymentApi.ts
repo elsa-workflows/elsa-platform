@@ -11,6 +11,8 @@ import type {
   EngineHealthResult,
   PromotionComparison,
   PromotionPreviewRequest,
+  PromotionRequest,
+  PromotionResult,
   QueueDeploymentRunRequest,
   QueueRollbackRunRequest,
   RegisterDeploymentEngineRequest,
@@ -175,6 +177,13 @@ export function createDesiredStateRevision(
 
 export function previewPromotion(workspaceId: string, request: PromotionPreviewRequest) {
   return apiRequest<PromotionComparison>(`/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/promotions/preview`, {
+    method: "POST",
+    body: JSON.stringify(request)
+  });
+}
+
+export function promoteRevision(workspaceId: string, request: PromotionRequest) {
+  return apiRequest<PromotionResult>(`/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/promotions`, {
     method: "POST",
     body: JSON.stringify(request)
   });

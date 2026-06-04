@@ -7,6 +7,9 @@ export type DeploymentSetupValues = {
   environmentName: string;
   environmentTier: EnvironmentSummary["tier"];
   environmentTierId: string;
+} & EngineRegistrationValues;
+
+export type EngineRegistrationValues = {
   engineName: string;
   baseUrl: string;
   credentialProvider: string;
@@ -175,6 +178,10 @@ function legacyTierFromName(name?: string): EnvironmentSummary["tier"] {
 }
 
 export function setupEngineRequest(values: DeploymentSetupValues): RegisterDeploymentEngineRequest {
+  return engineRegistrationRequest(values);
+}
+
+export function engineRegistrationRequest(values: EngineRegistrationValues): RegisterDeploymentEngineRequest {
   return {
     name: values.engineName,
     baseUrl: values.baseUrl,
