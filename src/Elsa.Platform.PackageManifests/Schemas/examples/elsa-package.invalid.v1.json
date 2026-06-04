@@ -5,6 +5,9 @@
     "version": ""
   },
   "displayName": "",
+  "compatibility": {
+    "runtimeKinds": [ "elsa server", "ELSA SERVER" ]
+  },
   "features": [
     {
       "id": "",

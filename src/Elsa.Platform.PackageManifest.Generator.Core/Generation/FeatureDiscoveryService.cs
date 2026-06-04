@@ -42,6 +42,7 @@ public sealed class FeatureDiscoveryService(
             [],
             [],
             metadata.Infrastructure,
+            null,
             metadata.Extensions,
             settings);
     }

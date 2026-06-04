@@ -97,6 +97,7 @@ public sealed class LicenseOverride
 
 public sealed class CompatibilityOverride
 {
+    public IReadOnlyList<string>? RuntimeKinds { get; init; }
     public string? ElsaVersionRange { get; init; }
     public string? DockerImageVersionRange { get; init; }
     public IReadOnlyList<string>? RuntimeCapabilities { get; init; }

@@ -704,6 +704,7 @@ public sealed class MessagingFeature : IShellFeature
             [],
             [],
             [new ManifestInfrastructureRequirementReference("broker", "message-broker", false, null, [], ["rabbitmq"], [], new Dictionary<string, object?>())],
+            null,
             new Dictionary<string, object?>(),
             []);
         var manifestOverride = new ManifestOverride
@@ -730,6 +731,48 @@ public sealed class MessagingFeature : IShellFeature
 
         result[0].Infrastructure[0].Kind.Should().Be("message-broker");
         result[0].Infrastructure[0].Providers.Should().BeEquivalentTo("rabbitmq", "azure-service-bus");
+    }
+
+    [Fact]
+    public async Task Generate_applies_runtime_kind_compatibility_from_override_file()
+    {
+        await using var project = new SampleProjectBuilder()
+            .WithSource("""
+using CShells.Features;
+
+namespace Sample.Features;
+
+[ShellFeature("StudioWidget", DisplayName = "Studio Widget")]
+public sealed class StudioWidgetFeature : IShellFeature
+{
+}
+""");
+        var build = await project.BuildAsync();
+        build.ExitCode.Should().Be(0, build.StandardOutput + build.StandardError);
+        var overridePath = Path.Combine(project.ProjectDirectory, "elsa-package.overrides.json");
+        await File.WriteAllTextAsync(overridePath, """
+{
+  "package": {
+    "compatibility": {
+      "runtimeKinds": [ "elsa.server", "elsa.studio" ]
+    }
+  },
+  "features": [
+    {
+      "id": "Sample.Elsa.Package.StudioWidget",
+      "compatibility": {
+        "runtimeKinds": [ "elsa.studio" ]
+      }
+    }
+  ]
+}
+""");
+
+        var result = Generate(project, overridePath);
+        using var document = JsonDocument.Parse(result.artifact.ManifestJson);
+
+        document.RootElement.GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().BeEquivalentTo("elsa.server", "elsa.studio");
+        document.RootElement.GetProperty("features")[0].GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().Equal("elsa.studio");
     }
 
     private static (GeneratedManifestArtifact artifact, GenerationDiagnostics diagnostics) Generate(

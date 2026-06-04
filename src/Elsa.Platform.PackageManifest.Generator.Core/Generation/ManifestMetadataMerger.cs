@@ -57,6 +57,7 @@ public sealed class ManifestMetadataMerger
                 Conflicts = featureOverride.Conflicts?.Select(ToConflictReference).ToArray() ?? feature.Conflicts,
                 RequiredCapabilities = featureOverride.RequiredCapabilities ?? feature.RequiredCapabilities,
                 Infrastructure = MergeInfrastructure(feature.Infrastructure, featureOverride.Infrastructure),
+                Compatibility = featureOverride.Compatibility ?? feature.Compatibility,
                 ExtensionMetadata = Merge(feature.ExtensionMetadata, featureOverride.Extensions),
                 Settings = settings
             };

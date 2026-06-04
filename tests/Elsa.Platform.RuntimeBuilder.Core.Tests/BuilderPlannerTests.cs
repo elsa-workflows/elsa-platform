@@ -63,8 +63,8 @@ public sealed class BuilderPlannerTests
 
     private static PublicPackageProjection Package(PublicPackageSourceProjection source, string packageId, PublicFeatureProjection feature)
     {
-        var version = new PublicPackageVersionProjection(packageId, "1.0.0", source, "1.0", null, [feature]);
-        return new PublicPackageProjection(packageId, packageId, source, "1.0.0", [version]);
+        var version = new PublicPackageVersionProjection(packageId, "1.0.0", source, "1.0", ["elsa.server"], null, [feature]);
+        return new PublicPackageProjection(packageId, packageId, source, ["elsa.server"], "1.0.0", [version]);
     }
 
     private static PublicFeatureProjection Feature(
@@ -80,6 +80,7 @@ public sealed class BuilderPlannerTests
             featureId,
             null,
             null,
+            ["elsa.server"],
             [],
             dependencies ?? [],
             [],

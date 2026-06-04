@@ -62,6 +62,7 @@ const catalogFixture: BuilderCatalog = {
         name: "Elsa Official",
         url: "https://api.nuget.org/v3/index.json"
       },
+      runtimeKinds: ["elsa.server"],
       latestVersion: "1.0.2",
       versions: [
         {
@@ -73,6 +74,7 @@ const catalogFixture: BuilderCatalog = {
             url: "https://api.nuget.org/v3/index.json"
           },
           schemaVersion: "1.0",
+          runtimeKinds: ["elsa.server"],
           publishedAt: "2026-05-15T08:00:00Z",
           features: [
             {
@@ -81,6 +83,7 @@ const catalogFixture: BuilderCatalog = {
               displayName: "PostgreSQL Persistence",
               description: "Stores workflow state in PostgreSQL.",
               category: "Persistence",
+              runtimeKinds: ["elsa.server"],
               requiredCapabilities: ["persistence"],
               infrastructure: [
                 {

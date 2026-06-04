@@ -1,4 +1,5 @@
 using Elsa.Platform.PackageManifests.Validation;
+using Elsa.Platform.PackageManifest.Generator.Core.Overrides;
 
 namespace Elsa.Platform.PackageManifest.Generator.Core.Generation;
 
@@ -60,6 +61,7 @@ public sealed record DiscoveredFeature(
     IReadOnlyList<ManifestConflictReference> Conflicts,
     IReadOnlyList<string> RequiredCapabilities,
     IReadOnlyList<ManifestInfrastructureRequirementReference> Infrastructure,
+    CompatibilityOverride? Compatibility,
     IReadOnlyDictionary<string, object?> ExtensionMetadata,
     IReadOnlyList<DiscoveredSetting> Settings);
 

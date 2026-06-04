@@ -22,6 +22,8 @@ public sealed class BundleGenerationService(
     BundleFilePolicy filePolicy,
     ILogger<BundleGenerationService> logger)
 {
+    private const string ServerRuntimeKind = "elsa.server";
+
     public async Task<BundleGenerationResult> GenerateAsync(RuntimeBuilderIntent intent, Guid? workspaceId = null, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -154,11 +156,24 @@ public sealed class BundleGenerationService(
                 continue;
             }
 
+            if (!version.RuntimeKinds.Any(IsServerRuntimeKind))
+            {
+                findings.Add(BundleFinding.Error("package.runtimeKindMismatch", $"{selection.PackageId} {selection.Version} is not compatible with Elsa Server.", $"package:{selection.PackageId}"));
+                continue;
+            }
+
             var selectedFeatures = NormalizeSelectedFeatures(selection.SelectedFeatures);
             foreach (var featureId in selectedFeatures)
             {
-                if (version.Features.All(x => !string.Equals(x.FeatureId, featureId, StringComparison.OrdinalIgnoreCase)))
+                var feature = version.Features.FirstOrDefault(x => string.Equals(x.FeatureId, featureId, StringComparison.OrdinalIgnoreCase));
+                if (feature is null)
+                {
                     findings.Add(BundleFinding.Error("feature.missing", $"Feature {featureId} is not present in {selection.PackageId} {selection.Version}.", $"feature:{featureId}"));
+                    continue;
+                }
+
+                if (!feature.RuntimeKinds.Any(IsServerRuntimeKind))
+                    findings.Add(BundleFinding.Error("feature.runtimeKindMismatch", $"Feature {featureId} is not compatible with Elsa Server.", $"feature:{featureId}"));
             }
 
             var source = new ResolvedPackageSource(version.Source.Id, version.Source.Name, version.Source.Url, "nuget");
@@ -304,4 +319,7 @@ public sealed class BundleGenerationService(
 
         return int.MaxValue;
     }
+
+    private static bool IsServerRuntimeKind(string runtimeKind) =>
+        string.Equals(runtimeKind, ServerRuntimeKind, StringComparison.OrdinalIgnoreCase);
 }

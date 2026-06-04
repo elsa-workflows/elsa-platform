@@ -15,6 +15,7 @@ public sealed class FeatureManifest : ExtensibleManifestObject
     public string DisplayName { get; init; } = "";
     public string? Description { get; init; }
     public string? Category { get; init; }
+    public CompatibilityManifest? Compatibility { get; init; }
     public IReadOnlyList<FeatureSettingManifest> Settings { get; init; } = [];
     public IReadOnlyList<DependencyManifest> Dependencies { get; init; } = [];
     public IReadOnlyList<ConflictManifest> Conflicts { get; init; } = [];
