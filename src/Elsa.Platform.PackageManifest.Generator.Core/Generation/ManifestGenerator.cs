@@ -148,6 +148,7 @@ public sealed class ManifestGenerator
         DisplayName = feature.DisplayName,
         Description = feature.Description,
         Category = feature.Category,
+        Compatibility = ToCompatibility(feature.Compatibility),
         Settings = feature.Settings.Select(ToSettingManifest).ToArray(),
         Dependencies = feature.Dependencies.Select(x => new DependencyManifest { PackageId = x.PackageId, VersionRange = x.VersionRange, FeatureId = x.FeatureId }).ToArray(),
         Conflicts = feature.Conflicts.Select(x => new ConflictManifest { PackageId = x.PackageId, VersionRange = x.VersionRange, FeatureId = x.FeatureId, Reason = x.Reason }).ToArray(),
@@ -290,6 +291,7 @@ public sealed class ManifestGenerator
         {
             ElsaVersionRange = compatibility.ElsaVersionRange,
             DockerImageVersionRange = compatibility.DockerImageVersionRange,
+            RuntimeKinds = compatibility.RuntimeKinds ?? [],
             RuntimeCapabilities = compatibility.RuntimeCapabilities ?? [],
             Extensions = compatibility.Extensions ?? []
         };

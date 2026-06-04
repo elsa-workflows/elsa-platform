@@ -16,6 +16,7 @@
     "displayName": { "type": "string", "minLength": 1 },
     "description": { "type": "string" },
     "tags": { "type": "array", "items": { "type": "string" } },
+    "compatibility": { "$ref": "#/$defs/compatibility" },
     "features": {
       "type": "array",
       "items": { "$ref": "#/$defs/feature" }
@@ -29,12 +30,36 @@
         "id": { "type": "string", "minLength": 1 },
         "typeName": { "type": "string" },
         "displayName": { "type": "string" },
+        "compatibility": { "$ref": "#/$defs/compatibility" },
         "infrastructure": {
           "type": "array",
           "items": { "$ref": "#/$defs/infrastructureRequirement" }
         }
       },
       "additionalProperties": true
+    },
+    "compatibility": {
+      "type": "object",
+      "properties": {
+        "runtimeKinds": { "$ref": "#/$defs/runtimeKinds" },
+        "elsaVersionRange": { "type": "string" },
+        "dockerImageVersionRange": { "type": "string" },
+        "runtimeCapabilities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "runtimeKinds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+      },
+      "uniqueItems": true
     },
     "infrastructureRequirement": {
       "type": "object",

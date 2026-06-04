@@ -48,4 +48,25 @@ public sealed class PublicPackageVersionApiTests
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    [Fact]
+    public async Task Get_undeclared_version_defaults_runtime_kind_to_elsa_server()
+    {
+        await using var app = new PlatformApiTestApplication();
+        var sourceId = Guid.Empty;
+        await app.SeedAsync(db =>
+        {
+            var source = PublicCatalogSeedData.CreatePackageSource();
+            sourceId = source.Id;
+            var package = PublicCatalogSeedData.CreatePackage(source);
+            PublicCatalogSeedData.AddFeature(PublicCatalogSeedData.AddVersion(package));
+            db.PackageSources.Add(source);
+            return Task.CompletedTask;
+        });
+
+        var version = await app.CreateClient().GetFromJsonAsync<PublicPackageVersionResponse>($"/api/sources/{sourceId}/packages/Elsa.Email/versions/1.0.0");
+
+        version!.RuntimeKinds.Should().Equal("elsa.server");
+        version.Features[0].RuntimeKinds.Should().Equal("elsa.server");
+    }
 }

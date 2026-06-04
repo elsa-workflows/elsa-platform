@@ -31,6 +31,28 @@ Enum settings emit validation enum values and default to `ui.hint = "select-list
 
 For metadata that cannot be inferred, add `elsa-package.overrides.json` beside the project file or set `ElsaPackageManifestOverrideFile`.
 
+Runtime kind compatibility can be declared through overrides:
+
+```json
+{
+  "package": {
+    "compatibility": {
+      "runtimeKinds": [ "elsa.server" ]
+    }
+  },
+  "features": [
+    {
+      "id": "My.Package.StudioWidget",
+      "compatibility": {
+        "runtimeKinds": [ "elsa.studio" ]
+      }
+    }
+  ]
+}
+```
+
+Use `elsa.server` for Elsa Server packages and `elsa.studio` for Elsa Studio packages. Feature-level compatibility overrides the package default.
+
 Common MSBuild properties:
 
 - `GenerateElsaPackageManifest`

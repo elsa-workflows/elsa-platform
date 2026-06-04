@@ -10,6 +10,8 @@ public sealed class BuilderPlannerService(
     IPackageCompatibilityService compatibility,
     InfrastructureProviderCatalog infrastructureProviders)
 {
+    private const string ServerRuntimeKind = "elsa.server";
+
     public async Task<BuilderPlanResult> PlanAsync(BuilderPlanRequest request, Guid? workspaceId = null, CancellationToken cancellationToken = default)
     {
         var packages = request.Intent.Packages.ToList();
@@ -21,6 +23,7 @@ public sealed class BuilderPlannerService(
         var visiblePackages = workspaceId.HasValue
             ? await catalog.ListPackagesForWorkspaceAsync(workspaceId.Value, [], cancellationToken)
             : await catalog.ListPackagesAsync([], cancellationToken);
+        visiblePackages = FilterServerPackages(visiblePackages);
         var packageLookup = visiblePackages
             .SelectMany(package => package.Versions.Select(version => new { Package = package, Version = version }))
             .ToList();
@@ -125,4 +128,25 @@ public sealed class BuilderPlannerService(
         if (index >= 0)
             packages[index] = selected with { SelectedFeatures = selectedFeatures.Order(StringComparer.OrdinalIgnoreCase).ToList() };
     }
+
+    private static IReadOnlyList<PublicPackageProjection> FilterServerPackages(IReadOnlyList<PublicPackageProjection> packages) =>
+        packages
+            .Select(package => package with
+            {
+                RuntimeKinds = package.RuntimeKinds.Where(IsServerRuntimeKind).ToList(),
+                Versions = package.Versions
+                    .Where(version => version.RuntimeKinds.Any(IsServerRuntimeKind))
+                    .Select(version => version with
+                    {
+                        Features = version.Features
+                            .Where(feature => feature.RuntimeKinds.Any(IsServerRuntimeKind))
+                            .ToList()
+                    })
+                    .ToList()
+            })
+            .Where(package => package.Versions.Count > 0)
+            .ToList();
+
+    private static bool IsServerRuntimeKind(string runtimeKind) =>
+        string.Equals(runtimeKind, ServerRuntimeKind, StringComparison.OrdinalIgnoreCase);
 }

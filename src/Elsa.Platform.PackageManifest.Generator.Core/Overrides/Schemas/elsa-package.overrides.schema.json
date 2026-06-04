@@ -75,6 +75,11 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "runtimeKinds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
         "elsaVersionRange": { "type": "string" },
         "dockerImageVersionRange": { "type": "string" },
         "runtimeCapabilities": {

@@ -6,6 +6,7 @@ using Elsa.Platform.RuntimeBuilder.Abstractions;
 using Elsa.Platform.RuntimeBuilder.Abstractions.Planner;
 using Elsa.Platform.PackageCatalog.Core.Compatibility;
 using Elsa.Platform.PackageCatalog.Core.Packages;
+using Elsa.Platform.PackageManifests.Compatibility;
 using Elsa.Platform.RuntimeBuilder.Core.Builder;
 using Elsa.Platform.RuntimeBuilder.Core.Builder.Planner;
 using Microsoft.AspNetCore.Mvc;
@@ -21,9 +22,10 @@ public static class BuilderEndpoints
         group.MapGet("/catalog", async ([FromQuery] Guid[] sourceIds, PublicCatalogQueryService catalog, RuntimeImageCatalog runtimeImages, InfrastructureProviderCatalog infrastructure, CancellationToken cancellationToken) =>
         {
             var packages = await catalog.ListPackagesAsync(sourceIds, cancellationToken);
+            var serverPackages = RuntimeKindCompatibilityPolicy.FilterPackages(packages, ElsaRuntimeKinds.Server);
             return Results.Ok(new BuilderCatalogResponse(
                 runtimeImages.ListImages().Select(ToRuntimeImageResponse).ToList(),
-                packages.Select(PublicPackageEndpoints.ToResponse).ToList(),
+                serverPackages.Select(PublicPackageEndpoints.ToResponse).ToList(),
                 infrastructure.ListProviders().Select(ToResponse).ToList()));
         });
 
