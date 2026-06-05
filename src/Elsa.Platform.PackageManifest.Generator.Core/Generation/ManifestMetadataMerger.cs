@@ -57,7 +57,7 @@ public sealed class ManifestMetadataMerger
                 Conflicts = featureOverride.Conflicts?.Select(ToConflictReference).ToArray() ?? feature.Conflicts,
                 RequiredCapabilities = featureOverride.RequiredCapabilities ?? feature.RequiredCapabilities,
                 Infrastructure = MergeInfrastructure(feature.Infrastructure, featureOverride.Infrastructure),
-                Compatibility = featureOverride.Compatibility ?? feature.Compatibility,
+                Compatibility = MergeCompatibility(feature.Compatibility, featureOverride.Compatibility),
                 ExtensionMetadata = Merge(feature.ExtensionMetadata, featureOverride.Extensions),
                 Settings = settings
             };
@@ -74,6 +74,25 @@ public sealed class ManifestMetadataMerger
         }
 
         return result;
+    }
+
+    private static CompatibilityOverride? MergeCompatibility(CompatibilityOverride? discovered, CompatibilityOverride? overrideCompatibility)
+    {
+        if (discovered is null)
+            return overrideCompatibility;
+
+        if (overrideCompatibility is null)
+            return discovered;
+
+        return new CompatibilityOverride
+        {
+            RuntimeKinds = overrideCompatibility.RuntimeKinds ?? discovered.RuntimeKinds,
+            ElsaVersionRange = overrideCompatibility.ElsaVersionRange ?? discovered.ElsaVersionRange,
+            DockerImageVersionRange = overrideCompatibility.DockerImageVersionRange ?? discovered.DockerImageVersionRange,
+            RuntimeCapabilities = overrideCompatibility.RuntimeCapabilities ?? discovered.RuntimeCapabilities,
+            Extensions = Merge(discovered.Extensions ?? new Dictionary<string, object?>(), overrideCompatibility.Extensions)
+                .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase)
+        };
     }
 
     private static IReadOnlyList<ManifestUIOptionReference> ResolveUIOptions(

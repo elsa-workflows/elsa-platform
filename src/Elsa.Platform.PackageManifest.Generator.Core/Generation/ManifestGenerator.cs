@@ -41,7 +41,8 @@ public sealed class ManifestGenerator
         var merger = new ManifestMetadataMerger();
 
         var xmlEntries = xmlReader.Read(assemblyInput.XmlDocumentationPath);
-        var features = assemblyReader.Read(assemblyInput.AssemblyPath, assemblyInput.ReferenceAssemblyPaths, assembly => featureDiscovery.Discover(assembly, packageMetadata));
+        var discovered = assemblyReader.Read(assemblyInput.AssemblyPath, assemblyInput.ReferenceAssemblyPaths, assembly => featureDiscovery.Discover(assembly, packageMetadata));
+        var features = discovered.Features;
         features = xmlEnricher.Enrich(features, xmlEntries);
 
         ManifestOverride? manifestOverride = null;
@@ -60,7 +61,7 @@ public sealed class ManifestGenerator
         var recommendedValidator = new RecommendedMetadataValidator();
         recommendedValidator.Validate(features, options.Strict, diagnostics);
 
-        var manifest = BuildManifest(packageMetadata, features, manifestOverride);
+        var manifest = BuildManifest(packageMetadata, discovered.PackageCompatibility, features, manifestOverride);
         var manifestJson = DeterministicJsonSerializer.Serialize(manifest);
 
         var sizeValidator = new GeneratedManifestSizeValidator();
@@ -103,7 +104,7 @@ public sealed class ManifestGenerator
             options.IncludeInPackage);
     }
 
-    private static ElsaPackageManifest BuildManifest(ProjectPackageMetadata metadata, IReadOnlyList<DiscoveredFeature> features, ManifestOverride? manifestOverride)
+    private static ElsaPackageManifest BuildManifest(ProjectPackageMetadata metadata, CompatibilityOverride? packageCompatibility, IReadOnlyList<DiscoveredFeature> features, ManifestOverride? manifestOverride)
     {
         var packageOverride = manifestOverride?.Package;
         return new ElsaPackageManifest
@@ -117,7 +118,7 @@ public sealed class ManifestGenerator
             Description = packageOverride?.Description ?? metadata.Description,
             Tags = packageOverride?.Tags ?? metadata.PackageTags,
             Features = features.Select(ToFeatureManifest).ToArray(),
-            Compatibility = ToCompatibility(packageOverride?.Compatibility),
+            Compatibility = ToCompatibility(MergeCompatibility(packageCompatibility, packageOverride?.Compatibility)),
             Dependencies = ToDependencies(packageOverride?.Dependencies),
             Conflicts = ToConflicts(packageOverride?.Conflicts),
             License = ToLicense(packageOverride?.License, metadata.PackageLicenseExpression),
@@ -294,6 +295,24 @@ public sealed class ManifestGenerator
             RuntimeKinds = compatibility.RuntimeKinds ?? [],
             RuntimeCapabilities = compatibility.RuntimeCapabilities ?? [],
             Extensions = compatibility.Extensions ?? []
+        };
+    }
+
+    private static CompatibilityOverride? MergeCompatibility(CompatibilityOverride? discovered, CompatibilityOverride? overrideCompatibility)
+    {
+        if (discovered is null)
+            return overrideCompatibility;
+
+        if (overrideCompatibility is null)
+            return discovered;
+
+        return new CompatibilityOverride
+        {
+            RuntimeKinds = overrideCompatibility.RuntimeKinds ?? discovered.RuntimeKinds,
+            ElsaVersionRange = overrideCompatibility.ElsaVersionRange ?? discovered.ElsaVersionRange,
+            DockerImageVersionRange = overrideCompatibility.DockerImageVersionRange ?? discovered.DockerImageVersionRange,
+            RuntimeCapabilities = overrideCompatibility.RuntimeCapabilities ?? discovered.RuntimeCapabilities,
+            Extensions = MergeExtensions(discovered.Extensions, overrideCompatibility.Extensions)
         };
     }
 

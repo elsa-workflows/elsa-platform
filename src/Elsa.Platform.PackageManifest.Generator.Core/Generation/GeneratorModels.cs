@@ -44,6 +44,10 @@ public enum FeatureDiscoverySource
     AdditionalInterface
 }
 
+public sealed record DiscoveredManifestMetadata(
+    CompatibilityOverride? PackageCompatibility,
+    IReadOnlyList<DiscoveredFeature> Features);
+
 public sealed record DiscoveredFeature(
     string FeatureId,
     string CShellsFeatureName,
