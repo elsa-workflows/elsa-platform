@@ -52,7 +52,7 @@ Runtime kind compatibility can be declared through overrides:
 }
 ```
 
-Use `elsa.server` for Elsa Server packages and `elsa.studio` for Elsa Studio packages. Feature-level compatibility overrides the package default.
+Use `elsa.server` for Elsa Server packages and `elsa.studio` for Elsa Studio packages. Feature-level compatibility narrows or specializes the package-level compatibility for that feature.
 
 For the common case, prefer source-only attributes in package code:
 
@@ -62,7 +62,7 @@ using Elsa.Platform.PackageManifest.Generator.Hints;
 [assembly: ManifestRuntimeKind("elsa.server")]
 ```
 
-Feature-level attributes override the package default:
+Feature-level attributes apply compatibility to the individual feature:
 
 ```csharp
 [ManifestRuntimeKind("elsa.studio")]
