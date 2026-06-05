@@ -775,6 +775,81 @@ public sealed class StudioWidgetFeature : IShellFeature
         document.RootElement.GetProperty("features")[0].GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().Equal("elsa.studio");
     }
 
+    [Fact]
+    public async Task Generate_applies_runtime_kind_compatibility_from_assembly_and_feature_attributes()
+    {
+        await using var project = new SampleProjectBuilder()
+            .WithSource("""
+using CShells.Features;
+using Elsa.Platform.PackageManifest.Generator.Hints;
+
+[assembly: ManifestRuntimeKind("elsa.server")]
+[assembly: ManifestRuntimeKind("acme.custom-host")]
+
+namespace Sample.Features;
+
+[ManifestRuntimeKind("elsa.studio")]
+[ShellFeature("StudioWidget", DisplayName = "Studio Widget")]
+public sealed class StudioWidgetFeature : IShellFeature
+{
+}
+""");
+        var build = await project.BuildAsync();
+        build.ExitCode.Should().Be(0, build.StandardOutput + build.StandardError);
+
+        var result = Generate(project);
+        using var document = JsonDocument.Parse(result.artifact.ManifestJson);
+
+        document.RootElement.GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().BeEquivalentTo("elsa.server", "acme.custom-host");
+        document.RootElement.GetProperty("features")[0].GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().Equal("elsa.studio");
+    }
+
+    [Fact]
+    public async Task Generate_uses_override_runtime_kinds_over_attribute_runtime_kinds()
+    {
+        await using var project = new SampleProjectBuilder()
+            .WithSource("""
+using CShells.Features;
+using Elsa.Platform.PackageManifest.Generator.Hints;
+
+[assembly: ManifestRuntimeKind("elsa.server")]
+
+namespace Sample.Features;
+
+[ManifestRuntimeKind("elsa.studio")]
+[ShellFeature("StudioWidget", DisplayName = "Studio Widget")]
+public sealed class StudioWidgetFeature : IShellFeature
+{
+}
+""");
+        var build = await project.BuildAsync();
+        build.ExitCode.Should().Be(0, build.StandardOutput + build.StandardError);
+        var overridePath = Path.Combine(project.ProjectDirectory, "elsa-package.overrides.json");
+        await File.WriteAllTextAsync(overridePath, """
+{
+  "package": {
+    "compatibility": {
+      "runtimeKinds": [ "elsa.studio" ]
+    }
+  },
+  "features": [
+    {
+      "id": "Sample.Elsa.Package.StudioWidget",
+      "compatibility": {
+        "runtimeKinds": [ "elsa.server" ]
+      }
+    }
+  ]
+}
+""");
+
+        var result = Generate(project, overridePath);
+        using var document = JsonDocument.Parse(result.artifact.ManifestJson);
+
+        document.RootElement.GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().Equal("elsa.studio");
+        document.RootElement.GetProperty("features")[0].GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().Equal("elsa.server");
+    }
+
     private static (GeneratedManifestArtifact artifact, GenerationDiagnostics diagnostics) Generate(
         SampleProjectBuilder project,
         string? overridePath = null,

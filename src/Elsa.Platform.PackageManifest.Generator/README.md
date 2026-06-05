@@ -24,6 +24,7 @@ Optional source-only hints are available under `Elsa.Platform.PackageManifest.Ge
 - `ManifestIgnoreAttribute`
 - `ManifestExtensionAttribute`
 - `ManifestInfrastructureAttribute`
+- `ManifestRuntimeKindAttribute`
 
 These hint attributes are intentionally shipped as source-only, internal types so consuming packages can use them without exposing generator APIs from their assemblies. `ManifestInfrastructureAttribute.Extensions` uses `key=value` strings; entries without a key before `=` are ignored.
 
@@ -51,7 +52,27 @@ Runtime kind compatibility can be declared through overrides:
 }
 ```
 
-Use `elsa.server` for Elsa Server packages and `elsa.studio` for Elsa Studio packages. Feature-level compatibility overrides the package default.
+Use `elsa.server` for Elsa Server packages and `elsa.studio` for Elsa Studio packages. Feature-level compatibility narrows or specializes the package-level compatibility for that feature.
+
+For the common case, prefer source-only attributes in package code:
+
+```csharp
+using Elsa.Platform.PackageManifest.Generator.Hints;
+
+[assembly: ManifestRuntimeKind("elsa.server")]
+```
+
+Feature-level attributes apply compatibility to the individual feature:
+
+```csharp
+[ManifestRuntimeKind("elsa.studio")]
+[ShellFeature("StudioWidget", DisplayName = "Studio Widget")]
+public sealed class StudioWidgetFeature : IShellFeature
+{
+}
+```
+
+Override files remain useful for CI- or packaging-specific metadata. When `runtimeKinds` are supplied in an override file, they take precedence over attribute-provided runtime kinds for that package or feature.
 
 Common MSBuild properties:
 
