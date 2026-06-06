@@ -415,10 +415,13 @@ internal sealed class WorkspaceDeploymentArtifactConfiguration : IEntityTypeConf
         builder.Property(x => x.ChecksumStatus).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.InspectionStatus).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.DiagnosticsJson).IsRequired();
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
         builder.Property(x => x.RegisteredAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.ArchivedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.WorkspaceId, x.ArtifactId }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.Status, x.RegisteredAt });
         builder.HasIndex(x => new { x.WorkspaceId, x.RegisteredAt });
     }
 }

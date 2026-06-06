@@ -108,7 +108,7 @@ public sealed class CompatibilityCheckService(ICompatibilityQueries queries, Ver
         {
             var feature = selectedFeature.Feature;
             var effectiveRuntimeKinds = EffectiveRuntimeKinds(selectedFeature.PackageCompatibility, feature);
-            if (!RuntimeKindCompatibilityPolicy.IsCompatible(effectiveRuntimeKinds, runtimeKinds))
+            if (runtimeKinds is { Count: > 0 } && !runtimeKinds.Any(targetRuntimeKind => RuntimeKindCompatibilityPolicy.IsCompatibleWith(effectiveRuntimeKinds, targetRuntimeKind)))
                 findings.Add(CompatibilityFinding.Error("feature.runtimeKindUnsupported", $"{feature.Id} is not compatible with the selected runtime image."));
 
             foreach (var dependency in feature.Dependencies.Where(x => !x.Optional))
@@ -139,11 +139,17 @@ public sealed class CompatibilityCheckService(ICompatibilityQueries queries, Ver
 
     private static IReadOnlyList<string> EffectiveRuntimeKinds(CompatibilityManifest? packageCompatibility, FeatureManifest feature)
     {
-        var featureRuntimeKinds = RuntimeKindCompatibilityPolicy.Normalize(feature.Compatibility?.RuntimeKinds);
+        var featureRuntimeKinds = NormalizeRuntimeKinds(feature.Compatibility?.RuntimeKinds);
         return featureRuntimeKinds.Count > 0
             ? featureRuntimeKinds
-            : RuntimeKindCompatibilityPolicy.Normalize(packageCompatibility?.RuntimeKinds);
+            : NormalizeRuntimeKinds(RuntimeKindCompatibility.EffectiveRuntimeKinds(packageCompatibility?.RuntimeKinds));
     }
+
+    private static IReadOnlyList<string> NormalizeRuntimeKinds(IReadOnlyList<string>? runtimeKinds) =>
+        (runtimeKinds ?? [])
+        .Where(RuntimeKindCompatibility.IsValid)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
 
     private static bool FeatureMatches(string? packageId, string? versionRange, string featureId, IReadOnlyList<SelectedFeatureManifest> features, VersionRangeEvaluator ranges) =>
         features.Any(feature =>

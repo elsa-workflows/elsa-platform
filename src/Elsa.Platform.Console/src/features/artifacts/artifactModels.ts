@@ -2,6 +2,7 @@ export type WorkspaceArtifactFormat = "Folder" | "Zip" | "Unknown";
 export type WorkspaceArtifactChecksumStatus = "Unverified" | "Verified" | "Missing" | "Mismatched" | "Unexpected" | "Unavailable";
 export type WorkspaceArtifactInspectionStatus = "NeverInspected" | "Valid" | "Invalid" | "Unavailable" | "Unsupported";
 export type WorkspaceArtifactDiagnosticSeverity = "Info" | "Warning" | "Error";
+export type WorkspaceArtifactLifecycleStatus = "Active" | "Archived";
 
 export type WorkspaceArtifactDigest = {
   algorithm: string;
@@ -89,6 +90,9 @@ export type WorkspaceArtifact = {
   registeredAt: string;
   registeredByAccountId: string;
   lastInspectedAt: string | null;
+  status: WorkspaceArtifactLifecycleStatus;
+  archivedAt: string | null;
+  archivedByAccountId: string | null;
   createdAt: string;
   updatedAt: string;
   envelopeVersion: string | null;

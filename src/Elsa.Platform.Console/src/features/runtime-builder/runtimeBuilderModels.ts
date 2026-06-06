@@ -97,6 +97,7 @@ export type PublicPackageVersion = {
   version: string;
   source: PublicPackageSource;
   schemaVersion?: string | null;
+  runtimeKinds: string[];
   publishedAt?: string | null;
   features: PublicPackageFeature[];
 };
@@ -105,6 +106,7 @@ export type BuilderPackage = {
   packageId: string;
   displayName: string;
   source: PublicPackageSource;
+  runtimeKinds: string[];
   latestVersion?: string | null;
   versions: PublicPackageVersion[];
 };

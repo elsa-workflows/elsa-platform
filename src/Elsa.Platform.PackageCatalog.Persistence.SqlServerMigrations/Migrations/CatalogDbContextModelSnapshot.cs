@@ -1934,6 +1934,12 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<long?>("ArchivedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("ArchivedByAccountId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("ArtifactId")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -2053,6 +2059,11 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<long>("UpdatedAt")
                         .HasColumnType("bigint");
 
@@ -2065,6 +2076,8 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                         .IsUnique();
 
                     b.HasIndex("WorkspaceId", "RegisteredAt");
+
+                    b.HasIndex("WorkspaceId", "Status", "RegisteredAt");
 
                     b.ToTable("WorkspaceDeploymentArtifacts");
                 });

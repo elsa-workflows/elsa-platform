@@ -33,6 +33,7 @@ public sealed class WorkspaceArtifactApiTests
         registerResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         list!.Items.Should().ContainSingle(x => x.Id == registered.Id);
         detail!.Manifest.Name.Should().Be("claims");
+        detail.Status.Should().Be(WorkspaceArtifactLifecycleStatus.Active);
         detail.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
         detail.Producer!.ProducerType.Should().Be("manual");
         detail.CompatibilityHints.Should().ContainSingle(x => x.RequiredArtifactType == ArtifactTypeIds.ElsaWorkflowDefinition);
@@ -153,6 +154,34 @@ public sealed class WorkspaceArtifactApiTests
     }
 
     [Fact]
+    public async Task Owner_can_archive_and_restore_artifact_without_removing_detail_history()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("artifact-archive-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var artifact = await RegisterArtifactAsync(owner, workspaceId);
+
+        var archiveResponse = await owner.PostAsync($"/api/workspaces/{workspaceId}/artifacts/{artifact.Id}/archive", null);
+        var archived = await archiveResponse.Content.ReadPlatformJsonAsync<WorkspaceArtifact>();
+        var activeList = await owner.GetPlatformJsonAsync<WorkspaceArtifactListResponse>($"/api/workspaces/{workspaceId}/artifacts");
+        var allList = await owner.GetPlatformJsonAsync<WorkspaceArtifactListResponse>($"/api/workspaces/{workspaceId}/artifacts?includeArchived=true");
+        var detail = await owner.GetPlatformJsonAsync<WorkspaceArtifact>($"/api/workspaces/{workspaceId}/artifacts/{artifact.Id}");
+        var restoreResponse = await owner.PostAsync($"/api/workspaces/{workspaceId}/artifacts/{artifact.Id}/restore", null);
+        var restored = await restoreResponse.Content.ReadPlatformJsonAsync<WorkspaceArtifact>();
+
+        archiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        archived!.Status.Should().Be(WorkspaceArtifactLifecycleStatus.Archived);
+        archived.ArchivedAt.Should().NotBeNull();
+        activeList!.Items.Should().BeEmpty();
+        allList!.Items.Should().ContainSingle(x => x.Id == artifact.Id && x.Status == WorkspaceArtifactLifecycleStatus.Archived);
+        detail!.Status.Should().Be(WorkspaceArtifactLifecycleStatus.Archived);
+        restoreResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        restored!.Status.Should().Be(WorkspaceArtifactLifecycleStatus.Active);
+        restored.ArchivedAt.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Artifact_routes_enforce_read_and_setup_permissions()
     {
         await using var app = new PlatformApiTestApplication();
@@ -171,12 +200,14 @@ public sealed class WorkspaceArtifactApiTests
             $"/api/workspaces/{workspaceId}/artifacts",
             WorkspaceDeploymentTestFixtures.ArtifactRegistration("sha256:reader"));
         var refreshDenied = await reader.PostAsync($"/api/workspaces/{workspaceId}/artifacts/{artifact.Id}/refresh", null);
+        var archiveDenied = await reader.PostAsync($"/api/workspaces/{workspaceId}/artifacts/{artifact.Id}/archive", null);
         var nonMemberDenied = await nonMember.GetAsync($"/api/workspaces/{workspaceId}/artifacts/{artifact.Id}");
 
         readDenied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         readAllowed.StatusCode.Should().Be(HttpStatusCode.OK);
         registerDenied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         refreshDenied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        archiveDenied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         nonMemberDenied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 

@@ -11,11 +11,17 @@ public sealed class WorkspaceArtifactService(
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly ArtifactEnvelopeValidator _envelopeValidator = envelopeValidator ?? new ArtifactEnvelopeValidator(new ArtifactTypeRegistry());
 
-    public Task<IReadOnlyList<WorkspaceArtifact>> ListArtifactsAsync(Guid workspaceId, CancellationToken cancellationToken = default) =>
-        store.ListArtifactsAsync(workspaceId, cancellationToken);
+    public Task<IReadOnlyList<WorkspaceArtifact>> ListArtifactsAsync(Guid workspaceId, bool includeArchived = false, CancellationToken cancellationToken = default) =>
+        store.ListArtifactsAsync(workspaceId, includeArchived, cancellationToken);
 
     public Task<WorkspaceArtifact?> GetArtifactAsync(Guid workspaceId, Guid artifactRecordId, CancellationToken cancellationToken = default) =>
         store.GetArtifactAsync(workspaceId, artifactRecordId, cancellationToken);
+
+    public Task<WorkspaceArtifact> ArchiveArtifactAsync(Guid workspaceId, Guid artifactRecordId, Guid actorAccountId, CancellationToken cancellationToken = default) =>
+        store.ArchiveArtifactAsync(workspaceId, artifactRecordId, actorAccountId, cancellationToken);
+
+    public Task<WorkspaceArtifact> RestoreArtifactAsync(Guid workspaceId, Guid artifactRecordId, CancellationToken cancellationToken = default) =>
+        store.RestoreArtifactAsync(workspaceId, artifactRecordId, cancellationToken);
 
     public async Task<WorkspaceArtifactDownload> OpenDownloadAsync(
         Guid workspaceId,

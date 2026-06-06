@@ -13,6 +13,7 @@ public sealed record PublicFeatureResponse(
     string? Description,
     string? Category,
     IReadOnlyList<string> Categories,
+    IReadOnlyList<string> RuntimeKinds,
     IReadOnlyList<string> RequiredCapabilities,
     IReadOnlyList<PublicFeatureDependencyResponse> Dependencies,
     IReadOnlyList<PublicFeatureConflictResponse> Conflicts,

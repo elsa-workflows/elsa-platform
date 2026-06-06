@@ -64,6 +64,7 @@ const catalogFixture: BuilderCatalog = {
         name: "Elsa Official",
         url: "https://api.nuget.org/v3/index.json"
       },
+      runtimeKinds: ["elsa.server"],
       latestVersion: "1.0.2",
       versions: [
         {
@@ -75,6 +76,7 @@ const catalogFixture: BuilderCatalog = {
             url: "https://api.nuget.org/v3/index.json"
           },
           schemaVersion: "1.0",
+          runtimeKinds: ["elsa.server"],
           publishedAt: "2026-05-15T08:00:00Z",
           features: [
             {
@@ -610,6 +612,7 @@ function catalogWithAliasFeatureDependencies(): BuilderCatalog {
         packageId: "Elsa",
         displayName: "Elsa",
         source,
+        runtimeKinds: ["elsa.server"],
         latestVersion: "1.0.0",
         versions: [
           {
@@ -617,6 +620,7 @@ function catalogWithAliasFeatureDependencies(): BuilderCatalog {
             version: "1.0.0",
             source,
             schemaVersion: "1.0",
+            runtimeKinds: ["elsa.server"],
             publishedAt: "2026-06-06T08:00:00Z",
             features: [
               {
@@ -647,6 +651,7 @@ function catalogWithAliasFeatureDependencies(): BuilderCatalog {
         packageId: "Elsa.Workflows.Management",
         displayName: "Workflows.Management",
         source,
+        runtimeKinds: ["elsa.server"],
         latestVersion: "1.0.0",
         versions: [
           {
@@ -654,6 +659,7 @@ function catalogWithAliasFeatureDependencies(): BuilderCatalog {
             version: "1.0.0",
             source,
             schemaVersion: "1.0",
+            runtimeKinds: ["elsa.server"],
             publishedAt: "2026-06-06T08:00:00Z",
             features: [
               {
@@ -706,6 +712,7 @@ function catalogWithRuntimeKindFeatures(): BuilderCatalog {
         packageId: "Elsa.RuntimeKinds",
         displayName: "Runtime Kind Features",
         source,
+        runtimeKinds: ["elsa.server", "elsa.studio"],
         latestVersion: "1.0.0",
         versions: [
           {
@@ -713,6 +720,7 @@ function catalogWithRuntimeKindFeatures(): BuilderCatalog {
             version: "1.0.0",
             source,
             schemaVersion: "1.0",
+            runtimeKinds: ["elsa.server", "elsa.studio"],
             publishedAt: "2026-06-06T08:00:00Z",
             features: [
               {

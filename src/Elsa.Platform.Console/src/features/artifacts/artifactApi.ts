@@ -12,8 +12,9 @@ import type {
   WorkspaceArtifactTypeListResponse
 } from "@/features/artifacts/artifactModels";
 
-export function listWorkspaceArtifacts(workspaceId: string) {
-  return apiRequest<WorkspaceArtifactListResponse>(`/api/workspaces/${encodeURIComponent(workspaceId)}/artifacts`);
+export function listWorkspaceArtifacts(workspaceId: string, includeArchived = false) {
+  const query = includeArchived ? "?includeArchived=true" : "";
+  return apiRequest<WorkspaceArtifactListResponse>(`/api/workspaces/${encodeURIComponent(workspaceId)}/artifacts${query}`);
 }
 
 export function getWorkspaceArtifact(workspaceId: string, artifactId: string) {
@@ -34,6 +35,20 @@ export function registerWorkspaceArtifact(workspaceId: string, request: Workspac
 export function refreshWorkspaceArtifactInspection(workspaceId: string, artifactId: string) {
   return apiRequest<WorkspaceArtifactInspectionResult>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/artifacts/${encodeURIComponent(artifactId)}/refresh`,
+    { method: "POST" }
+  );
+}
+
+export function archiveWorkspaceArtifact(workspaceId: string, artifactId: string) {
+  return apiRequest<WorkspaceArtifact>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/artifacts/${encodeURIComponent(artifactId)}/archive`,
+    { method: "POST" }
+  );
+}
+
+export function restoreWorkspaceArtifact(workspaceId: string, artifactId: string) {
+  return apiRequest<WorkspaceArtifact>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/artifacts/${encodeURIComponent(artifactId)}/restore`,
     { method: "POST" }
   );
 }

@@ -8,6 +8,7 @@ using Elsa.Platform.RuntimeBuilder.Abstractions;
 using Elsa.Platform.RuntimeBuilder.Abstractions.Planner;
 using Elsa.Platform.PackageCatalog.Core.Compatibility;
 using Elsa.Platform.PackageCatalog.Core.Packages;
+using Elsa.Platform.PackageManifests.Compatibility;
 using Elsa.Platform.RuntimeBuilder.Core.Builder;
 using Elsa.Platform.RuntimeBuilder.Core.Builder.Planner;
 using Microsoft.AspNetCore.Mvc;
@@ -36,9 +37,10 @@ public static class WorkspaceBuilderEndpoints
                 return access.ToHttpResult();
 
             var packages = await catalog.ListPackagesForWorkspaceAsync(workspaceId, sourceIds, cancellationToken);
+            var serverPackages = Elsa.Platform.PackageCatalog.Core.Compatibility.RuntimeKindCompatibilityPolicy.FilterPackages(packages, ElsaRuntimeKinds.Server);
             return Results.Ok(new BuilderCatalogResponse(
                 runtimeImages.ListImages().Select(BuilderEndpoints.ToRuntimeImageResponse).ToList(),
-                packages.Select(PublicPackageEndpoints.ToResponse).ToList(),
+                serverPackages.Select(PublicPackageEndpoints.ToResponse).ToList(),
                 infrastructure.ListProviders().Select(ToResponse).ToList()));
         });
 

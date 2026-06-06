@@ -42,14 +42,15 @@ public static class PublicCatalogSeedData
         bool listed = true,
         bool suspicious = false,
         string? manifestHash = null,
-        string? suspiciousManifestHash = null)
+        string? suspiciousManifestHash = null,
+        string[]? runtimeKinds = null)
     {
         var packageVersion = new PackageVersion
         {
             Package = package,
             PackageId = package.Id,
             Version = version,
-            ManifestJson = new ManifestFixtureBuilder().WithPackage(package.PackageId, version).WithFeature().BuildJson(),
+            ManifestJson = ApplyRuntimeKinds(new ManifestFixtureBuilder().WithPackage(package.PackageId, version).WithFeature(), runtimeKinds).BuildJson(),
             ManifestHash = manifestHash ?? $"{package.PackageId}-{version}-hash",
             SuspiciousManifestHash = suspiciousManifestHash,
             SchemaVersion = "1.0",
@@ -117,4 +118,7 @@ public static class PublicCatalogSeedData
         version.Features.Add(feature);
         return feature;
     }
+
+    private static ManifestFixtureBuilder ApplyRuntimeKinds(ManifestFixtureBuilder builder, string[]? runtimeKinds) =>
+        runtimeKinds is null ? builder : builder.WithRuntimeKinds(runtimeKinds);
 }

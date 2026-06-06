@@ -33,6 +33,7 @@ public static class WorkspaceArtifactEndpoints
 
         group.MapGet("", async (
             Guid workspaceId,
+            bool? includeArchived,
             HttpContext context,
             WorkspaceAccessResolver accessResolver,
             WorkspacePermissionService permissions,
@@ -45,7 +46,7 @@ public static class WorkspaceArtifactEndpoints
             if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.Read, cancellationToken))
                 return DeploymentPermissionDenied();
 
-            return Results.Ok(new WorkspaceArtifactListResponse(await artifacts.ListArtifactsAsync(workspaceId, cancellationToken)));
+            return Results.Ok(new WorkspaceArtifactListResponse(await artifacts.ListArtifactsAsync(workspaceId, includeArchived ?? false, cancellationToken)));
         });
 
         group.MapGet("/{artifactRecordId:guid}", async (
@@ -176,6 +177,56 @@ public static class WorkspaceArtifactEndpoints
             catch (InvalidOperationException ex)
             {
                 return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        group.MapPost("/{artifactRecordId:guid}/archive", async (
+            Guid workspaceId,
+            Guid artifactRecordId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceArtifactService artifacts,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await artifacts.ArchiveArtifactAsync(workspaceId, artifactRecordId, access.Access!.AccountId, cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
+        group.MapPost("/{artifactRecordId:guid}/restore", async (
+            Guid workspaceId,
+            Guid artifactRecordId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceArtifactService artifacts,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await artifacts.RestoreArtifactAsync(workspaceId, artifactRecordId, cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
             }
         });
 

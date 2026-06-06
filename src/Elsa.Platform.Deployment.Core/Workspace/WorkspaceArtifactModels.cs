@@ -36,6 +36,12 @@ public enum WorkspaceArtifactDiagnosticSeverity
     Error
 }
 
+public enum WorkspaceArtifactLifecycleStatus
+{
+    Active,
+    Archived
+}
+
 public sealed record WorkspaceArtifactDigest(string Algorithm, string Value);
 
 public sealed record WorkspaceArtifactManifestSummary(
@@ -108,7 +114,10 @@ public sealed record WorkspaceArtifact(
     ArtifactPayloadReference? PayloadReference = null,
     ArtifactProducer? Producer = null,
     ArtifactDisplayMetadata? DisplayMetadata = null,
-    IReadOnlyList<ArtifactCompatibilityHint>? CompatibilityHints = null)
+    IReadOnlyList<ArtifactCompatibilityHint>? CompatibilityHints = null,
+    WorkspaceArtifactLifecycleStatus Status = WorkspaceArtifactLifecycleStatus.Active,
+    DateTimeOffset? ArchivedAt = null,
+    Guid? ArchivedByAccountId = null)
 {
     public ArtifactEnvelope ToEnvelope() =>
         new(

@@ -1382,11 +1382,16 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
 
     public async Task<IReadOnlyList<WorkspaceArtifact>> ListArtifactsAsync(
         Guid workspaceId,
+        bool includeArchived = false,
         CancellationToken cancellationToken = default)
     {
-        var artifacts = await dbContext.WorkspaceDeploymentArtifacts
+        var query = dbContext.WorkspaceDeploymentArtifacts
             .AsNoTracking()
-            .Where(x => x.WorkspaceId == workspaceId)
+            .Where(x => x.WorkspaceId == workspaceId);
+        if (!includeArchived)
+            query = query.Where(x => x.Status == WorkspaceArtifactLifecycleStatus.Active);
+
+        var artifacts = await query
             .OrderByDescending(x => x.RegisteredAt)
             .ThenBy(x => x.ArtifactId)
             .ToListAsync(cancellationToken);
@@ -1456,6 +1461,48 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         };
 
         await dbContext.WorkspaceDeploymentArtifacts.AddAsync(artifact, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceArtifact(artifact);
+    }
+
+    public async Task<WorkspaceArtifact> ArchiveArtifactAsync(
+        Guid workspaceId,
+        Guid artifactRecordId,
+        Guid actorAccountId,
+        CancellationToken cancellationToken = default)
+    {
+        var artifact = await dbContext.WorkspaceDeploymentArtifacts
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == artifactRecordId, cancellationToken);
+        if (artifact is null)
+            throw new KeyNotFoundException("Artifact does not exist in the workspace.");
+        if (artifact.Status == WorkspaceArtifactLifecycleStatus.Archived)
+            return ToWorkspaceArtifact(artifact);
+
+        var now = DateTimeOffset.UtcNow;
+        artifact.Status = WorkspaceArtifactLifecycleStatus.Archived;
+        artifact.ArchivedAt = now;
+        artifact.ArchivedByAccountId = actorAccountId;
+        artifact.UpdatedAt = now;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceArtifact(artifact);
+    }
+
+    public async Task<WorkspaceArtifact> RestoreArtifactAsync(
+        Guid workspaceId,
+        Guid artifactRecordId,
+        CancellationToken cancellationToken = default)
+    {
+        var artifact = await dbContext.WorkspaceDeploymentArtifacts
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == artifactRecordId, cancellationToken);
+        if (artifact is null)
+            throw new KeyNotFoundException("Artifact does not exist in the workspace.");
+        if (artifact.Status == WorkspaceArtifactLifecycleStatus.Active)
+            return ToWorkspaceArtifact(artifact);
+
+        artifact.Status = WorkspaceArtifactLifecycleStatus.Active;
+        artifact.ArchivedAt = null;
+        artifact.ArchivedByAccountId = null;
+        artifact.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToWorkspaceArtifact(artifact);
     }
@@ -1798,7 +1845,10 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             DeserializePayloadReference(artifact.PayloadReferenceJson, artifact.ReferenceProvider, artifact.Reference),
             DeserializeProducer(artifact.ProducerJson),
             DeserializeDisplayMetadata(artifact.DisplayMetadataJson, artifact.ManifestName, artifact.ManifestVersion, artifact.ManifestEnvironment),
-            DeserializeCompatibilityHints(artifact.CompatibilityHintsJson, artifact.ArtifactTypeId));
+            DeserializeCompatibilityHints(artifact.CompatibilityHintsJson, artifact.ArtifactTypeId),
+            artifact.Status,
+            artifact.ArchivedAt,
+            artifact.ArchivedByAccountId);
 
     private static IReadOnlyList<WorkspaceArtifactResourceSummary> DeserializeArtifactResources(string json) =>
         JsonSerializer.Deserialize<IReadOnlyList<WorkspaceArtifactResourceSummary>>(json) ?? [];

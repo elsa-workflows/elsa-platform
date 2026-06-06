@@ -1929,6 +1929,12 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("ArchivedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("ArchivedByAccountId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ArtifactId")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -2048,6 +2054,11 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
                     b.Property<long>("UpdatedAt")
                         .HasColumnType("INTEGER");
 
@@ -2060,6 +2071,8 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .IsUnique();
 
                     b.HasIndex("WorkspaceId", "RegisteredAt");
+
+                    b.HasIndex("WorkspaceId", "Status", "RegisteredAt");
 
                     b.ToTable("WorkspaceDeploymentArtifacts");
                 });

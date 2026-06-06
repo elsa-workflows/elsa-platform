@@ -137,9 +137,12 @@ internal sealed class WorkspaceDeploymentArtifactEntity
     public WorkspaceArtifactChecksumStatus ChecksumStatus { get; set; }
     public WorkspaceArtifactInspectionStatus InspectionStatus { get; set; }
     public string DiagnosticsJson { get; set; } = "[]";
+    public WorkspaceArtifactLifecycleStatus Status { get; set; } = WorkspaceArtifactLifecycleStatus.Active;
     public DateTimeOffset RegisteredAt { get; set; }
     public Guid RegisteredByAccountId { get; set; }
     public DateTimeOffset? LastInspectedAt { get; set; }
+    public DateTimeOffset? ArchivedAt { get; set; }
+    public Guid? ArchivedByAccountId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

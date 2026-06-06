@@ -113,6 +113,17 @@ public sealed class BuilderBundleGenerationTests
     }
 
     [Fact]
+    public async Task Studio_only_package_returns_runtime_kind_mismatch_and_no_files()
+    {
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var service = CreateService(new FakePublicCatalogQueries(CreatePackageProjection(source, runtimeKinds: ["elsa.studio"])), [CreatePackageVersion(source)], null);
+
+        var result = await service.GenerateAsync(new BuilderBundleFixtureBuilder().WithPackage(source, "Elsa.Email", features: ["email"]).Build());
+
+        result.Files.Should().BeEmpty();
+        result.Findings.Should().Contain(x => x.Code == "package.runtimeKindMismatch" && x.Level == "error");
+    }
+    [Fact]
     public async Task Required_missing_setting_returns_files_with_placeholder_warning()
     {
         var source = PublicCatalogSeedData.CreatePackageSource();
@@ -255,8 +266,9 @@ public sealed class BuilderBundleGenerationTests
             NullLogger<BundleGenerationService>.Instance);
     }
 
-    private static PublicPackageProjection CreatePackageProjection(PackageSource source, bool secretSetting = false)
+    private static PublicPackageProjection CreatePackageProjection(PackageSource source, bool secretSetting = false, IReadOnlyList<string>? runtimeKinds = null)
     {
+        runtimeKinds ??= ["elsa.server"];
         var sourceProjection = new PublicPackageSourceProjection(source.Id, source.Name, source.Url);
         var setting = new PublicFeatureSettingProjection(
             "smtpHost",
@@ -284,7 +296,7 @@ public sealed class BuilderBundleGenerationTests
             "Communication",
             ["Communication"],
             [],
-            ["elsa.server"],
+            runtimeKinds,
             [],
             [],
             [],
@@ -292,8 +304,8 @@ public sealed class BuilderBundleGenerationTests
             false,
             "{}",
             [setting]);
-        var version = new PublicPackageVersionProjection("Elsa.Email", "1.0.0", sourceProjection, "1.0", null, [feature]);
-        return new PublicPackageProjection("Elsa.Email", "Email", sourceProjection, "1.0.0", [version]);
+        var version = new PublicPackageVersionProjection("Elsa.Email", "1.0.0", sourceProjection, "1.0", runtimeKinds, null, [feature]);
+        return new PublicPackageProjection("Elsa.Email", "Email", sourceProjection, runtimeKinds, "1.0.0", [version]);
     }
 
     private static PackageVersion CreatePackageVersion(PackageSource source)

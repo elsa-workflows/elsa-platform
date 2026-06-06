@@ -18,6 +18,8 @@ describe("ArtifactsPage", () => {
     renderArtifacts();
 
     expect(await screen.findByRole("heading", { name: "Artifacts" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Active 1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Archived 0" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Upload artifact" })).toHaveAttribute("href", "/admin/artifacts/new");
     expect(screen.getByRole("link", { name: "sha256:claims-prod" })).toHaveAttribute("href", "/admin/artifacts/artifact-1");
     expect(screen.getByRole("link", { name: "Open details" })).toHaveAttribute("href", "/admin/artifacts/artifact-1");
@@ -28,6 +30,23 @@ describe("ArtifactsPage", () => {
     expect(screen.queryByText("Compatibility")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Artifact identity")).not.toBeInTheDocument();
     expect(screen.queryByText(/workflow definition payload|secret value|token/i)).not.toBeInTheDocument();
+  });
+
+  it("archives and restores artifacts from the list", async () => {
+    renderArtifacts();
+
+    expect(await screen.findByRole("link", { name: "sha256:claims-prod" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Archive" }));
+
+    expect(await screen.findByText("No active artifacts")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Archived 1" }));
+    expect(await screen.findByRole("link", { name: "sha256:claims-prod" })).toBeInTheDocument();
+    expect(screen.getByText("Archived")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Restore" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Active 1" }));
+    expect(await screen.findByRole("link", { name: "sha256:claims-prod" })).toBeInTheDocument();
   });
 
   it("shows upload guidance on the dedicated creation route", async () => {
@@ -88,6 +107,7 @@ describe("ArtifactsPage", () => {
     expect(await screen.findByRole("heading", { name: "sha256:claims-prod" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Artifacts" })).toHaveAttribute("href", "/admin/artifacts");
     expect(screen.getByRole("button", { name: "Refresh inspection" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Archive" })).toBeInTheDocument();
     expect(screen.getByText("Compatibility")).toBeInTheDocument();
     expect(screen.getByText(/studio:\/\/workflows\/claims\/versions\/1\.0\.0/)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Open details" })).not.toBeInTheDocument();
@@ -167,7 +187,7 @@ function createFetchMock(initial: WorkspaceArtifactListResponse) {
       list = { items: [artifactFixture] };
       return jsonResponse({ uploadId: "upload-sample", status: "Completed", artifact: artifactFixture, created: true, diagnostics: [] }, 201);
     }
-    if (method === "GET" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts`)) {
+    if (method === "GET" && url.includes(`/api/workspaces/${workspaceId}/artifacts`) && !url.includes("/artifacts/types") && !url.includes("/artifacts/")) {
       return jsonResponse(list);
     }
     if (method === "GET" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts/types`)) {
@@ -196,6 +216,15 @@ function createFetchMock(initial: WorkspaceArtifactListResponse) {
       const artifact = { ...artifactFixture, id: "artifact-new", artifactId: body.artifactId };
       list = { items: [artifact] };
       return jsonResponse(artifact, 201);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts/artifact-1/archive`)) {
+      const artifact = { ...artifactFixture, status: "Archived" as const, archivedAt: "2026-06-07T10:00:00Z", archivedByAccountId: "account-1" };
+      list = { items: [artifact] };
+      return jsonResponse(artifact);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts/artifact-1/restore`)) {
+      list = { items: [artifactFixture] };
+      return jsonResponse(artifactFixture);
     }
     if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts/artifact-1/refresh`)) {
       list = {
@@ -300,6 +329,9 @@ const artifactFixture: WorkspaceArtifact = {
   registeredAt: "2026-05-26T10:00:00Z",
   registeredByAccountId: "account-1",
   lastInspectedAt: "2026-05-26T10:05:00Z",
+  status: "Active",
+  archivedAt: null,
+  archivedByAccountId: null,
   createdAt: "2026-05-26T10:00:00Z",
   updatedAt: "2026-05-26T10:05:00Z",
   envelopeVersion: "platform.elsa.io/artifact-envelope/v1alpha1",

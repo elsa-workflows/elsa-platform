@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Archive, ArrowLeft, CheckCircle2, FileArchive, RefreshCw, Save, Upload, Wand2, X } from "lucide-react";
+import { AlertTriangle, Archive, ArrowLeft, CheckCircle2, FileArchive, RefreshCw, RotateCcw, Save, Upload, Wand2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -8,6 +8,7 @@ import { RequestStateView } from "@/components/states/RequestStateViews";
 import {
   getWorkspaceArtifact,
   abortArtifactUpload,
+  archiveWorkspaceArtifact,
   completeArtifactUpload,
   createArtifactUpload,
   createSampleArtifact,
@@ -16,6 +17,7 @@ import {
   listWorkspaceArtifacts,
   refreshWorkspaceArtifactInspection,
   registerWorkspaceArtifact,
+  restoreWorkspaceArtifact,
   uploadArtifactContent
 } from "@/features/artifacts/artifactApi";
 import type { CompleteArtifactUploadResponse, WorkspaceArtifact, WorkspaceArtifactDiagnostic, WorkspaceArtifactRegistrationRequest } from "@/features/artifacts/artifactModels";
@@ -27,21 +29,25 @@ import { useWorkspaceContext } from "@/app/WorkspaceContextProvider";
 const layoutVersion = "platform.elsa.io/deployment-artifact/v1alpha1";
 const envelopeVersion = "platform.elsa.io/artifact-envelope/v1alpha1";
 const workflowArtifactType = "elsa.workflow-definition";
+type ArtifactListFilter = "active" | "archived" | "all";
 
 export function ArtifactsPage() {
   const workspaceContext = useWorkspaceContext();
   const workspaceId = workspaceContext.selectedWorkspaceId;
+  const [filter, setFilter] = useState<ArtifactListFilter>("active");
   const permissions = useQuery({
     queryKey: queryKeys.deploymentPermissions(workspaceId),
     queryFn: () => getDeploymentPermissions(workspaceId),
     enabled: Boolean(workspaceId)
   });
   const artifacts = useQuery({
-    queryKey: queryKeys.artifacts(workspaceId),
-    queryFn: () => listWorkspaceArtifacts(workspaceId),
+    queryKey: [...queryKeys.artifacts(workspaceId), "include-archived"],
+    queryFn: () => listWorkspaceArtifacts(workspaceId, true),
     enabled: Boolean(workspaceId)
   });
   const canManageSetup = Boolean(permissions.data?.permissions.includes("deployments.setup.manage"));
+  const archive = useArtifactArchiveMutation(workspaceId);
+  const restore = useArtifactRestoreMutation(workspaceId);
 
   if (workspaceContext.isLoading || artifacts.isLoading || permissions.isLoading)
     return <RequestStateView state="loading" title="Loading artifacts" />;
@@ -49,6 +55,11 @@ export function ArtifactsPage() {
     return <EmptyState title="No workspace selected" description="Select an organization workspace before registry metadata can be shown." />;
   if (workspaceContext.isError || artifacts.isError || permissions.isError)
     return <RequestStateView state="unexpected" title="Artifacts could not load" />;
+
+  const allItems = artifacts.data?.items ?? [];
+  const activeItems = allItems.filter((artifact) => artifact.status !== "Archived");
+  const archivedItems = allItems.filter((artifact) => artifact.status === "Archived");
+  const visibleItems = filter === "archived" ? archivedItems : filter === "all" ? allItems : activeItems;
 
   return (
     <section className="space-y-5">
@@ -72,13 +83,18 @@ export function ArtifactsPage() {
       </div>
 
       {!canManageSetup ? <p className="text-xs text-muted-foreground">Deployment setup permission is required to upload or register artifacts.</p> : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <FilterButton active={filter === "active"} onClick={() => setFilter("active")}>Active {activeItems.length}</FilterButton>
+        <FilterButton active={filter === "archived"} onClick={() => setFilter("archived")}>Archived {archivedItems.length}</FilterButton>
+        <FilterButton active={filter === "all"} onClick={() => setFilter("all")}>All {allItems.length}</FilterButton>
+      </div>
 
-      {artifacts.data?.items.length === 0 ? (
+      {visibleItems.length === 0 ? (
         <EmptyState
-          title="No artifacts registered"
-          description="Uploaded and manually registered artifacts appear here with type, producer, digest, and compatibility metadata."
+          title={filter === "archived" ? "No archived artifacts" : filter === "all" ? "No artifacts registered" : "No active artifacts"}
+          description={filter === "archived" ? "Archived artifacts will appear here for audit and restore workflows." : "Uploaded and manually registered artifacts appear here with type, producer, digest, and compatibility metadata."}
           action={
-            canManageSetup ? (
+            canManageSetup && filter !== "archived" ? (
               <Link to="/admin/artifacts/new" className={buttonClassName()}>
                 <Upload className="h-4 w-4" />
                 Upload artifact
@@ -100,7 +116,7 @@ export function ArtifactsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {artifacts.data!.items.map((artifact) => (
+              {visibleItems.map((artifact) => (
                 <tr key={artifact.id} className="hover:bg-muted/50">
                   <td className="px-3 py-2">
                     <Link to={artifactPath(artifact.id)} className="font-medium text-foreground hover:text-primary">
@@ -110,12 +126,30 @@ export function ArtifactsPage() {
                   </td>
                   <td className="px-3 py-2"><Badge>{artifact.artifactTypeId ?? workflowArtifactType}</Badge></td>
                   <td className="px-3 py-2">{artifact.manifest.name || "Unnamed"} {artifact.manifest.version ? `v${artifact.manifest.version}` : ""}</td>
-                  <td className="px-3 py-2"><Badge>{artifact.inspectionStatus}</Badge></td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-wrap gap-1">
+                      <Badge>{artifact.inspectionStatus}</Badge>
+                      {artifact.status === "Archived" ? <Badge>Archived</Badge> : null}
+                    </div>
+                  </td>
                   <td className="px-3 py-2 text-muted-foreground">{formatDateTime(artifact.registeredAt)}</td>
                   <td className="px-3 py-2 text-right">
-                    <Link to={artifactPath(artifact.id)} className="text-xs font-medium text-primary hover:underline">
-                      Open details
-                    </Link>
+                    <div className="flex justify-end gap-2">
+                      <Link to={artifactPath(artifact.id)} className="text-xs font-medium text-primary hover:underline">
+                        Open details
+                      </Link>
+                      {canManageSetup ? (
+                        artifact.status === "Archived" ? (
+                          <button type="button" className="text-xs font-medium text-primary hover:underline" disabled={restore.isPending} onClick={() => restore.mutate(artifact.id)}>
+                            Restore
+                          </button>
+                        ) : (
+                          <button type="button" className="text-xs font-medium text-primary hover:underline" disabled={archive.isPending} onClick={() => archive.mutate(artifact.id)}>
+                            Archive
+                          </button>
+                        )
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -123,6 +157,9 @@ export function ArtifactsPage() {
           </table>
         </Table>
       )}
+      {archive.error instanceof Error || restore.error instanceof Error ? (
+        <p role="alert" className="text-sm text-destructive">{archive.error instanceof Error ? archive.error.message : restore.error instanceof Error ? restore.error.message : null}</p>
+      ) : null}
     </section>
   );
 }
@@ -227,6 +264,8 @@ export function ArtifactDetailsPage() {
     enabled: Boolean(workspaceId)
   });
   const canManageSetup = Boolean(permissions.data?.permissions.includes("deployments.setup.manage"));
+  const archive = useArtifactArchiveMutation(workspaceId, artifactId ?? "");
+  const restore = useArtifactRestoreMutation(workspaceId, artifactId ?? "");
   const refresh = useMutation({
     mutationFn: (current: WorkspaceArtifact) => refreshWorkspaceArtifactInspection(workspaceId, current.id),
     onSuccess: () => {
@@ -259,12 +298,35 @@ export function ArtifactDetailsPage() {
             Immutable artifact metadata, references, checksum state, inspection diagnostics, and compatibility details.
           </p>
         </div>
-        <SecondaryButton className="self-start md:shrink-0" disabled={!canManageSetup || refresh.isPending} onClick={() => refresh.mutate(artifact.data)}>
-          <RefreshCw className="h-4 w-4" />
-          {refresh.isPending ? "Refreshing" : "Refresh inspection"}
-        </SecondaryButton>
+        <div className="flex flex-wrap gap-2 self-start md:justify-end">
+          {canManageSetup ? (
+            artifact.data.status === "Archived" ? (
+              <SecondaryButton disabled={restore.isPending} onClick={() => restore.mutate(artifact.data.id)}>
+                <RotateCcw className="h-4 w-4" />
+                {restore.isPending ? "Restoring" : "Restore"}
+              </SecondaryButton>
+            ) : (
+              <SecondaryButton disabled={archive.isPending} onClick={() => archive.mutate(artifact.data.id)}>
+                <Archive className="h-4 w-4" />
+                {archive.isPending ? "Archiving" : "Archive"}
+              </SecondaryButton>
+            )
+          ) : null}
+          <SecondaryButton className="md:shrink-0" disabled={!canManageSetup || refresh.isPending || artifact.data.status === "Archived"} onClick={() => refresh.mutate(artifact.data)}>
+            <RefreshCw className="h-4 w-4" />
+            {refresh.isPending ? "Refreshing" : "Refresh inspection"}
+          </SecondaryButton>
+        </div>
       </div>
-      {!canManageSetup ? <p className="text-xs text-muted-foreground">Deployment setup permission is required to refresh artifact inspection.</p> : null}
+      {!canManageSetup ? <p className="text-xs text-muted-foreground">Deployment setup permission is required to refresh or archive artifacts.</p> : null}
+      {artifact.data.status === "Archived" ? (
+        <p className="rounded-ui border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          This artifact is archived and hidden from new revision selection. Existing history and references can still open this detail page.
+        </p>
+      ) : null}
+      {archive.error instanceof Error || restore.error instanceof Error ? (
+        <p role="alert" className="text-sm text-destructive">{archive.error instanceof Error ? archive.error.message : restore.error instanceof Error ? restore.error.message : null}</p>
+      ) : null}
       <ArtifactDetail
         artifact={artifact.data}
         workspaceId={workspaceId}
@@ -356,6 +418,42 @@ function ArtifactRegistrationPanel({
         </Button>
       </div>
     </form>
+  );
+}
+
+function useArtifactArchiveMutation(workspaceId: string, detailArtifactId = "") {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (artifactId: string) => archiveWorkspaceArtifact(workspaceId, artifactId),
+    onSuccess: async (artifact) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.artifacts(workspaceId) });
+      const detailKey = detailArtifactId || artifact.id;
+      await queryClient.invalidateQueries({ queryKey: queryKeys.artifactDetails(workspaceId, detailKey) });
+    }
+  });
+}
+
+function useArtifactRestoreMutation(workspaceId: string, detailArtifactId = "") {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (artifactId: string) => restoreWorkspaceArtifact(workspaceId, artifactId),
+    onSuccess: async (artifact) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.artifacts(workspaceId) });
+      const detailKey = detailArtifactId || artifact.id;
+      await queryClient.invalidateQueries({ queryKey: queryKeys.artifactDetails(workspaceId, detailKey) });
+    }
+  });
+}
+
+function FilterButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      className={buttonClassName(active ? "primary" : "secondary")}
+      onClick={onClick}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -621,6 +719,8 @@ function ArtifactDetail({
         />
         <Detail label="Checksum" value={artifact.checksumStatus} />
         <Detail label="Inspection" value={artifact.inspectionStatus} />
+        <Detail label="Lifecycle" value={artifact.status} />
+        {artifact.archivedAt ? <Detail label="Archived" value={formatDateTime(artifact.archivedAt)} /> : null}
         <Detail label="Last inspected" value={formatDateTime(artifact.lastInspectedAt)} />
       </dl>
       {compatibility.length > 0 ? (

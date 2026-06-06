@@ -160,6 +160,33 @@ describe("DeploymentsPage", () => {
     );
   });
 
+  it("explains production observability validation and links to a revision with a binding", async () => {
+    const cockpit = {
+      ...deploymentCockpitFixture,
+      comparisons: [
+        {
+          ...deploymentCockpitFixture.comparisons[1],
+          targetEnvironmentId: "claims-prod",
+          targetRevision: 40,
+          validations: [
+            {
+              id: "deployment.tier.observability-required",
+              severity: "Blocker" as const,
+              scope: "Observability",
+              message: "Production requires at least one observability binding."
+            }
+          ]
+        }
+      ]
+    };
+    renderDeployments(cockpit, "/admin/deployments/applications/claims-ops/environments/claims-prod");
+
+    expect(await screen.findByText("Deployment blockers")).toBeInTheDocument();
+    expect((await screen.findAllByText("Production requires at least one observability binding.")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Production promotion requires the source revision to declare where runtime telemetry will be sent/).length).toBeGreaterThan(0);
+    expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-dev/revisions/new?includeObservability=1")).toBeInTheDocument();
+  });
+
   it("renders not-found states for unknown hierarchy ids", async () => {
     renderDeployments(undefined, "/admin/deployments/applications/missing-app");
 
@@ -250,6 +277,36 @@ describe("DeploymentsPage", () => {
             artifactId: "sha256:payment-retry-dev",
             artifactTypeId: "elsa.workflow-definition",
             contentDigest: { algorithm: "sha256", value: "dev-digest" }
+          }
+        }
+      ]
+    });
+  }, 15000);
+
+  it("creates a desired-state revision with an observability binding", async () => {
+    const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-dev/revisions/new?includeObservability=1");
+
+    expect(await screen.findByRole("heading", { name: "New revision" })).toBeInTheDocument();
+    expect((await screen.findAllByText("Payment Retry 8")).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText(/Include observability binding/)).toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "Create revision" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops/environments/claims-dev/revisions`),
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+    expect(requestBody(fetchMock, "POST", "/environments/claims-dev/revisions")).toMatchObject({
+      records: [
+        { kind: "ArtifactReference" },
+        {
+          kind: "ObservabilityBinding",
+          name: "Traces - OpenTelemetry Collector",
+          payload: {
+            kind: "Traces",
+            provider: "OpenTelemetry Collector",
+            scope: "Dev / workflow runtime"
           }
         }
       ]

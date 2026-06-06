@@ -1,5 +1,6 @@
 using System.Reflection;
 using Elsa.Platform.PackageManifest.Generator.Core.AssemblyInspection;
+using Elsa.Platform.PackageManifest.Generator.Core.Overrides;
 
 namespace Elsa.Platform.PackageManifest.Generator.Core.Generation;
 
@@ -8,13 +9,18 @@ public sealed class FeatureDiscoveryService(
     FeatureMetadataReader metadataReader,
     SettingDiscoveryService settingDiscoveryService)
 {
-    public IReadOnlyList<DiscoveredFeature> Discover(Assembly assembly, ProjectPackageMetadata packageMetadata)
+    public DiscoveredManifestMetadata Discover(Assembly assembly, ProjectPackageMetadata packageMetadata)
     {
-        return assembly.GetTypes()
+        var packageMetadataHints = metadataReader.ReadPackageMetadata(assembly);
+        var features = assembly.GetTypes()
             .Where(featureTypeMatcher.IsFeature)
             .Select(type => CreateFeature(type, packageMetadata))
             .OrderBy(x => x.FeatureId, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+
+        return new DiscoveredManifestMetadata(
+            ToCompatibility(packageMetadataHints.RuntimeKinds),
+            features);
     }
 
     private DiscoveredFeature CreateFeature(Type type, ProjectPackageMetadata packageMetadata)
@@ -42,7 +48,11 @@ public sealed class FeatureDiscoveryService(
             [],
             [],
             metadata.Infrastructure,
+            ToCompatibility(metadata.RuntimeKinds),
             metadata.Extensions,
             settings);
     }
+
+    private static CompatibilityOverride? ToCompatibility(IReadOnlyList<string> runtimeKinds) =>
+        runtimeKinds.Count == 0 ? null : new CompatibilityOverride { RuntimeKinds = runtimeKinds };
 }

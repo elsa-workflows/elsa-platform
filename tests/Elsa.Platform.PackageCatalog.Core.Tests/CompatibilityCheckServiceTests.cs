@@ -209,7 +209,7 @@ public sealed class CompatibilityCheckServiceTests
     }
 
     [Fact]
-    public async Task Runtime_kind_validation_requires_feature_runtime_kinds_when_runtime_context_is_supplied()
+    public async Task Runtime_kind_validation_defaults_legacy_features_to_server_when_runtime_context_is_supplied()
     {
         var source = PublicCatalogSeedData.CreatePackageSource();
         var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Mixed");
@@ -229,7 +229,7 @@ public sealed class CompatibilityCheckServiceTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Mixed")], ["server", "legacy"], RuntimeKinds: ["elsa.server"]));
 
-        result.Findings.Should().ContainSingle(x => x.Code == "feature.runtimeKindUnsupported" && x.Message.Contains("legacy"));
+        result.Findings.Should().NotContain(x => x.Code == "feature.runtimeKindUnsupported" && x.Message.Contains("legacy"));
     }
 
     [Fact]

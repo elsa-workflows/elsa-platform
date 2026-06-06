@@ -67,6 +67,10 @@ export function PromotionPreviewPanel({
   const blocked = comparison ? hasBlockingValidation(comparison.validations) : true;
   const hasRollbackTarget = Boolean(comparison?.rollbackRevision && comparison.rollbackRevisionId);
   const previewBlocked = readinessIssues.some((issue) => issue.severity === "Blocker");
+  const sourceApplication = data.applications.find((application) => application.environments.some((environment) => environment.id === sourceEnvironmentId));
+  const observabilityRevisionPath = sourceApplication
+    ? `/admin/deployments/applications/${encodeURIComponent(sourceApplication.id)}/environments/${encodeURIComponent(sourceEnvironmentId)}/revisions/new?includeObservability=1`
+    : undefined;
 
   return (
     <div className="space-y-4">
@@ -173,7 +177,11 @@ export function PromotionPreviewPanel({
           </Panel>
           {comparison.artifacts.length > 0 ? <ArtifactPanel artifacts={comparison.artifacts} /> : null}
           <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-start">
-            <ValidationPanel validations={comparison.validations} />
+            <ValidationPanel
+              validations={comparison.validations}
+              observabilityRevisionPath={observabilityRevisionPath}
+              canManageDesiredState={canManageDesiredState}
+            />
             <div className="rounded-ui border border-border bg-surface p-3">
               <div className="mb-3 text-sm font-medium">Deployment gate</div>
               <div className="flex flex-col gap-2">
@@ -304,7 +312,15 @@ function RuntimeCompatibility({ validations }: { validations: PromotionCompariso
   return <StatusBadge value={selected.severity} tone={validationTone(selected.severity)} />;
 }
 
-function ValidationPanel({ validations }: { validations: PromotionComparison["validations"] }) {
+function ValidationPanel({
+  validations,
+  observabilityRevisionPath,
+  canManageDesiredState
+}: {
+  validations: PromotionComparison["validations"];
+  observabilityRevisionPath?: string;
+  canManageDesiredState: boolean;
+}) {
   return (
     <Panel title="Validations" icon={<ClipboardCheck className="h-4 w-4" />}>
       <div className="space-y-2">
@@ -323,6 +339,24 @@ function ValidationPanel({ validations }: { validations: PromotionComparison["va
                 <StatusBadge value={validation.severity} tone={validationTone(validation.severity)} />
               </div>
               <p className="mt-1 text-muted-foreground">{validation.message}</p>
+              {validation.id === "deployment.tier.observability-required" ? (
+                <div className="mt-3 space-y-3 rounded-ui border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                  <p>
+                    Production promotion requires the source revision to declare where runtime telemetry will be sent.
+                    Add at least one logs, metrics, traces, or console binding with a provider and scope.
+                  </p>
+                  {observabilityRevisionPath ? (
+                    <Link
+                      to={observabilityRevisionPath}
+                      className={buttonClassName("secondary", !canManageDesiredState ? "pointer-events-none opacity-50" : undefined)}
+                      aria-disabled={!canManageDesiredState}
+                    >
+                      <GitBranch className="h-4 w-4" />
+                      Add binding to new revision
+                    </Link>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         ))}

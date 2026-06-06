@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Elsa.Platform.PackageManifests.Compatibility;
 
 namespace Elsa.Platform.PackageManifests.Validation;
 
@@ -56,6 +57,7 @@ public sealed class ManifestValidator
 
         ValidateRange(manifest.Compatibility?.ElsaVersionRange, "$.compatibility.elsaVersionRange", errors);
         ValidateRange(manifest.Compatibility?.DockerImageVersionRange, "$.compatibility.dockerImageVersionRange", errors);
+        ValidateRuntimeKinds(manifest.Compatibility?.RuntimeKinds, "$.compatibility.runtimeKinds", errors);
 
         if (manifest.Features is null)
         {
@@ -70,6 +72,7 @@ public sealed class ManifestValidator
             Required(feature.TypeName, $"$.features[{i}].typeName", "feature.typeName.required", "Feature CLR type name is required.", errors);
             Required(feature.DisplayName, $"$.features[{i}].displayName", "feature.displayName.required", "Feature display name is required.", errors);
             ValidateCategories(feature.Categories, $"$.features[{i}].categories", errors);
+            ValidateRuntimeKinds(feature.Compatibility?.RuntimeKinds, $"$.features[{i}].compatibility.runtimeKinds", errors);
 
             if (feature.Infrastructure is null)
             {
@@ -127,6 +130,33 @@ public sealed class ManifestValidator
 
             if (!seen.Add(category.Trim()))
                 errors.Add(new ManifestValidationFinding($"{path}[{categoryIndex}]", "feature.category.duplicate", "Feature categories must be unique.", ManifestValidationSeverity.Error));
+        }
+    }
+
+    private static void ValidateRuntimeKinds(IReadOnlyList<string>? runtimeKinds, string path, ICollection<ManifestValidationFinding> errors)
+    {
+        if (runtimeKinds is null)
+            return;
+
+        if (runtimeKinds.Count == 0)
+        {
+            errors.Add(new ManifestValidationFinding(path, "runtimeKinds.empty", "Runtime kinds must include at least one value when specified.", ManifestValidationSeverity.Error));
+            return;
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < runtimeKinds.Count; i++)
+        {
+            var runtimeKind = runtimeKinds[i];
+            var itemPath = $"{path}[{i}]";
+            if (!RuntimeKindCompatibility.IsValid(runtimeKind))
+            {
+                errors.Add(new ManifestValidationFinding(itemPath, "runtimeKind.invalid", "Runtime kind must be a non-empty machine-readable identifier without whitespace.", ManifestValidationSeverity.Error));
+                continue;
+            }
+
+            if (!seen.Add(runtimeKind))
+                errors.Add(new ManifestValidationFinding(itemPath, "runtimeKind.duplicate", $"Runtime kind '{runtimeKind}' is duplicated.", ManifestValidationSeverity.Error));
         }
     }
 

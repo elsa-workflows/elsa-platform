@@ -47,13 +47,9 @@
     "compatibility": {
       "type": "object",
       "properties": {
+        "runtimeKinds": { "$ref": "#/$defs/runtimeKinds" },
         "elsaVersionRange": { "type": "string" },
         "dockerImageVersionRange": { "type": "string" },
-        "runtimeKinds": {
-          "type": "array",
-          "items": { "type": "string", "minLength": 1 },
-          "uniqueItems": true
-        },
         "runtimeCapabilities": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
@@ -65,6 +61,15 @@
         }
       },
       "additionalProperties": true
+    },
+    "runtimeKinds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+      },
+      "uniqueItems": true
     },
     "infrastructureRequirement": {
       "type": "object",

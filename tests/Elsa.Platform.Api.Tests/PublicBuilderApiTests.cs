@@ -87,7 +87,7 @@ public sealed class PublicBuilderApiTests
         catalog.Images.Single(x => x.Slug == "elsa-pro-combined").RuntimeKinds.Should().BeEquivalentTo("elsa.server", "elsa.studio");
         var features = catalog.Packages.Single(x => x.PackageId == "Elsa.RuntimeKinds").Versions.Single().Features;
         features.Single(x => x.FeatureId == "server-default").RuntimeKinds.Should().BeEquivalentTo("elsa.server");
-        features.Single(x => x.FeatureId == "studio-override").RuntimeKinds.Should().BeEquivalentTo("elsa.studio");
+        features.Should().NotContain(x => x.FeatureId == "studio-override");
     }
 
     [Fact]
@@ -112,6 +112,43 @@ public sealed class PublicBuilderApiTests
 
         catalog!.Packages.Should().ContainSingle(x => x.PackageId == "Elsa.Selected");
         catalog.Packages.Should().NotContain(x => x.PackageId == "Elsa.Hidden");
+    }
+
+    [Fact]
+    public async Task Get_builder_catalog_filters_to_elsa_server_runtime_kind()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(db =>
+        {
+            var source = PublicCatalogSeedData.CreatePackageSource();
+
+            var serverPackage = PublicCatalogSeedData.CreatePackage(source, "Elsa.ServerOnly");
+            PublicCatalogSeedData.AddFeature(PublicCatalogSeedData.AddVersion(serverPackage, runtimeKinds: ["elsa.server"]), "server", "Server");
+
+            var studioPackage = PublicCatalogSeedData.CreatePackage(source, "Elsa.StudioOnly");
+            PublicCatalogSeedData.AddFeature(PublicCatalogSeedData.AddVersion(studioPackage, runtimeKinds: ["elsa.studio"]), "studio", "Studio");
+
+            var mixedPackage = PublicCatalogSeedData.CreatePackage(source, "Elsa.Mixed");
+            var mixedVersion = PublicCatalogSeedData.AddVersion(mixedPackage);
+            mixedVersion.ManifestJson = new ManifestFixtureBuilder()
+                .WithPackage("Elsa.Mixed", "1.0.0")
+                .WithRuntimeKinds("elsa.server", "elsa.studio")
+                .WithFeature("server", "Elsa.Mixed.ServerFeature", ["elsa.server"])
+                .WithFeature("studio", "Elsa.Mixed.StudioFeature", ["elsa.studio"])
+                .BuildJson();
+            PublicCatalogSeedData.AddFeature(mixedVersion, "server", "Server");
+            PublicCatalogSeedData.AddFeature(mixedVersion, "studio", "Studio");
+
+            db.PackageSources.Add(source);
+            return Task.CompletedTask;
+        });
+
+        var catalog = await app.CreateClient().GetFromJsonAsync<BuilderCatalogResponse>("/api/builder/catalog");
+
+        catalog!.Packages.Should().Contain(x => x.PackageId == "Elsa.ServerOnly");
+        catalog.Packages.Should().Contain(x => x.PackageId == "Elsa.Mixed");
+        catalog.Packages.Should().NotContain(x => x.PackageId == "Elsa.StudioOnly");
+        catalog.Packages.Single(x => x.PackageId == "Elsa.Mixed").Versions.Single().Features.Should().ContainSingle(x => x.FeatureId == "server");
     }
 
     [Fact]

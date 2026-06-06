@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Badge, Button, buttonClassName, EmptyState, Input, SecondaryButton, Select, Table } from "@/components/ui";
 import { RequestStateView } from "@/components/states/RequestStateViews";
 import {
@@ -67,6 +67,7 @@ import {
   type DeploymentStatus,
   type DriftStatus,
   type EnvironmentSummary,
+  type ObservabilityBinding,
   type WorkspaceDesiredStateRecordRequest,
   type RuntimeControl,
   type ValidationSeverity,
@@ -102,10 +103,13 @@ type EnvironmentFormValues = {
 
 type DeploymentBlocker = {
   id: string;
+  validationId?: string;
   scope: string;
   message: string;
   severity: ValidationSeverity;
   source: string;
+  actionPath?: string;
+  actionLabel?: string;
 };
 
 type PromotionReadinessIssue = {
@@ -731,7 +735,7 @@ function DeploymentEnvironmentReady({
             <MetricCard label="Engines" value={String(environmentEngines.length)} />
           </div>
 
-          {deploymentBlockers.length > 0 ? <DeploymentBlockersPanel blockers={deploymentBlockers} /> : null}
+          {deploymentBlockers.length > 0 ? <DeploymentBlockersPanel blockers={deploymentBlockers} canManageDesiredState={canManageDesiredState} /> : null}
 
           <Panel title="Engine registrations" icon={<RadioTower className="h-4 w-4" />}>
             {environmentEngines.length === 0 ? (
@@ -925,16 +929,22 @@ function DeploymentRevisionCreateReady({
   environmentId: string;
 }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { workspaceId, data, canManageDesiredState } = context;
   const resolved = resolveEnvironment(data, applicationId, environmentId);
   const [label, setLabel] = useState("");
   const [commit, setCommit] = useState("");
   const [artifactRecordId, setArtifactRecordId] = useState("");
+  const [includeObservability, setIncludeObservability] = useState(searchParams.get("includeObservability") === "1");
+  const [observabilityKind, setObservabilityKind] = useState<ObservabilityBinding["kind"]>("Traces");
+  const [observabilityProvider, setObservabilityProvider] = useState("OpenTelemetry Collector");
+  const [observabilityScope, setObservabilityScope] = useState(() => `${resolved.environment?.name ?? "Environment"} / workflow runtime`);
+  const [observabilitySample, setObservabilitySample] = useState("Runtime telemetry is expected for promotion and deployment review.");
   const artifacts = useQuery({
     queryKey: queryKeys.artifacts(workspaceId),
     queryFn: () => listWorkspaceArtifacts(workspaceId)
   });
-  const artifactItems = artifacts.data?.items ?? [];
+  const artifactItems = (artifacts.data?.items ?? []).filter((artifact) => artifact.status !== "Archived");
   const selectedArtifact = artifactItems.find((artifact) => artifact.id === artifactRecordId) ?? artifactItems[0];
 
   const createRevision = useMutation({
@@ -943,11 +953,23 @@ function DeploymentRevisionCreateReady({
         throw new Error("Environment not found.");
       if (!selectedArtifact)
         throw new Error("Choose an artifact before creating a revision.");
+      if (includeObservability && (!observabilityProvider.trim() || !observabilityScope.trim()))
+        throw new Error("Observability provider and scope are required.");
+
+      const records = [artifactRevisionRecord(selectedArtifact)];
+      if (includeObservability) {
+        records.push(observabilityRevisionRecord({
+          kind: observabilityKind,
+          provider: observabilityProvider,
+          scope: observabilityScope,
+          sample: observabilitySample
+        }));
+      }
 
       return createDesiredStateRevision(workspaceId, resolved.application.id, resolved.environment.id, {
         label: label.trim() || artifactDisplayName(selectedArtifact),
         commit: commit.trim() || null,
-        records: [artifactRevisionRecord(selectedArtifact)]
+        records
       });
     },
     onSuccess: async () => {
@@ -1023,6 +1045,66 @@ function DeploymentRevisionCreateReady({
                   <Input value={commit} onChange={(event) => setCommit(event.target.value)} placeholder="Optional source commit" className="mt-1" />
                 </label>
               </div>
+              <div className="rounded-ui border border-border bg-muted/20 p-3">
+                <label className="flex items-start gap-2 text-sm font-medium">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={includeObservability}
+                    onChange={(event) => setIncludeObservability(event.target.checked)}
+                  />
+                  <span>
+                    Include observability binding
+                    <span className="mt-1 block text-xs font-normal leading-5 text-muted-foreground">
+                      Production targets require the desired state to declare at least one logs, metrics, traces, or console telemetry binding.
+                    </span>
+                  </span>
+                </label>
+                {includeObservability ? (
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <label className="block text-sm font-medium">
+                      Signal
+                      <Select
+                        className="mt-1 w-full"
+                        value={observabilityKind}
+                        onChange={(event) => setObservabilityKind(event.target.value as ObservabilityBinding["kind"])}
+                      >
+                        <option value="Traces">Traces</option>
+                        <option value="Logs">Logs</option>
+                        <option value="Metrics">Metrics</option>
+                        <option value="Console">Console</option>
+                      </Select>
+                    </label>
+                    <label className="block text-sm font-medium">
+                      Provider
+                      <Input
+                        value={observabilityProvider}
+                        onChange={(event) => setObservabilityProvider(event.target.value)}
+                        placeholder="OpenTelemetry Collector"
+                        className="mt-1"
+                      />
+                    </label>
+                    <label className="block text-sm font-medium">
+                      Scope
+                      <Input
+                        value={observabilityScope}
+                        onChange={(event) => setObservabilityScope(event.target.value)}
+                        placeholder={`${environment.name} / workflow runtime`}
+                        className="mt-1"
+                      />
+                    </label>
+                    <label className="block text-sm font-medium">
+                      Sample or note
+                      <Input
+                        value={observabilitySample}
+                        onChange={(event) => setObservabilitySample(event.target.value)}
+                        placeholder="Runtime telemetry endpoint configured."
+                        className="mt-1"
+                      />
+                    </label>
+                  </div>
+                ) : null}
+              </div>
               <div className="flex flex-wrap justify-end gap-2">
                 <Link to={environmentPath(application.id, environment.id)} className={buttonClassName("secondary")}>Cancel</Link>
                 <Button type="submit" disabled={submitDisabled}>
@@ -1040,6 +1122,7 @@ function DeploymentRevisionCreateReady({
               icon={<ClipboardCheck className="h-4 w-4" />}
               actions={[
                 "The revision becomes the latest desired state for this environment.",
+                "If included, the observability binding satisfies production-tier telemetry validation.",
                 "Use Promotion to copy it into a higher environment.",
                 "Use Deploy Target Revision after promotion validation passes."
               ]}
@@ -1994,7 +2077,13 @@ function ValidationPanel({ validations }: { validations: DeploymentCockpit["comp
   );
 }
 
-function DeploymentBlockersPanel({ blockers }: { blockers: DeploymentBlocker[] }) {
+function DeploymentBlockersPanel({
+  blockers,
+  canManageDesiredState
+}: {
+  blockers: DeploymentBlocker[];
+  canManageDesiredState: boolean;
+}) {
   return (
     <Panel title="Deployment blockers" icon={<AlertTriangle className="h-4 w-4" />}>
       <div className="space-y-2">
@@ -2008,6 +2097,24 @@ function DeploymentBlockersPanel({ blockers }: { blockers: DeploymentBlocker[] }
                 <StatusBadge value={blocker.severity} tone={validationTone(blocker.severity)} />
               </div>
               <p className="mt-1 text-muted-foreground">{blocker.message}</p>
+              {blocker.validationId === "deployment.tier.observability-required" ? (
+                <div className="mt-3 space-y-3 rounded-ui border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                  <p>
+                    Production promotion requires the source revision to declare where runtime telemetry will be sent.
+                    Add at least one logs, metrics, traces, or console binding with a provider and scope.
+                  </p>
+                  {blocker.actionPath ? (
+                    <Link
+                      to={blocker.actionPath}
+                      className={buttonClassName("secondary", !canManageDesiredState ? "pointer-events-none opacity-50" : undefined)}
+                      aria-disabled={!canManageDesiredState}
+                    >
+                      <GitBranch className="h-4 w-4" />
+                      {blocker.actionLabel ?? "Add binding to new revision"}
+                    </Link>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         ))}
@@ -2131,6 +2238,13 @@ function environmentPath(applicationId: string, environmentId: string) {
   return `${applicationPath(applicationId)}/environments/${encodeURIComponent(environmentId)}`;
 }
 
+function newRevisionPathForEnvironment(data: DeploymentCockpit, environmentId: string, query?: string) {
+  const application = data.applications.find((item) => item.environments.some((environment) => environment.id === environmentId));
+  if (!application) return undefined;
+  const path = `${environmentPath(application.id, environmentId)}/revisions/new`;
+  return query ? `${path}?${query}` : path;
+}
+
 function enginePath(applicationId: string, environmentId: string, engineId: string) {
   return `${environmentPath(applicationId, environmentId)}/engines/${encodeURIComponent(engineId)}`;
 }
@@ -2151,6 +2265,29 @@ function artifactRevisionRecord(artifact: WorkspaceArtifact): WorkspaceDesiredSt
       artifactTypeId: artifact.artifactTypeId ?? "elsa.workflow-definition",
       contentDigest: artifact.contentDigest,
       metadata: artifact.displayMetadata?.labels ?? {}
+    }
+  };
+}
+
+function observabilityRevisionRecord({
+  kind,
+  provider,
+  scope,
+  sample
+}: {
+  kind: ObservabilityBinding["kind"];
+  provider: string;
+  scope: string;
+  sample: string;
+}): WorkspaceDesiredStateRecordRequest {
+  return {
+    kind: "ObservabilityBinding",
+    name: `${kind} - ${provider.trim()}`,
+    payload: {
+      kind,
+      provider: provider.trim(),
+      scope: scope.trim(),
+      sample: sample.trim() || null
     }
   };
 }
@@ -2395,7 +2532,7 @@ function hasUsableDesiredRevision(environment: EnvironmentSummary) {
 }
 
 function isValidArtifactForRevision(artifact: WorkspaceArtifact) {
-  return artifact.inspectionStatus === "Valid" && artifact.checksumStatus === "Verified";
+  return artifact.status !== "Archived" && artifact.inspectionStatus === "Valid" && artifact.checksumStatus === "Verified";
 }
 
 function collectDeploymentBlockers(
@@ -2409,10 +2546,15 @@ function collectDeploymentBlockers(
     for (const validation of comparison.validations.filter((item) => item.severity === "Blocker")) {
       blockers.push({
         id: `comparison:${comparison.sourceEnvironmentId}:${comparison.sourceRevisionId}:${validation.id}`,
+        validationId: validation.id,
         scope: validation.scope,
         message: validation.message,
         severity: validation.severity,
-        source: `Promotion r${comparison.sourceRevision}`
+        source: `Promotion r${comparison.sourceRevision}`,
+        actionPath: validation.id === "deployment.tier.observability-required"
+          ? newRevisionPathForEnvironment(data, comparison.sourceEnvironmentId, "includeObservability=1")
+          : undefined,
+        actionLabel: validation.id === "deployment.tier.observability-required" ? "Add binding to new revision" : undefined
       });
     }
 

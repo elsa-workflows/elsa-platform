@@ -36,6 +36,7 @@ public static class PublicFeatureEndpoints
             feature.Description,
             feature.Category,
             feature.Categories,
+            feature.RuntimeKinds,
             feature.RequiredCapabilities,
             feature.Dependencies.Select(x => new PublicFeatureDependencyResponse(x.PackageId, x.VersionRange, x.FeatureId, x.Optional, x.Reason)).ToList(),
             feature.Conflicts.Select(x => new PublicFeatureConflictResponse(x.PackageId, x.VersionRange, x.FeatureId, x.Reason)).ToList(),
