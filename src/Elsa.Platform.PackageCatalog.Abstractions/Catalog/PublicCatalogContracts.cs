@@ -43,6 +43,7 @@ public sealed record PublicFeatureProjection(
     string DisplayName,
     string? Description,
     string? Category,
+    IReadOnlyList<string> Categories,
     IReadOnlyList<string> RequiredCapabilities,
     IReadOnlyList<string> RuntimeKinds,
     IReadOnlyList<PublicDependencyProjection> Dependencies,

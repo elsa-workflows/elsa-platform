@@ -147,22 +147,34 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
     private static PublicPackageVersionProjection ToVersionProjection(PackageVersion version)
     {
         var featureRuntimeKinds = GetFeatureRuntimeKinds(version.ManifestJson);
+        var featureCategories = GetFeatureCategories(version.ManifestJson);
         return new(
             version.Package?.PackageId ?? "",
             version.Version,
             ToSourceProjection(version.Package),
             version.SchemaVersion,
             version.PublishedAt,
-            version.Features.Select(feature => ToFeatureProjection(feature, version, featureRuntimeKinds)).ToList());
+            version.Features.Select(feature => ToFeatureProjection(feature, version, featureRuntimeKinds, featureCategories)).ToList());
     }
 
     private static IReadOnlyList<PublicFeatureProjection> ToFeatureProjections(PackageVersion version)
     {
         var featureRuntimeKinds = GetFeatureRuntimeKinds(version.ManifestJson);
-        return version.Features.Select(feature => ToFeatureProjection(feature, version, featureRuntimeKinds)).ToList();
+        var featureCategories = GetFeatureCategories(version.ManifestJson);
+        return version.Features.Select(feature => ToFeatureProjection(feature, version, featureRuntimeKinds, featureCategories)).ToList();
     }
 
-    private static PublicFeatureProjection ToFeatureProjection(Core.Manifests.FeatureRecord feature, PackageVersion version, IReadOnlyDictionary<string, IReadOnlyList<string>> featureRuntimeKinds) =>
+    private static PublicFeatureProjection ToFeatureProjection(
+        Core.Manifests.FeatureRecord feature,
+        PackageVersion version,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> featureRuntimeKinds,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> featureCategories)
+    {
+        var categories = featureCategories.TryGetValue(feature.FeatureId, out var values)
+            ? values
+            : string.IsNullOrWhiteSpace(feature.Category) ? [] : [feature.Category];
+
+        return
         new(
             feature.FeatureId,
             version.Package?.PackageId ?? "",
@@ -171,7 +183,8 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
             feature.TypeName,
             feature.DisplayName,
             feature.Description,
-            feature.Category,
+            categories.FirstOrDefault(),
+            categories,
             DeserializeList<string>(feature.RequiredCapabilitiesJson),
             featureRuntimeKinds.TryGetValue(feature.FeatureId, out var runtimeKinds) ? runtimeKinds : [],
             DeserializeList<DependencyManifest>(feature.DependenciesJson)
@@ -211,6 +224,7 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
                     setting.UiJson,
                     setting.ExtensionsJson))
                 .ToList());
+    }
 
     private static IReadOnlyDictionary<string, IReadOnlyList<string>> GetFeatureRuntimeKinds(string manifestJson)
     {
@@ -226,6 +240,35 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
         {
             return new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
         }
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> GetFeatureCategories(string manifestJson)
+    {
+        try
+        {
+            var manifest = JsonSerializer.Deserialize<ElsaPackageManifest>(manifestJson, ManifestJsonSerializerOptions.Default);
+            return manifest?.Features.ToDictionary(
+                feature => feature.Id,
+                EffectiveCategories,
+                StringComparer.OrdinalIgnoreCase) ?? new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
+        {
+            return new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private static IReadOnlyList<string> EffectiveCategories(FeatureManifest feature)
+    {
+        var categories = (feature.Categories ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return categories.Length > 0
+            ? categories
+            : string.IsNullOrWhiteSpace(feature.Category) ? [] : [feature.Category.Trim()];
     }
 
     private static IReadOnlyList<string> EffectiveRuntimeKinds(CompatibilityManifest? packageCompatibility, FeatureManifest feature)

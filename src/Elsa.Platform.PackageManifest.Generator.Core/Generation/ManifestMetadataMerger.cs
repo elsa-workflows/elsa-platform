@@ -50,7 +50,7 @@ public sealed class ManifestMetadataMerger
             {
                 DisplayName = featureOverride.DisplayName ?? feature.DisplayName,
                 Description = featureOverride.Description ?? feature.Description,
-                Category = featureOverride.Category ?? feature.Category,
+                Categories = ResolveCategories(feature.Categories, featureOverride),
                 Advanced = featureOverride.Advanced ?? feature.Advanced,
                 Experimental = featureOverride.Experimental ?? feature.Experimental,
                 Dependencies = featureOverride.Dependencies?.Select(ToDependencyReference).ToArray() ?? feature.Dependencies,
@@ -62,6 +62,23 @@ public sealed class ManifestMetadataMerger
             };
         }).ToArray();
     }
+
+    private static IReadOnlyList<string> ResolveCategories(IReadOnlyList<string> current, FeatureOverride featureOverride)
+    {
+        if (featureOverride.Categories is not null)
+            return NormalizeCategories(featureOverride.Categories);
+
+        return string.IsNullOrWhiteSpace(featureOverride.Category)
+            ? current
+            : NormalizeCategories([featureOverride.Category]);
+    }
+
+    private static IReadOnlyList<string> NormalizeCategories(IEnumerable<string?> categories) =>
+        categories
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     private static IReadOnlyDictionary<string, object?> Merge(IReadOnlyDictionary<string, object?> first, IReadOnlyDictionary<string, object?>? second)
     {

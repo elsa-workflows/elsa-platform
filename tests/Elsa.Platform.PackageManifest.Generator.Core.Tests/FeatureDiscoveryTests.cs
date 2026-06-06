@@ -24,6 +24,9 @@ using Elsa.Platform.PackageManifest.Generator.Hints;
 namespace Sample.Features;
 
 /// <summary>Adds Entity Framework Core persistence support.</summary>
+[ManifestFeatureCategory("Persistence")]
+[ManifestFeatureCategory("Data")]
+[ManifestFeatureCategory("Persistence")]
 [ShellFeature("EntityFrameworkCore", DisplayName = "Entity Framework Core Persistence", Description = "Adds EF Core persistence.")]
 public sealed class EntityFrameworkCoreFeature : IShellFeature
 {
@@ -69,6 +72,8 @@ public sealed class EntityFrameworkCoreFeature : IShellFeature
         feature.GetProperty("id").GetString().Should().Be("Sample.Elsa.Package.EntityFrameworkCore");
         feature.GetProperty("displayName").GetString().Should().Be("Entity Framework Core Persistence");
         feature.GetProperty("description").GetString().Should().Be("Adds EF Core persistence.");
+        feature.GetProperty("category").GetString().Should().Be("Persistence");
+        feature.GetProperty("categories").EnumerateArray().Select(x => x.GetString()).Should().Equal("Persistence", "Data");
 
         var settings = feature.GetProperty("settings").EnumerateArray().ToDictionary(x => x.GetProperty("name").GetString()!);
         settings.Keys.Should().BeEquivalentTo("BatchSize", "Code", "OptionalBatchSize", "Provider", "Ratio", "RequiredName", "SupportedItems", "SupportedMap");
@@ -693,7 +698,7 @@ public sealed class MessagingFeature : IShellFeature
             "Sample.Features.MessagingFeature",
             "Messaging",
             null,
-            null,
+            [],
             FeatureDiscoverySource.IShellFeature,
             true,
             false,

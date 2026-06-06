@@ -95,12 +95,12 @@ public sealed class CompatibilityCheckService(ICompatibilityQueries queries, Ver
         var selectedFeatures = new HashSet<string>(selectedFeatureIds, StringComparer.OrdinalIgnoreCase);
         var features = selected
             .SelectMany(package => package.Manifest.Features.Select(feature => new SelectedFeatureManifest(package.Manifest.Package.Id, package.Manifest.Package.Version, package.Manifest.Compatibility, feature)))
-            .Where(x => selectedFeatures.Contains(x.Id))
+            .Where(x => selectedFeatures.Any(selectedFeature => FeatureMatchesIdentity(x.Feature, selectedFeature)))
             .ToList();
 
         foreach (var requestedFeatureId in selectedFeatures)
         {
-            if (features.All(x => !string.Equals(x.Id, requestedFeatureId, StringComparison.OrdinalIgnoreCase)))
+            if (features.All(x => !FeatureMatchesIdentity(x.Feature, requestedFeatureId)))
                 findings.Add(CompatibilityFinding.Error("feature.missing", $"Feature {requestedFeatureId} is not present in the selected packages."));
         }
 
@@ -147,9 +147,24 @@ public sealed class CompatibilityCheckService(ICompatibilityQueries queries, Ver
 
     private static bool FeatureMatches(string? packageId, string? versionRange, string featureId, IReadOnlyList<SelectedFeatureManifest> features, VersionRangeEvaluator ranges) =>
         features.Any(feature =>
-            string.Equals(feature.Id, featureId, StringComparison.OrdinalIgnoreCase)
+            FeatureMatchesIdentity(feature.Feature, featureId)
             && (packageId is null || string.Equals(feature.PackageId, packageId, StringComparison.OrdinalIgnoreCase))
             && (packageId is null || ranges.Includes(versionRange, feature.PackageVersion)));
+
+    private static bool FeatureMatchesIdentity(FeatureManifest feature, string featureId) =>
+        FeatureDependencyIdentityPolicy.Matches(feature.Id, ShellFeatureName(feature), featureId);
+
+    private static string? ShellFeatureName(FeatureManifest feature)
+    {
+        return feature.Extensions.TryGetValue("cshellsFeatureName", out var value)
+            ? value switch
+            {
+                string text => text,
+                JsonElement { ValueKind: JsonValueKind.String } element => element.GetString(),
+                _ => value?.ToString()
+            }
+            : null;
+    }
 
     private static bool TryParseManifest(string manifestJson, out ElsaPackageManifest? manifest)
     {

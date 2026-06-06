@@ -30,6 +30,12 @@
         "id": { "type": "string", "minLength": 1 },
         "typeName": { "type": "string" },
         "displayName": { "type": "string" },
+        "category": { "type": "string" },
+        "categories": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
         "compatibility": { "$ref": "#/$defs/compatibility" },
         "infrastructure": {
           "type": "array",

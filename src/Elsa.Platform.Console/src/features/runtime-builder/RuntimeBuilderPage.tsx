@@ -57,6 +57,18 @@ type FeatureCatalogItem = {
   feature: BuilderPackage["versions"][number]["features"][number];
 };
 
+type RemovedRuntimeFeature = {
+  featureId: string;
+  displayName: string;
+  packageId: string;
+  version: string;
+};
+
+type RuntimeKindNotice = {
+  message: string;
+  removedFeatures: RemovedRuntimeFeature[];
+};
+
 export function RuntimeBuilderPage() {
   const navigate = useNavigate();
   const workspaceContext = useWorkspaceContext();
@@ -136,7 +148,7 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [wizardStep, setWizardStep] = useState<WizardStep>("runtime");
   const [appliedConfigurationId, setAppliedConfigurationId] = useState("");
-  const [runtimeKindNotice, setRuntimeKindNotice] = useState("");
+  const [runtimeKindNotice, setRuntimeKindNotice] = useState<RuntimeKindNotice | null>(null);
   const workspaceContext = useWorkspaceContext();
   const effectiveWorkspaceId = workspaceContext.selectedWorkspaceId;
 
@@ -198,7 +210,10 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
       if (result.removedFeatureCount === 0)
         return current;
 
-      setRuntimeKindNotice(`${result.removedFeatureCount} incompatible ${result.removedFeatureCount === 1 ? "feature was" : "features were"} removed for ${selectedImage.displayName}.`);
+      setRuntimeKindNotice({
+        message: `${result.removedFeatureCount} incompatible ${result.removedFeatureCount === 1 ? "feature was" : "features were"} removed for ${selectedImage.displayName}.`,
+        removedFeatures: result.removedFeatures
+      });
       setBundle(null);
       setSelectedFilePath(null);
       return result.packages;
@@ -504,7 +519,7 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
                         setImageTag(image.defaultTag);
                         setHostPort(String(image.hostPort));
                         setEnvOverrides({});
-                        setRuntimeKindNotice("");
+                        setRuntimeKindNotice(null);
                         setBundle(null);
                       }}
                     >
@@ -596,7 +611,20 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
                 </div>
                 {runtimeKindNotice ? (
                   <div className="mt-3 rounded-ui border border-warning/40 bg-surface p-3 text-sm text-warning">
-                    {runtimeKindNotice}
+                    <p>{runtimeKindNotice.message}</p>
+                    {runtimeKindNotice.removedFeatures.length > 0 ? (
+                      <details className="mt-2 text-muted-foreground">
+                        <summary className="cursor-pointer text-warning">Removed features</summary>
+                        <ul className="mt-2 space-y-1">
+                          {runtimeKindNotice.removedFeatures.map((feature) => (
+                            <li key={`${feature.packageId}:${feature.version}:${feature.featureId}`}>
+                              <span className="font-medium text-foreground">{feature.displayName}</span>
+                              <span className="ml-2 text-xs">{feature.packageId} {feature.version}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
                   </div>
                 ) : null}
                 <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(17.5rem,1fr))] gap-3">
@@ -1348,6 +1376,7 @@ function pruneSelectedPackagesForRuntimeKinds(
   runtimeKinds: string[]
 ) {
   let removedFeatureCount = 0;
+  const removedFeatures: RemovedRuntimeFeature[] = [];
   const packages: Record<string, SelectedRuntimePackage> = {};
 
   for (const selection of Object.values(current)) {
@@ -1355,7 +1384,7 @@ function pruneSelectedPackagesForRuntimeKinds(
       (item) => item.source.id === selection.sourceId && item.packageId.toLowerCase() === selection.packageId.toLowerCase()
     );
     const version = packageItem?.versions.find((item) => item.version === selection.version);
-    if (!version) {
+    if (!packageItem || !version) {
       packages[packageSelectionKey(selection.sourceId, selection.packageId)] = selection;
       continue;
     }
@@ -1363,8 +1392,15 @@ function pruneSelectedPackagesForRuntimeKinds(
     const selectedFeatures = selection.selectedFeatures.filter((featureId) => {
       const feature = version.features.find((candidate) => candidate.featureId.toLowerCase() === featureId.toLowerCase());
       const compatible = !feature || isFeatureCompatibleWithRuntimeKinds(feature.runtimeKinds, runtimeKinds);
-      if (!compatible)
+      if (!compatible) {
         removedFeatureCount++;
+        removedFeatures.push({
+          featureId: feature.featureId,
+          displayName: feature.displayName,
+          packageId: packageItem.packageId,
+          version: version.version
+        });
+      }
       return compatible;
     });
 
@@ -1377,7 +1413,7 @@ function pruneSelectedPackagesForRuntimeKinds(
     }
   }
 
-  return { packages, removedFeatureCount };
+  return { packages, removedFeatureCount, removedFeatures };
 }
 
 function inferProviderIds(item: FeatureCatalogItem, providers: InfrastructureProvider[]) {
@@ -1478,27 +1514,69 @@ function findDependencyFeatureItem(
   featureId: string | null | undefined,
   catalog: BuilderCatalog
 ) {
-  const dependencyPackageId = packageId?.trim() || source.packageItem.packageId;
-  const packageItem = catalog.packages.find((candidate) => candidate.packageId.toLowerCase() === dependencyPackageId.toLowerCase());
-  if (!packageItem)
+  const requestedFeatureId = featureId?.trim();
+  if (!requestedFeatureId)
     return null;
 
-  const version = packageItem.packageId.toLowerCase() === source.packageItem.packageId.toLowerCase()
-    ? packageItem.versions.find((candidate) => candidate.version === source.version.version) ?? latestPackageVersion(packageItem)
-    : latestPackageVersion(packageItem);
-  if (!version)
-    return null;
+  const dependencyPackageId = packageId?.trim();
+  const packageItems = dependencyPackageId
+    ? catalog.packages.filter((candidate) => candidate.packageId.toLowerCase() === dependencyPackageId.toLowerCase())
+    : catalog.packages;
+  const candidates = packageItems
+    .flatMap((packageItem) => {
+      const preferredVersion = packageItem.packageId.toLowerCase() === source.packageItem.packageId.toLowerCase()
+        ? packageItem.versions.find((candidate) => candidate.version === source.version.version) ?? latestPackageVersion(packageItem)
+        : latestPackageVersion(packageItem);
+      return preferredVersion ? [{ packageItem, version: preferredVersion }] : [];
+    })
+    .sort((left, right) => dependencyCandidateScore(right, source) - dependencyCandidateScore(left, source));
 
-  const feature = version.features.find((candidate) => candidate.featureId.toLowerCase() === featureId?.trim().toLowerCase());
-  if (!feature)
-    return null;
+  for (const candidate of candidates) {
+    const feature = candidate.version.features.find((item) => featureMatchesDependency(item, requestedFeatureId));
+    if (feature) {
+      return {
+        key: `${candidate.packageItem.source.id}:${candidate.packageItem.packageId}:${candidate.version.version}:${feature.featureId}`,
+        packageItem: candidate.packageItem,
+        version: candidate.version,
+        feature
+      };
+    }
+  }
 
-  return {
-    key: `${packageItem.source.id}:${packageItem.packageId}:${version.version}:${feature.featureId}`,
-    packageItem,
-    version,
-    feature
-  };
+  return null;
+}
+
+function dependencyCandidateScore(
+  candidate: { packageItem: BuilderPackage; version: BuilderPackage["versions"][number] },
+  source: FeatureCatalogItem
+) {
+  let score = 0;
+  if (candidate.packageItem.source.id === source.packageItem.source.id)
+    score += 4;
+  if (candidate.packageItem.packageId.toLowerCase() === source.packageItem.packageId.toLowerCase())
+    score += 2;
+  if (candidate.version.version === source.version.version)
+    score += 1;
+  return score;
+}
+
+function featureMatchesDependency(feature: BuilderPackage["versions"][number]["features"][number], requestedFeatureId: string) {
+  if (feature.featureId.toLowerCase() === requestedFeatureId.toLowerCase())
+    return true;
+
+  const shellFeatureName = shellFeatureNameExtension(feature);
+  return Boolean(
+    shellFeatureName
+    && (
+      shellFeatureName.toLowerCase() === requestedFeatureId.toLowerCase()
+      || requestedFeatureId.toLowerCase().endsWith(`.${shellFeatureName.toLowerCase()}`)
+    )
+  );
+}
+
+function shellFeatureNameExtension(feature: BuilderPackage["versions"][number]["features"][number]) {
+  const value = feature.extensions?.cshellsFeatureName;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function addPackageSelection(selectedPackages: Record<string, SelectedRuntimePackage>, packageItem: BuilderPackage) {

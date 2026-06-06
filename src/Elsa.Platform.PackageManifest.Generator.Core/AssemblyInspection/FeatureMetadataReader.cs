@@ -9,10 +9,13 @@ public sealed class FeatureMetadataReader
     {
         var shellFeature = FeatureTypeMatcher.GetShellFeatureAttribute(type);
         var extensions = ReadExtensions(type);
+        var attributeCategories = ReadFeatureCategoryAttributes(type);
+        var shellFeatureCategories = ReadShellFeatureCategories(shellFeature);
         return new FeatureMetadata(
             FeatureTypeMatcher.ResolveFeatureName(type),
             FeatureTypeMatcher.ReadNamedString(shellFeature, "DisplayName"),
             FeatureTypeMatcher.ReadNamedString(shellFeature, "Description"),
+            attributeCategories.Count > 0 ? attributeCategories : shellFeatureCategories,
             FeatureTypeMatcher.ReadDependsOn(shellFeature),
             ReadInfrastructure(type),
             extensions);
@@ -87,6 +90,28 @@ public sealed class FeatureMetadataReader
             .ToDictionary(x => x.Key, x => (object?)x.Last().Value, StringComparer.OrdinalIgnoreCase);
     }
 
+    private static IReadOnlyList<string> ReadFeatureCategoryAttributes(MemberInfo member) =>
+        NormalizeCategories(member.GetCustomAttributesData()
+            .Where(x => x.AttributeType.FullName == "Elsa.Platform.PackageManifest.Generator.Hints.ManifestFeatureCategoryAttribute")
+            .Select(x => x.ConstructorArguments.Count > 0 ? x.ConstructorArguments[0].Value as string : null));
+
+    private static IReadOnlyList<string> ReadShellFeatureCategories(CustomAttributeData? attribute)
+    {
+        var categories = FeatureTypeMatcher.ReadNamedStringArray(attribute, "Categories");
+        if (categories.Count > 0)
+            return NormalizeCategories(categories);
+
+        var category = FeatureTypeMatcher.ReadNamedString(attribute, "Category");
+        return string.IsNullOrWhiteSpace(category) ? [] : [category.Trim()];
+    }
+
+    private static IReadOnlyList<string> NormalizeCategories(IEnumerable<string?> categories) =>
+        categories
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
     private static IReadOnlyList<ManifestInfrastructureRequirementReference> ReadInfrastructure(MemberInfo member)
     {
         return member.GetCustomAttributesData()
@@ -134,6 +159,7 @@ public sealed record FeatureMetadata(
     string FeatureName,
     string? DisplayName,
     string? Description,
+    IReadOnlyList<string> Categories,
     IReadOnlyList<string> Dependencies,
     IReadOnlyList<ManifestInfrastructureRequirementReference> Infrastructure,
     IReadOnlyDictionary<string, object?> Extensions);

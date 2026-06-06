@@ -29,6 +29,7 @@ public sealed record PublicPackageFeatureResponse(
     string DisplayName,
     string? Description,
     string? Category,
+    IReadOnlyList<string> Categories,
     IReadOnlyList<string> RequiredCapabilities,
     IReadOnlyList<string> RuntimeKinds,
     IReadOnlyList<PublicPackageDependencyResponse> Dependencies,

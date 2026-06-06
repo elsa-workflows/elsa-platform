@@ -282,6 +282,7 @@ public sealed class BuilderBundleGenerationTests
             "Email",
             null,
             "Communication",
+            ["Communication"],
             [],
             ["elsa.server"],
             [],

@@ -16,7 +16,7 @@
       "id": "email",
       "typeName": "Elsa.Email.EmailFeature",
       "displayName": "Email",
-      "category": "Communication",
+      "categories": [ "Communication", "Messaging" ],
       "settings": [
         {
           "name": "smtpHost",

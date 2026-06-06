@@ -288,6 +288,9 @@ describe("RuntimeBuilderPage", () => {
     await clickWizardFooterButton("Features");
 
     expect(await screen.findByText("1 incompatible feature was removed for Elsa Server.")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Removed features"));
+    expect(screen.getByText("Studio Feature")).toBeInTheDocument();
+    expect(screen.getByText("Elsa.RuntimeKinds 1.0.0")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /Server Feature/i })).toBeChecked();
     expect(screen.queryByRole("checkbox", { name: /Studio Feature/i })).not.toBeInTheDocument();
   });
@@ -436,6 +439,36 @@ describe("RuntimeBuilderPage", () => {
     });
   });
 
+  it("selects required feature dependencies resolved by shell feature alias", async () => {
+    const fetchMock = createRuntimeBuilderFetchMock({
+      catalog: catalogWithAliasFeatureDependencies(),
+      planResponse: (intent) => ({
+        resolved: intent,
+        autoAdded: { packages: [], features: [], infrastructure: [] },
+        findings: []
+      })
+    });
+    renderRuntimeBuilder(fetchMock);
+
+    expect((await screen.findAllByText("Elsa Runtime")).length).toBeGreaterThan(0);
+
+    await clickWizardFooterButton("Features");
+    await userEvent.click(screen.getByRole("checkbox", { name: /Elsa Core/i }));
+
+    expect(screen.getByRole("checkbox", { name: /Workflow Management/i })).toBeChecked();
+
+    await advanceFromFeaturesToReview();
+    await userEvent.click(screen.getByRole("button", { name: "Plan build" }));
+
+    await waitFor(() => {
+      const planCall = findPlanCall(fetchMock);
+      expect(planCall).toBeDefined();
+      const packages = readBody<{ intent: RuntimeBuilderIntent }>(planCall?.[1]).intent.packages;
+      expect(packages.find((item) => item.packageId === "Elsa")?.selectedFeatures).toEqual(["Elsa.Elsa"]);
+      expect(packages.find((item) => item.packageId === "Elsa.Workflows.Management")?.selectedFeatures).toEqual(["Elsa.Workflows.Management.WorkflowManagement"]);
+    });
+  });
+
   it("shows a generic error state for non-auth workspace failures", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = input instanceof Request ? input.url : input.toString();
@@ -564,6 +597,82 @@ function catalogWithFeatureDependencies(): BuilderCatalog {
         ]
       }))
     }))
+  };
+}
+
+function catalogWithAliasFeatureDependencies(): BuilderCatalog {
+  const source = catalogFixture.packages[0].source;
+  const baseFeature = catalogFixture.packages[0].versions[0].features[0];
+  return {
+    ...catalogFixture,
+    packages: [
+      {
+        packageId: "Elsa",
+        displayName: "Elsa",
+        source,
+        latestVersion: "1.0.0",
+        versions: [
+          {
+            packageId: "Elsa",
+            version: "1.0.0",
+            source,
+            schemaVersion: "1.0",
+            publishedAt: "2026-06-06T08:00:00Z",
+            features: [
+              {
+                ...baseFeature,
+                featureId: "Elsa.Elsa",
+                typeName: "Elsa.ShellFeatures.ElsaFeature",
+                displayName: "Elsa Core",
+                description: "Core Elsa workflow system functionality",
+                runtimeKinds: ["elsa.server"],
+                dependencies: [
+                  {
+                    packageId: null,
+                    versionRange: null,
+                    featureId: "Elsa.WorkflowManagement",
+                    optional: false,
+                    reason: null
+                  }
+                ],
+                infrastructure: [],
+                settings: [],
+                extensions: { cshellsFeatureName: "Elsa" }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        packageId: "Elsa.Workflows.Management",
+        displayName: "Workflows.Management",
+        source,
+        latestVersion: "1.0.0",
+        versions: [
+          {
+            packageId: "Elsa.Workflows.Management",
+            version: "1.0.0",
+            source,
+            schemaVersion: "1.0",
+            publishedAt: "2026-06-06T08:00:00Z",
+            features: [
+              {
+                ...baseFeature,
+                featureId: "Elsa.Workflows.Management.WorkflowManagement",
+                typeName: "Elsa.Workflows.Management.ShellFeatures.WorkflowManagementFeature",
+                displayName: "Workflow Management",
+                description: "Provides workflow management services",
+                runtimeKinds: ["elsa.server"],
+                dependencies: [],
+                infrastructure: [],
+                settings: [],
+                extensions: { cshellsFeatureName: "WorkflowManagement" }
+              }
+            ]
+          }
+        ]
+      }
+    ]
   };
 }
 

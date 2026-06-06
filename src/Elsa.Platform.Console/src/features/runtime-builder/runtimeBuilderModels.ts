@@ -88,6 +88,7 @@ export type PublicPackageFeature = {
   infrastructure: PublicPackageInfrastructureRequirement[];
   advanced: boolean;
   experimental: boolean;
+  extensions?: Record<string, unknown> | null;
   settings: PublicPackageFeatureSetting[];
 };
 

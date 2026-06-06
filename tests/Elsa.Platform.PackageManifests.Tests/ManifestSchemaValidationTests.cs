@@ -107,6 +107,52 @@ public sealed class ManifestSchemaValidationTests
     }
 
     [Fact]
+    public void Validate_accepts_feature_categories()
+    {
+        var result = _validator.Validate("""
+        {
+          "schemaVersion": "1.0",
+          "package": { "id": "Elsa.Persistence", "version": "1.0.0" },
+          "displayName": "Persistence",
+          "features": [
+            {
+              "id": "Elsa.Persistence.EntityFrameworkCore",
+              "typeName": "Elsa.Persistence.EntityFrameworkCoreFeature",
+              "displayName": "Entity Framework Core",
+              "categories": ["Persistence", "Data"]
+            }
+          ]
+        }
+        """);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_rejects_invalid_feature_categories()
+    {
+        var result = _validator.Validate("""
+        {
+          "schemaVersion": "1.0",
+          "package": { "id": "Elsa.Persistence", "version": "1.0.0" },
+          "displayName": "Persistence",
+          "features": [
+            {
+              "id": "Elsa.Persistence.EntityFrameworkCore",
+              "typeName": "Elsa.Persistence.EntityFrameworkCoreFeature",
+              "displayName": "Entity Framework Core",
+              "categories": ["Persistence", "", "persistence"]
+            }
+          ]
+        }
+        """);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.RuleId == "feature.category.required");
+        result.Errors.Should().Contain(x => x.RuleId == "feature.category.duplicate");
+    }
+
+    [Fact]
     public void Validate_rejects_infrastructure_requirements_without_id_or_kind()
     {
         var result = _validator.Validate("""

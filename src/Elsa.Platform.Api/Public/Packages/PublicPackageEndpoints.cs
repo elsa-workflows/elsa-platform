@@ -54,6 +54,7 @@ public static class PublicPackageEndpoints
             feature.DisplayName,
             feature.Description,
             feature.Category,
+            feature.Categories,
             feature.RequiredCapabilities,
             feature.RuntimeKinds,
             feature.Dependencies.Select(x => new PublicPackageDependencyResponse(x.PackageId, x.VersionRange, x.FeatureId, x.Optional, x.Reason)).ToList(),

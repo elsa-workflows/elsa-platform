@@ -160,6 +160,55 @@ public sealed class CompatibilityCheckServiceTests
     }
 
     [Fact]
+    public async Task Satisfies_feature_dependency_with_shell_feature_alias()
+    {
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var core = PublicCatalogSeedData.CreatePackage(source, "Elsa");
+        var management = PublicCatalogSeedData.CreatePackage(source, "Elsa.Workflows.Management");
+        var coreVersion = PublicCatalogSeedData.AddVersion(core);
+        var managementVersion = PublicCatalogSeedData.AddVersion(management);
+        coreVersion.ManifestJson = """
+        {
+          "schemaVersion": "1.0",
+          "package": { "id": "Elsa", "version": "1.0.0" },
+          "displayName": "Elsa",
+          "features": [
+            {
+              "id": "Elsa.Elsa",
+              "typeName": "Elsa.ElsaFeature",
+              "displayName": "Elsa Core",
+              "dependencies": [{ "featureId": "Elsa.WorkflowManagement" }]
+            }
+          ]
+        }
+        """;
+        managementVersion.ManifestJson = """
+        {
+          "schemaVersion": "1.0",
+          "package": { "id": "Elsa.Workflows.Management", "version": "1.0.0" },
+          "displayName": "Workflow Management",
+          "features": [
+            {
+              "id": "Elsa.Workflows.Management.WorkflowManagement",
+              "typeName": "Elsa.Workflows.Management.WorkflowManagementFeature",
+              "displayName": "Workflow Management",
+              "extensions": { "cshellsFeatureName": "WorkflowManagement" }
+            }
+          ]
+        }
+        """;
+        var service = new CompatibilityCheckService(new FakeQueries(core.Versions.Concat(management.Versions).ToList()), new VersionRangeEvaluator());
+
+        var result = await service.CheckAsync(new CompatibilityCheckRequest(
+            null,
+            null,
+            [Selection(source, "Elsa"), Selection(source, "Elsa.Workflows.Management")],
+            ["Elsa.Elsa", "Elsa.Workflows.Management.WorkflowManagement"]));
+
+        result.Findings.Should().NotContain(x => x.Code == "feature.missing" || x.Code == "feature.dependency");
+    }
+
+    [Fact]
     public async Task Runtime_kind_validation_requires_feature_runtime_kinds_when_runtime_context_is_supplied()
     {
         var source = PublicCatalogSeedData.CreatePackageSource();
