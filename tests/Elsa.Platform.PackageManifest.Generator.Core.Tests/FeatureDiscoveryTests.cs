@@ -783,12 +783,12 @@ public sealed class StudioWidgetFeature : IShellFeature
 using CShells.Features;
 using Elsa.Platform.PackageManifest.Generator.Hints;
 
-[assembly: ManifestRuntimeKind("elsa.server")]
+[assembly: ManifestRuntimeKind(ElsaRuntimeKinds.Server)]
 [assembly: ManifestRuntimeKind("acme.custom-host")]
 
 namespace Sample.Features;
 
-[ManifestRuntimeKind("elsa.studio")]
+[ManifestRuntimeKind(ElsaRuntimeKinds.Studio)]
 [ShellFeature("StudioWidget", DisplayName = "Studio Widget")]
 public sealed class StudioWidgetFeature : IShellFeature
 {

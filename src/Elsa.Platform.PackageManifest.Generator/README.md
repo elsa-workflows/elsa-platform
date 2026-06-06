@@ -25,6 +25,7 @@ Optional source-only hints are available under `Elsa.Platform.PackageManifest.Ge
 - `ManifestExtensionAttribute`
 - `ManifestInfrastructureAttribute`
 - `ManifestRuntimeKindAttribute`
+- `ElsaRuntimeKinds`
 
 These hint attributes are intentionally shipped as source-only, internal types so consuming packages can use them without exposing generator APIs from their assemblies. `ManifestInfrastructureAttribute.Extensions` uses `key=value` strings; entries without a key before `=` are ignored.
 
@@ -59,13 +60,13 @@ For the common case, prefer source-only attributes in package code:
 ```csharp
 using Elsa.Platform.PackageManifest.Generator.Hints;
 
-[assembly: ManifestRuntimeKind("elsa.server")]
+[assembly: ManifestRuntimeKind(ElsaRuntimeKinds.Server)]
 ```
 
 Feature-level attributes apply compatibility to the individual feature:
 
 ```csharp
-[ManifestRuntimeKind("elsa.studio")]
+[ManifestRuntimeKind(ElsaRuntimeKinds.Studio)]
 [ShellFeature("StudioWidget", DisplayName = "Studio Widget")]
 public sealed class StudioWidgetFeature : IShellFeature
 {
