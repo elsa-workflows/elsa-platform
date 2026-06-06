@@ -121,5 +121,11 @@ internal sealed class ManifestRuntimeKindAttribute(string runtimeKind) : Attribu
 {
     public string RuntimeKind { get; } = runtimeKind;
 }
+
+internal static class ElsaRuntimeKinds
+{
+    public const string Server = "elsa.server";
+    public const string Studio = "elsa.studio";
+}
 """;
 }
