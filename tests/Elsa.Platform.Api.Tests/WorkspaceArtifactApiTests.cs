@@ -181,6 +181,37 @@ public sealed class WorkspaceArtifactApiTests
     }
 
     [Fact]
+    public async Task Owner_can_download_local_artifact_reference()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"elsa-platform-artifact-download-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        var artifactPath = Path.Combine(tempRoot, "claims-prod.zip");
+        var bytes = "artifact bytes"u8.ToArray();
+        await File.WriteAllBytesAsync(artifactPath, bytes);
+        try
+        {
+            await using var app = new PlatformApiTestApplication();
+            await app.SeedAsync(_ => Task.CompletedTask);
+            var owner = app.CreateTrustedWorkspaceClient("artifact-download-owner");
+            var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+            var artifact = await RegisterArtifactAsync(owner, workspaceId, "sha256:download", artifactPath, format: WorkspaceArtifactFormat.Zip);
+
+            var response = await owner.GetAsync($"/api/workspaces/{workspaceId}/artifacts/{artifact.Id}/download");
+            var downloaded = await response.Content.ReadAsByteArrayAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/zip");
+            response.Content.Headers.ContentDisposition!.FileNameStar.Should().Be("claims-prod.zip");
+            downloaded.Should().Equal(bytes);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+                Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task List_and_detail_are_workspace_isolated()
     {
         await using var app = new PlatformApiTestApplication();
@@ -280,11 +311,12 @@ public sealed class WorkspaceArtifactApiTests
         Guid workspaceId,
         string artifactId = "sha256:claims-prod",
         string reference = "/tmp/claims-prod",
-        string referenceProvider = "local")
+        string referenceProvider = "local",
+        WorkspaceArtifactFormat format = WorkspaceArtifactFormat.Folder)
     {
         var response = await client.PostPlatformJsonAsync(
             $"/api/workspaces/{workspaceId}/artifacts",
-            WorkspaceDeploymentTestFixtures.ArtifactRegistration(artifactId, reference, referenceProvider));
+            WorkspaceDeploymentTestFixtures.ArtifactRegistration(artifactId, reference, referenceProvider) with { Format = format });
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         return (await response.Content.ReadPlatformJsonAsync<WorkspaceArtifact>())!;
     }

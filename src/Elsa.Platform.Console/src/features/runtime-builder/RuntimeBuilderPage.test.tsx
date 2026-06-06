@@ -27,6 +27,7 @@ const catalogFixture: BuilderCatalog = {
       licenseTier: "Community",
       stability: "Stable",
       capabilities: ["workflows", "http"],
+      runtimeKinds: ["elsa.server"],
       envVars: [
         {
           name: "ELSA_CONNECTION_STRING",
@@ -83,6 +84,7 @@ const catalogFixture: BuilderCatalog = {
               description: "Stores workflow state in PostgreSQL.",
               category: "Persistence",
               requiredCapabilities: ["persistence"],
+              runtimeKinds: ["elsa.server"],
               infrastructure: [
                 {
                   id: "postgresql",
@@ -96,7 +98,20 @@ const catalogFixture: BuilderCatalog = {
               ],
               advanced: false,
               experimental: false,
-              settings: []
+              settings: [
+                {
+                  name: "ConnectionString",
+                  jsonType: "string",
+                  required: true,
+                  defaultValue: "",
+                  displayName: "Connection string",
+                  description: "PostgreSQL connection string for workflow persistence.",
+                  category: "Persistence",
+                  secret: true,
+                  restartRequired: true,
+                  environmentVariable: "ELSA_PERSISTENCE_POSTGRESQL_CONNECTIONSTRING"
+                }
+              ]
             }
           ]
         }
@@ -139,11 +154,15 @@ describe("RuntimeBuilderPage", () => {
     renderRuntimeBuilder(fetchMock);
 
     expect((await screen.findAllByText("Elsa Runtime")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Configure runtime image" })).toBeInTheDocument();
 
+    await clickWizardFooterButton("Features");
     await userEvent.click(screen.getByRole("checkbox", { name: /PostgreSQL Persistence/i }));
-    expect(screen.getByText("Package inferred: Elsa.Persistence.PostgreSql 1.0.2")).toBeInTheDocument();
+    expect(screen.getByText("Package: Elsa.Persistence.PostgreSql 1.0.2")).toBeInTheDocument();
 
-    await clickWizardFooterButton("Runtime");
+    await clickWizardFooterButton("Settings");
+    expect(screen.getByRole("heading", { name: "Configure feature settings" })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/Connection string/), "Host=postgres;Database=elsa;");
     await clickWizardFooterButton("Infrastructure");
     await clickWizardFooterButton("Review");
 
@@ -162,6 +181,11 @@ describe("RuntimeBuilderPage", () => {
       const planBody = readBody<{ intent: RuntimeBuilderIntent }>(planCall?.[1]);
       expect(planBody.intent.packages).toHaveLength(1);
       expect(planBody.intent.packages[0].selectedFeatures).toEqual(["postgresql"]);
+      expect(planBody.intent.packages[0].settings).toEqual({
+        postgresql: {
+          ConnectionString: "Host=postgres;Database=elsa;"
+        }
+      });
     });
   });
 
@@ -176,9 +200,7 @@ describe("RuntimeBuilderPage", () => {
     renderRuntimeBuilder(fetchMock);
 
     expect((await screen.findAllByText("Elsa Runtime")).length).toBeGreaterThan(0);
-    await clickWizardFooterButton("Runtime");
-    await clickWizardFooterButton("Infrastructure");
-    await clickWizardFooterButton("Review");
+    await advanceFromRuntimeToReview();
     await userEvent.click(screen.getByRole("button", { name: "Plan build" }));
 
     await waitFor(() => expect(findPlanCall(fetchMock)).toBeDefined());
@@ -196,11 +218,78 @@ describe("RuntimeBuilderPage", () => {
     renderRuntimeBuilder(fetchMock);
 
     expect((await screen.findAllByText("Elsa Runtime")).length).toBeGreaterThan(0);
+    await clickWizardFooterButton("Features");
 
     await userEvent.type(screen.getByLabelText("Search runtime features"), "Elsa.Persistence.PostgreSql.PostgreSqlFeature");
 
     expect(screen.getByRole("checkbox", { name: /PostgreSQL Persistence/i })).toBeInTheDocument();
     expect(screen.queryByText("No features match the current search.")).not.toBeInTheDocument();
+  });
+
+  it("filters features by the selected runtime image kind", async () => {
+    const fetchMock = createRuntimeBuilderFetchMock({
+      catalog: catalogWithRuntimeKindFeatures(),
+      planResponse: (intent) => ({
+        resolved: intent,
+        autoAdded: { packages: [], features: [], infrastructure: [] },
+        findings: []
+      })
+    });
+    renderRuntimeBuilder(fetchMock);
+
+    expect(await screen.findByRole("heading", { name: "Configure runtime image" })).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Image"), "elsa-studio");
+    await clickWizardFooterButton("Features");
+
+    expect(screen.getByRole("checkbox", { name: /Studio Feature/i })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /Legacy Feature/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /Server Feature/i })).not.toBeInTheDocument();
+  });
+
+  it("shows both server and studio features for combined runtime images", async () => {
+    const fetchMock = createRuntimeBuilderFetchMock({
+      catalog: catalogWithRuntimeKindFeatures(),
+      planResponse: (intent) => ({
+        resolved: intent,
+        autoAdded: { packages: [], features: [], infrastructure: [] },
+        findings: []
+      })
+    });
+    renderRuntimeBuilder(fetchMock);
+
+    expect(await screen.findByRole("heading", { name: "Configure runtime image" })).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Image"), "elsa-combined");
+    await clickWizardFooterButton("Features");
+
+    expect(screen.getByRole("checkbox", { name: /Server Feature/i })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Studio Feature/i })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /Legacy Feature/i })).not.toBeInTheDocument();
+  });
+
+  it("removes incompatible selected features when the runtime image changes", async () => {
+    const fetchMock = createRuntimeBuilderFetchMock({
+      catalog: catalogWithRuntimeKindFeatures(),
+      planResponse: (intent) => ({
+        resolved: intent,
+        autoAdded: { packages: [], features: [], infrastructure: [] },
+        findings: []
+      })
+    });
+    renderRuntimeBuilder(fetchMock);
+
+    expect(await screen.findByRole("heading", { name: "Configure runtime image" })).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Image"), "elsa-combined");
+    await clickWizardFooterButton("Features");
+    await userEvent.click(screen.getByRole("checkbox", { name: /Server Feature/i }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /Studio Feature/i }));
+
+    await clickWizardFooterButton("Runtime");
+    await userEvent.selectOptions(screen.getByLabelText("Image"), "elsa-server");
+    await clickWizardFooterButton("Features");
+
+    expect(await screen.findByText("1 incompatible feature was removed for Elsa Server.")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Server Feature/i })).toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: /Studio Feature/i })).not.toBeInTheDocument();
   });
 
   it("lists saved build configurations without rendering the builder wizard", async () => {
@@ -241,11 +330,10 @@ describe("RuntimeBuilderPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Edit build configuration" })).toBeInTheDocument();
     expect(await screen.findByText("Claims runtime")).toBeInTheDocument();
+    await clickWizardFooterButton("Features");
     expect(screen.getByRole("checkbox", { name: /PostgreSQL Persistence/i })).toBeChecked();
 
-    await clickWizardFooterButton("Runtime");
-    await clickWizardFooterButton("Infrastructure");
-    await clickWizardFooterButton("Review");
+    await advanceFromFeaturesToReview();
 
     expect(screen.getByDisplayValue("Claims runtime")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Runtime build for claims processing.")).toBeInTheDocument();
@@ -288,9 +376,7 @@ describe("RuntimeBuilderPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(findUpdateConfigurationCall(fetchMock)).toBeDefined());
 
-    await clickWizardFooterButton("Runtime");
-    await clickWizardFooterButton("Infrastructure");
-    await clickWizardFooterButton("Review");
+    await advanceFromRuntimeToReview();
     expect(screen.queryByRole("heading", { name: "Quick actions" })).not.toBeInTheDocument();
   });
 
@@ -308,10 +394,9 @@ describe("RuntimeBuilderPage", () => {
     renderRuntimeBuilder(fetchMock);
 
     expect((await screen.findAllByText("Elsa Runtime")).length).toBeGreaterThan(0);
+    await clickWizardFooterButton("Features");
     await userEvent.click(screen.getByRole("checkbox", { name: /PostgreSQL Persistence/i }));
-    await clickWizardFooterButton("Runtime");
-    await clickWizardFooterButton("Infrastructure");
-    await clickWizardFooterButton("Review");
+    await advanceFromFeaturesToReview();
 
     await userEvent.click(screen.getByLabelText("Include local packages directory"));
     await userEvent.click(screen.getByRole("button", { name: "Generate bundle" }));
@@ -335,13 +420,12 @@ describe("RuntimeBuilderPage", () => {
 
     expect((await screen.findAllByText("Elsa Runtime")).length).toBeGreaterThan(0);
 
+    await clickWizardFooterButton("Features");
     await userEvent.click(screen.getByRole("checkbox", { name: /PostgreSQL Persistence/i }));
 
     expect(screen.getByRole("checkbox", { name: /Persistence Core/i })).toBeChecked();
 
-    await clickWizardFooterButton("Runtime");
-    await clickWizardFooterButton("Infrastructure");
-    await clickWizardFooterButton("Review");
+    await advanceFromFeaturesToReview();
     await userEvent.click(screen.getByRole("button", { name: "Plan build" }));
 
     await waitFor(() => {
@@ -458,6 +542,7 @@ function catalogWithFeatureDependencies(): BuilderCatalog {
             description: "Base persistence services.",
             category: "Persistence",
             requiredCapabilities: ["persistence"],
+            runtimeKinds: ["elsa.server"],
             dependencies: [],
             infrastructure: [],
             advanced: false,
@@ -479,6 +564,77 @@ function catalogWithFeatureDependencies(): BuilderCatalog {
         ]
       }))
     }))
+  };
+}
+
+function catalogWithRuntimeKindFeatures(): BuilderCatalog {
+  const source = catalogFixture.packages[0].source;
+  const baseFeature = catalogFixture.packages[0].versions[0].features[0];
+  return {
+    ...catalogFixture,
+    images: [
+      {
+        ...catalogFixture.images[0],
+        slug: "elsa-server",
+        displayName: "Elsa Server",
+        runtimeKinds: ["elsa.server"]
+      },
+      {
+        ...catalogFixture.images[0],
+        slug: "elsa-studio",
+        displayName: "Elsa Studio",
+        runtimeKinds: ["elsa.studio"]
+      },
+      {
+        ...catalogFixture.images[0],
+        slug: "elsa-combined",
+        displayName: "Elsa Combined",
+        runtimeKinds: ["elsa.server", "elsa.studio"]
+      }
+    ],
+    packages: [
+      {
+        packageId: "Elsa.RuntimeKinds",
+        displayName: "Runtime Kind Features",
+        source,
+        latestVersion: "1.0.0",
+        versions: [
+          {
+            packageId: "Elsa.RuntimeKinds",
+            version: "1.0.0",
+            source,
+            schemaVersion: "1.0",
+            publishedAt: "2026-06-06T08:00:00Z",
+            features: [
+              {
+                ...baseFeature,
+                featureId: "server-feature",
+                displayName: "Server Feature",
+                typeName: "Elsa.Server.ServerFeature",
+                runtimeKinds: ["elsa.server"],
+                settings: []
+              },
+              {
+                ...baseFeature,
+                featureId: "studio-feature",
+                displayName: "Studio Feature",
+                typeName: "Elsa.Studio.StudioFeature",
+                runtimeKinds: ["elsa.studio"],
+                settings: []
+              },
+              {
+                ...baseFeature,
+                featureId: "legacy-feature",
+                displayName: "Legacy Feature",
+                typeName: "Elsa.Legacy.LegacyFeature",
+                runtimeKinds: [],
+                settings: []
+              }
+            ]
+          }
+        ]
+      }
+    ]
   };
 }
 
@@ -558,8 +714,19 @@ function runtimeBuilderRouteConfig(page: "list" | "new" | "edit", route?: string
 }
 
 async function clickWizardFooterButton(name: string) {
-  const buttons = screen.getAllByRole("button", { name });
+  const buttons = screen.getAllByRole("button").filter((button) => button.textContent?.trim() === name);
   await userEvent.click(buttons[buttons.length - 1]);
+}
+
+async function advanceFromFeaturesToReview() {
+  await clickWizardFooterButton("Settings");
+  await clickWizardFooterButton("Infrastructure");
+  await clickWizardFooterButton("Review");
+}
+
+async function advanceFromRuntimeToReview() {
+  await clickWizardFooterButton("Features");
+  await advanceFromFeaturesToReview();
 }
 
 function workspaceContextFixture() {

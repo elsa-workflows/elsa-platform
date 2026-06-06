@@ -77,6 +77,11 @@ public sealed record RegisterWorkspaceArtifactRequest(
 
 public sealed record WorkspaceArtifactRegistrationResult(WorkspaceArtifact Artifact, bool Created);
 
+public sealed record WorkspaceArtifactDownload(
+    string FileName,
+    string ContentType,
+    Stream Content);
+
 public sealed record WorkspaceArtifact(
     Guid Id,
     Guid WorkspaceId,

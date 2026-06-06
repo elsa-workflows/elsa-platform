@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Elsa.Platform.PackageCatalog.Abstractions.Catalog;
+using Elsa.Platform.PackageCatalog.Abstractions.Compatibility;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Elsa.Platform.PackageCatalog.Core.Packages;
 using Elsa.Platform.PackageCatalog.Core.Sources;
@@ -85,7 +86,7 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
         var packages = await VisiblePackages().ToListAsync(cancellationToken);
         return packages
             .SelectMany(x => x.Versions)
-            .SelectMany(x => x.Features.Select(feature => ToFeatureProjection(feature, x)))
+            .SelectMany(ToFeatureProjections)
             .OrderBy(x => x.FeatureId)
             .ToList();
     }
@@ -95,7 +96,7 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
         var packages = await VisiblePackages().ToListAsync(cancellationToken);
         return packages
             .SelectMany(x => x.Versions)
-            .SelectMany(x => x.Features.Select(feature => ToFeatureProjection(feature, x)))
+            .SelectMany(ToFeatureProjections)
             .FirstOrDefault(x => x.FeatureId == featureId);
     }
 
@@ -143,16 +144,25 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
             versions.Select(ToVersionProjection).ToList());
     }
 
-    private static PublicPackageVersionProjection ToVersionProjection(PackageVersion version) =>
-        new(
+    private static PublicPackageVersionProjection ToVersionProjection(PackageVersion version)
+    {
+        var featureRuntimeKinds = GetFeatureRuntimeKinds(version.ManifestJson);
+        return new(
             version.Package?.PackageId ?? "",
             version.Version,
             ToSourceProjection(version.Package),
             version.SchemaVersion,
             version.PublishedAt,
-            version.Features.Select(feature => ToFeatureProjection(feature, version)).ToList());
+            version.Features.Select(feature => ToFeatureProjection(feature, version, featureRuntimeKinds)).ToList());
+    }
 
-    private static PublicFeatureProjection ToFeatureProjection(Core.Manifests.FeatureRecord feature, PackageVersion version) =>
+    private static IReadOnlyList<PublicFeatureProjection> ToFeatureProjections(PackageVersion version)
+    {
+        var featureRuntimeKinds = GetFeatureRuntimeKinds(version.ManifestJson);
+        return version.Features.Select(feature => ToFeatureProjection(feature, version, featureRuntimeKinds)).ToList();
+    }
+
+    private static PublicFeatureProjection ToFeatureProjection(Core.Manifests.FeatureRecord feature, PackageVersion version, IReadOnlyDictionary<string, IReadOnlyList<string>> featureRuntimeKinds) =>
         new(
             feature.FeatureId,
             version.Package?.PackageId ?? "",
@@ -163,6 +173,7 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
             feature.Description,
             feature.Category,
             DeserializeList<string>(feature.RequiredCapabilitiesJson),
+            featureRuntimeKinds.TryGetValue(feature.FeatureId, out var runtimeKinds) ? runtimeKinds : [],
             DeserializeList<DependencyManifest>(feature.DependenciesJson)
                 .Select(x => new PublicDependencyProjection(x.PackageId, x.VersionRange, x.FeatureId, x.Optional, x.Reason))
                 .ToList(),
@@ -200,6 +211,30 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
                     setting.UiJson,
                     setting.ExtensionsJson))
                 .ToList());
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> GetFeatureRuntimeKinds(string manifestJson)
+    {
+        try
+        {
+            var manifest = JsonSerializer.Deserialize<ElsaPackageManifest>(manifestJson, ManifestJsonSerializerOptions.Default);
+            return manifest?.Features.ToDictionary(
+                feature => feature.Id,
+                feature => EffectiveRuntimeKinds(manifest.Compatibility, feature),
+                StringComparer.OrdinalIgnoreCase) ?? new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
+        {
+            return new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private static IReadOnlyList<string> EffectiveRuntimeKinds(CompatibilityManifest? packageCompatibility, FeatureManifest feature)
+    {
+        var featureRuntimeKinds = RuntimeKindCompatibilityPolicy.Normalize(feature.Compatibility?.RuntimeKinds);
+        return featureRuntimeKinds.Count > 0
+            ? featureRuntimeKinds
+            : RuntimeKindCompatibilityPolicy.Normalize(packageCompatibility?.RuntimeKinds);
+    }
 
     private static PublicPackageSourceProjection ToSourceProjection(Package? package)
     {

@@ -17,6 +17,27 @@ public sealed class WorkspaceArtifactService(
     public Task<WorkspaceArtifact?> GetArtifactAsync(Guid workspaceId, Guid artifactRecordId, CancellationToken cancellationToken = default) =>
         store.GetArtifactAsync(workspaceId, artifactRecordId, cancellationToken);
 
+    public async Task<WorkspaceArtifactDownload> OpenDownloadAsync(
+        Guid workspaceId,
+        Guid artifactRecordId,
+        CancellationToken cancellationToken = default)
+    {
+        var artifact = await store.GetArtifactAsync(workspaceId, artifactRecordId, cancellationToken)
+            ?? throw new KeyNotFoundException("Artifact does not exist in the workspace.");
+        if (!artifact.ReferenceProvider.Equals("local", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Artifact reference provider is not downloadable.");
+
+        var path = ResolveLocalPath(artifact.Reference);
+        if (path is null || !File.Exists(path))
+            throw new FileNotFoundException("Artifact file is unavailable.");
+        if (Directory.Exists(path))
+            throw new InvalidOperationException("Artifact folders cannot be downloaded from this endpoint.");
+
+        var fileName = Path.GetFileName(path);
+        var contentType = artifact.Format == WorkspaceArtifactFormat.Zip ? "application/zip" : "application/octet-stream";
+        return new WorkspaceArtifactDownload(fileName, contentType, File.OpenRead(path));
+    }
+
     public async Task<WorkspaceArtifactRegistrationResult> RegisterArtifactAsync(
         Guid workspaceId,
         RegisterWorkspaceArtifactRequest request,

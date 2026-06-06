@@ -10,7 +10,8 @@ public sealed record CompatibilityCheckRequest(
     string? DockerImageVersion,
     IReadOnlyList<SelectedPackageVersion> Packages,
     IReadOnlyList<string> Features,
-    Guid? WorkspaceId = null);
+    Guid? WorkspaceId = null,
+    IReadOnlyList<string>? RuntimeKinds = null);
 
 public sealed record SelectedPackageVersion(Guid SourceId, string PackageId, string Version);
 

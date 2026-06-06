@@ -13,6 +13,7 @@ public sealed record RuntimeImage(
     string LicenseTier,
     string Stability,
     IReadOnlyList<string> Capabilities,
+    IReadOnlyList<string> RuntimeKinds,
     IReadOnlyList<RuntimeImageEnvironmentVariable> EnvVars,
     RuntimeImageDeploymentHints DeploymentHints,
     RuntimeImageDocs Docs);

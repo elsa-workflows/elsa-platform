@@ -81,7 +81,8 @@ public sealed class BundleGenerationService(
                 intent.Image.Tag ?? runtimeImage.DefaultTag,
                 packages.Select(x => new SelectedPackageVersion(x.SourceId, x.PackageId, x.Version)).ToList(),
                 selectedFeatures,
-                workspaceId), cancellationToken);
+                workspaceId,
+                runtimeImage.RuntimeKinds), cancellationToken);
             findings.AddRange(compatibilityResult.Findings.Select(ToBundleFinding));
         }
 

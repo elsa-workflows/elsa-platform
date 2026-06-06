@@ -55,6 +55,7 @@ public static class PublicPackageEndpoints
             feature.Description,
             feature.Category,
             feature.RequiredCapabilities,
+            feature.RuntimeKinds,
             feature.Dependencies.Select(x => new PublicPackageDependencyResponse(x.PackageId, x.VersionRange, x.FeatureId, x.Optional, x.Reason)).ToList(),
             feature.Conflicts.Select(x => new PublicPackageConflictResponse(x.PackageId, x.VersionRange, x.FeatureId, x.Reason)).ToList(),
             feature.Infrastructure.Select(x => new PublicPackageInfrastructureRequirementResponse(x.Id, x.Kind, x.Optional, x.Reason, x.Capabilities, x.Providers, x.ConfigurationKeys, PublicJsonMetadata.ParseObject(x.ExtensionsJson))).ToList(),

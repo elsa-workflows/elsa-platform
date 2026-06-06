@@ -22,6 +22,7 @@ export type RuntimeImage = {
   licenseTier: string;
   stability: string;
   capabilities: string[];
+  runtimeKinds: string[];
   envVars: RuntimeImageEnvironmentVariable[];
   deploymentHints: {
     supportsDockerCompose: boolean;
@@ -82,6 +83,7 @@ export type PublicPackageFeature = {
   description?: string | null;
   category?: string | null;
   requiredCapabilities: string[];
+  runtimeKinds: string[];
   dependencies?: PublicPackageFeatureDependency[] | null;
   infrastructure: PublicPackageInfrastructureRequirement[];
   advanced: boolean;
@@ -217,6 +219,7 @@ export type SelectedRuntimePackage = {
   packageId: string;
   version: string;
   selectedFeatures: string[];
+  settings?: Record<string, Record<string, unknown>>;
 };
 
 export type DeploymentTarget = "docker-compose" | "kubernetes-helm" | "azure-container-apps";

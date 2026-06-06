@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Archive, ArrowLeft, CheckCircle2, FileArchive, RefreshCw, Save, Upload, Wand2, X } from "lucide-react";
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Badge, Button, EmptyState, Input, SecondaryButton, Select, Table, buttonClassName } from "@/components/ui";
@@ -266,6 +267,7 @@ export function ArtifactDetailsPage() {
       {!canManageSetup ? <p className="text-xs text-muted-foreground">Deployment setup permission is required to refresh artifact inspection.</p> : null}
       <ArtifactDetail
         artifact={artifact.data}
+        workspaceId={workspaceId}
         error={refresh.error instanceof Error ? refresh.error.message : undefined}
         artifactTypeLabel={artifactTypeLabel}
       />
@@ -576,10 +578,12 @@ function SampleArtifactPanel({ canManageSetup, workspaceId }: { canManageSetup: 
 
 function ArtifactDetail({
   artifact,
+  workspaceId,
   error,
   artifactTypeLabel
 }: {
   artifact: WorkspaceArtifact;
+  workspaceId: string;
   error?: string;
   artifactTypeLabel?: string;
 }) {
@@ -588,6 +592,7 @@ function ArtifactDetail({
     .flatMap((hint) => [hint.runtimeFamily, ...hint.requiredCapabilities])
     .filter((item): item is string => Boolean(item));
   const display = artifact.displayMetadata;
+  const reference = artifactReferenceDisplay(artifact);
   return (
     <div className="space-y-4 rounded-ui border border-border bg-surface p-4">
       <div className="flex items-start justify-between gap-3">
@@ -604,7 +609,16 @@ function ArtifactDetail({
         <Detail label="Envelope" value={artifact.envelopeVersion ?? envelopeVersion} />
         <Detail label="Schema" value={artifact.artifactSchemaVersion ?? "1.0"} />
         <Detail label="Digest" value={`${artifact.contentDigest.algorithm}:${artifact.contentDigest.value}`} />
-        <Detail label="Reference" value={`${artifact.payloadReference?.provider ?? artifact.referenceProvider} · ${artifact.payloadReference?.uri ?? artifact.reference}`} />
+        <Detail
+          label="Reference"
+          value={
+            isDownloadableLocalArtifact(artifact) ? (
+              <a className="text-primary underline-offset-4 hover:underline" href={artifactDownloadPath(workspaceId, artifact.id)} download>
+                {reference}
+              </a>
+            ) : reference
+          }
+        />
         <Detail label="Checksum" value={artifact.checksumStatus} />
         <Detail label="Inspection" value={artifact.inspectionStatus} />
         <Detail label="Last inspected" value={formatDateTime(artifact.lastInspectedAt)} />
@@ -645,6 +659,19 @@ function ArtifactDetail({
 
 function artifactPath(artifactId: string) {
   return `/admin/artifacts/${encodeURIComponent(artifactId)}`;
+}
+
+function artifactDownloadPath(workspaceId: string, artifactId: string) {
+  return `/api/workspaces/${encodeURIComponent(workspaceId)}/artifacts/${encodeURIComponent(artifactId)}/download`;
+}
+
+function artifactReferenceDisplay(artifact: WorkspaceArtifact) {
+  return `${artifact.payloadReference?.provider ?? artifact.referenceProvider} · ${artifact.payloadReference?.uri ?? artifact.reference}`;
+}
+
+function isDownloadableLocalArtifact(artifact: WorkspaceArtifact) {
+  const displayedProvider = artifact.payloadReference?.provider ?? artifact.referenceProvider;
+  return displayedProvider.toLowerCase() === "local" && artifact.referenceProvider.toLowerCase() === "local" && artifact.format !== "Folder";
 }
 
 function formatFileSize(size: number) {
@@ -703,7 +730,7 @@ function DiagnosticList({ diagnostics }: { diagnostics: WorkspaceArtifactDiagnos
   );
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+function Detail({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
       <dt className="text-xs text-muted-foreground">{label}</dt>

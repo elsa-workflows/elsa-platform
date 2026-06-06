@@ -23,6 +23,7 @@ public sealed record RuntimeImageResponse(
     string LicenseTier,
     string Stability,
     IReadOnlyList<string> Capabilities,
+    IReadOnlyList<string> RuntimeKinds,
     IReadOnlyList<RuntimeImageEnvironmentVariableResponse> EnvVars,
     RuntimeImageDeploymentHintsResponse DeploymentHints,
     RuntimeImageDocsResponse Docs);

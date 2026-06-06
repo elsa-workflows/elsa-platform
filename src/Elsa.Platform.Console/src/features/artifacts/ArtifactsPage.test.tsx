@@ -94,6 +94,15 @@ describe("ArtifactsPage", () => {
     expect(screen.queryByText(/workflow definition payload|secret value|token/i)).not.toBeInTheDocument();
   });
 
+  it("links local artifact references to the download endpoint", async () => {
+    renderArtifacts({ items: [localArtifactFixture] }, "/admin/artifacts/artifact-local");
+
+    const link = await screen.findByRole("link", { name: "local · local:///tmp/claims-prod.zip" });
+
+    expect(link).toHaveAttribute("href", `/api/workspaces/${workspaceId}/artifacts/artifact-local/download`);
+    expect(link).toHaveAttribute("download");
+  });
+
   it("refreshes artifact inspection state from the details route", async () => {
     const fetchMock = renderArtifacts(undefined, "/admin/artifacts/artifact-1");
 
@@ -328,4 +337,17 @@ const artifactFixture: WorkspaceArtifact = {
       environmentConstraints: {}
     }
   ]
+};
+
+const localArtifactFixture: WorkspaceArtifact = {
+  ...artifactFixture,
+  id: "artifact-local",
+  payloadReference: {
+    provider: "local",
+    uri: "local:///tmp/claims-prod.zip",
+    mediaType: "application/zip",
+    sizeBytes: 1234,
+    referenceDigest: null,
+    expiresAt: null
+  }
 };

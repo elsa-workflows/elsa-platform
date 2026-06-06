@@ -44,6 +44,7 @@ public sealed record PublicFeatureProjection(
     string? Description,
     string? Category,
     IReadOnlyList<string> RequiredCapabilities,
+    IReadOnlyList<string> RuntimeKinds,
     IReadOnlyList<PublicDependencyProjection> Dependencies,
     IReadOnlyList<PublicConflictProjection> Conflicts,
     IReadOnlyList<PublicInfrastructureRequirementProjection> Infrastructure,

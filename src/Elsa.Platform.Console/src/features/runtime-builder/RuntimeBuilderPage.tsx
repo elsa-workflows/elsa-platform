@@ -27,6 +27,7 @@ import {
   type BuilderPackage,
   type DeploymentTarget,
   type InfrastructureProvider,
+  type PublicPackageFeatureSetting,
   type RuntimeBuilderIntent,
   type RuntimeConfiguration,
   type RuntimeImage,
@@ -40,10 +41,11 @@ import { formatDateTime } from "@/lib/formatters";
 import { ApiError } from "@/lib/api/httpClient";
 
 const defaultTarget: DeploymentTarget = "docker-compose";
-type WizardStep = "features" | "runtime" | "infrastructure" | "review";
+type WizardStep = "runtime" | "features" | "settings" | "infrastructure" | "review";
 const wizardSteps: Array<{ id: WizardStep; label: string }> = [
-  { id: "features", label: "Features" },
   { id: "runtime", label: "Runtime" },
+  { id: "features", label: "Features" },
+  { id: "settings", label: "Settings" },
   { id: "infrastructure", label: "Infrastructure" },
   { id: "review", label: "Review" }
 ];
@@ -132,8 +134,9 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
   const [configurationDescription, setConfigurationDescription] = useState("");
   const [bundle, setBundle] = useState<BuilderBundleResponse | null>(null);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
-  const [wizardStep, setWizardStep] = useState<WizardStep>("features");
+  const [wizardStep, setWizardStep] = useState<WizardStep>("runtime");
   const [appliedConfigurationId, setAppliedConfigurationId] = useState("");
+  const [runtimeKindNotice, setRuntimeKindNotice] = useState("");
   const workspaceContext = useWorkspaceContext();
   const effectiveWorkspaceId = workspaceContext.selectedWorkspaceId;
 
@@ -168,7 +171,7 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
     setConfigurationDescription(configuration.data.description ?? "");
     setBundle(null);
     setSelectedFilePath(null);
-    setWizardStep("features");
+    setWizardStep("runtime");
     setAppliedConfigurationId(configuration.data.id);
   }, [appliedConfigurationId, catalog.data, configuration.data, mode]);
 
@@ -178,10 +181,29 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
   );
 
   const featureCatalogItems = useMemo(() => collectFeatureCatalogItems(catalog.data?.packages ?? []), [catalog.data?.packages]);
+  const compatibleFeatureItems = useMemo(() => {
+    return featureCatalogItems.filter((item) => isFeatureCompatibleWithRuntimeKinds(item.feature.runtimeKinds, selectedImage?.runtimeKinds ?? []));
+  }, [featureCatalogItems, selectedImage?.runtimeKinds]);
 
   const filteredFeatureItems = useMemo(() => {
-    return filterFeatures(featureCatalogItems, featureSearch);
-  }, [featureCatalogItems, featureSearch]);
+    return filterFeatures(compatibleFeatureItems, featureSearch);
+  }, [compatibleFeatureItems, featureSearch]);
+
+  useEffect(() => {
+    if (!catalog.data || !selectedImage)
+      return;
+
+    setSelectedPackages((current) => {
+      const result = pruneSelectedPackagesForRuntimeKinds(current, catalog.data!, selectedImage.runtimeKinds);
+      if (result.removedFeatureCount === 0)
+        return current;
+
+      setRuntimeKindNotice(`${result.removedFeatureCount} incompatible ${result.removedFeatureCount === 1 ? "feature was" : "features were"} removed for ${selectedImage.displayName}.`);
+      setBundle(null);
+      setSelectedFilePath(null);
+      return result.packages;
+    });
+  }, [catalog.data, selectedImage]);
 
   const selectedPackageItems = useMemo(() => {
     return Object.values(selectedPackages)
@@ -307,7 +329,8 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
             sourceId: item.sourceId,
             packageId: item.packageId,
             version: item.version,
-            selectedFeatures: [...(item.selectedFeatures ?? [])]
+            selectedFeatures: [...(item.selectedFeatures ?? [])],
+            settings: item.settings ?? undefined
           }
         ])
       )
@@ -319,11 +342,11 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
       return;
 
     setSelectedPackages((current) => {
-      return resolveFeatureSelection(current, item, enabled, catalog.data!);
+      return resolveFeatureSelection(current, item, enabled, catalog.data!, selectedImage?.runtimeKinds ?? []);
     });
 
     if (enabled) {
-      const providerIds = inferProviderIdsForFeatureClosure(item, catalog.data);
+      const providerIds = inferProviderIdsForFeatureClosure(item, catalog.data, selectedImage?.runtimeKinds ?? []);
       if (providerIds.length > 0) {
         setSelectedInfrastructure((current) => ({
           ...current,
@@ -332,6 +355,36 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
       }
     }
 
+    setBundle(null);
+  }
+
+  function updateFeatureSetting(
+    item: FeatureCatalogItem,
+    setting: PublicPackageFeatureSetting,
+    value: unknown
+  ) {
+    const packageKey = packageSelectionKey(item.packageItem.source.id, item.packageItem.packageId);
+    setSelectedPackages((current) => {
+      const selection = current[packageKey];
+      if (!selection)
+        return current;
+
+      const nextSettings = {
+        ...(selection.settings ?? {}),
+        [item.feature.featureId]: {
+          ...(selection.settings?.[item.feature.featureId] ?? {}),
+          [setting.name]: value
+        }
+      };
+
+      return {
+        ...current,
+        [packageKey]: {
+          ...selection,
+          settings: prunePackageSettings(nextSettings, selection.selectedFeatures)
+        }
+      };
+    });
     setBundle(null);
   }
 
@@ -432,69 +485,8 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
         <WizardSteps currentStep={wizardStep} onStepChange={setWizardStep} />
         <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_24rem]">
           <div className="min-w-0 border-border p-4 xl:border-r">
-            {wizardStep === "features" ? (
-              <WizardPane
-                title="Choose features"
-                description="Select workflow capabilities first. Runtime packages are inferred from the features you choose."
-              >
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <label className="relative block md:w-96">
-                    <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      value={featureSearch}
-                      onChange={(event) => setFeatureSearch(event.target.value)}
-                      className="pl-9"
-                      placeholder="Search features"
-                      aria-label="Search runtime features"
-                    />
-                  </label>
-                  <Badge>{selectedFeatureItems.length} selected</Badge>
-                </div>
-                <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(17.5rem,1fr))] gap-3">
-                  {filteredFeatureItems.length === 0 ? (
-                    <p className="rounded-ui border border-dashed border-border p-4 text-sm text-muted-foreground">No features match the current search.</p>
-                  ) : (
-                    filteredFeatureItems.map((item) => {
-                      const packageKey = packageSelectionKey(item.packageItem.source.id, item.packageItem.packageId);
-                      const checked = selectedPackages[packageKey]?.selectedFeatures.includes(item.feature.featureId) ?? false;
-                      return (
-                        <label
-                          key={item.key}
-                          className={cn(
-                            "flex min-h-32 items-start gap-3 rounded-ui border bg-background p-3 text-sm transition-colors",
-                            checked ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"
-                          )}
-                        >
-                          <input
-                            type="checkbox"
-                            className="mt-1 h-4 w-4 rounded border-border"
-                            checked={checked}
-                            onChange={(event) => toggleFeature(item, event.target.checked)}
-                          />
-                          <span className="min-w-0">
-                            <span className="block font-medium">{item.feature.displayName}</span>
-                            <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                              {item.feature.description ?? item.feature.featureId}
-                            </span>
-                            <span className="mt-2 flex flex-wrap gap-1">
-                              {item.feature.category ? <Badge>{item.feature.category}</Badge> : null}
-                              {item.feature.experimental ? <Badge>Experimental</Badge> : null}
-                              {item.feature.advanced ? <Badge>Advanced</Badge> : null}
-                            </span>
-                            <span className="mt-2 block text-xs text-muted-foreground">
-                              Package inferred: {item.packageItem.packageId} {item.version.version}
-                            </span>
-                          </span>
-                        </label>
-                      );
-                    })
-                  )}
-                </div>
-              </WizardPane>
-            ) : null}
-
             {wizardStep === "runtime" ? (
-              <WizardPane title="Configure runtime image" description="Choose the runtime image, target, host port, and environment values for this build.">
+              <WizardPane title="Configure runtime image" description="Choose the runtime image first. The selected image determines which feature capabilities are meaningful for the resulting runtime.">
                 <div className="flex items-center gap-2">
                   <Settings2 className="h-4 w-4 text-primary" />
                   <h2 className="text-base font-medium">Runtime image</h2>
@@ -512,6 +504,7 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
                         setImageTag(image.defaultTag);
                         setHostPort(String(image.hostPort));
                         setEnvOverrides({});
+                        setRuntimeKindNotice("");
                         setBundle(null);
                       }}
                     >
@@ -551,6 +544,9 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
                   <Badge>{selectedImage.image}</Badge>
                   <Badge>{selectedImage.licenseTier}</Badge>
                   <Badge>{selectedImage.stability}</Badge>
+                  {selectedImage.runtimeKinds.map((runtimeKind) => (
+                    <Badge key={runtimeKind}>{runtimeKind}</Badge>
+                  ))}
                   {selectedImage.capabilities.map((capability) => (
                     <Badge key={capability}>{capability}</Badge>
                   ))}
@@ -577,6 +573,82 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
                     ))}
                   </div>
                 ) : null}
+              </WizardPane>
+            ) : null}
+
+            {wizardStep === "features" ? (
+              <WizardPane
+                title="Choose features"
+                description="Select capabilities for the chosen runtime image. Runtime packages are inferred from the features you choose."
+              >
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <label className="relative block md:w-96">
+                    <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      value={featureSearch}
+                      onChange={(event) => setFeatureSearch(event.target.value)}
+                      className="pl-9"
+                      placeholder="Search features"
+                      aria-label="Search runtime features"
+                    />
+                  </label>
+                  <Badge>{selectedFeatureItems.length} selected</Badge>
+                </div>
+                {runtimeKindNotice ? (
+                  <div className="mt-3 rounded-ui border border-warning/40 bg-surface p-3 text-sm text-warning">
+                    {runtimeKindNotice}
+                  </div>
+                ) : null}
+                <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(17.5rem,1fr))] gap-3">
+                  {filteredFeatureItems.length === 0 ? (
+                    <p className="rounded-ui border border-dashed border-border p-4 text-sm text-muted-foreground">No features match the current search.</p>
+                  ) : (
+                    filteredFeatureItems.map((item) => {
+                      const packageKey = packageSelectionKey(item.packageItem.source.id, item.packageItem.packageId);
+                      const checked = selectedPackages[packageKey]?.selectedFeatures.includes(item.feature.featureId) ?? false;
+                      return (
+                        <label
+                          key={item.key}
+                          className={cn(
+                            "flex min-h-32 items-start gap-3 rounded-ui border bg-background p-3 text-sm transition-colors",
+                            checked ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-1 h-4 w-4 rounded border-border"
+                            checked={checked}
+                            onChange={(event) => toggleFeature(item, event.target.checked)}
+                          />
+                          <span className="min-w-0">
+                            <span className="block font-medium">{item.feature.displayName}</span>
+                            <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                              {item.feature.description ?? item.feature.featureId}
+                            </span>
+                            <span className="mt-2 flex flex-wrap gap-1">
+                              {item.feature.category ? <Badge>{item.feature.category}</Badge> : null}
+                              {item.feature.experimental ? <Badge>Experimental</Badge> : null}
+                              {item.feature.advanced ? <Badge>Advanced</Badge> : null}
+                            </span>
+                            <span className="mt-2 block text-xs text-muted-foreground">
+                              Package: {item.packageItem.packageId} {item.version.version}
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </WizardPane>
+            ) : null}
+
+            {wizardStep === "settings" ? (
+              <WizardPane title="Configure feature settings" description="Provide values for settings exposed by the selected features. Secret references should be used instead of raw secrets when the feature supports them.">
+                <FeatureSettingsPane
+                  selectedPackages={selectedPackages}
+                  selectedFeatureItems={selectedFeatureItems}
+                  onSettingChange={updateFeatureSetting}
+                />
               </WizardPane>
             ) : null}
 
@@ -660,6 +732,7 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
                 </div>
                 <div className="mt-4 grid gap-4 lg:grid-cols-2">
                   <ReviewList title="Selected features" items={selectedFeatureItems.map((item) => item.feature.displayName)} emptyText="No features selected." />
+                  <ReviewList title="Feature settings" items={featureSettingReviewItems(selectedFeatureItems, selectedPackages)} emptyText="No feature settings configured." />
                   <ReviewList title="Inferred packages" items={selectedPackageItems.map(({ selection }) => `${selection.packageId} ${selection.version}`)} emptyText="No packages inferred yet." />
                 </div>
                 <BuilderActions
@@ -686,6 +759,7 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
                 <SummaryItem label="Tag" value={imageTag || selectedImage.defaultTag} />
                 <SummaryItem label="Packages" value={selectedPackageItems.length.toString()} />
                 <SummaryItem label="Features" value={countFeatures(selectedPackages).toString()} />
+                <SummaryItem label="Settings" value={countConfiguredSettings(selectedPackages).toString()} />
                 <SummaryItem label="Infrastructure" value={Object.values(selectedInfrastructure).filter(Boolean).length.toString()} />
                 <SummaryItem label="Target" value={deploymentTargets.find((item) => item.value === target)?.label ?? target} />
               </dl>
@@ -866,7 +940,7 @@ function RuntimeConfigurationsList({
 function WizardSteps({ currentStep, onStepChange }: { currentStep: WizardStep; onStepChange: (step: WizardStep) => void }) {
   const currentIndex = wizardSteps.findIndex((step) => step.id === currentStep);
   return (
-    <ol className="grid border-b border-border md:grid-cols-4">
+    <ol className="grid border-b border-border md:grid-cols-5">
       {wizardSteps.map((step, index) => {
         const isCurrent = step.id === currentStep;
         const isComplete = index < currentIndex;
@@ -894,6 +968,159 @@ function WizardSteps({ currentStep, onStepChange }: { currentStep: WizardStep; o
         );
       })}
     </ol>
+  );
+}
+
+function FeatureSettingsPane({
+  selectedPackages,
+  selectedFeatureItems,
+  onSettingChange
+}: {
+  selectedPackages: Record<string, SelectedRuntimePackage>;
+  selectedFeatureItems: FeatureCatalogItem[];
+  onSettingChange: (item: FeatureCatalogItem, setting: PublicPackageFeatureSetting, value: unknown) => void;
+}) {
+  const configurableFeatures = selectedFeatureItems.filter((item) => item.feature.settings.length > 0);
+  if (selectedFeatureItems.length === 0) {
+    return (
+      <p className="rounded-ui border border-dashed border-border p-4 text-sm text-muted-foreground">
+        Select features first. Any settings exposed by those features will appear here.
+      </p>
+    );
+  }
+  if (configurableFeatures.length === 0) {
+    return (
+      <p className="rounded-ui border border-dashed border-border p-4 text-sm text-muted-foreground">
+        The selected features do not expose configurable settings.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {configurableFeatures.map((item) => {
+        const packageKey = packageSelectionKey(item.packageItem.source.id, item.packageItem.packageId);
+        const values = selectedPackages[packageKey]?.settings?.[item.feature.featureId] ?? {};
+        return (
+          <section key={item.key} className="rounded-ui border border-border bg-background p-4">
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h3 className="font-medium">{item.feature.displayName}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {item.packageItem.packageId} {item.version.version}
+                </p>
+              </div>
+              {item.feature.category ? <Badge>{item.feature.category}</Badge> : null}
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {item.feature.settings.map((setting) => (
+                <FeatureSettingField
+                  key={setting.name}
+                  setting={setting}
+                  value={values[setting.name]}
+                  onChange={(value) => onSettingChange(item, setting, value)}
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function FeatureSettingField({
+  setting,
+  value,
+  onChange
+}: {
+  setting: PublicPackageFeatureSetting;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  const valueText = value === undefined || value === null ? "" : String(value);
+  const label = setting.displayName || setting.name;
+  if (setting.jsonType === "boolean") {
+    return (
+      <label className="flex min-h-24 items-start gap-3 rounded-ui border border-border bg-surface p-3 text-sm">
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4 rounded border-border"
+          checked={value === undefined ? Boolean(setting.defaultValue) : Boolean(value)}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+        <span>
+          <span className="flex flex-wrap items-center gap-2 font-medium">
+            {label}
+            {setting.required ? <Badge>Required</Badge> : null}
+            {setting.restartRequired ? <Badge>Restart</Badge> : null}
+          </span>
+          <FeatureSettingHelp setting={setting} />
+        </span>
+      </label>
+    );
+  }
+
+  if (setting.jsonType === "number" || setting.jsonType === "integer") {
+    return (
+      <FeatureSettingWrapper setting={setting}>
+        <Input
+          type="number"
+          value={valueText}
+          onChange={(event) => onChange(parseNumericSettingValue(event.target.value, setting.jsonType))}
+          placeholder={setting.defaultValue === undefined ? setting.name : String(setting.defaultValue)}
+        />
+      </FeatureSettingWrapper>
+    );
+  }
+
+  if (setting.jsonType === "array" || setting.jsonType === "object") {
+    return (
+      <FeatureSettingWrapper setting={setting}>
+        <textarea
+          className="min-h-24 w-full rounded-ui border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
+          value={valueText}
+          onChange={(event) => onChange(parseStructuredSettingValue(event.target.value))}
+          placeholder={setting.defaultValue === undefined ? "{}" : JSON.stringify(setting.defaultValue, null, 2)}
+        />
+      </FeatureSettingWrapper>
+    );
+  }
+
+  return (
+    <FeatureSettingWrapper setting={setting}>
+      <Input
+        type={setting.secret ? "password" : "text"}
+        value={valueText}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={setting.defaultValue === undefined ? setting.name : String(setting.defaultValue)}
+      />
+    </FeatureSettingWrapper>
+  );
+}
+
+function FeatureSettingWrapper({ setting, children }: { setting: PublicPackageFeatureSetting; children: ReactNode }) {
+  return (
+    <label className="space-y-1 text-sm">
+      <span className="flex flex-wrap items-center gap-2 font-medium">
+        {setting.displayName || setting.name}
+        {setting.required ? <Badge>Required</Badge> : null}
+        {setting.secret ? <Badge>Secret</Badge> : null}
+        {setting.restartRequired ? <Badge>Restart</Badge> : null}
+      </span>
+      {children}
+      <FeatureSettingHelp setting={setting} />
+    </label>
+  );
+}
+
+function FeatureSettingHelp({ setting }: { setting: PublicPackageFeatureSetting }) {
+  return (
+    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+      {setting.description || setting.name}
+      {setting.environmentVariable ? ` Environment variable: ${setting.environmentVariable}.` : ""}
+      {setting.secret ? " Prefer a secret reference over a raw secret value." : ""}
+    </span>
   );
 }
 
@@ -1058,6 +1285,7 @@ function featureSearchText(item: FeatureCatalogItem) {
     feature.displayName,
     feature.description,
     feature.category,
+    ...feature.runtimeKinds,
     ...feature.requiredCapabilities,
     ...feature.infrastructure.flatMap((requirement) => [
       requirement.id,
@@ -1101,6 +1329,57 @@ function compactSearchText(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+function isFeatureCompatibleWithRuntimeKinds(featureRuntimeKinds: string[] | undefined, runtimeKinds: string[]) {
+  const normalizedFeatureRuntimeKinds = normalizeRuntimeKinds(featureRuntimeKinds);
+  const normalizedRuntimeKinds = normalizeRuntimeKinds(runtimeKinds);
+  if (normalizedRuntimeKinds.length === 0)
+    return true;
+
+  return normalizedFeatureRuntimeKinds.length > 0 && normalizedFeatureRuntimeKinds.some((featureRuntimeKind) => normalizedRuntimeKinds.includes(featureRuntimeKind));
+}
+
+function normalizeRuntimeKinds(runtimeKinds: string[] | undefined) {
+  return Array.from(new Set((runtimeKinds ?? []).map((runtimeKind) => runtimeKind.trim().toLowerCase()).filter(Boolean))).sort();
+}
+
+function pruneSelectedPackagesForRuntimeKinds(
+  current: Record<string, SelectedRuntimePackage>,
+  catalog: BuilderCatalog,
+  runtimeKinds: string[]
+) {
+  let removedFeatureCount = 0;
+  const packages: Record<string, SelectedRuntimePackage> = {};
+
+  for (const selection of Object.values(current)) {
+    const packageItem = catalog.packages.find(
+      (item) => item.source.id === selection.sourceId && item.packageId.toLowerCase() === selection.packageId.toLowerCase()
+    );
+    const version = packageItem?.versions.find((item) => item.version === selection.version);
+    if (!version) {
+      packages[packageSelectionKey(selection.sourceId, selection.packageId)] = selection;
+      continue;
+    }
+
+    const selectedFeatures = selection.selectedFeatures.filter((featureId) => {
+      const feature = version.features.find((candidate) => candidate.featureId.toLowerCase() === featureId.toLowerCase());
+      const compatible = !feature || isFeatureCompatibleWithRuntimeKinds(feature.runtimeKinds, runtimeKinds);
+      if (!compatible)
+        removedFeatureCount++;
+      return compatible;
+    });
+
+    if (selectedFeatures.length > 0) {
+      packages[packageSelectionKey(selection.sourceId, selection.packageId)] = {
+        ...selection,
+        selectedFeatures,
+        settings: prunePackageSettings(selection.settings ?? {}, selectedFeatures)
+      };
+    }
+  }
+
+  return { packages, removedFeatureCount };
+}
+
 function inferProviderIds(item: FeatureCatalogItem, providers: InfrastructureProvider[]) {
   const ids = new Set<string>();
   for (const requirement of item.feature.infrastructure) {
@@ -1115,9 +1394,9 @@ function inferProviderIds(item: FeatureCatalogItem, providers: InfrastructurePro
   return Array.from(ids);
 }
 
-function inferProviderIdsForFeatureClosure(item: FeatureCatalogItem, catalog: BuilderCatalog) {
+function inferProviderIdsForFeatureClosure(item: FeatureCatalogItem, catalog: BuilderCatalog, runtimeKinds: string[]) {
   const providerIds = new Set(inferProviderIds(item, catalog.infrastructureProviders));
-  for (const dependency of collectRequiredFeatureDependencies(item, catalog)) {
+  for (const dependency of collectRequiredFeatureDependencies(item, catalog, runtimeKinds)) {
     for (const providerId of inferProviderIds(dependency, catalog.infrastructureProviders)) {
       providerIds.add(providerId);
     }
@@ -1129,7 +1408,8 @@ function resolveFeatureSelection(
   current: Record<string, SelectedRuntimePackage>,
   item: FeatureCatalogItem,
   enabled: boolean,
-  catalog: BuilderCatalog
+  catalog: BuilderCatalog,
+  runtimeKinds: string[]
 ) {
   const next = { ...current };
   const packageKey = packageSelectionKey(item.packageItem.source.id, item.packageItem.packageId);
@@ -1155,7 +1435,7 @@ function resolveFeatureSelection(
     for (const dependency of collectRequiredPackageDependencies(item, catalog)) {
       addPackageSelection(next, dependency);
     }
-    for (const dependency of collectRequiredFeatureDependencies(item, catalog)) {
+    for (const dependency of collectRequiredFeatureDependencies(item, catalog, runtimeKinds)) {
       addFeatureSelection(next, dependency);
     }
   }
@@ -1163,7 +1443,7 @@ function resolveFeatureSelection(
   return next;
 }
 
-function collectRequiredFeatureDependencies(item: FeatureCatalogItem, catalog: BuilderCatalog) {
+function collectRequiredFeatureDependencies(item: FeatureCatalogItem, catalog: BuilderCatalog, runtimeKinds: string[]) {
   const dependencies: FeatureCatalogItem[] = [];
   const visited = new Set<string>();
   const visit = (current: FeatureCatalogItem) => {
@@ -1172,7 +1452,7 @@ function collectRequiredFeatureDependencies(item: FeatureCatalogItem, catalog: B
         continue;
 
       const dependencyItem = findDependencyFeatureItem(current, dependency.packageId, dependency.featureId, catalog);
-      if (!dependencyItem || visited.has(dependencyItem.key))
+      if (!dependencyItem || visited.has(dependencyItem.key) || !isFeatureCompatibleWithRuntimeKinds(dependencyItem.feature.runtimeKinds, runtimeKinds))
         continue;
 
       visited.add(dependencyItem.key);
@@ -1270,8 +1550,35 @@ function setSelectedFeatureIds(
     sourceId,
     packageId,
     version,
-    selectedFeatures: Array.from(selectedFeatures).sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }))
+    selectedFeatures: Array.from(selectedFeatures).sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" })),
+    settings: existingSettingsForSelectedFeatures(selectedPackages[packageKey]?.settings, selectedFeatures)
   };
+}
+
+function existingSettingsForSelectedFeatures(
+  settings: Record<string, Record<string, unknown>> | undefined,
+  selectedFeatures: Set<string>
+) {
+  return prunePackageSettings(settings ?? {}, Array.from(selectedFeatures));
+}
+
+function prunePackageSettings(
+  settings: Record<string, Record<string, unknown>>,
+  selectedFeatures: string[]
+) {
+  const selected = new Set(selectedFeatures.map((featureId) => featureId.toLowerCase()));
+  const pruned: Record<string, Record<string, unknown>> = Object.fromEntries(
+    Object.entries(settings)
+      .filter(([featureId]) => selected.has(featureId.toLowerCase()))
+      .map(([featureId, featureSettings]) => [
+        featureId,
+        Object.fromEntries(
+          Object.entries(featureSettings).filter(([, value]) => !isEmptySettingValue(value))
+        )
+      ])
+      .filter(([, featureSettings]) => Object.keys(featureSettings).length > 0)
+  );
+  return Object.keys(pruned).length > 0 ? pruned : undefined;
 }
 
 function buildIntent({
@@ -1301,7 +1608,8 @@ function buildIntent({
     sourceId: selection.sourceId,
     packageId: selection.packageId,
     version: selection.version,
-    selectedFeatures: selection.selectedFeatures
+    selectedFeatures: selection.selectedFeatures,
+    settings: prunePackageSettings(selection.settings ?? {}, selection.selectedFeatures) ?? null
   }));
   const packageSources = uniqueSources(catalog, packages);
   const infrastructure = catalog.infrastructureProviders
@@ -1354,6 +1662,52 @@ function providerToSelection(provider: InfrastructureProvider) {
 
 function countFeatures(selectedPackages: Record<string, SelectedRuntimePackage>) {
   return Object.values(selectedPackages).reduce((count, selection) => count + selection.selectedFeatures.length, 0);
+}
+
+function countConfiguredSettings(selectedPackages: Record<string, SelectedRuntimePackage>) {
+  return Object.values(selectedPackages).reduce((count, selection) => {
+    const settings = prunePackageSettings(selection.settings ?? {}, selection.selectedFeatures);
+    if (!settings)
+      return count;
+
+    return count + Object.values(settings).reduce((featureCount, featureSettings) => featureCount + Object.keys(featureSettings).length, 0);
+  }, 0);
+}
+
+function featureSettingReviewItems(
+  selectedFeatureItems: FeatureCatalogItem[],
+  selectedPackages: Record<string, SelectedRuntimePackage>
+) {
+  return selectedFeatureItems.flatMap((item) => {
+    const packageKey = packageSelectionKey(item.packageItem.source.id, item.packageItem.packageId);
+    const values = selectedPackages[packageKey]?.settings?.[item.feature.featureId] ?? {};
+    return item.feature.settings
+      .filter((setting) => !isEmptySettingValue(values[setting.name]))
+      .map((setting) => `${item.feature.displayName}: ${setting.displayName || setting.name}`);
+  });
+}
+
+function isEmptySettingValue(value: unknown) {
+  return value === undefined || value === null || value === "";
+}
+
+function parseNumericSettingValue(value: string, jsonType: string) {
+  if (!value.trim())
+    return "";
+
+  const number = jsonType === "integer" ? Number.parseInt(value, 10) : Number.parseFloat(value);
+  return Number.isFinite(number) ? number : value;
+}
+
+function parseStructuredSettingValue(value: string) {
+  if (!value.trim())
+    return "";
+
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
 }
 
 function findingTone(level: string) {

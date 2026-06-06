@@ -16,6 +16,7 @@
     "displayName": { "type": "string", "minLength": 1 },
     "description": { "type": "string" },
     "tags": { "type": "array", "items": { "type": "string" } },
+    "compatibility": { "$ref": "#/$defs/compatibility" },
     "features": {
       "type": "array",
       "items": { "$ref": "#/$defs/feature" }
@@ -29,9 +30,32 @@
         "id": { "type": "string", "minLength": 1 },
         "typeName": { "type": "string" },
         "displayName": { "type": "string" },
+        "compatibility": { "$ref": "#/$defs/compatibility" },
         "infrastructure": {
           "type": "array",
           "items": { "$ref": "#/$defs/infrastructureRequirement" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "compatibility": {
+      "type": "object",
+      "properties": {
+        "elsaVersionRange": { "type": "string" },
+        "dockerImageVersionRange": { "type": "string" },
+        "runtimeKinds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "runtimeCapabilities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "extensions": {
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "additionalProperties": true

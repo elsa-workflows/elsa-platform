@@ -55,10 +55,27 @@ public sealed class BuilderPlannerTests
         result.Findings.Should().Contain(x => x.Code == "feature.packageDependency");
     }
 
+    [Fact]
+    public async Task Planner_returns_runtime_kind_findings_for_incompatible_selected_features()
+    {
+        var source = new PublicPackageSourceProjection(Guid.NewGuid(), "NuGet", "https://example.test/v3/index.json");
+        var package = Package(source, "Elsa.StudioOnly", Feature("studio-feature", runtimeKinds: ["elsa.studio"]));
+        var service = CreateService([package]);
+
+        var result = await service.PlanAsync(new BuilderPlanRequest(new RuntimeBuilderIntent(
+            new RuntimeImageSelection("elsa-pro-server", "latest", 8080, new Dictionary<string, string>()),
+            [new BundlePackageSelection(source.Id, "Elsa.StudioOnly", "1.0.0", ["studio-feature"], null)],
+            [new PackageSourceSelection(source.Id)],
+            [],
+            new LocalPackagesOptions(false, "packages"))));
+
+        result.Findings.Should().ContainSingle(x => x.Code == "feature.runtimeKindUnsupported");
+    }
+
     private static BuilderPlannerService CreateService(IReadOnlyList<PublicPackageProjection> packages)
     {
         var queries = new FakeQueries(packages);
-        return new BuilderPlannerService(queries, new CompatibilityCheckService(queries, new VersionRangeEvaluator()), new InfrastructureProviderCatalog());
+        return new BuilderPlannerService(queries, new CompatibilityCheckService(queries, new VersionRangeEvaluator()), new RuntimeImageCatalog(), new InfrastructureProviderCatalog());
     }
 
     private static PublicPackageProjection Package(PublicPackageSourceProjection source, string packageId, PublicFeatureProjection feature)
@@ -69,6 +86,7 @@ public sealed class BuilderPlannerTests
 
     private static PublicFeatureProjection Feature(
         string featureId,
+        IReadOnlyList<string>? runtimeKinds = null,
         IReadOnlyList<PublicDependencyProjection>? dependencies = null,
         IReadOnlyList<PublicInfrastructureRequirementProjection>? infrastructure = null) =>
         new(
@@ -81,6 +99,7 @@ public sealed class BuilderPlannerTests
             null,
             null,
             [],
+            runtimeKinds ?? ["elsa.server"],
             dependencies ?? [],
             [],
             infrastructure ?? [],
@@ -152,7 +171,10 @@ public sealed class BuilderPlannerTests
             var dependencies = feature.Dependencies.Count == 0
                 ? "[]"
                 : $"[{string.Join(",", feature.Dependencies.Select(x => $"{{ \"packageId\": \"{x.PackageId}\", \"featureId\": {(x.FeatureId is null ? "null" : $"\"{x.FeatureId}\"")} }}"))}]";
-            return $"{{ \"id\": \"{feature.FeatureId}\", \"typeName\": \"{feature.TypeName}\", \"displayName\": \"{feature.DisplayName}\", \"dependencies\": {dependencies} }}";
+            var compatibility = feature.RuntimeKinds.Count == 0
+                ? ""
+                : $", \"compatibility\": {{ \"runtimeKinds\": [{string.Join(",", feature.RuntimeKinds.Select(x => $"\"{x}\""))}] }}";
+            return $"{{ \"id\": \"{feature.FeatureId}\", \"typeName\": \"{feature.TypeName}\", \"displayName\": \"{feature.DisplayName}\", \"dependencies\": {dependencies}{compatibility} }}";
         }
     }
 }

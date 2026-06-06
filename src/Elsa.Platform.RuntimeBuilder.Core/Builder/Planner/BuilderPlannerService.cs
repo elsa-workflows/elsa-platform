@@ -8,6 +8,7 @@ namespace Elsa.Platform.RuntimeBuilder.Core.Builder.Planner;
 public sealed class BuilderPlannerService(
     IPublicCatalogQueries catalog,
     IPackageCompatibilityService compatibility,
+    RuntimeImageCatalog runtimeImages,
     InfrastructureProviderCatalog infrastructureProviders)
 {
     public async Task<BuilderPlanResult> PlanAsync(BuilderPlanRequest request, Guid? workspaceId = null, CancellationToken cancellationToken = default)
@@ -17,6 +18,8 @@ public sealed class BuilderPlannerService(
         var autoPackages = new List<BundlePackageSelection>();
         var autoFeatures = new List<string>();
         var autoInfrastructure = new List<InfrastructureSelection>();
+        var findings = new List<BundleFinding>();
+        var runtimeKinds = runtimeImages.Find(request.Intent.Image.Slug)?.RuntimeKinds ?? [];
 
         var visiblePackages = workspaceId.HasValue
             ? await catalog.ListPackagesForWorkspaceAsync(workspaceId.Value, [], cancellationToken)
@@ -52,6 +55,16 @@ public sealed class BuilderPlannerService(
                             if (dependencyVersion is not null)
                             {
                                 IReadOnlyList<string> dependencyFeatures = string.IsNullOrWhiteSpace(dependency.FeatureId) ? [] : [dependency.FeatureId];
+                                if (dependencyFeatures.Count > 0)
+                                {
+                                    var dependencyFeature = dependencyVersion.Version.Features.FirstOrDefault(x => string.Equals(x.FeatureId, dependency.FeatureId, StringComparison.OrdinalIgnoreCase));
+                                    if (dependencyFeature is not null && !RuntimeKindCompatibilityPolicy.IsCompatible(dependencyFeature.RuntimeKinds, runtimeKinds))
+                                    {
+                                        findings.Add(BundleFinding.Error("feature.runtimeKindUnsupported", $"{dependency.FeatureId} is not compatible with the selected runtime image.", $"feature:{dependency.FeatureId}"));
+                                        continue;
+                                    }
+                                }
+
                                 var added = new BundlePackageSelection(dependencyVersion.Version.Source.Id, dependencyVersion.Version.PackageId, dependencyVersion.Version.Version, dependencyFeatures, null);
                                 packages.Add(added);
                                 autoPackages.Add(added);
@@ -63,6 +76,13 @@ public sealed class BuilderPlannerService(
 
                         if (!string.IsNullOrWhiteSpace(dependency.FeatureId) && !selectedFeatures.Contains(dependency.FeatureId))
                         {
+                            var dependencyFeature = version.Features.FirstOrDefault(x => string.Equals(x.FeatureId, dependency.FeatureId, StringComparison.OrdinalIgnoreCase));
+                            if (dependencyFeature is not null && !RuntimeKindCompatibilityPolicy.IsCompatible(dependencyFeature.RuntimeKinds, runtimeKinds))
+                            {
+                                findings.Add(BundleFinding.Error("feature.runtimeKindUnsupported", $"{dependency.FeatureId} is not compatible with the selected runtime image.", $"feature:{dependency.FeatureId}"));
+                                continue;
+                            }
+
                             selectedFeatures.Add(dependency.FeatureId);
                             ReplacePackageFeatures(packages, selected, selectedFeatures);
                             autoFeatures.Add(dependency.FeatureId);
@@ -100,7 +120,9 @@ public sealed class BuilderPlannerService(
             request.Intent.Image.Tag,
             packages.Select(x => new SelectedPackageVersion(x.SourceId, x.PackageId, x.Version)).ToList(),
             features,
-            workspaceId), cancellationToken);
+            workspaceId,
+            runtimeKinds), cancellationToken);
+        findings.AddRange(compatibilityResult.Findings.Select(x => new BundleFinding(x.Severity, x.Code, x.Message, null)));
 
         var resolved = request.Intent with
         {
@@ -116,7 +138,7 @@ public sealed class BuilderPlannerService(
         return new BuilderPlanResult(
             resolved,
             new BuilderPlanAutoAdded(autoPackages, autoFeatures.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList(), autoInfrastructure),
-            compatibilityResult.Findings.Select(x => new BundleFinding(x.Severity, x.Code, x.Message, null)).ToList());
+            findings);
     }
 
     private static void ReplacePackageFeatures(List<BundlePackageSelection> packages, BundlePackageSelection selected, HashSet<string> selectedFeatures)

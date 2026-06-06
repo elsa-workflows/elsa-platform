@@ -67,6 +67,40 @@ public static class WorkspaceArtifactEndpoints
             return artifact is null ? Results.NotFound() : Results.Ok(artifact);
         });
 
+        group.MapGet("/{artifactRecordId:guid}/download", async (
+            Guid workspaceId,
+            Guid artifactRecordId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceArtifactService artifacts,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.Read, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                var download = await artifacts.OpenDownloadAsync(workspaceId, artifactRecordId, cancellationToken);
+                return Results.File(download.Content, download.ContentType, download.FileName);
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (FileNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
         group.MapPost("", async (
             Guid workspaceId,
             WorkspaceArtifactRegistrationRequest request,

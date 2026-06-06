@@ -30,6 +30,7 @@ public sealed record PublicPackageFeatureResponse(
     string? Description,
     string? Category,
     IReadOnlyList<string> RequiredCapabilities,
+    IReadOnlyList<string> RuntimeKinds,
     IReadOnlyList<PublicPackageDependencyResponse> Dependencies,
     IReadOnlyList<PublicPackageConflictResponse> Conflicts,
     IReadOnlyList<PublicPackageInfrastructureRequirementResponse> Infrastructure,
