@@ -10,7 +10,7 @@ public static partial class ElsaRuntimeKinds
 
 public static partial class RuntimeKindCompatibility
 {
-    public static IReadOnlyList<string> DefaultRuntimeKinds { get; } = [ElsaRuntimeKinds.Server];
+    public static IReadOnlyList<string> DefaultRuntimeKinds { get; } = [];
 
     public static bool IsValid(string? runtimeKind) =>
         !string.IsNullOrWhiteSpace(runtimeKind) &&

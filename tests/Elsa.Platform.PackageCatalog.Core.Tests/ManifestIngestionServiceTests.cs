@@ -114,7 +114,7 @@ public sealed class ManifestIngestionServiceTests
     }
 
     [Fact]
-    public void Defaults_undeclared_manifests_to_elsa_server()
+    public void Leaves_undeclared_runtime_kinds_empty()
     {
         var packageVersion = new PackageVersion();
         var manifestJson = """
@@ -136,8 +136,8 @@ public sealed class ManifestIngestionServiceTests
         var packageRuntimeKinds = RuntimeKindCompatibilityPolicy.ResolvePackageRuntimeKinds(ingested.Manifest);
         var featureRuntimeKinds = RuntimeKindCompatibilityPolicy.ResolveFeatureRuntimeKinds(ingested.Manifest.Features[0], packageRuntimeKinds);
 
-        packageRuntimeKinds.Should().Equal("elsa.server");
-        featureRuntimeKinds.Should().Equal("elsa.server");
+        packageRuntimeKinds.Should().BeEmpty();
+        featureRuntimeKinds.Should().BeEmpty();
         RuntimeKindCompatibilityPolicy.IsCompatibleWith(featureRuntimeKinds, "elsa.studio").Should().BeFalse();
     }
 }

@@ -22,8 +22,6 @@ public sealed class BundleGenerationService(
     BundleFilePolicy filePolicy,
     ILogger<BundleGenerationService> logger)
 {
-    private const string ServerRuntimeKind = "elsa.server";
-
     public async Task<BundleGenerationResult> GenerateAsync(RuntimeBuilderIntent intent, Guid? workspaceId = null, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -69,7 +67,7 @@ public sealed class BundleGenerationService(
         var runtimeImage = ValidateRuntimeImage(intent.Image, findings);
         ValidateLocalPackages(intent.LocalPackages, findings);
         var infrastructure = ValidateInfrastructure(intent.Infrastructure, findings);
-        var packages = await ResolvePackagesAsync(intent.Packages, workspaceId, findings, cancellationToken);
+        var packages = await ResolvePackagesAsync(intent.Packages, runtimeImage?.RuntimeKinds ?? [], workspaceId, findings, cancellationToken);
         var sources = await ResolveSourcesAsync(intent.PackageSources, packages, workspaceId, findings, cancellationToken);
 
         if (runtimeImage is not null && packages.Count > 0 && !findingPolicy.HasBlockingErrors(findings))
@@ -134,6 +132,7 @@ public sealed class BundleGenerationService(
 
     private async Task<IReadOnlyList<ResolvedBundlePackage>> ResolvePackagesAsync(
         IReadOnlyList<BundlePackageSelection> selections,
+        IReadOnlyList<string> runtimeKinds,
         Guid? workspaceId,
         List<BundleFinding> findings,
         CancellationToken cancellationToken)
@@ -157,9 +156,9 @@ public sealed class BundleGenerationService(
                 continue;
             }
 
-            if (!version.RuntimeKinds.Any(IsServerRuntimeKind))
+            if (!RuntimeKindCompatibilityPolicy.IsCompatible(version.RuntimeKinds, runtimeKinds))
             {
-                findings.Add(BundleFinding.Error("package.runtimeKindMismatch", $"{selection.PackageId} {selection.Version} is not compatible with Elsa Server.", $"package:{selection.PackageId}"));
+                findings.Add(BundleFinding.Error("package.runtimeKindMismatch", $"{selection.PackageId} {selection.Version} is not compatible with the selected runtime image.", $"package:{selection.PackageId}"));
                 continue;
             }
 
@@ -173,8 +172,8 @@ public sealed class BundleGenerationService(
                     continue;
                 }
 
-                if (!feature.RuntimeKinds.Any(IsServerRuntimeKind))
-                    findings.Add(BundleFinding.Error("feature.runtimeKindMismatch", $"Feature {featureId} is not compatible with Elsa Server.", $"feature:{featureId}"));
+                if (!RuntimeKindCompatibilityPolicy.IsCompatible(feature.RuntimeKinds, runtimeKinds))
+                    findings.Add(BundleFinding.Error("feature.runtimeKindMismatch", $"Feature {featureId} is not compatible with the selected runtime image.", $"feature:{featureId}"));
             }
 
             var source = new ResolvedPackageSource(version.Source.Id, version.Source.Name, version.Source.Url, "nuget");
@@ -320,7 +319,4 @@ public sealed class BundleGenerationService(
 
         return int.MaxValue;
     }
-
-    private static bool IsServerRuntimeKind(string runtimeKind) =>
-        string.Equals(runtimeKind, ServerRuntimeKind, StringComparison.OrdinalIgnoreCase);
 }

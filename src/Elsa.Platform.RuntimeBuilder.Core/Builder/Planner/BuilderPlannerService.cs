@@ -11,8 +11,6 @@ public sealed class BuilderPlannerService(
     RuntimeImageCatalog runtimeImages,
     InfrastructureProviderCatalog infrastructureProviders)
 {
-    private const string ServerRuntimeKind = "elsa.server";
-
     public async Task<BuilderPlanResult> PlanAsync(BuilderPlanRequest request, Guid? workspaceId = null, CancellationToken cancellationToken = default)
     {
         var packages = request.Intent.Packages.ToList();
@@ -26,7 +24,7 @@ public sealed class BuilderPlannerService(
         var visiblePackages = workspaceId.HasValue
             ? await catalog.ListPackagesForWorkspaceAsync(workspaceId.Value, [], cancellationToken)
             : await catalog.ListPackagesAsync([], cancellationToken);
-        visiblePackages = FilterServerPackages(visiblePackages);
+        visiblePackages = FilterPackagesByRuntimeKinds(visiblePackages, runtimeKinds);
         var packageLookup = visiblePackages
             .SelectMany(package => package.Versions.Select(version => new PackageVersionLookupItem(package, version)))
             .ToList();
@@ -232,24 +230,25 @@ public sealed class BuilderPlannerService(
 
     private sealed record ResolvedDependencyFeature(PublicPackageVersionProjection Version, PublicFeatureProjection Feature);
 
-    private static IReadOnlyList<PublicPackageProjection> FilterServerPackages(IReadOnlyList<PublicPackageProjection> packages) =>
+    private static IReadOnlyList<PublicPackageProjection> FilterPackagesByRuntimeKinds(
+        IReadOnlyList<PublicPackageProjection> packages,
+        IReadOnlyList<string> runtimeKinds) =>
         packages
             .Select(package => package with
             {
-                RuntimeKinds = package.RuntimeKinds.Where(IsServerRuntimeKind).ToList(),
+                RuntimeKinds = package.RuntimeKinds
+                    .Where(runtimeKind => RuntimeKindCompatibilityPolicy.IsCompatible([runtimeKind], runtimeKinds))
+                    .ToList(),
                 Versions = package.Versions
-                    .Where(version => version.RuntimeKinds.Any(IsServerRuntimeKind))
+                    .Where(version => RuntimeKindCompatibilityPolicy.IsCompatible(version.RuntimeKinds, runtimeKinds))
                     .Select(version => version with
                     {
                         Features = version.Features
-                            .Where(feature => feature.RuntimeKinds.Any(IsServerRuntimeKind))
+                            .Where(feature => RuntimeKindCompatibilityPolicy.IsCompatible(feature.RuntimeKinds, runtimeKinds))
                             .ToList()
                     })
                     .ToList()
             })
             .Where(package => package.Versions.Count > 0)
             .ToList();
-
-    private static bool IsServerRuntimeKind(string runtimeKind) =>
-        string.Equals(runtimeKind, ServerRuntimeKind, StringComparison.OrdinalIgnoreCase);
 }

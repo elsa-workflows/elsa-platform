@@ -50,7 +50,7 @@ public sealed class PublicPackageVersionApiTests
     }
 
     [Fact]
-    public async Task Get_undeclared_version_defaults_runtime_kind_to_elsa_server()
+    public async Task Get_undeclared_version_projects_empty_runtime_kinds()
     {
         await using var app = new PlatformApiTestApplication();
         var sourceId = Guid.Empty;
@@ -66,7 +66,7 @@ public sealed class PublicPackageVersionApiTests
 
         var version = await app.CreateClient().GetFromJsonAsync<PublicPackageVersionResponse>($"/api/sources/{sourceId}/packages/Elsa.Email/versions/1.0.0");
 
-        version!.RuntimeKinds.Should().Equal("elsa.server");
-        version.Features[0].RuntimeKinds.Should().Equal("elsa.server");
+        version!.RuntimeKinds.Should().BeEmpty();
+        version.Features[0].RuntimeKinds.Should().BeEmpty();
     }
 }
