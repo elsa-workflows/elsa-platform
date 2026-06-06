@@ -12,6 +12,7 @@ public sealed record PublicFeatureResponse(
     string DisplayName,
     string? Description,
     string? Category,
+    IReadOnlyList<string> Categories,
     IReadOnlyList<string> RuntimeKinds,
     IReadOnlyList<string> RequiredCapabilities,
     IReadOnlyList<PublicFeatureDependencyResponse> Dependencies,

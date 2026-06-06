@@ -82,6 +82,11 @@
         },
         "elsaVersionRange": { "type": "string" },
         "dockerImageVersionRange": { "type": "string" },
+        "runtimeKinds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
         "runtimeCapabilities": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
@@ -124,6 +129,11 @@
         "displayName": { "type": "string" },
         "description": { "type": "string" },
         "category": { "type": "string" },
+        "categories": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
         "advanced": { "type": "boolean" },
         "experimental": { "type": "boolean" },
         "compatibility": { "$ref": "#/$defs/compatibility" },

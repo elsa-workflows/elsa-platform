@@ -37,7 +37,7 @@ public static class WorkspaceBuilderEndpoints
                 return access.ToHttpResult();
 
             var packages = await catalog.ListPackagesForWorkspaceAsync(workspaceId, sourceIds, cancellationToken);
-            var serverPackages = RuntimeKindCompatibilityPolicy.FilterPackages(packages, ElsaRuntimeKinds.Server);
+            var serverPackages = Elsa.Platform.PackageCatalog.Core.Compatibility.RuntimeKindCompatibilityPolicy.FilterPackages(packages, ElsaRuntimeKinds.Server);
             return Results.Ok(new BuilderCatalogResponse(
                 runtimeImages.ListImages().Select(BuilderEndpoints.ToRuntimeImageResponse).ToList(),
                 serverPackages.Select(PublicPackageEndpoints.ToResponse).ToList(),

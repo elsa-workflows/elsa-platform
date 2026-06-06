@@ -1,19 +1,17 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Archive, RotateCcw, Save } from "lucide-react";
+import { Archive, Pencil, RotateCcw, Save } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Badge, Button, Input, SecondaryButton } from "@/components/ui";
 import {
   archiveDeploymentTier,
-  createDeploymentTier,
-  previewDeploymentTierImpact,
-  restoreDeploymentTier,
-  updateDeploymentTier
+  restoreDeploymentTier
 } from "@/features/deployments/deploymentApi";
 import type { DeploymentTierCapability, DeploymentTierImpactSummary, WorkspaceDeploymentTier } from "@/features/deployments/deploymentModels";
 import { queryKeys } from "@/lib/query/queryClient";
 import { cn } from "@/lib/utils";
 
-type TierFormValues = {
+export type TierFormValues = {
   name: string;
   description: string;
   sortOrder: number;
@@ -32,10 +30,6 @@ export function DeploymentTiersPanel({
   capabilities: DeploymentTierCapability[];
 }) {
   const queryClient = useQueryClient();
-  const [editingTierId, setEditingTierId] = useState("");
-  const [impact, setImpact] = useState<DeploymentTierImpactSummary | null>(null);
-  const editingTier = tiers.find((tier) => tier.id === editingTierId) ?? null;
-  const nextSortOrder = tiers.reduce((max, tier) => Math.max(max, tier.sortOrder), 0) + 10;
 
   const refresh = async () => {
     await Promise.all([
@@ -43,35 +37,6 @@ export function DeploymentTiersPanel({
       queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) })
     ]);
   };
-  const createTier = useMutation({
-    mutationFn: (values: TierFormValues) =>
-      createDeploymentTier(workspaceId, {
-        name: values.name,
-        description: values.description || null,
-        sortOrder: values.sortOrder,
-        capabilities: values.capabilities
-      }),
-    onSuccess: refresh
-  });
-  const updateTier = useMutation({
-    mutationFn: ({ tierId, values, impactAccepted }: { tierId: string; values: TierFormValues; impactAccepted: boolean }) =>
-      updateDeploymentTier(workspaceId, tierId, {
-        name: values.name,
-        description: values.description || null,
-        sortOrder: values.sortOrder,
-        capabilities: values.capabilities,
-        impactAccepted
-      }),
-    onSuccess: async () => {
-      setImpact(null);
-      await refresh();
-    }
-  });
-  const previewImpact = useMutation({
-    mutationFn: ({ tierId, capabilities: nextCapabilities }: { tierId: string; capabilities: string[] }) =>
-      previewDeploymentTierImpact(workspaceId, tierId, { capabilities: nextCapabilities }),
-    onSuccess: setImpact
-  });
   const archiveTier = useMutation({
     mutationFn: (tierId: string) => archiveDeploymentTier(workspaceId, tierId),
     onSuccess: refresh
@@ -82,96 +47,64 @@ export function DeploymentTiersPanel({
   });
 
   const error =
-    createTier.error instanceof Error
-      ? createTier.error.message
-      : updateTier.error instanceof Error
-        ? updateTier.error.message
-        : previewImpact.error instanceof Error
-          ? previewImpact.error.message
-          : archiveTier.error instanceof Error
-            ? archiveTier.error.message
-            : restoreTier.error instanceof Error
-              ? restoreTier.error.message
-              : undefined;
+    archiveTier.error instanceof Error
+      ? archiveTier.error.message
+      : restoreTier.error instanceof Error
+        ? restoreTier.error.message
+        : undefined;
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="space-y-3">
-          {tiers.map((tier) => (
-            <div key={tier.id} className="rounded-ui border border-border bg-surface p-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-sm font-semibold">{tier.name}</h3>
-                    <Badge className={tier.status === "Active" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}>{tier.status}</Badge>
-                    {tier.isDefault ? <Badge>Default</Badge> : null}
-                    <span className="text-xs text-muted-foreground">{tier.environmentCount} environments</span>
-                  </div>
-                  {tier.description ? <p className="mt-1 text-sm text-muted-foreground">{tier.description}</p> : null}
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {tier.capabilities.map((capabilityId) => (
-                      <Badge key={capabilityId}>{capabilityLabel(capabilities, capabilityId)}</Badge>
-                    ))}
-                  </div>
+      <div className="space-y-3">
+        {tiers.map((tier) => (
+          <div key={tier.id} className="rounded-ui border border-border bg-surface p-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-semibold">{tier.name}</h3>
+                  <Badge className={tier.status === "Active" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}>{tier.status}</Badge>
+                  {tier.isDefault ? <Badge>Default</Badge> : null}
+                  <span className="text-xs text-muted-foreground">{tier.environmentCount} environments</span>
                 </div>
-                <div className="flex gap-2">
-                  <SecondaryButton className="h-8" disabled={!canManageTiers} onClick={() => { setEditingTierId(tier.id); setImpact(null); }}>
-                    Edit
-                  </SecondaryButton>
-                  {tier.status === "Active" ? (
-                    <SecondaryButton className="h-8" disabled={!canManageTiers || archiveTier.isPending} onClick={() => archiveTier.mutate(tier.id)}>
-                      <Archive className="h-4 w-4" />
-                      Archive
-                    </SecondaryButton>
-                  ) : (
-                    <SecondaryButton className="h-8" disabled={!canManageTiers || restoreTier.isPending} onClick={() => restoreTier.mutate(tier.id)}>
-                      <RotateCcw className="h-4 w-4" />
-                      Restore
-                    </SecondaryButton>
-                  )}
+                {tier.description ? <p className="mt-1 text-sm text-muted-foreground">{tier.description}</p> : null}
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {tier.capabilities.map((capabilityId) => (
+                    <Badge key={capabilityId}>{capabilityLabel(capabilities, capabilityId)}</Badge>
+                  ))}
                 </div>
               </div>
+              <div className="flex gap-2">
+                <Link
+                  to={`/admin/deployments/tiers/${tier.id}/edit`}
+                  className={cn("inline-flex h-8 items-center justify-center gap-2 rounded-ui border border-border px-3 text-sm font-medium", !canManageTiers ? "pointer-events-none opacity-50" : "hover:bg-muted")}
+                  aria-disabled={!canManageTiers}
+                >
+                  <Pencil className="h-4 w-4" />
+                  Edit
+                </Link>
+                {tier.status === "Active" ? (
+                  <SecondaryButton className="h-8" disabled={!canManageTiers || archiveTier.isPending} onClick={() => archiveTier.mutate(tier.id)}>
+                    <Archive className="h-4 w-4" />
+                    Archive
+                  </SecondaryButton>
+                ) : (
+                  <SecondaryButton className="h-8" disabled={!canManageTiers || restoreTier.isPending} onClick={() => restoreTier.mutate(tier.id)}>
+                    <RotateCcw className="h-4 w-4" />
+                    Restore
+                  </SecondaryButton>
+                )}
+              </div>
             </div>
-          ))}
-        </div>
-        <TierForm
-          key={editingTier?.id ?? "new"}
-          title={editingTier ? "Edit tier" : "Create tier"}
-          canManageTiers={canManageTiers}
-          capabilities={capabilities}
-          initialValues={
-            editingTier
-              ? {
-                  name: editingTier.name,
-                  description: editingTier.description ?? "",
-                  sortOrder: editingTier.sortOrder,
-                  capabilities: editingTier.capabilities
-                }
-              : { name: "", description: "", sortOrder: nextSortOrder, capabilities: [] }
-          }
-          impact={impact}
-          isSubmitting={createTier.isPending || updateTier.isPending}
-          isPreviewing={previewImpact.isPending}
-          error={error}
-          onCancel={editingTier ? () => { setEditingTierId(""); setImpact(null); } : undefined}
-          onPreview={
-            editingTier
-              ? (values) => previewImpact.mutate({ tierId: editingTier.id, capabilities: values.capabilities })
-              : undefined
-          }
-          onSubmit={(values) =>
-            editingTier
-              ? updateTier.mutate({ tierId: editingTier.id, values, impactAccepted: Boolean(impact) })
-              : createTier.mutate(values)
-          }
-        />
+          </div>
+        ))}
       </div>
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {!canManageTiers ? <p className="text-sm text-muted-foreground">Workspace owner access is required to manage tiers.</p> : null}
     </div>
   );
 }
 
-function TierForm({
+export function TierForm({
   title,
   canManageTiers,
   capabilities,

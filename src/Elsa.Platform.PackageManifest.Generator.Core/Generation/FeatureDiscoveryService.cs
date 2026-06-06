@@ -35,7 +35,7 @@ public sealed class FeatureDiscoveryService(
             type.FullName ?? type.Name,
             metadata.DisplayName ?? NamingHelpers.ToDisplayName(metadata.FeatureName),
             metadata.Description,
-            null,
+            metadata.Categories,
             type.GetInterfaces().Any(x => x.FullName == FeatureTypeMatcher.ShellFeatureInterfaceName)
                 ? FeatureDiscoverySource.IShellFeature
                 : FeatureDiscoverySource.InheritedIShellFeature,

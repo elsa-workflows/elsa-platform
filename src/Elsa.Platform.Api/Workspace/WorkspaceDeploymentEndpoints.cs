@@ -367,6 +367,7 @@ public static class WorkspaceDeploymentEndpoints
             WorkspaceAccessResolver accessResolver,
             WorkspacePermissionService permissions,
             WorkspaceDeploymentService deployments,
+            EngineHealthService health,
             CancellationToken cancellationToken) =>
         {
             var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
@@ -388,7 +389,11 @@ public static class WorkspaceDeploymentEndpoints
                     request.Controls,
                     request.HostingProvider),
                 cancellationToken);
-            return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/engines/{engine.Id:D}", engine);
+            var healthResult = await health.VerifyEngineAsync(
+                workspaceId,
+                new EngineHealthVerificationRequest(engine.Id, access.Access!.AccountId),
+                cancellationToken);
+            return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/engines/{engine.Id:D}", ApplyHealthResult(engine, healthResult));
         });
 
         group.MapPut("/engines/{engineId:guid}", async (
@@ -399,6 +404,7 @@ public static class WorkspaceDeploymentEndpoints
             WorkspaceAccessResolver accessResolver,
             WorkspacePermissionService permissions,
             WorkspaceDeploymentService deployments,
+            EngineHealthService health,
             CancellationToken cancellationToken) =>
         {
             var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
@@ -409,7 +415,7 @@ public static class WorkspaceDeploymentEndpoints
 
             try
             {
-                return Results.Ok(await deployments.UpdateEngineAsync(
+                var engine = await deployments.UpdateEngineAsync(
                     workspaceId,
                     engineId,
                     new UpdateWorkflowEngineRequest(
@@ -421,7 +427,12 @@ public static class WorkspaceDeploymentEndpoints
                         request.Capabilities,
                         request.Controls,
                         request.HostingProvider),
-                    cancellationToken));
+                    cancellationToken);
+                var healthResult = await health.VerifyEngineAsync(
+                    workspaceId,
+                    new EngineHealthVerificationRequest(engine.Id, access.Access!.AccountId),
+                    cancellationToken);
+                return Results.Ok(ApplyHealthResult(engine, healthResult));
             }
             catch (KeyNotFoundException)
             {
@@ -768,6 +779,19 @@ public static class WorkspaceDeploymentEndpoints
         Results.Problem(
             title: "Deployment permission is required.",
             statusCode: StatusCodes.Status403Forbidden);
+
+    private static WorkspaceWorkflowEngine ApplyHealthResult(WorkspaceWorkflowEngine engine, EngineHealthResult result) =>
+        engine with
+        {
+            Version = result.Version,
+            CertificateStatus = result.CertificateStatus,
+            CredentialVerificationStatus = result.CredentialVerificationStatus,
+            CredentialLastVerifiedAt = result.CredentialLastVerifiedAt,
+            Health = result.Health,
+            LastHeartbeatAt = result.LastHeartbeatAt,
+            LastVerificationAt = result.LastVerificationAt,
+            VerificationMessage = result.Message
+        };
 
     private static string PermissionForConfirmation(ConfirmationActionType actionType) =>
         actionType switch

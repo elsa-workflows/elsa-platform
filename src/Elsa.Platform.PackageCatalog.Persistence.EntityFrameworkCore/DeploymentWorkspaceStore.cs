@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
 
-public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWorkspaceDeploymentStore, IWorkspacePermissionStore, IWorkspaceDeploymentMutationStore, IWorkspaceDeploymentCommandStore, IWorkspaceArtifactStore, IWorkspaceDeploymentTierStore
+public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWorkspaceDeploymentStore, IWorkspacePermissionStore, IWorkspaceDeploymentMutationStore, IWorkspaceDeploymentCommandStore, IWorkspaceArtifactStore, IWorkspaceArtifactUploadStore, IWorkspaceDeploymentTierStore
 {
     public async Task<DeploymentCockpit> GetCockpitAsync(Guid workspaceId, CancellationToken cancellationToken = default)
     {
@@ -1343,6 +1343,26 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         return entity is null ? null : ToWorkspaceWorkflowEngine(entity);
     }
 
+    public async Task<IReadOnlyList<WorkspaceWorkflowEngine>> ListEnginesDueForVerificationAsync(
+        DateTimeOffset verifyBefore,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (limit <= 0)
+            return [];
+
+        var entities = await dbContext.WorkflowEngines
+            .AsNoTracking()
+            .Where(x => !x.LastVerificationAt.HasValue || x.LastVerificationAt <= verifyBefore)
+            .OrderBy(x => x.LastVerificationAt.HasValue)
+            .ThenBy(x => x.LastVerificationAt)
+            .ThenBy(x => x.Id)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
+        return entities.Select(ToWorkspaceWorkflowEngine).ToList();
+    }
+
     public async Task<EngineHealthResult> UpdateEngineHealthAsync(
         Guid workspaceId,
         EngineHealthUpdate update,
@@ -1362,11 +1382,16 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
 
     public async Task<IReadOnlyList<WorkspaceArtifact>> ListArtifactsAsync(
         Guid workspaceId,
+        bool includeArchived = false,
         CancellationToken cancellationToken = default)
     {
-        var artifacts = await dbContext.WorkspaceDeploymentArtifacts
+        var query = dbContext.WorkspaceDeploymentArtifacts
             .AsNoTracking()
-            .Where(x => x.WorkspaceId == workspaceId)
+            .Where(x => x.WorkspaceId == workspaceId);
+        if (!includeArchived)
+            query = query.Where(x => x.Status == WorkspaceArtifactLifecycleStatus.Active);
+
+        var artifacts = await query
             .OrderByDescending(x => x.RegisteredAt)
             .ThenBy(x => x.ArtifactId)
             .ToListAsync(cancellationToken);
@@ -1440,6 +1465,48 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         return ToWorkspaceArtifact(artifact);
     }
 
+    public async Task<WorkspaceArtifact> ArchiveArtifactAsync(
+        Guid workspaceId,
+        Guid artifactRecordId,
+        Guid actorAccountId,
+        CancellationToken cancellationToken = default)
+    {
+        var artifact = await dbContext.WorkspaceDeploymentArtifacts
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == artifactRecordId, cancellationToken);
+        if (artifact is null)
+            throw new KeyNotFoundException("Artifact does not exist in the workspace.");
+        if (artifact.Status == WorkspaceArtifactLifecycleStatus.Archived)
+            return ToWorkspaceArtifact(artifact);
+
+        var now = DateTimeOffset.UtcNow;
+        artifact.Status = WorkspaceArtifactLifecycleStatus.Archived;
+        artifact.ArchivedAt = now;
+        artifact.ArchivedByAccountId = actorAccountId;
+        artifact.UpdatedAt = now;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceArtifact(artifact);
+    }
+
+    public async Task<WorkspaceArtifact> RestoreArtifactAsync(
+        Guid workspaceId,
+        Guid artifactRecordId,
+        CancellationToken cancellationToken = default)
+    {
+        var artifact = await dbContext.WorkspaceDeploymentArtifacts
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == artifactRecordId, cancellationToken);
+        if (artifact is null)
+            throw new KeyNotFoundException("Artifact does not exist in the workspace.");
+        if (artifact.Status == WorkspaceArtifactLifecycleStatus.Active)
+            return ToWorkspaceArtifact(artifact);
+
+        artifact.Status = WorkspaceArtifactLifecycleStatus.Active;
+        artifact.ArchivedAt = null;
+        artifact.ArchivedByAccountId = null;
+        artifact.UpdatedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceArtifact(artifact);
+    }
+
     public async Task<WorkspaceArtifactInspectionResult> UpdateArtifactInspectionAsync(
         Guid workspaceId,
         WorkspaceArtifactInspectionUpdate update,
@@ -1470,6 +1537,63 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             artifact.ResourceCount,
             DeserializeArtifactResources(artifact.ResourceSummaryJson),
             DeserializeArtifactDiagnostics(artifact.DiagnosticsJson));
+    }
+
+    public async Task<WorkspaceArtifactUploadSession> CreateArtifactUploadSessionAsync(
+        WorkspaceArtifactUploadSession session,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = ToWorkspaceArtifactUploadSessionEntity(session);
+        await dbContext.WorkspaceArtifactUploadSessions.AddAsync(entity, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceArtifactUploadSession(entity);
+    }
+
+    public async Task<WorkspaceArtifactUploadSession?> GetArtifactUploadSessionAsync(
+        Guid workspaceId,
+        Guid uploadId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.WorkspaceArtifactUploadSessions
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == uploadId, cancellationToken);
+        return entity is null ? null : ToWorkspaceArtifactUploadSession(entity);
+    }
+
+    public async Task<WorkspaceArtifactUploadSession?> FindArtifactUploadByIdempotencyKeyAsync(
+        Guid workspaceId,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.WorkspaceArtifactUploadSessions
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.IdempotencyKey == idempotencyKey, cancellationToken);
+        return entity is null ? null : ToWorkspaceArtifactUploadSession(entity);
+    }
+
+    public async Task<WorkspaceArtifactUploadSession> UpdateArtifactUploadSessionAsync(
+        WorkspaceArtifactUploadSession session,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.WorkspaceArtifactUploadSessions
+            .SingleOrDefaultAsync(x => x.WorkspaceId == session.WorkspaceId && x.Id == session.Id, cancellationToken);
+        if (entity is null)
+            throw new KeyNotFoundException("Artifact upload session does not exist in the workspace.");
+
+        entity.Status = session.Status;
+        entity.FileName = session.FileName;
+        entity.ContentType = session.ContentType;
+        entity.DeclaredSizeBytes = session.DeclaredSizeBytes;
+        entity.UploadedSizeBytes = session.UploadedSizeBytes;
+        entity.StagedFilePath = session.StagedFilePath;
+        entity.IdempotencyKey = session.IdempotencyKey;
+        entity.DiagnosticsJson = JsonSerializer.Serialize(session.Diagnostics);
+        entity.ExpiresAt = session.ExpiresAt;
+        entity.CompletedArtifactRecordId = session.CompletedArtifactRecordId;
+        entity.CreatedByAccountId = session.CreatedByAccountId;
+        entity.UpdatedAt = session.UpdatedAt;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceArtifactUploadSession(entity);
     }
 
     public async Task<EngineHealthResult> ApplyEngineHeartbeatAsync(
@@ -1721,13 +1845,54 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             DeserializePayloadReference(artifact.PayloadReferenceJson, artifact.ReferenceProvider, artifact.Reference),
             DeserializeProducer(artifact.ProducerJson),
             DeserializeDisplayMetadata(artifact.DisplayMetadataJson, artifact.ManifestName, artifact.ManifestVersion, artifact.ManifestEnvironment),
-            DeserializeCompatibilityHints(artifact.CompatibilityHintsJson, artifact.ArtifactTypeId));
+            DeserializeCompatibilityHints(artifact.CompatibilityHintsJson, artifact.ArtifactTypeId),
+            artifact.Status,
+            artifact.ArchivedAt,
+            artifact.ArchivedByAccountId);
 
     private static IReadOnlyList<WorkspaceArtifactResourceSummary> DeserializeArtifactResources(string json) =>
         JsonSerializer.Deserialize<IReadOnlyList<WorkspaceArtifactResourceSummary>>(json) ?? [];
 
     private static IReadOnlyList<WorkspaceArtifactDiagnostic> DeserializeArtifactDiagnostics(string json) =>
         JsonSerializer.Deserialize<IReadOnlyList<WorkspaceArtifactDiagnostic>>(json) ?? [];
+
+    private static WorkspaceArtifactUploadSession ToWorkspaceArtifactUploadSession(WorkspaceArtifactUploadSessionEntity entity) =>
+        new(
+            entity.Id,
+            entity.WorkspaceId,
+            entity.Status,
+            entity.FileName,
+            entity.ContentType,
+            entity.DeclaredSizeBytes,
+            entity.UploadedSizeBytes,
+            entity.StagedFilePath,
+            entity.IdempotencyKey,
+            DeserializeArtifactDiagnostics(entity.DiagnosticsJson),
+            entity.ExpiresAt,
+            entity.CompletedArtifactRecordId,
+            entity.CreatedByAccountId,
+            entity.CreatedAt,
+            entity.UpdatedAt);
+
+    private static WorkspaceArtifactUploadSessionEntity ToWorkspaceArtifactUploadSessionEntity(WorkspaceArtifactUploadSession session) =>
+        new()
+        {
+            Id = session.Id,
+            WorkspaceId = session.WorkspaceId,
+            Status = session.Status,
+            FileName = session.FileName,
+            ContentType = session.ContentType,
+            DeclaredSizeBytes = session.DeclaredSizeBytes,
+            UploadedSizeBytes = session.UploadedSizeBytes,
+            StagedFilePath = session.StagedFilePath,
+            IdempotencyKey = session.IdempotencyKey,
+            DiagnosticsJson = JsonSerializer.Serialize(session.Diagnostics),
+            ExpiresAt = session.ExpiresAt,
+            CompletedArtifactRecordId = session.CompletedArtifactRecordId,
+            CreatedByAccountId = session.CreatedByAccountId,
+            CreatedAt = session.CreatedAt,
+            UpdatedAt = session.UpdatedAt
+        };
 
     private static string NormalizeEnvelopeVersion(string? envelopeVersion) =>
         string.IsNullOrWhiteSpace(envelopeVersion) ? ArtifactEnvelopeConstants.EnvelopeVersion : envelopeVersion;

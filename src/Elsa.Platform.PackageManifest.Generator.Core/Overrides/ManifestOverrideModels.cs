@@ -31,6 +31,7 @@ public sealed class FeatureOverride
     public string? DisplayName { get; init; }
     public string? Description { get; init; }
     public string? Category { get; init; }
+    public IReadOnlyList<string>? Categories { get; init; }
     public bool? Advanced { get; init; }
     public bool? Experimental { get; init; }
     public CompatibilityOverride? Compatibility { get; init; }

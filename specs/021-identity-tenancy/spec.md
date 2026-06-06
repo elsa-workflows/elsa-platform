@@ -20,6 +20,29 @@ Direct runtime **Publish** behavior may still exist in non-integrated Studio ins
 
 Runtime deployment communication is modeled as durable platform-owned deployment runs and deployment commands. A runtime integration package may consume those commands by outbound pull/sync, webhook-triggered fetch, or direct platform push, but the deployment run remains the authoritative state and the command/result contract remains transport-independent. Runtime pull is the preferred default for customer-hosted environments because it avoids requiring inbound network access to the runtime.
 
+Git-backed desired-state versioning is the preferred long-term source-control model for deployment governance. Elsa Platform should be able to attach a workspace or organization to a Git repository and write declarative desired-state files for applications, environments, runtime configurations, artifact references, secret references, observability bindings, infrastructure requirements, promotions, and rollbacks. Git versions the intended state that operators review, promote, deploy, and roll back. Deployment runs, runtime commands, engine health, verification results, drift observations, approval events, logs, and audit history remain platform operational records rather than Git-authored desired-state files.
+
+Git integration must be optional at first. Workspaces without Git continue using platform-owned versioned desired-state records. Workspaces with Git enabled treat Git commits as the durable revision source and Platform database records as indexed projections, validation state, runtime coordination state, and audit history. The existing desired-state revision `commit` concept should become platform-managed when Git is enabled instead of remaining caller-supplied metadata.
+
+### Future GitOps Spec Seed
+
+The future GitOps feature should define how Platform maps workspace deployment state to a repository, how it writes and reads deterministic files, and how it reconciles database projections with Git commits.
+
+Candidate Git-owned files:
+
+- Application and environment topology, including stable application/environment identifiers, display names, tier references, and target bindings.
+- Environment desired-state manifests, including artifact references, artifact identities, content digests, feature selections, feature settings, runtime image and runtime configuration, infrastructure requirements, package selections, observability bindings, and engine target bindings.
+- Runtime builder outputs, including selected image, selected compatible features, feature settings, infrastructure components, generated deployment target metadata, and bundle references.
+- Artifact descriptors containing immutable artifact identity, type, digest, safe display metadata, compatibility hints, and payload reference metadata, but not artifact payload bytes.
+- Secret references, provider names, external key paths, version policies, and verification requirements, but never secret values.
+- Promotion and rollback commits that update target environment desired-state files to point at the promoted or restored artifact and configuration references.
+
+Non-Git operational records:
+
+- Artifact ZIP bytes or other artifact payloads, which belong in local/object/OCI artifact storage and are referenced by digest.
+- Deployment runs, runtime command claims, command heartbeats, command results, validation attempts, approval decisions, audit events, health checks, engine verification, drift observations, logs, metrics, and traces.
+- Raw secrets, connection strings, provider tokens, runtime credentials, and storage credentials.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Sign In With Trusted Identity (Priority: P1)
@@ -268,6 +291,16 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **FR-052**: System MUST distinguish assistant recommendations from executed platform state changes so users and auditors can tell whether the system only suggested an action or actually applied it.
 - **FR-053**: System MUST treat workspace content supplied to the assistant as untrusted input and validate assistant responses so prompt injection in workflow artifacts, environment metadata, deployment descriptions, or observability data cannot cause disclosure beyond the requesting user's authorized scope.
 - **FR-054**: System MUST enforce the all-or-nothing execution boundary for an approved assistant mutation plan; if any step fails, the platform MUST stop remaining steps, roll back or compensate already-applied steps where possible, and audit/report any residual partial state before allowing another plan execution.
+- **FR-055**: System MUST support a future Git-backed desired-state mode where a workspace or organization can bind deployment desired state to a configured Git repository.
+- **FR-056**: System MUST keep Git-backed desired-state files declarative and deterministic so semantically equivalent platform state does not produce noisy diffs.
+- **FR-057**: System MUST store application topology, environment desired state, artifact descriptors, runtime configuration, infrastructure requirements, secret references, observability bindings, promotion results, and rollback targets as Git-versioned desired-state files when Git-backed mode is enabled.
+- **FR-058**: System MUST NOT store artifact payload bytes, raw workflow payloads, raw secrets, connection strings, provider tokens, runtime credentials, deployment run events, runtime command events, health checks, drift observations, logs, metrics, traces, or audit history as Git-authored desired-state files.
+- **FR-059**: System MUST keep artifact payloads in artifact storage and reference them from Git only by immutable identity, type, digest, safe metadata, compatibility hints, and payload reference metadata.
+- **FR-060**: System MUST make promotion create or select a target desired-state revision by changing target environment desired-state references through a platform-mediated Git commit when Git-backed mode is enabled.
+- **FR-061**: System MUST make rollback create a new desired-state revision that points back to a previously known-good artifact and configuration set rather than mutating history in place.
+- **FR-062**: System MUST treat Platform database revision records as indexed projections of Git commits, validation state, runtime coordination state, and audit metadata when Git-backed mode is enabled.
+- **FR-063**: System MUST preserve non-Git operation for workspaces that have not enabled Git-backed desired-state storage.
+- **FR-064**: System MUST make the desired-state revision commit identifier platform-managed in Git-backed mode and prevent clients from supplying arbitrary commit metadata as authority.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -291,6 +324,9 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **Workflow Artifact**: Platform-owned immutable deployable snapshot produced by a platform-integrated Elsa Studio "Submit to Platform" command or equivalent future ingestion path, containing opaque workflow definition content, safe metadata, source identifiers, schema/version information, and a content hash.
 - **Artifact Submission**: Audited handoff from Elsa Studio or another producer into Elsa Platform that creates a workflow artifact without making that artifact immediately executable in a runtime.
 - **Desired-State Revision**: Versioned source of truth for an environment, including workflow artifact references, feature settings, shell configuration, runtime configuration, secret references, observability bindings, and target bindings.
+- **Git-Backed Desired-State Store**: Optional workspace or organization repository binding where Platform writes and reads deterministic desired-state files and records the resulting commit as the revision source.
+- **Desired-State File**: Declarative file stored in Git that represents application topology, environment desired state, artifact descriptors, runtime configuration, infrastructure requirements, secret references, observability bindings, promotion results, or rollback targets without operational event history or secret values.
+- **Desired-State Projection**: Platform database record derived from a Git commit, used for fast reads, validation status, deployment coordination, cockpit summaries, and audit correlation.
 - **Deployment**: Attempt to apply a desired-state revision to one environment and one or more workflow engines, with validation results, actor metadata, status, and rollback relationship.
 - **Deployment Command**: Durable platform-owned instruction linked to a deployment run that asks a specific runtime integration to validate, dry-run, apply, or roll back one artifact or desired-state revision with idempotency and expiration metadata.
 - **Runtime Sync Worker**: Optional runtime-side integration component that authenticates outbound to Elsa Platform, discovers pending deployment commands, claims work, fetches artifacts, applies supported artifact types, and reports progress/results.
@@ -325,6 +361,10 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **SC-020**: Assistant access tests prove the assistant can summarize and compare only data visible to the requesting account's current workspace membership, role, and entitlement state.
 - **SC-021**: Assistant mutation tests prove deployment, rollback, runtime control, secret-reference, and desired-state changes require explicit approval of the exact immutable plan artifact, enforce all-or-nothing plan execution on step failure, and produce audit records that distinguish proposed actions from executed actions.
 - **SC-022**: Prompt-injection tests prove adversarial workspace content cannot cause assistant responses to expose raw secrets, hidden credentials, operator-only data, or data from another workspace.
+- **SC-023**: In Git-backed mode, creating or promoting a desired-state revision produces a deterministic Git commit whose files reference artifact identity, digest, runtime configuration, feature settings, infrastructure requirements, secret references, observability bindings, and target bindings without raw payloads or secrets.
+- **SC-024**: In Git-backed mode, rollback creates a new commit that restores a previous desired-state artifact and configuration reference set while preserving prior commits and deployment history.
+- **SC-025**: Workspaces without Git-backed mode can still create, compare, promote, deploy, and roll back platform-owned desired-state revisions through existing versioned records.
+- **SC-026**: Git projection tests prove the Platform database can rebuild or validate environment desired-state summaries from a Git commit and still keep deployment runs, runtime commands, health, drift, approval, and audit records outside Git-authored desired-state files.
 
 ## Assumptions
 
@@ -341,6 +381,11 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - Workflow artifacts are created by an opt-in Elsa Studio integration that replaces direct-runtime publishing in platform-integrated installations with the command "Submit to Platform"; future producers such as CLI import, CI automation, or package upload should create the same artifact type.
 - "Submit to Platform" means creating an immutable deployable artifact in Elsa Platform; it does not mean release approval, promotion, deployment, or immediate runtime execution.
 - Desired state is expected to be stored as platform-owned versioned records or an equivalent workspace-controlled versioned store so environment state can be diffed, promoted, audited, and rolled back.
+- Git-backed desired-state storage is the preferred long-term workspace-controlled versioned store, but it is optional at first so local, development, and simpler installations can keep using platform-owned versioned records.
+- Git-backed desired-state files represent declarative intent only. Platform operational history remains in Platform-controlled persistence even when the desired state came from Git.
+- A Git-backed desired-state repository may be workspace-scoped initially and organization-scoped later after `specs/031-organization-tenancy` is fully adopted.
+- Git commits authored by Platform should be deterministic, reviewable, and attributable to the account or automation that caused the desired-state change.
+- External Git edits are a future reconciliation concern; the initial GitOps spec can start with Platform-mediated writes before adding bidirectional import, pull request workflows, branch policies, or conflict resolution.
 - Deployment runs and commands are the authoritative coordination records. Webhooks, direct runtime endpoints, polling, and long-polling are interchangeable transports around that command contract, not independent sources of deployment truth.
 - Runtime pull/sync is the preferred default for customer-hosted environments; direct platform push is reserved for environments with explicit inbound connectivity and trust configuration.
 - Webhook notifications are advisory triggers only and should carry enough information to fetch a command, not enough information to apply an artifact without consulting Elsa Platform.

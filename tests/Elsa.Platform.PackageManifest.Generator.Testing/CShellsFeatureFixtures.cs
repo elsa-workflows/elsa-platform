@@ -58,6 +58,12 @@ using System;
 
 namespace Elsa.Platform.PackageManifest.Generator.Hints;
 
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+internal sealed class ManifestFeatureCategoryAttribute(string category) : Attribute
+{
+    public string Category { get; } = category;
+}
+
 [AttributeUsage(AttributeTargets.Property)]
 internal sealed class ManifestSettingAttribute : Attribute
 {

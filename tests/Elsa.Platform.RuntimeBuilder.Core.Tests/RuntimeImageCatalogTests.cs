@@ -14,6 +14,9 @@ public sealed class RuntimeImageCatalogTests
         images.Select(x => x.Slug).Should().BeEquivalentTo("elsa-pro-server", "elsa-pro-studio", "elsa-pro-combined");
         images.Should().OnlyContain(x => !string.IsNullOrWhiteSpace(x.Image));
         images.Should().OnlyContain(x => x.DeploymentHints.SupportsDockerCompose);
+        images.Single(x => x.Slug == "elsa-pro-server").RuntimeKinds.Should().BeEquivalentTo("elsa.server");
+        images.Single(x => x.Slug == "elsa-pro-studio").RuntimeKinds.Should().BeEquivalentTo("elsa.studio");
+        images.Single(x => x.Slug == "elsa-pro-combined").RuntimeKinds.Should().BeEquivalentTo("elsa.server", "elsa.studio");
     }
 
     [Fact]
@@ -70,5 +73,21 @@ public sealed class RuntimeImageCatalogTests
         findings.Should().Contain(x => x.Code == "runtimeImage.invalidDefaultTag");
         findings.Should().Contain(x => x.Code == "runtimeImage.duplicateEnvVar");
         findings.Should().Contain(x => x.Code == "runtimeImage.brokenCompanion");
+    }
+
+    [Fact]
+    public void Validation_rejects_blank_and_duplicate_runtime_kinds()
+    {
+        var valid = new RuntimeImageCatalog().Find("elsa-pro-combined")!;
+        var invalid = valid with
+        {
+            Slug = "custom",
+            RuntimeKinds = ["elsa.server", "ELSA.SERVER", " "]
+        };
+
+        var findings = new RuntimeImageValidator().Validate([valid, invalid]);
+
+        findings.Should().Contain(x => x.Code == "runtimeImage.blankRuntimeKind");
+        findings.Should().Contain(x => x.Code == "runtimeImage.duplicateRuntimeKind");
     }
 }

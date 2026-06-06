@@ -54,7 +54,7 @@ public sealed record DiscoveredFeature(
     string ClrTypeName,
     string DisplayName,
     string? Description,
-    string? Category,
+    IReadOnlyList<string> Categories,
     FeatureDiscoverySource DiscoverySource,
     bool IsPublic,
     bool IsAbstract,

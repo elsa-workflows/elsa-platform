@@ -1,9 +1,11 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http.Headers;
 using Elsa.Platform.Api.Workspace;
 using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
+using Elsa.Platform.Deployment.Manifest;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Microsoft.Extensions.DependencyInjection;
 using FluentAssertions;
@@ -31,6 +33,7 @@ public sealed class WorkspaceArtifactApiTests
         registerResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         list!.Items.Should().ContainSingle(x => x.Id == registered.Id);
         detail!.Manifest.Name.Should().Be("claims");
+        detail.Status.Should().Be(WorkspaceArtifactLifecycleStatus.Active);
         detail.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
         detail.Producer!.ProducerType.Should().Be("manual");
         detail.CompatibilityHints.Should().ContainSingle(x => x.RequiredArtifactType == ArtifactTypeIds.ElsaWorkflowDefinition);
@@ -151,6 +154,34 @@ public sealed class WorkspaceArtifactApiTests
     }
 
     [Fact]
+    public async Task Owner_can_archive_and_restore_artifact_without_removing_detail_history()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("artifact-archive-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var artifact = await RegisterArtifactAsync(owner, workspaceId);
+
+        var archiveResponse = await owner.PostAsync($"/api/workspaces/{workspaceId}/artifacts/{artifact.Id}/archive", null);
+        var archived = await archiveResponse.Content.ReadPlatformJsonAsync<WorkspaceArtifact>();
+        var activeList = await owner.GetPlatformJsonAsync<WorkspaceArtifactListResponse>($"/api/workspaces/{workspaceId}/artifacts");
+        var allList = await owner.GetPlatformJsonAsync<WorkspaceArtifactListResponse>($"/api/workspaces/{workspaceId}/artifacts?includeArchived=true");
+        var detail = await owner.GetPlatformJsonAsync<WorkspaceArtifact>($"/api/workspaces/{workspaceId}/artifacts/{artifact.Id}");
+        var restoreResponse = await owner.PostAsync($"/api/workspaces/{workspaceId}/artifacts/{artifact.Id}/restore", null);
+        var restored = await restoreResponse.Content.ReadPlatformJsonAsync<WorkspaceArtifact>();
+
+        archiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        archived!.Status.Should().Be(WorkspaceArtifactLifecycleStatus.Archived);
+        archived.ArchivedAt.Should().NotBeNull();
+        activeList!.Items.Should().BeEmpty();
+        allList!.Items.Should().ContainSingle(x => x.Id == artifact.Id && x.Status == WorkspaceArtifactLifecycleStatus.Archived);
+        detail!.Status.Should().Be(WorkspaceArtifactLifecycleStatus.Archived);
+        restoreResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        restored!.Status.Should().Be(WorkspaceArtifactLifecycleStatus.Active);
+        restored.ArchivedAt.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Artifact_routes_enforce_read_and_setup_permissions()
     {
         await using var app = new PlatformApiTestApplication();
@@ -169,13 +200,46 @@ public sealed class WorkspaceArtifactApiTests
             $"/api/workspaces/{workspaceId}/artifacts",
             WorkspaceDeploymentTestFixtures.ArtifactRegistration("sha256:reader"));
         var refreshDenied = await reader.PostAsync($"/api/workspaces/{workspaceId}/artifacts/{artifact.Id}/refresh", null);
+        var archiveDenied = await reader.PostAsync($"/api/workspaces/{workspaceId}/artifacts/{artifact.Id}/archive", null);
         var nonMemberDenied = await nonMember.GetAsync($"/api/workspaces/{workspaceId}/artifacts/{artifact.Id}");
 
         readDenied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         readAllowed.StatusCode.Should().Be(HttpStatusCode.OK);
         registerDenied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         refreshDenied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        archiveDenied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         nonMemberDenied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Owner_can_download_local_artifact_reference()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"elsa-platform-artifact-download-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        var artifactPath = Path.Combine(tempRoot, "claims-prod.zip");
+        var bytes = "artifact bytes"u8.ToArray();
+        await File.WriteAllBytesAsync(artifactPath, bytes);
+        try
+        {
+            await using var app = new PlatformApiTestApplication();
+            await app.SeedAsync(_ => Task.CompletedTask);
+            var owner = app.CreateTrustedWorkspaceClient("artifact-download-owner");
+            var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+            var artifact = await RegisterArtifactAsync(owner, workspaceId, "sha256:download", artifactPath, format: WorkspaceArtifactFormat.Zip);
+
+            var response = await owner.GetAsync($"/api/workspaces/{workspaceId}/artifacts/{artifact.Id}/download");
+            var downloaded = await response.Content.ReadAsByteArrayAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/zip");
+            response.Content.Headers.ContentDisposition!.FileNameStar.Should().Be("claims-prod.zip");
+            downloaded.Should().Equal(bytes);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+                Directory.Delete(tempRoot, recursive: true);
+        }
     }
 
     [Fact]
@@ -241,16 +305,49 @@ public sealed class WorkspaceArtifactApiTests
         stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
     }
 
+    [Fact]
+    public async Task Owner_can_upload_zip_and_server_computes_artifact_identity()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("artifact-upload-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        await using var zip = await BuildValidArtifactZipAsync();
+
+        var create = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/artifact-uploads",
+            new CreateArtifactUploadRequest("claims-prod.zip", "application/zip", zip.Bytes.Length));
+        var session = await create.Content.ReadPlatformJsonAsync<CreateArtifactUploadResponse>();
+        using var content = new ByteArrayContent(zip.Bytes);
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse("application/zip");
+        var upload = await owner.PutAsync($"/api/workspaces/{workspaceId}/artifact-uploads/{session!.UploadId}/content", content);
+        var complete = await owner.PostAsync($"/api/workspaces/{workspaceId}/artifact-uploads/{session.UploadId}/complete", null);
+        var completed = await complete.Content.ReadPlatformJsonAsync<CompleteArtifactUploadResponse>();
+
+        create.StatusCode.Should().Be(HttpStatusCode.Created);
+        upload.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        complete.StatusCode.Should().Be(HttpStatusCode.Created);
+        completed!.Status.Should().Be(WorkspaceArtifactUploadStatus.Completed);
+        completed.Artifact.Should().NotBeNull();
+        completed.Artifact!.ArtifactId.Should().Be(zip.ArtifactId);
+        completed.Artifact.ReferenceProvider.Should().Be("local");
+        completed.Artifact.Format.Should().Be(WorkspaceArtifactFormat.Zip);
+        completed.Artifact.ChecksumStatus.Should().Be(WorkspaceArtifactChecksumStatus.Verified);
+        completed.Artifact.InspectionStatus.Should().Be(WorkspaceArtifactInspectionStatus.Valid);
+        completed.Artifact.Resources.Should().ContainSingle(x => x.LogicalId == "order-approval");
+    }
+
     private static async Task<WorkspaceArtifact> RegisterArtifactAsync(
         HttpClient client,
         Guid workspaceId,
         string artifactId = "sha256:claims-prod",
         string reference = "/tmp/claims-prod",
-        string referenceProvider = "local")
+        string referenceProvider = "local",
+        WorkspaceArtifactFormat format = WorkspaceArtifactFormat.Folder)
     {
         var response = await client.PostPlatformJsonAsync(
             $"/api/workspaces/{workspaceId}/artifacts",
-            WorkspaceDeploymentTestFixtures.ArtifactRegistration(artifactId, reference, referenceProvider));
+            WorkspaceDeploymentTestFixtures.ArtifactRegistration(artifactId, reference, referenceProvider) with { Format = format });
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         return (await response.Content.ReadPlatformJsonAsync<WorkspaceArtifact>())!;
     }
@@ -281,6 +378,48 @@ public sealed class WorkspaceArtifactApiTests
                     ],
                     [],
                     Guid.NewGuid()));
+        }
+    }
+
+    private static async Task<ArtifactZipFixture> BuildValidArtifactZipAsync()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"elsa-platform-api-artifact-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "workflows"));
+        await File.WriteAllTextAsync(Path.Combine(root, "workflows", "order-approval.json"), """{"id":"order-approval"}""");
+        var outputPath = Path.Combine(root, "artifact.zip");
+        var manifest = """
+            apiVersion: platform.elsa.io/v1alpha1
+            kind: EnvironmentManifest
+            metadata:
+              name: claims-prod
+              version: 1.0.0
+              environment: prod
+            resources:
+              workflows:
+                - id: order-approval
+                  path: workflows/order-approval.json
+            """;
+        var build = await new DeploymentArtifactBuilder().BuildZipAsync(
+            new DeploymentArtifactBuildOptions(
+                manifest,
+                ManifestFormat.Yaml,
+                root,
+                outputPath,
+                overwrite: true,
+                builtAt: new DateTimeOffset(2026, 6, 4, 12, 0, 0, TimeSpan.Zero),
+                builder: "api-tests",
+                source: "fixture"));
+        build.Succeeded.Should().BeTrue();
+        return new ArtifactZipFixture(root, build.ArtifactId!, await File.ReadAllBytesAsync(outputPath));
+    }
+
+    private sealed record ArtifactZipFixture(string Root, string ArtifactId, byte[] Bytes) : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync()
+        {
+            if (Directory.Exists(Root))
+                Directory.Delete(Root, recursive: true);
+            return ValueTask.CompletedTask;
         }
     }
 }

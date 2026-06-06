@@ -18,6 +18,7 @@ Multi-targeted package projects include exactly one canonical manifest by defaul
 
 Optional source-only hints are available under `Elsa.Platform.PackageManifest.Generator.Hints`:
 
+- `ManifestFeatureCategoryAttribute`
 - `ManifestSettingAttribute`
 - `ManifestUIOptionAttribute`
 - `ManifestUIOptionsProviderAttribute`
@@ -28,6 +29,8 @@ Optional source-only hints are available under `Elsa.Platform.PackageManifest.Ge
 - `ElsaRuntimeKinds`
 
 These hint attributes are intentionally shipped as source-only, internal types so consuming packages can use them without exposing generator APIs from their assemblies. `ManifestInfrastructureAttribute.Extensions` uses `key=value` strings; entries without a key before `=` are ignored.
+
+Apply `ManifestFeatureCategoryAttribute` zero or more times to a feature class to emit feature manifest categories. The generator also accepts `categories` in `elsa-package.overrides.json`; legacy single `category` override values are still supported.
 
 Enum settings emit validation enum values and default to `ui.hint = "select-list"` with static option items. Use `ManifestUIOptionAttribute` for custom static list values and `ManifestUIOptionsProviderAttribute` to reference a trusted Runtime Builder option provider for dynamic list values. Provider references are manifest data only; the generator does not execute package code to resolve options.
 

@@ -22,7 +22,7 @@ public static class BuilderEndpoints
         group.MapGet("/catalog", async ([FromQuery] Guid[] sourceIds, PublicCatalogQueryService catalog, RuntimeImageCatalog runtimeImages, InfrastructureProviderCatalog infrastructure, CancellationToken cancellationToken) =>
         {
             var packages = await catalog.ListPackagesAsync(sourceIds, cancellationToken);
-            var serverPackages = RuntimeKindCompatibilityPolicy.FilterPackages(packages, ElsaRuntimeKinds.Server);
+            var serverPackages = Elsa.Platform.PackageCatalog.Core.Compatibility.RuntimeKindCompatibilityPolicy.FilterPackages(packages, ElsaRuntimeKinds.Server);
             return Results.Ok(new BuilderCatalogResponse(
                 runtimeImages.ListImages().Select(ToRuntimeImageResponse).ToList(),
                 serverPackages.Select(PublicPackageEndpoints.ToResponse).ToList(),
@@ -142,6 +142,7 @@ public static class BuilderEndpoints
             image.LicenseTier,
             image.Stability,
             image.Capabilities,
+            image.RuntimeKinds,
             image.EnvVars.Select(x => new RuntimeImageEnvironmentVariableResponse(x.Name, x.DisplayName, x.Description, x.Required, x.Secret, x.DefaultValue, x.Group, x.Advanced)).ToList(),
             new RuntimeImageDeploymentHintsResponse(
                 image.DeploymentHints.SupportsDockerCompose,

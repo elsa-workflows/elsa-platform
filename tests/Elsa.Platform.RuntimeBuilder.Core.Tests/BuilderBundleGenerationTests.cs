@@ -82,6 +82,37 @@ public sealed class BuilderBundleGenerationTests
     }
 
     [Fact]
+    public async Task Incompatible_runtime_kind_returns_error_findings_and_no_files()
+    {
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var packageVersion = CreatePackageVersion(source);
+        packageVersion.ManifestJson = """
+        {
+          "schemaVersion": "1.0",
+          "package": { "id": "Elsa.Email", "version": "1.0.0" },
+          "displayName": "Email",
+          "features": [
+            {
+              "id": "email",
+              "typeName": "Elsa.Email.EmailFeature",
+              "displayName": "Email",
+              "compatibility": { "runtimeKinds": ["elsa.studio"] }
+            }
+          ]
+        }
+        """;
+        var service = CreateService(new FakePublicCatalogQueries(CreatePackageProjection(source)), [packageVersion]);
+
+        var result = await service.GenerateAsync(new BuilderBundleFixtureBuilder()
+            .WithImage("elsa-pro-server")
+            .WithPackage(source, "Elsa.Email", features: ["email"])
+            .Build());
+
+        result.Files.Should().BeEmpty();
+        result.Findings.Should().Contain(x => x.Code == "feature.runtimeKindUnsupported" && x.Level == "error");
+    }
+
+    [Fact]
     public async Task Studio_only_package_returns_runtime_kind_mismatch_and_no_files()
     {
         var source = PublicCatalogSeedData.CreatePackageSource();
@@ -92,8 +123,6 @@ public sealed class BuilderBundleGenerationTests
         result.Files.Should().BeEmpty();
         result.Findings.Should().Contain(x => x.Code == "package.runtimeKindMismatch" && x.Level == "error");
     }
-
-
     [Fact]
     public async Task Required_missing_setting_returns_files_with_placeholder_warning()
     {
@@ -212,12 +241,13 @@ public sealed class BuilderBundleGenerationTests
     {
         var compatibility = new CompatibilityCheckService(new FakeCompatibilityQueries(compatibilityVersions), new VersionRangeEvaluator());
         var infrastructure = new InfrastructureProviderCatalog();
+        var runtimeImages = new RuntimeImageCatalog();
         return new BundleGenerationService(
             catalog,
             compatibility,
-            new RuntimeImageCatalog(),
+            runtimeImages,
             infrastructure,
-            new BuilderPlannerService(catalog, compatibility, infrastructure),
+            new BuilderPlannerService(catalog, compatibility, runtimeImages, infrastructure),
             new DeploymentTemplateRegistry(
             [
                 new DockerComposeBundleRenderer(),
@@ -264,8 +294,9 @@ public sealed class BuilderBundleGenerationTests
             "Email",
             null,
             "Communication",
-            runtimeKinds,
+            ["Communication"],
             [],
+            runtimeKinds,
             [],
             [],
             [],
@@ -287,7 +318,7 @@ public sealed class BuilderBundleGenerationTests
           "package": { "id": "Elsa.Email", "version": "1.0.0" },
           "displayName": "Email",
           "features": [
-            { "id": "email", "typeName": "Elsa.Email.EmailFeature", "displayName": "Email" }
+            { "id": "email", "typeName": "Elsa.Email.EmailFeature", "displayName": "Email", "compatibility": { "runtimeKinds": ["elsa.server"] } }
           ]
         }
         """;

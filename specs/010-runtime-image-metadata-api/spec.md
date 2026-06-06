@@ -72,6 +72,23 @@ Operators and contributors can detect incomplete or inconsistent runtime image d
 2. **Given** an image references a companion image slug that does not exist, **When** validation runs, **Then** the broken reference is reported.
 3. **Given** every required image field is present and consistent, **When** validation runs, **Then** all known runtime images pass.
 
+---
+
+### User Story 5 - Configure Runtime Images From Backend Definitions (Priority: P2)
+
+Platform operators can curate the runtime images and image-level configurable attributes exposed by Runtime Builder without changing console code.
+
+**Why this priority**: The builder UI should be a generic renderer of platform image metadata. Adding an image, changing exposed image attributes, or adjusting deployment-shape defaults should not require editing React select options or per-image form logic.
+
+**Independent Test**: Can be tested by changing a backend-owned image definition and verifying the builder catalog response and runtime image form reflect the change without frontend code changes.
+
+**Acceptance Scenarios**:
+
+1. **Given** an operator adds or updates a runtime image in the backend-owned catalog source, **When** the builder catalog is loaded, **Then** the image selector reflects the configured image definition.
+2. **Given** a runtime image exposes environment variables or other configurable attributes, **When** the frontend renders the runtime image step, **Then** it renders those attributes from backend metadata rather than hardcoded image-specific UI.
+3. **Given** an image or image attribute is disabled, deprecated, renamed, or removed, **When** saved runtime configurations reference it, **Then** the system reports a clear validation finding and preserves enough metadata for the user to repair the configuration.
+4. **Given** an invalid image definition is configured, **When** the platform starts or the catalog source is loaded, **Then** validation prevents the invalid definition from becoming authoritative for bundle generation.
+
 ### Edge Cases
 
 - The frontend asks for an image slug that no longer exists.
@@ -83,6 +100,10 @@ Operators and contributors can detect incomplete or inconsistent runtime image d
 - Studio requires a companion server image, but the companion image is missing or incompatible.
 - A deployment-affecting field is accidentally kept only in frontend fallback data.
 - Marketing copy changes without changing deployment behavior.
+- A configured image is hidden for new configurations but still referenced by saved configurations.
+- A configurable image attribute is removed or renamed while saved configurations still contain overrides.
+- A configured environment variable is marked secret and must not expose an unsafe default value.
+- Runtime image definitions differ by organization, workspace, license entitlement, or deployment target.
 
 ## Requirements *(mandatory)*
 
@@ -101,6 +122,10 @@ Operators and contributors can detect incomplete or inconsistent runtime image d
 - **FR-011**: Deployment-affecting image defaults MUST NOT remain authoritative only in Lovable after migration is complete.
 - **FR-012**: System SHOULD allow image metadata to be curated without requiring frontend redeployment for deployment-shape changes.
 - **FR-013**: Documentation or marketing fields MAY remain frontend-owned when they do not affect generated deployment output.
+- **FR-014**: The backend runtime image catalog MUST be the source of truth for available runtime images and image-level configurable attributes exposed by Runtime Builder.
+- **FR-015**: Runtime Builder frontend code MUST render image choices and image-level configurable attributes generically from catalog metadata, without hardcoded per-image option lists or deployment-affecting defaults.
+- **FR-016**: Runtime image catalog loading MUST validate configured definitions before they are used by planning or bundle generation.
+- **FR-017**: System MUST define lifecycle behavior for hidden, disabled, deprecated, or removed images and attributes so saved configurations remain diagnosable and repairable.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -109,6 +134,7 @@ Operators and contributors can detect incomplete or inconsistent runtime image d
 - **Runtime Image Deployment Hint**: Metadata that controls how an image participates in generated deployment output, including supported targets and companion image behavior.
 - **Runtime Image Docs**: Optional documentation metadata such as Docker Hub links or container path references.
 - **Frontend Fallback Image Data**: Temporary Lovable-owned image metadata used only during migration when platform metadata is unavailable.
+- **Runtime Image Catalog Source**: Backend-owned source for runtime image definitions. It may start as source-controlled or appsettings-backed metadata, and may later become persisted/admin-managed once product ownership and scoping are defined.
 
 ## Success Criteria *(mandatory)*
 
@@ -120,6 +146,8 @@ Operators and contributors can detect incomplete or inconsistent runtime image d
 - **SC-004**: During migration, Lovable can load image metadata from the platform and still fall back locally when platform metadata is unavailable.
 - **SC-005**: After migration, no deployment-affecting image metadata is authoritative only in the frontend static image file.
 - **SC-006**: Presentation-only metadata can change without altering generated deployment output.
+- **SC-007**: A backend image definition change appears in the builder catalog and runtime image form without editing console source code.
+- **SC-008**: Invalid configured image definitions are rejected before they can affect generated deployment bundles.
 
 ## Assumptions
 
@@ -128,3 +156,11 @@ Operators and contributors can detect incomplete or inconsistent runtime image d
 - The first frontend migration keeps local fallback data to reduce rollout risk.
 - Full runtime image tag discovery can be curated manually at first; automated registry discovery is not required for this feature.
 - Runtime image metadata is required before bundle generation can fully remove frontend deployment defaults.
+- Current code may use static backend seed metadata as an intermediate step, but that is not the long-term operator-configurable catalog source.
+
+## Clarifications Needed
+
+- Should runtime image definitions be global platform settings, organization-scoped, workspace-scoped, or filtered by entitlement while remaining globally authored?
+- Should the first configurable source be appsettings/source-controlled metadata, an operator API, or persisted admin-managed records?
+- Should image tags remain manually curated, or should the platform discover tags from a registry and allow operators to approve them?
+- What lifecycle states are required for images and attributes: active, hidden, deprecated, disabled, removed, or superseded?

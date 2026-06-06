@@ -2,16 +2,29 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppShell } from "@/app/AppShell";
 import { OverviewPage } from "@/app/OverviewPage";
 import { RequestStateView } from "@/components/states/RequestStateViews";
-import { DeploymentsPage } from "@/features/deployments/DeploymentsPage";
-import { DeploymentTiersPage } from "@/features/deployments/DeploymentTiersPage";
-import { ArtifactsPage } from "@/features/artifacts/ArtifactsPage";
+import {
+  DeploymentApplicationEditPage,
+  DeploymentApplicationsPage,
+  DeploymentApplicationPage,
+  DeploymentEnginePage,
+  DeploymentEngineEditPage,
+  DeploymentEngineRegisterPage,
+  DeploymentEnvironmentCreatePage,
+  DeploymentEnvironmentEditPage,
+  DeploymentEnvironmentPage,
+  DeploymentRevisionCreatePage,
+  DeploymentsPage,
+  NewDeploymentSetupPage
+} from "@/features/deployments/DeploymentsPage";
+import { DeploymentTierCreatePage, DeploymentTierEditPage, DeploymentTiersPage } from "@/features/deployments/DeploymentTiersPage";
+import { ArtifactCreatePage, ArtifactDetailsPage, ArtifactsPage } from "@/features/artifacts/ArtifactsPage";
 import { RequireCustomerAuth } from "@/lib/auth/AuthProvider";
 import { NewSourcePage, EditSourcePage } from "@/features/sources/SourceFormPage";
 import { SourceDetailsPage } from "@/features/sources/SourceDetailsPage";
 import { SourcesPage } from "@/features/sources/SourcesPage";
 import { PackageDetailsPage } from "@/features/packages/PackageDetailsPage";
 import { PackagesPage } from "@/features/packages/PackagesPage";
-import { RuntimeBuilderPage } from "@/features/runtime-builder/RuntimeBuilderPage";
+import { EditRuntimeBuilderPage, NewRuntimeBuilderPage, RuntimeBuilderPage } from "@/features/runtime-builder/RuntimeBuilderPage";
 import { SyncRunDetailsPage } from "@/features/sync-runs/SyncRunDetailsPage";
 import { SyncRunsPage } from "@/features/sync-runs/SyncRunsPage";
 
@@ -47,9 +60,26 @@ export const router = createBrowserRouter([
       { path: "sync-runs", element: <SyncRunsPage /> },
       { path: "sync-runs/:runId", element: <SyncRunDetailsPage /> },
       { path: "deployments", element: <RequireCustomerAuth><DeploymentsPage /></RequireCustomerAuth> },
+      { path: "deployments/new", element: <RequireCustomerAuth><NewDeploymentSetupPage /></RequireCustomerAuth> },
+      { path: "deployments/applications", element: <RequireCustomerAuth><DeploymentApplicationsPage /></RequireCustomerAuth> },
+      { path: "deployments/applications/:applicationId", element: <RequireCustomerAuth><DeploymentApplicationPage /></RequireCustomerAuth> },
+      { path: "deployments/applications/:applicationId/edit", element: <RequireCustomerAuth><DeploymentApplicationEditPage /></RequireCustomerAuth> },
+      { path: "deployments/applications/:applicationId/environments/new", element: <RequireCustomerAuth><DeploymentEnvironmentCreatePage /></RequireCustomerAuth> },
+      { path: "deployments/applications/:applicationId/environments/:environmentId", element: <RequireCustomerAuth><DeploymentEnvironmentPage /></RequireCustomerAuth> },
+      { path: "deployments/applications/:applicationId/environments/:environmentId/edit", element: <RequireCustomerAuth><DeploymentEnvironmentEditPage /></RequireCustomerAuth> },
+      { path: "deployments/applications/:applicationId/environments/:environmentId/revisions/new", element: <RequireCustomerAuth><DeploymentRevisionCreatePage /></RequireCustomerAuth> },
+      { path: "deployments/applications/:applicationId/environments/:environmentId/engines/new", element: <RequireCustomerAuth><DeploymentEngineRegisterPage /></RequireCustomerAuth> },
+      { path: "deployments/applications/:applicationId/environments/:environmentId/engines/:engineId", element: <RequireCustomerAuth><DeploymentEnginePage /></RequireCustomerAuth> },
+      { path: "deployments/applications/:applicationId/environments/:environmentId/engines/:engineId/edit", element: <RequireCustomerAuth><DeploymentEngineEditPage /></RequireCustomerAuth> },
       { path: "deployments/tiers", element: <RequireCustomerAuth><DeploymentTiersPage /></RequireCustomerAuth> },
+      { path: "deployments/tiers/new", element: <RequireCustomerAuth><DeploymentTierCreatePage /></RequireCustomerAuth> },
+      { path: "deployments/tiers/:tierId/edit", element: <RequireCustomerAuth><DeploymentTierEditPage /></RequireCustomerAuth> },
       { path: "artifacts", element: <RequireCustomerAuth><ArtifactsPage /></RequireCustomerAuth> },
+      { path: "artifacts/new", element: <RequireCustomerAuth><ArtifactCreatePage /></RequireCustomerAuth> },
+      { path: "artifacts/:artifactId", element: <RequireCustomerAuth><ArtifactDetailsPage /></RequireCustomerAuth> },
       { path: "runtime-builder", element: <RequireCustomerAuth><RuntimeBuilderPage /></RequireCustomerAuth> },
+      { path: "runtime-builder/new", element: <RequireCustomerAuth><NewRuntimeBuilderPage /></RequireCustomerAuth> },
+      { path: "runtime-builder/:configurationId/edit", element: <RequireCustomerAuth><EditRuntimeBuilderPage /></RequireCustomerAuth> },
       { path: "targets", element: <PlaceholderPage title="Targets" /> },
       { path: "runtimes", element: <PlaceholderPage title="Managed Runtimes" /> },
       { path: "operations", element: <PlaceholderPage title="Runtime Operations" /> },

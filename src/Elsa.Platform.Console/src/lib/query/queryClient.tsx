@@ -33,7 +33,8 @@ export const queryKeys = {
   overview: ["overview"] as const,
   workspaceContext: ["workspace-context"] as const,
   runtimeBuilderCatalog: (workspaceId: string) => ["runtime-builder", workspaceId, "catalog"] as const,
-  runtimeConfigurations: (workspaceId: string) => ["runtime-builder", workspaceId, "configurations"] as const
+  runtimeConfigurations: (workspaceId: string) => ["runtime-builder", workspaceId, "configurations"] as const,
+  runtimeConfiguration: (workspaceId: string, configurationId: string) => ["runtime-builder", workspaceId, "configurations", configurationId] as const
 };
 
 export function QueryProvider({ children }: { children: ReactNode }) {

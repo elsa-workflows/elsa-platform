@@ -17,7 +17,7 @@
       "id": "email",
       "typeName": "Elsa.Email.EmailFeature",
       "displayName": "Email",
-      "category": "Communication",
+      "categories": [ "Communication", "Messaging" ],
       "compatibility": {
         "runtimeKinds": [ "elsa.server" ]
       },

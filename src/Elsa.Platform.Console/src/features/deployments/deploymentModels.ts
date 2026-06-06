@@ -215,7 +215,8 @@ export type DesiredStateRecordKind =
   | "RuntimeConfiguration"
   | "SecretReference"
   | "ObservabilityBinding"
-  | "EngineBinding";
+  | "EngineBinding"
+  | "ArtifactReference";
 
 export type WorkspaceDesiredStateRecordRequest = {
   kind: DesiredStateRecordKind;
@@ -246,6 +247,17 @@ export type PromotionPreviewRequest = {
   targetEnvironmentId: string;
   sourceRevisionId: string;
   targetEngineId: string;
+};
+
+export type PromotionRequest = PromotionPreviewRequest & {
+  label: string;
+  commit: string | null;
+};
+
+export type PromotionResult = {
+  sourceRevision: WorkspaceDesiredStateRevision;
+  targetRevision: WorkspaceDesiredStateRevision;
+  comparison: PromotionComparison;
 };
 
 export type ConfirmationActionType = "Deploy" | "Rollback" | "RuntimeControl";

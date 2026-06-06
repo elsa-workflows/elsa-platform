@@ -71,6 +71,7 @@ public sealed class ManifestValidator
             Required(feature.Id, $"$.features[{i}].id", "feature.id.required", "Feature ID is required.", errors);
             Required(feature.TypeName, $"$.features[{i}].typeName", "feature.typeName.required", "Feature CLR type name is required.", errors);
             Required(feature.DisplayName, $"$.features[{i}].displayName", "feature.displayName.required", "Feature display name is required.", errors);
+            ValidateCategories(feature.Categories, $"$.features[{i}].categories", errors);
             ValidateRuntimeKinds(feature.Compatibility?.RuntimeKinds, $"$.features[{i}].compatibility.runtimeKinds", errors);
 
             if (feature.Infrastructure is null)
@@ -107,6 +108,29 @@ public sealed class ManifestValidator
     {
         if (!string.IsNullOrWhiteSpace(value) && !SimpleVersionRangePattern.IsMatch(value))
             errors.Add(new ManifestValidationFinding(path, "versionRange.invalid", "Version range contains unsupported characters.", ManifestValidationSeverity.Error));
+    }
+
+    private static void ValidateCategories(IReadOnlyList<string>? categories, string path, ICollection<ManifestValidationFinding> errors)
+    {
+        if (categories is null)
+        {
+            errors.Add(new ManifestValidationFinding(path, "feature.categories.invalid", "Feature categories must be an array.", ManifestValidationSeverity.Error));
+            return;
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var categoryIndex = 0; categoryIndex < categories.Count; categoryIndex++)
+        {
+            var category = categories[categoryIndex];
+            if (string.IsNullOrWhiteSpace(category))
+            {
+                errors.Add(new ManifestValidationFinding($"{path}[{categoryIndex}]", "feature.category.required", "Feature category cannot be empty.", ManifestValidationSeverity.Error));
+                continue;
+            }
+
+            if (!seen.Add(category.Trim()))
+                errors.Add(new ManifestValidationFinding($"{path}[{categoryIndex}]", "feature.category.duplicate", "Feature categories must be unique.", ManifestValidationSeverity.Error));
+        }
     }
 
     private static void ValidateRuntimeKinds(IReadOnlyList<string>? runtimeKinds, string path, ICollection<ManifestValidationFinding> errors)

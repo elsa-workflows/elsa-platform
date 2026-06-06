@@ -155,6 +155,7 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
     private static PublicPackageVersionProjection ToVersionProjection(PackageVersion version)
     {
         var compatibility = ResolveRuntimeCompatibility(version);
+        var featureCategories = GetFeatureCategories(version.ManifestJson);
         return new(
             version.Package?.PackageId ?? "",
             version.Version,
@@ -162,10 +163,20 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
             version.SchemaVersion,
             compatibility.PackageRuntimeKinds,
             version.PublishedAt,
-            version.Features.Select(feature => ToFeatureProjection(feature, version, compatibility)).ToList());
+            version.Features.Select(feature => ToFeatureProjection(feature, version, compatibility, featureCategories)).ToList());
     }
 
-    private static PublicFeatureProjection ToFeatureProjection(Core.Manifests.FeatureRecord feature, PackageVersion version, RuntimeCompatibility compatibility) =>
+    private static PublicFeatureProjection ToFeatureProjection(
+        Core.Manifests.FeatureRecord feature,
+        PackageVersion version,
+        RuntimeCompatibility compatibility,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> featureCategories)
+    {
+        var categories = featureCategories.TryGetValue(feature.FeatureId, out var values)
+            ? values
+            : string.IsNullOrWhiteSpace(feature.Category) ? [] : [feature.Category];
+
+        return
         new(
             feature.FeatureId,
             version.Package?.PackageId ?? "",
@@ -174,9 +185,10 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
             feature.TypeName,
             feature.DisplayName,
             feature.Description,
-            feature.Category,
-            RuntimeKindsForFeature(feature.FeatureId, compatibility),
+            categories.FirstOrDefault(),
+            categories,
             DeserializeList<string>(feature.RequiredCapabilitiesJson),
+            RuntimeKindsForFeature(feature.FeatureId, compatibility),
             DeserializeList<DependencyManifest>(feature.DependenciesJson)
                 .Select(x => new PublicDependencyProjection(x.PackageId, x.VersionRange, x.FeatureId, x.Optional, x.Reason))
                 .ToList(),
@@ -214,6 +226,36 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
                     setting.UiJson,
                     setting.ExtensionsJson))
                 .ToList());
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> GetFeatureCategories(string manifestJson)
+    {
+        try
+        {
+            var manifest = JsonSerializer.Deserialize<ElsaPackageManifest>(manifestJson, ManifestJsonSerializerOptions.Default);
+            return manifest?.Features.ToDictionary(
+                feature => feature.Id,
+                EffectiveCategories,
+                StringComparer.OrdinalIgnoreCase) ?? new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
+        {
+            return new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private static IReadOnlyList<string> EffectiveCategories(FeatureManifest feature)
+    {
+        var categories = (feature.Categories ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return categories.Length > 0
+            ? categories
+            : string.IsNullOrWhiteSpace(feature.Category) ? [] : [feature.Category.Trim()];
+    }
 
     private static RuntimeCompatibility ResolveRuntimeCompatibility(PackageVersion version)
     {
@@ -227,11 +269,11 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
             // Invalid manifests are filtered out before projection. Fall back defensively for older data.
         }
 
-        var packageRuntimeKinds = RuntimeKindCompatibilityPolicy.ResolvePackageRuntimeKinds(manifest);
+        var packageRuntimeKinds = Elsa.Platform.PackageCatalog.Core.Compatibility.RuntimeKindCompatibilityPolicy.ResolvePackageRuntimeKinds(manifest);
         var featureRuntimeKinds = (manifest?.Features ?? [])
             .ToDictionary(
                 feature => feature.Id,
-                feature => RuntimeKindCompatibilityPolicy.ResolveFeatureRuntimeKinds(feature, packageRuntimeKinds),
+                feature => Elsa.Platform.PackageCatalog.Core.Compatibility.RuntimeKindCompatibilityPolicy.ResolveFeatureRuntimeKinds(feature, packageRuntimeKinds),
                 StringComparer.OrdinalIgnoreCase);
 
         return new RuntimeCompatibility(packageRuntimeKinds, featureRuntimeKinds);

@@ -24,7 +24,7 @@ public sealed class ManifestIngestionService
                 TypeName = feature.TypeName,
                 DisplayName = feature.DisplayName,
                 Description = feature.Description,
-                Category = feature.Category,
+                Category = EffectiveCategories(feature).FirstOrDefault(),
                 Advanced = feature.Advanced,
                 Experimental = feature.Experimental,
                 RequiredCapabilitiesJson = JsonSerializer.Serialize(feature.RequiredCapabilities),
@@ -73,6 +73,19 @@ public sealed class ManifestIngestionService
             merged[item.Key] = item.Value;
 
         return JsonSerializer.Serialize(merged, ManifestJsonSerializerOptions.Default);
+    }
+
+    private static IReadOnlyList<string> EffectiveCategories(FeatureManifest feature)
+    {
+        var categories = (feature.Categories ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return categories.Length > 0
+            ? categories
+            : string.IsNullOrWhiteSpace(feature.Category) ? [] : [feature.Category.Trim()];
     }
 }
 
