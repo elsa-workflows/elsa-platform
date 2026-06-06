@@ -156,12 +156,19 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
     {
         var compatibility = ResolveRuntimeCompatibility(version);
         var featureCategories = GetFeatureCategories(version.ManifestJson);
+        var versionRuntimeKinds = compatibility.PackageRuntimeKinds.Count > 0
+            ? compatibility.PackageRuntimeKinds
+            : compatibility.FeatureRuntimeKinds.Values
+                .SelectMany(x => x)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToList();
         return new(
             version.Package?.PackageId ?? "",
             version.Version,
             ToSourceProjection(version.Package),
             version.SchemaVersion,
-            compatibility.PackageRuntimeKinds,
+            versionRuntimeKinds,
             version.PublishedAt,
             version.Features.Select(feature => ToFeatureProjection(feature, version, compatibility, featureCategories)).ToList());
     }

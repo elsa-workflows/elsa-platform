@@ -87,7 +87,7 @@ public sealed class PublicBuilderApiTests
         catalog.Images.Single(x => x.Slug == "elsa-pro-combined").RuntimeKinds.Should().BeEquivalentTo("elsa.server", "elsa.studio");
         var features = catalog.Packages.Single(x => x.PackageId == "Elsa.RuntimeKinds").Versions.Single().Features;
         features.Single(x => x.FeatureId == "server-default").RuntimeKinds.Should().BeEquivalentTo("elsa.server");
-        features.Should().NotContain(x => x.FeatureId == "studio-override");
+        features.Single(x => x.FeatureId == "studio-override").RuntimeKinds.Should().BeEquivalentTo("elsa.studio");
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public sealed class PublicBuilderApiTests
     }
 
     [Fact]
-    public async Task Get_builder_catalog_filters_to_elsa_server_runtime_kind()
+    public async Task Get_builder_catalog_returns_all_runtime_kind_features_for_client_side_image_filtering()
     {
         await using var app = new PlatformApiTestApplication();
         await app.SeedAsync(db =>
@@ -147,8 +147,8 @@ public sealed class PublicBuilderApiTests
 
         catalog!.Packages.Should().Contain(x => x.PackageId == "Elsa.ServerOnly");
         catalog.Packages.Should().Contain(x => x.PackageId == "Elsa.Mixed");
-        catalog.Packages.Should().NotContain(x => x.PackageId == "Elsa.StudioOnly");
-        catalog.Packages.Single(x => x.PackageId == "Elsa.Mixed").Versions.Single().Features.Should().ContainSingle(x => x.FeatureId == "server");
+        catalog.Packages.Should().Contain(x => x.PackageId == "Elsa.StudioOnly");
+        catalog.Packages.Single(x => x.PackageId == "Elsa.Mixed").Versions.Single().Features.Select(x => x.FeatureId).Should().BeEquivalentTo("server", "studio");
     }
 
     [Fact]

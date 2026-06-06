@@ -113,16 +113,41 @@ public sealed class BuilderBundleGenerationTests
     }
 
     [Fact]
-    public async Task Studio_only_package_returns_runtime_kind_mismatch_and_no_files()
+    public async Task Studio_only_package_on_server_image_returns_runtime_kind_mismatch_and_no_files()
     {
         var source = PublicCatalogSeedData.CreatePackageSource();
-        var service = CreateService(new FakePublicCatalogQueries(CreatePackageProjection(source, runtimeKinds: ["elsa.studio"])), [CreatePackageVersion(source)], null);
+        var service = CreateService(new FakePublicCatalogQueries(CreatePackageProjection(source, runtimeKinds: ["elsa.studio"])), [CreatePackageVersion(source, ["elsa.studio"])], null);
 
-        var result = await service.GenerateAsync(new BuilderBundleFixtureBuilder().WithPackage(source, "Elsa.Email", features: ["email"]).Build());
+        var result = await service.GenerateAsync(new BuilderBundleFixtureBuilder()
+            .WithImage("elsa-pro-server")
+            .WithPackage(source, "Elsa.Email", features: ["email"])
+            .Build());
 
         result.Files.Should().BeEmpty();
         result.Findings.Should().Contain(x => x.Code == "package.runtimeKindMismatch" && x.Level == "error");
     }
+
+    [Fact]
+    public async Task Studio_only_package_on_combined_image_generates_files()
+    {
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var service = CreateService(new FakePublicCatalogQueries(CreatePackageProjection(source, runtimeKinds: ["elsa.studio"])), [CreatePackageVersion(source, ["elsa.studio"])], null);
+
+        var result = await service.GenerateAsync(new BuilderBundleFixtureBuilder()
+            .WithImage("elsa-pro-combined")
+            .WithPackage(source, "Elsa.Email", features: ["email"])
+            .Build());
+        var runtimeKindFindingCodes = new[]
+        {
+            "package.runtimeKindMismatch",
+            "feature.runtimeKindMismatch",
+            "feature.runtimeKindUnsupported"
+        };
+
+        result.Files.Should().NotBeEmpty();
+        result.Findings.Should().NotContain(x => runtimeKindFindingCodes.Contains(x.Code));
+    }
+
     [Fact]
     public async Task Required_missing_setting_returns_files_with_placeholder_warning()
     {
@@ -308,17 +333,19 @@ public sealed class BuilderBundleGenerationTests
         return new PublicPackageProjection("Elsa.Email", "Email", sourceProjection, runtimeKinds, "1.0.0", [version]);
     }
 
-    private static PackageVersion CreatePackageVersion(PackageSource source)
+    private static PackageVersion CreatePackageVersion(PackageSource source, IReadOnlyList<string>? runtimeKinds = null)
     {
+        runtimeKinds ??= ["elsa.server"];
+        var runtimeKindJson = string.Join(", ", runtimeKinds.Select(x => $"\"{x}\""));
         var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Email");
         var version = PublicCatalogSeedData.AddVersion(package);
-        version.ManifestJson = """
+        version.ManifestJson = $$"""
         {
           "schemaVersion": "1.0",
           "package": { "id": "Elsa.Email", "version": "1.0.0" },
           "displayName": "Email",
           "features": [
-            { "id": "email", "typeName": "Elsa.Email.EmailFeature", "displayName": "Email", "compatibility": { "runtimeKinds": ["elsa.server"] } }
+            { "id": "email", "typeName": "Elsa.Email.EmailFeature", "displayName": "Email", "compatibility": { "runtimeKinds": [{{runtimeKindJson}}] } }
           ]
         }
         """;
