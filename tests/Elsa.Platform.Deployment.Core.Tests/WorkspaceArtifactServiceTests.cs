@@ -238,8 +238,11 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
         public Dictionary<Guid, WorkspaceArtifact> Artifacts { get; } = [];
         public List<RegisterWorkspaceArtifactRequest> RegisteredRequests { get; } = [];
 
-        public Task<IReadOnlyList<WorkspaceArtifact>> ListArtifactsAsync(Guid workspaceId, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<WorkspaceArtifact>>(Artifacts.Values.Where(x => x.WorkspaceId == workspaceId).ToList());
+        public Task<IReadOnlyList<WorkspaceArtifact>> ListArtifactsAsync(Guid workspaceId, bool includeArchived = false, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<WorkspaceArtifact>>(Artifacts.Values
+                .Where(x => x.WorkspaceId == workspaceId)
+                .Where(x => includeArchived || x.Status == WorkspaceArtifactLifecycleStatus.Active)
+                .ToList());
 
         public Task<WorkspaceArtifact?> GetArtifactAsync(Guid workspaceId, Guid artifactRecordId, CancellationToken cancellationToken = default) =>
             Task.FromResult(Artifacts.TryGetValue(artifactRecordId, out var artifact) && artifact.WorkspaceId == workspaceId ? artifact : null);
@@ -252,6 +255,41 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
             RegisteredRequests.Add(request);
             var artifact = Artifact(workspaceId, request);
             Artifacts.Add(artifact.Id, artifact);
+            return Task.FromResult(artifact);
+        }
+
+        public Task<WorkspaceArtifact> ArchiveArtifactAsync(Guid workspaceId, Guid artifactRecordId, Guid actorAccountId, CancellationToken cancellationToken = default)
+        {
+            var artifact = GetExistingArtifact(workspaceId, artifactRecordId);
+            if (artifact.Status == WorkspaceArtifactLifecycleStatus.Archived)
+                return Task.FromResult(artifact);
+
+            var now = DateTimeOffset.UtcNow;
+            artifact = artifact with
+            {
+                Status = WorkspaceArtifactLifecycleStatus.Archived,
+                ArchivedAt = now,
+                ArchivedByAccountId = actorAccountId,
+                UpdatedAt = now
+            };
+            Artifacts[artifact.Id] = artifact;
+            return Task.FromResult(artifact);
+        }
+
+        public Task<WorkspaceArtifact> RestoreArtifactAsync(Guid workspaceId, Guid artifactRecordId, CancellationToken cancellationToken = default)
+        {
+            var artifact = GetExistingArtifact(workspaceId, artifactRecordId);
+            if (artifact.Status == WorkspaceArtifactLifecycleStatus.Active)
+                return Task.FromResult(artifact);
+
+            artifact = artifact with
+            {
+                Status = WorkspaceArtifactLifecycleStatus.Active,
+                ArchivedAt = null,
+                ArchivedByAccountId = null,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+            Artifacts[artifact.Id] = artifact;
             return Task.FromResult(artifact);
         }
 
@@ -307,6 +345,13 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
                 request.Producer,
                 request.DisplayMetadata,
                 request.CompatibilityHints);
+
+        private WorkspaceArtifact GetExistingArtifact(Guid workspaceId, Guid artifactRecordId)
+        {
+            if (!Artifacts.TryGetValue(artifactRecordId, out var artifact) || artifact.WorkspaceId != workspaceId)
+                throw new KeyNotFoundException("Artifact does not exist in the workspace.");
+            return artifact;
+        }
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
