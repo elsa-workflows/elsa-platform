@@ -85,7 +85,7 @@ export function PromotionPreviewPanel({
   const previewBlocked = readinessIssues.some((issue) => issue.severity === "Blocker");
   const sourceApplication = data.applications.find((application) => application.environments.some((environment) => environment.id === sourceEnvironmentId));
   const observabilityRevisionPath = sourceApplication
-    ? `/admin/deployments/applications/${encodeURIComponent(sourceApplication.id)}/environments/${encodeURIComponent(sourceEnvironmentId)}/revisions/new?includeObservability=1`
+    ? `/admin/deployments/applications/${encodeURIComponent(sourceApplication.id)}/environments/${encodeURIComponent(sourceEnvironmentId)}/revisions/new?includeRequirement=observability-binding`
     : undefined;
 
   return (

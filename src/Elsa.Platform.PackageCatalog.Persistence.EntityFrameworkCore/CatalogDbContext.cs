@@ -35,6 +35,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.DeploymentTierCapabilityAssignmentEntity> DeploymentTierCapabilityAssignments => Set<Models.DeploymentTierCapabilityAssignmentEntity>();
     internal DbSet<Models.DeploymentTierChangeRecordEntity> DeploymentTierChangeRecords => Set<Models.DeploymentTierChangeRecordEntity>();
     internal DbSet<Models.WorkflowEngineEntity> WorkflowEngines => Set<Models.WorkflowEngineEntity>();
+    internal DbSet<Models.DeploymentSecretStoreEntity> DeploymentSecretStores => Set<Models.DeploymentSecretStoreEntity>();
+    internal DbSet<Models.DeploymentCredentialReferenceEntity> DeploymentCredentialReferences => Set<Models.DeploymentCredentialReferenceEntity>();
     internal DbSet<Models.WorkspaceDeploymentArtifactEntity> WorkspaceDeploymentArtifacts => Set<Models.WorkspaceDeploymentArtifactEntity>();
     internal DbSet<Models.WorkspaceArtifactUploadSessionEntity> WorkspaceArtifactUploadSessions => Set<Models.WorkspaceArtifactUploadSessionEntity>();
     internal DbSet<Models.EngineCapabilityEntity> EngineCapabilities => Set<Models.EngineCapabilityEntity>();
@@ -51,6 +53,12 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.DeploymentCommandWebhookNotificationEntity> DeploymentCommandWebhookNotifications => Set<Models.DeploymentCommandWebhookNotificationEntity>();
     internal DbSet<Models.ObservabilityBindingEntity> ObservabilityBindings => Set<Models.ObservabilityBindingEntity>();
     internal DbSet<Models.DriftReportItemEntity> DriftReportItems => Set<Models.DriftReportItemEntity>();
+    internal DbSet<Models.WeaverSessionEntity> WeaverSessions => Set<Models.WeaverSessionEntity>();
+    internal DbSet<Models.WeaverMessageEntity> WeaverMessages => Set<Models.WeaverMessageEntity>();
+    internal DbSet<Models.WeaverToolCallEntity> WeaverToolCalls => Set<Models.WeaverToolCallEntity>();
+    internal DbSet<Models.WeaverPlanEntity> WeaverPlans => Set<Models.WeaverPlanEntity>();
+    internal DbSet<Models.WeaverPlanApprovalEntity> WeaverPlanApprovals => Set<Models.WeaverPlanApprovalEntity>();
+    internal DbSet<Models.WeaverPlanExecutionEntity> WeaverPlanExecutions => Set<Models.WeaverPlanExecutionEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -80,6 +88,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.DeploymentTierCapabilityAssignmentConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DeploymentTierChangeRecordConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WorkflowEngineConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentSecretStoreConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.DeploymentCredentialReferenceConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WorkspaceDeploymentArtifactConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WorkspaceArtifactUploadSessionConfiguration());
         modelBuilder.ApplyConfiguration(new Models.EngineCapabilityConfiguration());
@@ -96,6 +106,12 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.DeploymentCommandWebhookNotificationConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ObservabilityBindingConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DriftReportItemConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.WeaverSessionConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.WeaverMessageConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.WeaverToolCallConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.WeaverPlanConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.WeaverPlanApprovalConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.WeaverPlanExecutionConfiguration());
     }
 
     public override int SaveChanges()

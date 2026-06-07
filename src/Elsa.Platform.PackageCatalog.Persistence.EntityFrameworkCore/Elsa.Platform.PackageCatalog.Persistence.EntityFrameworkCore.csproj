@@ -4,6 +4,7 @@
     <ProjectReference Include="..\Elsa.Platform.PackageCatalog.Core\Elsa.Platform.PackageCatalog.Core.csproj" />
     <ProjectReference Include="..\Elsa.Platform.PackageManifests\Elsa.Platform.PackageManifests.csproj" />
     <ProjectReference Include="..\Elsa.Platform.RuntimeBuilder.Abstractions\Elsa.Platform.RuntimeBuilder.Abstractions.csproj" />
+    <ProjectReference Include="..\Elsa.Platform.Weaver.Core\Elsa.Platform.Weaver.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

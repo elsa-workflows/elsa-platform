@@ -46,7 +46,47 @@ public sealed record WorkspaceWorkflowEngine(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     DateTimeOffset? LastVerificationAt = null,
-    string VerificationMessage = "");
+    string VerificationMessage = "",
+    Guid? CredentialReferenceId = null);
+
+public enum DeploymentSecretStoreStatus
+{
+    Active,
+    Archived
+}
+
+public sealed record WorkspaceDeploymentSecretStore(
+    Guid Id,
+    Guid WorkspaceId,
+    string Name,
+    string Provider,
+    string? Description,
+    DeploymentSecretStoreStatus Status,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    Guid? CreatedByAccountId,
+    Guid? UpdatedByAccountId,
+    DateTimeOffset? ArchivedAt,
+    Guid? ArchivedByAccountId);
+
+public sealed record WorkspaceDeploymentCredentialReference(
+    Guid Id,
+    Guid WorkspaceId,
+    Guid SecretStoreId,
+    string SecretStoreName,
+    string SecretStoreProvider,
+    string Name,
+    string Reference,
+    string? Description,
+    DeploymentSecretStoreStatus Status,
+    CredentialVerificationStatus VerificationStatus,
+    DateTimeOffset? LastVerifiedAt,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    Guid? CreatedByAccountId,
+    Guid? UpdatedByAccountId,
+    DateTimeOffset? ArchivedAt,
+    Guid? ArchivedByAccountId);
 
 public sealed record WorkspaceEngineCapability(
     Guid Id,
@@ -117,6 +157,23 @@ public sealed record WorkspaceDesiredStateRevisionRunSummary(
     DateTimeOffset? CompletedAt,
     string? FailureMessage);
 
+public enum DesiredStateRequirementApplicability
+{
+    CurrentTier,
+    ContextualFix,
+    Optional
+}
+
+public sealed record DesiredStateRequirement(
+    string Id,
+    string? CapabilityId,
+    string RecordKind,
+    string Label,
+    string Description,
+    string ValidationId,
+    bool Required,
+    DesiredStateRequirementApplicability Applicability);
+
 public sealed record WorkspacePromotionPreviewRequest(
     Guid SourceEnvironmentId,
     Guid TargetEnvironmentId,
@@ -150,11 +207,12 @@ public sealed record RegisterWorkflowEngineRequest(
     string Name,
     string BaseUrl,
     string? Region,
-    string CredentialProvider,
-    string CredentialReference,
+    string? CredentialProvider,
+    string? CredentialReference,
     IReadOnlyList<EngineCapability> Capabilities,
     IReadOnlyList<RuntimeControl> Controls,
-    string? HostingProvider);
+    string? HostingProvider,
+    Guid? CredentialReferenceId = null);
 
 public sealed record UpdateWorkflowEngineRequest(
     string Name,
@@ -165,6 +223,31 @@ public sealed record UpdateWorkflowEngineRequest(
     IReadOnlyList<EngineCapability> Capabilities,
     IReadOnlyList<RuntimeControl> Controls,
     string? HostingProvider);
+
+public sealed record CreateDeploymentSecretStoreRequest(
+    string Name,
+    string Provider,
+    string? Description,
+    Guid? ActorAccountId);
+
+public sealed record UpdateDeploymentSecretStoreRequest(
+    string Name,
+    string Provider,
+    string? Description,
+    Guid? ActorAccountId);
+
+public sealed record CreateDeploymentCredentialReferenceRequest(
+    Guid SecretStoreId,
+    string Name,
+    string Reference,
+    string? Description,
+    Guid? ActorAccountId);
+
+public sealed record UpdateDeploymentCredentialReferenceRequest(
+    string Name,
+    string Reference,
+    string? Description,
+    Guid? ActorAccountId);
 
 public sealed record CreateDesiredStateRevisionRequest(
     Guid ApplicationId,

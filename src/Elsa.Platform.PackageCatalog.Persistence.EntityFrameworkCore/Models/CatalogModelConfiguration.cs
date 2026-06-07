@@ -384,6 +384,45 @@ internal sealed class WorkflowEngineConfiguration : IEntityTypeConfiguration<Wor
         builder.HasIndex(x => new { x.WorkspaceId, x.EnvironmentId, x.Name }).IsUnique();
         builder.HasMany(x => x.Capabilities).WithOne(x => x.Engine).HasForeignKey(x => x.EngineId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.Controls).WithOne(x => x.Engine).HasForeignKey(x => x.EngineId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(x => x.CredentialReferenceMetadata).WithMany(x => x.Engines).HasForeignKey(x => x.CredentialReferenceId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasIndex(x => new { x.WorkspaceId, x.CredentialReferenceId });
+    }
+}
+
+internal sealed class DeploymentSecretStoreConfiguration : IEntityTypeConfiguration<DeploymentSecretStoreEntity>
+{
+    public void Configure(EntityTypeBuilder<DeploymentSecretStoreEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Provider).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Description).HasMaxLength(1000);
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.ArchivedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.HasIndex(x => new { x.WorkspaceId, x.Status, x.Name });
+        builder.HasOne<Workspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.CredentialReferences).WithOne(x => x.SecretStore).HasForeignKey(x => x.SecretStoreId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class DeploymentCredentialReferenceConfiguration : IEntityTypeConfiguration<DeploymentCredentialReferenceEntity>
+{
+    public void Configure(EntityTypeBuilder<DeploymentCredentialReferenceEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Reference).HasMaxLength(1024).IsRequired();
+        builder.Property(x => x.Description).HasMaxLength(1000);
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(x => x.VerificationStatus).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(x => x.LastVerifiedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.ArchivedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.HasIndex(x => new { x.SecretStoreId, x.Status, x.Name });
+        builder.HasIndex(x => new { x.WorkspaceId, x.Status });
     }
 }
 

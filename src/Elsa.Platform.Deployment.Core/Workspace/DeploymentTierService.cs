@@ -4,6 +4,10 @@ namespace Elsa.Platform.Deployment.Core.Workspace;
 
 public sealed class DeploymentTierService(IWorkspaceDeploymentTierStore? store = null)
 {
+    public const string ObservabilityBindingRequirementId = "observability-binding";
+    public const string ObservabilityBindingRecordKind = "ObservabilityBinding";
+    public const string ObservabilityRequiredValidationId = "deployment.tier.observability-required";
+
     public static IReadOnlyList<DeploymentTierCapability> CapabilityCatalog { get; } =
     [
         new(DeploymentTierCapabilities.DevelopmentLike, "Development-like", "Marks environments as development-grade deployment contexts.", DeploymentTierCapabilityCategory.Classification),
@@ -151,6 +155,26 @@ public sealed class DeploymentTierService(IWorkspaceDeploymentTierStore? store =
         environment.TierCapabilities is { Count: > 0 }
             ? environment.TierCapabilities
             : DefaultCapabilitiesByLegacyTier[environment.Tier];
+
+    public static IReadOnlyList<DesiredStateRequirement> DesiredStateRequirementsFor(EnvironmentSummary environment)
+    {
+        var requirements = new List<DesiredStateRequirement>();
+        if (RequiresObservability(environment))
+            requirements.Add(ObservabilityRequirement(DesiredStateRequirementApplicability.CurrentTier, required: true));
+
+        return requirements;
+    }
+
+    public static DesiredStateRequirement ObservabilityRequirement(DesiredStateRequirementApplicability applicability, bool required) =>
+        new(
+            ObservabilityBindingRequirementId,
+            DeploymentTierCapabilities.ObservabilityRequired,
+            ObservabilityBindingRecordKind,
+            "Observability binding",
+            "Requires at least one logs, metrics, traces, or console telemetry binding.",
+            ObservabilityRequiredValidationId,
+            required,
+            applicability);
 
     public static IReadOnlyList<string> ChangedSafeguards(
         IReadOnlyCollection<string> addedCapabilities,

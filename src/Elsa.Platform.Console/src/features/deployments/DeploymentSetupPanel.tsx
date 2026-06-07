@@ -7,13 +7,14 @@ export type DeploymentSetupValues = {
   environmentName: string;
   environmentTier: EnvironmentSummary["tier"];
   environmentTierId: string;
-} & EngineRegistrationValues;
+};
 
 export type EngineRegistrationValues = {
   engineName: string;
   baseUrl: string;
-  credentialProvider: string;
-  credentialReference: string;
+  credentialReferenceId?: string | null;
+  credentialProvider?: string | null;
+  credentialReference?: string | null;
 };
 
 export type CredentialReferenceOption = {
@@ -27,7 +28,6 @@ export function DeploymentSetupPanel({
   canManageSetup,
   tiers,
   tiersLoading = false,
-  credentialOptions = [],
   isSubmitting,
   error,
   submitLabel = "Create setup",
@@ -37,7 +37,6 @@ export function DeploymentSetupPanel({
   canManageSetup: boolean;
   tiers: WorkspaceDeploymentTier[];
   tiersLoading?: boolean;
-  credentialOptions?: CredentialReferenceOption[];
   isSubmitting: boolean;
   error?: string;
   submitLabel?: string;
@@ -49,11 +48,7 @@ export function DeploymentSetupPanel({
     applicationName: fixedApplicationName ?? "",
     environmentName: "Prod",
     environmentTier: "Production",
-    environmentTierId: "",
-    engineName: "",
-    baseUrl: "",
-    credentialProvider: credentialOptions[0]?.provider ?? "External secret store",
-    credentialReference: ""
+    environmentTierId: ""
   });
   useEffect(() => {
     if (!fixedApplicationName) return;
@@ -71,20 +66,11 @@ export function DeploymentSetupPanel({
     }));
   }, [tierOptions, values.environmentTierId]);
 
-  useEffect(() => {
-    if (values.credentialProvider.trim().length > 0 || credentialOptions.length === 0) return;
-    setValues((current) => ({ ...current, credentialProvider: credentialOptions[0].provider }));
-  }, [credentialOptions, values.credentialProvider]);
-
   const canSubmit =
     canManageSetup &&
     values.environmentTierId.length > 0 &&
     values.applicationName.trim().length > 0 &&
-    values.environmentName.trim().length > 0 &&
-    values.engineName.trim().length > 0 &&
-    values.baseUrl.trim().length > 0 &&
-    values.credentialProvider.trim().length > 0 &&
-    values.credentialReference.trim().length > 0;
+    values.environmentName.trim().length > 0;
 
   return (
     <form
@@ -130,34 +116,6 @@ export function DeploymentSetupPanel({
             ))}
           </Select>
         </label>
-        <label className="text-sm font-medium">
-          Engine
-          <Input className="mt-1" value={values.engineName} onChange={(event) => setValues((current) => ({ ...current, engineName: event.target.value }))} />
-        </label>
-        <label className="text-sm font-medium">
-          Base URL
-          <Input className="mt-1" value={values.baseUrl} onChange={(event) => setValues((current) => ({ ...current, baseUrl: event.target.value }))} />
-        </label>
-        <label className="text-sm font-medium">
-          Credential provider
-          <Input className="mt-1" value={values.credentialProvider} onChange={(event) => setValues((current) => ({ ...current, credentialProvider: event.target.value }))} />
-        </label>
-        <label className="text-sm font-medium">
-          Credential reference
-          <CredentialReferenceInput
-            className="mt-1"
-            value={values.credentialReference}
-            options={credentialOptions}
-            onChange={(reference) => {
-              const option = credentialOptions.find((item) => item.reference === reference);
-              setValues((current) => ({
-                ...current,
-                credentialProvider: option?.provider ?? current.credentialProvider,
-                credentialReference: reference
-              }));
-            }}
-          />
-        </label>
       </div>
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
       {!canManageSetup ? <p className="mt-3 text-sm text-muted-foreground">Deployment setup permission is required.</p> : null}
@@ -177,17 +135,14 @@ function legacyTierFromName(name?: string): EnvironmentSummary["tier"] {
   return "Production";
 }
 
-export function setupEngineRequest(values: DeploymentSetupValues): RegisterDeploymentEngineRequest {
-  return engineRegistrationRequest(values);
-}
-
 export function engineRegistrationRequest(values: EngineRegistrationValues): RegisterDeploymentEngineRequest {
   return {
     name: values.engineName,
     baseUrl: values.baseUrl,
     region: null,
-    credentialProvider: values.credentialProvider,
-    credentialReference: values.credentialReference,
+    credentialProvider: values.credentialProvider ?? null,
+    credentialReference: values.credentialReference ?? null,
+    credentialReferenceId: values.credentialReferenceId ?? null,
     capabilities: [{ id: "engine.reload-configuration", label: "Reload engine configuration", boundary: "EngineApi" }],
     controls: [
       {

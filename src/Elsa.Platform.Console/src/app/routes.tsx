@@ -29,6 +29,7 @@ import { PackagesPage } from "@/features/packages/PackagesPage";
 import { EditRuntimeBuilderPage, NewRuntimeBuilderPage, RuntimeBuilderPage } from "@/features/runtime-builder/RuntimeBuilderPage";
 import { SyncRunDetailsPage } from "@/features/sync-runs/SyncRunDetailsPage";
 import { SyncRunsPage } from "@/features/sync-runs/SyncRunsPage";
+import { WeaverSessionPage } from "@/features/weaver/WeaverSessionPage";
 
 function PlaceholderPage({ title }: { title: string }) {
   return (
@@ -87,6 +88,7 @@ export const router = createBrowserRouter([
       { path: "targets", element: <PlaceholderPage title="Targets" /> },
       { path: "runtimes", element: <PlaceholderPage title="Managed Runtimes" /> },
       { path: "operations", element: <PlaceholderPage title="Runtime Operations" /> },
+      { path: "weaver/sessions/:sessionId", element: <RequireCustomerAuth><WeaverSessionPage /></RequireCustomerAuth> },
       { path: "audit", element: <PlaceholderPage title="Audit" /> }
     ]
   }

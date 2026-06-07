@@ -31,13 +31,18 @@ export const queryKeys = {
   deploymentApplicationRevisions: (workspaceId: string, applicationId: string) => ["deployments", workspaceId, "applications", applicationId, "revisions"] as const,
   deploymentRevision: (workspaceId: string, revisionId: string) => ["deployments", workspaceId, "revisions", revisionId] as const,
   deploymentRevisionDeployability: (workspaceId: string, revisionId: string, engineId: string) => ["deployments", workspaceId, "revisions", revisionId, "deployability", engineId] as const,
+  deploymentDesiredStateRequirements: (workspaceId: string, environmentId: string) => ["deployments", workspaceId, "environments", environmentId, "desired-state-requirements"] as const,
+  deploymentSecretStores: (workspaceId: string) => ["deployments", workspaceId, "secret-stores"] as const,
+  deploymentCredentialReferences: (workspaceId: string) => ["deployments", workspaceId, "credential-references"] as const,
   artifacts: (workspaceId: string) => ["artifacts", workspaceId] as const,
   artifactDetails: (workspaceId: string, artifactId: string) => ["artifacts", workspaceId, artifactId] as const,
   overview: ["overview"] as const,
   workspaceContext: ["workspace-context"] as const,
   runtimeBuilderCatalog: (workspaceId: string) => ["runtime-builder", workspaceId, "catalog"] as const,
   runtimeConfigurations: (workspaceId: string) => ["runtime-builder", workspaceId, "configurations"] as const,
-  runtimeConfiguration: (workspaceId: string, configurationId: string) => ["runtime-builder", workspaceId, "configurations", configurationId] as const
+  runtimeConfiguration: (workspaceId: string, configurationId: string) => ["runtime-builder", workspaceId, "configurations", configurationId] as const,
+  weaverConfiguration: (workspaceId: string) => ["weaver", workspaceId, "configuration"] as const,
+  weaverSession: (workspaceId: string, sessionId: string) => ["weaver", workspaceId, "sessions", sessionId] as const
 };
 
 export function QueryProvider({ children }: { children: ReactNode }) {
