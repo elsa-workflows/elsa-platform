@@ -34,7 +34,9 @@ export const queryKeys = {
   workspaceContext: ["workspace-context"] as const,
   runtimeBuilderCatalog: (workspaceId: string) => ["runtime-builder", workspaceId, "catalog"] as const,
   runtimeConfigurations: (workspaceId: string) => ["runtime-builder", workspaceId, "configurations"] as const,
-  runtimeConfiguration: (workspaceId: string, configurationId: string) => ["runtime-builder", workspaceId, "configurations", configurationId] as const
+  runtimeConfiguration: (workspaceId: string, configurationId: string) => ["runtime-builder", workspaceId, "configurations", configurationId] as const,
+  weaverConfiguration: (workspaceId: string) => ["weaver", workspaceId, "configuration"] as const,
+  weaverSession: (workspaceId: string, sessionId: string) => ["weaver", workspaceId, "sessions", sessionId] as const
 };
 
 export function QueryProvider({ children }: { children: ReactNode }) {
