@@ -84,29 +84,30 @@ describe("AppShell", () => {
     expect(screen.getByRole("complementary", { name: "Weaver assistant" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Weaver" })).toBeInTheDocument();
     expect(screen.getByText("/admin")).toBeInTheDocument();
-    expect(screen.getByLabelText("Mode")).toHaveValue("plan");
-    expect(screen.getByLabelText("Guardrail")).toHaveValue("review");
+    await waitFor(() => expect(screen.getByLabelText("Mode")).toHaveValue("Plan"));
 
     await userEvent.click(screen.getByRole("button", { name: "Suggest prompt" }));
     expect(screen.getByLabelText("Message Weaver")).toHaveValue("Summarize the current page and recommended next actions.");
 
-    await userEvent.selectOptions(screen.getByLabelText("Mode"), "inspect");
-    await userEvent.click(screen.getByRole("button", { name: "Queue" }));
-    expect(screen.getByText("Queued work")).toBeInTheDocument();
-    expect(screen.getByText(/Inspect · Review required/i)).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "Run next" }));
-    expect(screen.getByText("Queued: Summarize the current page and recommended next actions.")).toBeInTheDocument();
-    expect(screen.getByText(/Mode: Inspect\. Guardrail: Review required/i)).toBeInTheDocument();
-    expect(screen.queryByText("Queued work")).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "Suggest prompt" }));
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(screen.getByText("Summarize the current page and recommended next actions.")).toBeInTheDocument();
-    expect(screen.getAllByText(/Assistant execution is not connected yet/i).length).toBeGreaterThan(0);
+    expect(await screen.findByText(/Mode: Plan/i)).toBeInTheDocument();
+    expect(screen.getByText("Tool activity")).toBeInTheDocument();
+    expect(screen.getByText("get_current_context")).toBeInTheDocument();
+    expect(screen.getByText("Draft promotion plan")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Close Weaver assistant" }));
     expect(screen.queryByRole("complementary", { name: "Weaver assistant" })).not.toBeInTheDocument();
+  });
+
+  it("shows Weaver unavailable state", async () => {
+    renderAppShell("0.0.1", workspaceContextFixture(), disabledWeaverConfigurationFixture());
+
+    await userEvent.click(screen.getAllByRole("button", { name: "Open Weaver assistant" })[0]);
+
+    expect(await screen.findByText("Unavailable")).toBeInTheDocument();
+    expect(screen.getByText("Weaver is disabled.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Message Weaver")).toBeDisabled();
   });
 
   it("keeps workspace choices scoped to the selected organization", async () => {
@@ -124,14 +125,28 @@ describe("AppShell", () => {
   });
 });
 
-function renderAppShell(buildNumber = "0.0.1", workspaceContext = workspaceContextFixture()) {
+function renderAppShell(
+  buildNumber = "0.0.1",
+  workspaceContext = workspaceContextFixture(),
+  weaverConfiguration = weaverConfigurationFixture()
+) {
   installLocalStorageStub();
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : input.toString();
+    const method = input instanceof Request ? input.method : init?.method ?? "GET";
+    const path = new URL(url, window.location.origin).pathname;
     if (url.endsWith("/api/auth/session"))
       return Response.json({ loginEnabled: true, authenticated: true, displayName: "Test User", email: "test@example.com", loginPath: "/api/auth/login", logoutPath: "/api/auth/logout" });
     if (url.endsWith("/api/me/organizations"))
       return Response.json(workspaceContext);
+    if (path.endsWith("/weaver/configuration"))
+      return Response.json(weaverConfiguration);
+    if (path.endsWith("/weaver/sessions") && method === "POST")
+      return Response.json({ id: "session-1", status: "Active", mode: "Plan", createdAt: "2026-06-07T12:00:00Z" }, { status: 201 });
+    if (path.endsWith("/weaver/sessions/session-1/messages") && method === "POST")
+      return Response.json({ messageId: "message-1", assistantMessageId: "message-2", sessionStatus: "Active" });
+    if (path.endsWith("/weaver/sessions/session-1"))
+      return Response.json(weaverSessionDetailFixture());
     return Response.json({ name: "Elsa.Platform.Api", buildNumber });
   }));
   const router = createMemoryRouter([{ path: "/admin", element: <AppShell /> }], {
@@ -169,6 +184,91 @@ function multiOrganizationContextFixture() {
       { id: "workspace-claims", name: "Claims", kind: "Shared", role: "Owner", organizationId: "org-alpha", organizationName: "Alpha Corp", organizationRole: "Owner" },
       { id: "workspace-billing", name: "Billing", kind: "Shared", role: "Reader", organizationId: "org-alpha", organizationName: "Alpha Corp", organizationRole: "Owner" },
       { id: "workspace-research", name: "Research", kind: "Shared", role: "Owner", organizationId: "org-beta", organizationName: "Beta Labs", organizationRole: "Administrator" }
+    ]
+  };
+}
+
+type WeaverConfigurationFixture = {
+  enabled: boolean;
+  providerMode: string;
+  model: string;
+  reasoningEffort: string;
+  streamingEnabled: boolean;
+  modes: string[];
+  disabledReason: string | null;
+};
+
+function weaverConfigurationFixture(): WeaverConfigurationFixture {
+  return {
+    enabled: true,
+    providerMode: "Fake",
+    model: "gpt-5",
+    reasoningEffort: "medium",
+    streamingEnabled: true,
+    modes: ["Inspect", "Plan"],
+    disabledReason: null
+  };
+}
+
+function disabledWeaverConfigurationFixture(): WeaverConfigurationFixture {
+  return {
+    ...weaverConfigurationFixture(),
+    enabled: false,
+    providerMode: "Disabled",
+    modes: [],
+    disabledReason: "Weaver is disabled."
+  };
+}
+
+function weaverSessionDetailFixture() {
+  return {
+    session: { id: "session-1", status: "Active", mode: "Plan", createdAt: "2026-06-07T12:00:00Z" },
+    messages: [
+      {
+        id: "message-1",
+        role: "User",
+        content: "Summarize the current page and recommended next actions.",
+        redactionState: "None",
+        sequence: 1,
+        createdAt: "2026-06-07T12:00:01Z"
+      },
+      {
+        id: "message-2",
+        role: "Assistant",
+        content: "Mode: Plan. I can inspect this workspace from /admin.",
+        redactionState: "None",
+        sequence: 2,
+        createdAt: "2026-06-07T12:00:02Z"
+      }
+    ],
+    toolCalls: [
+      {
+        id: "tool-1",
+        toolName: "get_current_context",
+        resultSummaryJson: "{\"summary\":\"routePath=/admin\"}",
+        authorizationResult: "Allowed",
+        status: "Succeeded",
+        durationMilliseconds: 1,
+        createdAt: "2026-06-07T12:00:01Z",
+        completedAt: "2026-06-07T12:00:02Z"
+      }
+    ],
+    plans: [
+      {
+        id: "plan-1",
+        version: 1,
+        planType: "Promotion",
+        title: "Draft promotion plan",
+        summary: "Prepare a promotion plan for Production.",
+        targetJson: "{\"environment\":\"Production\"}",
+        impactJson: "{\"changes\":\"No mutation until approval\"}",
+        validationJson: "{\"status\":\"Requires review\"}",
+        rollbackJson: "{\"path\":\"Previous revision\"}",
+        risk: "Medium",
+        status: "ReadyForApproval",
+        createdAt: "2026-06-07T12:00:03Z",
+        updatedAt: "2026-06-07T12:00:03Z"
+      }
     ]
   };
 }

@@ -37,6 +37,12 @@ using Elsa.Platform.RuntimeBuilder.Core.Builder;
 using Elsa.Platform.RuntimeBuilder.Core.Builder.Planner;
 using Elsa.Platform.RuntimeBuilder.Core.Builder.Renderers;
 using Elsa.Platform.RuntimeBuilder.Core.RuntimeConfigurations;
+using Elsa.Platform.Weaver.Core.Configuration;
+using Elsa.Platform.Weaver.Core.Plans;
+using Elsa.Platform.Weaver.Core.Runtime;
+using Elsa.Platform.Weaver.Core.Safety;
+using Elsa.Platform.Weaver.Core.Sessions;
+using Elsa.Platform.Weaver.Core.Tools;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -215,6 +221,23 @@ builder.Services.AddScoped<DeploymentQueueWorker>();
 builder.Services.AddScoped<RuntimeControlService>();
 builder.Services.AddScoped<ConfirmationService>();
 builder.Services.AddScoped<ObservabilityDriftService>();
+builder.Services.Configure<WeaverOptions>(builder.Configuration.GetSection("Weaver"));
+builder.Services.AddSingleton<WeaverRedactionService>();
+builder.Services.AddScoped<WeaverWorkspaceTools>();
+builder.Services.AddScoped<IWeaverSessionStore, WeaverSessionStore>();
+builder.Services.AddScoped<FakeWeaverRuntime>();
+builder.Services.AddScoped<CopilotWeaverRuntime>();
+builder.Services.AddScoped<IWeaverRuntime>(services =>
+{
+    var weaverOptions = services.GetRequiredService<IOptions<WeaverOptions>>().Value;
+    return weaverOptions.ProviderMode == WeaverProviderMode.Fake
+        ? services.GetRequiredService<FakeWeaverRuntime>()
+        : services.GetRequiredService<CopilotWeaverRuntime>();
+});
+builder.Services.AddScoped<WeaverSessionService>();
+builder.Services.AddScoped<WeaverPlanService>();
+builder.Services.AddScoped<WeaverPlanExecutionService>();
+builder.Services.AddHostedService<WeaverConfigurationHostedService>();
 var deploymentQueueWorkerEnabled = builder.Configuration.GetValue("Deployment:QueueWorker:Enabled", false);
 if (deploymentQueueWorkerEnabled && !builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<DeploymentQueueHostedService>();
@@ -313,6 +336,7 @@ app.MapWorkspaceBuilderEndpoints();
 app.MapWorkspaceRuntimeConfigurationEndpoints();
 app.MapWorkspaceDeploymentEndpoints();
 app.MapWorkspaceArtifactEndpoints();
+app.MapWorkspaceWeaverEndpoints();
 app.MapRuntimeCommandEndpoints();
 app.MapAdminApplicationEndpoints();
 app.MapAdminSourceEndpoints();
