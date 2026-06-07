@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Archive, ArrowLeft, CheckCircle2, FileArchive, RefreshCw, RotateCcw, Save, Upload, Wand2, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Badge, Button, EmptyState, Input, SecondaryButton, Select, Table, buttonClassName } from "@/components/ui";
 import { RequestStateView } from "@/components/states/RequestStateViews";
@@ -136,7 +136,7 @@ export function ArtifactsPage() {
                   <td className="px-3 py-2 text-right">
                     <div className="flex justify-end gap-2">
                       <Link to={artifactPath(artifact.id)} className="text-xs font-medium text-primary hover:underline">
-                        Open details
+                        Details
                       </Link>
                       {canManageSetup ? (
                         artifact.status === "Archived" ? (
@@ -248,6 +248,8 @@ export function ArtifactDetailsPage() {
   const { artifactId } = useParams();
   const workspaceContext = useWorkspaceContext();
   const workspaceId = workspaceContext.selectedWorkspaceId;
+  const [isInspectionRefreshing, setIsInspectionRefreshing] = useState(false);
+  const inspectionRefreshTimeout = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const permissions = useQuery({
     queryKey: queryKeys.deploymentPermissions(workspaceId),
     queryFn: () => getDeploymentPermissions(workspaceId),
@@ -268,12 +270,30 @@ export function ArtifactDetailsPage() {
   const restore = useArtifactRestoreMutation(workspaceId, artifactId ?? "");
   const refresh = useMutation({
     mutationFn: (current: WorkspaceArtifact) => refreshWorkspaceArtifactInspection(workspaceId, current.id),
+    onMutate: () => {
+      if (inspectionRefreshTimeout.current) {
+        window.clearTimeout(inspectionRefreshTimeout.current);
+        inspectionRefreshTimeout.current = null;
+      }
+      setIsInspectionRefreshing(true);
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.artifacts(workspaceId) });
       if (artifactId)
         void queryClient.invalidateQueries({ queryKey: queryKeys.artifactDetails(workspaceId, artifactId) });
+    },
+    onSettled: () => {
+      inspectionRefreshTimeout.current = window.setTimeout(() => {
+        setIsInspectionRefreshing(false);
+        inspectionRefreshTimeout.current = null;
+      }, 600);
     }
   });
+
+  useEffect(() => () => {
+    if (inspectionRefreshTimeout.current)
+      window.clearTimeout(inspectionRefreshTimeout.current);
+  }, []);
 
   if (workspaceContext.isLoading || artifact.isLoading)
     return <RequestStateView state="loading" title="Loading artifact detail" />;
@@ -283,6 +303,7 @@ export function ArtifactDetailsPage() {
     return <RequestStateView state="unexpected" title="Artifact could not load" />;
 
   const artifactTypeLabel = artifactTypes.data?.items.find((type) => type.typeId === (artifact.data.artifactTypeId ?? workflowArtifactType))?.displayName;
+  const showInspectionRefreshing = refresh.isPending || isInspectionRefreshing;
 
   return (
     <section className="space-y-5">
@@ -312,9 +333,9 @@ export function ArtifactDetailsPage() {
               </SecondaryButton>
             )
           ) : null}
-          <SecondaryButton className="md:shrink-0" disabled={!canManageSetup || refresh.isPending || artifact.data.status === "Archived"} onClick={() => refresh.mutate(artifact.data)}>
-            <RefreshCw className="h-4 w-4" />
-            {refresh.isPending ? "Refreshing" : "Refresh inspection"}
+          <SecondaryButton className="md:shrink-0" disabled={!canManageSetup || showInspectionRefreshing || artifact.data.status === "Archived"} onClick={() => refresh.mutate(artifact.data)}>
+            <RefreshCw className={`h-4 w-4${showInspectionRefreshing ? " animate-spin" : ""}`} />
+            {showInspectionRefreshing ? "Refreshing" : "Refresh inspection"}
           </SecondaryButton>
         </div>
       </div>
@@ -332,6 +353,7 @@ export function ArtifactDetailsPage() {
         workspaceId={workspaceId}
         error={refresh.error instanceof Error ? refresh.error.message : undefined}
         artifactTypeLabel={artifactTypeLabel}
+        isInspectionRefreshing={showInspectionRefreshing}
       />
     </section>
   );
@@ -678,12 +700,14 @@ function ArtifactDetail({
   artifact,
   workspaceId,
   error,
-  artifactTypeLabel
+  artifactTypeLabel,
+  isInspectionRefreshing = false
 }: {
   artifact: WorkspaceArtifact;
   workspaceId: string;
   error?: string;
   artifactTypeLabel?: string;
+  isInspectionRefreshing?: boolean;
 }) {
   const compatibility = artifact.compatibilityHints ?? [];
   const compatibilityItems = compatibility
@@ -718,7 +742,17 @@ function ArtifactDetail({
           }
         />
         <Detail label="Checksum" value={artifact.checksumStatus} />
-        <Detail label="Inspection" value={artifact.inspectionStatus} />
+        <Detail
+          label="Inspection"
+          value={
+            isInspectionRefreshing ? (
+              <span aria-live="polite" className="inline-flex items-center gap-1.5 text-primary">
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                Inspecting
+              </span>
+            ) : artifact.inspectionStatus
+          }
+        />
         <Detail label="Lifecycle" value={artifact.status} />
         {artifact.archivedAt ? <Detail label="Archived" value={formatDateTime(artifact.archivedAt)} /> : null}
         <Detail label="Last inspected" value={formatDateTime(artifact.lastInspectedAt)} />

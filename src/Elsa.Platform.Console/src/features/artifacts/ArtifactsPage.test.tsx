@@ -22,7 +22,7 @@ describe("ArtifactsPage", () => {
     expect(screen.getByRole("button", { name: "Archived 0" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Upload artifact" })).toHaveAttribute("href", "/admin/artifacts/new");
     expect(screen.getByRole("link", { name: "sha256:claims-prod" })).toHaveAttribute("href", "/admin/artifacts/artifact-1");
-    expect(screen.getByRole("link", { name: "Open details" })).toHaveAttribute("href", "/admin/artifacts/artifact-1");
+    expect(screen.getByRole("link", { name: "Details" })).toHaveAttribute("href", "/admin/artifacts/artifact-1");
     expect(screen.getByText("elsa.workflow-definition")).toBeInTheDocument();
     expect(screen.getByText(/Elsa Studio/i)).toBeInTheDocument();
     expect(screen.getByText(/claims v1.0.0/i)).toBeInTheDocument();
@@ -124,10 +124,16 @@ describe("ArtifactsPage", () => {
   });
 
   it("refreshes artifact inspection state from the details route", async () => {
-    const fetchMock = renderArtifacts(undefined, "/admin/artifacts/artifact-1");
+    const refreshGate = createDeferred();
+    const fetchMock = renderArtifacts(undefined, "/admin/artifacts/artifact-1", { beforeRefreshResponse: refreshGate.promise });
 
     await screen.findByRole("heading", { name: "sha256:claims-prod" });
     await userEvent.click(screen.getByRole("button", { name: "Refresh inspection" }));
+
+    expect(await screen.findByText("Inspecting")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refreshing" })).toBeDisabled();
+
+    refreshGate.resolve();
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -140,8 +146,8 @@ describe("ArtifactsPage", () => {
   });
 });
 
-function renderArtifacts(response: WorkspaceArtifactListResponse = { items: [artifactFixture] }, route = "/admin/artifacts") {
-  const fetchMock = createFetchMock(response);
+function renderArtifacts(response: WorkspaceArtifactListResponse = { items: [artifactFixture] }, route = "/admin/artifacts", options?: FetchMockOptions) {
+  const fetchMock = createFetchMock(response, options);
   vi.stubGlobal("fetch", fetchMock);
   render(
     <TestQueryProvider>
@@ -161,7 +167,11 @@ function renderArtifacts(response: WorkspaceArtifactListResponse = { items: [art
   return fetchMock;
 }
 
-function createFetchMock(initial: WorkspaceArtifactListResponse) {
+type FetchMockOptions = {
+  beforeRefreshResponse?: Promise<void>;
+};
+
+function createFetchMock(initial: WorkspaceArtifactListResponse, options?: FetchMockOptions) {
   let list = initial;
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : input.toString();
@@ -227,6 +237,7 @@ function createFetchMock(initial: WorkspaceArtifactListResponse) {
       return jsonResponse(artifactFixture);
     }
     if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts/artifact-1/refresh`)) {
+      await options?.beforeRefreshResponse;
       list = {
         items: [
           {
@@ -256,6 +267,14 @@ function createFetchMock(initial: WorkspaceArtifactListResponse) {
     }
     return jsonResponse({ title: "Not found" }, 404);
   });
+}
+
+function createDeferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((innerResolve) => {
+    resolve = innerResolve;
+  });
+  return { promise, resolve };
 }
 
 function installSuccessfulXhrUpload() {

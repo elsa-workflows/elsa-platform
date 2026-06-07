@@ -288,7 +288,7 @@ function ThemeAccentPicker({
       </span>
       <select
         aria-label="Theme accent"
-        className="absolute inset-0 h-full w-full cursor-pointer appearance-none rounded-ui bg-transparent opacity-0"
+        className="theme-accent-picker-select absolute inset-0 h-full w-full cursor-pointer appearance-none rounded-ui bg-transparent opacity-0"
         value={themeAccent}
         onChange={(event) => onThemeAccentChange(parseThemeAccent(event.target.value))}
       >

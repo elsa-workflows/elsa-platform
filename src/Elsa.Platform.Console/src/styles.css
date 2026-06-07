@@ -95,6 +95,11 @@ select option {
   color: hsl(var(--foreground));
 }
 
+.theme-accent-picker-select option {
+  padding: 0.35rem 0.75rem;
+  line-height: 1.5;
+}
+
 :focus-visible {
   outline: 2px solid hsl(var(--primary));
   outline-offset: 2px;
