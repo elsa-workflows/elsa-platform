@@ -41,6 +41,7 @@ export default defineConfig(({ mode }) => {
         "/api": {
           target: catalogApiProxyTarget,
           changeOrigin: true,
+          ws: true,
           configure: (proxy) => {
             proxy.on("proxyReq", (proxyReq) => {
               proxyReq.setHeader("Origin", catalogApiProxyOrigin);

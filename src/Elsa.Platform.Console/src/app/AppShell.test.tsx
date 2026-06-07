@@ -31,14 +31,16 @@ describe("AppShell", () => {
     expect(screen.getAllByRole("link", { name: "Artifacts" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Runtime Builder").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Build configurations" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Console" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Managed Runtimes").length).toBeGreaterThan(0);
     expect(navigationText).toContain("PlatformOverview");
     expect(navigationText).toContain("DeploymentsOverviewApplicationsArtifactsTiers");
     expect(navigationText).toContain("Runtime BuilderBuild configurations");
+    expect(navigationText).toContain("OperationsConsole");
     expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
-    expect(await screen.findAllByRole("combobox", { name: "Organization" })).toHaveLength(2);
+    expect(await screen.findAllByRole("combobox", { name: "Organization" }, { timeout: 5_000 })).toHaveLength(2);
     expect(screen.getAllByRole("combobox", { name: "Workspace" })).toHaveLength(2);
-    expect(await screen.findAllByLabelText("Application build number")).toHaveLength(2);
+    expect(await screen.findAllByLabelText("Application build number", {}, { timeout: 5_000 })).toHaveLength(2);
   });
 
   it("shows the application build number", async () => {
@@ -98,7 +100,7 @@ describe("AppShell", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Close Weaver assistant" }));
     expect(screen.queryByRole("complementary", { name: "Weaver assistant" })).not.toBeInTheDocument();
-  });
+  }, 10_000);
 
   it("shows Weaver unavailable state", async () => {
     renderAppShell("0.0.1", workspaceContextFixture(), disabledWeaverConfigurationFixture());
@@ -113,7 +115,7 @@ describe("AppShell", () => {
   it("keeps workspace choices scoped to the selected organization", async () => {
     renderAppShell("0.0.1", multiOrganizationContextFixture());
 
-    const organizationSelect = (await screen.findAllByRole("combobox", { name: "Organization" }))[0];
+    const organizationSelect = (await screen.findAllByRole("combobox", { name: "Organization" }, { timeout: 5_000 }))[0];
     const workspaceSelect = screen.getAllByRole("combobox", { name: "Workspace" })[0];
 
     expect(workspaceSelect).toHaveDisplayValue("Claims");

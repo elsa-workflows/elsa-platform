@@ -1,5 +1,7 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using ConsoleLogStreaming.AspNetCore.DependencyInjection;
+using ConsoleLogStreaming.Core.DependencyInjection;
 using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
@@ -63,6 +65,21 @@ builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient(AdminDashboardAuthenticationDefaults.DevelopmentUrlConfigurationKey);
+builder.Services.AddConsoleLogStreamingHost(options =>
+{
+    options.ServiceName = "Elsa Platform API";
+    options.SourceId = "elsa-platform-api";
+    options.SourceDisplayName = "Elsa Platform API";
+    options.RecentCapacity = 5_000;
+    options.MaxRecentQuerySize = 1_000;
+});
+builder.Services.AddConsoleLogStreamingAspNetCore(options =>
+{
+    options.AuthorizationPolicy = AdminAuthorization.Policy;
+    options.RecentPath = "/api/admin/console-logs/recent";
+    options.SourcesPath = "/api/admin/console-logs/sources";
+    options.HubPath = "/api/admin/console-logs/hub";
+});
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
@@ -346,6 +363,7 @@ app.MapAdminPackageEndpoints();
 app.MapAdminApprovalEndpoints();
 app.MapAdminValidationEndpoints();
 app.MapAdminWorkspaceEntitlementEndpoints();
+app.MapConsoleLogStreaming();
 if (AdminConsoleAssetsExist(app.Environment))
     app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
 
