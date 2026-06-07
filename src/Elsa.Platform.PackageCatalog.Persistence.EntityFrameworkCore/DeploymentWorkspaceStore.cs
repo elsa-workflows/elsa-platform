@@ -1332,6 +1332,62 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         return entity is null ? null : ToWorkspaceDesiredStateRevision(entity);
     }
 
+    public async Task<IReadOnlyList<WorkspaceDesiredStateRevisionSummary>> ListApplicationRevisionsAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        CancellationToken cancellationToken = default)
+    {
+        var revisions = await dbContext.DesiredStateRevisions
+            .AsNoTracking()
+            .Include(x => x.Environment)
+                .ThenInclude(x => x!.TierDefinition)
+            .Where(x => x.WorkspaceId == workspaceId && x.ApplicationId == applicationId)
+            .OrderByDescending(x => x.AuthoredAt)
+            .ThenByDescending(x => x.RevisionNumber)
+            .ToListAsync(cancellationToken);
+
+        var revisionIds = revisions.Select(x => x.Id).ToHashSet();
+        IReadOnlyList<DeploymentRunEntity> runs = revisionIds.Count == 0
+            ? []
+            : await dbContext.DeploymentRuns
+                .AsNoTracking()
+                .Where(x => x.WorkspaceId == workspaceId && revisionIds.Contains(x.SourceRevisionId))
+                .OrderByDescending(x => x.QueuedAt)
+                .ToListAsync(cancellationToken);
+        var latestRuns = runs
+            .GroupBy(x => x.SourceRevisionId)
+            .ToDictionary(x => x.Key, x => x.First());
+
+        return revisions.Select(x => ToWorkspaceDesiredStateRevisionSummary(x, latestRuns.GetValueOrDefault(x.Id))).ToList();
+    }
+
+    public async Task<WorkspaceDesiredStateRevisionDetail?> GetRevisionDetailAsync(
+        Guid workspaceId,
+        Guid revisionId,
+        CancellationToken cancellationToken = default)
+    {
+        var revision = await dbContext.DesiredStateRevisions
+            .AsNoTracking()
+            .Include(x => x.Environment)
+                .ThenInclude(x => x!.TierDefinition)
+            .Include(x => x.Records)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == revisionId, cancellationToken);
+        if (revision is null)
+            return null;
+
+        var runs = await dbContext.DeploymentRuns
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.SourceRevisionId == revisionId)
+            .OrderByDescending(x => x.QueuedAt)
+            .ToListAsync(cancellationToken);
+        var latestRun = runs.FirstOrDefault();
+
+        return new WorkspaceDesiredStateRevisionDetail(
+            ToWorkspaceDesiredStateRevisionSummary(revision, latestRun),
+            revision.Records.OrderBy(x => x.Kind).ThenBy(x => x.Name, StringComparer.Ordinal).Select(ToWorkspaceDesiredStateRevisionRecord).ToList(),
+            runs.Select(ToWorkspaceDesiredStateRevisionRunSummary).ToList());
+    }
+
     public async Task<WorkspaceWorkflowEngine?> GetEngineAsync(
         Guid workspaceId,
         Guid engineId,
@@ -1981,6 +2037,43 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             entity.AuthoredAt,
             entity.CreatedAt,
             entity.CreatedByAccountId);
+
+    private static WorkspaceDesiredStateRevisionSummary ToWorkspaceDesiredStateRevisionSummary(DesiredStateRevisionEntity entity, DeploymentRunEntity? latestRun) =>
+        new(
+            ToWorkspaceDesiredStateRevision(entity),
+            entity.Environment?.Name ?? "",
+            entity.Environment?.Tier ?? EnvironmentTier.Production,
+            entity.Environment?.TierId,
+            entity.Environment?.TierDefinition?.Name,
+            entity.Environment?.DesiredRevisionId == entity.Id,
+            entity.Environment?.DeployedRevisionId == entity.Id,
+            latestRun?.Status,
+            latestRun?.QueuedAt);
+
+    private static WorkspaceDesiredStateRevisionRecord ToWorkspaceDesiredStateRevisionRecord(StructuredDesiredStateRecordEntity entity) =>
+        new(
+            entity.Id,
+            entity.Kind,
+            entity.Name,
+            entity.PayloadJson,
+            entity.ContentHash,
+            entity.ArtifactRecordId,
+            entity.ArtifactId,
+            entity.ArtifactTypeId,
+            entity.ArtifactDigestAlgorithm is null || entity.ArtifactDigest is null
+                ? null
+                : new WorkspaceArtifactDigest(entity.ArtifactDigestAlgorithm, entity.ArtifactDigest));
+
+    private static WorkspaceDesiredStateRevisionRunSummary ToWorkspaceDesiredStateRevisionRunSummary(DeploymentRunEntity entity) =>
+        new(
+            entity.Id,
+            entity.EnvironmentId,
+            entity.EngineId,
+            entity.Status,
+            entity.ValidationOutcome,
+            entity.QueuedAt,
+            entity.CompletedAt,
+            entity.FailureMessage);
 
     private static List<StructuredDesiredStateRecordEntity> ParseStructuredRecords(Guid workspaceId, Guid revisionId, string desiredStateJson)
     {

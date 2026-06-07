@@ -21,6 +21,10 @@ export function getWorkspaceArtifact(workspaceId: string, artifactId: string) {
   return apiRequest<WorkspaceArtifact>(`/api/workspaces/${encodeURIComponent(workspaceId)}/artifacts/${encodeURIComponent(artifactId)}`);
 }
 
+export function workspaceArtifactDownloadUrl(workspaceId: string, artifactId: string) {
+  return `/api/workspaces/${encodeURIComponent(workspaceId)}/artifacts/${encodeURIComponent(artifactId)}/download`;
+}
+
 export function listWorkspaceArtifactTypes(workspaceId: string) {
   return apiRequest<WorkspaceArtifactTypeListResponse>(`/api/workspaces/${encodeURIComponent(workspaceId)}/artifacts/types`);
 }

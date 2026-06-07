@@ -28,6 +28,9 @@ import type {
   DeploymentTierImpactSummary,
   WorkspaceDeploymentTier,
   WorkspaceDesiredStateRevision,
+  WorkspaceDesiredStateRevisionDetail,
+  WorkspaceDesiredStateRequirementsResponse,
+  WorkspaceApplicationRevisionsResponse,
   WorkspaceDeploymentRun,
   WorkspaceDeploymentRunDetailResponse,
   WorkspaceDeploymentPermissionsResponse,
@@ -48,6 +51,12 @@ export function getDeploymentTierCapabilities(workspaceId: string) {
 
 export function getDeploymentTiers(workspaceId: string) {
   return apiRequest<WorkspaceDeploymentTiersResponse>(`/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/tiers`);
+}
+
+export function getEnvironmentDesiredStateRequirements(workspaceId: string, environmentId: string) {
+  return apiRequest<WorkspaceDesiredStateRequirementsResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/environments/${encodeURIComponent(environmentId)}/desired-state-requirements`
+  );
 }
 
 export function createDeploymentTier(workspaceId: string, request: WorkspaceDeploymentTierRequest) {
@@ -172,6 +181,18 @@ export function createDesiredStateRevision(
       method: "POST",
       body: JSON.stringify(request)
     }
+  );
+}
+
+export function getApplicationRevisions(workspaceId: string, applicationId: string) {
+  return apiRequest<WorkspaceApplicationRevisionsResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/applications/${encodeURIComponent(applicationId)}/revisions`
+  );
+}
+
+export function getRevisionDetail(workspaceId: string, revisionId: string) {
+  return apiRequest<WorkspaceDesiredStateRevisionDetail>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/revisions/${encodeURIComponent(revisionId)}`
   );
 }
 

@@ -64,6 +64,18 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore, IW
         CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("The in-memory cockpit store is read-only.");
 
+    public Task<IReadOnlyList<WorkspaceDesiredStateRevisionSummary>> ListApplicationRevisionsAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
+
+    public Task<WorkspaceDesiredStateRevisionDetail?> GetRevisionDetailAsync(
+        Guid workspaceId,
+        Guid revisionId,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
+
     public Task<WorkspaceWorkflowEngine?> GetEngineAsync(
         Guid workspaceId,
         Guid engineId,
