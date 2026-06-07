@@ -46,6 +46,59 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore, IW
         CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("The in-memory cockpit store is read-only.");
 
+    public Task<IReadOnlyList<WorkspaceDeploymentSecretStore>> ListSecretStoresAsync(
+        Guid workspaceId,
+        bool includeArchived = false,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
+
+    public Task<WorkspaceDeploymentSecretStore> CreateSecretStoreAsync(
+        Guid workspaceId,
+        CreateDeploymentSecretStoreRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
+
+    public Task<WorkspaceDeploymentSecretStore> UpdateSecretStoreAsync(
+        Guid workspaceId,
+        Guid secretStoreId,
+        UpdateDeploymentSecretStoreRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
+
+    public Task<WorkspaceDeploymentSecretStore> ArchiveSecretStoreAsync(
+        Guid workspaceId,
+        Guid secretStoreId,
+        Guid? actorAccountId,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
+
+    public Task<IReadOnlyList<WorkspaceDeploymentCredentialReference>> ListCredentialReferencesAsync(
+        Guid workspaceId,
+        Guid? secretStoreId = null,
+        bool includeArchived = false,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
+
+    public Task<WorkspaceDeploymentCredentialReference> CreateCredentialReferenceAsync(
+        Guid workspaceId,
+        CreateDeploymentCredentialReferenceRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
+
+    public Task<WorkspaceDeploymentCredentialReference> UpdateCredentialReferenceAsync(
+        Guid workspaceId,
+        Guid credentialReferenceId,
+        UpdateDeploymentCredentialReferenceRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
+
+    public Task<WorkspaceDeploymentCredentialReference> ArchiveCredentialReferenceAsync(
+        Guid workspaceId,
+        Guid credentialReferenceId,
+        Guid? actorAccountId,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
+
     public Task<WorkspaceDesiredStateRevision> CreateRevisionAsync(
         Guid workspaceId,
         CreateDesiredStateRevisionRequest request,
@@ -61,6 +114,18 @@ public sealed class InMemoryDeploymentCockpitStore : IDeploymentCockpitStore, IW
     public Task<WorkspaceDesiredStateRevision?> GetLatestRevisionAsync(
         Guid workspaceId,
         Guid environmentId,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
+
+    public Task<IReadOnlyList<WorkspaceDesiredStateRevisionSummary>> ListApplicationRevisionsAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("The in-memory cockpit store is read-only.");
+
+    public Task<WorkspaceDesiredStateRevisionDetail?> GetRevisionDetailAsync(
+        Guid workspaceId,
+        Guid revisionId,
         CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("The in-memory cockpit store is read-only.");
 

@@ -55,8 +55,11 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.BaseUrl);
-        ArgumentException.ThrowIfNullOrWhiteSpace(request.CredentialProvider);
-        ArgumentException.ThrowIfNullOrWhiteSpace(request.CredentialReference);
+        if (!request.CredentialReferenceId.HasValue)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(request.CredentialProvider);
+            ArgumentException.ThrowIfNullOrWhiteSpace(request.CredentialReference);
+        }
 
         if (!Uri.TryCreate(request.BaseUrl, UriKind.Absolute, out _))
             throw new ArgumentException("Engine base URL must be an absolute URI.", nameof(request));
@@ -81,6 +84,75 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
         return store.UpdateEngineAsync(workspaceId, engineId, request, cancellationToken);
     }
 
+    public Task<IReadOnlyList<WorkspaceDeploymentSecretStore>> ListSecretStoresAsync(
+        Guid workspaceId,
+        bool includeArchived = false,
+        CancellationToken cancellationToken = default) =>
+        store.ListSecretStoresAsync(workspaceId, includeArchived, cancellationToken);
+
+    public Task<WorkspaceDeploymentSecretStore> CreateSecretStoreAsync(
+        Guid workspaceId,
+        CreateDeploymentSecretStoreRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Provider);
+        return store.CreateSecretStoreAsync(workspaceId, request, cancellationToken);
+    }
+
+    public Task<WorkspaceDeploymentSecretStore> UpdateSecretStoreAsync(
+        Guid workspaceId,
+        Guid secretStoreId,
+        UpdateDeploymentSecretStoreRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Provider);
+        return store.UpdateSecretStoreAsync(workspaceId, secretStoreId, request, cancellationToken);
+    }
+
+    public Task<WorkspaceDeploymentSecretStore> ArchiveSecretStoreAsync(
+        Guid workspaceId,
+        Guid secretStoreId,
+        Guid? actorAccountId,
+        CancellationToken cancellationToken = default) =>
+        store.ArchiveSecretStoreAsync(workspaceId, secretStoreId, actorAccountId, cancellationToken);
+
+    public Task<IReadOnlyList<WorkspaceDeploymentCredentialReference>> ListCredentialReferencesAsync(
+        Guid workspaceId,
+        Guid? secretStoreId = null,
+        bool includeArchived = false,
+        CancellationToken cancellationToken = default) =>
+        store.ListCredentialReferencesAsync(workspaceId, secretStoreId, includeArchived, cancellationToken);
+
+    public Task<WorkspaceDeploymentCredentialReference> CreateCredentialReferenceAsync(
+        Guid workspaceId,
+        CreateDeploymentCredentialReferenceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Reference);
+        return store.CreateCredentialReferenceAsync(workspaceId, request, cancellationToken);
+    }
+
+    public Task<WorkspaceDeploymentCredentialReference> UpdateCredentialReferenceAsync(
+        Guid workspaceId,
+        Guid credentialReferenceId,
+        UpdateDeploymentCredentialReferenceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Reference);
+        return store.UpdateCredentialReferenceAsync(workspaceId, credentialReferenceId, request, cancellationToken);
+    }
+
+    public Task<WorkspaceDeploymentCredentialReference> ArchiveCredentialReferenceAsync(
+        Guid workspaceId,
+        Guid credentialReferenceId,
+        Guid? actorAccountId,
+        CancellationToken cancellationToken = default) =>
+        store.ArchiveCredentialReferenceAsync(workspaceId, credentialReferenceId, actorAccountId, cancellationToken);
+
     public Task<WorkspaceDesiredStateRevision> CreateRevisionAsync(
         Guid workspaceId,
         CreateDesiredStateRevisionRequest request,
@@ -93,6 +165,18 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
             request with { DesiredStateJson = request.DesiredStateJson },
             cancellationToken);
     }
+
+    public Task<IReadOnlyList<WorkspaceDesiredStateRevisionSummary>> ListApplicationRevisionsAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        CancellationToken cancellationToken = default) =>
+        store.ListApplicationRevisionsAsync(workspaceId, applicationId, cancellationToken);
+
+    public Task<WorkspaceDesiredStateRevisionDetail?> GetRevisionDetailAsync(
+        Guid workspaceId,
+        Guid revisionId,
+        CancellationToken cancellationToken = default) =>
+        store.GetRevisionDetailAsync(workspaceId, revisionId, cancellationToken);
 
     public static string ComputeDesiredStateHash(string desiredStateJson)
     {

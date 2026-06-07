@@ -89,6 +89,8 @@ internal sealed class WorkflowEngineEntity
     public Guid WorkspaceId { get; set; }
     public Guid EnvironmentId { get; set; }
     public DeploymentEnvironmentEntity? Environment { get; set; }
+    public Guid? CredentialReferenceId { get; set; }
+    public DeploymentCredentialReferenceEntity? CredentialReferenceMetadata { get; set; }
     public string Name { get; set; } = "";
     public string BaseUrl { get; set; } = "";
     public string? Region { get; set; }
@@ -107,6 +109,44 @@ internal sealed class WorkflowEngineEntity
     public DateTimeOffset UpdatedAt { get; set; }
     public List<EngineCapabilityEntity> Capabilities { get; set; } = [];
     public List<RuntimeControlEntity> Controls { get; set; } = [];
+}
+
+internal sealed class DeploymentSecretStoreEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public string Name { get; set; } = "";
+    public string Provider { get; set; } = "";
+    public string? Description { get; set; }
+    public DeploymentSecretStoreStatus Status { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public Guid? CreatedByAccountId { get; set; }
+    public Guid? UpdatedByAccountId { get; set; }
+    public DateTimeOffset? ArchivedAt { get; set; }
+    public Guid? ArchivedByAccountId { get; set; }
+    public List<DeploymentCredentialReferenceEntity> CredentialReferences { get; set; } = [];
+}
+
+internal sealed class DeploymentCredentialReferenceEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid SecretStoreId { get; set; }
+    public DeploymentSecretStoreEntity? SecretStore { get; set; }
+    public string Name { get; set; } = "";
+    public string Reference { get; set; } = "";
+    public string? Description { get; set; }
+    public DeploymentSecretStoreStatus Status { get; set; }
+    public CredentialVerificationStatus VerificationStatus { get; set; }
+    public DateTimeOffset? LastVerifiedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public Guid? CreatedByAccountId { get; set; }
+    public Guid? UpdatedByAccountId { get; set; }
+    public DateTimeOffset? ArchivedAt { get; set; }
+    public Guid? ArchivedByAccountId { get; set; }
+    public List<WorkflowEngineEntity> Engines { get; set; } = [];
 }
 
 internal sealed class WorkspaceDeploymentArtifactEntity

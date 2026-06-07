@@ -39,6 +39,59 @@ public interface IWorkspaceDeploymentStore
         UpdateWorkflowEngineRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<WorkspaceDeploymentSecretStore>> ListSecretStoresAsync(
+        Guid workspaceId,
+        bool includeArchived = false,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Deployment secret store listing is not supported by this store.");
+
+    Task<WorkspaceDeploymentSecretStore> CreateSecretStoreAsync(
+        Guid workspaceId,
+        CreateDeploymentSecretStoreRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Deployment secret store creation is not supported by this store.");
+
+    Task<WorkspaceDeploymentSecretStore> UpdateSecretStoreAsync(
+        Guid workspaceId,
+        Guid secretStoreId,
+        UpdateDeploymentSecretStoreRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Deployment secret store updates are not supported by this store.");
+
+    Task<WorkspaceDeploymentSecretStore> ArchiveSecretStoreAsync(
+        Guid workspaceId,
+        Guid secretStoreId,
+        Guid? actorAccountId,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Deployment secret store archival is not supported by this store.");
+
+    Task<IReadOnlyList<WorkspaceDeploymentCredentialReference>> ListCredentialReferencesAsync(
+        Guid workspaceId,
+        Guid? secretStoreId = null,
+        bool includeArchived = false,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Deployment credential reference listing is not supported by this store.");
+
+    Task<WorkspaceDeploymentCredentialReference> CreateCredentialReferenceAsync(
+        Guid workspaceId,
+        CreateDeploymentCredentialReferenceRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Deployment credential reference creation is not supported by this store.");
+
+    Task<WorkspaceDeploymentCredentialReference> UpdateCredentialReferenceAsync(
+        Guid workspaceId,
+        Guid credentialReferenceId,
+        UpdateDeploymentCredentialReferenceRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Deployment credential reference updates are not supported by this store.");
+
+    Task<WorkspaceDeploymentCredentialReference> ArchiveCredentialReferenceAsync(
+        Guid workspaceId,
+        Guid credentialReferenceId,
+        Guid? actorAccountId,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Deployment credential reference archival is not supported by this store.");
+
     Task<WorkspaceDesiredStateRevision> CreateRevisionAsync(
         Guid workspaceId,
         CreateDesiredStateRevisionRequest request,
@@ -53,6 +106,18 @@ public interface IWorkspaceDeploymentStore
         Guid workspaceId,
         Guid environmentId,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<WorkspaceDesiredStateRevisionSummary>> ListApplicationRevisionsAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Application revision listing is not supported by this store.");
+
+    Task<WorkspaceDesiredStateRevisionDetail?> GetRevisionDetailAsync(
+        Guid workspaceId,
+        Guid revisionId,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Revision detail lookup is not supported by this store.");
 
     Task<WorkspaceWorkflowEngine?> GetEngineAsync(
         Guid workspaceId,

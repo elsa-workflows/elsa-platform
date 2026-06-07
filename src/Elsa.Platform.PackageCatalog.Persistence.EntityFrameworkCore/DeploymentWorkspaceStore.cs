@@ -1163,18 +1163,20 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             throw new InvalidOperationException("Deployment environment does not exist in the workspace.");
 
         var now = DateTimeOffset.UtcNow;
+        var credential = await ResolveCredentialReferenceAsync(workspaceId, request.CredentialReferenceId, request.CredentialProvider, request.CredentialReference, cancellationToken);
         var engine = new WorkflowEngineEntity
         {
             Id = Guid.NewGuid(),
             WorkspaceId = workspaceId,
             EnvironmentId = request.EnvironmentId,
+            CredentialReferenceId = credential.Id,
             Name = request.Name,
             BaseUrl = request.BaseUrl,
             Region = request.Region,
             Version = "",
             CertificateStatus = CertificateStatus.Trusted,
-            CredentialProvider = request.CredentialProvider,
-            CredentialReference = request.CredentialReference,
+            CredentialProvider = credential.Provider,
+            CredentialReference = credential.Reference,
             CredentialVerificationStatus = CredentialVerificationStatus.Unverified,
             Health = DeploymentHealth.Unreachable,
             VerificationMessage = "Engine has not been verified.",
@@ -1204,6 +1206,214 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         await dbContext.WorkflowEngines.AddAsync(engine, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToWorkspaceWorkflowEngine(engine);
+    }
+
+    public async Task<IReadOnlyList<WorkspaceDeploymentSecretStore>> ListSecretStoresAsync(
+        Guid workspaceId,
+        bool includeArchived = false,
+        CancellationToken cancellationToken = default)
+    {
+        var query = dbContext.DeploymentSecretStores
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId);
+        if (!includeArchived)
+            query = query.Where(x => x.Status == DeploymentSecretStoreStatus.Active);
+
+        var stores = await query
+            .OrderBy(x => x.Name)
+            .ToListAsync(cancellationToken);
+        return stores.Select(ToWorkspaceDeploymentSecretStore).ToList();
+    }
+
+    public async Task<WorkspaceDeploymentSecretStore> CreateSecretStoreAsync(
+        Guid workspaceId,
+        CreateDeploymentSecretStoreRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (await ActiveSecretStoreNameExistsAsync(workspaceId, request.Name, null, cancellationToken))
+            throw new InvalidOperationException("An active deployment secret store with this name already exists in the workspace.");
+
+        var now = DateTimeOffset.UtcNow;
+        var entity = new DeploymentSecretStoreEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            Name = request.Name,
+            Provider = request.Provider,
+            Description = request.Description,
+            Status = DeploymentSecretStoreStatus.Active,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CreatedByAccountId = request.ActorAccountId,
+            UpdatedByAccountId = request.ActorAccountId
+        };
+
+        await dbContext.DeploymentSecretStores.AddAsync(entity, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceDeploymentSecretStore(entity);
+    }
+
+    public async Task<WorkspaceDeploymentSecretStore> UpdateSecretStoreAsync(
+        Guid workspaceId,
+        Guid secretStoreId,
+        UpdateDeploymentSecretStoreRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.DeploymentSecretStores
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == secretStoreId, cancellationToken);
+        if (entity is null)
+            throw new KeyNotFoundException("Deployment secret store does not exist in the workspace.");
+        if (entity.Status == DeploymentSecretStoreStatus.Active && await ActiveSecretStoreNameExistsAsync(workspaceId, request.Name, secretStoreId, cancellationToken))
+            throw new InvalidOperationException("An active deployment secret store with this name already exists in the workspace.");
+
+        entity.Name = request.Name;
+        entity.Provider = request.Provider;
+        entity.Description = request.Description;
+        entity.UpdatedAt = DateTimeOffset.UtcNow;
+        entity.UpdatedByAccountId = request.ActorAccountId;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceDeploymentSecretStore(entity);
+    }
+
+    public async Task<WorkspaceDeploymentSecretStore> ArchiveSecretStoreAsync(
+        Guid workspaceId,
+        Guid secretStoreId,
+        Guid? actorAccountId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.DeploymentSecretStores
+            .Include(x => x.CredentialReferences)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == secretStoreId, cancellationToken);
+        if (entity is null)
+            throw new KeyNotFoundException("Deployment secret store does not exist in the workspace.");
+        if (entity.Status == DeploymentSecretStoreStatus.Archived)
+            return ToWorkspaceDeploymentSecretStore(entity);
+
+        var now = DateTimeOffset.UtcNow;
+        entity.Status = DeploymentSecretStoreStatus.Archived;
+        entity.ArchivedAt = now;
+        entity.ArchivedByAccountId = actorAccountId;
+        entity.UpdatedAt = now;
+        entity.UpdatedByAccountId = actorAccountId;
+        foreach (var reference in entity.CredentialReferences.Where(x => x.Status == DeploymentSecretStoreStatus.Active))
+        {
+            reference.Status = DeploymentSecretStoreStatus.Archived;
+            reference.ArchivedAt = now;
+            reference.ArchivedByAccountId = actorAccountId;
+            reference.UpdatedAt = now;
+            reference.UpdatedByAccountId = actorAccountId;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceDeploymentSecretStore(entity);
+    }
+
+    public async Task<IReadOnlyList<WorkspaceDeploymentCredentialReference>> ListCredentialReferencesAsync(
+        Guid workspaceId,
+        Guid? secretStoreId = null,
+        bool includeArchived = false,
+        CancellationToken cancellationToken = default)
+    {
+        var query = dbContext.DeploymentCredentialReferences
+            .AsNoTracking()
+            .Include(x => x.SecretStore)
+            .Where(x => x.WorkspaceId == workspaceId);
+        if (secretStoreId.HasValue)
+            query = query.Where(x => x.SecretStoreId == secretStoreId.Value);
+        if (!includeArchived)
+            query = query.Where(x => x.Status == DeploymentSecretStoreStatus.Active && x.SecretStore!.Status == DeploymentSecretStoreStatus.Active);
+
+        var references = await query
+            .OrderBy(x => x.SecretStore!.Name)
+            .ThenBy(x => x.Name)
+            .ToListAsync(cancellationToken);
+        return references.Select(ToWorkspaceDeploymentCredentialReference).ToList();
+    }
+
+    public async Task<WorkspaceDeploymentCredentialReference> CreateCredentialReferenceAsync(
+        Guid workspaceId,
+        CreateDeploymentCredentialReferenceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var store = await dbContext.DeploymentSecretStores
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == request.SecretStoreId, cancellationToken);
+        if (store is null)
+            throw new KeyNotFoundException("Deployment secret store does not exist in the workspace.");
+        if (store.Status != DeploymentSecretStoreStatus.Active)
+            throw new InvalidOperationException("Credential references can only be added to active secret stores.");
+        if (await ActiveCredentialReferenceNameExistsAsync(workspaceId, request.SecretStoreId, request.Name, null, cancellationToken))
+            throw new InvalidOperationException("An active credential reference with this name already exists in the secret store.");
+
+        var now = DateTimeOffset.UtcNow;
+        var entity = new DeploymentCredentialReferenceEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            SecretStoreId = request.SecretStoreId,
+            SecretStore = store,
+            Name = request.Name,
+            Reference = request.Reference,
+            Description = request.Description,
+            Status = DeploymentSecretStoreStatus.Active,
+            VerificationStatus = CredentialVerificationStatus.Unverified,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CreatedByAccountId = request.ActorAccountId,
+            UpdatedByAccountId = request.ActorAccountId
+        };
+
+        await dbContext.DeploymentCredentialReferences.AddAsync(entity, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceDeploymentCredentialReference(entity);
+    }
+
+    public async Task<WorkspaceDeploymentCredentialReference> UpdateCredentialReferenceAsync(
+        Guid workspaceId,
+        Guid credentialReferenceId,
+        UpdateDeploymentCredentialReferenceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.DeploymentCredentialReferences
+            .Include(x => x.SecretStore)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == credentialReferenceId, cancellationToken);
+        if (entity is null)
+            throw new KeyNotFoundException("Deployment credential reference does not exist in the workspace.");
+        if (entity.Status == DeploymentSecretStoreStatus.Active && await ActiveCredentialReferenceNameExistsAsync(workspaceId, entity.SecretStoreId, request.Name, credentialReferenceId, cancellationToken))
+            throw new InvalidOperationException("An active credential reference with this name already exists in the secret store.");
+
+        entity.Name = request.Name;
+        entity.Reference = request.Reference;
+        entity.Description = request.Description;
+        entity.VerificationStatus = CredentialVerificationStatus.Unverified;
+        entity.LastVerifiedAt = null;
+        entity.UpdatedAt = DateTimeOffset.UtcNow;
+        entity.UpdatedByAccountId = request.ActorAccountId;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceDeploymentCredentialReference(entity);
+    }
+
+    public async Task<WorkspaceDeploymentCredentialReference> ArchiveCredentialReferenceAsync(
+        Guid workspaceId,
+        Guid credentialReferenceId,
+        Guid? actorAccountId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.DeploymentCredentialReferences
+            .Include(x => x.SecretStore)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == credentialReferenceId, cancellationToken);
+        if (entity is null)
+            throw new KeyNotFoundException("Deployment credential reference does not exist in the workspace.");
+        if (entity.Status == DeploymentSecretStoreStatus.Archived)
+            return ToWorkspaceDeploymentCredentialReference(entity);
+
+        var now = DateTimeOffset.UtcNow;
+        entity.Status = DeploymentSecretStoreStatus.Archived;
+        entity.ArchivedAt = now;
+        entity.ArchivedByAccountId = actorAccountId;
+        entity.UpdatedAt = now;
+        entity.UpdatedByAccountId = actorAccountId;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceDeploymentCredentialReference(entity);
     }
 
     public async Task<WorkspaceWorkflowEngine> UpdateEngineAsync(
@@ -1330,6 +1540,62 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             .OrderByDescending(x => x.RevisionNumber)
             .FirstOrDefaultAsync(cancellationToken);
         return entity is null ? null : ToWorkspaceDesiredStateRevision(entity);
+    }
+
+    public async Task<IReadOnlyList<WorkspaceDesiredStateRevisionSummary>> ListApplicationRevisionsAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        CancellationToken cancellationToken = default)
+    {
+        var revisions = await dbContext.DesiredStateRevisions
+            .AsNoTracking()
+            .Include(x => x.Environment)
+                .ThenInclude(x => x!.TierDefinition)
+            .Where(x => x.WorkspaceId == workspaceId && x.ApplicationId == applicationId)
+            .OrderByDescending(x => x.AuthoredAt)
+            .ThenByDescending(x => x.RevisionNumber)
+            .ToListAsync(cancellationToken);
+
+        var revisionIds = revisions.Select(x => x.Id).ToHashSet();
+        IReadOnlyList<DeploymentRunEntity> runs = revisionIds.Count == 0
+            ? []
+            : await dbContext.DeploymentRuns
+                .AsNoTracking()
+                .Where(x => x.WorkspaceId == workspaceId && revisionIds.Contains(x.SourceRevisionId))
+                .OrderByDescending(x => x.QueuedAt)
+                .ToListAsync(cancellationToken);
+        var latestRuns = runs
+            .GroupBy(x => x.SourceRevisionId)
+            .ToDictionary(x => x.Key, x => x.First());
+
+        return revisions.Select(x => ToWorkspaceDesiredStateRevisionSummary(x, latestRuns.GetValueOrDefault(x.Id))).ToList();
+    }
+
+    public async Task<WorkspaceDesiredStateRevisionDetail?> GetRevisionDetailAsync(
+        Guid workspaceId,
+        Guid revisionId,
+        CancellationToken cancellationToken = default)
+    {
+        var revision = await dbContext.DesiredStateRevisions
+            .AsNoTracking()
+            .Include(x => x.Environment)
+                .ThenInclude(x => x!.TierDefinition)
+            .Include(x => x.Records)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == revisionId, cancellationToken);
+        if (revision is null)
+            return null;
+
+        var runs = await dbContext.DeploymentRuns
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.SourceRevisionId == revisionId)
+            .OrderByDescending(x => x.QueuedAt)
+            .ToListAsync(cancellationToken);
+        var latestRun = runs.FirstOrDefault();
+
+        return new WorkspaceDesiredStateRevisionDetail(
+            ToWorkspaceDesiredStateRevisionSummary(revision, latestRun),
+            revision.Records.OrderBy(x => x.Kind).ThenBy(x => x.Name, StringComparer.Ordinal).Select(ToWorkspaceDesiredStateRevisionRecord).ToList(),
+            runs.Select(ToWorkspaceDesiredStateRevisionRunSummary).ToList());
     }
 
     public async Task<WorkspaceWorkflowEngine?> GetEngineAsync(
@@ -1759,6 +2025,41 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             tier.ArchivedAt,
             tier.ArchivedByAccountId);
 
+    private static WorkspaceDeploymentSecretStore ToWorkspaceDeploymentSecretStore(DeploymentSecretStoreEntity store) =>
+        new(
+            store.Id,
+            store.WorkspaceId,
+            store.Name,
+            store.Provider,
+            store.Description,
+            store.Status,
+            store.CreatedAt,
+            store.UpdatedAt,
+            store.CreatedByAccountId,
+            store.UpdatedByAccountId,
+            store.ArchivedAt,
+            store.ArchivedByAccountId);
+
+    private static WorkspaceDeploymentCredentialReference ToWorkspaceDeploymentCredentialReference(DeploymentCredentialReferenceEntity reference) =>
+        new(
+            reference.Id,
+            reference.WorkspaceId,
+            reference.SecretStoreId,
+            reference.SecretStore?.Name ?? "",
+            reference.SecretStore?.Provider ?? "",
+            reference.Name,
+            reference.Reference,
+            reference.Description,
+            reference.Status,
+            reference.VerificationStatus,
+            reference.LastVerifiedAt,
+            reference.CreatedAt,
+            reference.UpdatedAt,
+            reference.CreatedByAccountId,
+            reference.UpdatedByAccountId,
+            reference.ArchivedAt,
+            reference.ArchivedByAccountId);
+
     private static WorkflowEngineRegistration ToEngineRegistration(WorkflowEngineEntity engine) =>
         new(
             engine.Id.ToString("D"),
@@ -1814,7 +2115,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             engine.CreatedAt,
             engine.UpdatedAt,
             engine.LastVerificationAt,
-            engine.VerificationMessage);
+            engine.VerificationMessage,
+            engine.CredentialReferenceId);
 
     private static WorkspaceArtifact ToWorkspaceArtifact(WorkspaceDeploymentArtifactEntity artifact) =>
         new(
@@ -1981,6 +2283,43 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             entity.AuthoredAt,
             entity.CreatedAt,
             entity.CreatedByAccountId);
+
+    private static WorkspaceDesiredStateRevisionSummary ToWorkspaceDesiredStateRevisionSummary(DesiredStateRevisionEntity entity, DeploymentRunEntity? latestRun) =>
+        new(
+            ToWorkspaceDesiredStateRevision(entity),
+            entity.Environment?.Name ?? "",
+            entity.Environment?.Tier ?? EnvironmentTier.Production,
+            entity.Environment?.TierId,
+            entity.Environment?.TierDefinition?.Name,
+            entity.Environment?.DesiredRevisionId == entity.Id,
+            entity.Environment?.DeployedRevisionId == entity.Id,
+            latestRun?.Status,
+            latestRun?.QueuedAt);
+
+    private static WorkspaceDesiredStateRevisionRecord ToWorkspaceDesiredStateRevisionRecord(StructuredDesiredStateRecordEntity entity) =>
+        new(
+            entity.Id,
+            entity.Kind,
+            entity.Name,
+            entity.PayloadJson,
+            entity.ContentHash,
+            entity.ArtifactRecordId,
+            entity.ArtifactId,
+            entity.ArtifactTypeId,
+            entity.ArtifactDigestAlgorithm is null || entity.ArtifactDigest is null
+                ? null
+                : new WorkspaceArtifactDigest(entity.ArtifactDigestAlgorithm, entity.ArtifactDigest));
+
+    private static WorkspaceDesiredStateRevisionRunSummary ToWorkspaceDesiredStateRevisionRunSummary(DeploymentRunEntity entity) =>
+        new(
+            entity.Id,
+            entity.EnvironmentId,
+            entity.EngineId,
+            entity.Status,
+            entity.ValidationOutcome,
+            entity.QueuedAt,
+            entity.CompletedAt,
+            entity.FailureMessage);
 
     private static List<StructuredDesiredStateRecordEntity> ParseStructuredRecords(Guid workspaceId, Guid revisionId, string desiredStateJson)
     {
@@ -2635,6 +2974,56 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
                 && x.Name == name.Trim()
                 && (!excludedTierId.HasValue || x.Id != excludedTierId.Value),
             cancellationToken);
+
+    private Task<bool> ActiveSecretStoreNameExistsAsync(
+        Guid workspaceId,
+        string name,
+        Guid? excludedSecretStoreId,
+        CancellationToken cancellationToken) =>
+        dbContext.DeploymentSecretStores.AnyAsync(
+            x => x.WorkspaceId == workspaceId
+                && x.Status == DeploymentSecretStoreStatus.Active
+                && x.Name == name.Trim()
+                && (!excludedSecretStoreId.HasValue || x.Id != excludedSecretStoreId.Value),
+            cancellationToken);
+
+    private Task<bool> ActiveCredentialReferenceNameExistsAsync(
+        Guid workspaceId,
+        Guid secretStoreId,
+        string name,
+        Guid? excludedCredentialReferenceId,
+        CancellationToken cancellationToken) =>
+        dbContext.DeploymentCredentialReferences.AnyAsync(
+            x => x.WorkspaceId == workspaceId
+                && x.SecretStoreId == secretStoreId
+                && x.Status == DeploymentSecretStoreStatus.Active
+                && x.Name == name.Trim()
+                && (!excludedCredentialReferenceId.HasValue || x.Id != excludedCredentialReferenceId.Value),
+            cancellationToken);
+
+    private async Task<ResolvedEngineCredential> ResolveCredentialReferenceAsync(
+        Guid workspaceId,
+        Guid? credentialReferenceId,
+        string? credentialProvider,
+        string? credentialReference,
+        CancellationToken cancellationToken)
+    {
+        if (!credentialReferenceId.HasValue)
+            return new ResolvedEngineCredential(null, credentialProvider!.Trim(), credentialReference!.Trim());
+
+        var reference = await dbContext.DeploymentCredentialReferences
+            .AsNoTracking()
+            .Include(x => x.SecretStore)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == credentialReferenceId.Value, cancellationToken);
+        if (reference is null)
+            throw new InvalidOperationException("Deployment credential reference does not exist in the workspace.");
+        if (reference.Status != DeploymentSecretStoreStatus.Active || reference.SecretStore?.Status != DeploymentSecretStoreStatus.Active)
+            throw new InvalidOperationException("Archived deployment credential references cannot be assigned to engines.");
+
+        return new ResolvedEngineCredential(reference.Id, reference.SecretStore.Provider, reference.Reference);
+    }
+
+    private sealed record ResolvedEngineCredential(Guid? Id, string Provider, string Reference);
 
     private static DeploymentHealth EnvironmentHealth(DeploymentEnvironmentEntity environment, IReadOnlyList<WorkflowEngineEntity> engines)
     {

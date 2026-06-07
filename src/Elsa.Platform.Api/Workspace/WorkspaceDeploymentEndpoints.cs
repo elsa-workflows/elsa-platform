@@ -67,6 +67,36 @@ public static class WorkspaceDeploymentEndpoints
             return Results.Ok(new WorkspaceDeploymentTierCapabilitiesResponse(tiers.GetCapabilityCatalog()));
         });
 
+        group.MapGet("/environments/{environmentId:guid}/desired-state-requirements", async (
+            Guid workspaceId,
+            Guid environmentId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            DeploymentCockpitService cockpit,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.Read, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            var deploymentCockpit = await cockpit.GetCockpitAsync(workspaceId, cancellationToken);
+            var environment = deploymentCockpit.Applications
+                .SelectMany(application => application.Environments)
+                .SingleOrDefault(candidate => Guid.TryParse(candidate.Id, out var candidateId) && candidateId == environmentId);
+            if (environment is null)
+                return Results.NotFound();
+
+            return Results.Ok(new WorkspaceDesiredStateRequirementsResponse(
+                environmentId,
+                environment.Name,
+                string.IsNullOrWhiteSpace(environment.TierName) ? environment.Tier.ToString() : environment.TierName,
+                DeploymentTierService.CapabilitiesFor(environment),
+                DeploymentTierService.DesiredStateRequirementsFor(environment)));
+        });
+
         group.MapGet("/tiers", async (
             Guid workspaceId,
             HttpContext context,
@@ -238,6 +268,261 @@ public static class WorkspaceDeploymentEndpoints
             }
         });
 
+        group.MapGet("/secret-stores", async (
+            Guid workspaceId,
+            bool? includeArchived,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.Read, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            var stores = await deployments.ListSecretStoresAsync(workspaceId, includeArchived == true, cancellationToken);
+            return Results.Ok(new WorkspaceDeploymentSecretStoresResponse(stores));
+        });
+
+        group.MapPost("/secret-stores", async (
+            Guid workspaceId,
+            WorkspaceDeploymentSecretStoreRequest request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                var store = await deployments.CreateSecretStoreAsync(
+                    workspaceId,
+                    new CreateDeploymentSecretStoreRequest(request.Name, request.Provider, request.Description, access.Access!.AccountId),
+                    cancellationToken);
+                return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/secret-stores/{store.Id:D}", store);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        group.MapPut("/secret-stores/{secretStoreId:guid}", async (
+            Guid workspaceId,
+            Guid secretStoreId,
+            WorkspaceDeploymentSecretStoreRequest request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await deployments.UpdateSecretStoreAsync(
+                    workspaceId,
+                    secretStoreId,
+                    new UpdateDeploymentSecretStoreRequest(request.Name, request.Provider, request.Description, access.Access!.AccountId),
+                    cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        group.MapPost("/secret-stores/{secretStoreId:guid}/archive", async (
+            Guid workspaceId,
+            Guid secretStoreId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await deployments.ArchiveSecretStoreAsync(workspaceId, secretStoreId, access.Access!.AccountId, cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
+        group.MapGet("/secret-stores/{secretStoreId:guid}/credential-references", async (
+            Guid workspaceId,
+            Guid secretStoreId,
+            bool? includeArchived,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.Read, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            var references = await deployments.ListCredentialReferencesAsync(workspaceId, secretStoreId, includeArchived == true, cancellationToken);
+            return Results.Ok(new WorkspaceDeploymentCredentialReferencesResponse(references));
+        });
+
+        group.MapGet("/credential-references", async (
+            Guid workspaceId,
+            bool? includeArchived,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.Read, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            var references = await deployments.ListCredentialReferencesAsync(workspaceId, null, includeArchived == true, cancellationToken);
+            return Results.Ok(new WorkspaceDeploymentCredentialReferencesResponse(references));
+        });
+
+        group.MapPost("/secret-stores/{secretStoreId:guid}/credential-references", async (
+            Guid workspaceId,
+            Guid secretStoreId,
+            WorkspaceDeploymentCredentialReferenceRequest request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                var reference = await deployments.CreateCredentialReferenceAsync(
+                    workspaceId,
+                    new CreateDeploymentCredentialReferenceRequest(secretStoreId, request.Name, request.Reference, request.Description, access.Access!.AccountId),
+                    cancellationToken);
+                return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/credential-references/{reference.Id:D}", reference);
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        group.MapPut("/credential-references/{credentialReferenceId:guid}", async (
+            Guid workspaceId,
+            Guid credentialReferenceId,
+            WorkspaceDeploymentCredentialReferenceRequest request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await deployments.UpdateCredentialReferenceAsync(
+                    workspaceId,
+                    credentialReferenceId,
+                    new UpdateDeploymentCredentialReferenceRequest(request.Name, request.Reference, request.Description, access.Access!.AccountId),
+                    cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        group.MapPost("/credential-references/{credentialReferenceId:guid}/archive", async (
+            Guid workspaceId,
+            Guid credentialReferenceId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await deployments.ArchiveCredentialReferenceAsync(workspaceId, credentialReferenceId, access.Access!.AccountId, cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
         group.MapPost("/applications", async (
             Guid workspaceId,
             WorkspaceDeploymentApplicationRequest request,
@@ -359,6 +644,44 @@ public static class WorkspaceDeploymentEndpoints
             }
         });
 
+        group.MapGet("/applications/{applicationId:guid}/revisions", async (
+            Guid workspaceId,
+            Guid applicationId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.Read, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            var revisions = await deployments.ListApplicationRevisionsAsync(workspaceId, applicationId, cancellationToken);
+            return Results.Ok(new WorkspaceApplicationRevisionsResponse(revisions));
+        });
+
+        group.MapGet("/revisions/{revisionId:guid}", async (
+            Guid workspaceId,
+            Guid revisionId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.Read, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            var revision = await deployments.GetRevisionDetailAsync(workspaceId, revisionId, cancellationToken);
+            return revision is null ? Results.NotFound() : Results.Ok(revision);
+        });
+
         group.MapPost("/environments/{environmentId:guid}/engines", async (
             Guid workspaceId,
             Guid environmentId,
@@ -376,24 +699,36 @@ public static class WorkspaceDeploymentEndpoints
             if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
                 return DeploymentPermissionDenied();
 
-            var engine = await deployments.RegisterEngineAsync(
-                workspaceId,
-                new RegisterWorkflowEngineRequest(
-                    environmentId,
-                    request.Name,
-                    request.BaseUrl,
-                    request.Region,
-                    request.CredentialProvider,
-                    request.CredentialReference,
-                    request.Capabilities,
-                    request.Controls,
-                    request.HostingProvider),
-                cancellationToken);
-            var healthResult = await health.VerifyEngineAsync(
-                workspaceId,
-                new EngineHealthVerificationRequest(engine.Id, access.Access!.AccountId),
-                cancellationToken);
-            return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/engines/{engine.Id:D}", ApplyHealthResult(engine, healthResult));
+            try
+            {
+                var engine = await deployments.RegisterEngineAsync(
+                    workspaceId,
+                    new RegisterWorkflowEngineRequest(
+                        environmentId,
+                        request.Name,
+                        request.BaseUrl,
+                        request.Region,
+                        request.CredentialProvider ?? "",
+                        request.CredentialReference ?? "",
+                        request.Capabilities,
+                        request.Controls,
+                        request.HostingProvider,
+                        request.CredentialReferenceId),
+                    cancellationToken);
+                var healthResult = await health.VerifyEngineAsync(
+                    workspaceId,
+                    new EngineHealthVerificationRequest(engine.Id, access.Access!.AccountId),
+                    cancellationToken);
+                return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/engines/{engine.Id:D}", ApplyHealthResult(engine, healthResult));
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
         });
 
         group.MapPut("/engines/{engineId:guid}", async (
@@ -422,8 +757,8 @@ public static class WorkspaceDeploymentEndpoints
                         request.Name,
                         request.BaseUrl,
                         request.Region,
-                        request.CredentialProvider,
-                        request.CredentialReference,
+                        request.CredentialProvider ?? string.Empty,
+                        request.CredentialReference ?? string.Empty,
                         request.Capabilities,
                         request.Controls,
                         request.HostingProvider),

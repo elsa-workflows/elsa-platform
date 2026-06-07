@@ -26,12 +26,21 @@ import { Badge, Button, buttonClassName, EmptyState, Input, SecondaryButton, Sel
 import { RequestStateView } from "@/components/states/RequestStateViews";
 import {
   createActionConfirmation,
+  archiveDeploymentCredentialReference,
+  archiveDeploymentSecretStore,
   createDeploymentApplication,
+  createDeploymentCredentialReference,
   createDeploymentEnvironment,
+  createDeploymentSecretStore,
   createDesiredStateRevision,
+  getApplicationRevisions,
   getDeploymentCockpit,
+  getEnvironmentDesiredStateRequirements,
+  getDeploymentCredentialReferences,
   getDeploymentPermissions,
+  getDeploymentSecretStores,
   getDeploymentTiers,
+  getRevisionDetail,
   previewPromotion,
   promoteRevision,
   queueDeploymentRun,
@@ -43,13 +52,12 @@ import {
   updateDeploymentEnvironment,
   verifyDeploymentEngine
 } from "@/features/deployments/deploymentApi";
-import { listWorkspaceArtifacts } from "@/features/artifacts/artifactApi";
+import { listWorkspaceArtifacts, workspaceArtifactDownloadUrl } from "@/features/artifacts/artifactApi";
 import type { WorkspaceArtifact } from "@/features/artifacts/artifactModels";
 import {
   CredentialReferenceInput,
   DeploymentSetupPanel,
   engineRegistrationRequest,
-  setupEngineRequest,
   type CredentialReferenceOption,
   type DeploymentSetupValues,
   type EngineRegistrationValues
@@ -72,6 +80,11 @@ import {
   type RuntimeControl,
   type ValidationSeverity,
   type WorkspaceDeploymentTier,
+  type WorkspaceDeploymentCredentialReference,
+  type WorkspaceDeploymentSecretStore,
+  type WorkspaceDesiredStateRevisionDetail,
+  type WorkspaceDesiredStateRevisionRecord,
+  type WorkspaceDesiredStateRevisionSummary,
   type WorkflowEngineRegistration
 } from "@/features/deployments/deploymentModels";
 import { useWorkspaceContext } from "@/app/WorkspaceContextProvider";
@@ -85,6 +98,8 @@ type DeploymentContext = {
   data: DeploymentCockpit;
   tiers: WorkspaceDeploymentTier[];
   activeTiers: WorkspaceDeploymentTier[];
+  secretStores: WorkspaceDeploymentSecretStore[];
+  credentialReferences: WorkspaceDeploymentCredentialReference[];
   credentialOptions: CredentialReferenceOption[];
   canManageSetup: boolean;
   canManageDesiredState: boolean;
@@ -127,6 +142,10 @@ type PromotionReadinessIssue = {
 type ApplicationSort = "name" | "health" | "environments" | "engines" | "drift";
 type EnvironmentSort = "name" | "tier" | "health" | "deployment" | "drift";
 type EngineSort = "name" | "health" | "verification" | "heartbeat";
+type RevisionSort = "newest" | "environment" | "status";
+type RevisionStatusFilter = "all" | "desired" | "deployed" | "superseded" | "never-deployed";
+
+const observabilityRequirementId = "observability-binding";
 
 const applicationSorts: { value: ApplicationSort; label: string }[] = [
   { value: "name", label: "Application" },
@@ -149,6 +168,20 @@ const engineSorts: { value: EngineSort; label: string }[] = [
   { value: "health", label: "Health" },
   { value: "verification", label: "Credential verification" },
   { value: "heartbeat", label: "Last heartbeat" }
+];
+
+const revisionSorts: { value: RevisionSort; label: string }[] = [
+  { value: "newest", label: "Newest" },
+  { value: "environment", label: "Environment" },
+  { value: "status", label: "Status" }
+];
+
+const revisionStatusFilters: { value: RevisionStatusFilter; label: string }[] = [
+  { value: "all", label: "All revisions" },
+  { value: "desired", label: "Current desired" },
+  { value: "deployed", label: "Currently deployed" },
+  { value: "superseded", label: "Superseded" },
+  { value: "never-deployed", label: "Never deployed" }
 ];
 
 export function DeploymentsPage() {
@@ -307,7 +340,7 @@ export function NewDeploymentSetupPage() {
 function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { workspaceId, activeTiers, credentialOptions, canManageSetup } = context;
+  const { workspaceId, activeTiers, canManageSetup } = context;
   const setup = useMutation({
     mutationFn: async (values: DeploymentSetupValues) => {
       const application = await createDeploymentApplication(workspaceId, { name: values.applicationName, description: null });
@@ -316,7 +349,6 @@ function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
         tier: values.environmentTier,
         tierId: values.environmentTierId
       });
-      await registerDeploymentEngine(workspaceId, environment.id, setupEngineRequest(values));
       return { applicationId: application.id, environmentId: environment.id };
     },
     onSuccess: async (created) => {
@@ -328,7 +360,7 @@ function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
   return (
     <FormPageShell
       title="New application setup"
-      description="Create a workflow application with its first environment and engine registration."
+      description="Create a workflow application with its first deployment environment."
       breadcrumbs={[
         { label: "Deployments", to: "/admin/deployments" },
         { label: "Applications", to: "/admin/deployments/applications" },
@@ -338,7 +370,6 @@ function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
       <DeploymentSetupPanel
         canManageSetup={canManageSetup}
         tiers={activeTiers}
-        credentialOptions={credentialOptions}
         isSubmitting={setup.isPending}
         error={setup.error instanceof Error ? setup.error.message : undefined}
         onSubmit={(values) => setup.mutate(values)}
@@ -355,7 +386,8 @@ export function DeploymentApplicationPage() {
 }
 
 function DeploymentApplicationReady({ context, applicationId }: { context: DeploymentContext; applicationId: string }) {
-  const { data, canManageSetup } = context;
+  const queryClient = useQueryClient();
+  const { workspaceId, data, secretStores, credentialReferences, canManageSetup } = context;
   const application = findApplication(data, applicationId);
   if (!application) return <RequestStateView state="not-found" title="Application not found" />;
 
@@ -365,6 +397,29 @@ function DeploymentApplicationReady({ context, applicationId }: { context: Deplo
     () => sortEnvironments(filterEnvironments(application.environments, environmentQuery), environmentSort),
     [application.environments, environmentQuery, environmentSort]
   );
+  const refreshSecretMetadata = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.deploymentSecretStores(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCredentialReferences(workspaceId) })
+    ]);
+  };
+  const createSecretStore = useMutation({
+    mutationFn: (values: { name: string; provider: string; description: string | null }) => createDeploymentSecretStore(workspaceId, values),
+    onSuccess: refreshSecretMetadata
+  });
+  const archiveSecretStore = useMutation({
+    mutationFn: (secretStoreId: string) => archiveDeploymentSecretStore(workspaceId, secretStoreId),
+    onSuccess: refreshSecretMetadata
+  });
+  const createCredentialReference = useMutation({
+    mutationFn: (values: { secretStoreId: string; name: string; reference: string; description: string | null }) =>
+      createDeploymentCredentialReference(workspaceId, values.secretStoreId, { name: values.name, reference: values.reference, description: values.description }),
+    onSuccess: refreshSecretMetadata
+  });
+  const archiveCredentialReference = useMutation({
+    mutationFn: (credentialReferenceId: string) => archiveDeploymentCredentialReference(workspaceId, credentialReferenceId),
+    onSuccess: refreshSecretMetadata
+  });
 
   return (
     <section className="space-y-5">
@@ -380,6 +435,10 @@ function DeploymentApplicationReady({ context, applicationId }: { context: Deplo
         description="Manage environments for this workflow application."
         actions={
           <>
+            <Link to={applicationRevisionsPath(application.id)} className={buttonClassName("secondary")}>
+              <GitBranch className="h-4 w-4" />
+              Revisions
+            </Link>
             <Link to={`/admin/deployments/applications/${application.id}/edit`} className={buttonClassName("secondary", !canManageSetup ? "pointer-events-none opacity-50" : undefined)} aria-disabled={!canManageSetup}>
               <Pencil className="h-4 w-4" />
               Edit application
@@ -407,16 +466,312 @@ function DeploymentApplicationReady({ context, applicationId }: { context: Deplo
       <section className="space-y-3">
         <SectionHeader title="Environments" description="Open an environment to inspect engines, promotions, runs, drift, and approvals." />
         {application.environments.length === 0 ? (
-          <EmptyState title="No environments registered" description="Add an environment and its first workflow engine registration." />
+          <EmptyState title="No environments registered" description="Add an environment, then register workflow engines from the environment page." />
         ) : environments.length === 0 ? (
           <EmptyState title="No matching environments" description="Clear the search to see all environments." />
         ) : (
           <EnvironmentTable application={application} environments={environments} data={data} />
         )}
       </section>
+      <SecretStoresPanel
+        stores={secretStores}
+        references={credentialReferences}
+        canManageSetup={canManageSetup}
+        isCreatingStore={createSecretStore.isPending}
+        isCreatingReference={createCredentialReference.isPending}
+        archivePendingId={archiveSecretStore.variables ?? archiveCredentialReference.variables ?? null}
+        error={
+          createSecretStore.error instanceof Error ? createSecretStore.error.message :
+          createCredentialReference.error instanceof Error ? createCredentialReference.error.message :
+          archiveSecretStore.error instanceof Error ? archiveSecretStore.error.message :
+          archiveCredentialReference.error instanceof Error ? archiveCredentialReference.error.message :
+          undefined
+        }
+        onCreateStore={(values) => createSecretStore.mutate(values)}
+        onArchiveStore={(secretStoreId) => archiveSecretStore.mutate(secretStoreId)}
+        onCreateReference={(values) => createCredentialReference.mutate(values)}
+        onArchiveReference={(credentialReferenceId) => archiveCredentialReference.mutate(credentialReferenceId)}
+      />
     </section>
   );
 }
+
+export function DeploymentApplicationRevisionsPage() {
+  const context = useDeploymentContext();
+  const { applicationId = "" } = useParams();
+  if (context.status !== "ready") return context.state;
+  return <DeploymentApplicationRevisionsReady context={context.value} applicationId={applicationId} />;
+}
+
+function DeploymentApplicationRevisionsReady({ context, applicationId }: { context: DeploymentContext; applicationId: string }) {
+  const { workspaceId, data, canManageDesiredState } = context;
+  const application = findApplication(data, applicationId);
+  const [searchParams] = useSearchParams();
+  const [query, setQuery] = useState("");
+  const [environmentId, setEnvironmentId] = useState(searchParams.get("environment") ?? "all");
+  const [status, setStatus] = useState<RevisionStatusFilter>(() => parseRevisionStatusFilter(searchParams.get("status")));
+  const [sort, setSort] = useState<RevisionSort>("newest");
+  const [newRevisionEnvironmentId, setNewRevisionEnvironmentId] = useState("");
+  const revisions = useQuery({
+    queryKey: queryKeys.deploymentApplicationRevisions(workspaceId, applicationId),
+    queryFn: () => getApplicationRevisions(workspaceId, applicationId),
+    enabled: Boolean(application)
+  });
+
+  useEffect(() => {
+    if (!application) return;
+    if (!application.environments.some((environment) => environment.id === newRevisionEnvironmentId)) {
+      setNewRevisionEnvironmentId(application.environments[0]?.id ?? "");
+    }
+  }, [application, newRevisionEnvironmentId]);
+
+  if (!application) return <RequestStateView state="not-found" title="Application not found" />;
+
+  const revisionItems = revisions.data?.items ?? [];
+  const visibleRevisions = sortRevisions(filterRevisions(revisionItems, query, environmentId, status), sort);
+  const newRevisionPath = newRevisionEnvironmentId ? `${environmentPath(application.id, newRevisionEnvironmentId)}/revisions/new` : "";
+
+  return (
+    <section className="space-y-5">
+      <Breadcrumbs
+        items={[
+          { label: "Deployments", to: "/admin/deployments" },
+          { label: "Applications", to: "/admin/deployments/applications" },
+          { label: application.name, to: applicationPath(application.id) },
+          { label: "Revisions" }
+        ]}
+      />
+      <PageHeader
+        title={`${application.name} revisions`}
+        description="Review desired-state revisions across this application's environments."
+        actions={
+          <div className="grid gap-2 sm:grid-cols-[minmax(12rem,18rem)_auto]">
+            <Select
+              value={newRevisionEnvironmentId}
+              disabled={application.environments.length === 0}
+              onChange={(event) => setNewRevisionEnvironmentId(event.target.value)}
+              aria-label="New revision environment"
+            >
+              {application.environments.length === 0 ? (
+                <option value="">No environments</option>
+              ) : (
+                application.environments.map((environment) => <option key={environment.id} value={environment.id}>{environment.name}</option>)
+              )}
+            </Select>
+            <Link
+              to={newRevisionPath || applicationPath(application.id)}
+              className={buttonClassName("primary", !canManageDesiredState || !newRevisionPath ? "pointer-events-none opacity-50" : undefined)}
+              aria-disabled={!canManageDesiredState || !newRevisionPath}
+            >
+              <Plus className="h-4 w-4" />
+              New revision
+            </Link>
+          </div>
+        }
+      />
+
+      <div className="grid gap-3 xl:grid-cols-[minmax(16rem,1fr)_minmax(12rem,18rem)_minmax(12rem,18rem)_auto] xl:items-center">
+        <label className="relative block">
+          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} className="pl-9" placeholder="Search revisions" />
+        </label>
+        <Select value={environmentId} onChange={(event) => setEnvironmentId(event.target.value)} aria-label="Filter revisions by environment">
+          <option value="all">All environments</option>
+          {application.environments.map((environment) => <option key={environment.id} value={environment.id}>{environment.name}</option>)}
+        </Select>
+        <Select value={status} onChange={(event) => setStatus(event.target.value as RevisionStatusFilter)} aria-label="Filter revisions by status">
+          {revisionStatusFilters.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </Select>
+        <Select value={sort} onChange={(event) => setSort(event.target.value as RevisionSort)} aria-label="Sort revisions">
+          {revisionSorts.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </Select>
+      </div>
+
+      {revisions.isLoading || revisions.isFetching ? (
+        <RequestStateView state="loading" title="Loading revisions" />
+      ) : revisions.isError ? (
+        <RequestStateView state="unexpected" title="Revisions could not load" />
+      ) : revisionItems.length === 0 ? (
+        <EmptyState
+          title="No revisions yet"
+          description="Create a desired-state revision from a registered artifact before deploying this application."
+          action={
+            newRevisionPath ? (
+              <Link to={newRevisionPath} className={buttonClassName("secondary", !canManageDesiredState ? "pointer-events-none opacity-50" : undefined)} aria-disabled={!canManageDesiredState}>
+                <Plus className="h-4 w-4" />
+                New revision
+              </Link>
+            ) : undefined
+          }
+        />
+      ) : visibleRevisions.length === 0 ? (
+        <EmptyState title="No matching revisions" description="Clear filters to see all revisions for this application." />
+      ) : (
+        <RevisionTable application={application} revisions={visibleRevisions} />
+      )}
+    </section>
+  );
+}
+
+export function DeploymentRevisionDetailPage() {
+  const context = useDeploymentContext();
+  const { applicationId = "", revisionId = "" } = useParams();
+  if (context.status !== "ready") return context.state;
+  return <DeploymentRevisionDetailReady context={context.value} applicationId={applicationId} revisionId={revisionId} />;
+}
+
+function DeploymentRevisionDetailReady({ context, applicationId, revisionId }: { context: DeploymentContext; applicationId: string; revisionId: string }) {
+  const queryClient = useQueryClient();
+  const { workspaceId, data, canExecuteDeployment } = context;
+  const application = findApplication(data, applicationId);
+  const revision = useQuery({
+    queryKey: queryKeys.deploymentRevision(workspaceId, revisionId),
+    queryFn: () => getRevisionDetail(workspaceId, revisionId),
+    enabled: Boolean(application && revisionId)
+  });
+  const detail = revision.data;
+  const summary = detail?.summary;
+  const environment = summary ? application?.environments.find((item) => item.id === summary.revision.environmentId) : undefined;
+  const engines = summary ? enginesForEnvironment(data, summary.revision.environmentId) : [];
+  const [selectedEngineId, setSelectedEngineId] = useState("");
+  const deploy = useMutation({
+    mutationFn: async () => {
+      if (!summary)
+        throw new Error("Revision has not loaded.");
+      if (!selectedEngineId)
+        throw new Error("Choose an engine before deploying this revision.");
+      const confirmation = await createActionConfirmation(workspaceId, {
+        actionType: "Deploy",
+        targetId: summary.revision.id,
+        lifetimeSeconds: null
+      });
+      return queueDeploymentRun(workspaceId, {
+        sourceRevisionId: summary.revision.id,
+        targetEnvironmentId: summary.revision.environmentId,
+        targetEngineId: selectedEngineId,
+        confirmationId: confirmation.id,
+        mode: "Apply"
+      });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        context.refreshDeploymentCockpit(),
+        queryClient.invalidateQueries({ queryKey: queryKeys.deploymentApplicationRevisions(workspaceId, applicationId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.deploymentRevision(workspaceId, revisionId) })
+      ]);
+    }
+  });
+
+  useEffect(() => {
+    if (engines.some((engine) => engine.id === selectedEngineId)) return;
+    setSelectedEngineId(engines.length === 1 ? engines[0].id : "");
+  }, [engines, selectedEngineId]);
+
+  if (!application) return <RequestStateView state="not-found" title="Application not found" />;
+  if (revision.isLoading || revision.isFetching) return <RequestStateView state="loading" title="Loading revision" />;
+  if (revision.isError) return <RequestStateView state="unexpected" title="Revision could not load" />;
+  if (!detail || !summary || summary.revision.applicationId !== application.id) return <RequestStateView state="not-found" title="Revision not found" />;
+
+  const deployDisabled = !canExecuteDeployment || summary.isCurrentDeployed || engines.length === 0 || !selectedEngineId || deploy.isPending;
+
+  return (
+    <section className="space-y-5">
+      <Breadcrumbs
+        items={[
+          { label: "Deployments", to: "/admin/deployments" },
+          { label: "Applications", to: "/admin/deployments/applications" },
+          { label: application.name, to: applicationPath(application.id) },
+          { label: "Revisions", to: applicationRevisionsPath(application.id) },
+          { label: `r${summary.revision.revisionNumber}` }
+        ]}
+      />
+      <PageHeader
+        title={`Revision r${summary.revision.revisionNumber}`}
+        description={`${summary.environmentName} desired-state revision for ${application.name}.`}
+        actions={
+          <>
+            <Link to={`${environmentPath(application.id, summary.revision.environmentId)}/revisions/new`} className={buttonClassName("secondary")}>
+              <Plus className="h-4 w-4" />
+              New revision
+            </Link>
+            <Link to={environmentPath(application.id, summary.revision.environmentId)} className={buttonClassName("secondary")}>
+              <ShieldCheck className="h-4 w-4" />
+              Environment
+            </Link>
+          </>
+        }
+      />
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-4">
+          <Panel title="Revision metadata" icon={<GitBranch className="h-4 w-4" />}>
+            <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Detail label="Status" value={<RevisionStateBadge revision={summary} />} />
+              <Detail label="Environment" value={environment ? <Link to={environmentPath(application.id, environment.id)} className="text-primary hover:underline">{environment.name}</Link> : summary.environmentName} />
+              <Detail label="Tier" value={summary.environmentTierName ?? summary.environmentTier} />
+              <Detail label="Label" value={summary.revision.label} />
+              <Detail label="Commit" value={summary.revision.commit} />
+              <Detail label="Authored" value={formatDateTime(summary.revision.authoredAt)} />
+              <Detail label="Content hash" value={summary.revision.contentHash} />
+              <Detail label="Latest run" value={summary.latestRunStatus ? `${summary.latestRunStatus} · ${formatDateTime(summary.latestRunQueuedAt)}` : "No runs queued"} />
+            </dl>
+          </Panel>
+
+          <Panel title="Desired-state records" icon={<ClipboardCheck className="h-4 w-4" />}>
+            {detail.records.length === 0 ? (
+              <EmptyState title="No structured records" description="This revision does not expose structured desired-state records." />
+            ) : (
+              <RevisionRecordTable records={detail.records} />
+            )}
+          </Panel>
+
+          <Panel title="Deployment runs" icon={<Rocket className="h-4 w-4" />}>
+            {detail.runs.length === 0 ? (
+              <EmptyState title="No deployment runs" description="Queue deployment when this revision is ready to apply." />
+            ) : (
+              <RevisionRunTable runs={detail.runs} engines={data.engines} />
+            )}
+          </Panel>
+        </div>
+
+        <aside className="space-y-4">
+          <Panel title="Deploy revision" icon={<Rocket className="h-4 w-4" />}>
+            <div className="space-y-3">
+              {summary.isCurrentDeployed ? (
+                <p className="rounded-ui border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                  This revision is already deployed in {summary.environmentName}.
+                </p>
+              ) : engines.length === 0 ? (
+                <p className="rounded-ui border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                  Register an engine before deploying this revision.
+                </p>
+              ) : (
+                <label className="block text-sm font-medium">
+                  Target engine
+                  <Select className="mt-1 w-full" value={selectedEngineId} onChange={(event) => setSelectedEngineId(event.target.value)}>
+                    <option value="" disabled>Choose engine</option>
+                    {engines.map((engine) => <option key={engine.id} value={engine.id}>{engine.name}</option>)}
+                  </Select>
+                </label>
+              )}
+              <Button disabled={deployDisabled} onClick={() => deploy.mutate()}>
+                <Rocket className="h-4 w-4" />
+                {deploy.isPending ? "Queueing deployment" : "Deploy revision"}
+              </Button>
+              {!canExecuteDeployment ? <p className="text-xs text-muted-foreground">Deployment execution permission is required.</p> : null}
+              {deploy.error instanceof Error ? <p role="alert" className="text-sm text-destructive">{deploy.error.message}</p> : null}
+              {deploy.isSuccess ? <p role="status" className="text-sm text-success">Deployment run queued.</p> : null}
+            </div>
+          </Panel>
+          <Panel title="Raw desired state" icon={<ClipboardCheck className="h-4 w-4" />}>
+            <pre className="max-h-80 overflow-auto rounded-ui bg-muted/40 p-3 text-xs text-muted-foreground">{formatJson(summary.revision.desiredStateJson)}</pre>
+          </Panel>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
 
 export function DeploymentApplicationEditPage() {
   const context = useDeploymentContext();
@@ -470,7 +825,7 @@ export function DeploymentEnvironmentCreatePage() {
 
 function DeploymentEnvironmentCreateReady({ context, applicationId }: { context: DeploymentContext; applicationId: string }) {
   const navigate = useNavigate();
-  const { workspaceId, data, activeTiers, credentialOptions, canManageSetup } = context;
+  const { workspaceId, data, activeTiers, canManageSetup } = context;
   const application = findApplication(data, applicationId);
   if (!application) return <RequestStateView state="not-found" title="Application not found" />;
 
@@ -481,7 +836,6 @@ function DeploymentEnvironmentCreateReady({ context, applicationId }: { context:
         tier: values.environmentTier,
         tierId: values.environmentTierId
       });
-      await registerDeploymentEngine(workspaceId, environment.id, setupEngineRequest(values));
       return environment;
     },
     onSuccess: async (environment) => {
@@ -493,7 +847,7 @@ function DeploymentEnvironmentCreateReady({ context, applicationId }: { context:
   return (
     <FormPageShell
       title="Add environment"
-      description="Create an environment and register its first workflow engine."
+      description="Create an environment for this application."
       breadcrumbs={[
         { label: "Deployments", to: "/admin/deployments" },
         { label: "Applications", to: "/admin/deployments/applications" },
@@ -505,7 +859,6 @@ function DeploymentEnvironmentCreateReady({ context, applicationId }: { context:
         fixedApplicationName={application.name}
         canManageSetup={canManageSetup}
         tiers={activeTiers}
-        credentialOptions={credentialOptions}
         submitLabel="Add environment"
         isSubmitting={createEnvironment.isPending}
         error={createEnvironment.error instanceof Error ? createEnvironment.error.message : undefined}
@@ -871,11 +1224,28 @@ function DeploymentEnvironmentReady({
           <Panel title="Environment" icon={<ShieldCheck className="h-4 w-4" />}>
             <dl className="space-y-3">
               <Detail label="Tier" value={`${environment.tierName || environment.tier}${environment.tierStatus === "Archived" ? " (archived)" : ""}`} />
-              <Detail label="Desired revision" value={`r${environment.desiredRevision.revision} · ${environment.desiredRevision.commit}`} />
-              <Detail label="Deployed revision" value={environment.deployedRevision ? `r${environment.deployedRevision}` : "Not deployed"} />
+              <Detail
+                label="Desired revision"
+                value={
+                  <Link to={revisionDetailPath(application.id, environment.desiredRevision.id)} className="text-primary hover:underline">
+                    r{environment.desiredRevision.revision} · {environment.desiredRevision.commit}
+                  </Link>
+                }
+              />
+              <Detail
+                label="Deployed revision"
+                value={environment.deployedRevision ? (
+                  <Link to={applicationRevisionsPath(application.id, `environment=${encodeURIComponent(environment.id)}&status=deployed`)} className="text-primary hover:underline">
+                    r{environment.deployedRevision}
+                  </Link>
+                ) : "Not deployed"}
+              />
               <Detail label="Desired label" value={environment.desiredRevision.label} />
               <Detail label="Authored" value={formatDateTime(environment.desiredRevision.authoredAt)} />
             </dl>
+            <Link to={applicationRevisionsPath(application.id, `environment=${encodeURIComponent(environment.id)}`)} className="mt-4 inline-flex text-xs font-medium text-primary hover:underline">
+              View all revisions
+            </Link>
           </Panel>
           <Panel title="Tier capabilities" icon={<ClipboardCheck className="h-4 w-4" />}>
             <div className="flex flex-wrap gap-2">
@@ -975,7 +1345,6 @@ function DeploymentRevisionCreateReady({
   const [label, setLabel] = useState("");
   const [commit, setCommit] = useState("");
   const [artifactRecordId, setArtifactRecordId] = useState("");
-  const [includeObservability, setIncludeObservability] = useState(searchParams.get("includeObservability") === "1");
   const [observabilityKind, setObservabilityKind] = useState<ObservabilityBinding["kind"]>("Traces");
   const [observabilityProvider, setObservabilityProvider] = useState("OpenTelemetry Collector");
   const [observabilityScope, setObservabilityScope] = useState(() => `${resolved.environment?.name ?? "Environment"} / workflow runtime`);
@@ -984,8 +1353,21 @@ function DeploymentRevisionCreateReady({
     queryKey: queryKeys.artifacts(workspaceId),
     queryFn: () => listWorkspaceArtifacts(workspaceId)
   });
+  const desiredStateRequirements = useQuery({
+    queryKey: queryKeys.deploymentDesiredStateRequirements(workspaceId, environmentId),
+    queryFn: () => getEnvironmentDesiredStateRequirements(workspaceId, environmentId),
+    enabled: Boolean(resolved.environment)
+  });
   const artifactItems = (artifacts.data?.items ?? []).filter((artifact) => artifact.status !== "Archived");
   const selectedArtifact = artifactItems.find((artifact) => artifact.id === artifactRecordId) ?? artifactItems[0];
+  const contextualObservabilityRequested = searchParams.get("includeRequirement") === observabilityRequirementId || searchParams.get("includeObservability") === "1";
+  const tierObservabilityRequirement = desiredStateRequirements.data?.requirements.find((requirement) => requirement.id === observabilityRequirementId);
+  const showObservability = Boolean(tierObservabilityRequirement) || contextualObservabilityRequested;
+  const observabilityRequired = Boolean(tierObservabilityRequirement?.required) || contextualObservabilityRequested;
+  const observabilityReason = tierObservabilityRequirement
+    ? `Required by ${desiredStateRequirements.data?.tierName ?? resolved.environment?.tierName ?? resolved.environment?.tier} tier.`
+    : "Included from a validation action for a target environment.";
+  const isLoadingRequirements = desiredStateRequirements.isLoading || desiredStateRequirements.isFetching;
 
   const createRevision = useMutation({
     mutationFn: async () => {
@@ -993,11 +1375,11 @@ function DeploymentRevisionCreateReady({
         throw new Error("Environment not found.");
       if (!selectedArtifact)
         throw new Error("Choose an artifact before creating a revision.");
-      if (includeObservability && (!observabilityProvider.trim() || !observabilityScope.trim()))
+      if (showObservability && observabilityRequired && (!observabilityProvider.trim() || !observabilityScope.trim()))
         throw new Error("Observability provider and scope are required.");
 
       const records = [artifactRevisionRecord(selectedArtifact)];
-      if (includeObservability) {
+      if (showObservability) {
         records.push(observabilityRevisionRecord({
           kind: observabilityKind,
           provider: observabilityProvider,
@@ -1012,10 +1394,10 @@ function DeploymentRevisionCreateReady({
         records
       });
     },
-    onSuccess: async () => {
+    onSuccess: async (createdRevision) => {
       if (!resolved.application || !resolved.environment) return;
       await context.refreshDeploymentCockpit();
-      navigate(environmentPath(resolved.application.id, resolved.environment.id));
+      navigate(revisionDetailPath(resolved.application.id, createdRevision.id));
     }
   });
 
@@ -1023,7 +1405,17 @@ function DeploymentRevisionCreateReady({
   if (!resolved.environment) return <RequestStateView state="not-found" title="Environment not found" />;
   const { application, environment } = resolved;
   const isLoadingArtifacts = artifacts.isLoading || artifacts.isFetching;
-  const submitDisabled = !canManageDesiredState || isLoadingArtifacts || artifactItems.length === 0 || createRevision.isPending;
+  const submitDisabled = !canManageDesiredState || isLoadingArtifacts || isLoadingRequirements || desiredStateRequirements.error instanceof Error || artifactItems.length === 0 || createRevision.isPending;
+  const requirementTierName = desiredStateRequirements.data?.tierName ?? environment.tierName ?? environment.tier;
+  const hasCurrentTierRequirements = (desiredStateRequirements.data?.requirements.length ?? 0) > 0;
+  const revisionFlowActions = [
+    "The revision becomes the latest desired state for this environment.",
+    hasCurrentTierRequirements
+      ? "Complete required desired-state records before creating the revision."
+      : "No additional desired-state records are required by this environment tier.",
+    "Use Promotion to copy it into a higher environment.",
+    "Use Deploy Target Revision after promotion validation passes."
+  ];
 
   return (
     <FormPageShell
@@ -1051,10 +1443,11 @@ function DeploymentRevisionCreateReady({
             </p>
           ) : null}
           {artifacts.error instanceof Error ? <p role="alert" className="text-sm text-destructive">{artifacts.error.message}</p> : null}
+          {desiredStateRequirements.error instanceof Error ? <p role="alert" className="text-sm text-destructive">{desiredStateRequirements.error.message}</p> : null}
           {createRevision.error instanceof Error ? <p role="alert" className="text-sm text-destructive">{createRevision.error.message}</p> : null}
 
-          {isLoadingArtifacts ? (
-            <RequestStateView state="loading" title="Loading artifacts" description="Fetching registered deployment artifacts." />
+          {isLoadingArtifacts || isLoadingRequirements ? (
+            <RequestStateView state="loading" title="Loading revision context" description="Fetching artifacts and desired-state requirements." />
           ) : artifactItems.length === 0 ? (
             <EmptyState
               title="No artifacts registered"
@@ -1086,62 +1479,70 @@ function DeploymentRevisionCreateReady({
                 </label>
               </div>
               <div className="rounded-ui border border-border bg-muted/20 p-3">
-                <label className="flex items-start gap-2 text-sm font-medium">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={includeObservability}
-                    onChange={(event) => setIncludeObservability(event.target.checked)}
-                  />
-                  <span>
-                    Include observability binding
-                    <span className="mt-1 block text-xs font-normal leading-5 text-muted-foreground">
-                      Production targets require the desired state to declare at least one logs, metrics, traces, or console telemetry binding.
-                    </span>
-                  </span>
-                </label>
-                {includeObservability ? (
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <label className="block text-sm font-medium">
-                      Signal
-                      <Select
-                        className="mt-1 w-full"
-                        value={observabilityKind}
-                        onChange={(event) => setObservabilityKind(event.target.value as ObservabilityBinding["kind"])}
-                      >
-                        <option value="Traces">Traces</option>
-                        <option value="Logs">Logs</option>
-                        <option value="Metrics">Metrics</option>
-                        <option value="Console">Console</option>
-                      </Select>
-                    </label>
-                    <label className="block text-sm font-medium">
-                      Provider
-                      <Input
-                        value={observabilityProvider}
-                        onChange={(event) => setObservabilityProvider(event.target.value)}
-                        placeholder="OpenTelemetry Collector"
-                        className="mt-1"
-                      />
-                    </label>
-                    <label className="block text-sm font-medium">
-                      Scope
-                      <Input
-                        value={observabilityScope}
-                        onChange={(event) => setObservabilityScope(event.target.value)}
-                        placeholder={`${environment.name} / workflow runtime`}
-                        className="mt-1"
-                      />
-                    </label>
-                    <label className="block text-sm font-medium">
-                      Sample or note
-                      <Input
-                        value={observabilitySample}
-                        onChange={(event) => setObservabilitySample(event.target.value)}
-                        placeholder="Runtime telemetry endpoint configured."
-                        className="mt-1"
-                      />
-                    </label>
+                <div className="flex items-start gap-2 text-sm">
+                  <ClipboardCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div>
+                    <div className="font-medium">Desired-state requirements</div>
+                    {hasCurrentTierRequirements || contextualObservabilityRequested ? (
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        Complete records required by {requirementTierName} or requested by validation.
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        No additional desired-state records are required for {requirementTierName}.
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {showObservability ? (
+                  <div className="mt-3 rounded-ui border border-border bg-background p-3">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="font-medium">Observability binding</span>
+                      <StatusBadge value={observabilityRequired ? "Required" : "Optional"} tone={observabilityRequired ? "warning" : "neutral"} />
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">{observabilityReason}</p>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <label className="block text-sm font-medium">
+                        Signal
+                        <Select
+                          className="mt-1 w-full"
+                          value={observabilityKind}
+                          onChange={(event) => setObservabilityKind(event.target.value as ObservabilityBinding["kind"])}
+                        >
+                          <option value="Traces">Traces</option>
+                          <option value="Logs">Logs</option>
+                          <option value="Metrics">Metrics</option>
+                          <option value="Console">Console</option>
+                        </Select>
+                      </label>
+                      <label className="block text-sm font-medium">
+                        Provider
+                        <Input
+                          value={observabilityProvider}
+                          onChange={(event) => setObservabilityProvider(event.target.value)}
+                          placeholder="OpenTelemetry Collector"
+                          className="mt-1"
+                        />
+                      </label>
+                      <label className="block text-sm font-medium">
+                        Scope
+                        <Input
+                          value={observabilityScope}
+                          onChange={(event) => setObservabilityScope(event.target.value)}
+                          placeholder={`${environment.name} / workflow runtime`}
+                          className="mt-1"
+                        />
+                      </label>
+                      <label className="block text-sm font-medium">
+                        Sample or note
+                        <Input
+                          value={observabilitySample}
+                          onChange={(event) => setObservabilitySample(event.target.value)}
+                          placeholder="Runtime telemetry endpoint configured."
+                          className="mt-1"
+                        />
+                      </label>
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -1160,12 +1561,7 @@ function DeploymentRevisionCreateReady({
             <ActionList
               title="After creation"
               icon={<ClipboardCheck className="h-4 w-4" />}
-              actions={[
-                "The revision becomes the latest desired state for this environment.",
-                "If included, the observability binding satisfies production-tier telemetry validation.",
-                "Use Promotion to copy it into a higher environment.",
-                "Use Deploy Target Revision after promotion validation passes."
-              ]}
+              actions={revisionFlowActions}
             />
           </Panel>
           {selectedArtifact ? (
@@ -1174,7 +1570,18 @@ function DeploymentRevisionCreateReady({
                 <Detail label="Artifact" value={artifactDisplayName(selectedArtifact)} />
                 <Detail label="Type" value={selectedArtifact.artifactTypeId ?? "Unknown"} />
                 <Detail label="Digest" value={`${selectedArtifact.contentDigest.algorithm}:${selectedArtifact.contentDigest.value}`} />
-                <Detail label="Reference" value={selectedArtifact.reference} />
+                <Detail
+                  label="Reference"
+                  value={
+                    <a
+                      className="text-primary underline-offset-2 hover:underline"
+                      href={workspaceArtifactDownloadUrl(workspaceId, selectedArtifact.id)}
+                      download
+                    >
+                      {selectedArtifact.reference}
+                    </a>
+                  }
+                />
               </dl>
             </Panel>
           ) : null}
@@ -1201,7 +1608,7 @@ function DeploymentEngineRegisterReady({
   environmentId: string;
 }) {
   const navigate = useNavigate();
-  const { workspaceId, data, credentialOptions } = context;
+  const { workspaceId, data, secretStores, credentialReferences } = context;
   const resolved = resolveEnvironment(data, applicationId, environmentId);
   if (!resolved.application) return <RequestStateView state="not-found" title="Application not found" />;
   if (!resolved.environment) return <RequestStateView state="not-found" title="Environment not found" />;
@@ -1230,7 +1637,8 @@ function DeploymentEngineRegisterReady({
       <div className="rounded-ui border border-border bg-surface p-4">
         <EngineRegistrationPanel
           environment={environment}
-          credentialOptions={credentialOptions}
+          secretStores={secretStores}
+          credentialReferences={credentialReferences}
           isSubmitting={registerEngine.isPending}
           error={registerEngine.error instanceof Error ? registerEngine.error.message : undefined}
           onCancel={() => navigate(environmentPath(application.id, environment.id))}
@@ -1424,6 +1832,16 @@ function useDeploymentContext(): DeploymentContextResult {
     queryFn: () => getDeploymentTiers(workspaceId),
     enabled: Boolean(workspaceId)
   });
+  const secretStores = useQuery({
+    queryKey: queryKeys.deploymentSecretStores(workspaceId),
+    queryFn: () => getDeploymentSecretStores(workspaceId),
+    enabled: Boolean(workspaceId)
+  });
+  const credentialReferences = useQuery({
+    queryKey: queryKeys.deploymentCredentialReferences(workspaceId),
+    queryFn: () => getDeploymentCredentialReferences(workspaceId),
+    enabled: Boolean(workspaceId)
+  });
 
   if (workspaceContext.isLoading || cockpit.isLoading) return { status: "state", state: <RequestStateView state="loading" title="Loading deployments" /> };
   if (workspaceContext.isError) return { status: "state", state: <RequestStateView state="unexpected" title="Workspace context could not load" /> };
@@ -1440,6 +1858,8 @@ function useDeploymentContext(): DeploymentContextResult {
       data: cockpit.data,
       tiers: deploymentTiers,
       activeTiers: deploymentTiers.filter((tier) => tier.status === "Active"),
+      secretStores: secretStores.data?.items ?? [],
+      credentialReferences: credentialReferences.data?.items ?? [],
       credentialOptions: credentialReferenceOptions(cockpit.data.engines),
       canManageSetup: Boolean(permissions.data?.permissions.includes("deployments.setup.manage")),
       canManageDesiredState: Boolean(permissions.data?.permissions.includes("deployments.desired-state.manage")),
@@ -1528,14 +1948,135 @@ function EnvironmentTable({
                 </td>
                 <td className="px-3 py-3"><StatusBadge value={environment.health} tone={healthTone(environment.health)} /></td>
                 <td className="px-3 py-3"><StatusBadge value={environment.deploymentStatus} tone={deploymentTone(environment.deploymentStatus)} /></td>
-                <td className="px-3 py-3">r{environment.desiredRevision.revision}</td>
-                <td className="px-3 py-3">{environment.deployedRevision ? `r${environment.deployedRevision}` : "-"}</td>
+                <td className="px-3 py-3">
+                  <Link to={revisionDetailPath(application.id, environment.desiredRevision.id)} className="text-primary hover:underline">r{environment.desiredRevision.revision}</Link>
+                </td>
+                <td className="px-3 py-3">
+                  {environment.deployedRevision ? (
+                    <Link to={applicationRevisionsPath(application.id, `environment=${encodeURIComponent(environment.id)}&status=deployed`)} className="text-primary hover:underline">
+                      r{environment.deployedRevision}
+                    </Link>
+                  ) : "-"}
+                </td>
                 <td className="px-3 py-3">{engines.length}</td>
                 <td className="px-3 py-3">{driftLabel(environment.driftStatus)}</td>
                 <td className="px-3 py-3"><Link to={environmentPath(application.id, environment.id)} className="text-xs font-medium text-primary hover:underline">Open</Link></td>
               </tr>
             );
           })}
+        </tbody>
+      </table>
+    </Table>
+  );
+}
+
+function RevisionTable({
+  application,
+  revisions
+}: {
+  application: DeploymentCockpit["applications"][number];
+  revisions: WorkspaceDesiredStateRevisionSummary[];
+}) {
+  return (
+    <Table>
+      <table className="min-w-full divide-y divide-border text-sm">
+        <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2">Revision</th>
+            <th className="px-3 py-2">Environment</th>
+            <th className="px-3 py-2">Status</th>
+            <th className="px-3 py-2">Label</th>
+            <th className="px-3 py-2">Commit</th>
+            <th className="px-3 py-2">Authored</th>
+            <th className="px-3 py-2">Latest run</th>
+            <th className="px-3 py-2">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {revisions.map((revision) => (
+            <tr key={revision.revision.id}>
+              <td className="px-3 py-3 font-medium">
+                <Link to={revisionDetailPath(application.id, revision.revision.id)}>r{revision.revision.revisionNumber}</Link>
+              </td>
+              <td className="px-3 py-3">
+                <Link to={environmentPath(application.id, revision.revision.environmentId)} className="text-primary hover:underline">{revision.environmentName}</Link>
+              </td>
+              <td className="px-3 py-3"><RevisionStateBadge revision={revision} /></td>
+              <td className="px-3 py-3 text-muted-foreground">{revision.revision.label}</td>
+              <td className="px-3 py-3 text-muted-foreground">{revision.revision.commit || "-"}</td>
+              <td className="px-3 py-3">{formatDateTime(revision.revision.authoredAt)}</td>
+              <td className="px-3 py-3">{revision.latestRunStatus ? `${revision.latestRunStatus} · ${formatDateTime(revision.latestRunQueuedAt)}` : "-"}</td>
+              <td className="px-3 py-3">
+                <Link to={revisionDetailPath(application.id, revision.revision.id)} className="text-xs font-medium text-primary hover:underline">Open</Link>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Table>
+  );
+}
+
+function RevisionRecordTable({ records }: { records: WorkspaceDesiredStateRevisionRecord[] }) {
+  return (
+    <Table>
+      <table className="min-w-full divide-y divide-border text-sm">
+        <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2">Kind</th>
+            <th className="px-3 py-2">Name</th>
+            <th className="px-3 py-2">Artifact</th>
+            <th className="px-3 py-2">Digest</th>
+            <th className="px-3 py-2">Payload</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {records.map((record) => (
+            <tr key={record.id}>
+              <td className="px-3 py-3"><Badge>{record.kind}</Badge></td>
+              <td className="px-3 py-3 font-medium">{record.name}</td>
+              <td className="px-3 py-3 text-muted-foreground">{record.artifactId ?? "-"}</td>
+              <td className="max-w-xs truncate px-3 py-3 text-muted-foreground">
+                {record.artifactDigest ? `${record.artifactDigest.algorithm}:${record.artifactDigest.value}` : "-"}
+              </td>
+              <td className="max-w-md px-3 py-3">
+                <pre className="max-h-32 overflow-auto rounded-ui bg-muted/40 p-2 text-xs text-muted-foreground">{formatJson(record.payloadJson)}</pre>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Table>
+  );
+}
+
+function RevisionRunTable({ runs, engines }: { runs: WorkspaceDesiredStateRevisionDetail["runs"]; engines: WorkflowEngineRegistration[] }) {
+  return (
+    <Table>
+      <table className="min-w-full divide-y divide-border text-sm">
+        <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2">Run</th>
+            <th className="px-3 py-2">Status</th>
+            <th className="px-3 py-2">Validation</th>
+            <th className="px-3 py-2">Engine</th>
+            <th className="px-3 py-2">Queued</th>
+            <th className="px-3 py-2">Completed</th>
+            <th className="px-3 py-2">Failure</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {runs.map((run) => (
+            <tr key={run.id}>
+              <td className="px-3 py-3 font-mono text-xs">{run.id.slice(0, 8)}</td>
+              <td className="px-3 py-3"><StatusBadge value={run.status} tone={deploymentRunTone(run.status)} /></td>
+              <td className="px-3 py-3">{run.validationOutcome}</td>
+              <td className="px-3 py-3">{engineLabel(run.engineId, engines)}</td>
+              <td className="px-3 py-3">{formatDateTime(run.queuedAt)}</td>
+              <td className="px-3 py-3">{formatDateTime(run.completedAt)}</td>
+              <td className="px-3 py-3 text-muted-foreground">{run.failureMessage ?? "-"}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </Table>
@@ -1837,32 +2378,212 @@ function EnvironmentForm({
   );
 }
 
+function SecretStoresPanel({
+  stores,
+  references,
+  canManageSetup,
+  isCreatingStore,
+  isCreatingReference,
+  archivePendingId,
+  error,
+  onCreateStore,
+  onArchiveStore,
+  onCreateReference,
+  onArchiveReference
+}: {
+  stores: WorkspaceDeploymentSecretStore[];
+  references: WorkspaceDeploymentCredentialReference[];
+  canManageSetup: boolean;
+  isCreatingStore: boolean;
+  isCreatingReference: boolean;
+  archivePendingId: string | null;
+  error?: string;
+  onCreateStore: (values: { name: string; provider: string; description: string | null }) => void;
+  onArchiveStore: (secretStoreId: string) => void;
+  onCreateReference: (values: { secretStoreId: string; name: string; reference: string; description: string | null }) => void;
+  onArchiveReference: (credentialReferenceId: string) => void;
+}) {
+  const activeStores = stores.filter((store) => store.status === "Active");
+  const activeReferences = references.filter((reference) => reference.status === "Active");
+  const [storeName, setStoreName] = useState("");
+  const [storeProvider, setStoreProvider] = useState("Azure Key Vault");
+  const [referenceStoreId, setReferenceStoreId] = useState(activeStores[0]?.id ?? "");
+  const [referenceName, setReferenceName] = useState("");
+  const [referenceValue, setReferenceValue] = useState("");
+  useEffect(() => {
+    if (activeStores.some((store) => store.id === referenceStoreId)) return;
+    setReferenceStoreId(activeStores[0]?.id ?? "");
+  }, [activeStores, referenceStoreId]);
+
+  const canCreateStore = canManageSetup && storeName.trim().length > 0 && storeProvider.trim().length > 0;
+  const canCreateReference = canManageSetup && referenceStoreId.length > 0 && referenceName.trim().length > 0 && referenceValue.trim().length > 0;
+
+  return (
+    <section className="space-y-3">
+      <SectionHeader title="Secret stores" description="Register safe credential metadata used by workflow engine registrations." />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
+        <div className="rounded-ui border border-border bg-surface">
+          <Table>
+            <table className="min-w-full text-sm">
+              <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2">Store</th>
+                  <th className="px-3 py-2">Provider</th>
+                  <th className="px-3 py-2">Credential references</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {activeStores.length === 0 ? (
+                  <tr>
+                    <td className="px-3 py-6 text-center text-sm text-muted-foreground" colSpan={4}>No active secret stores registered.</td>
+                  </tr>
+                ) : (
+                  activeStores.map((store) => (
+                    <tr key={store.id}>
+                      <td className="px-3 py-3 font-medium">{store.name}</td>
+                      <td className="px-3 py-3">{store.provider}</td>
+                      <td className="px-3 py-3">{activeReferences.filter((reference) => reference.secretStoreId === store.id).length}</td>
+                      <td className="px-3 py-3 text-right">
+                        <SecondaryButton type="button" disabled={!canManageSetup || archivePendingId === store.id} onClick={() => onArchiveStore(store.id)}>Archive</SecondaryButton>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </Table>
+        </div>
+        <div className="space-y-4 rounded-ui border border-border bg-surface p-4">
+          <form
+            className="grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!canCreateStore) return;
+              onCreateStore({ name: storeName.trim(), provider: storeProvider.trim(), description: null });
+              setStoreName("");
+            }}
+          >
+            <h3 className="text-sm font-semibold">Register secret store</h3>
+            <label className="text-sm font-medium">
+              Store name
+              <Input className="mt-1" value={storeName} onChange={(event) => setStoreName(event.target.value)} placeholder="Platform Key Vault" />
+            </label>
+            <label className="text-sm font-medium">
+              Provider
+              <Input className="mt-1" value={storeProvider} onChange={(event) => setStoreProvider(event.target.value)} placeholder="Azure Key Vault" />
+            </label>
+            <Button type="submit" disabled={!canCreateStore || isCreatingStore}>
+              <Plus className="h-4 w-4" />
+              Register store
+            </Button>
+          </form>
+          <form
+            className="grid gap-3 border-t border-border pt-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!canCreateReference) return;
+              onCreateReference({ secretStoreId: referenceStoreId, name: referenceName.trim(), reference: referenceValue.trim(), description: null });
+              setReferenceName("");
+              setReferenceValue("");
+            }}
+          >
+            <h3 className="text-sm font-semibold">Register credential reference</h3>
+            <label className="text-sm font-medium">
+              Secret store
+              <Select className="mt-1 w-full" value={referenceStoreId} disabled={activeStores.length === 0} onChange={(event) => setReferenceStoreId(event.target.value)}>
+                <option value="" disabled>{activeStores.length === 0 ? "No secret stores" : "Select a secret store"}</option>
+                {activeStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
+              </Select>
+            </label>
+            <label className="text-sm font-medium">
+              Reference name
+              <Input className="mt-1" value={referenceName} onChange={(event) => setReferenceName(event.target.value)} placeholder="Test engine API" />
+            </label>
+            <label className="text-sm font-medium">
+              Reference
+              <Input className="mt-1" value={referenceValue} onChange={(event) => setReferenceValue(event.target.value)} placeholder="kv://acme/test/engine-api" />
+            </label>
+            <Button type="submit" disabled={!canCreateReference || isCreatingReference}>
+              <Plus className="h-4 w-4" />
+              Register reference
+            </Button>
+          </form>
+          {!canManageSetup ? <p className="text-sm text-muted-foreground">Deployment setup permission is required.</p> : null}
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        </div>
+      </div>
+      {activeReferences.length > 0 ? (
+        <div className="rounded-ui border border-border bg-surface">
+          <Table>
+            <table className="min-w-full text-sm">
+              <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2">Reference</th>
+                  <th className="px-3 py-2">Store</th>
+                  <th className="px-3 py-2">Value</th>
+                  <th className="px-3 py-2">Verification</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {activeReferences.map((reference) => (
+                  <tr key={reference.id}>
+                    <td className="px-3 py-3 font-medium">{reference.name}</td>
+                    <td className="px-3 py-3">{reference.secretStoreName}</td>
+                    <td className="px-3 py-3">{reference.reference}</td>
+                    <td className="px-3 py-3"><StatusBadge value={reference.verificationStatus} tone={credentialTone(reference.verificationStatus)} /></td>
+                    <td className="px-3 py-3 text-right">
+                      <SecondaryButton type="button" disabled={!canManageSetup || archivePendingId === reference.id} onClick={() => onArchiveReference(reference.id)}>Archive</SecondaryButton>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function EngineRegistrationPanel({
   environment,
-  credentialOptions,
+  secretStores,
+  credentialReferences,
   isSubmitting,
   error,
   onCancel,
   onSubmit
 }: {
   environment: EnvironmentSummary;
-  credentialOptions: CredentialReferenceOption[];
+  secretStores: WorkspaceDeploymentSecretStore[];
+  credentialReferences: WorkspaceDeploymentCredentialReference[];
   isSubmitting: boolean;
   error?: string;
   onCancel: () => void;
   onSubmit: (values: EngineRegistrationValues) => void;
 }) {
+  const activeSecretStores = secretStores.filter((store) => store.status === "Active");
+  const [selectedSecretStoreId, setSelectedSecretStoreId] = useState(activeSecretStores[0]?.id ?? "");
+  const scopedCredentialReferences = credentialReferences.filter((reference) => reference.status === "Active" && reference.secretStoreId === selectedSecretStoreId);
   const [values, setValues] = useState<EngineRegistrationValues>({
     engineName: "",
     baseUrl: "",
-    credentialProvider: credentialOptions[0]?.provider ?? "External secret store",
-    credentialReference: ""
+    credentialReferenceId: scopedCredentialReferences[0]?.id ?? null
   });
+  useEffect(() => {
+    if (activeSecretStores.some((store) => store.id === selectedSecretStoreId)) return;
+    setSelectedSecretStoreId(activeSecretStores[0]?.id ?? "");
+  }, [activeSecretStores, selectedSecretStoreId]);
+  useEffect(() => {
+    if (scopedCredentialReferences.some((reference) => reference.id === values.credentialReferenceId)) return;
+    setValues((current) => ({ ...current, credentialReferenceId: scopedCredentialReferences[0]?.id ?? null }));
+  }, [scopedCredentialReferences, values.credentialReferenceId]);
   const canSubmit =
     values.engineName.trim().length > 0 &&
     values.baseUrl.trim().length > 0 &&
-    values.credentialProvider.trim().length > 0 &&
-    values.credentialReference.trim().length > 0;
+    Boolean(values.credentialReferenceId);
 
   return (
     <form
@@ -1872,8 +2593,7 @@ function EngineRegistrationPanel({
         onSubmit({
           engineName: values.engineName.trim(),
           baseUrl: values.baseUrl.trim(),
-          credentialProvider: values.credentialProvider.trim(),
-          credentialReference: values.credentialReference.trim()
+          credentialReferenceId: values.credentialReferenceId
         });
       }}
     >
@@ -1883,34 +2603,47 @@ function EngineRegistrationPanel({
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-medium">
-          Engine
-          <Input className="mt-1" value={values.engineName} onChange={(event) => setValues((current) => ({ ...current, engineName: event.target.value }))} />
+          Engine name
+          <Input className="mt-1" placeholder="test-weu-01" value={values.engineName} onChange={(event) => setValues((current) => ({ ...current, engineName: event.target.value }))} />
         </label>
         <label className="text-sm font-medium">
-          Base URL
-          <Input className="mt-1" value={values.baseUrl} onChange={(event) => setValues((current) => ({ ...current, baseUrl: event.target.value }))} />
+          Engine base URL
+          <Input className="mt-1" placeholder="https://test-engine.example.com" value={values.baseUrl} onChange={(event) => setValues((current) => ({ ...current, baseUrl: event.target.value }))} />
         </label>
         <label className="text-sm font-medium">
-          Credential provider
-          <Input className="mt-1" value={values.credentialProvider} onChange={(event) => setValues((current) => ({ ...current, credentialProvider: event.target.value }))} />
+          Secret store
+          <Select
+            className="mt-1 w-full"
+            value={selectedSecretStoreId}
+            onChange={(event) => setSelectedSecretStoreId(event.target.value)}
+            disabled={activeSecretStores.length === 0}
+          >
+            <option value="" disabled>{activeSecretStores.length === 0 ? "No secret stores registered" : "Select a secret store"}</option>
+            {activeSecretStores.map((store) => (
+              <option key={store.id} value={store.id}>{store.name} ({store.provider})</option>
+            ))}
+          </Select>
         </label>
         <label className="text-sm font-medium">
           Credential reference
-          <CredentialReferenceInput
-            className="mt-1"
-            value={values.credentialReference}
-            options={credentialOptions}
-            onChange={(reference) => {
-              const option = credentialOptions.find((item) => item.reference === reference);
-              setValues((current) => ({
-                ...current,
-                credentialProvider: option?.provider ?? current.credentialProvider,
-                credentialReference: reference
-              }));
-            }}
-          />
+          <Select
+            className="mt-1 w-full"
+            value={values.credentialReferenceId ?? ""}
+            onChange={(event) => setValues((current) => ({ ...current, credentialReferenceId: event.target.value }))}
+            disabled={scopedCredentialReferences.length === 0}
+          >
+            <option value="" disabled>{selectedSecretStoreId ? "Select a credential reference" : "Select a secret store first"}</option>
+            {scopedCredentialReferences.map((reference) => (
+              <option key={reference.id} value={reference.id}>{reference.name} - {reference.reference}</option>
+            ))}
+          </Select>
         </label>
       </div>
+      {activeSecretStores.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">Register a secret store and credential reference before registering an engine.</p>
+      ) : selectedSecretStoreId && scopedCredentialReferences.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">No active credential references are registered for the selected secret store.</p>
+      ) : null}
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
       <div className="mt-4 flex gap-2">
         <Button type="submit" disabled={!canSubmit || isSubmitting}>
@@ -1970,11 +2703,11 @@ function EngineEditPanel({
     >
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-medium">
-          Engine
+          Engine name
           <Input className="mt-1" value={name} onChange={(event) => setName(event.target.value)} />
         </label>
         <label className="text-sm font-medium">
-          Base URL
+          Engine base URL
           <Input className="mt-1" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
         </label>
         <label className="text-sm font-medium">
@@ -2259,9 +2992,9 @@ function Panel({ title, icon, children }: { title: string; icon: ReactNode; chil
 
 function Detail({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-words text-sm">{value || "-"}</dd>
+      <dd className="mt-1 min-w-0 break-words text-sm [overflow-wrap:anywhere]">{value || "-"}</dd>
     </div>
   );
 }
@@ -2272,6 +3005,15 @@ function StatusBadge({ value, tone }: { value: string; tone: StatusTone }) {
 
 function applicationPath(applicationId: string) {
   return `/admin/deployments/applications/${encodeURIComponent(applicationId)}`;
+}
+
+function applicationRevisionsPath(applicationId: string, query?: string) {
+  const path = `${applicationPath(applicationId)}/revisions`;
+  return query ? `${path}?${query}` : path;
+}
+
+function revisionDetailPath(applicationId: string, revisionId: string) {
+  return `${applicationRevisionsPath(applicationId)}/${encodeURIComponent(revisionId)}`;
 }
 
 function environmentPath(applicationId: string, environmentId: string) {
@@ -2453,6 +3195,76 @@ function sortEngines(engines: WorkflowEngineRegistration[], sort: EngineSort) {
         return compareText(left.name, right.name);
     }
   });
+}
+
+function filterRevisions(
+  revisions: WorkspaceDesiredStateRevisionSummary[],
+  query: string,
+  environmentId: string,
+  status: RevisionStatusFilter
+) {
+  const term = query.trim().toLowerCase();
+  return revisions.filter((revision) => {
+    if (environmentId !== "all" && revision.revision.environmentId !== environmentId) return false;
+    if (!matchesRevisionStatus(revision, status)) return false;
+    if (!term) return true;
+
+    return [
+      `r${revision.revision.revisionNumber}`,
+      revision.revision.label,
+      revision.revision.commit ?? "",
+      revision.environmentName,
+      revision.environmentTierName ?? revision.environmentTier,
+      revisionStateLabel(revision),
+      revision.latestRunStatus ?? ""
+    ].join(" ").toLowerCase().includes(term);
+  });
+}
+
+function sortRevisions(revisions: WorkspaceDesiredStateRevisionSummary[], sort: RevisionSort) {
+  return [...revisions].sort((left, right) => {
+    switch (sort) {
+      case "environment":
+        return compareText(left.environmentName, right.environmentName) || compareNumber(right.revision.revisionNumber, left.revision.revisionNumber);
+      case "status":
+        return compareText(revisionStateLabel(left), revisionStateLabel(right)) || compareText(right.revision.authoredAt, left.revision.authoredAt);
+      default:
+        return compareText(right.revision.authoredAt, left.revision.authoredAt) || compareNumber(right.revision.revisionNumber, left.revision.revisionNumber);
+    }
+  });
+}
+
+function matchesRevisionStatus(revision: WorkspaceDesiredStateRevisionSummary, status: RevisionStatusFilter) {
+  if (status === "all") return true;
+  if (status === "desired") return revision.isCurrentDesired;
+  if (status === "deployed") return revision.isCurrentDeployed;
+  if (status === "superseded") return !revision.isCurrentDesired && !revision.isCurrentDeployed && Boolean(revision.latestRunStatus);
+  return !revision.isCurrentDesired && !revision.isCurrentDeployed && !revision.latestRunStatus;
+}
+
+function revisionStateLabel(revision: WorkspaceDesiredStateRevisionSummary) {
+  if (revision.isCurrentDesired && revision.isCurrentDeployed) return "Desired + deployed";
+  if (revision.isCurrentDesired) return "Current desired";
+  if (revision.isCurrentDeployed) return "Currently deployed";
+  if (revision.latestRunStatus) return "Superseded";
+  return "Never deployed";
+}
+
+function parseRevisionStatusFilter(value: string | null): RevisionStatusFilter {
+  return revisionStatusFilters.some((item) => item.value === value) ? value as RevisionStatusFilter : "all";
+}
+
+function RevisionStateBadge({ revision }: { revision: WorkspaceDesiredStateRevisionSummary }) {
+  const tone: StatusTone = revision.isCurrentDesired || revision.isCurrentDeployed ? "success" : revision.latestRunStatus ? "warning" : "neutral";
+  return <StatusBadge value={revisionStateLabel(revision)} tone={tone} />;
+}
+
+function formatJson(json: string) {
+  try {
+    return JSON.stringify(JSON.parse(json), null, 2);
+  } catch {
+    return json;
+  }
 }
 
 function collectPromotionReadinessIssues(
@@ -2662,7 +3474,7 @@ function collectDeploymentBlockers(
         severity: validation.severity,
         source: `Promotion r${comparison.sourceRevision}`,
         actionPath: validation.id === "deployment.tier.observability-required"
-          ? newRevisionPathForEnvironment(data, comparison.sourceEnvironmentId, "includeObservability=1")
+          ? newRevisionPathForEnvironment(data, comparison.sourceEnvironmentId, `includeRequirement=${observabilityRequirementId}`)
           : undefined,
         actionLabel: validation.id === "deployment.tier.observability-required" ? "Add binding to new revision" : undefined
       });
@@ -2867,6 +3679,11 @@ function deploymentTone(status: DeploymentStatus | string): StatusTone {
   if (status === "Running" || status === "RolledBack" || status === "Queued" || status === "RecoveryRequired") return "warning";
   if (status === "Cancelled") return "neutral";
   return "destructive";
+}
+
+function deploymentRunTone(status: string): StatusTone {
+  if (status === "Failed" || status === "Blocked") return "destructive";
+  return deploymentTone(status);
 }
 
 function credentialTone(status: string): StatusTone {

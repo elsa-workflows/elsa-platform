@@ -14,6 +14,13 @@ public sealed record WorkspaceDeploymentTierCapabilitiesResponse(IReadOnlyList<D
 
 public sealed record WorkspaceDeploymentTiersResponse(IReadOnlyList<WorkspaceDeploymentTier> Tiers);
 
+public sealed record WorkspaceDesiredStateRequirementsResponse(
+    Guid EnvironmentId,
+    string EnvironmentName,
+    string TierName,
+    IReadOnlyList<string> TierCapabilities,
+    IReadOnlyList<DesiredStateRequirement> Requirements);
+
 public sealed record WorkspaceDeploymentTierRequest(
     string Name,
     string? Description,
@@ -27,11 +34,26 @@ public sealed record WorkspaceWorkflowEngineRequest(
     string Name,
     string BaseUrl,
     string? Region,
-    string CredentialProvider,
-    string CredentialReference,
+    string? CredentialProvider,
+    string? CredentialReference,
     IReadOnlyList<EngineCapability> Capabilities,
     IReadOnlyList<RuntimeControl> Controls,
-    string? HostingProvider);
+    string? HostingProvider,
+    Guid? CredentialReferenceId = null);
+
+public sealed record WorkspaceDeploymentSecretStoresResponse(IReadOnlyList<WorkspaceDeploymentSecretStore> Items);
+
+public sealed record WorkspaceDeploymentSecretStoreRequest(
+    string Name,
+    string Provider,
+    string? Description);
+
+public sealed record WorkspaceDeploymentCredentialReferencesResponse(IReadOnlyList<WorkspaceDeploymentCredentialReference> Items);
+
+public sealed record WorkspaceDeploymentCredentialReferenceRequest(
+    string Name,
+    string Reference,
+    string? Description);
 
 public sealed record WorkspaceEngineHeartbeatRequest(
     Guid EnvironmentId,
@@ -46,6 +68,8 @@ public sealed record WorkspaceDesiredStateRevisionRequest(
     string Label,
     string? Commit,
     IReadOnlyList<WorkspaceDesiredStateRecordRequest> Records);
+
+public sealed record WorkspaceApplicationRevisionsResponse(IReadOnlyList<WorkspaceDesiredStateRevisionSummary> Items);
 
 public sealed record WorkspaceDesiredStateRecordRequest(
     DesiredStateRecordKind Kind,

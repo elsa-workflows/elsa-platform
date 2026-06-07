@@ -26,7 +26,8 @@ export const deploymentTierCapabilities = {
   promotionTarget: "deployment.promotion.target",
   confirmationRequired: "deployment.confirmation.required",
   rollbackEnabled: "deployment.rollback.enabled",
-  productionLike: "deployment.tier.production-like"
+  productionLike: "deployment.tier.production-like",
+  observabilityRequired: "deployment.observability.required"
 } as const;
 
 export type RuntimeControl = {
@@ -240,6 +241,54 @@ export type WorkspaceDesiredStateRevision = {
   commit: string | null;
   contentHash: string;
   desiredStateJson: string;
+  authoredAt: string;
+  createdAt: string;
+  createdByAccountId: string | null;
+};
+
+export type WorkspaceDesiredStateRevisionSummary = {
+  revision: WorkspaceDesiredStateRevision;
+  environmentName: string;
+  environmentTier: EnvironmentSummary["tier"];
+  environmentTierId: string | null;
+  environmentTierName: string | null;
+  isCurrentDesired: boolean;
+  isCurrentDeployed: boolean;
+  latestRunStatus: WorkspaceDeploymentRunStatus | null;
+  latestRunQueuedAt: string | null;
+};
+
+export type WorkspaceDesiredStateRevisionRecord = {
+  id: string;
+  kind: DesiredStateRecordKind;
+  name: string;
+  payloadJson: string;
+  contentHash: string;
+  artifactRecordId: string | null;
+  artifactId: string | null;
+  artifactTypeId: string | null;
+  artifactDigest: WorkspaceArtifactDigest | null;
+};
+
+export type WorkspaceDesiredStateRevisionRunSummary = {
+  id: string;
+  environmentId: string;
+  engineId: string;
+  status: WorkspaceDeploymentRunStatus;
+  validationOutcome: "Passed" | "Warnings" | "Blocked";
+  queuedAt: string;
+  completedAt: string | null;
+  failureMessage: string | null;
+};
+
+export type WorkspaceDesiredStateRevisionDetail = {
+  summary: WorkspaceDesiredStateRevisionSummary;
+  records: WorkspaceDesiredStateRevisionRecord[];
+  runs: WorkspaceDesiredStateRevisionRunSummary[];
+};
+
+export type WorkspaceApplicationRevisionsResponse = {
+  items: WorkspaceDesiredStateRevisionSummary[];
 };
 
 export type PromotionPreviewRequest = {
@@ -464,6 +513,27 @@ export type WorkspaceDeploymentTiersResponse = {
   tiers: WorkspaceDeploymentTier[];
 };
 
+export type DesiredStateRequirementApplicability = "CurrentTier" | "ContextualFix" | "Optional";
+
+export type DesiredStateRequirement = {
+  id: string;
+  capabilityId: string | null;
+  recordKind: DesiredStateRecordKind;
+  label: string;
+  description: string;
+  validationId: string;
+  required: boolean;
+  applicability: DesiredStateRequirementApplicability;
+};
+
+export type WorkspaceDesiredStateRequirementsResponse = {
+  environmentId: string;
+  environmentName: string;
+  tierName: string;
+  tierCapabilities: string[];
+  requirements: DesiredStateRequirement[];
+};
+
 export type WorkspaceDeploymentTierRequest = {
   name: string;
   description: string | null;
@@ -495,14 +565,72 @@ export type RegisterDeploymentEngineRequest = {
   name: string;
   baseUrl: string;
   region: string | null;
-  credentialProvider: string;
-  credentialReference: string;
+  credentialProvider?: string | null;
+  credentialReference?: string | null;
+  credentialReferenceId?: string | null;
   capabilities: EngineCapability[];
   controls: RuntimeControl[];
   hostingProvider: string | null;
 };
 
 export type UpdateDeploymentEngineRequest = RegisterDeploymentEngineRequest;
+
+export type DeploymentSecretStoreStatus = "Active" | "Archived";
+
+export type WorkspaceDeploymentSecretStore = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  provider: string;
+  description: string | null;
+  status: DeploymentSecretStoreStatus;
+  createdAt: string;
+  updatedAt: string;
+  createdByAccountId: string | null;
+  updatedByAccountId: string | null;
+  archivedAt: string | null;
+  archivedByAccountId: string | null;
+};
+
+export type WorkspaceDeploymentCredentialReference = {
+  id: string;
+  workspaceId: string;
+  secretStoreId: string;
+  secretStoreName: string;
+  secretStoreProvider: string;
+  name: string;
+  reference: string;
+  description: string | null;
+  status: DeploymentSecretStoreStatus;
+  verificationStatus: CredentialVerificationStatus;
+  lastVerifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdByAccountId: string | null;
+  updatedByAccountId: string | null;
+  archivedAt: string | null;
+  archivedByAccountId: string | null;
+};
+
+export type WorkspaceDeploymentSecretStoresResponse = {
+  items: WorkspaceDeploymentSecretStore[];
+};
+
+export type WorkspaceDeploymentSecretStoreRequest = {
+  name: string;
+  provider: string;
+  description: string | null;
+};
+
+export type WorkspaceDeploymentCredentialReferencesResponse = {
+  items: WorkspaceDeploymentCredentialReference[];
+};
+
+export type WorkspaceDeploymentCredentialReferenceRequest = {
+  name: string;
+  reference: string;
+  description: string | null;
+};
 
 export type CreatedDeploymentApplication = {
   id: string;
