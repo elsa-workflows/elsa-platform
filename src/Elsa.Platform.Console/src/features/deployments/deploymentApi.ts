@@ -22,6 +22,12 @@ import type {
   UpdateDeploymentEngineRequest,
   UpdateDeploymentEnvironmentRequest,
   WorkspaceDeploymentTierCapabilitiesResponse,
+  WorkspaceDeploymentCredentialReference,
+  WorkspaceDeploymentCredentialReferenceRequest,
+  WorkspaceDeploymentCredentialReferencesResponse,
+  WorkspaceDeploymentSecretStore,
+  WorkspaceDeploymentSecretStoreRequest,
+  WorkspaceDeploymentSecretStoresResponse,
   WorkspaceDeploymentTierImpactPreviewRequest,
   WorkspaceDeploymentTierRequest,
   WorkspaceDeploymentTiersResponse,
@@ -96,6 +102,65 @@ export function archiveDeploymentTier(workspaceId: string, tierId: string) {
 export function restoreDeploymentTier(workspaceId: string, tierId: string) {
   return apiRequest<WorkspaceDeploymentTier>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/tiers/${encodeURIComponent(tierId)}/restore`,
+    { method: "POST" }
+  );
+}
+
+export function getDeploymentSecretStores(workspaceId: string) {
+  return apiRequest<WorkspaceDeploymentSecretStoresResponse>(`/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/secret-stores`);
+}
+
+export function createDeploymentSecretStore(workspaceId: string, request: WorkspaceDeploymentSecretStoreRequest) {
+  return apiRequest<WorkspaceDeploymentSecretStore>(`/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/secret-stores`, {
+    method: "POST",
+    body: JSON.stringify(request)
+  });
+}
+
+export function updateDeploymentSecretStore(workspaceId: string, secretStoreId: string, request: WorkspaceDeploymentSecretStoreRequest) {
+  return apiRequest<WorkspaceDeploymentSecretStore>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/secret-stores/${encodeURIComponent(secretStoreId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(request)
+    }
+  );
+}
+
+export function archiveDeploymentSecretStore(workspaceId: string, secretStoreId: string) {
+  return apiRequest<WorkspaceDeploymentSecretStore>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/secret-stores/${encodeURIComponent(secretStoreId)}/archive`,
+    { method: "POST" }
+  );
+}
+
+export function getDeploymentCredentialReferences(workspaceId: string) {
+  return apiRequest<WorkspaceDeploymentCredentialReferencesResponse>(`/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/credential-references`);
+}
+
+export function createDeploymentCredentialReference(workspaceId: string, secretStoreId: string, request: WorkspaceDeploymentCredentialReferenceRequest) {
+  return apiRequest<WorkspaceDeploymentCredentialReference>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/secret-stores/${encodeURIComponent(secretStoreId)}/credential-references`,
+    {
+      method: "POST",
+      body: JSON.stringify(request)
+    }
+  );
+}
+
+export function updateDeploymentCredentialReference(workspaceId: string, credentialReferenceId: string, request: WorkspaceDeploymentCredentialReferenceRequest) {
+  return apiRequest<WorkspaceDeploymentCredentialReference>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/credential-references/${encodeURIComponent(credentialReferenceId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(request)
+    }
+  );
+}
+
+export function archiveDeploymentCredentialReference(workspaceId: string, credentialReferenceId: string) {
+  return apiRequest<WorkspaceDeploymentCredentialReference>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/credential-references/${encodeURIComponent(credentialReferenceId)}/archive`,
     { method: "POST" }
   );
 }
