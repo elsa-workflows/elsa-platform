@@ -82,7 +82,6 @@ Content-Type: application/json
 ```json
 {
   "leaseToken": "opaque-lease-token",
-  "workerId": "runtime-sync-01",
   "status": "Applying",
   "percentComplete": 50,
   "message": "Applying artifact dev-sample 2026.06.04.4.",
@@ -107,7 +106,6 @@ Content-Type: application/json
 ```json
 {
   "leaseToken": "opaque-lease-token",
-  "workerId": "runtime-sync-01",
   "artifacts": [
     {
       "artifactRecordId": "ddf89a51-0560-4945-a5d2-2f5b65b9a5ca",

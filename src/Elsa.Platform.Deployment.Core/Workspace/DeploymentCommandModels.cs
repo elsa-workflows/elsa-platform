@@ -75,7 +75,8 @@ public sealed record DeploymentCommand(
     DateTimeOffset UpdatedAt,
     DateTimeOffset? AvailableAt,
     DateTimeOffset? ExpiresAt,
-    DateTimeOffset? CompletedAt);
+    DateTimeOffset? CompletedAt,
+    IReadOnlyList<DeploymentCommandArtifactItem>? Artifacts = null);
 
 public sealed record DeploymentCommandEvent(
     Guid Id,
@@ -154,7 +155,8 @@ public sealed record CreateDeploymentCommandRequest(
     DeploymentCommandRevisionReference? Revision,
     string IdempotencyKey,
     DateTimeOffset? AvailableAt = null,
-    DateTimeOffset? ExpiresAt = null);
+    DateTimeOffset? ExpiresAt = null,
+    IReadOnlyList<DeploymentCommandArtifactItem>? Artifacts = null);
 
 public sealed record ClaimDeploymentCommandRequest(
     Guid EngineId,
@@ -173,18 +175,22 @@ public sealed record DeploymentCommandProgressRequest(
     string LeaseToken,
     string Status,
     int? PercentComplete,
-    string Message);
+    string Message,
+    IReadOnlyList<DeploymentCommandArtifactOutcome>? Artifacts = null);
 
 public sealed record CompleteDeploymentCommandRequest(
     string LeaseToken,
     WorkspaceArtifactDigest? ObservedArtifactDigest,
     string? RuntimeReference,
-    IReadOnlyList<DeploymentCommandDiagnostic> Diagnostics);
+    IReadOnlyList<DeploymentCommandDiagnostic> Diagnostics,
+    IReadOnlyList<DeploymentCommandArtifactOutcome>? Artifacts = null);
 
 public sealed record FailDeploymentCommandRequest(
     string LeaseToken,
-    IReadOnlyList<DeploymentCommandDiagnostic> Diagnostics);
+    IReadOnlyList<DeploymentCommandDiagnostic> Diagnostics,
+    IReadOnlyList<DeploymentCommandArtifactOutcome>? Artifacts = null);
 
 public sealed record RejectDeploymentCommandRequest(
     string LeaseToken,
-    IReadOnlyList<DeploymentCommandDiagnostic> Diagnostics);
+    IReadOnlyList<DeploymentCommandDiagnostic> Diagnostics,
+    IReadOnlyList<DeploymentCommandArtifactOutcome>? Artifacts = null);

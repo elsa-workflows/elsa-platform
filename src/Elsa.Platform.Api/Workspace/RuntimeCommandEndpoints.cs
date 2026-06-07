@@ -62,6 +62,48 @@ public static class RuntimeCommandEndpoints
             }
         });
 
+        group.MapGet("/commands/{commandId:guid}/artifacts/{artifactRecordId:guid}/download", async (
+            Guid workspaceId,
+            Guid commandId,
+            Guid artifactRecordId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            DeploymentCommandService commands,
+            WorkspaceArtifactService artifacts,
+            CancellationToken cancellationToken) =>
+        {
+            var permission = await RequireRuntimeCommandAccessAsync(context, accessResolver, permissions, workspaceId, cancellationToken);
+            if (permission is not null)
+                return permission;
+
+            var leaseToken = context.Request.Headers["X-Elsa-Command-Lease"].FirstOrDefault();
+            var workerId = context.Request.Headers["X-Elsa-Worker-Id"].FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(leaseToken) || string.IsNullOrWhiteSpace(workerId))
+                return Results.Problem(title: "Command lease and worker identity are required.", statusCode: StatusCodes.Status409Conflict);
+
+            try
+            {
+                var item = await commands.ValidateRuntimeArtifactDownloadAsync(workspaceId, commandId, artifactRecordId, leaseToken, workerId, cancellationToken);
+                var download = await artifacts.OpenDownloadAsync(workspaceId, artifactRecordId, cancellationToken);
+                context.Response.Headers["X-Elsa-Artifact-Digest-Algorithm"] = item.ContentDigest.Algorithm;
+                context.Response.Headers["X-Elsa-Artifact-Digest"] = item.ContentDigest.Value;
+                return Results.File(download.Content, download.ContentType, download.FileName);
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (FileNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
         group.MapPost("/commands/{commandId:guid}/heartbeat", async (
             Guid workspaceId,
             Guid commandId,
@@ -104,7 +146,7 @@ public static class RuntimeCommandEndpoints
                 commandService => commandService.ProgressAsync(
                     workspaceId,
                     commandId,
-                    new DeploymentCommandProgressRequest(request.LeaseToken, request.Status, request.PercentComplete, request.Message),
+                    new DeploymentCommandProgressRequest(request.LeaseToken, request.Status, request.PercentComplete, request.Message, request.Artifacts),
                     cancellationToken),
                 cancellationToken));
 
@@ -131,7 +173,8 @@ public static class RuntimeCommandEndpoints
                         request.LeaseToken,
                         request.ObservedArtifactDigest,
                         request.RuntimeReference,
-                        request.Diagnostics),
+                        request.Diagnostics,
+                        request.Artifacts),
                     cancellationToken),
                 cancellationToken));
 
@@ -154,7 +197,7 @@ public static class RuntimeCommandEndpoints
                 commandService => commandService.FailAsync(
                     workspaceId,
                     commandId,
-                    new FailDeploymentCommandRequest(request.LeaseToken, request.Diagnostics),
+                    new FailDeploymentCommandRequest(request.LeaseToken, request.Diagnostics, request.Artifacts),
                     cancellationToken),
                 cancellationToken));
 
@@ -177,7 +220,7 @@ public static class RuntimeCommandEndpoints
                 commandService => commandService.RejectAsync(
                     workspaceId,
                     commandId,
-                    new RejectDeploymentCommandRequest(request.LeaseToken, request.Diagnostics),
+                    new RejectDeploymentCommandRequest(request.LeaseToken, request.Diagnostics, request.Artifacts),
                     cancellationToken),
                 cancellationToken));
 

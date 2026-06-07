@@ -12,9 +12,9 @@
 
 **Purpose**: Verify generated artifacts and existing project wiring before implementation.
 
-- [ ] T001 Verify current feature branch and Spec Kit artifacts in `specs/033-artifact-engine-deploy/`
-- [ ] T002 [P] Inspect existing deployment API/core/persistence test fixtures in `tests/Elsa.Platform.Deployment.Core.Tests/` and `tests/Elsa.Platform.Api.Tests/`
-- [ ] T003 [P] Inspect existing console deployment test utilities in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T001 Verify current feature branch and Spec Kit artifacts in `specs/033-artifact-engine-deploy/`
+- [X] T002 [P] Inspect existing deployment API/core/persistence test fixtures in `tests/Elsa.Platform.Deployment.Core.Tests/` and `tests/Elsa.Platform.Api.Tests/`
+- [X] T003 [P] Inspect existing console deployment test utilities in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ---
 
@@ -24,13 +24,13 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T004 Update artifact type default apply capability to canonical IDs in `src/Elsa.Platform.Deployment.Artifacts/ArtifactTypeRegistry.cs`
-- [ ] T005 Normalize legacy artifact compatibility hints to canonical apply capabilities in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
-- [ ] T006 Add deployability and per-artifact command domain models in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentDeployabilityModels.cs`
-- [ ] T007 Extend runtime command models for multi-artifact payloads and per-artifact outcomes in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentCommandModels.cs`
-- [ ] T008 Extend deployment command DTO contracts for multi-artifact payloads and runtime reports in `src/Elsa.Platform.Api/Workspace/RuntimeCommandContracts.cs`
-- [ ] T009 Update EF deployment command entity mapping for serialized artifact items and outcomes in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs` and `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
-- [ ] T010 Update deployment command store serialization/deserialization for artifact lists and outcomes in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T004 Update artifact type default apply capability to canonical IDs in `src/Elsa.Platform.Deployment.Artifacts/ArtifactTypeRegistry.cs`
+- [X] T005 Normalize legacy artifact compatibility hints to canonical apply capabilities in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
+- [X] T006 Add deployability and per-artifact command domain models in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentDeployabilityModels.cs`
+- [X] T007 Extend runtime command models for multi-artifact payloads and per-artifact outcomes in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentCommandModels.cs`
+- [X] T008 Extend deployment command DTO contracts for multi-artifact payloads and runtime reports in `src/Elsa.Platform.Api/Workspace/RuntimeCommandContracts.cs`
+- [X] T009 Update EF deployment command entity mapping for serialized artifact items and outcomes in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs` and `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
+- [X] T010 Update deployment command store serialization/deserialization for artifact lists and outcomes in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin.
 
@@ -44,22 +44,22 @@
 
 ### Tests for User Story 1
 
-- [ ] T011 [P] [US1] Add deployability service tests for compatible and missing-capability engines in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentDeployabilityServiceTests.cs`
-- [ ] T012 [P] [US1] Add deployability tests for stale or missing engine capability metadata in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentDeployabilityServiceTests.cs`
-- [ ] T013 [P] [US1] Add deployability tests for archived, invalid, unsupported, and unavailable artifacts in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentDeployabilityServiceTests.cs`
-- [ ] T014 [P] [US1] Add deployability tests for unsupported schema version and 10-artifact/10-engine performance in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentDeployabilityServiceTests.cs`
-- [ ] T015 [P] [US1] Add deployability endpoint tests in `tests/Elsa.Platform.Api.Tests/Workspace/DeploymentDeployabilityEndpointTests.cs`
-- [ ] T016 [P] [US1] Add console deployability rendering tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T011 [P] [US1] Add deployability service tests for compatible and missing-capability engines in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentDeployabilityServiceTests.cs`
+- [X] T012 [P] [US1] Add deployability tests for stale or missing engine capability metadata in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentDeployabilityServiceTests.cs`
+- [X] T013 [P] [US1] Add deployability tests for archived, invalid, unsupported, and unavailable artifacts in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentDeployabilityServiceTests.cs`
+- [X] T014 [P] [US1] Add deployability tests for unsupported schema version and 10-artifact/10-engine performance in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentDeployabilityServiceTests.cs`
+- [X] T015 [P] [US1] Add deployability endpoint tests in `tests/Elsa.Platform.Api.Tests/Workspace/DeploymentDeployabilityEndpointTests.cs`
+- [X] T016 [P] [US1] Add console deployability rendering tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 1
 
-- [ ] T017 [US1] Implement `DeploymentDeployabilityService` in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentDeployabilityService.cs`
-- [ ] T018 [US1] Register `DeploymentDeployabilityService` in `src/Elsa.Platform.Api/Program.cs`
-- [ ] T019 [US1] Add workspace deployability request/response contracts in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentContracts.cs`
-- [ ] T020 [US1] Add revision deployability endpoint in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [ ] T021 [US1] Replace queue-time artifact compatibility exception logic with deployability service reuse in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`
-- [ ] T022 [US1] Add console deployability API types and client function in `src/Elsa.Platform.Console/src/features/deployments/deploymentModels.ts` and `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
-- [ ] T023 [US1] Add revision detail deployability preflight UI in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T017 [US1] Implement `DeploymentDeployabilityService` in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentDeployabilityService.cs`
+- [X] T018 [US1] Register `DeploymentDeployabilityService` in `src/Elsa.Platform.Api/Program.cs`
+- [X] T019 [US1] Add workspace deployability request/response contracts in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentContracts.cs`
+- [X] T020 [US1] Add revision deployability endpoint in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T021 [US1] Replace queue-time artifact compatibility exception logic with deployability service reuse in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`
+- [X] T022 [US1] Add console deployability API types and client function in `src/Elsa.Platform.Console/src/features/deployments/deploymentModels.ts` and `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
+- [X] T023 [US1] Add revision detail deployability preflight UI in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
 
 **Checkpoint**: User Story 1 is functional and testable independently.
 
@@ -73,17 +73,17 @@
 
 ### Tests for User Story 2
 
-- [ ] T024 [P] [US2] Add command creation tests for multi-artifact payloads and idempotency in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentRunServiceTests.cs`
-- [ ] T025 [P] [US2] Add EF persistence tests for command artifact item serialization in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceStoreTests.cs`
-- [ ] T026 [P] [US2] Add API queue conflict tests for blocked deployability in `tests/Elsa.Platform.Api.Tests/Workspace/WorkspaceDeploymentRunEndpointTests.cs`
+- [X] T024 [P] [US2] Add command creation tests for multi-artifact payloads and idempotency in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentRunServiceTests.cs`
+- [X] T025 [P] [US2] Add EF persistence tests for command artifact item serialization in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceStoreTests.cs`
+- [X] T026 [P] [US2] Add API queue conflict tests for blocked deployability in `tests/Elsa.Platform.Api.Tests/Workspace/WorkspaceDeploymentRunEndpointTests.cs`
 
 ### Implementation for User Story 2
 
-- [ ] T027 [US2] Build deployment command artifact item extraction from revision records in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`
-- [ ] T028 [US2] Persist command artifact item lists when creating runs and commands in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [ ] T029 [US2] Include artifact item lists in runtime command DTOs and cockpit run command summaries in `src/Elsa.Platform.Api/Workspace/RuntimeCommandContracts.cs`
-- [ ] T030 [US2] Ensure command/run safe payloads redact local paths and unsafe diagnostics in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentCommandService.cs`
-- [ ] T031 [US2] Update console run and revision surfaces to show safe artifact names and wrapping digests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T027 [US2] Build deployment command artifact item extraction from revision records in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`
+- [X] T028 [US2] Persist command artifact item lists when creating runs and commands in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T029 [US2] Include artifact item lists in runtime command DTOs and cockpit run command summaries in `src/Elsa.Platform.Api/Workspace/RuntimeCommandContracts.cs`
+- [X] T030 [US2] Ensure command/run safe payloads redact local paths and unsafe diagnostics in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentCommandService.cs`
+- [X] T031 [US2] Update console run and revision surfaces to show safe artifact names and wrapping digests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
 
 **Checkpoint**: User Stories 1 and 2 both work independently.
 
@@ -97,17 +97,17 @@
 
 ### Tests for User Story 3
 
-- [ ] T032 [P] [US3] Add runtime download lease authorization tests in `tests/Elsa.Platform.Api.Tests/Workspace/RuntimeArtifactDownloadEndpointTests.cs`
-- [ ] T033 [P] [US3] Add command service tests for digest mismatch, per-artifact progress, and final outcomes in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentCommandServiceTests.cs`
-- [ ] T034 [P] [US3] Add EF persistence tests for per-artifact outcomes and partial failure in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceStoreTests.cs`
+- [X] T032 [P] [US3] Add runtime download lease authorization tests in `tests/Elsa.Platform.Api.Tests/Workspace/RuntimeArtifactDownloadEndpointTests.cs`
+- [X] T033 [P] [US3] Add command service tests for digest mismatch, per-artifact progress, and final outcomes in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentCommandServiceTests.cs`
+- [X] T034 [P] [US3] Add EF persistence tests for per-artifact outcomes and partial failure in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceStoreTests.cs`
 
 ### Implementation for User Story 3
 
-- [ ] T035 [US3] Add command lease validation helper for runtime downloads in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentCommandService.cs`
-- [ ] T036 [US3] Add runtime artifact download service method in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
-- [ ] T037 [US3] Add runtime artifact download endpoint in `src/Elsa.Platform.Api/Workspace/RuntimeCommandEndpoints.cs`
-- [ ] T038 [US3] Accept and persist per-artifact progress/final outcome reports in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentCommandService.cs`
-- [ ] T039 [US3] Mark partial runtime apply as failed or recovery-required while preserving per-artifact outcomes in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T035 [US3] Add command lease validation helper for runtime downloads in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentCommandService.cs`
+- [X] T036 [US3] Add runtime artifact download service method in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
+- [X] T037 [US3] Add runtime artifact download endpoint in `src/Elsa.Platform.Api/Workspace/RuntimeCommandEndpoints.cs`
+- [X] T038 [US3] Accept and persist per-artifact progress/final outcome reports in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentCommandService.cs`
+- [X] T039 [US3] Mark partial runtime apply as failed or recovery-required while preserving per-artifact outcomes in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
 
 **Checkpoint**: User Stories 1, 2, and 3 all work independently.
 
@@ -121,14 +121,14 @@
 
 ### Tests for User Story 4
 
-- [ ] T040 [P] [US4] Add deployability remediation mapping tests in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentDeployabilityServiceTests.cs`
-- [ ] T041 [P] [US4] Add console blocker copy and disabled reason tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T040 [P] [US4] Add deployability remediation mapping tests in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentDeployabilityServiceTests.cs`
+- [X] T041 [P] [US4] Add console blocker copy and disabled reason tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 4
 
-- [ ] T042 [US4] Add stable blocker remediation codes in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentDeployabilityService.cs`
-- [ ] T043 [US4] Render blocker remediation rows and deterministic disabled reasons in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [ ] T044 [US4] Hide non-applicable revision requirement controls by tier capability in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T042 [US4] Add stable blocker remediation codes in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentDeployabilityService.cs`
+- [X] T043 [US4] Render blocker remediation rows and deterministic disabled reasons in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T044 [US4] Hide non-applicable revision requirement controls by tier capability in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
 
 **Checkpoint**: All user stories are independently functional.
 
@@ -138,13 +138,13 @@
 
 **Purpose**: End-to-end verification, safety hardening, and documentation alignment.
 
-- [ ] T045 [P] Update quickstart verification notes if implemented endpoint names differ in `specs/033-artifact-engine-deploy/quickstart.md`
-- [ ] T046 [P] Add or update API contract documentation if runtime DTO fields differ in `specs/033-artifact-engine-deploy/contracts/`
-- [ ] T047 Run focused .NET tests for deployment core, EF persistence, and API projects listed in `specs/033-artifact-engine-deploy/quickstart.md`
-- [ ] T048 Run console deployment tests and typecheck from `src/Elsa.Platform.Console/`
-- [ ] T049 Run `git diff --check` from repository root
-- [ ] T050 Run `/speckit-analyze` equivalent review across `specs/033-artifact-engine-deploy/spec.md`, `plan.md`, and `tasks.md`
-- [ ] T051 Self-review implementation diff for constitution, safety, and critical regression issues before PR
+- [X] T045 [P] Update quickstart verification notes if implemented endpoint names differ in `specs/033-artifact-engine-deploy/quickstart.md`
+- [X] T046 [P] Add or update API contract documentation if runtime DTO fields differ in `specs/033-artifact-engine-deploy/contracts/`
+- [X] T047 Run focused .NET tests for deployment core, EF persistence, and API projects listed in `specs/033-artifact-engine-deploy/quickstart.md`
+- [X] T048 Run console deployment tests and typecheck from `src/Elsa.Platform.Console/`
+- [X] T049 Run `git diff --check` from repository root
+- [X] T050 Run `/speckit-analyze` equivalent review across `specs/033-artifact-engine-deploy/spec.md`, `plan.md`, and `tasks.md`
+- [X] T051 Self-review implementation diff for constitution, safety, and critical regression issues before PR
 
 ---
 

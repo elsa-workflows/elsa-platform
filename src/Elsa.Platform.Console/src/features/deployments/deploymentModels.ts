@@ -26,7 +26,8 @@ export const deploymentTierCapabilities = {
   promotionTarget: "deployment.promotion.target",
   confirmationRequired: "deployment.confirmation.required",
   rollbackEnabled: "deployment.rollback.enabled",
-  productionLike: "deployment.tier.production-like"
+  productionLike: "deployment.tier.production-like",
+  observabilityRequired: "deployment.observability.required"
 } as const;
 
 export type RuntimeControl = {
@@ -336,6 +337,45 @@ export type QueueDeploymentRunRequest = {
   mode: "DryRun" | "Apply";
 };
 
+export type DeployabilityStatus = "Deployable" | "Warning" | "Blocked";
+
+export type DeploymentBlocker = {
+  id: string;
+  severity: ValidationSeverity;
+  scope: string;
+  message: string;
+  remediation: string;
+  artifactRecordId: string | null;
+  engineId: string | null;
+};
+
+export type ArtifactDeployabilityResult = {
+  artifactRecordId: string | null;
+  recordName: string;
+  artifactId: string | null;
+  artifactTypeId: string | null;
+  artifactSchemaVersion: string | null;
+  contentDigest: WorkspaceArtifactDigest | null;
+  status: DeployabilityStatus;
+  requiredCapabilities: string[];
+  missingCapabilities: string[];
+  payloadAvailable: boolean;
+  diagnostics: DeploymentValidation[];
+};
+
+export type DeploymentDeployabilityResult = {
+  workspaceId: string;
+  revisionId: string;
+  environmentId: string;
+  targetEngineId: string;
+  mode: "DryRun" | "Apply";
+  status: DeployabilityStatus;
+  evaluatedAt: string;
+  artifacts: ArtifactDeployabilityResult[];
+  blockers: DeploymentBlocker[];
+  canDeploy: boolean;
+};
+
 export type QueueRollbackRunRequest = QueueDeploymentRunRequest & {
   rollbackSourceRunId: string;
 };
@@ -413,6 +453,23 @@ export type DeploymentRunCommandSummary = {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  artifacts?: DeploymentCommandArtifactItem[] | null;
+};
+
+export type DeploymentCommandArtifactStatus = "Pending" | "Downloading" | "Validated" | "Applying" | "Applied" | "Failed" | "Rejected" | "Skipped";
+
+export type DeploymentCommandArtifactItem = {
+  artifactRecordId: string;
+  artifactId: string;
+  artifactTypeId: string;
+  artifactSchemaVersion: string | null;
+  contentDigest: WorkspaceArtifactDigest;
+  displayName: string;
+  downloadUrl: string | null;
+  status: DeploymentCommandArtifactStatus;
+  observedDigest: WorkspaceArtifactDigest | null;
+  runtimeReference: string | null;
+  diagnostics: DeploymentCommandDiagnostic[] | null;
 };
 
 export type WorkspaceDeploymentRunDetailResponse = {

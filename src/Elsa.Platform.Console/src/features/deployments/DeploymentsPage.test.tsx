@@ -161,6 +161,17 @@ describe("DeploymentsPage", () => {
     expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-dev")).toBeInTheDocument();
   });
 
+  it("renders deployability blockers on revision detail before queueing", async () => {
+    renderDeployments(undefined, "/admin/deployments/applications/claims-ops/revisions/00000000-0000-0000-0000-000000000141");
+
+    expect(await screen.findByRole("heading", { name: "Revision r41" })).toBeInTheDocument();
+    expect(await screen.findByText("Blocked")).toBeInTheDocument();
+    expect(screen.getByText("EngineCapabilities:")).toBeInTheDocument();
+    expect(screen.getByText("Payment Retry requires runtime capability artifact.elsa.workflow-definition.apply.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Deploy revision" })).toBeDisabled();
+    expect(screen.getByText("Resolve deployability blockers before queueing deployment.")).toBeInTheDocument();
+  });
+
   it("renders environment detail with engine cards that link to detail pages", async () => {
     renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-dev");
 
@@ -322,12 +333,12 @@ describe("DeploymentsPage", () => {
     });
   }, 15000);
 
-  it("creates a desired-state revision with an observability binding", async () => {
+  it("hides non-applicable observability binding controls for development revisions", async () => {
     const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-dev/revisions/new?includeObservability=1");
 
     expect(await screen.findByRole("heading", { name: "New revision" })).toBeInTheDocument();
     expect((await screen.findAllByText("Payment Retry 8")).length).toBeGreaterThan(0);
-    expect(screen.getByLabelText(/Include observability binding/)).toBeChecked();
+    expect(screen.queryByLabelText(/Include observability binding/)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Create revision" }));
 
     await waitFor(() =>
@@ -338,6 +349,27 @@ describe("DeploymentsPage", () => {
     );
     expect(requestBody(fetchMock, "POST", "/environments/claims-dev/revisions")).toMatchObject({
       records: [
+        { kind: "ArtifactReference" }
+      ]
+    });
+  }, 15000);
+
+  it("creates a desired-state revision with an observability binding when the tier requires it", async () => {
+    const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-prod/revisions/new?includeObservability=1");
+
+    expect(await screen.findByRole("heading", { name: "New revision" })).toBeInTheDocument();
+    expect((await screen.findAllByText("Payment Retry 8")).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText(/Include observability binding/)).toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "Create revision" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops/environments/claims-prod/revisions`),
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+    expect(requestBody(fetchMock, "POST", "/environments/claims-prod/revisions")).toMatchObject({
+      records: [
         { kind: "ArtifactReference" },
         {
           kind: "ObservabilityBinding",
@@ -345,7 +377,7 @@ describe("DeploymentsPage", () => {
           payload: {
             kind: "Traces",
             provider: "OpenTelemetry Collector",
-            scope: "Dev / workflow runtime"
+            scope: "Prod / workflow runtime"
           }
         }
       ]
@@ -618,6 +650,51 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops/revisions`)) {
       return jsonResponse({ items: revisionSummaries(currentCockpit, "claims-ops") });
     }
+    if (method === "POST" && url.endsWith("/deployability")) {
+      const revisionId = decodeURIComponent(url.split("/deployments/revisions/")[1]?.replace("/deployability", "") ?? "");
+      const detail = revisionDetail(currentCockpit, revisionId);
+      if (!detail)
+        return jsonResponse({ title: "Not found" }, 404);
+      const isBlocked = revisionId === "00000000-0000-0000-0000-000000000141";
+      return jsonResponse({
+        workspaceId,
+        revisionId,
+        environmentId: detail.summary.revision.environmentId,
+        targetEngineId: detail.summary.revision.environmentId === "claims-stage" ? "stage-engine" : "dev-engine",
+        mode: "Apply",
+        status: isBlocked ? "Blocked" : "Deployable",
+        evaluatedAt: "2026-05-26T10:00:00Z",
+        artifacts: [
+          {
+            artifactRecordId: "00000000-0000-0000-0000-000000000900",
+            recordName: "Payment Retry",
+            artifactId: "payment-retry",
+            artifactTypeId: "elsa.workflow-definition",
+            artifactSchemaVersion: "1.0",
+            contentDigest: { algorithm: "sha256", value: "stage-digest" },
+            status: isBlocked ? "Blocked" : "Deployable",
+            requiredCapabilities: ["artifact.elsa.workflow-definition.apply"],
+            missingCapabilities: isBlocked ? ["artifact.elsa.workflow-definition.apply"] : [],
+            payloadAvailable: true,
+            diagnostics: []
+          }
+        ],
+        blockers: isBlocked
+          ? [
+              {
+                id: "artifact.capability.missing",
+                severity: "Blocker",
+                scope: "EngineCapabilities",
+                message: "Payment Retry requires runtime capability artifact.elsa.workflow-definition.apply.",
+                remediation: "Refresh the engine heartbeat or install the runtime applier for the missing capability.",
+                artifactRecordId: "00000000-0000-0000-0000-000000000900",
+                engineId: "stage-engine"
+              }
+            ]
+          : [],
+        canDeploy: !isBlocked
+      });
+    }
     if (url.includes(`/api/workspaces/${workspaceId}/deployments/revisions/`)) {
       const revisionId = decodeURIComponent(url.split("/deployments/revisions/")[1] ?? "");
       const detail = revisionDetail(currentCockpit, revisionId);
@@ -765,6 +842,22 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
         label: "Payment retry v8",
         commit: "8f6a9c1",
         contentHash: "hash-v43",
+        desiredStateJson: "{}",
+        authoredAt: "2026-05-26T11:00:00Z",
+        createdAt: "2026-05-26T11:00:00Z",
+        createdByAccountId: null
+      }, 201);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops/environments/claims-prod/revisions`)) {
+      return jsonResponse({
+        id: "00000000-0000-0000-0000-000000000244",
+        workspaceId,
+        applicationId: "claims-ops",
+        environmentId: "claims-prod",
+        revisionNumber: 41,
+        label: "Payment retry v8",
+        commit: null,
+        contentHash: "hash-prod-v41",
         desiredStateJson: "{}",
         authoredAt: "2026-05-26T11:00:00Z",
         createdAt: "2026-05-26T11:00:00Z",

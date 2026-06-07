@@ -319,7 +319,7 @@ public sealed class WorkspaceDeploymentApiTests
             app,
             workspaceId,
             application.Id,
-            sourceEnvironment.Id,
+            targetEnvironment.Id,
             "Digest mismatch",
             DesiredStateJson(ArtifactReferenceRecord(artifact!, new WorkspaceArtifactDigest("sha256", "wrong"))));
         var confirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Deploy, revision.Id);
@@ -349,7 +349,7 @@ public sealed class WorkspaceDeploymentApiTests
             app,
             workspaceId,
             application.Id,
-            sourceEnvironment.Id,
+            targetEnvironment.Id,
             "Missing runtime capability",
             DesiredStateJson(ArtifactReferenceRecord(artifact!)));
         var confirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Deploy, revision.Id);
@@ -377,14 +377,14 @@ public sealed class WorkspaceDeploymentApiTests
             app,
             workspaceId,
             application.Id,
-            sourceEnvironment.Id,
+            targetEnvironment.Id,
             "Known good artifact",
             DesiredStateJson(ArtifactReferenceRecord(artifactA)));
         var revisionB = await CreateRevisionDirectAsync(
             app,
             workspaceId,
             application.Id,
-            sourceEnvironment.Id,
+            targetEnvironment.Id,
             "Bad artifact",
             DesiredStateJson(ArtifactReferenceRecord(artifactB)));
         var deployAConfirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Deploy, revisionA.Id);
@@ -431,7 +431,7 @@ public sealed class WorkspaceDeploymentApiTests
             app,
             workspaceId,
             application.Id,
-            sourceEnvironment.Id,
+            targetEnvironment.Id,
             "Missing rollback artifact",
             DesiredStateJson(MissingArtifactReferenceRecord()));
         var confirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Rollback, revision.Id);
@@ -453,7 +453,7 @@ public sealed class WorkspaceDeploymentApiTests
         var owner = app.CreateTrustedWorkspaceClient("run-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
         var (application, sourceEnvironment, targetEnvironment, targetEngine) = await SeedPreviewTopologyAsync(app, workspaceId);
-        var revision = await CreateRevisionDirectAsync(app, workspaceId, application.Id, sourceEnvironment.Id, "Stage candidate", "{\"records\":[]}");
+        var revision = await CreateRevisionDirectAsync(app, workspaceId, application.Id, targetEnvironment.Id, "Stage candidate", "{\"records\":[]}");
 
         var confirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Deploy, revision.Id);
         var runResponse = await owner.PostPlatformJsonAsync(
@@ -484,7 +484,7 @@ public sealed class WorkspaceDeploymentApiTests
         var owner = app.CreateTrustedWorkspaceClient("run-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
         var (application, sourceEnvironment, targetEnvironment, targetEngine) = await SeedPreviewTopologyAsync(app, workspaceId);
-        var revision = await CreateRevisionDirectAsync(app, workspaceId, application.Id, sourceEnvironment.Id, "Stage candidate", "{\"records\":[]}");
+        var revision = await CreateRevisionDirectAsync(app, workspaceId, application.Id, targetEnvironment.Id, "Stage candidate", "{\"records\":[]}");
         var readerAccountId = await app.AddWorkspaceMemberAsync(workspaceId, "run-reader", WorkspaceRole.Reader);
         await app.GrantWorkspaceDeploymentPermissionAsync(workspaceId, readerAccountId, WorkspaceDeploymentPermissions.ExecuteDeployment);
         var reader = app.CreateTrustedWorkspaceClient("run-reader");

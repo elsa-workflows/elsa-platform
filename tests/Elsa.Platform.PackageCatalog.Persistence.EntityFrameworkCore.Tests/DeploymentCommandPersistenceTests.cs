@@ -85,6 +85,30 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Multi_artifact_revision_projects_all_artifacts_into_safe_command_payload()
+    {
+        var topology = await SeedTopologyAsync(createRevision: false);
+        var first = await _store.RegisterArtifactAsync(
+            _workspaceId,
+            ArtifactRegistration("sha256:payment-retry", "/tmp/payment-retry"));
+        var second = await _store.RegisterArtifactAsync(
+            _workspaceId,
+            ArtifactRegistration("sha256:invoice-sync", "/tmp/invoice-sync"));
+        var revision = await CreateArtifactBackedRevisionAsync(topology, first, second);
+
+        await QueueRunAsync(topology with { Revision = revision });
+        var command = (await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow)).Single();
+        var rawArtifactJson = await ReadCommandArtifactJsonAsync(command.Id);
+
+        command.Artifact!.ArtifactRecordId.Should().Be(first.Id);
+        command.Artifacts.Should().HaveCount(2);
+        command.Artifacts!.Select(x => x.ArtifactRecordId).Should().Equal(first.Id, second.Id);
+        command.Artifacts.Should().OnlyContain(x => x.DownloadUrl == null);
+        rawArtifactJson.Should().NotContain("/tmp/payment-retry");
+        rawArtifactJson.Should().NotContain("/tmp/invoice-sync");
+    }
+
+    [Fact]
     public async Task Artifact_backed_revision_rejects_missing_artifact_reference()
     {
         var topology = await SeedTopologyAsync(createRevision: false);
@@ -136,6 +160,48 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
 
         await complete.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("Observed artifact digest does not match command artifact digest.");
+    }
+
+    [Fact]
+    public async Task Failing_command_preserves_per_artifact_outcomes_and_marks_run_failed()
+    {
+        var topology = await SeedTopologyAsync(createRevision: false);
+        var first = await _store.RegisterArtifactAsync(
+            _workspaceId,
+            ArtifactRegistration("sha256:payment-retry", "/tmp/payment-retry"));
+        var second = await _store.RegisterArtifactAsync(
+            _workspaceId,
+            ArtifactRegistration("sha256:invoice-sync", "/tmp/invoice-sync"));
+        var revision = await CreateArtifactBackedRevisionAsync(topology, first, second);
+        var run = await QueueRunAsync(topology with { Revision = revision });
+        var command = (await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow)).Single();
+        await _store.ClaimCommandAsync(
+            _workspaceId,
+            command.Id,
+            new ClaimDeploymentCommandRequest(topology.Engine.Id, "worker-1", TimeSpan.FromMinutes(5)),
+            "lease-1",
+            DateTimeOffset.UtcNow);
+
+        var failed = await _store.FailCommandAsync(
+            _workspaceId,
+            command.Id,
+            new FailDeploymentCommandRequest(
+                "lease-1",
+                [new DeploymentCommandDiagnostic("apply-failed", DeploymentCommandDiagnosticSeverity.Error, "failed")],
+                [
+                    new DeploymentCommandArtifactOutcome(first.Id, DeploymentCommandArtifactStatus.Applied, first.ContentDigest, "elsa://workflow/payment-retry"),
+                    new DeploymentCommandArtifactOutcome(second.Id, DeploymentCommandArtifactStatus.Failed, second.ContentDigest, null, [new DeploymentCommandDiagnostic("apply-failed", DeploymentCommandDiagnosticSeverity.Error, "runtime rejected")])
+                ]),
+            DateTimeOffset.UtcNow);
+        var failedRun = await _store.GetRunAsync(_workspaceId, run.Id);
+
+        failed.Status.Should().Be(DeploymentCommandStatus.Failed);
+        failed.Artifacts.Should().HaveCount(2);
+        failed.Artifacts!.Single(x => x.ArtifactRecordId == first.Id).Status.Should().Be(DeploymentCommandArtifactStatus.Applied);
+        failed.Artifacts!.Single(x => x.ArtifactRecordId == first.Id).RuntimeReference.Should().Be("elsa://workflow/payment-retry");
+        failed.Artifacts!.Single(x => x.ArtifactRecordId == second.Id).Status.Should().Be(DeploymentCommandArtifactStatus.Failed);
+        failed.Artifacts!.Single(x => x.ArtifactRecordId == second.Id).Diagnostics!.Single().Message.Should().Be("runtime rejected");
+        failedRun!.Status.Should().Be(WorkspaceDeploymentRunStatus.Failed);
     }
 
     [Fact]
@@ -521,30 +587,45 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
 
     private async Task<WorkspaceDesiredStateRevision> CreateArtifactBackedRevisionAsync(
         DeploymentTopology topology,
-        WorkspaceArtifact artifact)
+        params WorkspaceArtifact[] artifacts)
     {
+        var records = string.Join(",", artifacts.Select(ArtifactRecordJson));
         var desiredStateJson = $$"""
             {
-              "records": [
-                {
-                  "kind": "ArtifactReference",
-                  "name": "Payment Retry",
-                  "payload": {
-                    "artifactRecordId": "{{artifact.Id:D}}",
-                    "artifactId": "{{artifact.ArtifactId}}",
-                    "artifactTypeId": "{{artifact.ArtifactTypeId}}",
-                    "contentDigest": {
-                      "algorithm": "{{artifact.ContentDigest.Algorithm}}",
-                      "value": "{{artifact.ContentDigest.Value}}"
-                    }
-                  }
-                }
-              ]
+              "records": [{{records}}]
             }
             """;
         return await _store.CreateRevisionAsync(
             _workspaceId,
             new CreateDesiredStateRevisionRequest(topology.Application.Id, topology.Environment.Id, "Artifact v1", "abc123", desiredStateJson, _accountId));
+    }
+
+    private static string ArtifactRecordJson(WorkspaceArtifact artifact) =>
+        $$"""
+        {
+          "kind": "ArtifactReference",
+          "name": "{{artifact.ArtifactId}}",
+          "payload": {
+            "artifactRecordId": "{{artifact.Id:D}}",
+            "artifactId": "{{artifact.ArtifactId}}",
+            "artifactTypeId": "{{artifact.ArtifactTypeId}}",
+            "contentDigest": {
+              "algorithm": "{{artifact.ContentDigest.Algorithm}}",
+              "value": "{{artifact.ContentDigest.Value}}"
+            }
+          }
+        }
+        """;
+
+    private async Task<string> ReadCommandArtifactJsonAsync(Guid commandId)
+    {
+        await using var command = _db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SELECT ArtifactJson FROM DeploymentCommands WHERE Id = $id";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$id";
+        parameter.Value = commandId;
+        command.Parameters.Add(parameter);
+        return (string)(await command.ExecuteScalarAsync())!;
     }
 
     private static async Task<WorkspaceDeploymentRun> QueueRunAsync(

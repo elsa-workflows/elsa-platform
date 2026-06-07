@@ -64,19 +64,20 @@ Blocked response shape:
       "status": "Blocked",
       "diagnostics": [
         {
-          "code": "artifact.capability.missing",
+          "id": "artifact.capability.missing",
           "severity": "Blocker",
-          "message": "Target engine does not advertise artifact.elsa.workflow-definition.apply."
+          "scope": "EngineCapabilities",
+          "message": "dev-sample 2026.06.04.4 requires runtime capability artifact.elsa.workflow-definition.apply."
         }
       ]
     }
   ],
   "blockers": [
     {
-      "id": "artifact-capability-missing",
+      "id": "artifact.capability.missing",
       "severity": "Blocker",
-      "scope": "Engine capabilities",
-      "message": "Target engine does not advertise artifact.elsa.workflow-definition.apply.",
+      "scope": "EngineCapabilities",
+      "message": "dev-sample 2026.06.04.4 requires runtime capability artifact.elsa.workflow-definition.apply.",
       "remediation": "Refresh the engine heartbeat or install the workflow definition runtime applier.",
       "artifactRecordId": "ddf89a51-0560-4945-a5d2-2f5b65b9a5ca",
       "engineId": "fbfd551b-6997-4b51-9842-9c0a35d5d2d2"
@@ -90,8 +91,8 @@ Expected responses:
 - `200 OK` when evaluation completes, even if the result is blocked.
 - `400 Bad Request` for invalid mode or malformed request.
 - `403 Forbidden` when the caller lacks deployment read permission.
-- `404 Not Found` when the revision or target engine is not visible in the workspace.
-- `409 Conflict` when the target engine is outside the revision environment or the revision cannot be evaluated safely.
+- `404 Not Found` when the revision is not visible in the workspace.
+- Missing target environments, missing target engines, target-engine environment mismatches, and unsafe revision prerequisites are returned as structured blocked deployability results so the console can show remediation without a second error path.
 
 ## Queue Deployment Run
 

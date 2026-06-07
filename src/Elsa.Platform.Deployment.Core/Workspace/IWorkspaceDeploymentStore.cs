@@ -57,12 +57,14 @@ public interface IWorkspaceDeploymentStore
     Task<IReadOnlyList<WorkspaceDesiredStateRevisionSummary>> ListApplicationRevisionsAsync(
         Guid workspaceId,
         Guid applicationId,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Application revision listing is not supported by this store.");
 
     Task<WorkspaceDesiredStateRevisionDetail?> GetRevisionDetailAsync(
         Guid workspaceId,
         Guid revisionId,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Revision detail reads are not supported by this store.");
 
     Task<WorkspaceWorkflowEngine?> GetEngineAsync(
         Guid workspaceId,

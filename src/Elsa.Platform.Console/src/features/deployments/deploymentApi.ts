@@ -14,6 +14,7 @@ import type {
   PromotionRequest,
   PromotionResult,
   QueueDeploymentRunRequest,
+  DeploymentDeployabilityResult,
   QueueRollbackRunRequest,
   RegisterDeploymentEngineRequest,
   RuntimeControlExecution,
@@ -186,6 +187,16 @@ export function getApplicationRevisions(workspaceId: string, applicationId: stri
 export function getRevisionDetail(workspaceId: string, revisionId: string) {
   return apiRequest<WorkspaceDesiredStateRevisionDetail>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/revisions/${encodeURIComponent(revisionId)}`
+  );
+}
+
+export function getRevisionDeployability(workspaceId: string, revisionId: string, targetEnvironmentId: string, targetEngineId: string) {
+  return apiRequest<DeploymentDeployabilityResult>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/revisions/${encodeURIComponent(revisionId)}/deployability`,
+    {
+      method: "POST",
+      body: JSON.stringify({ targetEnvironmentId, targetEngineId, mode: "Apply" })
+    }
   );
 }
 

@@ -10,7 +10,7 @@ public sealed class ArtifactTypeRegistry : IArtifactTypeRegistry
         [ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion],
         Enabled: true,
         DefaultRuntimeFamily: "elsa-workflows",
-        DefaultRequiredCapabilities: ["workflow-definition.apply"]);
+        DefaultRequiredCapabilities: [ArtifactApplyCapability.For(ArtifactTypeIds.ElsaWorkflowDefinition)]);
 
     private readonly IReadOnlyDictionary<string, ArtifactTypeDefinition> _types =
         new Dictionary<string, ArtifactTypeDefinition>(StringComparer.OrdinalIgnoreCase)
@@ -23,4 +23,25 @@ public sealed class ArtifactTypeRegistry : IArtifactTypeRegistry
 
     public ArtifactTypeDefinition? FindType(string typeId) =>
         _types.TryGetValue(typeId, out var type) ? type : null;
+}
+
+public static class ArtifactApplyCapability
+{
+    public static string For(string artifactTypeId) => $"artifact.{artifactTypeId}.apply";
+
+    public static string Normalize(string artifactTypeId, string capability)
+    {
+        if (string.IsNullOrWhiteSpace(capability))
+            return capability;
+
+        var trimmed = capability.Trim();
+        if (trimmed.StartsWith("artifact.", StringComparison.OrdinalIgnoreCase))
+            return trimmed;
+
+        if (string.Equals(artifactTypeId, ArtifactTypeIds.ElsaWorkflowDefinition, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(trimmed, "workflow-definition.apply", StringComparison.OrdinalIgnoreCase))
+            return For(ArtifactTypeIds.ElsaWorkflowDefinition);
+
+        return trimmed;
+    }
 }

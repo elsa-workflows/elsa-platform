@@ -197,6 +197,7 @@ builder.Services.AddScoped(services => new WorkspaceArtifactUploadService(
     services.GetRequiredService<TimeProvider>()));
 builder.Services.AddScoped<WorkspacePermissionService>();
 builder.Services.AddScoped<DeploymentValidationService>();
+builder.Services.AddScoped<DeploymentDeployabilityService>();
 builder.Services.AddScoped<DeploymentPromotionService>();
 builder.Services.AddHttpClient<IEngineHealthProbe, HttpEngineHealthProbe>(client => client.Timeout = TimeSpan.FromSeconds(3));
 builder.Services.AddScoped<EngineHealthService>();
