@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Check, FileCode2, Pencil, Play, Plus, RefreshCw, Save, Search, Settings2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Badge, Button, EmptyState, Input, SecondaryButton, Select, buttonClassName } from "@/components/ui";
 import { RequestStateView } from "@/components/states/RequestStateViews";
@@ -140,6 +140,7 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
   const [selectedPackages, setSelectedPackages] = useState<Record<string, SelectedRuntimePackage>>({});
   const [selectedInfrastructure, setSelectedInfrastructure] = useState<Record<string, boolean>>({});
   const [featureSearch, setFeatureSearch] = useState("");
+  const [selectedFeatureCategories, setSelectedFeatureCategories] = useState<string[]>([]);
   const [localPackagesEnabled, setLocalPackagesEnabled] = useState(false);
   const [localPackagesPath, setLocalPackagesPath] = useState("./packages");
   const [configurationName, setConfigurationName] = useState("Workflow runtime");
@@ -196,10 +197,14 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
   const compatibleFeatureItems = useMemo(() => {
     return featureCatalogItems.filter((item) => isFeatureCompatibleWithRuntimeKinds(item.feature.runtimeKinds, selectedImage?.runtimeKinds ?? []));
   }, [featureCatalogItems, selectedImage?.runtimeKinds]);
+  const featureCategoryOptions = useMemo(() => featureCategoryCounts(compatibleFeatureItems), [compatibleFeatureItems]);
+  const featureCategoryLabels = useMemo(() => featureCategoryOptions.map((item) => item.category), [featureCategoryOptions]);
+  const selectedFeatureCategorySet = useMemo(() => new Set(selectedFeatureCategories), [selectedFeatureCategories]);
+  const allFeatureCategoriesSelected = selectedFeatureCategories.length === 0;
 
   const filteredFeatureItems = useMemo(() => {
-    return filterFeatures(compatibleFeatureItems, featureSearch);
-  }, [compatibleFeatureItems, featureSearch]);
+    return filterFeatures(compatibleFeatureItems, featureSearch, selectedFeatureCategories);
+  }, [compatibleFeatureItems, featureSearch, selectedFeatureCategories]);
 
   useEffect(() => {
     if (!catalog.data || !selectedImage)
@@ -219,6 +224,13 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
       return result.packages;
     });
   }, [catalog.data, selectedImage]);
+
+  useEffect(() => {
+    setSelectedFeatureCategories((current) => {
+      const next = current.filter((category) => featureCategoryLabels.includes(category));
+      return next.length === current.length ? current : next;
+    });
+  }, [featureCategoryLabels]);
 
   const selectedPackageItems = useMemo(() => {
     return Object.values(selectedPackages)
@@ -627,45 +639,96 @@ function RuntimeBuilderWorkspace({ mode, configurationId = "" }: { mode: "new" |
                     ) : null}
                   </div>
                 ) : null}
-                <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(17.5rem,1fr))] gap-3">
-                  {filteredFeatureItems.length === 0 ? (
-                    <p className="rounded-ui border border-dashed border-border p-4 text-sm text-muted-foreground">No features match the current search.</p>
-                  ) : (
-                    filteredFeatureItems.map((item) => {
-                      const packageKey = packageSelectionKey(item.packageItem.source.id, item.packageItem.packageId);
-                      const checked = selectedPackages[packageKey]?.selectedFeatures.includes(item.feature.featureId) ?? false;
-                      return (
-                        <label
-                          key={item.key}
-                          className={cn(
-                            "flex min-h-32 items-start gap-3 rounded-ui border bg-background p-3 text-sm transition-colors",
-                            checked ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"
-                          )}
-                        >
-                          <input
-                            type="checkbox"
-                            className="mt-1 h-4 w-4 rounded border-border"
-                            checked={checked}
-                            onChange={(event) => toggleFeature(item, event.target.checked)}
-                          />
-                          <span className="min-w-0">
-                            <span className="block font-medium">{item.feature.displayName}</span>
-                            <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                              {item.feature.description ?? item.feature.featureId}
+                <div className="mt-4 grid gap-4 lg:grid-cols-[14rem_minmax(0,1fr)]">
+                  <aside className="lg:border-r lg:border-border lg:pr-4" aria-label="Runtime feature categories">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-medium">Categories</h3>
+                      {selectedFeatureCategories.length > 0 ? (
+                        <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => setSelectedFeatureCategories([])}>
+                          Clear
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 flex gap-2 overflow-x-auto pb-1 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
+                      <button
+                        type="button"
+                        className={featureCategoryButtonClassName(allFeatureCategoriesSelected)}
+                        aria-pressed={allFeatureCategoriesSelected}
+                        onClick={() => setSelectedFeatureCategories([])}
+                      >
+                        <span>All features</span>
+                        <span className={cn("text-xs", allFeatureCategoriesSelected ? "text-background/80" : "text-muted-foreground")}>{compatibleFeatureItems.length}</span>
+                      </button>
+                      {featureCategoryOptions.map(({ category, count }) => {
+                        const selected = selectedFeatureCategorySet.has(category);
+                        return (
+                          <button
+                            key={category}
+                            type="button"
+                            className={featureCategoryButtonClassName(selected)}
+                            aria-pressed={selected}
+                            onClick={() => toggleFeatureCategory(category, setSelectedFeatureCategories)}
+                          >
+                            <span className="inline-flex min-w-0 items-center gap-2">
+                              {selected ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
+                              <span className="truncate">{category}</span>
                             </span>
-                            <span className="mt-2 flex flex-wrap gap-1">
-                              {item.feature.category ? <Badge>{item.feature.category}</Badge> : null}
-                              {item.feature.experimental ? <Badge>Experimental</Badge> : null}
-                              {item.feature.advanced ? <Badge>Advanced</Badge> : null}
-                            </span>
-                            <span className="mt-2 block text-xs text-muted-foreground">
-                              Package: {item.packageItem.packageId} {item.version.version}
-                            </span>
-                          </span>
-                        </label>
-                      );
-                    })
-                  )}
+                            <span className={cn("text-xs", selected ? "text-background/80" : "text-muted-foreground")}>{count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </aside>
+
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">
+                      Showing {filteredFeatureItems.length} of {compatibleFeatureItems.length} features
+                      {selectedFeatureCategories.length > 0 ? ` in ${selectedFeatureCategories.join(", ")}` : ""}
+                      {featureSearch.trim() ? ` matching "${featureSearch.trim()}"` : ""}.
+                    </p>
+                    <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(17.5rem,1fr))] gap-3">
+                      {filteredFeatureItems.length === 0 ? (
+                        <p className="rounded-ui border border-dashed border-border p-4 text-sm text-muted-foreground">No features match the selected filters.</p>
+                      ) : (
+                        filteredFeatureItems.map((item) => {
+                          const packageKey = packageSelectionKey(item.packageItem.source.id, item.packageItem.packageId);
+                          const checked = selectedPackages[packageKey]?.selectedFeatures.includes(item.feature.featureId) ?? false;
+                          return (
+                            <label
+                              key={item.key}
+                              className={cn(
+                                "flex min-h-32 items-start gap-3 rounded-ui border bg-background p-3 text-sm transition-colors",
+                                checked ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                className="mt-1 h-4 w-4 rounded border-border"
+                                checked={checked}
+                                onChange={(event) => toggleFeature(item, event.target.checked)}
+                              />
+                              <span className="min-w-0">
+                                <span className="block font-medium">{item.feature.displayName}</span>
+                                <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                                  {item.feature.description ?? item.feature.featureId}
+                                </span>
+                                <span className="mt-2 flex flex-wrap gap-1">
+                                  {featureCategories(item.feature).map((category) => (
+                                    <Badge key={category}>{category}</Badge>
+                                  ))}
+                                  {item.feature.experimental ? <Badge>Experimental</Badge> : null}
+                                  {item.feature.advanced ? <Badge>Advanced</Badge> : null}
+                                </span>
+                                <span className="mt-2 block text-xs text-muted-foreground">
+                                  Package: {item.packageItem.packageId} {item.version.version}
+                                </span>
+                              </span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
                 </div>
               </WizardPane>
             ) : null}
@@ -1299,10 +1362,9 @@ function collectFeatureCatalogItems(packages: BuilderPackage[]) {
   });
 }
 
-function filterFeatures(features: FeatureCatalogItem[], query: string) {
+function filterFeatures(features: FeatureCatalogItem[], query: string, selectedCategories: string[]) {
   const term = query.trim();
-  if (!term) return features;
-  return features.filter((item) => matchesSearch(featureSearchText(item), term));
+  return features.filter((item) => featureMatchesSelectedCategories(item.feature, selectedCategories) && (!term || matchesSearch(featureSearchText(item), term)));
 }
 
 function featureSearchText(item: FeatureCatalogItem) {
@@ -1313,6 +1375,7 @@ function featureSearchText(item: FeatureCatalogItem) {
     feature.displayName,
     feature.description,
     feature.category,
+    ...featureCategories(feature),
     ...feature.runtimeKinds,
     ...feature.requiredCapabilities,
     ...feature.infrastructure.flatMap((requirement) => [
@@ -1335,6 +1398,46 @@ function featureSearchText(item: FeatureCatalogItem) {
     item.packageItem.source.url,
     item.version.version
   ].filter((value): value is string => Boolean(value));
+}
+
+function featureCategoryCounts(features: FeatureCatalogItem[]) {
+  const counts = new Map<string, number>();
+  features.forEach((item) => {
+    featureCategories(item.feature).forEach((category) => counts.set(category, (counts.get(category) ?? 0) + 1));
+  });
+  return [...counts.entries()]
+    .map(([category, count]) => ({ category, count }))
+    .sort((left, right) => left.category.localeCompare(right.category));
+}
+
+function featureCategories(feature: BuilderPackage["versions"][number]["features"][number]) {
+  const categories = (feature.categories ?? [])
+    .map((category) => category.trim())
+    .filter((category, index, values) => category.length > 0 && values.findIndex((value) => value.toLowerCase() === category.toLowerCase()) === index);
+
+  if (categories.length > 0) return categories;
+
+  const category = feature.category?.trim();
+  return category ? [category] : ["Uncategorized"];
+}
+
+function featureMatchesSelectedCategories(feature: BuilderPackage["versions"][number]["features"][number], selectedCategories: string[]) {
+  if (selectedCategories.length === 0) return true;
+  const categories = featureCategories(feature);
+  return selectedCategories.some((category) => categories.includes(category));
+}
+
+function toggleFeatureCategory(category: string, setSelectedFeatureCategories: Dispatch<SetStateAction<string[]>>) {
+  setSelectedFeatureCategories((current) =>
+    current.includes(category) ? current.filter((item) => item !== category) : [...current, category]
+  );
+}
+
+function featureCategoryButtonClassName(selected: boolean) {
+  return cn(
+    "flex min-w-36 items-center justify-between gap-3 whitespace-nowrap rounded-ui border px-3 py-2 text-left text-sm transition-colors lg:w-full",
+    selected ? "border-foreground bg-foreground text-background" : "border-border bg-background text-foreground hover:bg-muted"
+  );
 }
 
 function matchesSearch(values: string[], query: string) {

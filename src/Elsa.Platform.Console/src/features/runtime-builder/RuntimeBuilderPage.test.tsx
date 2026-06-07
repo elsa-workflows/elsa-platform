@@ -228,6 +228,48 @@ describe("RuntimeBuilderPage", () => {
     expect(screen.queryByText("No features match the current search.")).not.toBeInTheDocument();
   });
 
+  it("filters runtime features by multiple categories, including uncategorized features", async () => {
+    const fetchMock = createRuntimeBuilderFetchMock({
+      catalog: catalogWithFeatureCategories(),
+      planResponse: (intent) => ({
+        resolved: intent,
+        autoAdded: { packages: [], features: [], infrastructure: [] },
+        findings: []
+      })
+    });
+    renderRuntimeBuilder(fetchMock);
+
+    expect((await screen.findAllByText("Elsa Runtime")).length).toBeGreaterThan(0);
+    await clickWizardFooterButton("Features");
+
+    expect(screen.getByRole("checkbox", { name: /PostgreSQL Persistence/i })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /HTTP Activities/i })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Workflow Signals/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Data/ }));
+    expect(screen.getByRole("checkbox", { name: /PostgreSQL Persistence/i })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /HTTP Activities/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /Workflow Signals/i })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Uncategorized/ }));
+    expect(screen.getByRole("checkbox", { name: /PostgreSQL Persistence/i })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /HTTP Activities/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Workflow Signals/i })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Search runtime features"), "signals");
+    expect(screen.queryByRole("checkbox", { name: /PostgreSQL Persistence/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Workflow Signals/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.getByRole("checkbox", { name: /Workflow Signals/i })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /HTTP Activities/i })).not.toBeInTheDocument();
+
+    await userEvent.clear(screen.getByLabelText("Search runtime features"));
+    expect(screen.getByRole("checkbox", { name: /PostgreSQL Persistence/i })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /HTTP Activities/i })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Workflow Signals/i })).toBeInTheDocument();
+  });
+
   it("filters features by the selected runtime image kind", async () => {
     const fetchMock = createRuntimeBuilderFetchMock({
       catalog: catalogWithRuntimeKindFeatures(),
@@ -595,6 +637,46 @@ function catalogWithFeatureDependencies(): BuilderCatalog {
                 reason: "PostgreSQL persistence requires base persistence services."
               }
             ]
+          }
+        ]
+      }))
+    }))
+  };
+}
+
+function catalogWithFeatureCategories(): BuilderCatalog {
+  return {
+    ...catalogFixture,
+    packages: catalogFixture.packages.map((packageItem) => ({
+      ...packageItem,
+      versions: packageItem.versions.map((version) => ({
+        ...version,
+        features: [
+          {
+            ...version.features[0],
+            category: "Legacy Persistence",
+            categories: ["Persistence", "Data"]
+          },
+          {
+            ...version.features[0],
+            featureId: "http-activities",
+            typeName: "Elsa.Http.HttpActivitiesFeature",
+            displayName: "HTTP Activities",
+            description: "Adds HTTP activities.",
+            category: "HTTP",
+            categories: ["HTTP"],
+            settings: []
+          },
+          {
+            ...version.features[0],
+            featureId: "workflow-signals",
+            typeName: "Elsa.Workflows.Signals.SignalFeature",
+            displayName: "Workflow Signals",
+            description: "Adds signal dispatching for workflow triggers.",
+            category: null,
+            categories: [],
+            infrastructure: [],
+            settings: []
           }
         ]
       }))

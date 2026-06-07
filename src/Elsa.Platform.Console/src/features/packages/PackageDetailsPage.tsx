@@ -384,7 +384,7 @@ export function PackageDetailsPage() {
                           {feature.experimental ? <Badge>Experimental</Badge> : null}
                         </div>
                         <p className="mt-1 text-muted-foreground">{feature.description ?? feature.typeName}</p>
-                        <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <dl className="mt-3 grid gap-3 xl:grid-cols-2">
                           <DetailItem label="Feature ID" value={feature.featureId} />
                           <DetailItem label="Type" value={feature.typeName} />
                           <DetailItem label="Category" value={formatFeatureCategories(feature.categories)} />

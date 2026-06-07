@@ -82,6 +82,7 @@ export type PublicPackageFeature = {
   displayName: string;
   description?: string | null;
   category?: string | null;
+  categories?: string[] | null;
   requiredCapabilities: string[];
   runtimeKinds: string[];
   dependencies?: PublicPackageFeatureDependency[] | null;
