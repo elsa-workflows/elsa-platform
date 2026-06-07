@@ -28,6 +28,8 @@ export const queryKeys = {
   deploymentPermissions: (workspaceId: string) => ["deployments", workspaceId, "permissions"] as const,
   deploymentTiers: (workspaceId: string) => ["deployments", workspaceId, "tiers"] as const,
   deploymentTierCapabilities: (workspaceId: string) => ["deployments", workspaceId, "tier-capabilities"] as const,
+  deploymentApplicationRevisions: (workspaceId: string, applicationId: string) => ["deployments", workspaceId, "applications", applicationId, "revisions"] as const,
+  deploymentRevision: (workspaceId: string, revisionId: string) => ["deployments", workspaceId, "revisions", revisionId] as const,
   artifacts: (workspaceId: string) => ["artifacts", workspaceId] as const,
   artifactDetails: (workspaceId: string, artifactId: string) => ["artifacts", workspaceId, artifactId] as const,
   overview: ["overview"] as const,

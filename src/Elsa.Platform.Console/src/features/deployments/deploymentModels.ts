@@ -240,6 +240,54 @@ export type WorkspaceDesiredStateRevision = {
   commit: string | null;
   contentHash: string;
   desiredStateJson: string;
+  authoredAt: string;
+  createdAt: string;
+  createdByAccountId: string | null;
+};
+
+export type WorkspaceDesiredStateRevisionSummary = {
+  revision: WorkspaceDesiredStateRevision;
+  environmentName: string;
+  environmentTier: EnvironmentSummary["tier"];
+  environmentTierId: string | null;
+  environmentTierName: string | null;
+  isCurrentDesired: boolean;
+  isCurrentDeployed: boolean;
+  latestRunStatus: WorkspaceDeploymentRunStatus | null;
+  latestRunQueuedAt: string | null;
+};
+
+export type WorkspaceDesiredStateRevisionRecord = {
+  id: string;
+  kind: DesiredStateRecordKind;
+  name: string;
+  payloadJson: string;
+  contentHash: string;
+  artifactRecordId: string | null;
+  artifactId: string | null;
+  artifactTypeId: string | null;
+  artifactDigest: WorkspaceArtifactDigest | null;
+};
+
+export type WorkspaceDesiredStateRevisionRunSummary = {
+  id: string;
+  environmentId: string;
+  engineId: string;
+  status: WorkspaceDeploymentRunStatus;
+  validationOutcome: "Passed" | "Warnings" | "Blocked";
+  queuedAt: string;
+  completedAt: string | null;
+  failureMessage: string | null;
+};
+
+export type WorkspaceDesiredStateRevisionDetail = {
+  summary: WorkspaceDesiredStateRevisionSummary;
+  records: WorkspaceDesiredStateRevisionRecord[];
+  runs: WorkspaceDesiredStateRevisionRunSummary[];
+};
+
+export type WorkspaceApplicationRevisionsResponse = {
+  items: WorkspaceDesiredStateRevisionSummary[];
 };
 
 export type PromotionPreviewRequest = {

@@ -29,9 +29,11 @@ import {
   createDeploymentApplication,
   createDeploymentEnvironment,
   createDesiredStateRevision,
+  getApplicationRevisions,
   getDeploymentCockpit,
   getDeploymentPermissions,
   getDeploymentTiers,
+  getRevisionDetail,
   previewPromotion,
   promoteRevision,
   queueDeploymentRun,
@@ -43,7 +45,7 @@ import {
   updateDeploymentEnvironment,
   verifyDeploymentEngine
 } from "@/features/deployments/deploymentApi";
-import { listWorkspaceArtifacts } from "@/features/artifacts/artifactApi";
+import { listWorkspaceArtifacts, workspaceArtifactDownloadUrl } from "@/features/artifacts/artifactApi";
 import type { WorkspaceArtifact } from "@/features/artifacts/artifactModels";
 import {
   CredentialReferenceInput,
@@ -72,6 +74,9 @@ import {
   type RuntimeControl,
   type ValidationSeverity,
   type WorkspaceDeploymentTier,
+  type WorkspaceDesiredStateRevisionDetail,
+  type WorkspaceDesiredStateRevisionRecord,
+  type WorkspaceDesiredStateRevisionSummary,
   type WorkflowEngineRegistration
 } from "@/features/deployments/deploymentModels";
 import { useWorkspaceContext } from "@/app/WorkspaceContextProvider";
@@ -127,6 +132,8 @@ type PromotionReadinessIssue = {
 type ApplicationSort = "name" | "health" | "environments" | "engines" | "drift";
 type EnvironmentSort = "name" | "tier" | "health" | "deployment" | "drift";
 type EngineSort = "name" | "health" | "verification" | "heartbeat";
+type RevisionSort = "newest" | "environment" | "status";
+type RevisionStatusFilter = "all" | "desired" | "deployed" | "superseded" | "never-deployed";
 
 const applicationSorts: { value: ApplicationSort; label: string }[] = [
   { value: "name", label: "Application" },
@@ -149,6 +156,20 @@ const engineSorts: { value: EngineSort; label: string }[] = [
   { value: "health", label: "Health" },
   { value: "verification", label: "Credential verification" },
   { value: "heartbeat", label: "Last heartbeat" }
+];
+
+const revisionSorts: { value: RevisionSort; label: string }[] = [
+  { value: "newest", label: "Newest" },
+  { value: "environment", label: "Environment" },
+  { value: "status", label: "Status" }
+];
+
+const revisionStatusFilters: { value: RevisionStatusFilter; label: string }[] = [
+  { value: "all", label: "All revisions" },
+  { value: "desired", label: "Current desired" },
+  { value: "deployed", label: "Currently deployed" },
+  { value: "superseded", label: "Superseded" },
+  { value: "never-deployed", label: "Never deployed" }
 ];
 
 export function DeploymentsPage() {
@@ -380,6 +401,10 @@ function DeploymentApplicationReady({ context, applicationId }: { context: Deplo
         description="Manage environments for this workflow application."
         actions={
           <>
+            <Link to={applicationRevisionsPath(application.id)} className={buttonClassName("secondary")}>
+              <GitBranch className="h-4 w-4" />
+              Revisions
+            </Link>
             <Link to={`/admin/deployments/applications/${application.id}/edit`} className={buttonClassName("secondary", !canManageSetup ? "pointer-events-none opacity-50" : undefined)} aria-disabled={!canManageSetup}>
               <Pencil className="h-4 w-4" />
               Edit application
@@ -414,6 +439,282 @@ function DeploymentApplicationReady({ context, applicationId }: { context: Deplo
           <EnvironmentTable application={application} environments={environments} data={data} />
         )}
       </section>
+    </section>
+  );
+}
+
+export function DeploymentApplicationRevisionsPage() {
+  const context = useDeploymentContext();
+  const { applicationId = "" } = useParams();
+  if (context.status !== "ready") return context.state;
+  return <DeploymentApplicationRevisionsReady context={context.value} applicationId={applicationId} />;
+}
+
+function DeploymentApplicationRevisionsReady({ context, applicationId }: { context: DeploymentContext; applicationId: string }) {
+  const { workspaceId, data, canManageDesiredState } = context;
+  const application = findApplication(data, applicationId);
+  const [searchParams] = useSearchParams();
+  const [query, setQuery] = useState("");
+  const [environmentId, setEnvironmentId] = useState(searchParams.get("environment") ?? "all");
+  const [status, setStatus] = useState<RevisionStatusFilter>(() => parseRevisionStatusFilter(searchParams.get("status")));
+  const [sort, setSort] = useState<RevisionSort>("newest");
+  const [newRevisionEnvironmentId, setNewRevisionEnvironmentId] = useState("");
+  const revisions = useQuery({
+    queryKey: queryKeys.deploymentApplicationRevisions(workspaceId, applicationId),
+    queryFn: () => getApplicationRevisions(workspaceId, applicationId),
+    enabled: Boolean(application)
+  });
+
+  useEffect(() => {
+    if (!application) return;
+    if (!application.environments.some((environment) => environment.id === newRevisionEnvironmentId)) {
+      setNewRevisionEnvironmentId(application.environments[0]?.id ?? "");
+    }
+  }, [application, newRevisionEnvironmentId]);
+
+  if (!application) return <RequestStateView state="not-found" title="Application not found" />;
+
+  const revisionItems = revisions.data?.items ?? [];
+  const visibleRevisions = sortRevisions(filterRevisions(revisionItems, query, environmentId, status), sort);
+  const newRevisionPath = newRevisionEnvironmentId ? `${environmentPath(application.id, newRevisionEnvironmentId)}/revisions/new` : "";
+
+  return (
+    <section className="space-y-5">
+      <Breadcrumbs
+        items={[
+          { label: "Deployments", to: "/admin/deployments" },
+          { label: "Applications", to: "/admin/deployments/applications" },
+          { label: application.name, to: applicationPath(application.id) },
+          { label: "Revisions" }
+        ]}
+      />
+      <PageHeader
+        title={`${application.name} revisions`}
+        description="Review desired-state revisions across this application's environments."
+        actions={
+          <div className="grid gap-2 sm:grid-cols-[minmax(12rem,18rem)_auto]">
+            <Select
+              value={newRevisionEnvironmentId}
+              disabled={application.environments.length === 0}
+              onChange={(event) => setNewRevisionEnvironmentId(event.target.value)}
+              aria-label="New revision environment"
+            >
+              {application.environments.length === 0 ? (
+                <option value="">No environments</option>
+              ) : (
+                application.environments.map((environment) => <option key={environment.id} value={environment.id}>{environment.name}</option>)
+              )}
+            </Select>
+            <Link
+              to={newRevisionPath || applicationPath(application.id)}
+              className={buttonClassName("primary", !canManageDesiredState || !newRevisionPath ? "pointer-events-none opacity-50" : undefined)}
+              aria-disabled={!canManageDesiredState || !newRevisionPath}
+            >
+              <Plus className="h-4 w-4" />
+              New revision
+            </Link>
+          </div>
+        }
+      />
+
+      <div className="grid gap-3 xl:grid-cols-[minmax(16rem,1fr)_minmax(12rem,18rem)_minmax(12rem,18rem)_auto] xl:items-center">
+        <label className="relative block">
+          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} className="pl-9" placeholder="Search revisions" />
+        </label>
+        <Select value={environmentId} onChange={(event) => setEnvironmentId(event.target.value)} aria-label="Filter revisions by environment">
+          <option value="all">All environments</option>
+          {application.environments.map((environment) => <option key={environment.id} value={environment.id}>{environment.name}</option>)}
+        </Select>
+        <Select value={status} onChange={(event) => setStatus(event.target.value as RevisionStatusFilter)} aria-label="Filter revisions by status">
+          {revisionStatusFilters.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </Select>
+        <Select value={sort} onChange={(event) => setSort(event.target.value as RevisionSort)} aria-label="Sort revisions">
+          {revisionSorts.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </Select>
+      </div>
+
+      {revisions.isLoading || revisions.isFetching ? (
+        <RequestStateView state="loading" title="Loading revisions" />
+      ) : revisions.isError ? (
+        <RequestStateView state="unexpected" title="Revisions could not load" />
+      ) : revisionItems.length === 0 ? (
+        <EmptyState
+          title="No revisions yet"
+          description="Create a desired-state revision from a registered artifact before deploying this application."
+          action={
+            newRevisionPath ? (
+              <Link to={newRevisionPath} className={buttonClassName("secondary", !canManageDesiredState ? "pointer-events-none opacity-50" : undefined)} aria-disabled={!canManageDesiredState}>
+                <Plus className="h-4 w-4" />
+                New revision
+              </Link>
+            ) : undefined
+          }
+        />
+      ) : visibleRevisions.length === 0 ? (
+        <EmptyState title="No matching revisions" description="Clear filters to see all revisions for this application." />
+      ) : (
+        <RevisionTable application={application} revisions={visibleRevisions} />
+      )}
+    </section>
+  );
+}
+
+export function DeploymentRevisionDetailPage() {
+  const context = useDeploymentContext();
+  const { applicationId = "", revisionId = "" } = useParams();
+  if (context.status !== "ready") return context.state;
+  return <DeploymentRevisionDetailReady context={context.value} applicationId={applicationId} revisionId={revisionId} />;
+}
+
+function DeploymentRevisionDetailReady({ context, applicationId, revisionId }: { context: DeploymentContext; applicationId: string; revisionId: string }) {
+  const queryClient = useQueryClient();
+  const { workspaceId, data, canExecuteDeployment } = context;
+  const application = findApplication(data, applicationId);
+  const revision = useQuery({
+    queryKey: queryKeys.deploymentRevision(workspaceId, revisionId),
+    queryFn: () => getRevisionDetail(workspaceId, revisionId),
+    enabled: Boolean(application && revisionId)
+  });
+  const detail = revision.data;
+  const summary = detail?.summary;
+  const environment = summary ? application?.environments.find((item) => item.id === summary.revision.environmentId) : undefined;
+  const engines = summary ? enginesForEnvironment(data, summary.revision.environmentId) : [];
+  const [selectedEngineId, setSelectedEngineId] = useState("");
+  const deploy = useMutation({
+    mutationFn: async () => {
+      if (!summary)
+        throw new Error("Revision has not loaded.");
+      if (!selectedEngineId)
+        throw new Error("Choose an engine before deploying this revision.");
+      const confirmation = await createActionConfirmation(workspaceId, {
+        actionType: "Deploy",
+        targetId: summary.revision.id,
+        lifetimeSeconds: null
+      });
+      return queueDeploymentRun(workspaceId, {
+        sourceRevisionId: summary.revision.id,
+        targetEnvironmentId: summary.revision.environmentId,
+        targetEngineId: selectedEngineId,
+        confirmationId: confirmation.id,
+        mode: "Apply"
+      });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        context.refreshDeploymentCockpit(),
+        queryClient.invalidateQueries({ queryKey: queryKeys.deploymentApplicationRevisions(workspaceId, applicationId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.deploymentRevision(workspaceId, revisionId) })
+      ]);
+    }
+  });
+
+  useEffect(() => {
+    if (engines.some((engine) => engine.id === selectedEngineId)) return;
+    setSelectedEngineId(engines.length === 1 ? engines[0].id : "");
+  }, [engines, selectedEngineId]);
+
+  if (!application) return <RequestStateView state="not-found" title="Application not found" />;
+  if (revision.isLoading || revision.isFetching) return <RequestStateView state="loading" title="Loading revision" />;
+  if (revision.isError) return <RequestStateView state="unexpected" title="Revision could not load" />;
+  if (!detail || !summary || summary.revision.applicationId !== application.id) return <RequestStateView state="not-found" title="Revision not found" />;
+
+  const deployDisabled = !canExecuteDeployment || summary.isCurrentDeployed || engines.length === 0 || !selectedEngineId || deploy.isPending;
+
+  return (
+    <section className="space-y-5">
+      <Breadcrumbs
+        items={[
+          { label: "Deployments", to: "/admin/deployments" },
+          { label: "Applications", to: "/admin/deployments/applications" },
+          { label: application.name, to: applicationPath(application.id) },
+          { label: "Revisions", to: applicationRevisionsPath(application.id) },
+          { label: `r${summary.revision.revisionNumber}` }
+        ]}
+      />
+      <PageHeader
+        title={`Revision r${summary.revision.revisionNumber}`}
+        description={`${summary.environmentName} desired-state revision for ${application.name}.`}
+        actions={
+          <>
+            <Link to={`${environmentPath(application.id, summary.revision.environmentId)}/revisions/new`} className={buttonClassName("secondary")}>
+              <Plus className="h-4 w-4" />
+              New revision
+            </Link>
+            <Link to={environmentPath(application.id, summary.revision.environmentId)} className={buttonClassName("secondary")}>
+              <ShieldCheck className="h-4 w-4" />
+              Environment
+            </Link>
+          </>
+        }
+      />
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-4">
+          <Panel title="Revision metadata" icon={<GitBranch className="h-4 w-4" />}>
+            <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Detail label="Status" value={<RevisionStateBadge revision={summary} />} />
+              <Detail label="Environment" value={environment ? <Link to={environmentPath(application.id, environment.id)} className="text-primary hover:underline">{environment.name}</Link> : summary.environmentName} />
+              <Detail label="Tier" value={summary.environmentTierName ?? summary.environmentTier} />
+              <Detail label="Label" value={summary.revision.label} />
+              <Detail label="Commit" value={summary.revision.commit} />
+              <Detail label="Authored" value={formatDateTime(summary.revision.authoredAt)} />
+              <Detail label="Content hash" value={summary.revision.contentHash} />
+              <Detail label="Latest run" value={summary.latestRunStatus ? `${summary.latestRunStatus} · ${formatDateTime(summary.latestRunQueuedAt)}` : "No runs queued"} />
+            </dl>
+          </Panel>
+
+          <Panel title="Desired-state records" icon={<ClipboardCheck className="h-4 w-4" />}>
+            {detail.records.length === 0 ? (
+              <EmptyState title="No structured records" description="This revision does not expose structured desired-state records." />
+            ) : (
+              <RevisionRecordTable records={detail.records} />
+            )}
+          </Panel>
+
+          <Panel title="Deployment runs" icon={<Rocket className="h-4 w-4" />}>
+            {detail.runs.length === 0 ? (
+              <EmptyState title="No deployment runs" description="Queue deployment when this revision is ready to apply." />
+            ) : (
+              <RevisionRunTable runs={detail.runs} engines={data.engines} />
+            )}
+          </Panel>
+        </div>
+
+        <aside className="space-y-4">
+          <Panel title="Deploy revision" icon={<Rocket className="h-4 w-4" />}>
+            <div className="space-y-3">
+              {summary.isCurrentDeployed ? (
+                <p className="rounded-ui border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                  This revision is already deployed in {summary.environmentName}.
+                </p>
+              ) : engines.length === 0 ? (
+                <p className="rounded-ui border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                  Register an engine before deploying this revision.
+                </p>
+              ) : (
+                <label className="block text-sm font-medium">
+                  Target engine
+                  <Select className="mt-1 w-full" value={selectedEngineId} onChange={(event) => setSelectedEngineId(event.target.value)}>
+                    <option value="" disabled>Choose engine</option>
+                    {engines.map((engine) => <option key={engine.id} value={engine.id}>{engine.name}</option>)}
+                  </Select>
+                </label>
+              )}
+              <Button disabled={deployDisabled} onClick={() => deploy.mutate()}>
+                <Rocket className="h-4 w-4" />
+                {deploy.isPending ? "Queueing deployment" : "Deploy revision"}
+              </Button>
+              {!canExecuteDeployment ? <p className="text-xs text-muted-foreground">Deployment execution permission is required.</p> : null}
+              {deploy.error instanceof Error ? <p role="alert" className="text-sm text-destructive">{deploy.error.message}</p> : null}
+              {deploy.isSuccess ? <p role="status" className="text-sm text-success">Deployment run queued.</p> : null}
+            </div>
+          </Panel>
+          <Panel title="Raw desired state" icon={<ClipboardCheck className="h-4 w-4" />}>
+            <pre className="max-h-80 overflow-auto rounded-ui bg-muted/40 p-3 text-xs text-muted-foreground">{formatJson(summary.revision.desiredStateJson)}</pre>
+          </Panel>
+        </aside>
+      </div>
     </section>
   );
 }
@@ -871,11 +1172,28 @@ function DeploymentEnvironmentReady({
           <Panel title="Environment" icon={<ShieldCheck className="h-4 w-4" />}>
             <dl className="space-y-3">
               <Detail label="Tier" value={`${environment.tierName || environment.tier}${environment.tierStatus === "Archived" ? " (archived)" : ""}`} />
-              <Detail label="Desired revision" value={`r${environment.desiredRevision.revision} · ${environment.desiredRevision.commit}`} />
-              <Detail label="Deployed revision" value={environment.deployedRevision ? `r${environment.deployedRevision}` : "Not deployed"} />
+              <Detail
+                label="Desired revision"
+                value={
+                  <Link to={revisionDetailPath(application.id, environment.desiredRevision.id)} className="text-primary hover:underline">
+                    r{environment.desiredRevision.revision} · {environment.desiredRevision.commit}
+                  </Link>
+                }
+              />
+              <Detail
+                label="Deployed revision"
+                value={environment.deployedRevision ? (
+                  <Link to={applicationRevisionsPath(application.id, `environment=${encodeURIComponent(environment.id)}&status=deployed`)} className="text-primary hover:underline">
+                    r{environment.deployedRevision}
+                  </Link>
+                ) : "Not deployed"}
+              />
               <Detail label="Desired label" value={environment.desiredRevision.label} />
               <Detail label="Authored" value={formatDateTime(environment.desiredRevision.authoredAt)} />
             </dl>
+            <Link to={applicationRevisionsPath(application.id, `environment=${encodeURIComponent(environment.id)}`)} className="mt-4 inline-flex text-xs font-medium text-primary hover:underline">
+              View all revisions
+            </Link>
           </Panel>
           <Panel title="Tier capabilities" icon={<ClipboardCheck className="h-4 w-4" />}>
             <div className="flex flex-wrap gap-2">
@@ -1012,10 +1330,10 @@ function DeploymentRevisionCreateReady({
         records
       });
     },
-    onSuccess: async () => {
+    onSuccess: async (createdRevision) => {
       if (!resolved.application || !resolved.environment) return;
       await context.refreshDeploymentCockpit();
-      navigate(environmentPath(resolved.application.id, resolved.environment.id));
+      navigate(revisionDetailPath(resolved.application.id, createdRevision.id));
     }
   });
 
@@ -1174,7 +1492,18 @@ function DeploymentRevisionCreateReady({
                 <Detail label="Artifact" value={artifactDisplayName(selectedArtifact)} />
                 <Detail label="Type" value={selectedArtifact.artifactTypeId ?? "Unknown"} />
                 <Detail label="Digest" value={`${selectedArtifact.contentDigest.algorithm}:${selectedArtifact.contentDigest.value}`} />
-                <Detail label="Reference" value={selectedArtifact.reference} />
+                <Detail
+                  label="Reference"
+                  value={
+                    <a
+                      className="text-primary underline-offset-2 hover:underline"
+                      href={workspaceArtifactDownloadUrl(workspaceId, selectedArtifact.id)}
+                      download
+                    >
+                      {selectedArtifact.reference}
+                    </a>
+                  }
+                />
               </dl>
             </Panel>
           ) : null}
@@ -1528,14 +1857,135 @@ function EnvironmentTable({
                 </td>
                 <td className="px-3 py-3"><StatusBadge value={environment.health} tone={healthTone(environment.health)} /></td>
                 <td className="px-3 py-3"><StatusBadge value={environment.deploymentStatus} tone={deploymentTone(environment.deploymentStatus)} /></td>
-                <td className="px-3 py-3">r{environment.desiredRevision.revision}</td>
-                <td className="px-3 py-3">{environment.deployedRevision ? `r${environment.deployedRevision}` : "-"}</td>
+                <td className="px-3 py-3">
+                  <Link to={revisionDetailPath(application.id, environment.desiredRevision.id)} className="text-primary hover:underline">r{environment.desiredRevision.revision}</Link>
+                </td>
+                <td className="px-3 py-3">
+                  {environment.deployedRevision ? (
+                    <Link to={applicationRevisionsPath(application.id, `environment=${encodeURIComponent(environment.id)}&status=deployed`)} className="text-primary hover:underline">
+                      r{environment.deployedRevision}
+                    </Link>
+                  ) : "-"}
+                </td>
                 <td className="px-3 py-3">{engines.length}</td>
                 <td className="px-3 py-3">{driftLabel(environment.driftStatus)}</td>
                 <td className="px-3 py-3"><Link to={environmentPath(application.id, environment.id)} className="text-xs font-medium text-primary hover:underline">Open</Link></td>
               </tr>
             );
           })}
+        </tbody>
+      </table>
+    </Table>
+  );
+}
+
+function RevisionTable({
+  application,
+  revisions
+}: {
+  application: DeploymentCockpit["applications"][number];
+  revisions: WorkspaceDesiredStateRevisionSummary[];
+}) {
+  return (
+    <Table>
+      <table className="min-w-full divide-y divide-border text-sm">
+        <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2">Revision</th>
+            <th className="px-3 py-2">Environment</th>
+            <th className="px-3 py-2">Status</th>
+            <th className="px-3 py-2">Label</th>
+            <th className="px-3 py-2">Commit</th>
+            <th className="px-3 py-2">Authored</th>
+            <th className="px-3 py-2">Latest run</th>
+            <th className="px-3 py-2">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {revisions.map((revision) => (
+            <tr key={revision.revision.id}>
+              <td className="px-3 py-3 font-medium">
+                <Link to={revisionDetailPath(application.id, revision.revision.id)}>r{revision.revision.revisionNumber}</Link>
+              </td>
+              <td className="px-3 py-3">
+                <Link to={environmentPath(application.id, revision.revision.environmentId)} className="text-primary hover:underline">{revision.environmentName}</Link>
+              </td>
+              <td className="px-3 py-3"><RevisionStateBadge revision={revision} /></td>
+              <td className="px-3 py-3 text-muted-foreground">{revision.revision.label}</td>
+              <td className="px-3 py-3 text-muted-foreground">{revision.revision.commit || "-"}</td>
+              <td className="px-3 py-3">{formatDateTime(revision.revision.authoredAt)}</td>
+              <td className="px-3 py-3">{revision.latestRunStatus ? `${revision.latestRunStatus} · ${formatDateTime(revision.latestRunQueuedAt)}` : "-"}</td>
+              <td className="px-3 py-3">
+                <Link to={revisionDetailPath(application.id, revision.revision.id)} className="text-xs font-medium text-primary hover:underline">Open</Link>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Table>
+  );
+}
+
+function RevisionRecordTable({ records }: { records: WorkspaceDesiredStateRevisionRecord[] }) {
+  return (
+    <Table>
+      <table className="min-w-full divide-y divide-border text-sm">
+        <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2">Kind</th>
+            <th className="px-3 py-2">Name</th>
+            <th className="px-3 py-2">Artifact</th>
+            <th className="px-3 py-2">Digest</th>
+            <th className="px-3 py-2">Payload</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {records.map((record) => (
+            <tr key={record.id}>
+              <td className="px-3 py-3"><Badge>{record.kind}</Badge></td>
+              <td className="px-3 py-3 font-medium">{record.name}</td>
+              <td className="px-3 py-3 text-muted-foreground">{record.artifactId ?? "-"}</td>
+              <td className="max-w-xs truncate px-3 py-3 text-muted-foreground">
+                {record.artifactDigest ? `${record.artifactDigest.algorithm}:${record.artifactDigest.value}` : "-"}
+              </td>
+              <td className="max-w-md px-3 py-3">
+                <pre className="max-h-32 overflow-auto rounded-ui bg-muted/40 p-2 text-xs text-muted-foreground">{formatJson(record.payloadJson)}</pre>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Table>
+  );
+}
+
+function RevisionRunTable({ runs, engines }: { runs: WorkspaceDesiredStateRevisionDetail["runs"]; engines: WorkflowEngineRegistration[] }) {
+  return (
+    <Table>
+      <table className="min-w-full divide-y divide-border text-sm">
+        <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2">Run</th>
+            <th className="px-3 py-2">Status</th>
+            <th className="px-3 py-2">Validation</th>
+            <th className="px-3 py-2">Engine</th>
+            <th className="px-3 py-2">Queued</th>
+            <th className="px-3 py-2">Completed</th>
+            <th className="px-3 py-2">Failure</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {runs.map((run) => (
+            <tr key={run.id}>
+              <td className="px-3 py-3 font-mono text-xs">{run.id.slice(0, 8)}</td>
+              <td className="px-3 py-3"><StatusBadge value={run.status} tone={deploymentRunTone(run.status)} /></td>
+              <td className="px-3 py-3">{run.validationOutcome}</td>
+              <td className="px-3 py-3">{engineLabel(run.engineId, engines)}</td>
+              <td className="px-3 py-3">{formatDateTime(run.queuedAt)}</td>
+              <td className="px-3 py-3">{formatDateTime(run.completedAt)}</td>
+              <td className="px-3 py-3 text-muted-foreground">{run.failureMessage ?? "-"}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </Table>
@@ -2259,9 +2709,9 @@ function Panel({ title, icon, children }: { title: string; icon: ReactNode; chil
 
 function Detail({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-words text-sm">{value || "-"}</dd>
+      <dd className="mt-1 min-w-0 break-words text-sm [overflow-wrap:anywhere]">{value || "-"}</dd>
     </div>
   );
 }
@@ -2272,6 +2722,15 @@ function StatusBadge({ value, tone }: { value: string; tone: StatusTone }) {
 
 function applicationPath(applicationId: string) {
   return `/admin/deployments/applications/${encodeURIComponent(applicationId)}`;
+}
+
+function applicationRevisionsPath(applicationId: string, query?: string) {
+  const path = `${applicationPath(applicationId)}/revisions`;
+  return query ? `${path}?${query}` : path;
+}
+
+function revisionDetailPath(applicationId: string, revisionId: string) {
+  return `${applicationRevisionsPath(applicationId)}/${encodeURIComponent(revisionId)}`;
 }
 
 function environmentPath(applicationId: string, environmentId: string) {
@@ -2453,6 +2912,76 @@ function sortEngines(engines: WorkflowEngineRegistration[], sort: EngineSort) {
         return compareText(left.name, right.name);
     }
   });
+}
+
+function filterRevisions(
+  revisions: WorkspaceDesiredStateRevisionSummary[],
+  query: string,
+  environmentId: string,
+  status: RevisionStatusFilter
+) {
+  const term = query.trim().toLowerCase();
+  return revisions.filter((revision) => {
+    if (environmentId !== "all" && revision.revision.environmentId !== environmentId) return false;
+    if (!matchesRevisionStatus(revision, status)) return false;
+    if (!term) return true;
+
+    return [
+      `r${revision.revision.revisionNumber}`,
+      revision.revision.label,
+      revision.revision.commit ?? "",
+      revision.environmentName,
+      revision.environmentTierName ?? revision.environmentTier,
+      revisionStateLabel(revision),
+      revision.latestRunStatus ?? ""
+    ].join(" ").toLowerCase().includes(term);
+  });
+}
+
+function sortRevisions(revisions: WorkspaceDesiredStateRevisionSummary[], sort: RevisionSort) {
+  return [...revisions].sort((left, right) => {
+    switch (sort) {
+      case "environment":
+        return compareText(left.environmentName, right.environmentName) || compareNumber(right.revision.revisionNumber, left.revision.revisionNumber);
+      case "status":
+        return compareText(revisionStateLabel(left), revisionStateLabel(right)) || compareText(right.revision.authoredAt, left.revision.authoredAt);
+      default:
+        return compareText(right.revision.authoredAt, left.revision.authoredAt) || compareNumber(right.revision.revisionNumber, left.revision.revisionNumber);
+    }
+  });
+}
+
+function matchesRevisionStatus(revision: WorkspaceDesiredStateRevisionSummary, status: RevisionStatusFilter) {
+  if (status === "all") return true;
+  if (status === "desired") return revision.isCurrentDesired;
+  if (status === "deployed") return revision.isCurrentDeployed;
+  if (status === "superseded") return !revision.isCurrentDesired && !revision.isCurrentDeployed && Boolean(revision.latestRunStatus);
+  return !revision.isCurrentDesired && !revision.isCurrentDeployed && !revision.latestRunStatus;
+}
+
+function revisionStateLabel(revision: WorkspaceDesiredStateRevisionSummary) {
+  if (revision.isCurrentDesired && revision.isCurrentDeployed) return "Desired + deployed";
+  if (revision.isCurrentDesired) return "Current desired";
+  if (revision.isCurrentDeployed) return "Currently deployed";
+  if (revision.latestRunStatus) return "Superseded";
+  return "Never deployed";
+}
+
+function parseRevisionStatusFilter(value: string | null): RevisionStatusFilter {
+  return revisionStatusFilters.some((item) => item.value === value) ? value as RevisionStatusFilter : "all";
+}
+
+function RevisionStateBadge({ revision }: { revision: WorkspaceDesiredStateRevisionSummary }) {
+  const tone: StatusTone = revision.isCurrentDesired || revision.isCurrentDeployed ? "success" : revision.latestRunStatus ? "warning" : "neutral";
+  return <StatusBadge value={revisionStateLabel(revision)} tone={tone} />;
+}
+
+function formatJson(json: string) {
+  try {
+    return JSON.stringify(JSON.parse(json), null, 2);
+  } catch {
+    return json;
+  }
 }
 
 function collectPromotionReadinessIssues(
@@ -2867,6 +3396,11 @@ function deploymentTone(status: DeploymentStatus | string): StatusTone {
   if (status === "Running" || status === "RolledBack" || status === "Queued" || status === "RecoveryRequired") return "warning";
   if (status === "Cancelled") return "neutral";
   return "destructive";
+}
+
+function deploymentRunTone(status: string): StatusTone {
+  if (status === "Failed" || status === "Blocked") return "destructive";
+  return deploymentTone(status);
 }
 
 function credentialTone(status: string): StatusTone {

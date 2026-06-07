@@ -9,18 +9,25 @@ import {
   DeploymentApplicationEditPage,
   DeploymentApplicationsPage,
   DeploymentApplicationPage,
+  DeploymentApplicationRevisionsPage,
   DeploymentEngineEditPage,
   DeploymentEnginePage,
   DeploymentEngineRegisterPage,
   DeploymentEnvironmentCreatePage,
   DeploymentEnvironmentEditPage,
   DeploymentEnvironmentPage,
+  DeploymentRevisionDetailPage,
   DeploymentRevisionCreatePage,
   DeploymentsPage,
   NewDeploymentSetupPage
 } from "@/features/deployments/DeploymentsPage";
 import { DeploymentSetupPanel } from "@/features/deployments/DeploymentSetupPanel";
-import type { DeploymentCockpit, WorkspaceDeploymentTier } from "@/features/deployments/deploymentModels";
+import type {
+  DeploymentCockpit,
+  WorkspaceDeploymentTier,
+  WorkspaceDesiredStateRevisionDetail,
+  WorkspaceDesiredStateRevisionSummary
+} from "@/features/deployments/deploymentModels";
 import { AuthProvider } from "@/lib/auth/AuthProvider";
 
 describe("DeploymentsPage", () => {
@@ -121,10 +128,37 @@ describe("DeploymentsPage", () => {
     renderDeployments(multipleApplicationsCockpit, "/admin/deployments/applications/claims-ops");
 
     expect(await screen.findByRole("heading", { name: "Claims Operations" })).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/applications/claims-ops/revisions")).toBeInTheDocument();
     expect(linkByHref("/admin/deployments/applications/claims-ops/environments/new")).toBeInTheDocument();
     expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-dev")).toBeInTheDocument();
     expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-prod")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Policy/i })).not.toBeInTheDocument();
+  });
+
+  it("renders application revisions across environments", async () => {
+    renderDeployments(undefined, "/admin/deployments/applications/claims-ops/revisions");
+
+    expect(await screen.findByRole("heading", { name: "Claims Operations revisions" })).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-dev/revisions/new")).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/applications/claims-ops/revisions/00000000-0000-0000-0000-000000000142")).toBeInTheDocument();
+    expect(screen.getByText("Payment retry workflow")).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-stage")).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText("Filter revisions by environment"), "claims-prod");
+
+    expect(screen.getByText("Baseline production")).toBeInTheDocument();
+    expect(screen.queryByText("Payment retry workflow")).not.toBeInTheDocument();
+  });
+
+  it("renders revision detail records and deployment state", async () => {
+    renderDeployments(undefined, "/admin/deployments/applications/claims-ops/revisions/00000000-0000-0000-0000-000000000142");
+
+    expect(await screen.findByRole("heading", { name: "Revision r42" })).toBeInTheDocument();
+    expect(screen.getByText("Desired-state records")).toBeInTheDocument();
+    expect(screen.getByText("Payment Retry")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Deploy revision" })).toBeDisabled();
+    expect(screen.getByText("This revision is already deployed in Dev.")).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-dev")).toBeInTheDocument();
   });
 
   it("renders environment detail with engine cards that link to detail pages", async () => {
@@ -132,6 +166,7 @@ describe("DeploymentsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Dev" })).toBeInTheDocument();
     expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-dev/revisions/new")).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/applications/claims-ops/revisions/00000000-0000-0000-0000-000000000142")).toBeInTheDocument();
     expect(screen.getByText("Engine registrations")).toBeInTheDocument();
     expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-dev/engines/dev-engine")).toBeInTheDocument();
     expect(screen.queryByText("Engine details")).not.toBeInTheDocument();
@@ -255,6 +290,10 @@ describe("DeploymentsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "New revision" })).toBeInTheDocument();
     expect((await screen.findAllByText("Payment Retry 8")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "local:///tmp/payment-retry-dev.zip" })).toHaveAttribute(
+      "href",
+      `/api/workspaces/${workspaceId}/artifacts/11111111-1111-1111-1111-111111111111/download`
+    );
     await userEvent.type(screen.getByLabelText("Revision label"), "Payment retry v8");
     await userEvent.type(screen.getByLabelText("Commit"), "8f6a9c1");
     await userEvent.click(screen.getByRole("button", { name: "Create revision" }));
@@ -527,6 +566,8 @@ function renderDeployments(cockpit: DeploymentCockpit = deploymentCockpitFixture
               <Route path="/admin/deployments/applications" element={<DeploymentApplicationsPage />} />
               <Route path="/admin/deployments/applications/:applicationId" element={<DeploymentApplicationPage />} />
               <Route path="/admin/deployments/applications/:applicationId/edit" element={<DeploymentApplicationEditPage />} />
+              <Route path="/admin/deployments/applications/:applicationId/revisions" element={<DeploymentApplicationRevisionsPage />} />
+              <Route path="/admin/deployments/applications/:applicationId/revisions/:revisionId" element={<DeploymentRevisionDetailPage />} />
               <Route path="/admin/deployments/applications/:applicationId/environments/new" element={<DeploymentEnvironmentCreatePage />} />
               <Route path="/admin/deployments/applications/:applicationId/environments/:environmentId" element={<DeploymentEnvironmentPage />} />
               <Route path="/admin/deployments/applications/:applicationId/environments/:environmentId/edit" element={<DeploymentEnvironmentEditPage />} />
@@ -573,6 +614,14 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
     }
     if (url.endsWith(`/api/workspaces/${workspaceId}/artifacts`)) {
       return jsonResponse({ items: workspaceArtifacts });
+    }
+    if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications/claims-ops/revisions`)) {
+      return jsonResponse({ items: revisionSummaries(currentCockpit, "claims-ops") });
+    }
+    if (url.includes(`/api/workspaces/${workspaceId}/deployments/revisions/`)) {
+      const revisionId = decodeURIComponent(url.split("/deployments/revisions/")[1] ?? "");
+      const detail = revisionDetail(currentCockpit, revisionId);
+      return detail ? jsonResponse(detail) : jsonResponse({ title: "Not found" }, 404);
     }
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/cockpit`)) {
       return jsonResponse(currentCockpit);
@@ -716,7 +765,10 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
         label: "Payment retry v8",
         commit: "8f6a9c1",
         contentHash: "hash-v43",
-        desiredStateJson: "{}"
+        desiredStateJson: "{}",
+        authoredAt: "2026-05-26T11:00:00Z",
+        createdAt: "2026-05-26T11:00:00Z",
+        createdByAccountId: null
       }, 201);
     }
     if (method === "PUT" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/engines/dev-engine`)) {
@@ -941,6 +993,88 @@ function workspaceContextFixture() {
       { id: workspaceId, name: "Acme Insurance", kind: "Shared", role: "Owner", organizationId, organizationName: "Acme Corp", organizationRole: "Owner" },
       { id: "00000000-0000-0000-0000-000000000011", name: "Acme Labs", kind: "Shared", role: "Reader", organizationId, organizationName: "Acme Corp", organizationRole: "Owner" }
     ]
+  };
+}
+
+function revisionSummaries(cockpit: DeploymentCockpit, applicationId: string): WorkspaceDesiredStateRevisionSummary[] {
+  const application = cockpit.applications.find((item) => item.id === applicationId);
+  if (!application) return [];
+
+  return application.environments.map((environment) => {
+    const latestRun = cockpit.history.find((event) => event.environmentId === environment.id && event.revision === environment.desiredRevision.revision);
+    return {
+      revision: {
+        id: environment.desiredRevision.id,
+        workspaceId,
+        applicationId: application.id,
+        environmentId: environment.id,
+        revisionNumber: environment.desiredRevision.revision,
+        label: environment.desiredRevision.label,
+        commit: environment.desiredRevision.commit || null,
+        contentHash: `hash-${environment.desiredRevision.revision}`,
+        desiredStateJson: JSON.stringify({
+          records: [
+            {
+              kind: "ArtifactReference",
+              name: environment.desiredRevision.label,
+              payload: {
+                artifactId: `artifact-${environment.id}`,
+                contentDigest: { algorithm: "sha256", value: `digest-${environment.desiredRevision.revision}` }
+              }
+            }
+          ]
+        }),
+        authoredAt: environment.desiredRevision.authoredAt,
+        createdAt: environment.desiredRevision.authoredAt,
+        createdByAccountId: null
+      },
+      environmentName: environment.name,
+      environmentTier: environment.tier,
+      environmentTierId: environment.tierId ?? null,
+      environmentTierName: environment.tierName ?? null,
+      isCurrentDesired: true,
+      isCurrentDeployed: environment.deployedRevision === environment.desiredRevision.revision,
+      latestRunStatus: latestRun?.status ?? null,
+      latestRunQueuedAt: latestRun?.occurredAt ?? null
+    };
+  });
+}
+
+function revisionDetail(cockpit: DeploymentCockpit, revisionId: string): WorkspaceDesiredStateRevisionDetail | null {
+  const summary = revisionSummaries(cockpit, "claims-ops").find((item) => item.revision.id === revisionId);
+  if (!summary) return null;
+  const runs = cockpit.history
+    .filter((event) => event.environmentId === summary.revision.environmentId && event.revision === summary.revision.revisionNumber)
+    .map((event) => ({
+      id: event.id,
+      environmentId: event.environmentId,
+      engineId: event.engineId,
+      status: event.status,
+      validationOutcome: event.validationOutcome,
+      queuedAt: event.occurredAt,
+      completedAt: event.occurredAt,
+      failureMessage: null
+    }));
+
+  return {
+    summary,
+    records: [
+      {
+        id: `${revisionId}:artifact`,
+        kind: "ArtifactReference",
+        name: "Payment Retry",
+        payloadJson: JSON.stringify({
+          artifactId: "payment-retry",
+          contentDigest: { algorithm: "sha256", value: "stage-digest" }
+        }),
+        contentHash: "record-hash",
+        artifactRecordId: "00000000-0000-0000-0000-000000000900",
+        artifactId: "payment-retry",
+        artifactTypeId: "elsa.workflow-definition",
+        artifactDigest: { algorithm: "sha256", value: "stage-digest" }
+      }
+    ],
+    runs
   };
 }
 

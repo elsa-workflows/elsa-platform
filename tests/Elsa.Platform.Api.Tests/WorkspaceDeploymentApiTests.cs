@@ -162,6 +162,64 @@ public sealed class WorkspaceDeploymentApiTests
     }
 
     [Fact]
+    public async Task Owner_can_list_and_fetch_application_revisions()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("revision-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var (application, sourceEnvironment, targetEnvironment, _) = await SeedPreviewTopologyAsync(app, workspaceId);
+        var sourceRevisionResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications/{application.Id}/environments/{sourceEnvironment.Id}/revisions",
+            new WorkspaceDesiredStateRevisionRequest(
+                "Stage candidate",
+                "stage123",
+                [
+                    Record(DesiredStateRecordKind.Workflow, "Payment Retry", "{\"version\":8}"),
+                    Record(DesiredStateRecordKind.SecretReference, "Payment API", "{\"reference\":\"kv://claims/prod/payment-api\"}")
+                ]));
+        var targetRevision = await CreateRevisionDirectAsync(app, workspaceId, application.Id, targetEnvironment.Id, "Prod baseline", "{\"records\":[{\"kind\":\"Workflow\",\"name\":\"Payment Retry\",\"payload\":{\"version\":7}}]}");
+        var sourceRevision = await sourceRevisionResponse.Content.ReadPlatformJsonAsync<WorkspaceDesiredStateRevision>();
+
+        var list = await owner.GetPlatformJsonAsync<WorkspaceApplicationRevisionsResponse>(
+            $"/api/workspaces/{workspaceId}/deployments/applications/{application.Id}/revisions");
+        var detail = await owner.GetPlatformJsonAsync<WorkspaceDesiredStateRevisionDetail>(
+            $"/api/workspaces/{workspaceId}/deployments/revisions/{sourceRevision!.Id}");
+
+        sourceRevisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        list!.Items.Should().HaveCount(2);
+        list.Items.Should().Contain(x => x.Revision.Id == sourceRevision.Id && x.EnvironmentName == sourceEnvironment.Name && x.IsCurrentDesired);
+        list.Items.Should().Contain(x => x.Revision.Id == targetRevision.Id && x.EnvironmentName == targetEnvironment.Name && x.IsCurrentDesired);
+        detail!.Summary.Revision.Id.Should().Be(sourceRevision.Id);
+        detail.Records.Should().Contain(x => x.Kind == DesiredStateRecordKind.Workflow && x.Name == "Payment Retry");
+        detail.Records.Should().Contain(x => x.Kind == DesiredStateRecordKind.SecretReference && x.Name == "Payment API");
+    }
+
+    [Fact]
+    public async Task Application_revision_reads_require_deployment_read_permission()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("revision-permission-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var (application, sourceEnvironment, _, _) = await SeedPreviewTopologyAsync(app, workspaceId);
+        var revision = await CreateRevisionDirectAsync(app, workspaceId, application.Id, sourceEnvironment.Id, "Stage candidate", "{\"records\":[]}");
+        var readerAccountId = await app.AddWorkspaceMemberAsync(workspaceId, "revision-reader", WorkspaceRole.Reader);
+        var reader = app.CreateTrustedWorkspaceClient("revision-reader");
+
+        var deniedList = await reader.GetAsync($"/api/workspaces/{workspaceId}/deployments/applications/{application.Id}/revisions");
+        var deniedDetail = await reader.GetAsync($"/api/workspaces/{workspaceId}/deployments/revisions/{revision.Id}");
+        await app.GrantWorkspaceDeploymentPermissionAsync(workspaceId, readerAccountId, WorkspaceDeploymentPermissions.Read);
+        var allowedList = await reader.GetAsync($"/api/workspaces/{workspaceId}/deployments/applications/{application.Id}/revisions");
+        var allowedDetail = await reader.GetAsync($"/api/workspaces/{workspaceId}/deployments/revisions/{revision.Id}");
+
+        deniedList.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        deniedDetail.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        allowedList.StatusCode.Should().Be(HttpStatusCode.OK);
+        allowedDetail.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task Promotion_preview_requires_preview_permission_for_readers()
     {
         await using var app = new PlatformApiTestApplication();

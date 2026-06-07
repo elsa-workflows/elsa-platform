@@ -54,6 +54,16 @@ public interface IWorkspaceDeploymentStore
         Guid environmentId,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<WorkspaceDesiredStateRevisionSummary>> ListApplicationRevisionsAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        CancellationToken cancellationToken = default);
+
+    Task<WorkspaceDesiredStateRevisionDetail?> GetRevisionDetailAsync(
+        Guid workspaceId,
+        Guid revisionId,
+        CancellationToken cancellationToken = default);
+
     Task<WorkspaceWorkflowEngine?> GetEngineAsync(
         Guid workspaceId,
         Guid engineId,

@@ -28,6 +28,8 @@ import type {
   DeploymentTierImpactSummary,
   WorkspaceDeploymentTier,
   WorkspaceDesiredStateRevision,
+  WorkspaceDesiredStateRevisionDetail,
+  WorkspaceApplicationRevisionsResponse,
   WorkspaceDeploymentRun,
   WorkspaceDeploymentRunDetailResponse,
   WorkspaceDeploymentPermissionsResponse,
@@ -172,6 +174,18 @@ export function createDesiredStateRevision(
       method: "POST",
       body: JSON.stringify(request)
     }
+  );
+}
+
+export function getApplicationRevisions(workspaceId: string, applicationId: string) {
+  return apiRequest<WorkspaceApplicationRevisionsResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/applications/${encodeURIComponent(applicationId)}/revisions`
+  );
+}
+
+export function getRevisionDetail(workspaceId: string, revisionId: string) {
+  return apiRequest<WorkspaceDesiredStateRevisionDetail>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/revisions/${encodeURIComponent(revisionId)}`
   );
 }
 

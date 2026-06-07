@@ -359,6 +359,44 @@ public static class WorkspaceDeploymentEndpoints
             }
         });
 
+        group.MapGet("/applications/{applicationId:guid}/revisions", async (
+            Guid workspaceId,
+            Guid applicationId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.Read, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            var revisions = await deployments.ListApplicationRevisionsAsync(workspaceId, applicationId, cancellationToken);
+            return Results.Ok(new WorkspaceApplicationRevisionsResponse(revisions));
+        });
+
+        group.MapGet("/revisions/{revisionId:guid}", async (
+            Guid workspaceId,
+            Guid revisionId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.Read, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            var revision = await deployments.GetRevisionDetailAsync(workspaceId, revisionId, cancellationToken);
+            return revision is null ? Results.NotFound() : Results.Ok(revision);
+        });
+
         group.MapPost("/environments/{environmentId:guid}/engines", async (
             Guid workspaceId,
             Guid environmentId,

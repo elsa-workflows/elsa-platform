@@ -47,6 +47,8 @@ public sealed record WorkspaceDesiredStateRevisionRequest(
     string? Commit,
     IReadOnlyList<WorkspaceDesiredStateRecordRequest> Records);
 
+public sealed record WorkspaceApplicationRevisionsResponse(IReadOnlyList<WorkspaceDesiredStateRevisionSummary> Items);
+
 public sealed record WorkspaceDesiredStateRecordRequest(
     DesiredStateRecordKind Kind,
     string Name,

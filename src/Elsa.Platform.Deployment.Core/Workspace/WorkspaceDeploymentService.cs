@@ -94,6 +94,18 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
             cancellationToken);
     }
 
+    public Task<IReadOnlyList<WorkspaceDesiredStateRevisionSummary>> ListApplicationRevisionsAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        CancellationToken cancellationToken = default) =>
+        store.ListApplicationRevisionsAsync(workspaceId, applicationId, cancellationToken);
+
+    public Task<WorkspaceDesiredStateRevisionDetail?> GetRevisionDetailAsync(
+        Guid workspaceId,
+        Guid revisionId,
+        CancellationToken cancellationToken = default) =>
+        store.GetRevisionDetailAsync(workspaceId, revisionId, cancellationToken);
+
     public static string ComputeDesiredStateHash(string desiredStateJson)
     {
         var canonicalJson = CanonicalizeJson(desiredStateJson);
