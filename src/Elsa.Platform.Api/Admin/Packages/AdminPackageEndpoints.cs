@@ -110,6 +110,7 @@ public static class AdminPackageEndpoints
         var compatibilityPackageRules = compatibility?.PackageRules ?? [];
         var runtimeCapabilities = compatibility?.RuntimeCapabilities ?? [];
         var requiredCapabilities = version.Features.SelectMany(x => DeserializeStringList(x.RequiredCapabilitiesJson)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var featureCategories = FeatureCategories(manifest);
 
         return new(
             version.Version,
@@ -132,7 +133,7 @@ public static class AdminPackageEndpoints
                 compatibilityPackageRules.Select(x => x.Reason).Where(x => !string.IsNullOrWhiteSpace(x)).Cast<string>().ToList(),
                 compatibilityPackageRules.Select(x => $"{x.PackageId} {x.VersionRange}".Trim()).Where(x => !string.IsNullOrWhiteSpace(x)).ToList()),
             VisibilityReasons(package, version),
-            version.Features.Select(ToFeatureResponse).ToList(),
+            version.Features.Select(feature => ToFeatureResponse(feature, featureCategories)).ToList(),
             new AdminManifestResponse(
                 !string.IsNullOrWhiteSpace(version.ManifestJson),
                 version.SchemaVersion,
@@ -141,13 +142,14 @@ public static class AdminPackageEndpoints
                 ""));
     }
 
-    private static AdminFeatureResponse ToFeatureResponse(FeatureRecord feature) =>
+    private static AdminFeatureResponse ToFeatureResponse(FeatureRecord feature, IReadOnlyDictionary<string, IReadOnlyList<string>> featureCategories) =>
         new(
             feature.FeatureId,
             feature.TypeName,
             feature.DisplayName,
             feature.Description,
             feature.Category,
+            EffectiveCategories(feature, featureCategories),
             DeserializeStringList(feature.RequiredCapabilitiesJson),
             feature.DependenciesJson,
             feature.ConflictsJson,
@@ -170,6 +172,32 @@ public static class AdminPackageEndpoints
                 setting.EnvironmentVariable,
                 setting.UiJson,
                 setting.ExtensionsJson)).ToList());
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> FeatureCategories(ElsaPackageManifest? manifest) =>
+        manifest?.Features
+            .GroupBy(feature => feature.Id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => EffectiveCategories(group.First()),
+                StringComparer.OrdinalIgnoreCase) ?? new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+
+    private static IReadOnlyList<string> EffectiveCategories(FeatureManifest feature)
+    {
+        var categories = (feature.Categories ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return categories.Length > 0
+            ? categories
+            : string.IsNullOrWhiteSpace(feature.Category) ? [] : [feature.Category.Trim()];
+    }
+
+    private static IReadOnlyList<string> EffectiveCategories(FeatureRecord feature, IReadOnlyDictionary<string, IReadOnlyList<string>> featureCategories) =>
+        featureCategories.TryGetValue(feature.FeatureId, out var categories)
+            ? categories
+            : string.IsNullOrWhiteSpace(feature.Category) ? [] : [feature.Category.Trim()];
 
     private static IReadOnlyList<AdminVisibilityReasonResponse> VisibilityReasons(Package package, PackageVersion version)
     {

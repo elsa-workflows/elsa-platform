@@ -19,7 +19,7 @@ import {
   ShieldCheck,
   XCircle
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Badge, Button, buttonClassName, EmptyState, Input, SecondaryButton, Select, Table } from "@/components/ui";
@@ -55,7 +55,7 @@ import {
   type EngineRegistrationValues
 } from "@/features/deployments/DeploymentSetupPanel";
 import { DeploymentRunsPanel } from "@/features/deployments/DeploymentRunsPanel";
-import { PromotionPreviewPanel } from "@/features/deployments/PromotionPreviewPanel";
+import { PromotionPreviewPanel, type PromotionMode } from "@/features/deployments/PromotionPreviewPanel";
 import { RuntimeControlsPanel } from "@/features/deployments/RuntimeControlsPanel";
 import {
   deploymentTierCapabilities,
@@ -546,12 +546,21 @@ function DeploymentEnvironmentReady({
 
   const { application, environment } = resolved;
   const environmentEngines = enginesForEnvironment(data, environment.id);
-  const defaultComparison =
-    data.comparisons.find((comparison) => comparison.targetEnvironmentId === environment.id) ??
-    data.comparisons.find((comparison) => comparison.sourceEnvironmentId === environment.id) ??
-    data.comparisons[0];
-  const [sourceEnvironmentId, setSourceEnvironmentId] = useState(defaultComparison?.sourceEnvironmentId ?? application.environments[0]?.id ?? environment.id);
-  const [targetEnvironmentId, setTargetEnvironmentId] = useState(defaultComparison?.targetEnvironmentId ?? environment.id);
+  const initialPromotionMode = defaultPromotionMode(environment);
+  const [promotionMode, setPromotionMode] = useState<PromotionMode>(() => initialPromotionMode);
+  const effectivePromotionMode = normalizePromotionMode(environment, promotionMode);
+  const allowedPromotionModes = promotionModesFor(environment);
+  const selectablePromotionEnvironments = effectivePromotionMode === "from-current"
+    ? eligiblePromotionTargets(application, environment, data.engines)
+    : eligiblePromotionSources(application, environment);
+  const [selectedPromotionEnvironmentId, setSelectedPromotionEnvironmentId] = useState(() =>
+    defaultPromotionCounterpartId(data, application, environment, initialPromotionMode)
+  );
+  const effectiveSelectedPromotionEnvironmentId = selectablePromotionEnvironments.some((item) => item.id === selectedPromotionEnvironmentId)
+    ? selectedPromotionEnvironmentId
+    : selectablePromotionEnvironments[0]?.id ?? "";
+  const sourceEnvironmentId = effectivePromotionMode === "from-current" ? environment.id : effectiveSelectedPromotionEnvironmentId;
+  const targetEnvironmentId = effectivePromotionMode === "into-current" ? environment.id : effectiveSelectedPromotionEnvironmentId;
   const [previewComparison, setPreviewComparison] = useState<DeploymentCockpit["comparisons"][number] | null>(null);
   const [promotedTargetRevisionId, setPromotedTargetRevisionId] = useState<string | null>(null);
   const [promotionNotice, setPromotionNotice] = useState("");
@@ -695,6 +704,43 @@ function DeploymentEnvironmentReady({
   });
   const targetAllowsRollback = hasTierCapability(getEnvironment(targetEnvironmentId), deploymentTierCapabilities.rollbackEnabled);
 
+  useEffect(() => {
+    const nextMode = normalizePromotionMode(environment, promotionMode);
+    if (nextMode !== promotionMode) {
+      setPromotionMode(nextMode);
+      setSelectedPromotionEnvironmentId(defaultPromotionCounterpartId(data, application, environment, nextMode));
+      resetPromotionState();
+      return;
+    }
+
+    if (selectedPromotionEnvironmentId !== effectiveSelectedPromotionEnvironmentId) {
+      setSelectedPromotionEnvironmentId(effectiveSelectedPromotionEnvironmentId);
+      resetPromotionState();
+    }
+  }, [application, data, effectiveSelectedPromotionEnvironmentId, environment, promotionMode, selectedPromotionEnvironmentId]);
+
+  function resetPromotionState() {
+    setPreviewComparison(null);
+    setPromotedTargetRevisionId(null);
+    setPromotionNotice("");
+    preview.reset();
+    promoteTargetRevision.reset();
+    deployRevision.reset();
+    rollbackRevision.reset();
+  }
+
+  function changePromotionMode(nextMode: PromotionMode) {
+    const normalizedMode = normalizePromotionMode(environment, nextMode);
+    setPromotionMode(normalizedMode);
+    setSelectedPromotionEnvironmentId(defaultPromotionCounterpartId(data, application, environment, normalizedMode));
+    resetPromotionState();
+  }
+
+  function changeSelectedPromotionEnvironment(nextId: string) {
+    setSelectedPromotionEnvironmentId(nextId);
+    resetPromotionState();
+  }
+
   return (
     <section className="space-y-5">
       <Breadcrumbs
@@ -769,6 +815,10 @@ function DeploymentEnvironmentReady({
           <Panel title="Promotion" icon={<GitBranch className="h-4 w-4" />}>
             <PromotionPreviewPanel
               data={data}
+              promotionMode={effectivePromotionMode}
+              allowedPromotionModes={allowedPromotionModes}
+              selectableEnvironments={selectablePromotionEnvironments}
+              selectedEnvironmentId={effectiveSelectedPromotionEnvironmentId}
               sourceEnvironmentId={sourceEnvironmentId}
               targetEnvironmentId={targetEnvironmentId}
               comparison={comparison}
@@ -795,18 +845,8 @@ function DeploymentEnvironmentReady({
                       ? rollbackRevision.error.message
                       : undefined
               }
-              onSourceEnvironmentChange={(nextId) => {
-                setSourceEnvironmentId(nextId);
-                setPreviewComparison(null);
-                setPromotedTargetRevisionId(null);
-                setPromotionNotice("");
-              }}
-              onTargetEnvironmentChange={(nextId) => {
-                setTargetEnvironmentId(nextId);
-                setPreviewComparison(null);
-                setPromotedTargetRevisionId(null);
-                setPromotionNotice("");
-              }}
+              onPromotionModeChange={changePromotionMode}
+              onSelectedEnvironmentChange={changeSelectedPromotionEnvironment}
               onRefreshPreview={() => {
                 setPromotedTargetRevisionId(null);
                 preview.mutate();
@@ -2525,6 +2565,76 @@ function assertPromotionReady(issues: PromotionReadinessIssue[]) {
 
 function findEnvironmentById(data: DeploymentCockpit, environmentId: string) {
   return data.applications.flatMap((application) => application.environments).find((environment) => environment.id === environmentId);
+}
+
+function canPromoteFrom(environment: EnvironmentSummary | undefined) {
+  return hasTierCapability(environment, deploymentTierCapabilities.promotionSource);
+}
+
+function canPromoteInto(environment: EnvironmentSummary | undefined) {
+  return hasTierCapability(environment, deploymentTierCapabilities.promotionTarget);
+}
+
+function promotionModesFor(environment: EnvironmentSummary): PromotionMode[] {
+  const modes: PromotionMode[] = [];
+  if (canPromoteInto(environment)) modes.push("into-current");
+  if (canPromoteFrom(environment)) modes.push("from-current");
+  return modes;
+}
+
+function defaultPromotionMode(environment: EnvironmentSummary): PromotionMode {
+  return canPromoteInto(environment) ? "into-current" : "from-current";
+}
+
+function normalizePromotionMode(environment: EnvironmentSummary, mode: PromotionMode): PromotionMode {
+  const modes = promotionModesFor(environment);
+  return modes.includes(mode) ? mode : defaultPromotionMode(environment);
+}
+
+function eligiblePromotionSources(
+  application: DeploymentCockpit["applications"][number],
+  targetEnvironment: EnvironmentSummary
+) {
+  return application.environments.filter((environment) =>
+    environment.id !== targetEnvironment.id &&
+    canPromoteFrom(environment) &&
+    hasUsableDesiredRevision(environment)
+  );
+}
+
+function eligiblePromotionTargets(
+  application: DeploymentCockpit["applications"][number],
+  sourceEnvironment: EnvironmentSummary,
+  engines: WorkflowEngineRegistration[]
+) {
+  const environmentIdsWithEngines = new Set(engines.map((engine) => engine.environmentId));
+  return application.environments.filter((environment) =>
+    environment.id !== sourceEnvironment.id &&
+    canPromoteInto(environment) &&
+    environmentIdsWithEngines.has(environment.id)
+  );
+}
+
+function defaultPromotionCounterpartId(
+  data: DeploymentCockpit,
+  application: DeploymentCockpit["applications"][number],
+  environment: EnvironmentSummary,
+  mode: PromotionMode
+) {
+  const options = mode === "from-current"
+    ? eligiblePromotionTargets(application, environment, data.engines)
+    : eligiblePromotionSources(application, environment);
+  const comparison = mode === "from-current"
+    ? data.comparisons.find((item) =>
+        item.sourceEnvironmentId === environment.id &&
+        options.some((option) => option.id === item.targetEnvironmentId))
+    : data.comparisons.find((item) =>
+        item.targetEnvironmentId === environment.id &&
+        options.some((option) => option.id === item.sourceEnvironmentId));
+  const comparisonCounterpartId = mode === "from-current"
+    ? comparison?.targetEnvironmentId
+    : comparison?.sourceEnvironmentId;
+  return comparisonCounterpartId ?? options[0]?.id ?? "";
 }
 
 function hasUsableDesiredRevision(environment: EnvironmentSummary) {

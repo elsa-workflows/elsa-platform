@@ -107,6 +107,7 @@ export type PackageFeature = {
   displayName: string;
   description?: string | null;
   category?: string | null;
+  categories?: string[] | null;
   requiredCapabilities: string[];
   dependencies?: JsonBackedList<PackageFeatureDependency>;
   dependenciesJson?: string | null;
@@ -122,8 +123,9 @@ export type PackageFeature = {
 
 export type NormalizedPackageFeature = Omit<
   PackageFeature,
-  "dependencies" | "dependenciesJson" | "conflicts" | "conflictsJson" | "infrastructure" | "infrastructureJson"
+  "dependencies" | "dependenciesJson" | "conflicts" | "conflictsJson" | "infrastructure" | "infrastructureJson" | "categories"
 > & {
+  categories: string[];
   dependencies: PackageFeatureDependency[];
   conflicts: PackageFeatureConflict[];
   infrastructure: PackageInfrastructureRequirement[];
@@ -280,12 +282,14 @@ export function compatibilityMatchesSearch(compatibility: CompatibilityMetadata,
 }
 
 export function normalizeFeature(feature: PackageFeature): NormalizedPackageFeature {
+  const categories = normalizeFeatureCategories(feature);
   return {
     featureId: feature.featureId,
     typeName: feature.typeName,
     displayName: feature.displayName,
     description: feature.description,
-    category: feature.category,
+    category: categories[0] ?? feature.category,
+    categories,
     requiredCapabilities: feature.requiredCapabilities,
     advanced: feature.advanced,
     experimental: feature.experimental,
@@ -306,6 +310,7 @@ export function featureMatchesSearch(feature: NormalizedPackageFeature, term: st
     feature.displayName,
     feature.description ?? "",
     feature.category ?? "",
+    ...feature.categories,
     ...feature.requiredCapabilities,
     ...feature.settings.flatMap((setting) => [
       setting.name,
@@ -328,6 +333,12 @@ export function featureMatchesSearch(feature: NormalizedPackageFeature, term: st
   ].some(
     (value) => normalizeSearchTerm(value).includes(normalizedTerm)
   );
+}
+
+export function featureMatchesCategory(feature: NormalizedPackageFeature, category: string | string[]) {
+  const categories = Array.isArray(category) ? category : [category];
+  if (categories.length === 0 || categories.includes("All")) return true;
+  return categories.some((item) => item === "Uncategorized" ? feature.categories.length === 0 : feature.categories.includes(item));
 }
 
 export function validationFindingMatchesSearch(finding: ValidationFinding, term: string) {
@@ -355,6 +366,22 @@ function normalizeJsonBackedList<T>(value: JsonBackedList<T>): T[] {
   } catch {
     return [];
   }
+}
+
+function normalizeFeatureCategories(feature: PackageFeature) {
+  const categories = Array.isArray(feature.categories)
+    ? feature.categories
+    : feature.category
+      ? [feature.category]
+      : [];
+
+  const normalizedCategories = new Map<string, string>();
+  for (const category of categories.map((value) => value.trim()).filter(Boolean)) {
+    const key = category.toLowerCase();
+    if (!normalizedCategories.has(key)) normalizedCategories.set(key, category);
+  }
+
+  return [...normalizedCategories.values()];
 }
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {

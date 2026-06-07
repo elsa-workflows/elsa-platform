@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, RefreshCw, Search, X } from "lucide-react";
+import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Badge, Button, EmptyState, Input, SecondaryButton } from "@/components/ui";
@@ -7,6 +8,7 @@ import { RequestStateView } from "@/components/states/RequestStateViews";
 import { approvePackageVersion, getPackageDetails, getPackageManifest, getPackageValidation, rejectPackageVersion } from "@/features/packages/packageApi";
 import {
   compatibilityMatchesSearch,
+  featureMatchesCategory,
   featureMatchesSearch,
   normalizeFeature,
   type PackageFeatureConflict,
@@ -21,12 +23,14 @@ import { ApiError } from "@/lib/api/httpClient";
 import { formatDateTime, formatJson } from "@/lib/formatters";
 import { queryKeys } from "@/lib/query/queryClient";
 import { sourceStatusTone, statusToneClass } from "@/lib/status/statusBadges";
+import { cn } from "@/lib/utils";
 
 export function PackageDetailsPage() {
   const { packageId = "", version, section } = useParams();
   const [inspectionSearch, setInspectionSearch] = useState("");
   const [validationSearch, setValidationSearch] = useState("");
   const [manifestSearch, setManifestSearch] = useState("");
+  const [selectedFeatureCategories, setSelectedFeatureCategories] = useState<string[]>([]);
   const [rejectionReason, setRejectionReason] = useState("");
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [reviewedTokens, setReviewedTokens] = useState<Record<string, string>>({});
@@ -53,9 +57,22 @@ export function PackageDetailsPage() {
     enabled: Boolean(details && selectedVersion)
   });
   const normalizedFeatures = useMemo(() => selectedVersion?.features.map(normalizeFeature) ?? [], [selectedVersion]);
+  const featureCategoryOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    normalizedFeatures.forEach((feature) => {
+      const categories = feature.categories.length > 0 ? feature.categories : ["Uncategorized"];
+      categories.forEach((category) => counts.set(category, (counts.get(category) ?? 0) + 1));
+    });
+    return [...counts.entries()]
+      .map(([category, count]) => ({ category, count }))
+      .sort((left, right) => left.category.localeCompare(right.category));
+  }, [normalizedFeatures]);
+  const featureCategoryLabels = useMemo(() => featureCategoryOptions.map((item) => item.category), [featureCategoryOptions]);
+  const selectedFeatureCategorySet = useMemo(() => new Set(selectedFeatureCategories), [selectedFeatureCategories]);
+  const allFeatureCategoriesSelected = selectedFeatureCategories.length === 0;
   const visibleFeatures = useMemo(
-    () => normalizedFeatures.filter((feature) => featureMatchesSearch(feature, inspectionSearch)),
-    [inspectionSearch, normalizedFeatures]
+    () => normalizedFeatures.filter((feature) => featureMatchesSearch(feature, inspectionSearch) && featureMatchesCategory(feature, selectedFeatureCategories)),
+    [inspectionSearch, normalizedFeatures, selectedFeatureCategories]
   );
   const compatibilityVisible = selectedVersion ? compatibilityMatchesSearch(selectedVersion.compatibility, inspectionSearch) : false;
   const visibleValidationFindings = useMemo(
@@ -94,6 +111,13 @@ export function PackageDetailsPage() {
     setActionMessage(null);
     setRejectionReason("");
   }, [selectedVersion?.version]);
+
+  useEffect(() => {
+    setSelectedFeatureCategories((current) => {
+      const next = current.filter((category) => featureCategoryLabels.includes(category));
+      return next.length === current.length ? current : next;
+    });
+  }, [featureCategoryLabels]);
 
   useEffect(() => {
     if (!selectedVersion) return;
@@ -287,79 +311,129 @@ export function PackageDetailsPage() {
               </label>
             </div>
 
-            {selectedVersion && compatibilityVisible ? (
-              <div id={sectionElementId("compatibility")} className="mt-3 rounded-ui border border-border bg-background p-3 text-sm">
-                <h3 className="font-medium">Compatibility</h3>
-                <dl className="mt-2 grid gap-3 sm:grid-cols-2">
-                  <DetailItem label="Target frameworks" value={selectedVersion.compatibility.targetFrameworks.join(", ") || "None"} />
-                  <DetailItem label="Elsa range" value={selectedVersion.compatibility.elsaVersionRange ?? "Unspecified"} />
-                  <DetailItem label="Required capabilities" value={selectedVersion.compatibility.requiredCapabilities.join(", ") || "None"} />
-                  <DetailItem label="Unsupported combinations" value={selectedVersion.compatibility.unsupportedCombinations.join(", ") || "None"} />
-                </dl>
-                {selectedVersion.compatibility.notes.length > 0 ? <p className="mt-2 text-muted-foreground">{selectedVersion.compatibility.notes.join(" ")}</p> : null}
-              </div>
-            ) : null}
+            <div className="mt-3 grid gap-4 lg:grid-cols-[14rem_minmax(0,1fr)]">
+              <aside className="lg:border-r lg:border-border lg:pr-4" aria-label="Feature categories">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-medium">Categories</h3>
+                  {selectedFeatureCategories.length > 0 ? (
+                    <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => setSelectedFeatureCategories([])}>
+                      Clear
+                    </button>
+                  ) : null}
+                </div>
+                <div className="mt-2 flex gap-2 overflow-x-auto pb-1 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
+                  <button
+                    type="button"
+                    className={categoryFilterClassName(allFeatureCategoriesSelected)}
+                    aria-pressed={allFeatureCategoriesSelected}
+                    onClick={() => setSelectedFeatureCategories([])}
+                  >
+                    <span>All features</span>
+                    <span className={cn("text-xs", allFeatureCategoriesSelected ? "text-background/80" : "text-muted-foreground")}>{normalizedFeatures.length}</span>
+                  </button>
+                  {featureCategoryOptions.map(({ category, count }) => {
+                    const selected = selectedFeatureCategorySet.has(category);
+                    return (
+                      <button
+                        key={category}
+                        type="button"
+                        className={categoryFilterClassName(selected)}
+                        aria-pressed={selected}
+                        onClick={() => toggleFeatureCategory(category, setSelectedFeatureCategories)}
+                      >
+                        <span className="inline-flex min-w-0 items-center gap-2">
+                          {selected ? <Check className="h-3.5 w-3.5 shrink-0" /> : null}
+                          <span className="truncate">{category}</span>
+                        </span>
+                        <span className={cn("text-xs", selected ? "text-background/80" : "text-muted-foreground")}>{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </aside>
 
-            {visibleFeatures.length === 0 ? (
-              <p className="mt-3 text-sm text-muted-foreground">No feature metadata matches this package version.</p>
-            ) : (
-              <div id={sectionElementId("dependencies")} className="mt-3 space-y-3">
-                {visibleFeatures.map((feature) => (
-                  <div key={feature.featureId} className="rounded-ui border border-border bg-background p-3 text-sm">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-medium">{feature.displayName}</h3>
-                      {feature.advanced ? <Badge>Advanced</Badge> : null}
-                      {feature.experimental ? <Badge>Experimental</Badge> : null}
-                    </div>
-                    <p className="mt-1 text-muted-foreground">{feature.description ?? feature.typeName}</p>
-                    <dl className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <DetailItem label="Feature ID" value={feature.featureId} />
-                      <DetailItem label="Type" value={feature.typeName} />
-                      <DetailItem label="Category" value={feature.category ?? "Uncategorized"} />
-                      <DetailItem label="Dependencies" value={formatDependencies(feature.dependencies)} />
-                      <DetailItem label="Conflicts" value={formatConflicts(feature.conflicts)} />
-                      <DetailItem label="Infrastructure" value={formatInfrastructure(feature.infrastructure)} />
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">
+                  Showing {visibleFeatures.length} of {normalizedFeatures.length} features
+                  {selectedFeatureCategories.length > 0 ? ` in ${selectedFeatureCategories.join(", ")}` : ""}
+                  {inspectionSearch.trim() ? ` matching "${inspectionSearch.trim()}"` : ""}.
+                </p>
+
+                {selectedVersion && compatibilityVisible ? (
+                  <div id={sectionElementId("compatibility")} className="mt-3 rounded-ui border border-border bg-background p-3 text-sm">
+                    <h3 className="font-medium">Compatibility</h3>
+                    <dl className="mt-2 grid gap-3 sm:grid-cols-2">
+                      <DetailItem label="Target frameworks" value={selectedVersion.compatibility.targetFrameworks.join(", ") || "None"} />
+                      <DetailItem label="Elsa range" value={selectedVersion.compatibility.elsaVersionRange ?? "Unspecified"} />
+                      <DetailItem label="Required capabilities" value={selectedVersion.compatibility.requiredCapabilities.join(", ") || "None"} />
+                      <DetailItem label="Unsupported combinations" value={selectedVersion.compatibility.unsupportedCombinations.join(", ") || "None"} />
                     </dl>
-                    {feature.settings.length > 0 ? (
-                      <div className="mt-3 overflow-x-auto">
-                        <table className="min-w-full text-left text-xs">
-                          <thead className="text-muted-foreground">
-                            <tr>
-                              <th className="py-1 pr-3">Setting</th>
-                              <th className="py-1 pr-3">Name</th>
-                              <th className="py-1 pr-3">Type</th>
-                              <th className="py-1 pr-3">Required</th>
-                              <th className="py-1 pr-3">Secret</th>
-                              <th className="py-1 pr-3">Restart</th>
-                              <th className="py-1 pr-3">Default</th>
-                              <th className="py-1 pr-3">Validation</th>
-                              <th className="py-1 pr-3">Environment</th>
-                              <th className="py-1 pr-3">Notes</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {feature.settings.map((setting) => (
-                              <tr key={setting.name}>
-                                <td className="py-1 pr-3 font-medium">{setting.displayName}</td>
-                                <td className="py-1 pr-3">{setting.name}</td>
-                                <td className="py-1 pr-3">{setting.jsonType}</td>
-                                <td className="py-1 pr-3">{setting.required ? "Yes" : "No"}</td>
-                                <td className="py-1 pr-3">{setting.secret ? "Yes" : "No"}</td>
-                                <td className="py-1 pr-3">{setting.restartRequired ? "Yes" : "No"}</td>
-                                <td className="py-1 pr-3">{setting.defaultValueJson ?? "None"}</td>
-                                <td className="py-1 pr-3">{setting.validationJson && setting.validationJson !== "{}" ? setting.validationJson : "None"}</td>
-                                <td className="py-1 pr-3">{setting.environmentVariable ?? "None"}</td>
-                                <td className="py-1 pr-3">{[setting.category, setting.description].filter(Boolean).join(" - ") || "None"}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : null}
+                    {selectedVersion.compatibility.notes.length > 0 ? <p className="mt-2 text-muted-foreground">{selectedVersion.compatibility.notes.join(" ")}</p> : null}
                   </div>
-                ))}
+                ) : null}
+
+                {visibleFeatures.length === 0 ? (
+                  <p className="mt-3 text-sm text-muted-foreground">No feature metadata matches the selected filters.</p>
+                ) : (
+                  <div id={sectionElementId("dependencies")} className="mt-3 space-y-3">
+                    {visibleFeatures.map((feature) => (
+                      <div key={feature.featureId} className="rounded-ui border border-border bg-background p-3 text-sm">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-medium">{feature.displayName}</h3>
+                          {feature.advanced ? <Badge>Advanced</Badge> : null}
+                          {feature.experimental ? <Badge>Experimental</Badge> : null}
+                        </div>
+                        <p className="mt-1 text-muted-foreground">{feature.description ?? feature.typeName}</p>
+                        <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+                          <DetailItem label="Feature ID" value={feature.featureId} />
+                          <DetailItem label="Type" value={feature.typeName} />
+                          <DetailItem label="Category" value={formatFeatureCategories(feature.categories)} />
+                          <DetailItem label="Dependencies" value={formatDependencies(feature.dependencies)} />
+                          <DetailItem label="Conflicts" value={formatConflicts(feature.conflicts)} />
+                          <DetailItem label="Infrastructure" value={formatInfrastructure(feature.infrastructure)} />
+                        </dl>
+                        {feature.settings.length > 0 ? (
+                          <div className="mt-3 overflow-x-auto">
+                            <table className="min-w-full text-left text-xs">
+                              <thead className="text-muted-foreground">
+                                <tr>
+                                  <th className="py-1 pr-3">Setting</th>
+                                  <th className="py-1 pr-3">Name</th>
+                                  <th className="py-1 pr-3">Type</th>
+                                  <th className="py-1 pr-3">Required</th>
+                                  <th className="py-1 pr-3">Secret</th>
+                                  <th className="py-1 pr-3">Restart</th>
+                                  <th className="py-1 pr-3">Default</th>
+                                  <th className="py-1 pr-3">Validation</th>
+                                  <th className="py-1 pr-3">Environment</th>
+                                  <th className="py-1 pr-3">Notes</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {feature.settings.map((setting) => (
+                                  <tr key={setting.name}>
+                                    <td className="py-1 pr-3 font-medium">{setting.displayName}</td>
+                                    <td className="py-1 pr-3">{setting.name}</td>
+                                    <td className="py-1 pr-3">{setting.jsonType}</td>
+                                    <td className="py-1 pr-3">{setting.required ? "Yes" : "No"}</td>
+                                    <td className="py-1 pr-3">{setting.secret ? "Yes" : "No"}</td>
+                                    <td className="py-1 pr-3">{setting.restartRequired ? "Yes" : "No"}</td>
+                                    <td className="py-1 pr-3">{setting.defaultValueJson ?? "None"}</td>
+                                    <td className="py-1 pr-3">{setting.validationJson && setting.validationJson !== "{}" ? setting.validationJson : "None"}</td>
+                                    <td className="py-1 pr-3">{setting.environmentVariable ?? "None"}</td>
+                                    <td className="py-1 pr-3">{[setting.category, setting.description].filter(Boolean).join(" - ") || "None"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </section>
 
           <section id={sectionElementId("manifest")} className="rounded-ui border border-border bg-surface p-4">
@@ -508,8 +582,25 @@ function reviewTokenKey(packageId: string, version: string) {
   return `${packageId}@${version}`;
 }
 
+function toggleFeatureCategory(category: string, setSelectedFeatureCategories: Dispatch<SetStateAction<string[]>>) {
+  setSelectedFeatureCategories((current) =>
+    current.includes(category) ? current.filter((item) => item !== category) : [...current, category]
+  );
+}
+
+function categoryFilterClassName(selected: boolean) {
+  return cn(
+    "flex min-w-36 items-center justify-between gap-3 whitespace-nowrap rounded-ui border px-3 py-2 text-left text-sm transition-colors lg:w-full",
+    selected ? "border-foreground bg-foreground text-background" : "border-border bg-background text-foreground hover:bg-muted"
+  );
+}
+
 function confirmAction(packageId: string, version: string, action: "approve" | "reject") {
   return window.confirm(`${action === "approve" ? "Approve" : "Reject"} ${packageId} version ${version}?`);
+}
+
+function formatFeatureCategories(categories: string[]) {
+  return categories.join(", ") || "Uncategorized";
 }
 
 function formatDependencies(dependencies: PackageFeatureDependency[]) {

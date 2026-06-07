@@ -7,13 +7,20 @@ import {
   type DeploymentCockpit,
   type DiffCategory,
   hasBlockingValidation,
+  type EnvironmentSummary,
   type PromotionComparison,
   type ValidationSeverity
 } from "@/features/deployments/deploymentModels";
 import { statusToneClass, type StatusTone } from "@/lib/status/statusBadges";
 
+export type PromotionMode = "from-current" | "into-current";
+
 type PromotionPreviewPanelProps = {
   data: DeploymentCockpit;
+  promotionMode: PromotionMode;
+  allowedPromotionModes: PromotionMode[];
+  selectableEnvironments: EnvironmentSummary[];
+  selectedEnvironmentId: string;
   sourceEnvironmentId: string;
   targetEnvironmentId: string;
   comparison: PromotionComparison | undefined;
@@ -30,8 +37,8 @@ type PromotionPreviewPanelProps = {
   isQueueingRollback: boolean;
   notice: string;
   error?: string;
-  onSourceEnvironmentChange: (environmentId: string) => void;
-  onTargetEnvironmentChange: (environmentId: string) => void;
+  onPromotionModeChange: (mode: PromotionMode) => void;
+  onSelectedEnvironmentChange: (environmentId: string) => void;
   onRefreshPreview: () => void;
   onPromote: () => void;
   onDeploy: () => void;
@@ -40,6 +47,10 @@ type PromotionPreviewPanelProps = {
 
 export function PromotionPreviewPanel({
   data,
+  promotionMode,
+  allowedPromotionModes,
+  selectableEnvironments,
+  selectedEnvironmentId,
   sourceEnvironmentId,
   targetEnvironmentId,
   comparison,
@@ -56,14 +67,19 @@ export function PromotionPreviewPanel({
   isQueueingRollback,
   notice,
   error,
-  onSourceEnvironmentChange,
-  onTargetEnvironmentChange,
+  onPromotionModeChange,
+  onSelectedEnvironmentChange,
   onRefreshPreview,
   onPromote,
   onDeploy,
   onRollback
 }: PromotionPreviewPanelProps) {
-  const environmentOptions = data.applications.flatMap((application) => application.environments);
+  const sourceEnvironment = findEnvironment(data, sourceEnvironmentId);
+  const targetEnvironment = findEnvironment(data, targetEnvironmentId);
+  const fixedEnvironment = promotionMode === "from-current" ? sourceEnvironment : targetEnvironment;
+  const fixedLabel = promotionMode === "from-current" ? "Promote from" : "Promote into";
+  const selectorLabel = promotionMode === "from-current" ? "Promote into" : "Promote from";
+  const selectorEmptyLabel = promotionMode === "from-current" ? "No eligible targets" : "No eligible sources";
   const blocked = comparison ? hasBlockingValidation(comparison.validations) : true;
   const hasRollbackTarget = Boolean(comparison?.rollbackRevision && comparison.rollbackRevisionId);
   const previewBlocked = readinessIssues.some((issue) => issue.severity === "Blocker");
@@ -91,21 +107,44 @@ export function PromotionPreviewPanel({
           description="After the target revision exists and validation passes, queue deployment to the target engine."
         />
       </div>
+      {allowedPromotionModes.length > 1 ? (
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Promotion direction">
+          <button
+            type="button"
+            className={buttonClassName(promotionMode === "into-current" ? "primary" : "secondary")}
+            onClick={() => onPromotionModeChange("into-current")}
+          >
+            Promote into this environment
+          </button>
+          <button
+            type="button"
+            className={buttonClassName(promotionMode === "from-current" ? "primary" : "secondary")}
+            onClick={() => onPromotionModeChange("from-current")}
+          >
+            Promote from this environment
+          </button>
+        </div>
+      ) : null}
       <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto_auto] md:items-end">
+        <div className="rounded-ui border border-border bg-surface px-3 py-2 text-sm">
+          <div className="text-xs font-medium text-muted-foreground">{fixedLabel}</div>
+          <div className="mt-1 font-medium">{fixedEnvironment ? environmentRevisionLabel(fixedEnvironment, promotionMode === "from-current" ? "desired" : "target") : "-"}</div>
+        </div>
         <label className="text-xs font-medium text-muted-foreground">
-          Promote from
-          <Select className="mt-1 w-full" value={sourceEnvironmentId} onChange={(event) => onSourceEnvironmentChange(event.target.value)}>
-            {environmentOptions.map((environment) => (
-              <option key={environment.id} value={environment.id}>{environment.name} r{environment.desiredRevision.revision}</option>
-            ))}
-          </Select>
-        </label>
-        <label className="text-xs font-medium text-muted-foreground">
-          Promote into
-          <Select className="mt-1 w-full" value={targetEnvironmentId} onChange={(event) => onTargetEnvironmentChange(event.target.value)}>
-            {environmentOptions.map((environment) => (
-              <option key={environment.id} value={environment.id}>{environment.name} r{environment.deployedRevision ?? environment.desiredRevision.revision}</option>
-            ))}
+          {selectorLabel}
+          <Select
+            className="mt-1 w-full"
+            value={selectedEnvironmentId}
+            disabled={selectableEnvironments.length === 0}
+            onChange={(event) => onSelectedEnvironmentChange(event.target.value)}
+          >
+            {selectableEnvironments.length === 0 ? (
+              <option value="">{selectorEmptyLabel}</option>
+            ) : (
+              selectableEnvironments.map((environment) => (
+                <option key={environment.id} value={environment.id}>{environmentRevisionLabel(environment, promotionMode === "from-current" ? "target" : "desired")}</option>
+              ))
+            )}
           </Select>
         </label>
         <div className="rounded-ui border border-border bg-surface px-3 py-2 text-sm">
@@ -116,7 +155,8 @@ export function PromotionPreviewPanel({
         </SecondaryButton>
       </div>
       <p className="text-sm text-muted-foreground">
-        Promotion creates a new desired-state revision in the target environment. Deployment is a separate action so the target revision can be reviewed before it is applied.
+        Promotion creates a target desired-state revision in {targetEnvironment?.name ?? "the target"} from {sourceEnvironment?.name ?? "the source"}.
+        Deployment is a separate action so the target revision can be reviewed before it is applied.
       </p>
       {!canManageDesiredState ? <p className="text-sm text-muted-foreground">Desired-state management permission is required to create promoted revisions.</p> : null}
       {readinessIssues.length > 0 ? <PromotionRequirements issues={readinessIssues} /> : null}
@@ -130,7 +170,7 @@ export function PromotionPreviewPanel({
             title="No comparison available"
             description={previewBlocked
               ? "Resolve the promotion requirements, then refresh the preview."
-              : "Choose a source and target environment, then preview promotion. When validation passes, create the target revision and deploy it."}
+              : "Choose the promotion environment, then preview promotion. When validation passes, create the target revision and deploy it."}
           />
           <div className="rounded-ui border border-border bg-surface p-3">
             <div className="mb-3 text-sm font-medium">Deployment gate</div>
@@ -310,6 +350,17 @@ function RuntimeCompatibility({ validations }: { validations: PromotionCompariso
   const warning = validations.find((validation) => validation.severity === "Warning");
   const selected = blocker ?? warning ?? validations[0];
   return <StatusBadge value={selected.severity} tone={validationTone(selected.severity)} />;
+}
+
+function findEnvironment(data: DeploymentCockpit, environmentId: string) {
+  return data.applications.flatMap((application) => application.environments).find((environment) => environment.id === environmentId);
+}
+
+function environmentRevisionLabel(environment: EnvironmentSummary, revisionKind: "desired" | "target") {
+  const revision = revisionKind === "desired"
+    ? environment.desiredRevision.revision
+    : environment.deployedRevision ?? environment.desiredRevision.revision;
+  return `${environment.name} r${revision}`;
 }
 
 function ValidationPanel({

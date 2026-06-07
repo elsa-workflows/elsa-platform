@@ -151,7 +151,7 @@ describe("DeploymentsPage", () => {
             : environment)
       }))
     };
-    renderDeployments(cockpit, "/admin/deployments/applications/claims-ops/environments/claims-test");
+    renderDeployments(cockpit, "/admin/deployments/applications/claims-ops/environments/claims-dev");
 
     expect(await screen.findByText("Source revision")).toBeInTheDocument();
     expect(screen.getByText("Dev does not have a desired-state revision yet. Create or choose a source revision before previewing promotion.")).toBeInTheDocument();
@@ -384,16 +384,25 @@ describe("DeploymentsPage", () => {
   }, 15000);
 
   it("keeps promotion validation and deployment actions on environment detail", async () => {
-    const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-prod");
+    renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-prod");
 
     expect(await screen.findByRole("heading", { name: "Prod" })).toBeInTheDocument();
     expect(screen.getAllByText("Secret references").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Payment API secret reference is missing or not verified in Prod.").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Promotion creates a target desired-state revision in/)).toHaveTextContent("Promotion creates a target desired-state revision in Prod from Stage.");
+    expect(screen.getByLabelText("Promote from")).toHaveValue("claims-stage");
+    expect(screen.queryByLabelText("Promote into")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Deploy Target Revision" })).toBeDisabled();
     expect(screen.getByRole("button", { name: /Roll Back to r39/i })).toBeEnabled();
+  });
 
-    await userEvent.selectOptions(screen.getByLabelText("Promote from"), "claims-dev");
-    await userEvent.selectOptions(screen.getByLabelText("Promote into"), "claims-test");
+  it("promotes from a source-only environment into an eligible target", async () => {
+    const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-dev");
+
+    expect(await screen.findByRole("heading", { name: "Dev" })).toBeInTheDocument();
+    expect(screen.getByText(/Promotion creates a target desired-state revision in/)).toHaveTextContent("Promotion creates a target desired-state revision in Test from Dev.");
+    expect(screen.queryByLabelText("Promote from")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Promote into")).toHaveValue("claims-test");
     await userEvent.click(screen.getByRole("button", { name: "Preview promotion" }));
     expect(await screen.findByText("Live validation passed for Test.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Create Target Revision" }));
@@ -417,6 +426,27 @@ describe("DeploymentsPage", () => {
       sourceRevisionId: "00000000-0000-0000-0000-000000000243"
     });
   }, 10000);
+
+  it("scopes promotion selectors to the current application and resets preview when direction changes", async () => {
+    renderDeployments(multipleApplicationsCockpit, "/admin/deployments/applications/claims-ops/environments/claims-test");
+
+    expect(await screen.findByRole("heading", { name: "Test" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Promote into this environment" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Promote from this environment" })).toBeInTheDocument();
+    const sourceSelector = screen.getByLabelText("Promote from") as HTMLSelectElement;
+    expect(sourceSelector).toHaveValue("claims-dev");
+    expect(Array.from(sourceSelector.options).map((option) => option.value)).toEqual(["claims-dev", "claims-stage"]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Preview promotion" }));
+    expect(await screen.findByText("Live validation passed for Test.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Promote from this environment" }));
+
+    const targetSelector = screen.getByLabelText("Promote into") as HTMLSelectElement;
+    expect(targetSelector).toHaveValue("claims-stage");
+    expect(Array.from(targetSelector.options).map((option) => option.value)).toEqual(["claims-stage", "claims-prod"]);
+    expect(screen.queryByText("Live validation passed for Test.")).not.toBeInTheDocument();
+    expect(screen.getByText("No comparison available")).toBeInTheDocument();
+  });
 
   it("explains why promotion preview is unavailable when the source revision is missing", async () => {
     renderDeployments(cockpitWithMissingSourceRevision(), "/admin/deployments/applications/claims-ops/environments/claims-dev");

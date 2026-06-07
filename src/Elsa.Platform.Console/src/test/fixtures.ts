@@ -94,7 +94,8 @@ export const packageDetailsFixture = {
           typeName: "Elsa.Persistence.PostgreSql.PostgreSqlFeature",
           displayName: "PostgreSQL Persistence",
           description: "Stores workflow state in PostgreSQL.",
-          category: "Persistence",
+          category: "Legacy Persistence",
+          categories: ["Persistence", "Data"],
           requiredCapabilities: ["persistence"],
           dependencies: [{ packageId: "Elsa.Core", versionRange: "[4.0.0,5.0.0)", featureId: null, optional: false, reason: "Core runtime required." }],
           conflicts: [],
@@ -120,6 +121,21 @@ export const packageDetailsFixture = {
               extensionsJson: "{}"
             }
           ]
+        },
+        {
+          featureId: "workflow-signals",
+          typeName: "Elsa.Workflows.Signals.SignalFeature",
+          displayName: "Workflow Signals",
+          description: "Adds signal dispatching for workflow triggers.",
+          category: null,
+          requiredCapabilities: ["signals"],
+          dependencies: [],
+          conflicts: [],
+          infrastructure: [],
+          advanced: false,
+          experimental: true,
+          extensionsJson: "{}",
+          settings: []
         }
       ],
       manifest: {
