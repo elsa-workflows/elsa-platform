@@ -19,6 +19,7 @@ import {
   Rocket,
   ShieldCheck,
   Sun,
+  Terminal,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
@@ -71,6 +72,7 @@ const navSections: Array<{ label: string; items: NavItem[] }> = [
   {
     label: "Operations",
     items: [
+      { to: "/admin/console", label: "Console", icon: Terminal },
       { to: "/admin/targets", label: "Targets", icon: Cloud, disabled: true },
       { to: "/admin/runtimes", label: "Managed Runtimes", icon: Gauge, disabled: true },
       { to: "/admin/operations", label: "Runtime Operations", icon: Activity, disabled: true },
