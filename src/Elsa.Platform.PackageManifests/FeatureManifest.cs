@@ -14,7 +14,10 @@ public sealed class FeatureManifest : ExtensibleManifestObject
     public string TypeName { get; init; } = "";
     public string DisplayName { get; init; } = "";
     public string? Description { get; init; }
+    /// <summary>Legacy single category. Prefer <see cref="Categories"/> for new manifests.</summary>
     public string? Category { get; init; }
+    public IReadOnlyList<string> Categories { get; init; } = [];
+    public CompatibilityManifest? Compatibility { get; init; }
     public IReadOnlyList<FeatureSettingManifest> Settings { get; init; } = [];
     public IReadOnlyList<DependencyManifest> Dependencies { get; init; } = [];
     public IReadOnlyList<ConflictManifest> Conflicts { get; init; } = [];

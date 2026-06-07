@@ -140,6 +140,7 @@ public static class BuilderEndpoints
             image.LicenseTier,
             image.Stability,
             image.Capabilities,
+            image.RuntimeKinds,
             image.EnvVars.Select(x => new RuntimeImageEnvironmentVariableResponse(x.Name, x.DisplayName, x.Description, x.Required, x.Secret, x.DefaultValue, x.Group, x.Advanced)).ToList(),
             new RuntimeImageDeploymentHintsResponse(
                 image.DeploymentHints.SupportsDockerCompose,

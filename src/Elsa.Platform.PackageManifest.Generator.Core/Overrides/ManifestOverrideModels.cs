@@ -31,6 +31,7 @@ public sealed class FeatureOverride
     public string? DisplayName { get; init; }
     public string? Description { get; init; }
     public string? Category { get; init; }
+    public IReadOnlyList<string>? Categories { get; init; }
     public bool? Advanced { get; init; }
     public bool? Experimental { get; init; }
     public CompatibilityOverride? Compatibility { get; init; }
@@ -97,6 +98,7 @@ public sealed class LicenseOverride
 
 public sealed class CompatibilityOverride
 {
+    public IReadOnlyList<string>? RuntimeKinds { get; init; }
     public string? ElsaVersionRange { get; init; }
     public string? DockerImageVersionRange { get; init; }
     public IReadOnlyList<string>? RuntimeCapabilities { get; init; }

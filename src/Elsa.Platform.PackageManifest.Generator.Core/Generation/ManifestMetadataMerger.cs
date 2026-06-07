@@ -50,18 +50,36 @@ public sealed class ManifestMetadataMerger
             {
                 DisplayName = featureOverride.DisplayName ?? feature.DisplayName,
                 Description = featureOverride.Description ?? feature.Description,
-                Category = featureOverride.Category ?? feature.Category,
+                Categories = ResolveCategories(feature.Categories, featureOverride),
                 Advanced = featureOverride.Advanced ?? feature.Advanced,
                 Experimental = featureOverride.Experimental ?? feature.Experimental,
                 Dependencies = featureOverride.Dependencies?.Select(ToDependencyReference).ToArray() ?? feature.Dependencies,
                 Conflicts = featureOverride.Conflicts?.Select(ToConflictReference).ToArray() ?? feature.Conflicts,
                 RequiredCapabilities = featureOverride.RequiredCapabilities ?? feature.RequiredCapabilities,
                 Infrastructure = MergeInfrastructure(feature.Infrastructure, featureOverride.Infrastructure),
+                Compatibility = MergeCompatibility(feature.Compatibility, featureOverride.Compatibility),
                 ExtensionMetadata = Merge(feature.ExtensionMetadata, featureOverride.Extensions),
                 Settings = settings
             };
         }).ToArray();
     }
+
+    private static IReadOnlyList<string> ResolveCategories(IReadOnlyList<string> current, FeatureOverride featureOverride)
+    {
+        if (featureOverride.Categories is not null)
+            return NormalizeCategories(featureOverride.Categories);
+
+        return string.IsNullOrWhiteSpace(featureOverride.Category)
+            ? current
+            : NormalizeCategories([featureOverride.Category]);
+    }
+
+    private static IReadOnlyList<string> NormalizeCategories(IEnumerable<string?> categories) =>
+        categories
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     private static IReadOnlyDictionary<string, object?> Merge(IReadOnlyDictionary<string, object?> first, IReadOnlyDictionary<string, object?>? second)
     {
@@ -73,6 +91,25 @@ public sealed class ManifestMetadataMerger
         }
 
         return result;
+    }
+
+    private static CompatibilityOverride? MergeCompatibility(CompatibilityOverride? discovered, CompatibilityOverride? overrideCompatibility)
+    {
+        if (discovered is null)
+            return overrideCompatibility;
+
+        if (overrideCompatibility is null)
+            return discovered;
+
+        return new CompatibilityOverride
+        {
+            RuntimeKinds = overrideCompatibility.RuntimeKinds ?? discovered.RuntimeKinds,
+            ElsaVersionRange = overrideCompatibility.ElsaVersionRange ?? discovered.ElsaVersionRange,
+            DockerImageVersionRange = overrideCompatibility.DockerImageVersionRange ?? discovered.DockerImageVersionRange,
+            RuntimeCapabilities = overrideCompatibility.RuntimeCapabilities ?? discovered.RuntimeCapabilities,
+            Extensions = Merge(discovered.Extensions ?? new Dictionary<string, object?>(), overrideCompatibility.Extensions)
+                .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase)
+        };
     }
 
     private static IReadOnlyList<ManifestUIOptionReference> ResolveUIOptions(

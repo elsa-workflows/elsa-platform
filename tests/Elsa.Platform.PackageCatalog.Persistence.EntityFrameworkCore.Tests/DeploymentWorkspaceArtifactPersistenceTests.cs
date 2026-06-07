@@ -142,6 +142,49 @@ public sealed class DeploymentWorkspaceArtifactPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Persists_artifact_upload_session_lifecycle_and_workspace_scope()
+    {
+        var otherWorkspaceId = await CreateWorkspaceAsync("Other Upload Workspace");
+        var now = DateTimeOffset.Parse("2026-06-04T12:00:00Z");
+        var session = new WorkspaceArtifactUploadSession(
+            Guid.NewGuid(),
+            _workspaceId,
+            WorkspaceArtifactUploadStatus.Pending,
+            "claims-prod.zip",
+            "application/zip",
+            1024,
+            null,
+            "/tmp/staged.zip",
+            "upload-key",
+            [],
+            now.AddMinutes(30),
+            null,
+            _accountId,
+            now,
+            now);
+
+        var created = await _store.CreateArtifactUploadSessionAsync(session);
+        var updated = await _store.UpdateArtifactUploadSessionAsync(created with
+        {
+            Status = WorkspaceArtifactUploadStatus.Completed,
+            UploadedSizeBytes = 1024,
+            Diagnostics = [new WorkspaceArtifactDiagnostic("artifact.upload.completed", WorkspaceArtifactDiagnosticSeverity.Info, "Upload completed.")],
+            UpdatedAt = now.AddMinutes(1)
+        });
+        _db.ChangeTracker.Clear();
+
+        var loaded = await _store.GetArtifactUploadSessionAsync(_workspaceId, session.Id);
+        var byIdempotency = await _store.FindArtifactUploadByIdempotencyKeyAsync(_workspaceId, "upload-key");
+        var crossWorkspace = await _store.GetArtifactUploadSessionAsync(otherWorkspaceId, session.Id);
+
+        updated.Status.Should().Be(WorkspaceArtifactUploadStatus.Completed);
+        loaded!.UploadedSizeBytes.Should().Be(1024);
+        loaded.Diagnostics.Should().ContainSingle(x => x.Code == "artifact.upload.completed");
+        byIdempotency!.Id.Should().Be(session.Id);
+        crossWorkspace.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Rejects_inspection_update_that_changes_identity()
     {
         var artifact = await _store.RegisterArtifactAsync(_workspaceId, ArtifactRegistration());

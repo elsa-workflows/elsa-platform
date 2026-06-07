@@ -81,6 +81,9 @@ function problemMessage(details: unknown) {
   if (details && typeof details === "object" && "detail" in details && typeof details.detail === "string") {
     return details.detail;
   }
+  if (details && typeof details === "object" && "error" in details && typeof details.error === "string") {
+    return details.error;
+  }
   if (details && typeof details === "object" && "title" in details && typeof details.title === "string") {
     return details.title;
   }

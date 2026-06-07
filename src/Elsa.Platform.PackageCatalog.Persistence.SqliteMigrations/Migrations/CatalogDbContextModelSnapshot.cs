@@ -1859,10 +1859,80 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.ToTable("WorkflowEngines");
                 });
 
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkspaceArtifactUploadSessionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CompletedArtifactRecordId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContentType")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("CreatedByAccountId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("DeclaredSizeBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DiagnosticsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ExpiresAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("FileName")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StagedFilePath")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("UploadedSizeBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId", "IdempotencyKey");
+
+                    b.HasIndex("WorkspaceId", "Status", "ExpiresAt");
+
+                    b.ToTable("WorkspaceArtifactUploadSessions");
+                });
+
             modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkspaceDeploymentArtifactEntity", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("ArchivedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("ArchivedByAccountId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ArtifactId")
@@ -1984,6 +2054,11 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
                     b.Property<long>("UpdatedAt")
                         .HasColumnType("INTEGER");
 
@@ -1996,6 +2071,8 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .IsUnique();
 
                     b.HasIndex("WorkspaceId", "RegisteredAt");
+
+                    b.HasIndex("WorkspaceId", "Status", "RegisteredAt");
 
                     b.ToTable("WorkspaceDeploymentArtifacts");
                 });

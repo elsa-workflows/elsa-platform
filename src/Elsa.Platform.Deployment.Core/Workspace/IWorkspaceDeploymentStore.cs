@@ -59,6 +59,12 @@ public interface IWorkspaceDeploymentStore
         Guid engineId,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<WorkspaceWorkflowEngine>> ListEnginesDueForVerificationAsync(
+        DateTimeOffset verifyBefore,
+        int limit,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Engine verification scans are not supported by this store.");
+
     Task<EngineHealthResult> UpdateEngineHealthAsync(
         Guid workspaceId,
         EngineHealthUpdate update,

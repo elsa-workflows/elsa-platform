@@ -120,9 +120,34 @@ describe("PackageDetailsPage", () => {
     renderPackageDetailsPage();
 
     expect(await screen.findByText("PostgreSQL Persistence")).toBeInTheDocument();
+    expect(screen.getByText("Workflow Signals")).toBeInTheDocument();
+    expect(screen.getByText("Persistence, Data")).toBeInTheDocument();
     expect(screen.getByText("Connection string")).toBeInTheDocument();
     expect(screen.getByText("[4.0.0,5.0.0)")).toBeInTheDocument();
     expect(screen.getAllByText(/Elsa.Persistence.PostgreSql/).length).toBeGreaterThan(0);
+  });
+
+  it("filters features by multiple categories, including uncategorized features", async () => {
+    renderPackageDetailsPage();
+
+    expect(await screen.findByText("PostgreSQL Persistence")).toBeInTheDocument();
+    expect(screen.getByText("Workflow Signals")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Data/ }));
+    expect(screen.getByText("PostgreSQL Persistence")).toBeInTheDocument();
+    expect(screen.queryByText("Workflow Signals")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Uncategorized/ }));
+    expect(screen.getByText("PostgreSQL Persistence")).toBeInTheDocument();
+    expect(screen.getByText("Workflow Signals")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Data/ }));
+    expect(screen.queryByText("PostgreSQL Persistence")).not.toBeInTheDocument();
+    expect(screen.getByText("Workflow Signals")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /All features/ }));
+    expect(screen.getByText("PostgreSQL Persistence")).toBeInTheDocument();
+    expect(screen.getByText("Workflow Signals")).toBeInTheDocument();
   });
 
   it("requires rejection reasons and sends version actions with the selected version", async () => {

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Elsa.Platform.PackageManifests;
+using Elsa.Platform.PackageManifests.Compatibility;
 using FluentAssertions;
 
 namespace Elsa.Platform.PackageManifests.Tests;
@@ -22,5 +23,32 @@ public sealed class ManifestSerializationTests
 
         manifest.Should().NotBeNull();
         manifest!.ExtensionData.Should().ContainKey("x-vendor");
+    }
+
+    [Fact]
+    public void Runtime_kind_compatibility_round_trips()
+    {
+        var manifest = new ElsaPackageManifest
+        {
+            Package = new PackageIdentityManifest { Id = "Elsa.Mixed", Version = "1.0.0" },
+            DisplayName = "Mixed",
+            Compatibility = new CompatibilityManifest { RuntimeKinds = [ElsaRuntimeKinds.Server, "acme.custom-host"] },
+            Features =
+            [
+                new FeatureManifest
+                {
+                    Id = "studio-widget",
+                    TypeName = "Elsa.Mixed.StudioWidgetFeature",
+                    DisplayName = "Studio Widget",
+                    Compatibility = new CompatibilityManifest { RuntimeKinds = [ElsaRuntimeKinds.Studio] }
+                }
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(manifest, ManifestJsonSerializerOptions.Default);
+        var roundTripped = JsonSerializer.Deserialize<ElsaPackageManifest>(json, ManifestJsonSerializerOptions.Default);
+
+        roundTripped!.Compatibility!.RuntimeKinds.Should().BeEquivalentTo(ElsaRuntimeKinds.Server, "acme.custom-host");
+        roundTripped.Features[0].Compatibility!.RuntimeKinds.Should().BeEquivalentTo(ElsaRuntimeKinds.Studio);
     }
 }

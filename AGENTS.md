@@ -1,7 +1,7 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-specs/031-organization-tenancy/plan.md
+specs/032-runtime-kind-compatibility/plan.md
 <!-- SPECKIT END -->
 
 ## Active Technologies

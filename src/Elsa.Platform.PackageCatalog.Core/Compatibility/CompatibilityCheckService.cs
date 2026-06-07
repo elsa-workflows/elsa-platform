@@ -2,6 +2,7 @@ using System.Text.Json;
 using Elsa.Platform.PackageCatalog.Abstractions.Compatibility;
 using Elsa.Platform.PackageCatalog.Core.Packages;
 using Elsa.Platform.PackageManifests;
+using Elsa.Platform.PackageManifests.Compatibility;
 
 namespace Elsa.Platform.PackageCatalog.Core.Compatibility;
 
@@ -78,7 +79,7 @@ public sealed class CompatibilityCheckService(ICompatibilityQueries queries, Ver
         }
 
         if (request.Features.Count > 0)
-            ValidateSelectedFeatures(request.Features, selected, selectedVersions, ranges, findings);
+            ValidateSelectedFeatures(request.Features, selected, selectedVersions, ranges, request.RuntimeKinds, findings);
 
         return new CompatibilityCheckResult(findings.Count == 0, findings);
     }
@@ -88,23 +89,28 @@ public sealed class CompatibilityCheckService(ICompatibilityQueries queries, Ver
         IReadOnlyList<(SelectedPackageIdentity Identity, ElsaPackageManifest Manifest)> selected,
         IReadOnlyDictionary<string, List<string>> selectedVersions,
         VersionRangeEvaluator ranges,
+        IReadOnlyList<string>? runtimeKinds,
         List<CompatibilityFinding> findings)
     {
         var selectedFeatures = new HashSet<string>(selectedFeatureIds, StringComparer.OrdinalIgnoreCase);
         var features = selected
-            .SelectMany(package => package.Manifest.Features.Select(feature => new SelectedFeatureManifest(package.Manifest.Package.Id, package.Manifest.Package.Version, feature)))
-            .Where(x => selectedFeatures.Contains(x.Id))
+            .SelectMany(package => package.Manifest.Features.Select(feature => new SelectedFeatureManifest(package.Manifest.Package.Id, package.Manifest.Package.Version, package.Manifest.Compatibility, feature)))
+            .Where(x => selectedFeatures.Any(selectedFeature => FeatureMatchesIdentity(x.Feature, selectedFeature)))
             .ToList();
 
         foreach (var requestedFeatureId in selectedFeatures)
         {
-            if (features.All(x => !string.Equals(x.Id, requestedFeatureId, StringComparison.OrdinalIgnoreCase)))
+            if (features.All(x => !FeatureMatchesIdentity(x.Feature, requestedFeatureId)))
                 findings.Add(CompatibilityFinding.Error("feature.missing", $"Feature {requestedFeatureId} is not present in the selected packages."));
         }
 
         foreach (var selectedFeature in features)
         {
             var feature = selectedFeature.Feature;
+            var effectiveRuntimeKinds = EffectiveRuntimeKinds(selectedFeature.PackageCompatibility, feature);
+            if (runtimeKinds is { Count: > 0 } && !runtimeKinds.Any(targetRuntimeKind => RuntimeKindCompatibilityPolicy.IsCompatibleWith(effectiveRuntimeKinds, targetRuntimeKind)))
+                findings.Add(CompatibilityFinding.Error("feature.runtimeKindUnsupported", $"{feature.Id} is not compatible with the selected runtime image."));
+
             foreach (var dependency in feature.Dependencies.Where(x => !x.Optional))
             {
                 if (dependency.PackageId is not null && !PackageMatches(dependency.PackageId, dependency.VersionRange, selectedVersions, ranges))
@@ -131,11 +137,40 @@ public sealed class CompatibilityCheckService(ICompatibilityQueries queries, Ver
     private static bool PackageMatches(string packageId, string? versionRange, IReadOnlyDictionary<string, List<string>> selectedVersions, VersionRangeEvaluator ranges) =>
         selectedVersions.TryGetValue(packageId, out var versions) && versions.Any(version => ranges.Includes(versionRange, version));
 
+    private static IReadOnlyList<string> EffectiveRuntimeKinds(CompatibilityManifest? packageCompatibility, FeatureManifest feature)
+    {
+        var featureRuntimeKinds = NormalizeRuntimeKinds(feature.Compatibility?.RuntimeKinds);
+        return featureRuntimeKinds.Count > 0
+            ? featureRuntimeKinds
+            : NormalizeRuntimeKinds(RuntimeKindCompatibility.EffectiveRuntimeKinds(packageCompatibility?.RuntimeKinds));
+    }
+
+    private static IReadOnlyList<string> NormalizeRuntimeKinds(IReadOnlyList<string>? runtimeKinds) =>
+        (runtimeKinds ?? [])
+        .Where(RuntimeKindCompatibility.IsValid)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
     private static bool FeatureMatches(string? packageId, string? versionRange, string featureId, IReadOnlyList<SelectedFeatureManifest> features, VersionRangeEvaluator ranges) =>
         features.Any(feature =>
-            string.Equals(feature.Id, featureId, StringComparison.OrdinalIgnoreCase)
+            FeatureMatchesIdentity(feature.Feature, featureId)
             && (packageId is null || string.Equals(feature.PackageId, packageId, StringComparison.OrdinalIgnoreCase))
             && (packageId is null || ranges.Includes(versionRange, feature.PackageVersion)));
+
+    private static bool FeatureMatchesIdentity(FeatureManifest feature, string featureId) =>
+        FeatureDependencyIdentityPolicy.Matches(feature.Id, ShellFeatureName(feature), featureId);
+
+    private static string? ShellFeatureName(FeatureManifest feature)
+    {
+        return feature.Extensions.TryGetValue("cshellsFeatureName", out var value)
+            ? value switch
+            {
+                string text => text,
+                JsonElement { ValueKind: JsonValueKind.String } element => element.GetString(),
+                _ => value?.ToString()
+            }
+            : null;
+    }
 
     private static bool TryParseManifest(string manifestJson, out ElsaPackageManifest? manifest)
     {
@@ -159,7 +194,7 @@ public interface ICompatibilityQueries
 
 internal sealed record SelectedPackageIdentity(Guid SourceId, string PackageId);
 
-internal sealed record SelectedFeatureManifest(string PackageId, string PackageVersion, FeatureManifest Feature)
+internal sealed record SelectedFeatureManifest(string PackageId, string PackageVersion, CompatibilityManifest? PackageCompatibility, FeatureManifest Feature)
 {
     public string Id => Feature.Id;
 }

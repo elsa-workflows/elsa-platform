@@ -24,6 +24,15 @@ public sealed class RuntimeImageValidator
             if (!image.DeploymentHints.SupportsDockerCompose)
                 findings.Add(new("runtimeImage.composeUnsupported", $"Runtime image {image.Slug} must support Docker Compose in the first slice.", $"image:{image.Slug}"));
 
+            foreach (var runtimeKind in image.RuntimeKinds)
+            {
+                if (string.IsNullOrWhiteSpace(runtimeKind))
+                    findings.Add(new("runtimeImage.blankRuntimeKind", $"Runtime image {image.Slug} has a blank runtime kind.", $"image:{image.Slug}/runtimeKinds"));
+            }
+
+            foreach (var duplicateRuntimeKind in image.RuntimeKinds.Where(x => !string.IsNullOrWhiteSpace(x)).GroupBy(x => x.Trim(), StringComparer.OrdinalIgnoreCase).Where(x => x.Count() > 1))
+                findings.Add(new("runtimeImage.duplicateRuntimeKind", $"Runtime image {image.Slug} has duplicate runtime kind {duplicateRuntimeKind.Key}.", $"image:{image.Slug}/runtimeKinds:{duplicateRuntimeKind.Key}"));
+
             foreach (var duplicateEnv in image.EnvVars.GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase).Where(x => x.Count() > 1))
                 findings.Add(new("runtimeImage.duplicateEnvVar", $"Runtime image {image.Slug} has duplicate environment variable {duplicateEnv.Key}.", $"image:{image.Slug}/env:{duplicateEnv.Key}"));
 

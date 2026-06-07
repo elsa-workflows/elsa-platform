@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import type { ReactNode } from "react";
@@ -14,19 +14,27 @@ describe("AppShell", () => {
       window.localStorage.clear();
     }
     document.documentElement.classList.remove("dark");
+    document.documentElement.removeAttribute("data-theme-accent");
   });
 
   it("renders the unified platform navigation with package catalog active links", async () => {
     renderAppShell();
 
+    const navigationText = screen.getAllByRole("navigation", { name: "Primary" })[0].textContent ?? "";
     expect(screen.getAllByRole("link", { name: "Overview" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Sources" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Packages" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Sync Runs" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("link", { name: "Deployments" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Artifacts").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Deployments").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Applications" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Tiers" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Artifacts" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Runtime Builder").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Build configurations" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Managed Runtimes").length).toBeGreaterThan(0);
+    expect(navigationText).toContain("PlatformOverview");
+    expect(navigationText).toContain("DeploymentsOverviewApplicationsArtifactsTiers");
+    expect(navigationText).toContain("Runtime BuilderBuild configurations");
     expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
     expect(await screen.findAllByRole("combobox", { name: "Organization" })).toHaveLength(2);
     expect(screen.getAllByRole("combobox", { name: "Workspace" })).toHaveLength(2);
@@ -51,6 +59,54 @@ describe("AppShell", () => {
     expect(document.documentElement).toHaveClass("dark");
     expect(window.localStorage.getItem("elsa-console-theme")).toBe("dark");
     expect(screen.getAllByRole("button", { name: "Switch to light mode" }).length).toBeGreaterThan(0);
+  });
+
+  it("stores the selected accent theme", async () => {
+    renderAppShell();
+
+    const accentPickers = screen.getAllByRole("combobox", { name: "Theme accent" });
+    expect(accentPickers).toHaveLength(2);
+    expect(accentPickers[0]).toHaveValue("teal");
+    await waitFor(() => expect(document.documentElement).toHaveAttribute("data-theme-accent", "teal"));
+
+    await userEvent.selectOptions(accentPickers[0], "violet");
+
+    expect(accentPickers[0]).toHaveValue("violet");
+    expect(document.documentElement).toHaveAttribute("data-theme-accent", "violet");
+    expect(window.localStorage.getItem("elsa-console-theme-accent")).toBe("violet");
+  });
+
+  it("opens Weaver as a global assistant drawer", async () => {
+    renderAppShell();
+
+    await userEvent.click(screen.getAllByRole("button", { name: "Open Weaver assistant" })[0]);
+
+    expect(screen.getByRole("complementary", { name: "Weaver assistant" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Weaver" })).toBeInTheDocument();
+    expect(screen.getByText("/admin")).toBeInTheDocument();
+    expect(screen.getByLabelText("Mode")).toHaveValue("plan");
+    expect(screen.getByLabelText("Guardrail")).toHaveValue("review");
+
+    await userEvent.click(screen.getByRole("button", { name: "Suggest prompt" }));
+    expect(screen.getByLabelText("Message Weaver")).toHaveValue("Summarize the current page and recommended next actions.");
+
+    await userEvent.selectOptions(screen.getByLabelText("Mode"), "inspect");
+    await userEvent.click(screen.getByRole("button", { name: "Queue" }));
+    expect(screen.getByText("Queued work")).toBeInTheDocument();
+    expect(screen.getByText(/Inspect · Review required/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Run next" }));
+    expect(screen.getByText("Queued: Summarize the current page and recommended next actions.")).toBeInTheDocument();
+    expect(screen.getByText(/Mode: Inspect\. Guardrail: Review required/i)).toBeInTheDocument();
+    expect(screen.queryByText("Queued work")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Suggest prompt" }));
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(screen.getByText("Summarize the current page and recommended next actions.")).toBeInTheDocument();
+    expect(screen.getAllByText(/Assistant execution is not connected yet/i).length).toBeGreaterThan(0);
+
+    await userEvent.click(screen.getByRole("button", { name: "Close Weaver assistant" }));
+    expect(screen.queryByRole("complementary", { name: "Weaver assistant" })).not.toBeInTheDocument();
   });
 
   it("keeps workspace choices scoped to the selected organization", async () => {

@@ -82,6 +82,73 @@ public sealed class BuilderBundleGenerationTests
     }
 
     [Fact]
+    public async Task Incompatible_runtime_kind_returns_error_findings_and_no_files()
+    {
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var packageVersion = CreatePackageVersion(source);
+        packageVersion.ManifestJson = """
+        {
+          "schemaVersion": "1.0",
+          "package": { "id": "Elsa.Email", "version": "1.0.0" },
+          "displayName": "Email",
+          "features": [
+            {
+              "id": "email",
+              "typeName": "Elsa.Email.EmailFeature",
+              "displayName": "Email",
+              "compatibility": { "runtimeKinds": ["elsa.studio"] }
+            }
+          ]
+        }
+        """;
+        var service = CreateService(new FakePublicCatalogQueries(CreatePackageProjection(source)), [packageVersion]);
+
+        var result = await service.GenerateAsync(new BuilderBundleFixtureBuilder()
+            .WithImage("elsa-pro-server")
+            .WithPackage(source, "Elsa.Email", features: ["email"])
+            .Build());
+
+        result.Files.Should().BeEmpty();
+        result.Findings.Should().Contain(x => x.Code == "feature.runtimeKindUnsupported" && x.Level == "error");
+    }
+
+    [Fact]
+    public async Task Studio_only_package_on_server_image_returns_runtime_kind_mismatch_and_no_files()
+    {
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var service = CreateService(new FakePublicCatalogQueries(CreatePackageProjection(source, runtimeKinds: ["elsa.studio"])), [CreatePackageVersion(source, ["elsa.studio"])], null);
+
+        var result = await service.GenerateAsync(new BuilderBundleFixtureBuilder()
+            .WithImage("elsa-pro-server")
+            .WithPackage(source, "Elsa.Email", features: ["email"])
+            .Build());
+
+        result.Files.Should().BeEmpty();
+        result.Findings.Should().Contain(x => x.Code == "package.runtimeKindMismatch" && x.Level == "error");
+    }
+
+    [Fact]
+    public async Task Studio_only_package_on_combined_image_generates_files()
+    {
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var service = CreateService(new FakePublicCatalogQueries(CreatePackageProjection(source, runtimeKinds: ["elsa.studio"])), [CreatePackageVersion(source, ["elsa.studio"])], null);
+
+        var result = await service.GenerateAsync(new BuilderBundleFixtureBuilder()
+            .WithImage("elsa-pro-combined")
+            .WithPackage(source, "Elsa.Email", features: ["email"])
+            .Build());
+        var runtimeKindFindingCodes = new[]
+        {
+            "package.runtimeKindMismatch",
+            "feature.runtimeKindMismatch",
+            "feature.runtimeKindUnsupported"
+        };
+
+        result.Files.Should().NotBeEmpty();
+        result.Findings.Should().NotContain(x => runtimeKindFindingCodes.Contains(x.Code));
+    }
+
+    [Fact]
     public async Task Required_missing_setting_returns_files_with_placeholder_warning()
     {
         var source = PublicCatalogSeedData.CreatePackageSource();
@@ -199,12 +266,13 @@ public sealed class BuilderBundleGenerationTests
     {
         var compatibility = new CompatibilityCheckService(new FakeCompatibilityQueries(compatibilityVersions), new VersionRangeEvaluator());
         var infrastructure = new InfrastructureProviderCatalog();
+        var runtimeImages = new RuntimeImageCatalog();
         return new BundleGenerationService(
             catalog,
             compatibility,
-            new RuntimeImageCatalog(),
+            runtimeImages,
             infrastructure,
-            new BuilderPlannerService(catalog, compatibility, infrastructure),
+            new BuilderPlannerService(catalog, compatibility, runtimeImages, infrastructure),
             new DeploymentTemplateRegistry(
             [
                 new DockerComposeBundleRenderer(),
@@ -223,8 +291,9 @@ public sealed class BuilderBundleGenerationTests
             NullLogger<BundleGenerationService>.Instance);
     }
 
-    private static PublicPackageProjection CreatePackageProjection(PackageSource source, bool secretSetting = false)
+    private static PublicPackageProjection CreatePackageProjection(PackageSource source, bool secretSetting = false, IReadOnlyList<string>? runtimeKinds = null)
     {
+        runtimeKinds ??= ["elsa.server"];
         var sourceProjection = new PublicPackageSourceProjection(source.Id, source.Name, source.Url);
         var setting = new PublicFeatureSettingProjection(
             "smtpHost",
@@ -250,7 +319,9 @@ public sealed class BuilderBundleGenerationTests
             "Email",
             null,
             "Communication",
+            ["Communication"],
             [],
+            runtimeKinds,
             [],
             [],
             [],
@@ -258,21 +329,23 @@ public sealed class BuilderBundleGenerationTests
             false,
             "{}",
             [setting]);
-        var version = new PublicPackageVersionProjection("Elsa.Email", "1.0.0", sourceProjection, "1.0", null, [feature]);
-        return new PublicPackageProjection("Elsa.Email", "Email", sourceProjection, "1.0.0", [version]);
+        var version = new PublicPackageVersionProjection("Elsa.Email", "1.0.0", sourceProjection, "1.0", runtimeKinds, null, [feature]);
+        return new PublicPackageProjection("Elsa.Email", "Email", sourceProjection, runtimeKinds, "1.0.0", [version]);
     }
 
-    private static PackageVersion CreatePackageVersion(PackageSource source)
+    private static PackageVersion CreatePackageVersion(PackageSource source, IReadOnlyList<string>? runtimeKinds = null)
     {
+        runtimeKinds ??= ["elsa.server"];
+        var runtimeKindJson = string.Join(", ", runtimeKinds.Select(x => $"\"{x}\""));
         var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Email");
         var version = PublicCatalogSeedData.AddVersion(package);
-        version.ManifestJson = """
+        version.ManifestJson = $$"""
         {
           "schemaVersion": "1.0",
           "package": { "id": "Elsa.Email", "version": "1.0.0" },
           "displayName": "Email",
           "features": [
-            { "id": "email", "typeName": "Elsa.Email.EmailFeature", "displayName": "Email" }
+            { "id": "email", "typeName": "Elsa.Email.EmailFeature", "displayName": "Email", "compatibility": { "runtimeKinds": [{{runtimeKindJson}}] } }
           ]
         }
         """;

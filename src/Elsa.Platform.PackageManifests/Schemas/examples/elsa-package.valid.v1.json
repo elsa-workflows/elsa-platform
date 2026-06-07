@@ -8,6 +8,7 @@
   "description": "Adds email features to an Elsa runtime.",
   "tags": [ "email", "communication" ],
   "compatibility": {
+    "runtimeKinds": [ "elsa.server" ],
     "elsaVersionRange": "[3.0.0,4.0.0)",
     "dockerImageVersionRange": ">=3.0.0"
   },
@@ -16,7 +17,10 @@
       "id": "email",
       "typeName": "Elsa.Email.EmailFeature",
       "displayName": "Email",
-      "category": "Communication",
+      "categories": [ "Communication", "Messaging" ],
+      "compatibility": {
+        "runtimeKinds": [ "elsa.server" ]
+      },
       "settings": [
         {
           "name": "smtpHost",

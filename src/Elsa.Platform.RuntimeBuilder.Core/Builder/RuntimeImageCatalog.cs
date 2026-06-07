@@ -19,6 +19,7 @@ public sealed class RuntimeImageCatalog
             "Professional",
             "Stable",
             ["server"],
+            ["elsa.server"],
             [
                 new("ASPNETCORE_ENVIRONMENT", "Environment", "ASP.NET Core environment.", false, false, "Development", "Runtime", false)
             ],
@@ -37,6 +38,7 @@ public sealed class RuntimeImageCatalog
             "Professional",
             "Stable",
             ["studio"],
+            ["elsa.studio"],
             [
                 new("Backend__Url", "Backend URL", "URL used by Studio to reach the Elsa Server backend.", false, false, "http://elsa-pro-server:8080", "Runtime", false)
             ],
@@ -55,6 +57,7 @@ public sealed class RuntimeImageCatalog
             "Professional",
             "Stable",
             ["server", "studio"],
+            ["elsa.server", "elsa.studio"],
             [
                 new("ASPNETCORE_ENVIRONMENT", "Environment", "ASP.NET Core environment.", false, false, "Development", "Runtime", false),
                 new("Backend__Url", "Backend URL", "URL used by Studio to reach the Elsa Server backend.", false, false, "http://localhost:8080", "Runtime", false)

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Button, Input, Select } from "@/components/ui";
 import type { EnvironmentSummary, RegisterDeploymentEngineRequest, WorkspaceDeploymentTier } from "@/features/deployments/deploymentModels";
 
@@ -7,9 +7,19 @@ export type DeploymentSetupValues = {
   environmentName: string;
   environmentTier: EnvironmentSummary["tier"];
   environmentTierId: string;
+} & EngineRegistrationValues;
+
+export type EngineRegistrationValues = {
   engineName: string;
   baseUrl: string;
+  credentialProvider: string;
   credentialReference: string;
+};
+
+export type CredentialReferenceOption = {
+  provider: string;
+  reference: string;
+  label: string;
 };
 
 export function DeploymentSetupPanel({
@@ -17,6 +27,7 @@ export function DeploymentSetupPanel({
   canManageSetup,
   tiers,
   tiersLoading = false,
+  credentialOptions = [],
   isSubmitting,
   error,
   submitLabel = "Create setup",
@@ -26,6 +37,7 @@ export function DeploymentSetupPanel({
   canManageSetup: boolean;
   tiers: WorkspaceDeploymentTier[];
   tiersLoading?: boolean;
+  credentialOptions?: CredentialReferenceOption[];
   isSubmitting: boolean;
   error?: string;
   submitLabel?: string;
@@ -40,6 +52,7 @@ export function DeploymentSetupPanel({
     environmentTierId: "",
     engineName: "",
     baseUrl: "",
+    credentialProvider: credentialOptions[0]?.provider ?? "External secret store",
     credentialReference: ""
   });
   useEffect(() => {
@@ -58,6 +71,11 @@ export function DeploymentSetupPanel({
     }));
   }, [tierOptions, values.environmentTierId]);
 
+  useEffect(() => {
+    if (values.credentialProvider.trim().length > 0 || credentialOptions.length === 0) return;
+    setValues((current) => ({ ...current, credentialProvider: credentialOptions[0].provider }));
+  }, [credentialOptions, values.credentialProvider]);
+
   const canSubmit =
     canManageSetup &&
     values.environmentTierId.length > 0 &&
@@ -65,6 +83,7 @@ export function DeploymentSetupPanel({
     values.environmentName.trim().length > 0 &&
     values.engineName.trim().length > 0 &&
     values.baseUrl.trim().length > 0 &&
+    values.credentialProvider.trim().length > 0 &&
     values.credentialReference.trim().length > 0;
 
   return (
@@ -120,8 +139,24 @@ export function DeploymentSetupPanel({
           <Input className="mt-1" value={values.baseUrl} onChange={(event) => setValues((current) => ({ ...current, baseUrl: event.target.value }))} />
         </label>
         <label className="text-sm font-medium">
+          Credential provider
+          <Input className="mt-1" value={values.credentialProvider} onChange={(event) => setValues((current) => ({ ...current, credentialProvider: event.target.value }))} />
+        </label>
+        <label className="text-sm font-medium">
           Credential reference
-          <Input className="mt-1" value={values.credentialReference} onChange={(event) => setValues((current) => ({ ...current, credentialReference: event.target.value }))} />
+          <CredentialReferenceInput
+            className="mt-1"
+            value={values.credentialReference}
+            options={credentialOptions}
+            onChange={(reference) => {
+              const option = credentialOptions.find((item) => item.reference === reference);
+              setValues((current) => ({
+                ...current,
+                credentialProvider: option?.provider ?? current.credentialProvider,
+                credentialReference: reference
+              }));
+            }}
+          />
         </label>
       </div>
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
@@ -143,11 +178,15 @@ function legacyTierFromName(name?: string): EnvironmentSummary["tier"] {
 }
 
 export function setupEngineRequest(values: DeploymentSetupValues): RegisterDeploymentEngineRequest {
+  return engineRegistrationRequest(values);
+}
+
+export function engineRegistrationRequest(values: EngineRegistrationValues): RegisterDeploymentEngineRequest {
   return {
     name: values.engineName,
     baseUrl: values.baseUrl,
     region: null,
-    credentialProvider: "External secret store",
+    credentialProvider: values.credentialProvider,
     credentialReference: values.credentialReference,
     capabilities: [{ id: "engine.reload-configuration", label: "Reload engine configuration", boundary: "EngineApi" }],
     controls: [
@@ -161,4 +200,39 @@ export function setupEngineRequest(values: DeploymentSetupValues): RegisterDeplo
     ],
     hostingProvider: null
   };
+}
+
+export function CredentialReferenceInput({
+  className,
+  value,
+  options,
+  onChange
+}: {
+  className?: string;
+  value: string;
+  options: CredentialReferenceOption[];
+  onChange: (value: string) => void;
+}) {
+  const listId = useId();
+
+  return (
+    <>
+      <Input
+        aria-label="Credential reference"
+        className={className}
+        list={options.length > 0 ? listId : undefined}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {options.length > 0 ? (
+        <datalist id={listId}>
+          {options.map((option) => (
+            <option key={`${option.provider}:${option.reference}`} value={option.reference}>
+              {option.label}
+            </option>
+          ))}
+        </datalist>
+      ) : null}
+    </>
+  );
 }

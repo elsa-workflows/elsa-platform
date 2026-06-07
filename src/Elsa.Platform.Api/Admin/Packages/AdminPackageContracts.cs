@@ -86,6 +86,7 @@ public sealed record AdminFeatureResponse(
     string DisplayName,
     string? Description,
     string? Category,
+    IReadOnlyList<string> Categories,
     IReadOnlyList<string> RequiredCapabilities,
     string DependenciesJson,
     string ConflictsJson,

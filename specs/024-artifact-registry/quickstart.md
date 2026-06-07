@@ -46,6 +46,19 @@ Verify that workspace users can register artifact metadata, inspect artifact rec
 5. Refresh inspection and confirm state/diagnostics update.
 6. Confirm registration and refresh are disabled for users without setup permission.
 
+## Follow-up Upload Smoke Scenario
+
+This scenario belongs to the future upload slice defined in the PRD amendment.
+
+1. Open `/admin/artifacts` as a setup-authorized workspace member.
+2. Choose Upload artifact.
+3. Select or drop a valid ZIP deployment artifact.
+4. Confirm byte upload progress appears separately from server-side processing.
+5. Complete the upload and verify the backend computes digest, manifest summary, resource summary, checksum status, and safe diagnostics.
+6. Confirm the UI navigates to the created artifact detail page.
+7. Upload the same ZIP again and verify duplicate/idempotent behavior.
+8. Upload invalid, oversized, unsafe-path, unsupported-layout, and interrupted files and verify safe diagnostics with no deployable artifact record.
+
 ## Verification Commands
 
 ```sh
@@ -68,7 +81,8 @@ git diff --check
 
 ## Known Scope Boundaries
 
-- Artifact upload and payload storage are out of scope.
-- OCI, signing, GitOps, provider apply, live runtime drift, object storage, and external approval workflows are out of scope.
+- Artifact upload and payload storage are out of the completed metadata registry slice, but are now specified as the next artifact-ingestion slice.
+- OCI, signing, GitOps, provider apply, live runtime drift, and external approval workflows are out of scope.
+- Production upload requires a configured artifact blob storage provider. The catalog database remains metadata-only.
 - The first inspection refresh adapter may support local/test references only.
 - Current implementation includes focused console, core, persistence, and API coverage for the metadata registry and local/test refresh adapter.

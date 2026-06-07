@@ -1,4 +1,5 @@
 using Elsa.Platform.PackageManifests.Validation;
+using Elsa.Platform.PackageManifest.Generator.Core.Overrides;
 
 namespace Elsa.Platform.PackageManifest.Generator.Core.Generation;
 
@@ -43,13 +44,17 @@ public enum FeatureDiscoverySource
     AdditionalInterface
 }
 
+public sealed record DiscoveredManifestMetadata(
+    CompatibilityOverride? PackageCompatibility,
+    IReadOnlyList<DiscoveredFeature> Features);
+
 public sealed record DiscoveredFeature(
     string FeatureId,
     string CShellsFeatureName,
     string ClrTypeName,
     string DisplayName,
     string? Description,
-    string? Category,
+    IReadOnlyList<string> Categories,
     FeatureDiscoverySource DiscoverySource,
     bool IsPublic,
     bool IsAbstract,
@@ -60,6 +65,7 @@ public sealed record DiscoveredFeature(
     IReadOnlyList<ManifestConflictReference> Conflicts,
     IReadOnlyList<string> RequiredCapabilities,
     IReadOnlyList<ManifestInfrastructureRequirementReference> Infrastructure,
+    CompatibilityOverride? Compatibility,
     IReadOnlyDictionary<string, object?> ExtensionMetadata,
     IReadOnlyList<DiscoveredSetting> Settings);
 

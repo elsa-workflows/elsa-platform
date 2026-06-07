@@ -1,23 +1,16 @@
 import { Activity, Archive, Boxes, CheckCircle2, Clock3, PackageSearch, Rocket, TriangleAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui";
+import { useWorkspaceContext } from "@/app/WorkspaceContextProvider";
+import { listWorkspaceArtifacts } from "@/features/artifacts/artifactApi";
+import { listPackages } from "@/features/packages/packageApi";
+import { packageApprovalStatus } from "@/features/packages/packageModels";
+import { queryKeys } from "@/lib/query/queryClient";
+import { cn } from "@/lib/utils";
 
 const platformSignals: Signal[] = [
-  {
-    label: "Deployment readiness",
-    value: "3 artifacts",
-    description: "Validated artifacts ready for dry-run once deployment APIs land.",
-    icon: Archive,
-    status: "Ready"
-  },
-  {
-    label: "Package approvals",
-    value: "12 pending",
-    description: "Package versions waiting on catalog administrator review.",
-    icon: PackageSearch,
-    status: "Needs review",
-    tone: "warning"
-  },
   {
     label: "Runtime builder",
     value: "4 configs",
@@ -62,9 +55,46 @@ type Signal = {
   icon: LucideIcon;
   status: string;
   tone?: "warning";
+  to?: string;
 };
 
 export function OverviewPage() {
+  const { selectedWorkspaceId } = useWorkspaceContext();
+  const artifacts = useQuery({
+    queryKey: queryKeys.artifacts(selectedWorkspaceId),
+    queryFn: () => listWorkspaceArtifacts(selectedWorkspaceId),
+    enabled: Boolean(selectedWorkspaceId)
+  });
+  const packageCatalog = useQuery({
+    queryKey: queryKeys.packages,
+    queryFn: listPackages
+  });
+  const artifactCount = artifacts.data?.items.length ?? 0;
+  const packageItems = packageCatalog.data ?? [];
+  const pendingPackageCount = packageItems.filter((packageItem) => packageApprovalStatus(packageItem) === "Pending").length;
+  const deploymentReadinessSignal: Signal = {
+    label: "Deployment readiness",
+    value: artifacts.isLoading ? "Loading" : pluralize(artifactCount, "artifact"),
+    description: artifactCount === 0
+      ? "Register artifacts before creating revisions and promotion targets."
+      : "Registered artifacts available for revision creation and deployment promotion.",
+    icon: Archive,
+    status: artifacts.isLoading ? "Loading" : artifactCount > 0 ? "Ready" : "Setup",
+    to: "/admin/artifacts"
+  };
+  const packageApprovalSignal: Signal = {
+    label: "Package approvals",
+    value: packageCatalog.isLoading ? "Loading" : `${pendingPackageCount} pending`,
+    description: packageCatalog.isLoading
+      ? "Loading indexed packages and approval state."
+      : `${pluralize(packageItems.length, "package")} indexed; ${pluralize(pendingPackageCount, "package")} awaiting approval.`,
+    icon: PackageSearch,
+    status: packageCatalog.isLoading ? "Loading" : pendingPackageCount > 0 ? "Needs review" : "Ready",
+    tone: pendingPackageCount > 0 || packageCatalog.isLoading ? "warning" : undefined,
+    to: pendingPackageCount > 0 ? "/admin/packages?approval=Pending" : "/admin/packages"
+  };
+  const signals = [deploymentReadinessSignal, packageApprovalSignal, ...platformSignals];
+
   return (
     <section className="space-y-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -82,29 +112,7 @@ export function OverviewPage() {
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {platformSignals.map((signal) => (
-          <article key={signal.label} className="rounded-ui border border-border bg-surface p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="rounded-ui border border-border bg-background p-2 text-primary">
-                <signal.icon aria-hidden className="h-4 w-4" />
-              </div>
-              <Badge
-                className={
-                  signal.tone === "warning"
-                    ? "border-warning/30 bg-warning/10 text-warning"
-                    : "border-primary/30 bg-primary/10 text-primary"
-                }
-              >
-                {signal.status}
-              </Badge>
-            </div>
-            <div className="mt-4 space-y-1">
-              <p className="text-sm text-muted-foreground">{signal.label}</p>
-              <p className="text-2xl font-semibold">{signal.value}</p>
-              <p className="text-sm leading-5 text-muted-foreground">{signal.description}</p>
-            </div>
-          </article>
-        ))}
+        {signals.map((signal) => <SignalCard key={signal.label} signal={signal} />)}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -167,6 +175,43 @@ export function OverviewPage() {
   );
 }
 
+function SignalCard({ signal }: { signal: Signal }) {
+  const content = (
+    <article
+      className={cn(
+        "h-full rounded-ui border border-border bg-surface p-4",
+        signal.to ? "transition-colors hover:border-primary/50 hover:bg-muted/30" : ""
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="rounded-ui border border-border bg-background p-2 text-primary">
+          <signal.icon aria-hidden className="h-4 w-4" />
+        </div>
+        <Badge
+          className={
+            signal.tone === "warning"
+              ? "border-warning/30 bg-warning/10 text-warning"
+              : "border-primary/30 bg-primary/10 text-primary"
+          }
+        >
+          {signal.status}
+        </Badge>
+      </div>
+      <div className="mt-4 space-y-1">
+        <p className="text-sm text-muted-foreground">{signal.label}</p>
+        <p className="text-2xl font-semibold">{signal.value}</p>
+        <p className="text-sm leading-5 text-muted-foreground">{signal.description}</p>
+      </div>
+    </article>
+  );
+
+  return signal.to ? (
+    <Link to={signal.to} className="block rounded-ui focus:outline-none focus:ring-2 focus:ring-primary/50">
+      {content}
+    </Link>
+  ) : content;
+}
+
 function ModuleRow({ title, description, status }: { title: string; description: string; status: string }) {
   const isActive = status === "Active";
 
@@ -182,4 +227,8 @@ function ModuleRow({ title, description, status }: { title: string; description:
       </Badge>
     </div>
   );
+}
+
+function pluralize(count: number, singular: string) {
+  return `${count} ${singular}${count === 1 ? "" : "s"}`;
 }

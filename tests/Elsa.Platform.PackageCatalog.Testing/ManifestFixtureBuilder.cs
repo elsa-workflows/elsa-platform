@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Elsa.Platform.PackageManifests;
+using Elsa.Platform.PackageManifests.Compatibility;
 
 namespace Elsa.Platform.PackageCatalog.Testing;
 
@@ -8,6 +9,7 @@ public sealed class ManifestFixtureBuilder
     private string _packageId = "Elsa.Email";
     private string _version = "1.0.0";
     private string _displayName = "Email";
+    private IReadOnlyList<string>? _runtimeKinds;
     private readonly List<FeatureManifest> _features = [];
     private readonly List<string> _targetFrameworks = ["net10.0"];
 
@@ -38,6 +40,30 @@ public sealed class ManifestFixtureBuilder
         return this;
     }
 
+    public ManifestFixtureBuilder WithFeature(
+        string featureId,
+        string typeName,
+        IReadOnlyList<string>? runtimeKinds)
+    {
+        _features.Add(new FeatureManifest
+        {
+            Id = featureId,
+            TypeName = typeName,
+            DisplayName = "Email",
+            Description = "Adds email activities and services.",
+            Category = "Communication",
+            Compatibility = runtimeKinds is null ? null : new CompatibilityManifest { RuntimeKinds = runtimeKinds }
+        });
+
+        return this;
+    }
+
+    public ManifestFixtureBuilder WithRuntimeKinds(params string[] runtimeKinds)
+    {
+        _runtimeKinds = runtimeKinds;
+        return this;
+    }
+
     public ManifestFixtureBuilder WithTargetFrameworks(params string[] targetFrameworks)
     {
         _targetFrameworks.Clear();
@@ -50,6 +76,7 @@ public sealed class ManifestFixtureBuilder
         SchemaVersion = ManifestSchemaVersions.Current,
         Package = new PackageIdentityManifest { Id = _packageId, Version = _version },
         DisplayName = _displayName,
+        Compatibility = _runtimeKinds is null ? null : new CompatibilityManifest { RuntimeKinds = _runtimeKinds },
         Features = _features,
         Extensions = { ["targetFrameworks"] = _targetFrameworks.ToArray() }
     };

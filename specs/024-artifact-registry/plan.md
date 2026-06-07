@@ -10,6 +10,8 @@ Add a workspace-scoped deployment artifact registry that stores immutable artifa
 
 > **Forward compatibility note**: `specs/031-organization-tenancy` keeps artifact records workspace-owned but resolves workspace ownership through a root Organization tenant.
 
+> **Upload PRD amendment**: The completed registry slice deliberately stopped before payload upload. The PRD now defines a follow-up upload ingestion slice where the console uploads ZIP artifacts to a configured artifact blob store, the backend derives digest/manifest/resource metadata server-side, and the catalog database remains metadata-only.
+
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console.

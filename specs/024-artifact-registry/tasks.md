@@ -131,6 +131,39 @@
 
 ---
 
+## Phase 7: Follow-up User Story 4 - Upload Artifact Payload (Priority: P2)
+
+**Goal**: Authorized workspace users can upload a deployment artifact ZIP from the console. The backend stores bytes in artifact blob storage, derives artifact metadata server-side, and creates the same immutable registry record shape used by manual registration.
+
+**Independent Test**: Upload a valid artifact ZIP through API and console, verify the artifact record is created with computed digest, manifest summary, resources, storage reference, inspection state, and no raw payload in catalog/API responses. Invalid, duplicate, oversized, unsafe ZIP, expired-session, and cross-workspace completion cases fail closed with safe diagnostics.
+
+### Tests for User Story 4
+
+- [ ] T047 [P] [US4] Add core upload-session validation and inspection tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceArtifactUploadServiceTests.cs`
+- [ ] T048 [P] [US4] Add artifact blob storage contract tests with local/test provider in `tests/Elsa.Platform.Deployment.Core.Tests/ArtifactBlobStorageTests.cs`
+- [ ] T049 [P] [US4] Add persistence tests for upload sessions, expiration, completion, duplicate content, and cleanup state in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactUploadPersistenceTests.cs`
+- [ ] T050 [P] [US4] Add API tests for upload session create, content upload, completion, abort, permission checks, idempotency, unsafe ZIP rejection, and cross-workspace rejection in `tests/Elsa.Platform.Api.Tests/WorkspaceArtifactUploadApiTests.cs`
+- [ ] T051 [P] [US4] Add console upload wizard tests for file selection, progress states, completion navigation, failed diagnostics, permission-blocked state, and absence of raw payload/secret output in `src/Elsa.Platform.Console/src/features/artifacts/ArtifactsPage.test.tsx`
+
+### Implementation for User Story 4
+
+- [ ] T052 [US4] Define artifact upload request/result models and upload status enums in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceArtifactUploadModels.cs`
+- [ ] T053 [US4] Define artifact blob storage abstraction and local/test provider in `src/Elsa.Platform.Deployment.Core/Workspace/IWorkspaceArtifactBlobStore.cs`
+- [ ] T054 [US4] Add upload-session store contract methods in `src/Elsa.Platform.Deployment.Core/Workspace/IWorkspaceArtifactStore.cs`
+- [ ] T055 [US4] Add upload session EF entity, mappings, and migrations in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`, `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`, and migration projects
+- [ ] T056 [US4] Implement upload session create, idempotency, completion, expiration, abort, duplicate detection, and cleanup state in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceArtifactUploadService.cs`
+- [ ] T057 [US4] Implement ZIP safety validation, digest computation, artifact envelope inspection, manifest/resource extraction, size limits, entry-count limits, path traversal rejection, and safe diagnostics in the upload service
+- [ ] T058 [US4] Register artifact blob storage and upload services in `src/Elsa.Platform.Api/Program.cs`
+- [ ] T059 [US4] Add upload endpoints and contracts in `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactEndpoints.cs` and `src/Elsa.Platform.Api/Workspace/WorkspaceArtifactContracts.cs`
+- [ ] T060 [US4] Add artifact upload API client/models in `src/Elsa.Platform.Console/src/features/artifacts/artifactApi.ts` and `src/Elsa.Platform.Console/src/features/artifacts/artifactModels.ts`
+- [ ] T061 [US4] Replace primary inline manual registration UX with a dedicated Upload artifact page/wizard in `src/Elsa.Platform.Console/src/features/artifacts/ArtifactsPage.tsx`
+- [ ] T062 [US4] Keep manual Register artifact available as an advanced/reference-registration path, separated from the primary upload flow
+- [ ] T063 [US4] Add upload quickstart coverage and verification results in `specs/024-artifact-registry/quickstart.md`
+
+**Checkpoint**: Artifact upload is independently functional, derives metadata from uploaded payloads, and keeps catalog persistence payload-free.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -141,12 +174,14 @@
 - **US2 Inspect Registered Artifacts**: Depends on Phase 2 and uses US1 records but remains independently testable with seeded records.
 - **US3 Refresh Artifact Inspection Status**: Depends on Phase 2 and extends US1/US2 records.
 - **Phase 6 Polish**: Depends on selected user stories being complete.
+- **US4 Upload Artifact Payload**: Follow-up slice; depends on US1/US2 artifact registry records and can be implemented after metadata registration/list/detail are stable.
 
 ### User Story Dependencies
 
 - **US1 (P1)**: First independently deliverable slice.
 - **US2 (P1)**: Can proceed after shared models/store contracts exist.
 - **US3 (P2)**: Can proceed after artifact records exist.
+- **US4 (P2)**: Can proceed after US1/US2; extends registry ingestion and shares artifact inspection concepts with US3.
 
 ### Parallel Opportunities
 
@@ -155,6 +190,8 @@
 - T020-T021 can run in parallel after Phase 2.
 - T028-T031 can run in parallel after Phase 2.
 - T037-T039 can run in parallel during polish.
+- T047-T051 can run in parallel before US4 implementation.
+- T052-T055 can run in parallel after upload contracts are agreed.
 
 ## Implementation Strategy
 
@@ -168,4 +205,5 @@
 
 1. Add Artifacts list/detail console view after registration is working.
 2. Add inspection refresh after records and UI state are stable.
-3. Run broad verification and update quickstart/contracts.
+3. Add upload ingestion as a follow-up slice with blob storage and server-side inspection.
+4. Run broad verification and update quickstart/contracts.

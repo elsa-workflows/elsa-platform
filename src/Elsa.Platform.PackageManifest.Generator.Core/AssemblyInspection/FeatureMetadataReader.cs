@@ -5,16 +5,25 @@ namespace Elsa.Platform.PackageManifest.Generator.Core.AssemblyInspection;
 
 public sealed class FeatureMetadataReader
 {
+    private const string ManifestRuntimeKindAttributeName = "Elsa.Platform.PackageManifest.Generator.Hints.ManifestRuntimeKindAttribute";
+
+    public PackageHintMetadata ReadPackageMetadata(Assembly assembly) =>
+        new(ReadRuntimeKinds(assembly));
+
     public FeatureMetadata ReadFeatureMetadata(Type type)
     {
         var shellFeature = FeatureTypeMatcher.GetShellFeatureAttribute(type);
         var extensions = ReadExtensions(type);
+        var attributeCategories = ReadFeatureCategoryAttributes(type);
+        var shellFeatureCategories = ReadShellFeatureCategories(shellFeature);
         return new FeatureMetadata(
             FeatureTypeMatcher.ResolveFeatureName(type),
             FeatureTypeMatcher.ReadNamedString(shellFeature, "DisplayName"),
             FeatureTypeMatcher.ReadNamedString(shellFeature, "Description"),
+            attributeCategories.Count > 0 ? attributeCategories : shellFeatureCategories,
             FeatureTypeMatcher.ReadDependsOn(shellFeature),
             ReadInfrastructure(type),
+            ReadRuntimeKinds(type),
             extensions);
     }
 
@@ -87,6 +96,47 @@ public sealed class FeatureMetadataReader
             .ToDictionary(x => x.Key, x => (object?)x.Last().Value, StringComparer.OrdinalIgnoreCase);
     }
 
+    private static IReadOnlyList<string> ReadFeatureCategoryAttributes(MemberInfo member) =>
+        NormalizeCategories(member.GetCustomAttributesData()
+            .Where(x => x.AttributeType.FullName == "Elsa.Platform.PackageManifest.Generator.Hints.ManifestFeatureCategoryAttribute")
+            .Select(x => x.ConstructorArguments.Count > 0 ? x.ConstructorArguments[0].Value as string : null));
+
+    private static IReadOnlyList<string> ReadShellFeatureCategories(CustomAttributeData? attribute)
+    {
+        var categories = FeatureTypeMatcher.ReadNamedStringArray(attribute, "Categories");
+        if (categories.Count > 0)
+            return NormalizeCategories(categories);
+
+        var category = FeatureTypeMatcher.ReadNamedString(attribute, "Category");
+        return string.IsNullOrWhiteSpace(category) ? [] : [category.Trim()];
+    }
+
+    private static IReadOnlyList<string> NormalizeCategories(IEnumerable<string?> categories) =>
+        categories
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static IReadOnlyList<string> ReadRuntimeKinds(ICustomAttributeProvider provider)
+    {
+        var attributes = provider switch
+        {
+            Assembly assembly => assembly.GetCustomAttributesData(),
+            MemberInfo member => member.GetCustomAttributesData(),
+            _ => []
+        };
+
+        return attributes
+            .Where(x => x.AttributeType.FullName == ManifestRuntimeKindAttributeName)
+            .Select(x => x.ConstructorArguments.Count > 0 ? x.ConstructorArguments[0].Value as string : null)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .GroupBy(x => x!, StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.Last()!)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     private static IReadOnlyList<ManifestInfrastructureRequirementReference> ReadInfrastructure(MemberInfo member)
     {
         return member.GetCustomAttributesData()
@@ -130,12 +180,16 @@ public sealed class FeatureMetadataReader
     }
 }
 
+public sealed record PackageHintMetadata(IReadOnlyList<string> RuntimeKinds);
+
 public sealed record FeatureMetadata(
     string FeatureName,
     string? DisplayName,
     string? Description,
+    IReadOnlyList<string> Categories,
     IReadOnlyList<string> Dependencies,
     IReadOnlyList<ManifestInfrastructureRequirementReference> Infrastructure,
+    IReadOnlyList<string> RuntimeKinds,
     IReadOnlyDictionary<string, object?> Extensions);
 
 public sealed record SettingHintMetadata(

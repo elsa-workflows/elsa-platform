@@ -159,6 +159,175 @@ public sealed class CompatibilityCheckServiceTests
         result.Findings.Should().NotContain(x => x.Code == "feature.packageDependency");
     }
 
+    [Fact]
+    public async Task Satisfies_feature_dependency_with_shell_feature_alias()
+    {
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var core = PublicCatalogSeedData.CreatePackage(source, "Elsa");
+        var management = PublicCatalogSeedData.CreatePackage(source, "Elsa.Workflows.Management");
+        var coreVersion = PublicCatalogSeedData.AddVersion(core);
+        var managementVersion = PublicCatalogSeedData.AddVersion(management);
+        coreVersion.ManifestJson = """
+        {
+          "schemaVersion": "1.0",
+          "package": { "id": "Elsa", "version": "1.0.0" },
+          "displayName": "Elsa",
+          "features": [
+            {
+              "id": "Elsa.Elsa",
+              "typeName": "Elsa.ElsaFeature",
+              "displayName": "Elsa Core",
+              "dependencies": [{ "featureId": "Elsa.WorkflowManagement" }]
+            }
+          ]
+        }
+        """;
+        managementVersion.ManifestJson = """
+        {
+          "schemaVersion": "1.0",
+          "package": { "id": "Elsa.Workflows.Management", "version": "1.0.0" },
+          "displayName": "Workflow Management",
+          "features": [
+            {
+              "id": "Elsa.Workflows.Management.WorkflowManagement",
+              "typeName": "Elsa.Workflows.Management.WorkflowManagementFeature",
+              "displayName": "Workflow Management",
+              "extensions": { "cshellsFeatureName": "WorkflowManagement" }
+            }
+          ]
+        }
+        """;
+        var service = new CompatibilityCheckService(new FakeQueries(core.Versions.Concat(management.Versions).ToList()), new VersionRangeEvaluator());
+
+        var result = await service.CheckAsync(new CompatibilityCheckRequest(
+            null,
+            null,
+            [Selection(source, "Elsa"), Selection(source, "Elsa.Workflows.Management")],
+            ["Elsa.Elsa", "Elsa.Workflows.Management.WorkflowManagement"]));
+
+        result.Findings.Should().NotContain(x => x.Code == "feature.missing" || x.Code == "feature.dependency");
+    }
+
+    [Fact]
+    public async Task Runtime_kind_validation_rejects_legacy_features_without_runtime_metadata_when_runtime_context_is_supplied()
+    {
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Mixed");
+        var version = PublicCatalogSeedData.AddVersion(package);
+        version.ManifestJson = """
+        {
+          "schemaVersion": "1.0",
+          "package": { "id": "Elsa.Mixed", "version": "1.0.0" },
+          "displayName": "Mixed",
+          "features": [
+            { "id": "server", "typeName": "Elsa.ServerFeature", "displayName": "Server", "compatibility": { "runtimeKinds": ["elsa.server"] } },
+            { "id": "legacy", "typeName": "Elsa.LegacyFeature", "displayName": "Legacy" }
+          ]
+        }
+        """;
+        var service = new CompatibilityCheckService(new FakeQueries(package.Versions), new VersionRangeEvaluator());
+
+        var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Mixed")], ["server", "legacy"], RuntimeKinds: ["elsa.server"]));
+
+        result.Findings.Should().ContainSingle(x => x.Code == "feature.runtimeKindUnsupported" && x.Message.Contains("legacy"));
+    }
+
+    [Fact]
+    public async Task Runtime_kind_validation_is_skipped_without_runtime_context()
+    {
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Legacy");
+        var version = PublicCatalogSeedData.AddVersion(package);
+        version.ManifestJson = """
+        {
+          "schemaVersion": "1.0",
+          "package": { "id": "Elsa.Legacy", "version": "1.0.0" },
+          "displayName": "Legacy",
+          "features": [
+            { "id": "legacy", "typeName": "Elsa.LegacyFeature", "displayName": "Legacy" }
+          ]
+        }
+        """;
+        var service = new CompatibilityCheckService(new FakeQueries(package.Versions), new VersionRangeEvaluator());
+
+        var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Legacy")], ["legacy"]));
+
+        result.Findings.Should().NotContain(x => x.Code == "feature.runtimeKindUnsupported");
+    }
+
+    [Fact]
+    public async Task Runtime_kind_validation_reports_incompatible_selected_features()
+    {
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Studio");
+        var version = PublicCatalogSeedData.AddVersion(package);
+        version.ManifestJson = """
+        {
+          "schemaVersion": "1.0",
+          "package": { "id": "Elsa.Studio", "version": "1.0.0" },
+          "displayName": "Studio",
+          "features": [
+            { "id": "studio", "typeName": "Elsa.StudioFeature", "displayName": "Studio", "compatibility": { "runtimeKinds": ["elsa.studio"] } }
+          ]
+        }
+        """;
+        var service = new CompatibilityCheckService(new FakeQueries(package.Versions), new VersionRangeEvaluator());
+
+        var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Studio")], ["studio"], RuntimeKinds: ["elsa.server"]));
+
+        result.Findings.Should().ContainSingle(x => x.Code == "feature.runtimeKindUnsupported");
+    }
+
+    [Fact]
+    public async Task Runtime_kind_validation_treats_combined_runtime_as_matching_either_kind()
+    {
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Server");
+        var version = PublicCatalogSeedData.AddVersion(package);
+        version.ManifestJson = """
+        {
+          "schemaVersion": "1.0",
+          "package": { "id": "Elsa.Server", "version": "1.0.0" },
+          "displayName": "Server",
+          "features": [
+            { "id": "server", "typeName": "Elsa.ServerFeature", "displayName": "Server", "compatibility": { "runtimeKinds": ["elsa.server"] } }
+          ]
+        }
+        """;
+        var service = new CompatibilityCheckService(new FakeQueries(package.Versions), new VersionRangeEvaluator());
+
+        var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Server")], ["server"], RuntimeKinds: ["elsa.server", "elsa.studio"]));
+
+        result.Findings.Should().NotContain(x => x.Code == "feature.runtimeKindUnsupported");
+    }
+
+    [Fact]
+    public async Task Runtime_kind_validation_uses_package_level_kind_unless_feature_overrides_it()
+    {
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Specialized");
+        var version = PublicCatalogSeedData.AddVersion(package);
+        version.ManifestJson = """
+        {
+          "schemaVersion": "1.0",
+          "package": { "id": "Elsa.Specialized", "version": "1.0.0" },
+          "displayName": "Specialized",
+          "compatibility": { "runtimeKinds": ["elsa.server"] },
+          "features": [
+            { "id": "inherits-package", "typeName": "Elsa.InheritsPackageFeature", "displayName": "Inherits Package" },
+            { "id": "narrows-to-studio", "typeName": "Elsa.NarrowsToStudioFeature", "displayName": "Narrows To Studio", "compatibility": { "runtimeKinds": ["elsa.studio"] } }
+          ]
+        }
+        """;
+        var service = new CompatibilityCheckService(new FakeQueries(package.Versions), new VersionRangeEvaluator());
+
+        var serverResult = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Specialized")], ["inherits-package", "narrows-to-studio"], RuntimeKinds: ["elsa.server"]));
+        var studioResult = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Specialized")], ["inherits-package", "narrows-to-studio"], RuntimeKinds: ["elsa.studio"]));
+
+        serverResult.Findings.Should().ContainSingle(x => x.Code == "feature.runtimeKindUnsupported" && x.Message.Contains("narrows-to-studio"));
+        studioResult.Findings.Should().ContainSingle(x => x.Code == "feature.runtimeKindUnsupported" && x.Message.Contains("inherits-package"));
+    }
+
     private static SelectedPackageVersion Selection(PackageSource source, string packageId, string version = "1.0.0") =>
         new(source.Id, packageId, version);
 

@@ -58,6 +58,12 @@ using System;
 
 namespace Elsa.Platform.PackageManifest.Generator.Hints;
 
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+internal sealed class ManifestFeatureCategoryAttribute(string category) : Attribute
+{
+    public string Category { get; } = category;
+}
+
 [AttributeUsage(AttributeTargets.Property)]
 internal sealed class ManifestSettingAttribute : Attribute
 {
@@ -114,6 +120,18 @@ internal sealed class ManifestInfrastructureAttribute(string id, string kind) : 
     public string[] Providers { get; set; } = [];
     public string[] ConfigurationKeys { get; set; } = [];
     public string[] Extensions { get; set; } = [];
+}
+
+[AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+internal sealed class ManifestRuntimeKindAttribute(string runtimeKind) : Attribute
+{
+    public string RuntimeKind { get; } = runtimeKind;
+}
+
+internal static class ElsaRuntimeKinds
+{
+    public const string Server = "elsa.server";
+    public const string Studio = "elsa.studio";
 }
 """;
 }

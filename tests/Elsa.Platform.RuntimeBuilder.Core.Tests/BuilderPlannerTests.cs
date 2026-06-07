@@ -39,6 +39,32 @@ public sealed class BuilderPlannerTests
     }
 
     [Fact]
+    public async Task Planner_auto_adds_feature_dependency_resolved_by_shell_feature_alias()
+    {
+        var source = new PublicPackageSourceProjection(Guid.NewGuid(), "NuGet", "https://example.test/v3/index.json");
+        var core = Package(source, "Elsa", Feature("Elsa.Elsa", dependencies: [new PublicDependencyProjection(null, null, "Elsa.WorkflowManagement", false, null)]));
+        var workflowManagement = Package(
+            source,
+            "Elsa.Workflows.Management",
+            Feature(
+                "Elsa.Workflows.Management.WorkflowManagement",
+                extensionsJson: """{ "cshellsFeatureName": "WorkflowManagement" }"""));
+        var service = CreateService([core, workflowManagement]);
+
+        var result = await service.PlanAsync(new BuilderPlanRequest(new RuntimeBuilderIntent(
+            new RuntimeImageSelection("elsa-pro-combined", "latest", 8080, new Dictionary<string, string>()),
+            [new BundlePackageSelection(source.Id, "Elsa", "1.0.0", ["Elsa.Elsa"], null)],
+            [new PackageSourceSelection(source.Id)],
+            [],
+            new LocalPackagesOptions(false, "packages"))));
+
+        result.Resolved.Packages.Should().Contain(x => x.PackageId == "Elsa.Workflows.Management");
+        result.Resolved.Packages.Single(x => x.PackageId == "Elsa.Workflows.Management").SelectedFeatures.Should().Contain("Elsa.Workflows.Management.WorkflowManagement");
+        result.AutoAdded.Features.Should().Contain("Elsa.Workflows.Management.WorkflowManagement");
+        result.Findings.Should().NotContain(x => new[] { "feature.missing", "feature.dependency" }.Contains(x.Code));
+    }
+
+    [Fact]
     public async Task Planner_returns_compatibility_findings_for_resolved_state()
     {
         var source = new PublicPackageSourceProjection(Guid.NewGuid(), "NuGet", "https://example.test/v3/index.json");
@@ -55,22 +81,41 @@ public sealed class BuilderPlannerTests
         result.Findings.Should().Contain(x => x.Code == "feature.packageDependency");
     }
 
+    [Fact]
+    public async Task Planner_returns_runtime_kind_findings_for_incompatible_selected_features()
+    {
+        var source = new PublicPackageSourceProjection(Guid.NewGuid(), "NuGet", "https://example.test/v3/index.json");
+        var package = Package(source, "Elsa.StudioOnly", Feature("studio-feature", runtimeKinds: ["elsa.studio"]));
+        var service = CreateService([package]);
+
+        var result = await service.PlanAsync(new BuilderPlanRequest(new RuntimeBuilderIntent(
+            new RuntimeImageSelection("elsa-pro-server", "latest", 8080, new Dictionary<string, string>()),
+            [new BundlePackageSelection(source.Id, "Elsa.StudioOnly", "1.0.0", ["studio-feature"], null)],
+            [new PackageSourceSelection(source.Id)],
+            [],
+            new LocalPackagesOptions(false, "packages"))));
+
+        result.Findings.Should().ContainSingle(x => x.Code == "feature.runtimeKindUnsupported");
+    }
+
     private static BuilderPlannerService CreateService(IReadOnlyList<PublicPackageProjection> packages)
     {
         var queries = new FakeQueries(packages);
-        return new BuilderPlannerService(queries, new CompatibilityCheckService(queries, new VersionRangeEvaluator()), new InfrastructureProviderCatalog());
+        return new BuilderPlannerService(queries, new CompatibilityCheckService(queries, new VersionRangeEvaluator()), new RuntimeImageCatalog(), new InfrastructureProviderCatalog());
     }
 
     private static PublicPackageProjection Package(PublicPackageSourceProjection source, string packageId, PublicFeatureProjection feature)
     {
-        var version = new PublicPackageVersionProjection(packageId, "1.0.0", source, "1.0", null, [feature]);
-        return new PublicPackageProjection(packageId, packageId, source, "1.0.0", [version]);
+        var version = new PublicPackageVersionProjection(packageId, "1.0.0", source, "1.0", ["elsa.server"], null, [feature]);
+        return new PublicPackageProjection(packageId, packageId, source, ["elsa.server"], "1.0.0", [version]);
     }
 
     private static PublicFeatureProjection Feature(
         string featureId,
+        IReadOnlyList<string>? runtimeKinds = null,
         IReadOnlyList<PublicDependencyProjection>? dependencies = null,
-        IReadOnlyList<PublicInfrastructureRequirementProjection>? infrastructure = null) =>
+        IReadOnlyList<PublicInfrastructureRequirementProjection>? infrastructure = null,
+        string extensionsJson = "{}") =>
         new(
             featureId,
             "",
@@ -81,12 +126,14 @@ public sealed class BuilderPlannerTests
             null,
             null,
             [],
+            [],
+            runtimeKinds ?? ["elsa.server"],
             dependencies ?? [],
             [],
             infrastructure ?? [],
             false,
             false,
-            "{}",
+            extensionsJson,
             []);
 
     private sealed class FakeQueries(IReadOnlyList<PublicPackageProjection> packages) : IPublicCatalogQueries, ICompatibilityQueries
@@ -151,8 +198,17 @@ public sealed class BuilderPlannerTests
         {
             var dependencies = feature.Dependencies.Count == 0
                 ? "[]"
-                : $"[{string.Join(",", feature.Dependencies.Select(x => $"{{ \"packageId\": \"{x.PackageId}\", \"featureId\": {(x.FeatureId is null ? "null" : $"\"{x.FeatureId}\"")} }}"))}]";
-            return $"{{ \"id\": \"{feature.FeatureId}\", \"typeName\": \"{feature.TypeName}\", \"displayName\": \"{feature.DisplayName}\", \"dependencies\": {dependencies} }}";
+                : $"[{string.Join(",", feature.Dependencies.Select(x => $"{{ \"packageId\": {JsonString(x.PackageId)}, \"featureId\": {JsonString(x.FeatureId)} }}"))}]";
+            var compatibility = feature.RuntimeKinds.Count == 0
+                ? ""
+                : $", \"compatibility\": {{ \"runtimeKinds\": [{string.Join(",", feature.RuntimeKinds.Select(x => $"\"{x}\""))}] }}";
+            var extensions = feature.ExtensionsJson == "{}"
+                ? ""
+                : $", \"extensions\": {feature.ExtensionsJson}";
+            return $"{{ \"id\": \"{feature.FeatureId}\", \"typeName\": \"{feature.TypeName}\", \"displayName\": \"{feature.DisplayName}\", \"dependencies\": {dependencies}{compatibility}{extensions} }}";
         }
+
+        private static string JsonString(string? value) =>
+            value is null ? "null" : $"\"{value}\"";
     }
 }

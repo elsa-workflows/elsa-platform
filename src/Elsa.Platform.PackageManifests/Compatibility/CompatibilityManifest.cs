@@ -5,6 +5,7 @@ namespace Elsa.Platform.PackageManifests.Compatibility;
 /// </summary>
 public sealed class CompatibilityManifest : ExtensibleManifestObject
 {
+    public IReadOnlyList<string> RuntimeKinds { get; init; } = [];
     public string? ElsaVersionRange { get; init; }
     public string? DockerImageVersionRange { get; init; }
     public IReadOnlyList<PackageCompatibilityRuleManifest> PackageRules { get; init; } = [];

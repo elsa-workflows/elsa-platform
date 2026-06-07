@@ -1,93 +1,192 @@
-import { AlertTriangle, CheckCircle2, ClipboardCheck, GitCompareArrows, RotateCcw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardCheck, GitBranch, GitCompareArrows, RotateCcw } from "lucide-react";
 import type { ReactNode } from "react";
-import { Badge, Button, SecondaryButton, Select, Table } from "@/components/ui";
+import { Link } from "react-router-dom";
+import { Badge, Button, buttonClassName, SecondaryButton, Select, Table } from "@/components/ui";
 import { RequestStateView } from "@/components/states/RequestStateViews";
 import {
   type DeploymentCockpit,
   type DiffCategory,
   hasBlockingValidation,
+  type EnvironmentSummary,
   type PromotionComparison,
   type ValidationSeverity
 } from "@/features/deployments/deploymentModels";
 import { statusToneClass, type StatusTone } from "@/lib/status/statusBadges";
 
+export type PromotionMode = "from-current" | "into-current";
+
 type PromotionPreviewPanelProps = {
   data: DeploymentCockpit;
+  promotionMode: PromotionMode;
+  allowedPromotionModes: PromotionMode[];
+  selectableEnvironments: EnvironmentSummary[];
+  selectedEnvironmentId: string;
   sourceEnvironmentId: string;
   targetEnvironmentId: string;
   comparison: PromotionComparison | undefined;
+  readinessIssues: PromotionReadinessIssue[];
+  canManageDesiredState: boolean;
   canPreview: boolean;
   canDeploy: boolean;
+  hasPromotedTargetRevision: boolean;
   canRollback: boolean;
   rollbackBlockedReason?: string;
   isPreviewing: boolean;
+  isPromoting: boolean;
   isQueueingDeployment: boolean;
   isQueueingRollback: boolean;
   notice: string;
   error?: string;
-  onSourceEnvironmentChange: (environmentId: string) => void;
-  onTargetEnvironmentChange: (environmentId: string) => void;
+  onPromotionModeChange: (mode: PromotionMode) => void;
+  onSelectedEnvironmentChange: (environmentId: string) => void;
   onRefreshPreview: () => void;
+  onPromote: () => void;
   onDeploy: () => void;
   onRollback: () => void;
 };
 
 export function PromotionPreviewPanel({
   data,
+  promotionMode,
+  allowedPromotionModes,
+  selectableEnvironments,
+  selectedEnvironmentId,
   sourceEnvironmentId,
   targetEnvironmentId,
   comparison,
+  readinessIssues,
+  canManageDesiredState,
   canPreview,
   canDeploy,
+  hasPromotedTargetRevision,
   canRollback,
   rollbackBlockedReason,
   isPreviewing,
+  isPromoting,
   isQueueingDeployment,
   isQueueingRollback,
   notice,
   error,
-  onSourceEnvironmentChange,
-  onTargetEnvironmentChange,
+  onPromotionModeChange,
+  onSelectedEnvironmentChange,
   onRefreshPreview,
+  onPromote,
   onDeploy,
   onRollback
 }: PromotionPreviewPanelProps) {
-  const environmentOptions = data.applications.flatMap((application) => application.environments);
+  const sourceEnvironment = findEnvironment(data, sourceEnvironmentId);
+  const targetEnvironment = findEnvironment(data, targetEnvironmentId);
+  const fixedEnvironment = promotionMode === "from-current" ? sourceEnvironment : targetEnvironment;
+  const fixedLabel = promotionMode === "from-current" ? "Promote from" : "Promote into";
+  const selectorLabel = promotionMode === "from-current" ? "Promote into" : "Promote from";
+  const selectorEmptyLabel = promotionMode === "from-current" ? "No eligible targets" : "No eligible sources";
   const blocked = comparison ? hasBlockingValidation(comparison.validations) : true;
   const hasRollbackTarget = Boolean(comparison?.rollbackRevision && comparison.rollbackRevisionId);
+  const previewBlocked = readinessIssues.some((issue) => issue.severity === "Blocker");
+  const sourceApplication = data.applications.find((application) => application.environments.some((environment) => environment.id === sourceEnvironmentId));
+  const observabilityRevisionPath = sourceApplication
+    ? `/admin/deployments/applications/${encodeURIComponent(sourceApplication.id)}/environments/${encodeURIComponent(sourceEnvironmentId)}/revisions/new?includeObservability=1`
+    : undefined;
 
   return (
     <div className="space-y-4">
+      <div className="grid gap-3 lg:grid-cols-3">
+        <FlowStep
+          index="1"
+          title="Create or choose source"
+          description="Create a new desired-state revision in the source environment when workflow or artifact content changes."
+        />
+        <FlowStep
+          index="2"
+          title="Promote into target"
+          description="Preview validation, then create a target revision from the selected source revision."
+        />
+        <FlowStep
+          index="3"
+          title="Deploy target revision"
+          description="After the target revision exists and validation passes, queue deployment to the target engine."
+        />
+      </div>
+      {allowedPromotionModes.length > 1 ? (
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Promotion direction">
+          <button
+            type="button"
+            className={buttonClassName(promotionMode === "into-current" ? "primary" : "secondary")}
+            onClick={() => onPromotionModeChange("into-current")}
+          >
+            Promote into this environment
+          </button>
+          <button
+            type="button"
+            className={buttonClassName(promotionMode === "from-current" ? "primary" : "secondary")}
+            onClick={() => onPromotionModeChange("from-current")}
+          >
+            Promote from this environment
+          </button>
+        </div>
+      ) : null}
       <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto_auto] md:items-end">
+        <div className="rounded-ui border border-border bg-surface px-3 py-2 text-sm">
+          <div className="text-xs font-medium text-muted-foreground">{fixedLabel}</div>
+          <div className="mt-1 font-medium">{fixedEnvironment ? environmentRevisionLabel(fixedEnvironment, promotionMode === "from-current" ? "desired" : "target") : "-"}</div>
+        </div>
         <label className="text-xs font-medium text-muted-foreground">
-          Source revision
-          <Select className="mt-1 w-full" value={sourceEnvironmentId} onChange={(event) => onSourceEnvironmentChange(event.target.value)}>
-            {environmentOptions.map((environment) => (
-              <option key={environment.id} value={environment.id}>{environment.name} r{environment.desiredRevision.revision}</option>
-            ))}
-          </Select>
-        </label>
-        <label className="text-xs font-medium text-muted-foreground">
-          Target revision
-          <Select className="mt-1 w-full" value={targetEnvironmentId} onChange={(event) => onTargetEnvironmentChange(event.target.value)}>
-            {environmentOptions.map((environment) => (
-              <option key={environment.id} value={environment.id}>{environment.name} r{environment.deployedRevision ?? environment.desiredRevision.revision}</option>
-            ))}
+          {selectorLabel}
+          <Select
+            className="mt-1 w-full"
+            value={selectedEnvironmentId}
+            disabled={selectableEnvironments.length === 0}
+            onChange={(event) => onSelectedEnvironmentChange(event.target.value)}
+          >
+            {selectableEnvironments.length === 0 ? (
+              <option value="">{selectorEmptyLabel}</option>
+            ) : (
+              selectableEnvironments.map((environment) => (
+                <option key={environment.id} value={environment.id}>{environmentRevisionLabel(environment, promotionMode === "from-current" ? "target" : "desired")}</option>
+              ))
+            )}
           </Select>
         </label>
         <div className="rounded-ui border border-border bg-surface px-3 py-2 text-sm">
           {comparison ? `r${comparison.sourceRevision} -> r${comparison.targetRevision}` : "No comparison"}
         </div>
-        <SecondaryButton disabled={!canPreview || isPreviewing} onClick={onRefreshPreview}>
-          {isPreviewing ? "Previewing" : "Refresh Preview"}
+        <SecondaryButton disabled={previewBlocked || isPreviewing} onClick={onRefreshPreview}>
+          {isPreviewing ? "Previewing" : "Preview promotion"}
         </SecondaryButton>
       </div>
-      {!canPreview ? <p className="text-sm text-muted-foreground">Promotion preview permission is required for live validation.</p> : null}
+      <p className="text-sm text-muted-foreground">
+        Promotion creates a target desired-state revision in {targetEnvironment?.name ?? "the target"} from {sourceEnvironment?.name ?? "the source"}.
+        Deployment is a separate action so the target revision can be reviewed before it is applied.
+      </p>
+      {!canManageDesiredState ? <p className="text-sm text-muted-foreground">Desired-state management permission is required to create promoted revisions.</p> : null}
+      {readinessIssues.length > 0 ? <PromotionRequirements issues={readinessIssues} /> : null}
       {notice ? <div role="status" className="rounded-ui border border-border bg-muted/40 px-3 py-2 text-sm">{notice}</div> : null}
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
 
       {!comparison ? (
-        <RequestStateView state="empty" title="No comparison available" description="Choose a supported source and target environment pair." />
+        <>
+          <RequestStateView
+            state="empty"
+            title="No comparison available"
+            description={previewBlocked
+              ? "Resolve the promotion requirements, then refresh the preview."
+              : "Choose the promotion environment, then preview promotion. When validation passes, create the target revision and deploy it."}
+          />
+          <div className="rounded-ui border border-border bg-surface p-3">
+            <div className="mb-3 text-sm font-medium">Deployment gate</div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button disabled>
+                <GitBranch className="h-4 w-4" />
+                Create Target Revision
+              </Button>
+              <Button disabled>
+                <CheckCircle2 className="h-4 w-4" />
+                Deploy Target Revision
+              </Button>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">Preview promotion before creating a target revision.</p>
+          </div>
+        </>
       ) : (
         <>
           <Panel title="Desired-state changes" icon={<GitCompareArrows className="h-4 w-4" />}>
@@ -118,20 +217,29 @@ export function PromotionPreviewPanel({
           </Panel>
           {comparison.artifacts.length > 0 ? <ArtifactPanel artifacts={comparison.artifacts} /> : null}
           <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-start">
-            <ValidationPanel validations={comparison.validations} />
+            <ValidationPanel
+              validations={comparison.validations}
+              observabilityRevisionPath={observabilityRevisionPath}
+              canManageDesiredState={canManageDesiredState}
+            />
             <div className="rounded-ui border border-border bg-surface p-3">
               <div className="mb-3 text-sm font-medium">Deployment gate</div>
               <div className="flex flex-col gap-2">
-                <Button disabled={blocked || !canDeploy || isQueueingDeployment} onClick={onDeploy}>
+                <Button disabled={previewBlocked || blocked || !canManageDesiredState || isPromoting} onClick={onPromote}>
+                  <GitBranch className="h-4 w-4" />
+                  {isPromoting ? "Creating Target Revision" : "Create Target Revision"}
+                </Button>
+                <Button disabled={blocked || !canDeploy || !hasPromotedTargetRevision || isQueueingDeployment} onClick={onDeploy}>
                   <CheckCircle2 className="h-4 w-4" />
-                  {isQueueingDeployment ? "Queueing Deployment" : "Deploy Revision"}
+                  {isQueueingDeployment ? "Queueing Deployment" : "Deploy Target Revision"}
                 </Button>
                 <SecondaryButton disabled={!hasRollbackTarget || !canRollback || isQueueingRollback} onClick={onRollback}>
                   <RotateCcw className="h-4 w-4" />
                   {isQueueingRollback ? "Queueing Rollback" : `Roll Back to r${comparison.rollbackRevision ?? "-"}`}
                 </SecondaryButton>
               </div>
-              {blocked ? <p className="mt-3 text-xs text-destructive">Resolve validation blockers before deployment can start.</p> : null}
+              {blocked ? <p className="mt-3 text-xs text-destructive">Resolve validation blockers before promotion or deployment can start.</p> : null}
+              {!hasPromotedTargetRevision ? <p className="mt-3 text-xs text-muted-foreground">Create the target revision before deployment can be queued.</p> : null}
               {rollbackBlockedReason ? <p className="mt-3 text-xs text-muted-foreground">{rollbackBlockedReason}</p> : null}
               {!canDeploy || !canRollback ? <p className="mt-3 text-xs text-muted-foreground">Deployment and rollback actions require execute permissions and single-user confirmation.</p> : null}
             </div>
@@ -139,6 +247,60 @@ export function PromotionPreviewPanel({
         </>
       )}
     </div>
+  );
+}
+
+function FlowStep({ index, title, description }: { index: string; title: string; description: string }) {
+  return (
+    <div className="rounded-ui border border-border bg-muted/30 p-3">
+      <div className="flex items-center gap-2 text-sm font-medium">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-surface text-xs">{index}</span>
+        {title}
+      </div>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">{description}</p>
+    </div>
+  );
+}
+
+type PromotionReadinessIssue = {
+  id: string;
+  severity: "Blocker" | "Warning";
+  scope: string;
+  message: string;
+  action?: {
+    label: string;
+    to: string;
+    description?: string;
+  };
+};
+
+function PromotionRequirements({ issues }: { issues: PromotionReadinessIssue[] }) {
+  return (
+    <section className="rounded-ui border border-border bg-background p-3">
+      <h3 className="text-sm font-medium">Promotion requirements</h3>
+      <div className="mt-2 space-y-2">
+        {issues.map((issue) => (
+          <div key={issue.id} className="flex gap-2 text-sm">
+            <AlertTriangle className={issue.severity === "Blocker" ? "mt-0.5 h-4 w-4 shrink-0 text-destructive" : "mt-0.5 h-4 w-4 shrink-0 text-warning"} />
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{issue.scope}</span>
+                <StatusBadge value={issue.severity} tone={issue.severity === "Blocker" ? "destructive" : "warning"} />
+              </div>
+              <p className="mt-1 text-muted-foreground">{issue.message}</p>
+              {issue.action ? (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Link to={issue.action.to} className={buttonClassName("secondary", "h-8 px-2 text-xs")}>
+                    {issue.action.label}
+                  </Link>
+                  {issue.action.description ? <span className="text-xs text-muted-foreground">{issue.action.description}</span> : null}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -190,7 +352,26 @@ function RuntimeCompatibility({ validations }: { validations: PromotionCompariso
   return <StatusBadge value={selected.severity} tone={validationTone(selected.severity)} />;
 }
 
-function ValidationPanel({ validations }: { validations: PromotionComparison["validations"] }) {
+function findEnvironment(data: DeploymentCockpit, environmentId: string) {
+  return data.applications.flatMap((application) => application.environments).find((environment) => environment.id === environmentId);
+}
+
+function environmentRevisionLabel(environment: EnvironmentSummary, revisionKind: "desired" | "target") {
+  const revision = revisionKind === "desired"
+    ? environment.desiredRevision.revision
+    : environment.deployedRevision ?? environment.desiredRevision.revision;
+  return `${environment.name} r${revision}`;
+}
+
+function ValidationPanel({
+  validations,
+  observabilityRevisionPath,
+  canManageDesiredState
+}: {
+  validations: PromotionComparison["validations"];
+  observabilityRevisionPath?: string;
+  canManageDesiredState: boolean;
+}) {
   return (
     <Panel title="Validations" icon={<ClipboardCheck className="h-4 w-4" />}>
       <div className="space-y-2">
@@ -209,6 +390,24 @@ function ValidationPanel({ validations }: { validations: PromotionComparison["va
                 <StatusBadge value={validation.severity} tone={validationTone(validation.severity)} />
               </div>
               <p className="mt-1 text-muted-foreground">{validation.message}</p>
+              {validation.id === "deployment.tier.observability-required" ? (
+                <div className="mt-3 space-y-3 rounded-ui border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                  <p>
+                    Production promotion requires the source revision to declare where runtime telemetry will be sent.
+                    Add at least one logs, metrics, traces, or console binding with a provider and scope.
+                  </p>
+                  {observabilityRevisionPath ? (
+                    <Link
+                      to={observabilityRevisionPath}
+                      className={buttonClassName("secondary", !canManageDesiredState ? "pointer-events-none opacity-50" : undefined)}
+                      aria-disabled={!canManageDesiredState}
+                    >
+                      <GitBranch className="h-4 w-4" />
+                      Add binding to new revision
+                    </Link>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         ))}

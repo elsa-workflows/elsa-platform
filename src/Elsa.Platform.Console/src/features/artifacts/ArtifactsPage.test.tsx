@@ -2,9 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceContextProvider } from "@/app/WorkspaceContextProvider";
-import { ArtifactsPage } from "@/features/artifacts/ArtifactsPage";
+import { ArtifactCreatePage, ArtifactDetailsPage, ArtifactsPage } from "@/features/artifacts/ArtifactsPage";
 import type { WorkspaceArtifact, WorkspaceArtifactListResponse } from "@/features/artifacts/artifactModels";
 import { AuthProvider } from "@/lib/auth/AuthProvider";
 
@@ -17,18 +18,76 @@ describe("ArtifactsPage", () => {
     renderArtifacts();
 
     expect(await screen.findByRole("heading", { name: "Artifacts" })).toBeInTheDocument();
-    expect(screen.getAllByText("sha256:claims-prod").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("elsa.workflow-definition").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Elsa Studio/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Active 1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Archived 0" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Upload artifact" })).toHaveAttribute("href", "/admin/artifacts/new");
+    expect(screen.getByRole("link", { name: "sha256:claims-prod" })).toHaveAttribute("href", "/admin/artifacts/artifact-1");
+    expect(screen.getByRole("link", { name: "Open details" })).toHaveAttribute("href", "/admin/artifacts/artifact-1");
+    expect(screen.getByText("elsa.workflow-definition")).toBeInTheDocument();
+    expect(screen.getByText(/Elsa Studio/i)).toBeInTheDocument();
     expect(screen.getByText(/claims v1.0.0/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Refresh inspection" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Compatibility")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Artifact identity")).not.toBeInTheDocument();
     expect(screen.queryByText(/workflow definition payload|secret value|token/i)).not.toBeInTheDocument();
   });
 
-  it("registers artifact metadata through the live API", async () => {
-    const fetchMock = renderArtifacts({ items: [] });
+  it("archives and restores artifacts from the list", async () => {
+    renderArtifacts();
 
-    await screen.findByText("No artifacts registered");
-    await userEvent.click(screen.getByRole("button", { name: "Register artifact" }));
+    expect(await screen.findByRole("link", { name: "sha256:claims-prod" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Archive" }));
+
+    expect(await screen.findByText("No active artifacts")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Archived 1" }));
+    expect(await screen.findByRole("link", { name: "sha256:claims-prod" })).toBeInTheDocument();
+    expect(screen.getByText("Archived")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Restore" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Active 1" }));
+    expect(await screen.findByRole("link", { name: "sha256:claims-prod" })).toBeInTheDocument();
+  });
+
+  it("shows upload guidance on the dedicated creation route", async () => {
+    renderArtifacts({ items: [] }, "/admin/artifacts/new");
+
+    expect(await screen.findByRole("heading", { name: "New artifact" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to list" })).toHaveAttribute("href", "/admin/artifacts");
+    expect(screen.getByRole("heading", { name: "Upload artifact package" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Upload ZIP" })).toBeDisabled();
+
+    const file = new File(["artifact"], "claims-prod.zip", { type: "application/zip" });
+    await userEvent.upload(screen.getByLabelText("Artifact package"), file);
+
+    expect(screen.getAllByText("claims-prod.zip")).toHaveLength(2);
+    expect(screen.getByText("8 B")).toBeInTheDocument();
+    expect(screen.getByText("Waiting for a ZIP")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Upload ZIP" })).toBeEnabled();
+  });
+
+  it("uploads a zip artifact through the session flow", async () => {
+    const fetchMock = renderArtifacts({ items: [] }, "/admin/artifacts/new");
+    installSuccessfulXhrUpload();
+
+    const file = new File(["artifact"], "claims-prod.zip", { type: "application/zip" });
+    await screen.findByRole("heading", { name: "Upload artifact package" });
+    await userEvent.upload(screen.getByLabelText("Artifact package"), file);
+    await userEvent.click(screen.getByRole("button", { name: "Upload ZIP" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/artifact-uploads/upload-1/complete`),
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+    expect(await screen.findByRole("heading", { name: "sha256:claims-prod" })).toBeInTheDocument();
+  });
+
+  it("registers artifact metadata through the dedicated creation route", async () => {
+    const fetchMock = renderArtifacts({ items: [] }, "/admin/artifacts/new");
+
+    await screen.findByRole("heading", { name: "Advanced metadata registration" });
     await userEvent.clear(screen.getByLabelText("Artifact identity"));
     await userEvent.type(screen.getByLabelText("Artifact identity"), "sha256:new-artifact");
     await userEvent.click(screen.getByRole("button", { name: "Save artifact" }));
@@ -39,13 +98,35 @@ describe("ArtifactsPage", () => {
         expect.objectContaining({ method: "POST" })
       )
     );
-    expect(await screen.findByText("sha256:new-artifact")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "sha256:new-artifact" })).toBeInTheDocument();
   });
 
-  it("refreshes artifact inspection state", async () => {
-    const fetchMock = renderArtifacts();
+  it("renders artifact details on a dedicated route", async () => {
+    renderArtifacts(undefined, "/admin/artifacts/artifact-1");
 
-    await screen.findByRole("heading", { name: "Artifacts" });
+    expect(await screen.findByRole("heading", { name: "sha256:claims-prod" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Artifacts" })).toHaveAttribute("href", "/admin/artifacts");
+    expect(screen.getByRole("button", { name: "Refresh inspection" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Archive" })).toBeInTheDocument();
+    expect(screen.getByText("Compatibility")).toBeInTheDocument();
+    expect(screen.getByText(/studio:\/\/workflows\/claims\/versions\/1\.0\.0/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Open details" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/workflow definition payload|secret value|token/i)).not.toBeInTheDocument();
+  });
+
+  it("links local artifact references to the download endpoint", async () => {
+    renderArtifacts({ items: [localArtifactFixture] }, "/admin/artifacts/artifact-local");
+
+    const link = await screen.findByRole("link", { name: "local · local:///tmp/claims-prod.zip" });
+
+    expect(link).toHaveAttribute("href", `/api/workspaces/${workspaceId}/artifacts/artifact-local/download`);
+    expect(link).toHaveAttribute("download");
+  });
+
+  it("refreshes artifact inspection state from the details route", async () => {
+    const fetchMock = renderArtifacts(undefined, "/admin/artifacts/artifact-1");
+
+    await screen.findByRole("heading", { name: "sha256:claims-prod" });
     await userEvent.click(screen.getByRole("button", { name: "Refresh inspection" }));
 
     await waitFor(() =>
@@ -59,14 +140,20 @@ describe("ArtifactsPage", () => {
   });
 });
 
-function renderArtifacts(response: WorkspaceArtifactListResponse = { items: [artifactFixture] }) {
+function renderArtifacts(response: WorkspaceArtifactListResponse = { items: [artifactFixture] }, route = "/admin/artifacts") {
   const fetchMock = createFetchMock(response);
   vi.stubGlobal("fetch", fetchMock);
   render(
     <TestQueryProvider>
       <AuthProvider>
         <WorkspaceContextProvider>
-          <ArtifactsPage />
+          <MemoryRouter initialEntries={[route]}>
+            <Routes>
+              <Route path="/admin/artifacts" element={<ArtifactsPage />} />
+              <Route path="/admin/artifacts/new" element={<ArtifactCreatePage />} />
+              <Route path="/admin/artifacts/:artifactId" element={<ArtifactDetailsPage />} />
+            </Routes>
+          </MemoryRouter>
         </WorkspaceContextProvider>
       </AuthProvider>
     </TestQueryProvider>
@@ -86,7 +173,21 @@ function createFetchMock(initial: WorkspaceArtifactListResponse) {
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/permissions`)) {
       return jsonResponse({ permissions: ["deployments.read", "deployments.setup.manage"] });
     }
-    if (method === "GET" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts`)) {
+    if (method === "GET" && url.endsWith(`/api/workspaces/${workspaceId}/artifact-uploads/capabilities`)) {
+      return jsonResponse({ maxUploadBytes: 52428800, sampleArtifactGenerationEnabled: true });
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/artifact-uploads`)) {
+      return jsonResponse({ uploadId: "upload-1", status: "Pending", expiresAt: "2026-06-04T13:00:00Z", maxUploadBytes: 52428800 }, 201);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/artifact-uploads/upload-1/complete`)) {
+      list = { items: [artifactFixture] };
+      return jsonResponse({ uploadId: "upload-1", status: "Completed", artifact: artifactFixture, created: true, diagnostics: [] }, 201);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/artifact-uploads/dev-sample`)) {
+      list = { items: [artifactFixture] };
+      return jsonResponse({ uploadId: "upload-sample", status: "Completed", artifact: artifactFixture, created: true, diagnostics: [] }, 201);
+    }
+    if (method === "GET" && url.includes(`/api/workspaces/${workspaceId}/artifacts`) && !url.includes("/artifacts/types") && !url.includes("/artifacts/")) {
       return jsonResponse(list);
     }
     if (method === "GET" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts/types`)) {
@@ -105,14 +206,25 @@ function createFetchMock(initial: WorkspaceArtifactListResponse) {
         ]
       });
     }
-    if (method === "GET" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts/artifact-1`)) {
-      return jsonResponse(list.items[0]);
+    if (method === "GET" && url.includes(`/api/workspaces/${workspaceId}/artifacts/`)) {
+      const artifactRecordId = decodeURIComponent(url.split("/artifacts/")[1].split("/")[0]);
+      const artifact = list.items.find((item) => item.id === artifactRecordId);
+      return artifact ? jsonResponse(artifact) : jsonResponse({ title: "Not found" }, 404);
     }
     if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts`)) {
       const body = JSON.parse(init?.body?.toString() ?? "{}") as WorkspaceArtifact;
       const artifact = { ...artifactFixture, id: "artifact-new", artifactId: body.artifactId };
       list = { items: [artifact] };
       return jsonResponse(artifact, 201);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts/artifact-1/archive`)) {
+      const artifact = { ...artifactFixture, status: "Archived" as const, archivedAt: "2026-06-07T10:00:00Z", archivedByAccountId: "account-1" };
+      list = { items: [artifact] };
+      return jsonResponse(artifact);
+    }
+    if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts/artifact-1/restore`)) {
+      list = { items: [artifactFixture] };
+      return jsonResponse(artifactFixture);
     }
     if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/artifacts/artifact-1/refresh`)) {
       list = {
@@ -144,6 +256,24 @@ function createFetchMock(initial: WorkspaceArtifactListResponse) {
     }
     return jsonResponse({ title: "Not found" }, 404);
   });
+}
+
+function installSuccessfulXhrUpload() {
+  class MockXMLHttpRequest {
+    status = 204;
+    responseText = "";
+    upload = { onprogress: undefined as ((event: ProgressEvent) => void) | undefined };
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    open = vi.fn();
+    setRequestHeader = vi.fn();
+    send = vi.fn((file: File) => {
+      this.upload.onprogress?.({ lengthComputable: true, loaded: file.size, total: file.size } as ProgressEvent);
+      this.onload?.();
+    });
+  }
+
+  vi.stubGlobal("XMLHttpRequest", MockXMLHttpRequest);
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -199,6 +329,9 @@ const artifactFixture: WorkspaceArtifact = {
   registeredAt: "2026-05-26T10:00:00Z",
   registeredByAccountId: "account-1",
   lastInspectedAt: "2026-05-26T10:05:00Z",
+  status: "Active",
+  archivedAt: null,
+  archivedByAccountId: null,
   createdAt: "2026-05-26T10:00:00Z",
   updatedAt: "2026-05-26T10:05:00Z",
   envelopeVersion: "platform.elsa.io/artifact-envelope/v1alpha1",
@@ -236,4 +369,17 @@ const artifactFixture: WorkspaceArtifact = {
       environmentConstraints: {}
     }
   ]
+};
+
+const localArtifactFixture: WorkspaceArtifact = {
+  ...artifactFixture,
+  id: "artifact-local",
+  payloadReference: {
+    provider: "local",
+    uri: "local:///tmp/claims-prod.zip",
+    mediaType: "application/zip",
+    sizeBytes: 1234,
+    referenceDigest: null,
+    expiresAt: null
+  }
 };

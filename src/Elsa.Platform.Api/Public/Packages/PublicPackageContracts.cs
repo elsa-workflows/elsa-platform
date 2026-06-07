@@ -7,6 +7,7 @@ public sealed record PublicPackageResponse(
     string PackageId,
     string DisplayName,
     PublicPackageSourceResponse Source,
+    IReadOnlyList<string> RuntimeKinds,
     string? LatestVersion,
     IReadOnlyList<PublicPackageVersionResponse> Versions);
 
@@ -15,6 +16,7 @@ public sealed record PublicPackageVersionResponse(
     string Version,
     PublicPackageSourceResponse Source,
     string? SchemaVersion,
+    IReadOnlyList<string> RuntimeKinds,
     DateTimeOffset? PublishedAt,
     IReadOnlyList<PublicPackageFeatureResponse> Features);
 
@@ -29,7 +31,9 @@ public sealed record PublicPackageFeatureResponse(
     string DisplayName,
     string? Description,
     string? Category,
+    IReadOnlyList<string> Categories,
     IReadOnlyList<string> RequiredCapabilities,
+    IReadOnlyList<string> RuntimeKinds,
     IReadOnlyList<PublicPackageDependencyResponse> Dependencies,
     IReadOnlyList<PublicPackageConflictResponse> Conflicts,
     IReadOnlyList<PublicPackageInfrastructureRequirementResponse> Infrastructure,

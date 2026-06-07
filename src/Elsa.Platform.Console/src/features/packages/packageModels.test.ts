@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   compatibilityMatchesSearch,
+  featureMatchesCategory,
+  featureMatchesSearch,
   hasSuspiciousChange,
   isStaleVersionAction,
   normalizeFeature,
@@ -77,6 +79,45 @@ describe("packageModels", () => {
   it("normalizes JSON-backed feature dependencies", () => {
     const [dependency] = normalizeFeature(detailsItem.versions[0].features[0]).dependencies;
     expect(dependency.packageId).toBe("Elsa.Core");
+  });
+
+  it("normalizes feature categories from categories and falls back to the legacy category", () => {
+    const feature = normalizeFeature({
+      ...detailsItem.versions[0].features[0],
+      category: "Legacy",
+      categories: ["Persistence", "Data", "Persistence", ""]
+    });
+    const legacyFeature = normalizeFeature({
+      ...detailsItem.versions[0].features[0],
+      category: "Legacy",
+      categories: null
+    });
+
+    expect(feature.categories).toEqual(["Persistence", "Data"]);
+    expect(feature.category).toBe("Persistence");
+    expect(legacyFeature.categories).toEqual(["Legacy"]);
+  });
+
+  it("matches feature search and category filters against normalized categories", () => {
+    const categorizedFeature = normalizeFeature({
+      ...detailsItem.versions[0].features[0],
+      category: "Legacy",
+      categories: ["Persistence", "Data"]
+    });
+    const uncategorizedFeature = normalizeFeature({
+      ...detailsItem.versions[0].features[0],
+      category: null,
+      categories: []
+    });
+
+    expect(featureMatchesSearch(categorizedFeature, "data")).toBe(true);
+    expect(featureMatchesCategory(categorizedFeature, "Data")).toBe(true);
+    expect(featureMatchesCategory(categorizedFeature, ["Data", "Uncategorized"])).toBe(true);
+    expect(featureMatchesCategory(categorizedFeature, "Uncategorized")).toBe(false);
+    expect(featureMatchesCategory(uncategorizedFeature, ["Data"])).toBe(false);
+    expect(featureMatchesCategory(uncategorizedFeature, "Uncategorized")).toBe(true);
+    expect(featureMatchesCategory(uncategorizedFeature, "All")).toBe(true);
+    expect(featureMatchesCategory(uncategorizedFeature, [])).toBe(true);
   });
 
   it("ignores invalid entries in JSON-backed feature lists", () => {

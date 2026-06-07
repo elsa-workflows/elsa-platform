@@ -6,7 +6,7 @@
 
 ## Summary
 
-Move deployment-affecting Elsa Docker runtime image metadata into the Catalog API backend so builder catalog, bundle generation, and later planner flows use a single platform-owned source of truth. The first implementation uses strongly typed source-controlled/configured seed metadata for the known professional server, Studio, and combined images; database/admin image management and automated registry discovery are deferred.
+Move deployment-affecting Elsa Docker runtime image metadata into the Catalog API backend so builder catalog, bundle generation, and later planner flows use a single platform-owned source of truth. The first implementation uses strongly typed source-controlled/configured seed metadata for the known professional server, Studio, and combined images. The PRD now also captures the follow-on requirement that runtime image definitions and exposed image-level configurable attributes become backend-configurable without console code changes; database/admin image management and automated registry discovery remain separate product decisions.
 
 ## Technical Context
 
@@ -14,7 +14,7 @@ Move deployment-affecting Elsa Docker runtime image metadata into the Catalog AP
 
 **Primary Dependencies**: ASP.NET Core minimal APIs, System.Text.Json, options/configuration binding, existing builder catalog and bundle generation services, xUnit, FluentAssertions.
 
-**Storage**: Source-controlled or appsettings-backed runtime image seed metadata. No database migration in the first slice.
+**Storage**: Source-controlled or appsettings-backed runtime image seed metadata in the first slice. Current implementation may use static in-memory backend seed definitions as an intermediate step. No database migration is required until product decisions are made for operator-managed image records, organization/workspace scoping, lifecycle states, and registry tag discovery.
 
 **Testing**: xUnit and FluentAssertions for runtime image catalog validation; ASP.NET Core WebApplicationFactory tests for builder catalog image metadata and bundle image lookup behavior.
 
@@ -24,7 +24,7 @@ Move deployment-affecting Elsa Docker runtime image metadata into the Catalog AP
 
 **Performance Goals**: Runtime image catalog reads are in-memory and complete within normal builder catalog response budgets.
 
-**Constraints**: Deployment-affecting image metadata must not remain authoritative only in Lovable. Marketing-only fields may remain frontend-owned. Automated Docker registry tag discovery and admin-managed image CRUD are deferred.
+**Constraints**: Deployment-affecting image metadata must not remain authoritative only in Lovable or console source code. Marketing-only fields may remain frontend-owned. Automated Docker registry tag discovery and admin-managed image CRUD are deferred until catalog ownership and scoping are clarified.
 
 **Scale/Scope**: Three initial runtime images: professional server, professional Studio, and professional combined runtime.
 
@@ -80,7 +80,7 @@ tests/
     └── RuntimeImageApiTests.cs
 ```
 
-**Structure Decision**: Keep runtime image metadata in the existing builder/core area because it directly feeds builder catalog and bundle generation. Avoid persistence projects until product needs admin-managed image records.
+**Structure Decision**: Keep runtime image metadata in the existing builder/core area because it directly feeds builder catalog and bundle generation. Avoid persistence projects until product needs admin-managed image records. The frontend should continue to consume image definitions and image-level configurable attributes through builder catalog metadata instead of owning per-image option lists or deployment defaults.
 
 ## Complexity Tracking
 

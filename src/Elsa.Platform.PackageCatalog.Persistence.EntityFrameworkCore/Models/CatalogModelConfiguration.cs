@@ -415,11 +415,33 @@ internal sealed class WorkspaceDeploymentArtifactConfiguration : IEntityTypeConf
         builder.Property(x => x.ChecksumStatus).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.InspectionStatus).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.DiagnosticsJson).IsRequired();
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
         builder.Property(x => x.RegisteredAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.ArchivedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.WorkspaceId, x.ArtifactId }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.Status, x.RegisteredAt });
         builder.HasIndex(x => new { x.WorkspaceId, x.RegisteredAt });
+    }
+}
+
+internal sealed class WorkspaceArtifactUploadSessionConfiguration : IEntityTypeConfiguration<WorkspaceArtifactUploadSessionEntity>
+{
+    public void Configure(EntityTypeBuilder<WorkspaceArtifactUploadSessionEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.FileName).HasMaxLength(512);
+        builder.Property(x => x.ContentType).HasMaxLength(128);
+        builder.Property(x => x.StagedFilePath).HasMaxLength(2048);
+        builder.Property(x => x.IdempotencyKey).HasMaxLength(256);
+        builder.Property(x => x.DiagnosticsJson).IsRequired();
+        builder.Property(x => x.ExpiresAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.WorkspaceId, x.IdempotencyKey });
+        builder.HasIndex(x => new { x.WorkspaceId, x.Status, x.ExpiresAt });
     }
 }
 

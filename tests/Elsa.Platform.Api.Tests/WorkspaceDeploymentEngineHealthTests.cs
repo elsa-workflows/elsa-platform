@@ -12,6 +12,77 @@ namespace Elsa.Platform.Api.Tests;
 public sealed class WorkspaceDeploymentEngineHealthTests
 {
     [Fact]
+    public async Task Register_engine_verifies_health_immediately()
+    {
+        await using var app = new PlatformApiTestApplication(configureServices: services =>
+        {
+            services.RemoveAll<IEngineHealthProbe>();
+            services.AddSingleton<IEngineHealthProbe>(new StubProbe(new EngineHealthProbeResult(
+                true,
+                "Elsa 4.2.0",
+                CertificateStatus.Trusted,
+                CredentialVerificationStatus.Verified,
+                "Endpoint responded successfully.")));
+        });
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("register-health-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var environment = await SeedEnvironmentAsync(app, workspaceId);
+
+        var response = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/environments/{environment.Id}/engines",
+            EngineRequest("claims-prod"));
+        var created = await response.Content.ReadPlatformJsonAsync<WorkspaceWorkflowEngine>();
+        var cockpit = await owner.GetPlatformJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        created!.Health.Should().Be(DeploymentHealth.Healthy);
+        created.LastVerificationAt.Should().NotBeNull();
+        cockpit!.Engines.Should().ContainSingle(x =>
+            x.Name == "claims-prod"
+            && x.Health == DeploymentHealth.Healthy
+            && x.Endpoint.Version == "Elsa 4.2.0"
+            && x.LastVerificationAt != null
+            && x.VerificationMessage == "Endpoint responded successfully.");
+    }
+
+    [Fact]
+    public async Task Update_engine_verifies_health_immediately()
+    {
+        await using var app = new PlatformApiTestApplication(configureServices: services =>
+        {
+            services.RemoveAll<IEngineHealthProbe>();
+            services.AddSingleton<IEngineHealthProbe>(new StubProbe(new EngineHealthProbeResult(
+                true,
+                "Elsa 4.3.0",
+                CertificateStatus.Trusted,
+                CredentialVerificationStatus.Verified,
+                "Endpoint responded successfully.")));
+        });
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("update-health-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var engine = await SeedEngineAsync(app, workspaceId);
+
+        var response = await owner.PutPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}",
+            EngineRequest("claims-prod-updated"));
+        var updated = await response.Content.ReadPlatformJsonAsync<WorkspaceWorkflowEngine>();
+        var cockpit = await owner.GetPlatformJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        updated!.Health.Should().Be(DeploymentHealth.Healthy);
+        updated.LastVerificationAt.Should().NotBeNull();
+        cockpit!.Engines.Should().ContainSingle(x =>
+            x.Id == engine.Id.ToString("D")
+            && x.Name == "claims-prod-updated"
+            && x.Health == DeploymentHealth.Healthy
+            && x.Endpoint.Version == "Elsa 4.3.0"
+            && x.LastVerificationAt != null
+            && x.VerificationMessage == "Endpoint responded successfully.");
+    }
+
+    [Fact]
     public async Task Owner_can_verify_engine_health_and_reload_cockpit_metadata()
     {
         await using var app = new PlatformApiTestApplication(configureServices: services =>
@@ -119,10 +190,9 @@ public sealed class WorkspaceDeploymentEngineHealthTests
 
     private static async Task<WorkspaceWorkflowEngine> SeedEngineAsync(PlatformApiTestApplication app, Guid workspaceId)
     {
+        var environment = await SeedEnvironmentAsync(app, workspaceId);
         await using var scope = app.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IWorkspaceDeploymentStore>();
-        var application = await store.CreateApplicationAsync(workspaceId, new CreateWorkflowApplicationRequest("Claims Operations", null, null));
-        var environment = await store.CreateEnvironmentAsync(workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production));
         return await store.RegisterEngineAsync(
             workspaceId,
             new RegisterWorkflowEngineRequest(
@@ -136,6 +206,25 @@ public sealed class WorkspaceDeploymentEngineHealthTests
                 [new RuntimeControl("reload-configuration", "Reload Configuration", CapabilityBoundary.EngineApi, "engine.reload-configuration", "Reloads engine API configuration.")],
                 null));
     }
+
+    private static async Task<WorkspaceDeploymentEnvironment> SeedEnvironmentAsync(PlatformApiTestApplication app, Guid workspaceId)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IWorkspaceDeploymentStore>();
+        var application = await store.CreateApplicationAsync(workspaceId, new CreateWorkflowApplicationRequest("Claims Operations", null, null));
+        return await store.CreateEnvironmentAsync(workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production));
+    }
+
+    private static WorkspaceWorkflowEngineRequest EngineRequest(string name) =>
+        new(
+            name,
+            "https://workflows.example.test/elsa",
+            "westeurope",
+            "Azure Key Vault",
+            "kv://claims/prod/elsa-api",
+            [new EngineCapability("engine.reload-configuration", "Reload engine configuration", CapabilityBoundary.EngineApi)],
+            [new RuntimeControl("reload-configuration", "Reload Configuration", CapabilityBoundary.EngineApi, "engine.reload-configuration", "Reloads engine API configuration.")],
+            null);
 
     private sealed class StubProbe(EngineHealthProbeResult result) : IEngineHealthProbe
     {

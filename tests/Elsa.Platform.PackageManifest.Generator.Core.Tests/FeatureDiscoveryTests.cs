@@ -24,6 +24,9 @@ using Elsa.Platform.PackageManifest.Generator.Hints;
 namespace Sample.Features;
 
 /// <summary>Adds Entity Framework Core persistence support.</summary>
+[ManifestFeatureCategory("Persistence")]
+[ManifestFeatureCategory("Data")]
+[ManifestFeatureCategory("Persistence")]
 [ShellFeature("EntityFrameworkCore", DisplayName = "Entity Framework Core Persistence", Description = "Adds EF Core persistence.")]
 public sealed class EntityFrameworkCoreFeature : IShellFeature
 {
@@ -69,6 +72,8 @@ public sealed class EntityFrameworkCoreFeature : IShellFeature
         feature.GetProperty("id").GetString().Should().Be("Sample.Elsa.Package.EntityFrameworkCore");
         feature.GetProperty("displayName").GetString().Should().Be("Entity Framework Core Persistence");
         feature.GetProperty("description").GetString().Should().Be("Adds EF Core persistence.");
+        feature.GetProperty("category").GetString().Should().Be("Persistence");
+        feature.GetProperty("categories").EnumerateArray().Select(x => x.GetString()).Should().Equal("Persistence", "Data");
 
         var settings = feature.GetProperty("settings").EnumerateArray().ToDictionary(x => x.GetProperty("name").GetString()!);
         settings.Keys.Should().BeEquivalentTo("BatchSize", "Code", "OptionalBatchSize", "Provider", "Ratio", "RequiredName", "SupportedItems", "SupportedMap");
@@ -693,7 +698,7 @@ public sealed class MessagingFeature : IShellFeature
             "Sample.Features.MessagingFeature",
             "Messaging",
             null,
-            null,
+            [],
             FeatureDiscoverySource.IShellFeature,
             true,
             false,
@@ -704,6 +709,7 @@ public sealed class MessagingFeature : IShellFeature
             [],
             [],
             [new ManifestInfrastructureRequirementReference("broker", "message-broker", false, null, [], ["rabbitmq"], [], new Dictionary<string, object?>())],
+            null,
             new Dictionary<string, object?>(),
             []);
         var manifestOverride = new ManifestOverride
@@ -730,6 +736,123 @@ public sealed class MessagingFeature : IShellFeature
 
         result[0].Infrastructure[0].Kind.Should().Be("message-broker");
         result[0].Infrastructure[0].Providers.Should().BeEquivalentTo("rabbitmq", "azure-service-bus");
+    }
+
+    [Fact]
+    public async Task Generate_applies_runtime_kind_compatibility_from_override_file()
+    {
+        await using var project = new SampleProjectBuilder()
+            .WithSource("""
+using CShells.Features;
+
+namespace Sample.Features;
+
+[ShellFeature("StudioWidget", DisplayName = "Studio Widget")]
+public sealed class StudioWidgetFeature : IShellFeature
+{
+}
+""");
+        var build = await project.BuildAsync();
+        build.ExitCode.Should().Be(0, build.StandardOutput + build.StandardError);
+        var overridePath = Path.Combine(project.ProjectDirectory, "elsa-package.overrides.json");
+        await File.WriteAllTextAsync(overridePath, """
+{
+  "package": {
+    "compatibility": {
+      "runtimeKinds": [ "elsa.server", "elsa.studio" ]
+    }
+  },
+  "features": [
+    {
+      "id": "Sample.Elsa.Package.StudioWidget",
+      "compatibility": {
+        "runtimeKinds": [ "elsa.studio" ]
+      }
+    }
+  ]
+}
+""");
+
+        var result = Generate(project, overridePath);
+        using var document = JsonDocument.Parse(result.artifact.ManifestJson);
+
+        document.RootElement.GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().BeEquivalentTo("elsa.server", "elsa.studio");
+        document.RootElement.GetProperty("features")[0].GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().Equal("elsa.studio");
+    }
+
+    [Fact]
+    public async Task Generate_applies_runtime_kind_compatibility_from_assembly_and_feature_attributes()
+    {
+        await using var project = new SampleProjectBuilder()
+            .WithSource("""
+using CShells.Features;
+using Elsa.Platform.PackageManifest.Generator.Hints;
+
+[assembly: ManifestRuntimeKind(ElsaRuntimeKinds.Server)]
+[assembly: ManifestRuntimeKind("acme.custom-host")]
+
+namespace Sample.Features;
+
+[ManifestRuntimeKind(ElsaRuntimeKinds.Studio)]
+[ShellFeature("StudioWidget", DisplayName = "Studio Widget")]
+public sealed class StudioWidgetFeature : IShellFeature
+{
+}
+""");
+        var build = await project.BuildAsync();
+        build.ExitCode.Should().Be(0, build.StandardOutput + build.StandardError);
+
+        var result = Generate(project);
+        using var document = JsonDocument.Parse(result.artifact.ManifestJson);
+
+        document.RootElement.GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().BeEquivalentTo("elsa.server", "acme.custom-host");
+        document.RootElement.GetProperty("features")[0].GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().Equal("elsa.studio");
+    }
+
+    [Fact]
+    public async Task Generate_uses_override_runtime_kinds_over_attribute_runtime_kinds()
+    {
+        await using var project = new SampleProjectBuilder()
+            .WithSource("""
+using CShells.Features;
+using Elsa.Platform.PackageManifest.Generator.Hints;
+
+[assembly: ManifestRuntimeKind("elsa.server")]
+
+namespace Sample.Features;
+
+[ManifestRuntimeKind("elsa.studio")]
+[ShellFeature("StudioWidget", DisplayName = "Studio Widget")]
+public sealed class StudioWidgetFeature : IShellFeature
+{
+}
+""");
+        var build = await project.BuildAsync();
+        build.ExitCode.Should().Be(0, build.StandardOutput + build.StandardError);
+        var overridePath = Path.Combine(project.ProjectDirectory, "elsa-package.overrides.json");
+        await File.WriteAllTextAsync(overridePath, """
+{
+  "package": {
+    "compatibility": {
+      "runtimeKinds": [ "elsa.studio" ]
+    }
+  },
+  "features": [
+    {
+      "id": "Sample.Elsa.Package.StudioWidget",
+      "compatibility": {
+        "runtimeKinds": [ "elsa.server" ]
+      }
+    }
+  ]
+}
+""");
+
+        var result = Generate(project, overridePath);
+        using var document = JsonDocument.Parse(result.artifact.ManifestJson);
+
+        document.RootElement.GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().Equal("elsa.studio");
+        document.RootElement.GetProperty("features")[0].GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().Equal("elsa.server");
     }
 
     private static (GeneratedManifestArtifact artifact, GenerationDiagnostics diagnostics) Generate(

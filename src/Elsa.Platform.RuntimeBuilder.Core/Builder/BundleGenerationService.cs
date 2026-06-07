@@ -67,7 +67,7 @@ public sealed class BundleGenerationService(
         var runtimeImage = ValidateRuntimeImage(intent.Image, findings);
         ValidateLocalPackages(intent.LocalPackages, findings);
         var infrastructure = ValidateInfrastructure(intent.Infrastructure, findings);
-        var packages = await ResolvePackagesAsync(intent.Packages, workspaceId, findings, cancellationToken);
+        var packages = await ResolvePackagesAsync(intent.Packages, runtimeImage?.RuntimeKinds ?? [], workspaceId, findings, cancellationToken);
         var sources = await ResolveSourcesAsync(intent.PackageSources, packages, workspaceId, findings, cancellationToken);
 
         if (runtimeImage is not null && packages.Count > 0 && !findingPolicy.HasBlockingErrors(findings))
@@ -81,7 +81,8 @@ public sealed class BundleGenerationService(
                 intent.Image.Tag ?? runtimeImage.DefaultTag,
                 packages.Select(x => new SelectedPackageVersion(x.SourceId, x.PackageId, x.Version)).ToList(),
                 selectedFeatures,
-                workspaceId), cancellationToken);
+                workspaceId,
+                runtimeImage.RuntimeKinds), cancellationToken);
             findings.AddRange(compatibilityResult.Findings.Select(ToBundleFinding));
         }
 
@@ -131,6 +132,7 @@ public sealed class BundleGenerationService(
 
     private async Task<IReadOnlyList<ResolvedBundlePackage>> ResolvePackagesAsync(
         IReadOnlyList<BundlePackageSelection> selections,
+        IReadOnlyList<string> runtimeKinds,
         Guid? workspaceId,
         List<BundleFinding> findings,
         CancellationToken cancellationToken)
@@ -154,11 +156,24 @@ public sealed class BundleGenerationService(
                 continue;
             }
 
+            if (!RuntimeKindCompatibilityPolicy.IsCompatible(version.RuntimeKinds, runtimeKinds))
+            {
+                findings.Add(BundleFinding.Error("package.runtimeKindMismatch", $"{selection.PackageId} {selection.Version} is not compatible with the selected runtime image.", $"package:{selection.PackageId}"));
+                continue;
+            }
+
             var selectedFeatures = NormalizeSelectedFeatures(selection.SelectedFeatures);
             foreach (var featureId in selectedFeatures)
             {
-                if (version.Features.All(x => !string.Equals(x.FeatureId, featureId, StringComparison.OrdinalIgnoreCase)))
+                var feature = version.Features.FirstOrDefault(x => string.Equals(x.FeatureId, featureId, StringComparison.OrdinalIgnoreCase));
+                if (feature is null)
+                {
                     findings.Add(BundleFinding.Error("feature.missing", $"Feature {featureId} is not present in {selection.PackageId} {selection.Version}.", $"feature:{featureId}"));
+                    continue;
+                }
+
+                if (!RuntimeKindCompatibilityPolicy.IsCompatible(feature.RuntimeKinds, runtimeKinds))
+                    findings.Add(BundleFinding.Error("feature.runtimeKindMismatch", $"Feature {featureId} is not compatible with the selected runtime image.", $"feature:{featureId}"));
             }
 
             var source = new ResolvedPackageSource(version.Source.Id, version.Source.Name, version.Source.Url, "nuget");

@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Elsa.Platform.Api.Authentication;
+using Elsa.Platform.Deployment.Core.Cockpit;
+using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -73,6 +75,8 @@ internal sealed class PlatformApiTestApplication : WebApplicationFactory<Program
                 {
                     sqlite.MigrationsAssembly(CatalogDatabaseServiceCollectionExtensions.SqliteMigrationsAssembly);
                 }));
+            services.RemoveAll<IEngineHealthProbe>();
+            services.AddSingleton<IEngineHealthProbe, TestEngineHealthProbe>();
             _configureServices?.Invoke(services);
         });
     }
@@ -85,6 +89,17 @@ internal sealed class PlatformApiTestApplication : WebApplicationFactory<Program
         await db.Database.EnsureCreatedAsync();
         await seed(db);
         await db.SaveChangesAsync();
+    }
+
+    private sealed class TestEngineHealthProbe : IEngineHealthProbe
+    {
+        public Task<EngineHealthProbeResult> ProbeAsync(WorkspaceWorkflowEngine engine, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new EngineHealthProbeResult(
+                false,
+                engine.Version,
+                engine.CertificateStatus,
+                CredentialVerificationStatus.Unverified,
+                "Test probe did not contact the endpoint."));
     }
 
     async ValueTask IAsyncDisposable.DisposeAsync()

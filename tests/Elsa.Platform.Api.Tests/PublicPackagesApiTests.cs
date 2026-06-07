@@ -229,4 +229,36 @@ public sealed class PublicPackagesApiTests
 
         package!.Versions[0].Features[0].Settings[0].DefaultValue.Should().BeNull();
     }
+
+    [Fact]
+    public async Task Get_package_projects_runtime_kind_metadata()
+    {
+        await using var app = new PlatformApiTestApplication();
+        var sourceId = Guid.Empty;
+        await app.SeedAsync(db =>
+        {
+            var source = PublicCatalogSeedData.CreatePackageSource();
+            sourceId = source.Id;
+            var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Mixed");
+            var version = PublicCatalogSeedData.AddVersion(package);
+            version.ManifestJson = new ManifestFixtureBuilder()
+                .WithPackage("Elsa.Mixed", "1.0.0")
+                .WithRuntimeKinds("elsa.server", "acme.custom-host")
+                .WithFeature("server", "Elsa.Mixed.ServerFeature", null)
+                .WithFeature("studio", "Elsa.Mixed.StudioFeature", ["elsa.studio"])
+                .BuildJson();
+            PublicCatalogSeedData.AddFeature(version, "server", "Server");
+            PublicCatalogSeedData.AddFeature(version, "studio", "Studio");
+
+            db.PackageSources.Add(source);
+            return Task.CompletedTask;
+        });
+
+        var package = await app.CreateClient().GetFromJsonAsync<PublicPackageResponse>($"/api/sources/{sourceId}/packages/Elsa.Mixed");
+
+        package!.RuntimeKinds.Should().BeEquivalentTo("elsa.server", "acme.custom-host");
+        package.Versions[0].RuntimeKinds.Should().BeEquivalentTo("elsa.server", "acme.custom-host");
+        package.Versions[0].Features.Single(x => x.FeatureId == "server").RuntimeKinds.Should().BeEquivalentTo("elsa.server", "acme.custom-host");
+        package.Versions[0].Features.Single(x => x.FeatureId == "studio").RuntimeKinds.Should().Equal("elsa.studio");
+    }
 }

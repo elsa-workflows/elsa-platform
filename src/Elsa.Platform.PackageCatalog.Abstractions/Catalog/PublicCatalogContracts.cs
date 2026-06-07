@@ -18,6 +18,7 @@ public sealed record PublicPackageProjection(
     string PackageId,
     string DisplayName,
     PublicPackageSourceProjection Source,
+    IReadOnlyList<string> RuntimeKinds,
     string? LatestVersion,
     IReadOnlyList<PublicPackageVersionProjection> Versions);
 
@@ -26,6 +27,7 @@ public sealed record PublicPackageVersionProjection(
     string Version,
     PublicPackageSourceProjection Source,
     string? SchemaVersion,
+    IReadOnlyList<string> RuntimeKinds,
     DateTimeOffset? PublishedAt,
     IReadOnlyList<PublicFeatureProjection> Features);
 
@@ -43,7 +45,9 @@ public sealed record PublicFeatureProjection(
     string DisplayName,
     string? Description,
     string? Category,
+    IReadOnlyList<string> Categories,
     IReadOnlyList<string> RequiredCapabilities,
+    IReadOnlyList<string> RuntimeKinds,
     IReadOnlyList<PublicDependencyProjection> Dependencies,
     IReadOnlyList<PublicConflictProjection> Conflicts,
     IReadOnlyList<PublicInfrastructureRequirementProjection> Infrastructure,

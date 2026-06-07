@@ -125,6 +125,32 @@ public sealed class SyncPersistenceTests
     }
 
     [Fact]
+    public async Task Public_catalog_projects_runtime_kinds_from_stored_manifest_json()
+    {
+        await using var db = await CreateOpenDbContextAsync();
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Mixed");
+        var version = PublicCatalogSeedData.AddVersion(package);
+        version.ManifestJson = new ManifestFixtureBuilder()
+            .WithPackage("Elsa.Mixed", "1.0.0")
+            .WithRuntimeKinds("elsa.server", "acme.custom-host")
+            .WithFeature("server", "Elsa.Mixed.ServerFeature", null)
+            .WithFeature("studio", "Elsa.Mixed.StudioFeature", ["elsa.studio"])
+            .BuildJson();
+        PublicCatalogSeedData.AddFeature(version, "server", "Server");
+        PublicCatalogSeedData.AddFeature(version, "studio", "Studio");
+        db.PackageSources.Add(source);
+        await db.SaveChangesAsync();
+
+        var packages = await new PublicCatalogQueries(db).ListPackagesAsync([]);
+
+        var projectedVersion = packages.Should().ContainSingle().Subject.Versions.Should().ContainSingle().Subject;
+        projectedVersion.RuntimeKinds.Should().BeEquivalentTo("elsa.server", "acme.custom-host");
+        projectedVersion.Features.Single(x => x.FeatureId == "server").RuntimeKinds.Should().BeEquivalentTo("elsa.server", "acme.custom-host");
+        projectedVersion.Features.Single(x => x.FeatureId == "studio").RuntimeKinds.Should().Equal("elsa.studio");
+    }
+
+    [Fact]
     public async Task Bulk_sync_persists_source_last_synced_timestamp()
     {
         var options = new DbContextOptionsBuilder<CatalogDbContext>()
