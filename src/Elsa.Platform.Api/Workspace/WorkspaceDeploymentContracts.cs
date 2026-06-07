@@ -34,11 +34,26 @@ public sealed record WorkspaceWorkflowEngineRequest(
     string Name,
     string BaseUrl,
     string? Region,
-    string CredentialProvider,
-    string CredentialReference,
+    string? CredentialProvider,
+    string? CredentialReference,
     IReadOnlyList<EngineCapability> Capabilities,
     IReadOnlyList<RuntimeControl> Controls,
-    string? HostingProvider);
+    string? HostingProvider,
+    Guid? CredentialReferenceId = null);
+
+public sealed record WorkspaceDeploymentSecretStoresResponse(IReadOnlyList<WorkspaceDeploymentSecretStore> Items);
+
+public sealed record WorkspaceDeploymentSecretStoreRequest(
+    string Name,
+    string Provider,
+    string? Description);
+
+public sealed record WorkspaceDeploymentCredentialReferencesResponse(IReadOnlyList<WorkspaceDeploymentCredentialReference> Items);
+
+public sealed record WorkspaceDeploymentCredentialReferenceRequest(
+    string Name,
+    string Reference,
+    string? Description);
 
 public sealed record WorkspaceEngineHeartbeatRequest(
     Guid EnvironmentId,

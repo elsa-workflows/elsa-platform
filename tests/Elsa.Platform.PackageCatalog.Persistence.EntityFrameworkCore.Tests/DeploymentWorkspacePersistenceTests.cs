@@ -101,6 +101,110 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Persists_secret_store_references_and_derives_engine_credentials()
+    {
+        var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));
+        var environment = await _store.CreateEnvironmentAsync(_workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Test", EnvironmentTier.Test));
+        var store = await _store.CreateSecretStoreAsync(
+            _workspaceId,
+            new CreateDeploymentSecretStoreRequest("Platform Key Vault", "Azure Key Vault", null, _accountId));
+        var reference = await _store.CreateCredentialReferenceAsync(
+            _workspaceId,
+            new CreateDeploymentCredentialReferenceRequest(store.Id, "Test engine API", "kv://claims/test/elsa-api", null, _accountId));
+
+        var engine = await _store.RegisterEngineAsync(
+            _workspaceId,
+            new RegisterWorkflowEngineRequest(
+                environment.Id,
+                "claims-test",
+                "https://workflows.example.test/elsa",
+                "westeurope",
+                null,
+                null,
+                [new EngineCapability("engine.reload-configuration", "Reload engine configuration", CapabilityBoundary.EngineApi)],
+                [new RuntimeControl("reload-configuration", "Reload Configuration", CapabilityBoundary.EngineApi, "engine.reload-configuration", "Reloads engine API configuration.")],
+                null,
+                reference.Id));
+        _db.ChangeTracker.Clear();
+
+        var stores = await _store.ListSecretStoresAsync(_workspaceId);
+        var references = await _store.ListCredentialReferencesAsync(_workspaceId);
+        var cockpit = await _store.GetCockpitAsync(_workspaceId);
+
+        stores.Should().ContainSingle(x => x.Id == store.Id && x.Provider == "Azure Key Vault");
+        references.Should().ContainSingle(x => x.Id == reference.Id && x.SecretStoreId == store.Id);
+        engine.CredentialProvider.Should().Be("Azure Key Vault");
+        engine.CredentialReference.Should().Be("kv://claims/test/elsa-api");
+        engine.CredentialReferenceId.Should().Be(reference.Id);
+        cockpit.Engines.Should().ContainSingle(x => x.CredentialReference.Reference == "kv://claims/test/elsa-api");
+    }
+
+    [Fact]
+    public async Task Archived_secret_metadata_is_hidden_from_active_lists_and_new_engine_registration()
+    {
+        var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));
+        var environment = await _store.CreateEnvironmentAsync(_workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Test", EnvironmentTier.Test));
+        var store = await _store.CreateSecretStoreAsync(
+            _workspaceId,
+            new CreateDeploymentSecretStoreRequest("Platform Key Vault", "Azure Key Vault", null, _accountId));
+        var reference = await _store.CreateCredentialReferenceAsync(
+            _workspaceId,
+            new CreateDeploymentCredentialReferenceRequest(store.Id, "Test engine API", "kv://claims/test/elsa-api", null, _accountId));
+
+        await _store.ArchiveCredentialReferenceAsync(_workspaceId, reference.Id, _accountId);
+
+        var activeReferences = await _store.ListCredentialReferencesAsync(_workspaceId);
+        var allReferences = await _store.ListCredentialReferencesAsync(_workspaceId, includeArchived: true);
+        var register = async () => await _store.RegisterEngineAsync(
+            _workspaceId,
+            new RegisterWorkflowEngineRequest(
+                environment.Id,
+                "claims-test",
+                "https://workflows.example.test/elsa",
+                "westeurope",
+                null,
+                null,
+                [],
+                [],
+                null,
+                reference.Id));
+
+        activeReferences.Should().BeEmpty();
+        allReferences.Should().ContainSingle(x => x.Id == reference.Id && x.Status == DeploymentSecretStoreStatus.Archived);
+        await register.Should().ThrowAsync<InvalidOperationException>().WithMessage("Archived deployment credential references cannot be assigned to engines.");
+    }
+
+    [Fact]
+    public async Task Archived_secret_metadata_names_can_be_reused_and_archived_again()
+    {
+        var firstStore = await _store.CreateSecretStoreAsync(
+            _workspaceId,
+            new CreateDeploymentSecretStoreRequest("Platform Key Vault", "Azure Key Vault", null, _accountId));
+        var firstReference = await _store.CreateCredentialReferenceAsync(
+            _workspaceId,
+            new CreateDeploymentCredentialReferenceRequest(firstStore.Id, "Test engine API", "kv://claims/test/elsa-api", null, _accountId));
+        await _store.ArchiveCredentialReferenceAsync(_workspaceId, firstReference.Id, _accountId);
+        await _store.ArchiveSecretStoreAsync(_workspaceId, firstStore.Id, _accountId);
+
+        var secondStore = await _store.CreateSecretStoreAsync(
+            _workspaceId,
+            new CreateDeploymentSecretStoreRequest("Platform Key Vault", "Azure Key Vault", null, _accountId));
+        var secondReference = await _store.CreateCredentialReferenceAsync(
+            _workspaceId,
+            new CreateDeploymentCredentialReferenceRequest(secondStore.Id, "Test engine API", "kv://claims/test/elsa-api-v2", null, _accountId));
+
+        await _store.ArchiveCredentialReferenceAsync(_workspaceId, secondReference.Id, _accountId);
+        await _store.ArchiveSecretStoreAsync(_workspaceId, secondStore.Id, _accountId);
+        var allStores = await _store.ListSecretStoresAsync(_workspaceId, includeArchived: true);
+        var allReferences = await _store.ListCredentialReferencesAsync(_workspaceId, includeArchived: true);
+
+        allStores.Should().HaveCount(2);
+        allStores.Should().OnlyContain(x => x.Status == DeploymentSecretStoreStatus.Archived);
+        allReferences.Should().HaveCount(2);
+        allReferences.Should().OnlyContain(x => x.Status == DeploymentSecretStoreStatus.Archived);
+    }
+
+    [Fact]
     public async Task Persists_workspace_permission_grants()
     {
         await _store.GrantPermissionAsync(_workspaceId, new GrantWorkspacePermissionRequest(_accountId, WorkspaceDeploymentPermissions.Read, null));
