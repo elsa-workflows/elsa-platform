@@ -40,6 +40,7 @@ import {
   getDeploymentPermissions,
   getDeploymentSecretStores,
   getDeploymentTiers,
+  getRevisionDeployability,
   getRevisionDetail,
   previewPromotion,
   promoteRevision,
@@ -634,6 +635,13 @@ function DeploymentRevisionDetailReady({ context, applicationId, revisionId }: {
   const environment = summary ? application?.environments.find((item) => item.id === summary.revision.environmentId) : undefined;
   const engines = summary ? enginesForEnvironment(data, summary.revision.environmentId) : [];
   const [selectedEngineId, setSelectedEngineId] = useState("");
+  const deployability = useQuery({
+    queryKey: summary && selectedEngineId
+      ? queryKeys.deploymentRevisionDeployability(workspaceId, summary.revision.id, selectedEngineId)
+      : ["deployments", workspaceId, "revisions", revisionId, "deployability", "none"],
+    queryFn: () => getRevisionDeployability(workspaceId, summary!.revision.id, summary!.revision.environmentId, selectedEngineId),
+    enabled: Boolean(summary && selectedEngineId && !summary.isCurrentDeployed)
+  });
   const deploy = useMutation({
     mutationFn: async () => {
       if (!summary)
@@ -657,7 +665,8 @@ function DeploymentRevisionDetailReady({ context, applicationId, revisionId }: {
       await Promise.all([
         context.refreshDeploymentCockpit(),
         queryClient.invalidateQueries({ queryKey: queryKeys.deploymentApplicationRevisions(workspaceId, applicationId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.deploymentRevision(workspaceId, revisionId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.deploymentRevision(workspaceId, revisionId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.deploymentRevisionDeployability(workspaceId, revisionId, selectedEngineId) })
       ]);
     }
   });
@@ -672,7 +681,9 @@ function DeploymentRevisionDetailReady({ context, applicationId, revisionId }: {
   if (revision.isError) return <RequestStateView state="unexpected" title="Revision could not load" />;
   if (!detail || !summary || summary.revision.applicationId !== application.id) return <RequestStateView state="not-found" title="Revision not found" />;
 
-  const deployDisabled = !canExecuteDeployment || summary.isCurrentDeployed || engines.length === 0 || !selectedEngineId || deploy.isPending;
+  const deployabilityResult = deployability.data;
+  const deployabilityBlocked = deployabilityResult?.status === "Blocked";
+  const deployDisabled = !canExecuteDeployment || summary.isCurrentDeployed || engines.length === 0 || !selectedEngineId || deploy.isPending || deployability.isLoading || deployabilityBlocked;
 
   return (
     <section className="space-y-5">
@@ -758,7 +769,38 @@ function DeploymentRevisionDetailReady({ context, applicationId, revisionId }: {
                 <Rocket className="h-4 w-4" />
                 {deploy.isPending ? "Queueing deployment" : "Deploy revision"}
               </Button>
+              {selectedEngineId && !summary.isCurrentDeployed ? (
+                <div className="rounded-ui border border-border bg-muted/30 px-3 py-2 text-sm" role={deployabilityBlocked ? "alert" : "status"}>
+                  {deployability.isLoading || deployability.isFetching ? (
+                    <p className="text-muted-foreground">Checking deployability.</p>
+                  ) : deployability.isError ? (
+                    <p className="text-destructive">Deployability could not be checked.</p>
+                  ) : deployabilityResult ? (
+                    <div className="space-y-2">
+                      <p className={cn("font-medium", deployabilityBlocked ? "text-destructive" : "text-success")}>
+                        {deployabilityResult.status}
+                      </p>
+                      {deployabilityResult.blockers.length === 0 ? (
+                        <p className="text-muted-foreground">
+                          All {deployabilityResult.artifacts.length} artifact records can be applied by the selected engine.
+                        </p>
+                      ) : (
+                        <ul className="space-y-2">
+                          {deployabilityResult.blockers.map((blocker) => (
+                            <li key={`${blocker.id}-${blocker.artifactRecordId ?? ""}`} className="text-muted-foreground">
+                              <span className="font-medium text-foreground">{blocker.scope}: </span>
+                              {blocker.message}
+                              <span className="block text-xs">{blocker.remediation}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {!canExecuteDeployment ? <p className="text-xs text-muted-foreground">Deployment execution permission is required.</p> : null}
+              {deployabilityBlocked ? <p className="text-xs text-muted-foreground">Resolve deployability blockers before queueing deployment.</p> : null}
               {deploy.error instanceof Error ? <p role="alert" className="text-sm text-destructive">{deploy.error.message}</p> : null}
               {deploy.isSuccess ? <p role="status" className="text-sm text-success">Deployment run queued.</p> : null}
             </div>
@@ -771,7 +813,6 @@ function DeploymentRevisionDetailReady({ context, applicationId, revisionId }: {
     </section>
   );
 }
-
 
 export function DeploymentApplicationEditPage() {
   const context = useDeploymentContext();

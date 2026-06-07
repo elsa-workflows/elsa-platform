@@ -1,6 +1,7 @@
 using System.Net;
 using Elsa.Platform.Api.Workspace;
 using Elsa.Platform.Deployment.Abstractions.Artifacts;
+using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
@@ -108,6 +109,58 @@ public sealed class RuntimeCommandApiTests
         summary.RuntimeReference.Should().Be("elsa://workflows/payment-retry");
         summary.ObservedArtifactDigest.Should().Be(new WorkspaceArtifactDigest("sha256", "observed"));
         summary.WorkerId.Should().Be("runtime-worker-1");
+    }
+
+    [Fact]
+    public async Task Runtime_can_download_artifact_with_active_lease_and_report_per_artifact_outcome()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("runtime-artifact-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var artifactBytes = "artifact payload"u8.ToArray();
+        var seeded = await SeedArtifactBackedRunAsync(app, owner, workspaceId, "runtime-artifact-owner", artifactBytes);
+        var polled = await owner.GetPlatformJsonAsync<RuntimeCommandListResponse>(
+            $"/api/workspaces/{workspaceId}/deployments/runtime/engines/{seeded.EngineId}/commands");
+        var command = polled!.Commands.Single();
+        var claimResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runtime/commands/{command.Id}/claim",
+            new RuntimeCommandClaimRequest(seeded.EngineId, "runtime-worker-1", 300));
+        var claim = await claimResponse.Content.ReadPlatformJsonAsync<RuntimeCommandClaimResponse>();
+        var artifactItem = claim!.Command.Artifacts!.Single();
+        var missingLeaseResponse = await owner.GetAsync(artifactItem.DownloadUrl);
+        using var downloadRequest = new HttpRequestMessage(HttpMethod.Get, artifactItem.DownloadUrl);
+        downloadRequest.Headers.Add("X-Elsa-Command-Lease", claim.LeaseToken);
+        downloadRequest.Headers.Add("X-Elsa-Worker-Id", "runtime-worker-1");
+        using var downloadResponse = await owner.SendAsync(downloadRequest);
+        var downloaded = await downloadResponse.Content.ReadAsByteArrayAsync();
+        var completeResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/runtime/commands/{command.Id}/complete",
+            new RuntimeCommandCompleteRequest(
+                claim.LeaseToken,
+                seeded.Artifact.ContentDigest,
+                "elsa://workflows/claims-prod",
+                [],
+                [
+                    new DeploymentCommandArtifactOutcome(
+                        seeded.Artifact.Id,
+                        DeploymentCommandArtifactStatus.Applied,
+                        seeded.Artifact.ContentDigest,
+                        "elsa://workflows/claims-prod")
+                ]));
+        var completed = await completeResponse.Content.ReadPlatformJsonAsync<RuntimeCommandDto>();
+
+        claimResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        artifactItem.DownloadUrl.Should().Be($"/api/workspaces/{workspaceId:D}/deployments/runtime/commands/{command.Id:D}/artifacts/{seeded.Artifact.Id:D}/download");
+        missingLeaseResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        downloadResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        downloadResponse.Content.Headers.ContentType!.MediaType.Should().Be("application/zip");
+        downloadResponse.Headers.GetValues("X-Elsa-Artifact-Digest").Single().Should().Be(seeded.Artifact.ContentDigest.Value);
+        downloaded.Should().Equal(artifactBytes);
+        completeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        completed!.Status.Should().Be(DeploymentCommandStatus.Completed);
+        completed.Artifacts!.Single().Status.Should().Be(DeploymentCommandArtifactStatus.Applied);
+        completed.Artifacts!.Single().DownloadUrl.Should().Be(artifactItem.DownloadUrl);
     }
 
     [Fact]
@@ -253,5 +306,72 @@ public sealed class RuntimeCommandApiTests
         return new SeededRun(engine.Id, run.Id);
     }
 
+    private static async Task<SeededArtifactRun> SeedArtifactBackedRunAsync(
+        PlatformApiTestApplication app,
+        HttpClient owner,
+        Guid workspaceId,
+        string subject,
+        byte[] artifactBytes)
+    {
+        var artifactPath = Path.Combine(Path.GetTempPath(), $"elsa-runtime-artifact-{Guid.NewGuid():N}.zip");
+        await File.WriteAllBytesAsync(artifactPath, artifactBytes);
+        var registerResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/artifacts",
+            WorkspaceDeploymentTestFixtures.ArtifactRegistration("sha256:runtime-download", artifactPath) with { Format = WorkspaceArtifactFormat.Zip });
+        var artifact = (await registerResponse.Content.ReadPlatformJsonAsync<WorkspaceArtifact>())!;
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        var accountId = await db.ExternalIdentities
+            .Where(x => x.Issuer == WorkspaceDeploymentTestFixtures.DefaultIssuer && x.Subject == subject)
+            .Select(x => x.AccountId)
+            .SingleAsync();
+        var store = scope.ServiceProvider.GetRequiredService<IWorkspaceDeploymentStore>();
+        var mutationStore = scope.ServiceProvider.GetRequiredService<IWorkspaceDeploymentMutationStore>();
+
+        var application = await store.CreateApplicationAsync(workspaceId, new CreateWorkflowApplicationRequest($"Claims {Guid.NewGuid():N}", null, accountId));
+        var environment = await store.CreateEnvironmentAsync(workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production));
+        var engine = await store.RegisterEngineAsync(
+            workspaceId,
+            new RegisterWorkflowEngineRequest(
+                environment.Id,
+                "claims-prod",
+                "https://runtime.example.test",
+                "westeurope",
+                "Azure Key Vault",
+                "kv://claims/runtime",
+                [new EngineCapability("workflow-definition.apply", "Apply workflow definitions", CapabilityBoundary.EngineApi)],
+                [],
+                "container-apps"));
+        var desiredStateJson = $$"""
+            {
+              "records": [
+                {
+                  "kind": "ArtifactReference",
+                  "name": "Claims",
+                  "payload": {
+                    "artifactRecordId": "{{artifact.Id:D}}",
+                    "artifactId": "{{artifact.ArtifactId}}",
+                    "artifactTypeId": "{{ArtifactTypeIds.ElsaWorkflowDefinition}}",
+                    "contentDigest": {
+                      "algorithm": "{{artifact.ContentDigest.Algorithm}}",
+                      "value": "{{artifact.ContentDigest.Value}}"
+                    }
+                  }
+                }
+              ]
+            }
+            """;
+        var revision = await store.CreateRevisionAsync(
+            workspaceId,
+            new CreateDesiredStateRevisionRequest(application.Id, environment.Id, "v1", "abc123", desiredStateJson, accountId));
+        var run = await mutationStore.CreateRunAsync(
+            workspaceId,
+            new QueueWorkspaceDeploymentRunRequest(revision.Id, environment.Id, engine.Id, Guid.NewGuid(), accountId, null),
+            DateTimeOffset.UtcNow);
+        return new SeededArtifactRun(engine.Id, run.Id, artifact);
+    }
+
     private sealed record SeededRun(Guid EngineId, Guid RunId);
+    private sealed record SeededArtifactRun(Guid EngineId, Guid RunId, WorkspaceArtifact Artifact);
 }

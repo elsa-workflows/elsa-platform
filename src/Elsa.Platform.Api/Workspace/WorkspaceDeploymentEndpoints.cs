@@ -682,6 +682,40 @@ public static class WorkspaceDeploymentEndpoints
             return revision is null ? Results.NotFound() : Results.Ok(revision);
         });
 
+        group.MapPost("/revisions/{revisionId:guid}/deployability", async (
+            Guid workspaceId,
+            Guid revisionId,
+            WorkspaceDeployabilityRequestDto request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            DeploymentDeployabilityService deployability,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.Read, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await deployability.EvaluateAsync(
+                    workspaceId,
+                    revisionId,
+                    new DeploymentDeployabilityRequest(request.TargetEnvironmentId, request.TargetEngineId, request.Mode),
+                    cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
         group.MapPost("/environments/{environmentId:guid}/engines", async (
             Guid workspaceId,
             Guid environmentId,

@@ -128,6 +128,91 @@ public sealed class DeploymentCommandServiceTests
     }
 
     [Fact]
+    public async Task Runtime_artifact_download_requires_active_matching_lease_and_worker()
+    {
+        var artifactRecordId = Guid.Parse("90000000-0000-0000-0000-000000000001");
+        var claim = await _service.ClaimCommandAsync(
+            _workspaceId,
+            _commandId,
+            new ClaimDeploymentCommandRequest(_engineId, "runtime-1", TimeSpan.FromMinutes(5)));
+        _store.Commands[_commandId] = _store.Commands[_commandId] with
+        {
+            Artifacts =
+            [
+                new DeploymentCommandArtifactItem(
+                    artifactRecordId,
+                    "sha256:claims-prod",
+                    "elsa.workflow-definition",
+                    "v1",
+                    new WorkspaceArtifactDigest("sha256", "claims-prod"),
+                    "claims-prod",
+                    null)
+            ]
+        };
+
+        var artifact = await _service.ValidateRuntimeArtifactDownloadAsync(_workspaceId, _commandId, artifactRecordId, claim.LeaseToken, "runtime-1");
+        var wrongLease = () => _service.ValidateRuntimeArtifactDownloadAsync(_workspaceId, _commandId, artifactRecordId, "wrong", "runtime-1");
+        var wrongWorker = () => _service.ValidateRuntimeArtifactDownloadAsync(_workspaceId, _commandId, artifactRecordId, claim.LeaseToken, "runtime-2");
+
+        artifact.ArtifactRecordId.Should().Be(artifactRecordId);
+        await wrongLease.Should().ThrowAsync<InvalidOperationException>().WithMessage("Command lease token is invalid.");
+        await wrongWorker.Should().ThrowAsync<InvalidOperationException>().WithMessage("Command lease is owned by another worker.");
+    }
+
+    [Fact]
+    public async Task Progress_and_final_outcomes_sanitize_per_artifact_diagnostics()
+    {
+        var artifactRecordId = Guid.Parse("90000000-0000-0000-0000-000000000002");
+        var claim = await _service.ClaimCommandAsync(
+            _workspaceId,
+            _commandId,
+            new ClaimDeploymentCommandRequest(_engineId, "runtime-1", TimeSpan.FromMinutes(5)));
+        _store.Commands[_commandId] = _store.Commands[_commandId] with
+        {
+            Artifacts =
+            [
+                new DeploymentCommandArtifactItem(
+                    artifactRecordId,
+                    "sha256:claims-prod",
+                    "elsa.workflow-definition",
+                    "v1",
+                    new WorkspaceArtifactDigest("sha256", "claims-prod"),
+                    "claims-prod",
+                    null)
+            ]
+        };
+
+        var progress = await _service.ProgressAsync(
+            _workspaceId,
+            _commandId,
+            new DeploymentCommandProgressRequest(
+                claim.LeaseToken,
+                "applying",
+                50,
+                "Applying",
+                [new DeploymentCommandArtifactOutcome(
+                    artifactRecordId,
+                    DeploymentCommandArtifactStatus.Applying,
+                    Diagnostics: [new DeploymentCommandDiagnostic("apply", DeploymentCommandDiagnosticSeverity.Warning, "bearer token observed")])]));
+        var failed = await _service.FailAsync(
+            _workspaceId,
+            _commandId,
+            new FailDeploymentCommandRequest(
+                claim.LeaseToken,
+                [new DeploymentCommandDiagnostic("failed", DeploymentCommandDiagnosticSeverity.Error, "failed")],
+                [new DeploymentCommandArtifactOutcome(
+                    artifactRecordId,
+                    DeploymentCommandArtifactStatus.Failed,
+                    Diagnostics: [new DeploymentCommandDiagnostic("failed", DeploymentCommandDiagnosticSeverity.Error, "password leaked")])]));
+
+        progress.Artifacts!.Single().Status.Should().Be(DeploymentCommandArtifactStatus.Applying);
+        progress.Artifacts!.Single().Diagnostics!.Single().Message.Should().Be("[redacted] [redacted] observed");
+        failed.Status.Should().Be(DeploymentCommandStatus.Failed);
+        failed.Artifacts!.Single().Status.Should().Be(DeploymentCommandArtifactStatus.Failed);
+        failed.Artifacts!.Single().Diagnostics!.Single().Message.Should().Be("[redacted] leaked");
+    }
+
+    [Fact]
     public async Task Recover_stale_commands_delegates_cutoff_to_store()
     {
         _store.RecoveredCount = 2;
@@ -290,11 +375,13 @@ public sealed class DeploymentCommandServiceTests
 
         public Task<DeploymentCommand> RecordCommandProgressAsync(Guid workspaceId, Guid commandId, DeploymentCommandProgressRequest request, DateTimeOffset now, CancellationToken cancellationToken = default)
         {
-            var command = Commands[commandId] with
+            var existing = Commands[commandId];
+            var command = existing with
             {
                 Status = DeploymentCommandStatus.Running,
                 PercentComplete = request.PercentComplete,
                 ProgressMessage = request.Message,
+                Artifacts = MergeArtifacts(existing.Artifacts, request.Artifacts),
                 UpdatedAt = now
             };
             Commands[commandId] = command;
@@ -307,7 +394,14 @@ public sealed class DeploymentCommandServiceTests
             if (command.Status == DeploymentCommandStatus.Completed)
                 return Task.FromResult(command);
 
-            command = command with { Status = DeploymentCommandStatus.Completed, RuntimeReference = request.RuntimeReference, CompletedAt = now, UpdatedAt = now };
+            command = command with
+            {
+                Status = DeploymentCommandStatus.Completed,
+                RuntimeReference = request.RuntimeReference,
+                Artifacts = MergeArtifacts(command.Artifacts, request.Artifacts),
+                CompletedAt = now,
+                UpdatedAt = now
+            };
             Commands[commandId] = command;
             return Task.FromResult(command);
         }
@@ -319,7 +413,8 @@ public sealed class DeploymentCommandServiceTests
         }
 
         public Task<DeploymentCommand> CreateCommandAsync(Guid workspaceId, CreateDeploymentCommandRequest request, DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<DeploymentCommand?> GetCommandAsync(Guid workspaceId, Guid commandId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<DeploymentCommand?> GetCommandAsync(Guid workspaceId, Guid commandId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Commands.GetValueOrDefault(commandId));
         public Task<DeploymentCommand> HeartbeatCommandAsync(Guid workspaceId, Guid commandId, DeploymentCommandHeartbeatRequest request, DateTimeOffset now, CancellationToken cancellationToken = default)
         {
             var command = Commands[commandId] with { WorkerId = request.WorkerId, HeartbeatAt = now, UpdatedAt = now };
@@ -329,14 +424,30 @@ public sealed class DeploymentCommandServiceTests
 
         public Task<DeploymentCommand> FailCommandAsync(Guid workspaceId, Guid commandId, FailDeploymentCommandRequest request, DateTimeOffset now, CancellationToken cancellationToken = default)
         {
-            var command = Commands[commandId] with { Status = DeploymentCommandStatus.Failed, Diagnostics = request.Diagnostics, CompletedAt = now, UpdatedAt = now };
+            var existing = Commands[commandId];
+            var command = existing with
+            {
+                Status = DeploymentCommandStatus.Failed,
+                Diagnostics = request.Diagnostics,
+                Artifacts = MergeArtifacts(existing.Artifacts, request.Artifacts),
+                CompletedAt = now,
+                UpdatedAt = now
+            };
             Commands[commandId] = command;
             return Task.FromResult(command);
         }
 
         public Task<DeploymentCommand> RejectCommandAsync(Guid workspaceId, Guid commandId, RejectDeploymentCommandRequest request, DateTimeOffset now, CancellationToken cancellationToken = default)
         {
-            var command = Commands[commandId] with { Status = DeploymentCommandStatus.Rejected, Diagnostics = request.Diagnostics, CompletedAt = now, UpdatedAt = now };
+            var existing = Commands[commandId];
+            var command = existing with
+            {
+                Status = DeploymentCommandStatus.Rejected,
+                Diagnostics = request.Diagnostics,
+                Artifacts = MergeArtifacts(existing.Artifacts, request.Artifacts),
+                CompletedAt = now,
+                UpdatedAt = now
+            };
             Commands[commandId] = command;
             return Task.FromResult(command);
         }
@@ -366,6 +477,27 @@ public sealed class DeploymentCommandServiceTests
 
         private DeploymentCommandWebhookNotification Notification(Guid notificationId, WebhookNotificationStatus status, DateTimeOffset? sentAt) =>
             new(notificationId, Guid.Empty, Guid.Empty, Guid.Empty, status, "{}", DateTimeOffset.UtcNow, sentAt);
+
+        private static IReadOnlyList<DeploymentCommandArtifactItem>? MergeArtifacts(
+            IReadOnlyList<DeploymentCommandArtifactItem>? artifacts,
+            IReadOnlyList<DeploymentCommandArtifactOutcome>? outcomes)
+        {
+            if (artifacts is null || outcomes is null)
+                return artifacts;
+
+            var byRecordId = outcomes.ToDictionary(x => x.ArtifactRecordId);
+            return artifacts
+                .Select(artifact => byRecordId.TryGetValue(artifact.ArtifactRecordId, out var outcome)
+                    ? artifact with
+                    {
+                        Status = outcome.Status,
+                        ObservedDigest = outcome.ObservedDigest,
+                        RuntimeReference = outcome.RuntimeReference,
+                        Diagnostics = outcome.Diagnostics
+                    }
+                    : artifact)
+                .ToList();
+        }
     }
 
     private sealed class RecordingWebhookSender(DeploymentWebhookDispatchResult result) : IDeploymentWebhookSender

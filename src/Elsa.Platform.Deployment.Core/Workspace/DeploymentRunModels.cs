@@ -90,7 +90,8 @@ public sealed record DeploymentRunCommandSummary(
     IReadOnlyList<DeploymentCommandDiagnostic> Diagnostics,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    DateTimeOffset? CompletedAt);
+    DateTimeOffset? CompletedAt,
+    IReadOnlyList<DeploymentCommandArtifactItem>? Artifacts = null);
 
 public sealed record RuntimeControlExecutionRequest(
     Guid EngineId,

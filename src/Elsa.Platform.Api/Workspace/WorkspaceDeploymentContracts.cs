@@ -102,6 +102,11 @@ public sealed record WorkspaceDeploymentRunRequestDto(
     Guid ConfirmationId,
     DeploymentRunMode Mode);
 
+public sealed record WorkspaceDeployabilityRequestDto(
+    Guid TargetEnvironmentId,
+    Guid TargetEngineId,
+    DeploymentRunMode Mode);
+
 public sealed record WorkspaceRollbackRunRequestDto(
     Guid SourceRevisionId,
     Guid TargetEnvironmentId,

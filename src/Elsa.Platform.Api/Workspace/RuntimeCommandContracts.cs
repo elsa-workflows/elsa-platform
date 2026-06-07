@@ -10,17 +10,29 @@ public sealed record RuntimeCommandClaimResponse(RuntimeCommandDto Command, stri
 
 public sealed record RuntimeCommandHeartbeatRequest(string LeaseToken, string WorkerId);
 
-public sealed record RuntimeCommandProgressRequest(string LeaseToken, string Status, int? PercentComplete, string Message);
+public sealed record RuntimeCommandProgressRequest(
+    string LeaseToken,
+    string Status,
+    int? PercentComplete,
+    string Message,
+    IReadOnlyList<DeploymentCommandArtifactOutcome>? Artifacts = null);
 
 public sealed record RuntimeCommandCompleteRequest(
     string LeaseToken,
     WorkspaceArtifactDigest? ObservedArtifactDigest,
     string? RuntimeReference,
-    IReadOnlyList<DeploymentCommandDiagnostic> Diagnostics);
+    IReadOnlyList<DeploymentCommandDiagnostic> Diagnostics,
+    IReadOnlyList<DeploymentCommandArtifactOutcome>? Artifacts = null);
 
-public sealed record RuntimeCommandFailRequest(string LeaseToken, IReadOnlyList<DeploymentCommandDiagnostic> Diagnostics);
+public sealed record RuntimeCommandFailRequest(
+    string LeaseToken,
+    IReadOnlyList<DeploymentCommandDiagnostic> Diagnostics,
+    IReadOnlyList<DeploymentCommandArtifactOutcome>? Artifacts = null);
 
-public sealed record RuntimeCommandRejectRequest(string LeaseToken, IReadOnlyList<DeploymentCommandDiagnostic> Diagnostics);
+public sealed record RuntimeCommandRejectRequest(
+    string LeaseToken,
+    IReadOnlyList<DeploymentCommandDiagnostic> Diagnostics,
+    IReadOnlyList<DeploymentCommandArtifactOutcome>? Artifacts = null);
 
 public sealed record RuntimeCommandWebhookNotificationRequest(Guid EngineId);
 
@@ -71,7 +83,8 @@ public sealed record RuntimeCommandDto(
     DateTimeOffset UpdatedAt,
     DateTimeOffset? AvailableAt,
     DateTimeOffset? ExpiresAt,
-    DateTimeOffset? CompletedAt)
+    DateTimeOffset? CompletedAt,
+    IReadOnlyList<DeploymentCommandArtifactItem>? Artifacts = null)
 {
     public static RuntimeCommandDto FromCommand(DeploymentCommand command) =>
         new(
@@ -99,5 +112,9 @@ public sealed record RuntimeCommandDto(
             command.UpdatedAt,
             command.AvailableAt,
             command.ExpiresAt,
-            command.CompletedAt);
+            command.CompletedAt,
+            command.Artifacts?.Select(item => item with
+            {
+                DownloadUrl = $"/api/workspaces/{command.WorkspaceId:D}/deployments/runtime/commands/{command.Id:D}/artifacts/{item.ArtifactRecordId:D}/download"
+            }).ToList());
 }

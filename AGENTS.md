@@ -1,7 +1,7 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-specs/034-weaver-copilot-agent/plan.md
+specs/033-artifact-engine-deploy/plan.md
 <!-- SPECKIT END -->
 
 ## Active Technologies
@@ -17,6 +17,8 @@ specs/034-weaver-copilot-agent/plan.md
 - Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Deployment tier tables store workspace-owned tier definitions, capability assignments, environment references, and safe audit metadata only. (025-custom-deployment-tiers)
 - C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console. + ASP.NET Core authentication/authorization, EF Core catalog persistence, existing account/workspace services, workspace authorization helpers, React Router, TanStack Query, Vitest, Playwright where needed, xUnit, and FluentAssertions. (031-organization-tenancy)
 - Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Organization tables store customer tenant records, memberships, entitlements, workspace ownership references, and safe audit metadata only. (031-organization-tenancy)
+- C# on .NET 10 for API/Core/Persistence/runtime command services; TypeScript/React for the hosted console. + ASP.NET Core minimal APIs, existing workspace identity and deployment permissions, EF Core catalog persistence, `Elsa.Platform.Deployment.Core`, `Elsa.Platform.Deployment.Artifacts`, runtime command APIs, React Router, TanStack Query, Vitest, Playwright where browser verification is needed, xUnit, and FluentAssertions. (033-artifact-engine-deploy)
+- Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore` with SQLite and SQL Server migrations when schema changes are required. Deployment command storage must continue to store safe metadata only: artifact identities, type/schema metadata, digests, per-artifact outcomes, lease metadata, and diagnostics. Raw payloads, workflow definitions, local paths, credentials, provider tokens, and secrets stay out of command/history records. (033-artifact-engine-deploy)
 
 ## Recent Changes
 - codex/021-identity-tenancy: Added C# on .NET 10. + ASP.NET Core authentication/authorization, ASP.NET Core cookies, JWT bearer validation, EF Core, existing `Elsa.Platform.PackageCatalog.*` account/workspace services, xUnit and FluentAssertions for tests.

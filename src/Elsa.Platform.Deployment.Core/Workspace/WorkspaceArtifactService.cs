@@ -158,7 +158,9 @@ public sealed class WorkspaceArtifactService(
             new Dictionary<string, string>(),
             request.Manifest.Environment);
         var payloadReference = request.PayloadReference ?? new ArtifactPayloadReference(request.ReferenceProvider, request.Reference);
-        var compatibilityHints = request.CompatibilityHints ?? [new ArtifactCompatibilityHint(artifactTypeId, "elsa-workflows", null, ["workflow-definition.apply"], new Dictionary<string, string>())];
+        var compatibilityHints = (request.CompatibilityHints ?? [new ArtifactCompatibilityHint(artifactTypeId, "elsa-workflows", null, [ArtifactApplyCapability.For(artifactTypeId)], new Dictionary<string, string>())])
+            .Select(NormalizeCompatibilityHint)
+            .ToList();
 
         return request with
         {
@@ -213,8 +215,20 @@ public sealed class WorkspaceArtifactService(
             request.PayloadReference ?? new ArtifactPayloadReference(request.ReferenceProvider, request.Reference),
             request.Producer ?? new ArtifactProducer("manual", "Manual registration"),
             request.DisplayMetadata ?? new ArtifactDisplayMetadata(request.Manifest.Name, request.Manifest.Version, null, new Dictionary<string, string>(), new Dictionary<string, string>(), request.Manifest.Environment),
-            request.CompatibilityHints ?? [new ArtifactCompatibilityHint(request.ArtifactTypeId ?? ArtifactTypeIds.ElsaWorkflowDefinition, "elsa-workflows", null, ["workflow-definition.apply"], new Dictionary<string, string>())],
+            (request.CompatibilityHints ?? [new ArtifactCompatibilityHint(request.ArtifactTypeId ?? ArtifactTypeIds.ElsaWorkflowDefinition, "elsa-workflows", null, [ArtifactApplyCapability.For(request.ArtifactTypeId ?? ArtifactTypeIds.ElsaWorkflowDefinition)], new Dictionary<string, string>())])
+                .Select(NormalizeCompatibilityHint)
+                .ToList(),
             request.Diagnostics.Select(x => new ArtifactEnvelopeDiagnostic(x.Code, x.Severity.ToEnvelopeSeverity(), x.Message)).ToList());
+
+    private static ArtifactCompatibilityHint NormalizeCompatibilityHint(ArtifactCompatibilityHint hint) =>
+        hint with
+        {
+            RequiredCapabilities = hint.RequiredCapabilities
+                .Select(capability => ArtifactApplyCapability.Normalize(hint.RequiredArtifactType, capability))
+                .Where(capability => !string.IsNullOrWhiteSpace(capability))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList()
+        };
 
     private static string? ResolveLocalPath(string reference)
     {

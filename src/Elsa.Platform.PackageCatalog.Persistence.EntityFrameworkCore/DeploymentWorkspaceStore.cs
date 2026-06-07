@@ -535,7 +535,10 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         if (!engineExists)
             throw new InvalidOperationException("Target engine does not exist in the target environment.");
 
-        var artifactReference = await ResolveArtifactReferenceAsync(workspaceId, sourceRevision.DesiredStateJson, cancellationToken);
+        var artifacts = await ResolveArtifactItemsAsync(workspaceId, sourceRevision.DesiredStateJson, cancellationToken);
+        var artifactReference = artifacts.FirstOrDefault() is { } firstArtifact
+            ? new DeploymentCommandArtifactReference(firstArtifact.ArtifactRecordId, firstArtifact.ArtifactId, firstArtifact.ArtifactTypeId, firstArtifact.ContentDigest)
+            : null;
         var runId = Guid.NewGuid();
         var run = new DeploymentRunEntity
         {
@@ -578,7 +581,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
                 new DeploymentCommandRevisionReference(request.SourceRevisionId),
                 BuildDeploymentCommandIdempotencyKey(workspaceId, runId, request.TargetEnvironmentId, request.TargetEngineId, request.SourceRevisionId, request.RollbackSourceRunId),
                 now,
-                null),
+                null,
+                artifacts),
             now);
         await AddCommandEventAsync(command, DeploymentCommandStatus.Pending, "Deployment command created.", now, cancellationToken);
 
@@ -716,6 +720,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         command.Status = DeploymentCommandStatus.Running;
         command.PercentComplete = request.PercentComplete;
         command.ProgressMessage = request.Message;
+        command.ArtifactJson = ApplyArtifactOutcomes(command.ArtifactJson, request.Artifacts);
         command.HeartbeatAt = now;
         command.UpdatedAt = now;
         await TouchCommandRunHeartbeatAsync(command, command.WorkerId, now, cancellationToken);
@@ -745,6 +750,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         command.ObservedArtifactDigest = request.ObservedArtifactDigest?.Value;
         command.RuntimeReference = request.RuntimeReference;
         command.DiagnosticsJson = JsonSerializer.Serialize(request.Diagnostics);
+        command.ArtifactJson = ApplyArtifactOutcomes(command.ArtifactJson, request.Artifacts);
         command.CompletedAt = now;
         command.UpdatedAt = now;
         await AddCommandAndRunEventAsync(command, DeploymentCommandStatus.Completed, "Runtime command completed.", now, cancellationToken);
@@ -765,7 +771,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         FailDeploymentCommandRequest request,
         DateTimeOffset now,
         CancellationToken cancellationToken = default) =>
-        FinalizeCommandAsync(workspaceId, commandId, request.LeaseToken, DeploymentCommandStatus.Failed, request.Diagnostics, "Runtime command failed.", now, cancellationToken);
+        FinalizeCommandAsync(workspaceId, commandId, request.LeaseToken, DeploymentCommandStatus.Failed, request.Diagnostics, request.Artifacts, "Runtime command failed.", now, cancellationToken);
 
     public Task<DeploymentCommand> RejectCommandAsync(
         Guid workspaceId,
@@ -773,7 +779,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         RejectDeploymentCommandRequest request,
         DateTimeOffset now,
         CancellationToken cancellationToken = default) =>
-        FinalizeCommandAsync(workspaceId, commandId, request.LeaseToken, DeploymentCommandStatus.Rejected, request.Diagnostics, "Runtime command rejected.", now, cancellationToken);
+        FinalizeCommandAsync(workspaceId, commandId, request.LeaseToken, DeploymentCommandStatus.Rejected, request.Diagnostics, request.Artifacts, "Runtime command rejected.", now, cancellationToken);
 
     public async Task<int> MarkStaleCommandsRecoveryRequiredAsync(
         DateTimeOffset now,
@@ -2361,38 +2367,44 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             .ToList();
     }
 
-    private async Task<DeploymentCommandArtifactReference?> ResolveArtifactReferenceAsync(
+    private async Task<IReadOnlyList<DeploymentCommandArtifactItem>> ResolveArtifactItemsAsync(
         Guid workspaceId,
         string desiredStateJson,
         CancellationToken cancellationToken)
     {
-        var artifactReference = ParseArtifactReference(desiredStateJson);
-        if (artifactReference is null)
-            return null;
-
-        WorkspaceDeploymentArtifactEntity? artifact = null;
-        if (artifactReference.ArtifactRecordId is not null)
+        var artifactReferences = ParseArtifactReferences(desiredStateJson);
+        var items = new List<DeploymentCommandArtifactItem>();
+        foreach (var artifactReference in artifactReferences)
         {
-            artifact = await dbContext.WorkspaceDeploymentArtifacts
-                .AsNoTracking()
-                .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == artifactReference.ArtifactRecordId.Value, cancellationToken);
-        }
-        else if (!string.IsNullOrWhiteSpace(artifactReference.ArtifactId))
-        {
-            artifact = await dbContext.WorkspaceDeploymentArtifacts
-                .AsNoTracking()
-                .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.ArtifactId == artifactReference.ArtifactId, cancellationToken);
+            WorkspaceDeploymentArtifactEntity? artifact = null;
+            if (artifactReference.ArtifactRecordId is not null)
+            {
+                artifact = await dbContext.WorkspaceDeploymentArtifacts
+                    .AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == artifactReference.ArtifactRecordId.Value, cancellationToken);
+            }
+            else if (!string.IsNullOrWhiteSpace(artifactReference.ArtifactId))
+            {
+                artifact = await dbContext.WorkspaceDeploymentArtifacts
+                    .AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.ArtifactId == artifactReference.ArtifactId, cancellationToken);
+            }
+
+            if (artifact is null)
+                throw new InvalidOperationException("Artifact-backed revision references an artifact that is not visible in the workspace.");
+            ValidateArtifactReference(artifactReference, artifact);
+
+            items.Add(new DeploymentCommandArtifactItem(
+                artifact.Id,
+                artifact.ArtifactId,
+                artifact.ArtifactTypeId,
+                artifact.ArtifactSchemaVersion,
+                new WorkspaceArtifactDigest(artifact.ContentDigestAlgorithm, artifact.ContentDigest),
+                SafeArtifactDisplayName(artifact),
+                null));
         }
 
-        if (artifact is null)
-            throw new InvalidOperationException("Artifact-backed revision references an artifact that is not visible in the workspace.");
-        ValidateArtifactReference(artifactReference, artifact);
-
-        return new DeploymentCommandArtifactReference(
-            artifact.Id,
-            artifact.ArtifactId,
-            artifact.ArtifactTypeId,
-            new WorkspaceArtifactDigest(artifact.ContentDigestAlgorithm, artifact.ContentDigest));
+        return items;
     }
 
     private static void ValidateArtifactReference(
@@ -2414,7 +2426,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             throw new InvalidOperationException("Artifact-backed revision artifact digest does not match the registered artifact.");
     }
 
-    private static DeploymentCommandArtifactReference? ParseArtifactReference(string desiredStateJson)
+    private static IReadOnlyList<DeploymentCommandArtifactReference> ParseArtifactReferences(string desiredStateJson)
     {
         try
         {
@@ -2423,26 +2435,27 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
                 ? recordsElement
                 : document.RootElement;
             if (records.ValueKind != JsonValueKind.Array)
-                return null;
+                return [];
 
-            foreach (var record in records.EnumerateArray())
-            {
-                var kind = record.TryGetProperty("kind", out var kindElement) ? GetString(kindElement) : null;
-                if (!string.Equals(kind, DesiredStateRecordKind.ArtifactReference.ToString(), StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                var payload = record.TryGetProperty("payload", out var payloadElement) && payloadElement.ValueKind == JsonValueKind.Object
-                    ? payloadElement
-                    : record;
-                return ParseArtifactReference(payload);
-            }
+            return records.EnumerateArray()
+                .Where(record =>
+                {
+                    var kind = record.TryGetProperty("kind", out var kindElement) ? GetString(kindElement) : null;
+                    return string.Equals(kind, DesiredStateRecordKind.ArtifactReference.ToString(), StringComparison.OrdinalIgnoreCase);
+                })
+                .Select(record =>
+                {
+                    var payload = record.TryGetProperty("payload", out var payloadElement) && payloadElement.ValueKind == JsonValueKind.Object
+                        ? payloadElement
+                        : record;
+                    return ParseArtifactReference(payload);
+                })
+                .ToList();
         }
         catch (JsonException)
         {
-            return null;
+            return [];
         }
-
-        return null;
     }
 
     private static DeploymentCommandArtifactReference ParseArtifactReference(JsonElement payload)
@@ -2549,7 +2562,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             DeserializeDiagnostics(entity.DiagnosticsJson),
             entity.CreatedAt,
             entity.UpdatedAt,
-            entity.CompletedAt);
+            entity.CompletedAt,
+            DeserializeArtifactItems(entity.ArtifactJson));
 
     private static DeploymentCommandEntity CreateCommandEntity(
         Guid workspaceId,
@@ -2564,7 +2578,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             EngineId = request.EngineId,
             Action = request.Action,
             Status = DeploymentCommandStatus.Pending,
-            ArtifactJson = JsonSerializer.Serialize(request.Artifact),
+            ArtifactJson = SerializeArtifactPayload(request.Artifact, request.Artifacts),
             RevisionId = request.Revision?.RevisionId,
             IdempotencyKey = request.IdempotencyKey.Trim(),
             AttemptNumber = 0,
@@ -2581,6 +2595,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         string leaseToken,
         DeploymentCommandStatus status,
         IReadOnlyList<DeploymentCommandDiagnostic> diagnostics,
+        IReadOnlyList<DeploymentCommandArtifactOutcome>? artifacts,
         string message,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -2598,6 +2613,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
 
         command.Status = status;
         command.DiagnosticsJson = JsonSerializer.Serialize(diagnostics);
+        command.ArtifactJson = ApplyArtifactOutcomes(command.ArtifactJson, artifacts);
         command.CompletedAt = now;
         command.UpdatedAt = now;
 
@@ -2816,7 +2832,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             entity.UpdatedAt,
             entity.AvailableAt,
             entity.ExpiresAt,
-            entity.CompletedAt);
+            entity.CompletedAt,
+            DeserializeArtifactItems(entity.ArtifactJson));
 
     private static WorkspaceArtifactDigest? GetObservedArtifactDigest(DeploymentCommandEntity entity) =>
         entity.ObservedArtifactDigestAlgorithm is null || entity.ObservedArtifactDigest is null
@@ -2834,15 +2851,101 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             entity.CreatedAt,
             entity.SentAt);
 
-    private static DeploymentCommandArtifactReference? DeserializeArtifactReference(string artifactJson) =>
-        string.IsNullOrWhiteSpace(artifactJson) || artifactJson == "null"
+    private static string SerializeArtifactPayload(
+        DeploymentCommandArtifactReference? artifact,
+        IReadOnlyList<DeploymentCommandArtifactItem>? artifacts) =>
+        JsonSerializer.Serialize(new DeploymentCommandArtifactPayload(artifact, artifacts ?? []));
+
+    private static DeploymentCommandArtifactReference? DeserializeArtifactReference(string artifactJson)
+    {
+        var payload = DeserializeArtifactPayload(artifactJson);
+        if (payload?.Artifact is not null)
+            return payload.Artifact;
+        if (payload?.Artifacts.FirstOrDefault() is { } first)
+            return new DeploymentCommandArtifactReference(first.ArtifactRecordId, first.ArtifactId, first.ArtifactTypeId, first.ContentDigest);
+
+        return string.IsNullOrWhiteSpace(artifactJson) || artifactJson == "null"
             ? null
             : JsonSerializer.Deserialize<DeploymentCommandArtifactReference>(artifactJson);
+    }
+
+    private static IReadOnlyList<DeploymentCommandArtifactItem> DeserializeArtifactItems(string artifactJson)
+    {
+        var payload = DeserializeArtifactPayload(artifactJson);
+        if (payload is not null)
+            return payload.Artifacts;
+
+        var artifact = DeserializeArtifactReference(artifactJson);
+        return artifact?.ArtifactRecordId is null || artifact.ContentDigest is null
+            ? []
+            : [new DeploymentCommandArtifactItem(artifact.ArtifactRecordId.Value, artifact.ArtifactId ?? "", artifact.ArtifactTypeId ?? "", null, artifact.ContentDigest, artifact.ArtifactId ?? "Artifact", null)];
+    }
+
+    private static DeploymentCommandArtifactPayload? DeserializeArtifactPayload(string artifactJson)
+    {
+        if (string.IsNullOrWhiteSpace(artifactJson) || artifactJson == "null")
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(artifactJson);
+            return document.RootElement.TryGetProperty(nameof(DeploymentCommandArtifactPayload.Artifacts), out _)
+                ? JsonSerializer.Deserialize<DeploymentCommandArtifactPayload>(artifactJson)
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string ApplyArtifactOutcomes(
+        string artifactJson,
+        IReadOnlyList<DeploymentCommandArtifactOutcome>? outcomes)
+    {
+        if (outcomes is null || outcomes.Count == 0)
+            return artifactJson;
+
+        var payload = DeserializeArtifactPayload(artifactJson);
+        if (payload is null)
+            return artifactJson;
+
+        var byArtifactId = outcomes.ToDictionary(x => x.ArtifactRecordId);
+        var artifacts = payload.Artifacts.Select(item =>
+        {
+            if (!byArtifactId.TryGetValue(item.ArtifactRecordId, out var outcome))
+                return item;
+
+            return item with
+            {
+                Status = outcome.Status,
+                ObservedDigest = outcome.ObservedDigest,
+                RuntimeReference = outcome.RuntimeReference,
+                Diagnostics = outcome.Diagnostics ?? []
+            };
+        }).ToList();
+
+        return JsonSerializer.Serialize(payload with { Artifacts = artifacts });
+    }
 
     private static IReadOnlyList<DeploymentCommandDiagnostic> DeserializeDiagnostics(string diagnosticsJson) =>
         string.IsNullOrWhiteSpace(diagnosticsJson)
             ? []
             : JsonSerializer.Deserialize<List<DeploymentCommandDiagnostic>>(diagnosticsJson) ?? [];
+
+    private static string SafeArtifactDisplayName(WorkspaceDeploymentArtifactEntity artifact)
+    {
+        var metadata = DeserializeDisplayMetadata(artifact.DisplayMetadataJson, artifact.ManifestName, artifact.ManifestVersion, artifact.ManifestEnvironment);
+        return string.IsNullOrWhiteSpace(metadata.Name)
+            ? artifact.ArtifactId
+            : string.IsNullOrWhiteSpace(metadata.Version)
+                ? metadata.Name
+                : $"{metadata.Name} {metadata.Version}";
+    }
+
+    private sealed record DeploymentCommandArtifactPayload(
+        DeploymentCommandArtifactReference? Artifact,
+        IReadOnlyList<DeploymentCommandArtifactItem> Artifacts);
 
     private static RuntimeControlExecution ToRuntimeControlExecution(RuntimeControlExecutionEntity entity) =>
         new(
