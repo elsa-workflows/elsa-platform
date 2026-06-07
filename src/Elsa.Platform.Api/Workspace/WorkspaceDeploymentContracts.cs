@@ -14,6 +14,13 @@ public sealed record WorkspaceDeploymentTierCapabilitiesResponse(IReadOnlyList<D
 
 public sealed record WorkspaceDeploymentTiersResponse(IReadOnlyList<WorkspaceDeploymentTier> Tiers);
 
+public sealed record WorkspaceDesiredStateRequirementsResponse(
+    Guid EnvironmentId,
+    string EnvironmentName,
+    string TierName,
+    IReadOnlyList<string> TierCapabilities,
+    IReadOnlyList<DesiredStateRequirement> Requirements);
+
 public sealed record WorkspaceDeploymentTierRequest(
     string Name,
     string? Description,
@@ -46,6 +53,8 @@ public sealed record WorkspaceDesiredStateRevisionRequest(
     string Label,
     string? Commit,
     IReadOnlyList<WorkspaceDesiredStateRecordRequest> Records);
+
+public sealed record WorkspaceApplicationRevisionsResponse(IReadOnlyList<WorkspaceDesiredStateRevisionSummary> Items);
 
 public sealed record WorkspaceDesiredStateRecordRequest(
     DesiredStateRecordKind Kind,

@@ -80,6 +80,60 @@ public sealed record WorkspaceDesiredStateRevision(
     DateTimeOffset CreatedAt,
     Guid? CreatedByAccountId);
 
+public sealed record WorkspaceDesiredStateRevisionSummary(
+    WorkspaceDesiredStateRevision Revision,
+    string EnvironmentName,
+    EnvironmentTier EnvironmentTier,
+    Guid? EnvironmentTierId,
+    string? EnvironmentTierName,
+    bool IsCurrentDesired,
+    bool IsCurrentDeployed,
+    WorkspaceDeploymentRunStatus? LatestRunStatus,
+    DateTimeOffset? LatestRunQueuedAt);
+
+public sealed record WorkspaceDesiredStateRevisionDetail(
+    WorkspaceDesiredStateRevisionSummary Summary,
+    IReadOnlyList<WorkspaceDesiredStateRevisionRecord> Records,
+    IReadOnlyList<WorkspaceDesiredStateRevisionRunSummary> Runs);
+
+public sealed record WorkspaceDesiredStateRevisionRecord(
+    Guid Id,
+    DesiredStateRecordKind Kind,
+    string Name,
+    string PayloadJson,
+    string ContentHash,
+    Guid? ArtifactRecordId,
+    string? ArtifactId,
+    string? ArtifactTypeId,
+    WorkspaceArtifactDigest? ArtifactDigest);
+
+public sealed record WorkspaceDesiredStateRevisionRunSummary(
+    Guid Id,
+    Guid EnvironmentId,
+    Guid EngineId,
+    WorkspaceDeploymentRunStatus Status,
+    DeploymentValidationOutcome ValidationOutcome,
+    DateTimeOffset QueuedAt,
+    DateTimeOffset? CompletedAt,
+    string? FailureMessage);
+
+public enum DesiredStateRequirementApplicability
+{
+    CurrentTier,
+    ContextualFix,
+    Optional
+}
+
+public sealed record DesiredStateRequirement(
+    string Id,
+    string? CapabilityId,
+    string RecordKind,
+    string Label,
+    string Description,
+    string ValidationId,
+    bool Required,
+    DesiredStateRequirementApplicability Applicability);
+
 public sealed record WorkspacePromotionPreviewRequest(
     Guid SourceEnvironmentId,
     Guid TargetEnvironmentId,
