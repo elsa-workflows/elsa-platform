@@ -109,7 +109,7 @@ export function DeploymentsPage() {
       const environment = await createDeploymentEnvironment(workspaceId, targetApplicationId, {
         name: values.environmentName,
         tier: values.environmentTier,
-        tierId: activeDeploymentTiers.some((tier) => tier.id === values.environmentTierId) ? values.environmentTierId : null
+        tierId: values.environmentTierId
       });
       await registerDeploymentEngine(workspaceId, environment.id, setupEngineRequest(values));
     },

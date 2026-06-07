@@ -48,7 +48,8 @@ export function DeploymentSetupPanel({
   }, [fixedApplicationName]);
 
   useEffect(() => {
-    if (values.environmentTierId || tierOptions.length === 0) return;
+    const selectedTierStillExists = tierOptions.some((tier) => tier.id === values.environmentTierId);
+    if (selectedTierStillExists || tierOptions.length === 0) return;
     const preferredTier = tierOptions.find((tier) => tier.name === "Production") ?? tierOptions[0];
     setValues((current) => ({
       ...current,

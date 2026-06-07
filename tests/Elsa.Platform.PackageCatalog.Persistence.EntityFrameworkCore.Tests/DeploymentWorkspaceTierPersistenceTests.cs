@@ -249,6 +249,14 @@ public sealed class DeploymentWorkspaceTierPersistenceTests : IDisposable
             """,
             environmentId);
         productionCapabilityCount.Should().Be(1);
+
+        var store = new DeploymentWorkspaceStore(db);
+        var productionTier = (await store.ListTiersAsync(workspaceId)).Single(x => x.Name == EnvironmentTier.Production.ToString());
+        var createdEnvironment = await store.CreateEnvironmentAsync(
+            workspaceId,
+            new CreateDeploymentEnvironmentRequest(applicationId, "Prod EU", EnvironmentTier.Production, productionTier.Id));
+
+        createdEnvironment.TierId.Should().Be(productionTier.Id);
     }
 
     [Fact]

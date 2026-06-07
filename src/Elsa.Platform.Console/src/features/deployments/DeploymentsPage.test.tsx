@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceContextProvider } from "@/app/WorkspaceContextProvider";
 import { DeploymentsPage } from "@/features/deployments/DeploymentsPage";
 import { DeploymentSetupPanel } from "@/features/deployments/DeploymentSetupPanel";
-import type { DeploymentCockpit } from "@/features/deployments/deploymentModels";
+import type { DeploymentCockpit, WorkspaceDeploymentTier } from "@/features/deployments/deploymentModels";
 import { AuthProvider } from "@/lib/auth/AuthProvider";
 
 describe("DeploymentsPage", () => {
@@ -138,6 +138,39 @@ describe("DeploymentsPage", () => {
     expect(screen.getByRole("button", { name: "Create setup" })).toBeDisabled();
   });
 
+  it("replaces a stale selected tier id when workspace tiers change", async () => {
+    const submit = vi.fn();
+    const firstProductionTier = tier("tier-production-old", "Production", 40, ["deployment.tier.production-like"]);
+    const currentProductionTier = tier("tier-production-current", "Production", 40, ["deployment.tier.production-like"]);
+    const { rerender } = render(
+      <DeploymentSetupPanel
+        canManageSetup
+        tiers={[firstProductionTier]}
+        isSubmitting={false}
+        onSubmit={submit}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByLabelText("Tier")).toHaveValue("tier-production-old"));
+    rerender(
+      <DeploymentSetupPanel
+        canManageSetup
+        tiers={[currentProductionTier]}
+        isSubmitting={false}
+        onSubmit={submit}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByLabelText("Tier")).toHaveValue("tier-production-current"));
+    await userEvent.type(screen.getByLabelText("Application"), "Policy");
+    await userEvent.type(screen.getByLabelText("Engine"), "dev-01");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://localhost:5001");
+    await userEvent.type(screen.getByLabelText("Credential reference"), "foo");
+    await userEvent.click(screen.getByRole("button", { name: "Create setup" }));
+
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ environmentTierId: "tier-production-current" }));
+  });
+
   it("creates another deployment setup from a populated cockpit", async () => {
     const fetchMock = renderDeployments();
 
@@ -186,6 +219,32 @@ describe("DeploymentsPage", () => {
       name: "Prod",
       tier: "Production",
       tierId: "tier-production"
+    });
+  });
+
+  it("sends custom tier identity when adding an environment", async () => {
+    const fetchMock = renderDeployments(applicationWithoutSetupCockpit);
+
+    await screen.findByRole("heading", { name: "Deployments" });
+    await userEvent.click(screen.getByRole("button", { name: "Add environment" }));
+    await userEvent.selectOptions(screen.getByLabelText("Tier"), "tier-uat");
+    await userEvent.clear(screen.getByLabelText("Environment"));
+    await userEvent.type(screen.getByLabelText("Environment"), "UAT");
+    await userEvent.type(screen.getByLabelText("Engine"), "policy-uat-weu-01");
+    await userEvent.type(screen.getByLabelText("Base URL"), "https://policy-uat.example.test/elsa");
+    await userEvent.type(screen.getByLabelText("Credential reference"), "kv://policy/uat/elsa-api");
+    await userEvent.click(screen.getAllByRole("button", { name: "Add environment" }).at(-1)!);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/applications/policy-app/environments`),
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+    expect(requestBody(fetchMock, "POST", "/applications/policy-app/environments")).toMatchObject({
+      name: "UAT",
+      tier: "Production",
+      tierId: "tier-uat"
     });
   });
 
@@ -1124,7 +1183,7 @@ function capabilityDefinition(id: string, label: string, category: string) {
   };
 }
 
-function tier(id: string, name: string, sortOrder: number, capabilities: string[], status = "Active") {
+function tier(id: string, name: string, sortOrder: number, capabilities: string[], status: WorkspaceDeploymentTier["status"] = "Active"): WorkspaceDeploymentTier {
   return {
     id,
     workspaceId,

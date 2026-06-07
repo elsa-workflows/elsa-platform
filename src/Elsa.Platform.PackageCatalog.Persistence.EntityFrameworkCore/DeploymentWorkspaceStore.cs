@@ -317,6 +317,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         Guid? actorAccountId = null,
         CancellationToken cancellationToken = default)
     {
+        await NormalizeSqliteDeploymentTierIdsAsync(workspaceId, cancellationToken);
+
         var existing = await dbContext.DeploymentTierDefinitions
             .Include(x => x.Capabilities)
             .Where(x => x.WorkspaceId == workspaceId)
@@ -358,6 +360,46 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             .ThenBy(x => x.Name)
             .Select(x => ToWorkspaceDeploymentTier(x, x.Environments.Count))
             .ToList();
+    }
+
+    private async Task NormalizeSqliteDeploymentTierIdsAsync(Guid workspaceId, CancellationToken cancellationToken)
+    {
+        if (dbContext.Database.ProviderName != "Microsoft.EntityFrameworkCore.Sqlite")
+            return;
+
+        await dbContext.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = OFF;", cancellationToken);
+        try
+        {
+            await dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE DeploymentTierCapabilityAssignments
+                SET TierId = upper(TierId)
+                WHERE lower(WorkspaceId) = lower({workspaceId})
+                  AND TierId <> upper(TierId)
+                """, cancellationToken);
+            await dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE DeploymentTierChangeRecords
+                SET TierId = upper(TierId)
+                WHERE lower(WorkspaceId) = lower({workspaceId})
+                  AND TierId <> upper(TierId)
+                """, cancellationToken);
+            await dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE DeploymentEnvironments
+                SET TierId = upper(TierId)
+                WHERE lower(WorkspaceId) = lower({workspaceId})
+                  AND TierId IS NOT NULL
+                  AND TierId <> upper(TierId)
+                """, cancellationToken);
+            await dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE DeploymentTierDefinitions
+                SET Id = upper(Id)
+                WHERE lower(WorkspaceId) = lower({workspaceId})
+                  AND Id <> upper(Id)
+                """, cancellationToken);
+        }
+        finally
+        {
+            await dbContext.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = ON;", cancellationToken);
+        }
     }
 
     public async Task<IReadOnlyList<WorkspacePermissionGrant>> GetPermissionGrantsAsync(
@@ -2321,22 +2363,13 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         bool requireActive,
         CancellationToken cancellationToken)
     {
-        await EnsureDefaultTiersAsync(workspaceId, cancellationToken: cancellationToken);
-        DeploymentTierDefinitionEntity? tier;
-        if (tierId.HasValue)
-        {
-            tier = await dbContext.DeploymentTierDefinitions
-                .Include(x => x.Capabilities)
-                .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == tierId.Value, cancellationToken);
-        }
-        else
-        {
-            tier = await dbContext.DeploymentTierDefinitions
-                .Include(x => x.Capabilities)
-                .Where(x => x.WorkspaceId == workspaceId && x.Name == legacyTier.ToString())
+        var tiers = await EnsureDefaultTierEntitiesAsync(workspaceId, cancellationToken: cancellationToken);
+        var tier = tierId.HasValue
+            ? tiers.SingleOrDefault(x => x.Id == tierId.Value)
+            : tiers
+                .Where(x => x.Name == legacyTier.ToString())
                 .OrderByDescending(x => x.IsDefault)
-                .FirstOrDefaultAsync(cancellationToken);
-        }
+                .FirstOrDefault();
 
         if (tier is null)
             throw new InvalidOperationException("Deployment tier does not exist in the workspace.");
@@ -2344,6 +2377,18 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             throw new InvalidOperationException("Archived deployment tiers cannot be assigned to environments.");
 
         return tier;
+    }
+
+    private async Task<IReadOnlyList<DeploymentTierDefinitionEntity>> EnsureDefaultTierEntitiesAsync(
+        Guid workspaceId,
+        Guid? actorAccountId = null,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureDefaultTiersAsync(workspaceId, actorAccountId, cancellationToken);
+        return await dbContext.DeploymentTierDefinitions
+            .Include(x => x.Capabilities)
+            .Where(x => x.WorkspaceId == workspaceId)
+            .ToListAsync(cancellationToken);
     }
 
     private async Task AssignMissingEnvironmentTierIdsAsync(
