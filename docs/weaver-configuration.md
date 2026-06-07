@@ -69,6 +69,7 @@ Provider API keys must never be committed, logged, stored in Weaver session reco
 ## GitHub Copilot Runtime
 
 Use GitHub Copilot-backed mode when the API host has a valid GitHub token or authenticated Copilot runtime.
+The API uses the GitHub Copilot SDK in empty-mode hosting, which means only explicitly registered Elsa Platform tools are available to the agent; built-in shell, filesystem, git, and edit tools are not exposed.
 
 ```json
 {
@@ -84,6 +85,8 @@ Use GitHub Copilot-backed mode when the API host has a valid GitHub token or aut
 ```
 
 ## Runtime Limits
+
+`Runtime:CopilotHome` controls where the SDK stores runtime state and resumable session files. If omitted, Weaver uses `.weaver/copilot` relative to the API process working directory.
 
 ```json
 {

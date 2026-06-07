@@ -225,7 +225,15 @@ builder.Services.Configure<WeaverOptions>(builder.Configuration.GetSection("Weav
 builder.Services.AddSingleton<WeaverRedactionService>();
 builder.Services.AddScoped<WeaverWorkspaceTools>();
 builder.Services.AddScoped<IWeaverSessionStore, WeaverSessionStore>();
-builder.Services.AddScoped<IWeaverRuntime, FakeWeaverRuntime>();
+builder.Services.AddScoped<FakeWeaverRuntime>();
+builder.Services.AddScoped<CopilotWeaverRuntime>();
+builder.Services.AddScoped<IWeaverRuntime>(services =>
+{
+    var weaverOptions = services.GetRequiredService<IOptions<WeaverOptions>>().Value;
+    return weaverOptions.ProviderMode == WeaverProviderMode.Fake
+        ? services.GetRequiredService<FakeWeaverRuntime>()
+        : services.GetRequiredService<CopilotWeaverRuntime>();
+});
 builder.Services.AddScoped<WeaverSessionService>();
 builder.Services.AddScoped<WeaverPlanService>();
 builder.Services.AddScoped<WeaverPlanExecutionService>();
