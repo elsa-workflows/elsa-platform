@@ -124,6 +124,8 @@ describe("DeploymentsPage", () => {
       tierId: "tier-production"
     });
     expect(await screen.findByText("Prod - 0 engines")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Continue to engines" }));
+
     await userEvent.type(screen.getByLabelText("Engine name"), "claims-prod");
     await userEvent.type(screen.getByLabelText("Engine base URL"), "https://claims-prod.example/elsa");
     await userEvent.click(screen.getByRole("button", { name: "Register engine" }));
@@ -159,6 +161,12 @@ describe("DeploymentsPage", () => {
     expect(screen.getAllByText("Platform Key Vault").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Dev engine API").length).toBeGreaterThan(0);
     expect(screen.getByText("Register platform-to-engine credentials. Runtime secrets remain managed inside runtimes.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New credential store" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New credential reference" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Register engine credential store" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Register credential reference" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "New credential store" }));
     await userEvent.selectOptions(screen.getByLabelText("Store type"), "LocalEncryptedDatabase");
     expect(screen.getByText("Elsa Platform stores protected engine credential material.")).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByLabelText("Store type"), "AzureKeyVault");
@@ -182,6 +190,7 @@ describe("DeploymentsPage", () => {
       type: "AzureKeyVault"
     });
 
+    await userEvent.click(screen.getByRole("button", { name: "New credential reference" }));
     await userEvent.type(screen.getByLabelText("Reference name"), "Secondary dev engine API");
     await userEvent.type(screen.getByLabelText("Key Vault reference"), "kv://acme-platform/dev/elsa-api-secondary");
     await userEvent.click(screen.getByRole("button", { name: "Register reference" }));
@@ -197,6 +206,20 @@ describe("DeploymentsPage", () => {
       reference: "kv://acme-platform/dev/elsa-api-secondary"
     });
   }, 15000);
+
+  it("hides credential reference registration until a credential store exists", async () => {
+    renderDeployments(undefined, "/admin/deployments/applications/claims-ops", { secretStores: [], credentialReferences: [] });
+
+    expect(await screen.findByRole("heading", { name: "Claims Operations" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Engine credential stores" })).toBeInTheDocument();
+    expect(screen.getByText("No active engine credential stores registered.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New credential store" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New credential reference" })).toBeDisabled();
+    expect(screen.getByText("Create a credential store before adding credential references.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Register engine credential store" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Register credential reference" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Secret store")).not.toBeInTheDocument();
+  });
 
   it("renders application revisions across environments", async () => {
     renderDeployments(undefined, "/admin/deployments/applications/claims-ops/revisions");
@@ -459,8 +482,12 @@ describe("DeploymentsPage", () => {
     const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-dev/engines/dev-engine/edit");
 
     expect(await screen.findByRole("heading", { name: "Edit engine" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Credential provider")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Credential store")).toHaveValue("secret-store-azure");
+    expect(screen.getByLabelText("Credential reference")).toHaveValue("credential-reference-dev");
     await userEvent.clear(screen.getByLabelText("Engine base URL"));
     await userEvent.type(screen.getByLabelText("Engine base URL"), "https://dev-workflows-2.acme.example/elsa");
+    await userEvent.selectOptions(screen.getByLabelText("Credential reference"), "credential-reference-prod");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -469,6 +496,13 @@ describe("DeploymentsPage", () => {
         expect.objectContaining({ method: "PUT" })
       )
     );
+    expect(requestBody(fetchMock, "PUT", "/deployments/engines/dev-engine")).toMatchObject({
+      baseUrl: "https://dev-workflows-2.acme.example/elsa",
+      credentialProvider: "Azure Key Vault",
+      credentialReference: "kv://acme-platform/prod/elsa-api",
+      credentialReferenceId: "credential-reference-prod",
+      credentialAssignmentStatus: "Assigned"
+    });
   }, 15000);
 
   it("registers another workflow engine for an existing environment", async () => {
@@ -655,8 +689,13 @@ describe("DeploymentsPage", () => {
   });
 });
 
-function renderDeployments(cockpit: DeploymentCockpit = deploymentCockpitFixture, initialEntry = "/admin/deployments") {
-  const fetchMock = createDeploymentFetchMock(cockpit);
+type RenderDeploymentsOptions = {
+  secretStores?: WorkspaceDeploymentSecretStore[];
+  credentialReferences?: WorkspaceDeploymentCredentialReference[];
+};
+
+function renderDeployments(cockpit: DeploymentCockpit = deploymentCockpitFixture, initialEntry = "/admin/deployments", options: RenderDeploymentsOptions = {}) {
+  const fetchMock = createDeploymentFetchMock(cockpit, options);
   vi.stubGlobal("fetch", fetchMock);
   render(
     <TestQueryProvider>
@@ -711,10 +750,10 @@ function desiredStateRequirements(environment: DeploymentCockpit["applications"]
   };
 }
 
-function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
+function createDeploymentFetchMock(cockpit: DeploymentCockpit, options: RenderDeploymentsOptions = {}) {
   let currentCockpit = cockpit;
-  let secretStores = [...deploymentSecretStores];
-  let credentialReferences = [...deploymentCredentialReferences];
+  let secretStores = [...(options.secretStores ?? deploymentSecretStores)];
+  let credentialReferences = [...(options.credentialReferences ?? deploymentCredentialReferences)];
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : input.toString();
     const method = init?.method ?? (input instanceof Request ? input.method : "GET");

@@ -57,10 +57,8 @@ import {
 import { listWorkspaceArtifacts, workspaceArtifactDownloadUrl } from "@/features/artifacts/artifactApi";
 import type { WorkspaceArtifact } from "@/features/artifacts/artifactModels";
 import {
-  CredentialReferenceInput,
   DeploymentSetupPanel,
   engineRegistrationRequest,
-  type CredentialReferenceOption,
   type DeploymentSetupValues,
   type EngineRegistrationValues
 } from "@/features/deployments/DeploymentSetupPanel";
@@ -103,7 +101,6 @@ type DeploymentContext = {
   activeTiers: WorkspaceDeploymentTier[];
   secretStores: WorkspaceDeploymentSecretStore[];
   credentialReferences: WorkspaceDeploymentCredentialReference[];
-  credentialOptions: CredentialReferenceOption[];
   canManageSetup: boolean;
   canManageDesiredState: boolean;
   canPreviewPromotion: boolean;
@@ -2118,7 +2115,7 @@ function DeploymentEngineEditReady({
   engineId: string;
 }) {
   const navigate = useNavigate();
-  const { workspaceId, data, credentialOptions } = context;
+  const { workspaceId, data, secretStores, credentialReferences } = context;
   const resolved = resolveEnvironment(data, applicationId, environmentId);
   if (!resolved.application) return <RequestStateView state="not-found" title="Application not found" />;
   if (!resolved.environment) return <RequestStateView state="not-found" title="Environment not found" />;
@@ -2127,16 +2124,18 @@ function DeploymentEngineEditReady({
   if (!engine) return <RequestStateView state="not-found" title="Engine not found" />;
 
   const updateEngine = useMutation({
-    mutationFn: (nextEngine: WorkflowEngineRegistration) =>
-      updateDeploymentEngine(workspaceId, nextEngine.id, {
-        name: nextEngine.name,
-        baseUrl: nextEngine.endpoint.baseUrl,
-        region: nextEngine.endpoint.region || null,
-        credentialProvider: nextEngine.credentialReference.provider,
-        credentialReference: nextEngine.credentialReference.reference,
-        capabilities: nextEngine.capabilities,
-        controls: nextEngine.controls,
-        hostingProvider: nextEngine.hostingProvider
+    mutationFn: (values: EngineEditValues) =>
+      updateDeploymentEngine(workspaceId, engine.id, {
+        name: values.name,
+        baseUrl: values.baseUrl,
+        region: values.region || null,
+        credentialProvider: values.credentialProvider,
+        credentialReference: values.credentialReference,
+        credentialReferenceId: values.credentialReferenceId,
+        credentialAssignmentStatus: values.credentialAssignmentStatus,
+        capabilities: engine.capabilities,
+        controls: engine.controls,
+        hostingProvider: engine.hostingProvider
     }),
     onSuccess: async () => {
       await context.refreshDeploymentCockpit();
@@ -2159,7 +2158,8 @@ function DeploymentEngineEditReady({
     >
       <EngineEditPanel
         engine={engine}
-        credentialOptions={credentialOptions}
+        secretStores={secretStores}
+        credentialReferences={credentialReferences}
         isSubmitting={updateEngine.isPending}
         error={updateEngine.error instanceof Error ? updateEngine.error.message : undefined}
         onCancel={() => navigate(enginePath(application.id, environment.id, engine.id))}
@@ -2219,7 +2219,6 @@ function useDeploymentContext(): DeploymentContextResult {
       activeTiers: deploymentTiers.filter((tier) => tier.status === "Active"),
       secretStores: secretStores.data?.items ?? [],
       credentialReferences: credentialReferences.data?.items ?? [],
-      credentialOptions: credentialReferenceOptions(cockpit.data.engines),
       canManageSetup: Boolean(permissions.data?.permissions.includes("deployments.setup.manage")),
       canManageDesiredState: Boolean(permissions.data?.permissions.includes("deployments.desired-state.manage")),
       canPreviewPromotion: Boolean(permissions.data?.permissions.includes("deployments.promotion.preview")),
@@ -2770,6 +2769,7 @@ function SecretStoresPanel({
   const [referenceName, setReferenceName] = useState("");
   const [referenceValue, setReferenceValue] = useState("");
   const [usageReferenceId, setUsageReferenceId] = useState<string | null>(null);
+  const [activeCredentialForm, setActiveCredentialForm] = useState<"store" | "reference" | null>(null);
   const selectedStore = activeStores.find((store) => store.id === referenceStoreId);
   const usageReference = activeReferences.find((reference) => reference.id === usageReferenceId);
   const usage = useQuery({
@@ -2825,79 +2825,114 @@ function SecretStoresPanel({
           </Table>
         </div>
         <div className="space-y-4 rounded-ui border border-border bg-surface p-4">
-          <form
-            className="grid gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!canCreateStore) return;
-              onCreateStore({ name: storeName.trim(), provider: null, type: storeType, description: null });
-              setStoreName("");
-            }}
-          >
-            <h3 className="text-sm font-semibold">Register engine credential store</h3>
-            <label className="text-sm font-medium">
-              Store name
-              <Input className="mt-1" value={storeName} onChange={(event) => setStoreName(event.target.value)} placeholder="Platform engine credentials" />
-            </label>
-            <label className="text-sm font-medium">
-              Store type
-              <Select className="mt-1 w-full" value={storeType} onChange={(event) => setStoreType(event.target.value as DeploymentSecretStoreType)}>
-                {secretStoreTypeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </Select>
-            </label>
-            <p className="text-xs text-muted-foreground">{storeTypeOption.description}</p>
-            <Button type="submit" disabled={!canCreateStore || isCreatingStore}>
-              <Plus className="h-4 w-4" />
-              Register store
-            </Button>
-          </form>
-          <form
-            className="grid gap-3 border-t border-border pt-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!canCreateReference) return;
-              const name = referenceName.trim();
-              onCreateReference({
-                secretStoreId: referenceStoreId,
-                name,
-                reference: selectedStoreType === "LocalEncryptedDatabase" ? `local://engine-credentials/${slugify(name)}` : referenceValue.trim(),
-                description: null,
-                secretValue: selectedStoreType === "LocalEncryptedDatabase" ? referenceValue.trim() : null
-              });
-              setReferenceName("");
-              setReferenceValue("");
-            }}
-          >
-            <h3 className="text-sm font-semibold">Register credential reference</h3>
-            <label className="text-sm font-medium">
-              Secret store
-              <Select className="mt-1 w-full" value={referenceStoreId} disabled={activeStores.length === 0} onChange={(event) => setReferenceStoreId(event.target.value)}>
-                <option value="" disabled>{activeStores.length === 0 ? "No engine credential stores" : "Select an engine credential store"}</option>
-                {activeStores.map((store) => <option key={store.id} value={store.id}>{store.name} ({secretStoreTypeLabel(store.type)})</option>)}
-              </Select>
-            </label>
-            <label className="text-sm font-medium">
-              Reference name
-              <Input className="mt-1" value={referenceName} onChange={(event) => setReferenceName(event.target.value)} placeholder="Test engine API" />
-            </label>
-            <label className="text-sm font-medium">
-              {selectedTypeOption.referenceLabel}
-              <Input
-                className="mt-1"
-                type={selectedStoreType === "LocalEncryptedDatabase" ? "password" : "text"}
-                value={referenceValue}
-                onChange={(event) => setReferenceValue(event.target.value)}
-                placeholder={selectedTypeOption.referencePlaceholder}
-              />
-            </label>
-            <p className="text-xs text-muted-foreground">{selectedStoreType === "LocalEncryptedDatabase" ? "The submitted value is protected and never displayed again." : selectedTypeOption.description}</p>
-            <Button type="submit" disabled={!canCreateReference || isCreatingReference}>
-              <Plus className="h-4 w-4" />
-              Register reference
-            </Button>
-          </form>
+          <div className="space-y-3">
+            <div>
+              <h3 className="text-sm font-semibold">Credential actions</h3>
+              <p className="mt-1 text-xs text-muted-foreground">Create stores and references only when this application needs additional engine credentials.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" disabled={!canManageSetup} onClick={() => setActiveCredentialForm("store")}>
+                <Plus className="h-4 w-4" />
+                New credential store
+              </Button>
+              <SecondaryButton type="button" disabled={!canManageSetup || activeStores.length === 0} onClick={() => setActiveCredentialForm("reference")}>
+                <Plus className="h-4 w-4" />
+                New credential reference
+              </SecondaryButton>
+            </div>
+            {activeStores.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Create a credential store before adding credential references.</p>
+            ) : null}
+          </div>
+          {activeCredentialForm === "store" ? (
+            <form
+              className="grid gap-3 border-t border-border pt-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!canCreateStore) return;
+                onCreateStore({ name: storeName.trim(), provider: null, type: storeType, description: null });
+                setStoreName("");
+              }}
+            >
+              <h3 className="text-sm font-semibold">Register engine credential store</h3>
+              <label className="text-sm font-medium">
+                Store name
+                <Input className="mt-1" value={storeName} onChange={(event) => setStoreName(event.target.value)} placeholder="Platform engine credentials" />
+              </label>
+              <label className="text-sm font-medium">
+                Store type
+                <Select className="mt-1 w-full" value={storeType} onChange={(event) => setStoreType(event.target.value as DeploymentSecretStoreType)}>
+                  {secretStoreTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </Select>
+              </label>
+              <p className="text-xs text-muted-foreground">{storeTypeOption.description}</p>
+              <div className="flex gap-2">
+                <Button type="submit" disabled={!canCreateStore || isCreatingStore}>
+                  <Plus className="h-4 w-4" />
+                  Register store
+                </Button>
+                <SecondaryButton type="button" onClick={() => setActiveCredentialForm(null)}>Cancel</SecondaryButton>
+              </div>
+            </form>
+          ) : null}
+          {activeCredentialForm === "reference" ? (
+            activeStores.length === 0 ? (
+              <div className="border-t border-border pt-4 text-sm text-muted-foreground">
+                Register an engine credential store first. After it is created, add credential references for the engine secrets it manages.
+              </div>
+            ) : (
+              <form
+                className="grid gap-3 border-t border-border pt-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!canCreateReference) return;
+                  const name = referenceName.trim();
+                  onCreateReference({
+                    secretStoreId: referenceStoreId,
+                    name,
+                    reference: selectedStoreType === "LocalEncryptedDatabase" ? `local://engine-credentials/${slugify(name)}` : referenceValue.trim(),
+                    description: null,
+                    secretValue: selectedStoreType === "LocalEncryptedDatabase" ? referenceValue.trim() : null
+                  });
+                  setReferenceName("");
+                  setReferenceValue("");
+                }}
+              >
+                <h3 className="text-sm font-semibold">Register credential reference</h3>
+                <label className="text-sm font-medium">
+                  Secret store
+                  <Select className="mt-1 w-full" value={referenceStoreId} onChange={(event) => setReferenceStoreId(event.target.value)}>
+                    <option value="" disabled>Select an engine credential store</option>
+                    {activeStores.map((store) => <option key={store.id} value={store.id}>{store.name} ({secretStoreTypeLabel(store.type)})</option>)}
+                  </Select>
+                </label>
+                <label className="text-sm font-medium">
+                  Reference name
+                  <Input className="mt-1" value={referenceName} onChange={(event) => setReferenceName(event.target.value)} placeholder="Test engine API" />
+                </label>
+                <label className="text-sm font-medium">
+                  {selectedTypeOption.referenceLabel}
+                  <Input
+                    className="mt-1"
+                    type={selectedStoreType === "LocalEncryptedDatabase" ? "password" : "text"}
+                    value={referenceValue}
+                    onChange={(event) => setReferenceValue(event.target.value)}
+                    placeholder={selectedTypeOption.referencePlaceholder}
+                  />
+                </label>
+                <p className="text-xs text-muted-foreground">{selectedStoreType === "LocalEncryptedDatabase" ? "The submitted value is protected and never displayed again." : selectedTypeOption.description}</p>
+                <div className="flex gap-2">
+                  <Button type="submit" disabled={!canCreateReference || isCreatingReference}>
+                    <Plus className="h-4 w-4" />
+                    Register reference
+                  </Button>
+                  <SecondaryButton type="button" onClick={() => setActiveCredentialForm(null)}>Cancel</SecondaryButton>
+                </div>
+              </form>
+            )
+          ) : null}
           {!canManageSetup ? <p className="text-sm text-muted-foreground">Deployment setup permission is required.</p> : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
         </div>
@@ -3106,36 +3141,62 @@ function EngineRegistrationPanel({
   );
 }
 
+type EngineEditValues = {
+  name: string;
+  baseUrl: string;
+  region: string | null;
+  credentialProvider: string | null;
+  credentialReference: string | null;
+  credentialReferenceId: string | null;
+  credentialAssignmentStatus: WorkflowEngineRegistration["credentialAssignmentStatus"];
+};
+
 function EngineEditPanel({
   engine,
-  credentialOptions,
+  secretStores,
+  credentialReferences,
   isSubmitting,
   error,
   onCancel,
   onSubmit
 }: {
   engine: WorkflowEngineRegistration;
-  credentialOptions: CredentialReferenceOption[];
+  secretStores: WorkspaceDeploymentSecretStore[];
+  credentialReferences: WorkspaceDeploymentCredentialReference[];
   isSubmitting: boolean;
   error?: string;
   onCancel: () => void;
-  onSubmit: (engine: WorkflowEngineRegistration) => void;
+  onSubmit: (values: EngineEditValues) => void;
 }) {
+  const activeStores = useMemo(() => secretStores.filter((store) => store.status === "Active"), [secretStores]);
+  const activeReferences = useMemo(() => credentialReferences.filter((reference) => reference.status === "Active"), [credentialReferences]);
+  const initialCredentialReference = useMemo(
+    () => activeReferences.find((reference) =>
+      reference.reference === engine.credentialReference.reference &&
+      reference.secretStoreProvider === engine.credentialReference.provider
+    ) ?? null,
+    [activeReferences, engine.credentialReference.provider, engine.credentialReference.reference]
+  );
   const [name, setName] = useState(engine.name);
   const [baseUrl, setBaseUrl] = useState(engine.endpoint.baseUrl);
   const [region, setRegion] = useState(engine.endpoint.region);
-  const [credentialProvider, setCredentialProvider] = useState(engine.credentialReference.provider);
-  const [credentialReference, setCredentialReference] = useState(engine.credentialReference.reference);
+  const [selectedStoreId, setSelectedStoreId] = useState(initialCredentialReference?.secretStoreId ?? "");
+  const [selectedReferenceId, setSelectedReferenceId] = useState(initialCredentialReference?.id ?? "");
+  useEffect(() => {
+    if (selectedReferenceId || !initialCredentialReference) return;
+    setSelectedStoreId(initialCredentialReference.secretStoreId);
+    setSelectedReferenceId(initialCredentialReference.id);
+  }, [initialCredentialReference, selectedReferenceId]);
+  const scopedReferences = activeReferences.filter((reference) => reference.secretStoreId === selectedStoreId);
+  const selectedReference = activeReferences.find((reference) => reference.id === selectedReferenceId) ?? null;
+  const initialReferenceId = initialCredentialReference?.id ?? "";
   const canSubmit =
     name.trim().length > 0 &&
     baseUrl.trim().length > 0 &&
-    credentialProvider.trim().length > 0 &&
-    credentialReference.trim().length > 0 &&
     (name !== engine.name ||
       baseUrl !== engine.endpoint.baseUrl ||
       region !== engine.endpoint.region ||
-      credentialProvider !== engine.credentialReference.provider ||
-      credentialReference !== engine.credentialReference.reference);
+      selectedReferenceId !== initialReferenceId);
 
   return (
     <form
@@ -3144,10 +3205,13 @@ function EngineEditPanel({
         event.preventDefault();
         if (!canSubmit) return;
         onSubmit({
-          ...engine,
           name: name.trim(),
-          endpoint: { ...engine.endpoint, baseUrl: baseUrl.trim(), region: region.trim() },
-          credentialReference: { ...engine.credentialReference, provider: credentialProvider.trim(), reference: credentialReference.trim() }
+          baseUrl: baseUrl.trim(),
+          region: region.trim() || null,
+          credentialProvider: selectedReference?.secretStoreProvider ?? null,
+          credentialReference: selectedReference?.reference ?? null,
+          credentialReferenceId: selectedReference?.id ?? null,
+          credentialAssignmentStatus: selectedReference ? "Assigned" : "Deferred"
         });
       }}
     >
@@ -3165,23 +3229,43 @@ function EngineEditPanel({
           <Input className="mt-1" value={region} onChange={(event) => setRegion(event.target.value)} />
         </label>
         <label className="text-sm font-medium">
-          Credential provider
-          <Input className="mt-1" value={credentialProvider} onChange={(event) => setCredentialProvider(event.target.value)} />
+          Credential store
+          <Select
+            className="mt-1 w-full"
+            value={selectedStoreId}
+            onChange={(event) => {
+              const storeId = event.target.value;
+              const firstReference = activeReferences.find((reference) => reference.secretStoreId === storeId);
+              setSelectedStoreId(storeId);
+              setSelectedReferenceId(firstReference?.id ?? "");
+            }}
+          >
+            <option value="">Credentials deferred</option>
+            {activeStores.map((store) => (
+              <option key={store.id} value={store.id}>{store.name} ({secretStoreTypeLabel(store.type)})</option>
+            ))}
+          </Select>
         </label>
         <label className="text-sm font-medium">
           Credential reference
-          <CredentialReferenceInput
+          <Select
             className="mt-1"
-            value={credentialReference}
-            options={credentialOptions}
-            onChange={(reference) => {
-              const option = credentialOptions.find((item) => item.reference === reference);
-              setCredentialReference(reference);
-              if (option) setCredentialProvider(option.provider);
-            }}
-          />
+            value={selectedReferenceId}
+            disabled={!selectedStoreId || scopedReferences.length === 0}
+            onChange={(event) => setSelectedReferenceId(event.target.value)}
+          >
+            <option value="" disabled>{selectedStoreId ? "No active credential references" : "Select a credential store first"}</option>
+            {scopedReferences.map((reference) => (
+              <option key={reference.id} value={reference.id}>{reference.name} - {reference.reference}</option>
+            ))}
+          </Select>
         </label>
       </div>
+      {activeStores.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">No credential stores are registered. Saving will keep this engine's credentials deferred.</p>
+      ) : selectedStoreId && scopedReferences.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">No active credential references are registered for the selected store.</p>
+      ) : null}
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
       <div className="mt-4 flex gap-2">
         <Button type="submit" disabled={!canSubmit || isSubmitting}>
@@ -4058,20 +4142,6 @@ function deploymentTotals(data: DeploymentCockpit) {
     0
   );
   return { environments, drift };
-}
-
-function credentialReferenceOptions(engines: WorkflowEngineRegistration[]): CredentialReferenceOption[] {
-  const options = new Map<string, CredentialReferenceOption>();
-  for (const engine of engines) {
-    const reference = engine.credentialReference.reference;
-    if (!reference || options.has(reference)) continue;
-    options.set(reference, {
-      provider: engine.credentialReference.provider,
-      reference,
-      label: `${engine.credentialReference.provider} - ${reference}`
-    });
-  }
-  return Array.from(options.values()).sort((left, right) => left.reference.localeCompare(right.reference));
 }
 
 function summarizeApplicationHealth(application: DeploymentCockpit["applications"][number], engines: WorkflowEngineRegistration[]) {
