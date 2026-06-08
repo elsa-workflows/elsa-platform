@@ -19,10 +19,13 @@ describe("OverviewPage", () => {
     renderOverview();
 
     const readinessLink = await screen.findByRole("link", { name: /Deployment readiness\s+2 artifacts/i });
+    const applicationsLink = await screen.findByRole("link", { name: /Applications\s+2 applications/i });
     const packageLink = await screen.findByRole("link", { name: /Package approvals\s+2 pending/i });
 
     expect(readinessLink).toHaveAttribute("href", "/admin/artifacts");
     expect(screen.getByText("Registered artifacts available for revision creation and deployment promotion.")).toBeInTheDocument();
+    expect(applicationsLink).toHaveAttribute("href", "/admin/deployments/applications");
+    expect(screen.getByText("3 environments and 3 engines registered for deployment management.")).toBeInTheDocument();
     expect(packageLink).toHaveAttribute("href", "/admin/packages?approval=Pending");
     expect(screen.getByText("3 packages indexed; 2 packages awaiting approval.")).toBeInTheDocument();
   });
@@ -38,6 +41,8 @@ function renderOverview() {
       return Response.json(workspaceContextFixture());
     if (url.endsWith(`/api/workspaces/${workspaceId}/artifacts`))
       return Response.json({ items: [{ id: "artifact-1" }, { id: "artifact-2" }] });
+    if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/cockpit`))
+      return Response.json(deploymentCockpitFixture());
     if (url.endsWith("/api/admin/packages"))
       return Response.json([
         packageItem("Elsa.Workflows", "Pending"),
@@ -87,6 +92,40 @@ function workspaceContextFixture() {
     workspaces: [
       { id: workspaceId, name: "Acme Insurance", kind: "Shared", role: "Owner", organizationId, organizationName: "Acme Corp", organizationRole: "Owner" }
     ]
+  };
+}
+
+function deploymentCockpitFixture() {
+  return {
+    applications: [
+      {
+        id: "claims",
+        name: "Claims",
+        description: null,
+        environments: [
+          { id: "claims-dev", name: "Dev", tier: "Development", tierId: null, desiredStateRevision: null },
+          { id: "claims-prod", name: "Prod", tier: "Production", tierId: null, desiredStateRevision: null }
+        ]
+      },
+      {
+        id: "policies",
+        name: "Policies",
+        description: null,
+        environments: [
+          { id: "policies-dev", name: "Dev", tier: "Development", tierId: null, desiredStateRevision: null }
+        ]
+      }
+    ],
+    engines: [
+      { id: "claims-dev-engine", environmentId: "claims-dev" },
+      { id: "claims-prod-engine", environmentId: "claims-prod" },
+      { id: "policies-dev-engine", environmentId: "policies-dev" }
+    ],
+    comparisons: [],
+    observabilityBindings: [],
+    history: [],
+    driftReport: [],
+    assistantPlans: []
   };
 }
 

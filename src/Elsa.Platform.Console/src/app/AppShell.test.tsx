@@ -5,6 +5,7 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "@/app/AppShell";
+import { AdminLoginPage, ConsoleNotFoundPage } from "@/app/routes";
 import { AuthProvider } from "@/lib/auth/AuthProvider";
 
 describe("AppShell", () => {
@@ -125,6 +126,22 @@ describe("AppShell", () => {
     expect(workspaceSelect).toHaveDisplayValue("Research");
     expect(screen.queryByRole("option", { name: "Claims" })).not.toBeInTheDocument();
   });
+
+  it("renders a console-owned login recovery page", async () => {
+    renderAppShellRoute("/admin/login");
+
+    expect(await screen.findByRole("heading", { name: "You are already signed in" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open overview" })).toHaveAttribute("href", "/admin/overview");
+    expect(screen.queryByText("Unexpected Application Error!")).not.toBeInTheDocument();
+  });
+
+  it("renders a console-owned not found page for unknown admin routes", async () => {
+    renderAppShellRoute("/admin/missing");
+
+    expect(await screen.findByRole("heading", { name: "Console page not found" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open overview" })).toHaveAttribute("href", "/admin/overview");
+    expect(screen.queryByText("Unexpected Application Error!")).not.toBeInTheDocument();
+  });
 });
 
 function renderAppShell(
@@ -153,6 +170,38 @@ function renderAppShell(
   }));
   const router = createMemoryRouter([{ path: "/admin", element: <AppShell /> }], {
     initialEntries: ["/admin"]
+  });
+
+  render(
+    <TestQueryProvider>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </TestQueryProvider>
+  );
+}
+
+function renderAppShellRoute(route: string) {
+  installLocalStorageStub();
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = input instanceof Request ? input.url : input.toString();
+    if (url.endsWith("/api/auth/session"))
+      return Response.json({ loginEnabled: true, authenticated: true, displayName: "Test User", email: "test@example.com", loginPath: "/api/auth/login", logoutPath: "/api/auth/logout" });
+    if (url.endsWith("/api/me/organizations"))
+      return Response.json(workspaceContextFixture());
+    return Response.json({ name: "Elsa.Platform.Api", buildNumber: "0.0.1" });
+  }));
+  const router = createMemoryRouter([
+    {
+      path: "/admin",
+      element: <AppShell />,
+      children: [
+        { path: "login", element: <AdminLoginPage /> },
+        { path: "*", element: <ConsoleNotFoundPage /> }
+      ]
+    }
+  ], {
+    initialEntries: [route]
   });
 
   render(
