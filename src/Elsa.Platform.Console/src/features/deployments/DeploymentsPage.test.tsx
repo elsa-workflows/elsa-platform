@@ -124,8 +124,6 @@ describe("DeploymentsPage", () => {
       tierId: "tier-production"
     });
     expect(await screen.findByText("Prod - 0 engines")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Engine credentials" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Continue to engines" }));
     await userEvent.type(screen.getByLabelText("Engine name"), "claims-prod");
     await userEvent.type(screen.getByLabelText("Engine base URL"), "https://claims-prod.example/elsa");
     await userEvent.click(screen.getByRole("button", { name: "Register engine" }));
