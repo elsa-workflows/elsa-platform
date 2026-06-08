@@ -148,6 +148,8 @@ type CredentialReferenceValues = {
   secretValue?: string | null;
 };
 
+type EngineCredentialMode = "Create" | "Existing" | "Deferred";
+
 type SetupWizardStep = "application" | "environment" | "credentials" | "engine";
 
 const secretStoreTypeOptions: { value: DeploymentSecretStoreType; label: string; description: string; referenceLabel: string; referencePlaceholder: string }[] = [
@@ -415,6 +417,42 @@ export function DeploymentCredentialsPage() {
   return <DeploymentCredentialsReady context={context.value} />;
 }
 
+export function DeploymentCredentialStoreCreatePage() {
+  const context = useDeploymentContext();
+  if (context.status !== "ready") return context.state;
+  return <DeploymentCredentialStoreCreateReady context={context.value} />;
+}
+
+export function DeploymentCredentialStoreEditPage() {
+  const { secretStoreId } = useParams();
+  const context = useDeploymentContext();
+  if (context.status !== "ready") return context.state;
+  if (!secretStoreId) return <RequestStateView state="not-found" title="Credential store not found" />;
+  return <DeploymentCredentialStoreEditReady context={context.value} secretStoreId={secretStoreId} />;
+}
+
+export function DeploymentCredentialReferenceCreatePage() {
+  const context = useDeploymentContext();
+  if (context.status !== "ready") return context.state;
+  return <DeploymentCredentialReferenceCreateReady context={context.value} />;
+}
+
+export function DeploymentCredentialReferencePage() {
+  const { credentialReferenceId } = useParams();
+  const context = useDeploymentContext();
+  if (context.status !== "ready") return context.state;
+  if (!credentialReferenceId) return <RequestStateView state="not-found" title="Credential reference not found" />;
+  return <DeploymentCredentialReferenceReady context={context.value} credentialReferenceId={credentialReferenceId} />;
+}
+
+export function DeploymentCredentialReferenceEditPage() {
+  const { credentialReferenceId } = useParams();
+  const context = useDeploymentContext();
+  if (context.status !== "ready") return context.state;
+  if (!credentialReferenceId) return <RequestStateView state="not-found" title="Credential reference not found" />;
+  return <DeploymentCredentialReferenceEditReady context={context.value} credentialReferenceId={credentialReferenceId} />;
+}
+
 function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
   const queryClient = useQueryClient();
   const {
@@ -565,10 +603,11 @@ function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
                 environment={activeEnvironment}
                 secretStores={secretStores}
                 credentialReferences={credentialReferences}
-                isSubmitting={registerEngine.isPending}
-                error={registerEngine.error instanceof Error ? registerEngine.error.message : undefined}
+                isSubmitting={registerEngine.isPending || credentialManagement.createCredentialReference.isPending}
+                error={registerEngine.error instanceof Error ? registerEngine.error.message : credentialManagement.error}
                 cancelLabel="Back to environments"
                 onCancel={() => setStep("environment")}
+                onCreateReference={(values) => credentialManagement.createCredentialReference.mutateAsync(values)}
                 onSubmit={(values) => registerEngine.mutate(values)}
               />
             </div>
@@ -588,8 +627,16 @@ function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
 }
 
 function DeploymentCredentialsReady({ context }: { context: DeploymentContext }) {
-  const { workspaceId, secretStores, credentialReferences, canManageSetup } = context;
-  const credentialManagement = useCredentialManagementMutations(workspaceId);
+  const { secretStores, credentialReferences, canManageSetup } = context;
+  const [statusFilter, setStatusFilter] = useSearchParams();
+  const selectedStatus = statusFilter.get("status") === "archived" ? "Archived" : "Active";
+  const visibleStores = secretStores.filter((store) => store.status === selectedStatus);
+  const visibleReferences = credentialReferences.filter((reference) => reference.status === selectedStatus);
+  const activeStores = secretStores.filter((store) => store.status === "Active");
+
+  const setSelectedStatus = (status: "Active" | "Archived") => {
+    setStatusFilter(status === "Archived" ? { status: "archived" } : {});
+  };
 
   return (
     <section className="space-y-5">
@@ -597,27 +644,385 @@ function DeploymentCredentialsReady({ context }: { context: DeploymentContext })
       <PageHeader
         title="Engine credentials"
         description="Manage workspace platform-to-engine credential stores and references. Runtime secrets remain managed inside runtimes."
+        actions={
+          canManageSetup ? (
+            <>
+              <Link to="/admin/deployments/credentials/stores/new" className={buttonClassName("secondary")}>
+                <Plus className="h-4 w-4" />
+                New credential store
+              </Link>
+              <Link
+                to="/admin/deployments/credentials/references/new"
+                className={buttonClassName("primary", activeStores.length === 0 ? "pointer-events-none opacity-50" : undefined)}
+                aria-disabled={activeStores.length === 0}
+              >
+                <Plus className="h-4 w-4" />
+                New credential reference
+              </Link>
+            </>
+          ) : null
+        }
       />
-      <SecretStoresPanel
-        workspaceId={workspaceId}
-        stores={secretStores}
-        references={credentialReferences}
-        canManageSetup={canManageSetup}
-        isCreatingStore={credentialManagement.createSecretStore.isPending}
-        isCreatingReference={credentialManagement.createCredentialReference.isPending}
-        pendingActionId={credentialManagement.pendingActionId}
-        error={credentialManagement.error}
-        showStatusFilter
-        showManagementCopy
-        onCreateStore={(values) => credentialManagement.createSecretStore.mutate(values)}
-        onUpdateStore={(secretStoreId, values) => credentialManagement.updateSecretStore.mutate({ secretStoreId, values })}
-        onArchiveStore={(secretStoreId) => credentialManagement.archiveSecretStore.mutate(secretStoreId)}
-        onCreateReference={(values) => credentialManagement.createCredentialReference.mutate(values)}
-        onUpdateReference={(credentialReferenceId, values) => credentialManagement.updateCredentialReference.mutate({ credentialReferenceId, values })}
-        onRotateReference={(credentialReferenceId, secretValue) => credentialManagement.rotateCredentialReference.mutate({ credentialReferenceId, secretValue })}
-        onArchiveReference={(credentialReferenceId) => credentialManagement.archiveCredentialReference.mutate(credentialReferenceId)}
-      />
+      <div className="rounded-ui border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+        Engine credentials let Elsa Platform interact with registered workflow engines. Runtime secrets and artifact secret references stay in the runtimes.
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="text-sm font-medium" htmlFor="credential-status-filter">Status</label>
+        <Select id="credential-status-filter" className="w-auto min-w-36" value={selectedStatus} onChange={(event) => setSelectedStatus(event.target.value as "Active" | "Archived")}>
+          <option value="Active">Active</option>
+          <option value="Archived">Archived</option>
+        </Select>
+      </div>
+      {!canManageSetup ? (
+        <p className="rounded-ui border border-border bg-surface p-3 text-sm text-muted-foreground">
+          Deployment setup permission is required to change engine credential stores and references.
+        </p>
+      ) : null}
+      <section className="space-y-3">
+        <SectionHeader title="Credential stores" description="Workspace-scoped stores that hold or locate credentials used by Elsa Platform to call engines." />
+        <div className="rounded-ui border border-border bg-surface">
+          <Table>
+            <table className="min-w-full text-sm">
+              <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2">Store</th>
+                  <th className="px-3 py-2">Type</th>
+                  <th className="px-3 py-2">Credential references</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {visibleStores.length === 0 ? (
+                  <tr>
+                    <td className="px-3 py-6 text-center text-sm text-muted-foreground" colSpan={4}>
+                      {selectedStatus === "Archived" ? "No archived engine credential stores." : "No active engine credential stores registered."}
+                    </td>
+                  </tr>
+                ) : (
+                  visibleStores.map((store) => (
+                    <tr key={store.id}>
+                      <td className="px-3 py-3 font-medium">{store.name}</td>
+                      <td className="px-3 py-3">{secretStoreTypeLabel(store.type)}</td>
+                      <td className="px-3 py-3">{credentialReferences.filter((reference) => reference.status === "Active" && reference.secretStoreId === store.id).length}</td>
+                      <td className="px-3 py-3 text-right">
+                        {store.status === "Active" && canManageSetup ? (
+                          <Link to={`/admin/deployments/credentials/stores/${store.id}/edit`} className={buttonClassName("secondary")}>
+                            Edit
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">{store.status === "Archived" ? "Archived" : "View only"}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </Table>
+        </div>
+      </section>
+      <section className="space-y-3">
+        <SectionHeader title="Credential references" description="Named references that engines can use for platform control-plane credentials." />
+        <div className="rounded-ui border border-border bg-surface">
+          <Table>
+            <table className="min-w-full text-sm">
+              <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2">Credential</th>
+                  <th className="px-3 py-2">Store</th>
+                  <th className="px-3 py-2">Reference</th>
+                  <th className="px-3 py-2">Usage</th>
+                  <th className="px-3 py-2">Verification</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {visibleReferences.length === 0 ? (
+                  <tr>
+                    <td className="px-3 py-6 text-center text-sm text-muted-foreground" colSpan={6}>
+                      {selectedStatus === "Archived" ? "No archived credential references." : "No credential references registered."}
+                    </td>
+                  </tr>
+                ) : (
+                  visibleReferences.map((reference) => (
+                    <tr key={reference.id}>
+                      <td className="px-3 py-3 font-medium">{reference.name}</td>
+                      <td className="px-3 py-3">{reference.secretStoreName}</td>
+                      <td className="px-3 py-3">{reference.hasProtectedSecret ? "Protected local credential" : reference.reference}</td>
+                      <td className="px-3 py-3">{reference.usageCount > 0 ? `${reference.usageCount} engines` : "0"}</td>
+                      <td className="px-3 py-3"><StatusBadge value={reference.verificationStatus} tone={credentialTone(reference.verificationStatus)} /></td>
+                      <td className="px-3 py-3 text-right">
+                        <Link to={`/admin/deployments/credentials/references/${reference.id}`} className={buttonClassName("secondary")}>
+                          Open
+                        </Link>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </Table>
+        </div>
+      </section>
     </section>
+  );
+}
+
+function DeploymentCredentialStoreCreateReady({ context }: { context: DeploymentContext }) {
+  const { workspaceId, canManageSetup } = context;
+  const navigate = useNavigate();
+  const credentialManagement = useCredentialManagementMutations(workspaceId);
+
+  return (
+    <FormPageShell
+      title="New credential store"
+      description="Create a workspace-scoped store for credentials Elsa Platform uses to call registered engines."
+      breadcrumbs={[
+        { label: "Deployments", to: "/admin/deployments" },
+        { label: "Engine credentials", to: "/admin/deployments/credentials" },
+        { label: "New credential store" }
+      ]}
+    >
+      <CredentialStoreForm
+        canManageSetup={canManageSetup}
+        isSubmitting={credentialManagement.createSecretStore.isPending}
+        error={credentialManagement.error}
+        onSubmit={(values) => credentialManagement.createSecretStore.mutate(values, { onSuccess: () => navigate("/admin/deployments/credentials") })}
+      />
+    </FormPageShell>
+  );
+}
+
+function DeploymentCredentialStoreEditReady({ context, secretStoreId }: { context: DeploymentContext; secretStoreId: string }) {
+  const { workspaceId, secretStores, credentialReferences, canManageSetup } = context;
+  const navigate = useNavigate();
+  const credentialManagement = useCredentialManagementMutations(workspaceId);
+  const store = secretStores.find((item) => item.id === secretStoreId);
+  const activeReferenceCount = credentialReferences.filter((reference) => reference.status === "Active" && reference.secretStoreId === secretStoreId).length;
+  const [confirmArchive, setConfirmArchive] = useState(false);
+
+  if (!store) {
+    return <RequestStateView state="not-found" title="Credential store not found" description="The selected engine credential store does not exist in this workspace." />;
+  }
+
+  return (
+    <FormPageShell
+      title={`Edit ${store.name}`}
+      description="Update credential store metadata or archive the store when it is no longer used."
+      breadcrumbs={[
+        { label: "Deployments", to: "/admin/deployments" },
+        { label: "Engine credentials", to: "/admin/deployments/credentials" },
+        { label: store.name }
+      ]}
+    >
+      <CredentialStoreForm
+        store={store}
+        canManageSetup={canManageSetup && store.status === "Active"}
+        isSubmitting={credentialManagement.updateSecretStore.isPending}
+        error={credentialManagement.error}
+        onSubmit={(values) => credentialManagement.updateSecretStore.mutate({ secretStoreId, values }, { onSuccess: () => navigate("/admin/deployments/credentials") })}
+      />
+      {store.status === "Active" ? (
+        <div className="rounded-ui border border-border bg-surface p-4">
+          <SectionHeader title="Archive credential store" description="Archiving a store also removes its active references from engine assignment choices." />
+          {confirmArchive ? (
+            <div className="mt-3 space-y-3">
+              <p className="text-sm text-muted-foreground">{activeReferenceCount} active references will be archived with this store.</p>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" disabled={!canManageSetup || credentialManagement.pendingActionId === store.id} onClick={() => credentialManagement.archiveSecretStore.mutate(store.id, { onSuccess: () => navigate("/admin/deployments/credentials") })}>
+                  Confirm archive
+                </Button>
+                <SecondaryButton type="button" onClick={() => setConfirmArchive(false)}>Cancel</SecondaryButton>
+              </div>
+            </div>
+          ) : (
+            <SecondaryButton type="button" className="mt-3" disabled={!canManageSetup} onClick={() => setConfirmArchive(true)}>
+              Archive store
+            </SecondaryButton>
+          )}
+        </div>
+      ) : null}
+    </FormPageShell>
+  );
+}
+
+function DeploymentCredentialReferenceCreateReady({ context }: { context: DeploymentContext }) {
+  const { workspaceId, secretStores, canManageSetup } = context;
+  const navigate = useNavigate();
+  const credentialManagement = useCredentialManagementMutations(workspaceId);
+
+  return (
+    <FormPageShell
+      title="New credential reference"
+      description="Create a named engine credential reference under an active credential store."
+      breadcrumbs={[
+        { label: "Deployments", to: "/admin/deployments" },
+        { label: "Engine credentials", to: "/admin/deployments/credentials" },
+        { label: "New credential reference" }
+      ]}
+    >
+      <CredentialReferenceForm
+        stores={secretStores}
+        canManageSetup={canManageSetup}
+        isSubmitting={credentialManagement.createCredentialReference.isPending}
+        error={credentialManagement.error}
+        onSubmit={(values) => credentialManagement.createCredentialReference.mutate(values, { onSuccess: () => navigate("/admin/deployments/credentials") })}
+      />
+    </FormPageShell>
+  );
+}
+
+function DeploymentCredentialReferenceReady({ context, credentialReferenceId }: { context: DeploymentContext; credentialReferenceId: string }) {
+  const { workspaceId, credentialReferences, canManageSetup } = context;
+  const credentialManagement = useCredentialManagementMutations(workspaceId);
+  const reference = credentialReferences.find((item) => item.id === credentialReferenceId);
+  const [usageExpanded, setUsageExpanded] = useState(reference?.usageCount ? reference.usageCount > 0 : false);
+  const [rotateValue, setRotateValue] = useState("");
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const usage = useQuery({
+    queryKey: reference ? queryKeys.deploymentCredentialReferenceUsage(workspaceId, reference.id) : ["deployments", workspaceId, "credential-references", "usage", "none"],
+    queryFn: () => getDeploymentCredentialReferenceUsage(workspaceId, reference!.id),
+    enabled: Boolean(reference && usageExpanded)
+  });
+
+  if (!reference) {
+    return <RequestStateView state="not-found" title="Credential reference not found" description="The selected engine credential reference does not exist in this workspace." />;
+  }
+
+  const canRotate = canManageSetup && reference.status === "Active" && reference.secretStoreType === "LocalEncryptedDatabase" && rotateValue.trim().length > 0;
+
+  return (
+    <section className="space-y-5">
+      <Breadcrumbs items={[
+        { label: "Deployments", to: "/admin/deployments" },
+        { label: "Engine credentials", to: "/admin/deployments/credentials" },
+        { label: reference.name }
+      ]} />
+      <PageHeader
+        title={reference.name}
+        description="Inspect usage and manage lifecycle actions for this engine credential reference."
+        actions={
+          reference.status === "Active" && canManageSetup ? (
+            <Link to={`/admin/deployments/credentials/references/${reference.id}/edit`} className={buttonClassName("secondary")}>
+              Edit
+            </Link>
+          ) : null
+        }
+      />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.45fr)]">
+        <div className="rounded-ui border border-border bg-surface p-4">
+          <SectionHeader title="Reference details" description="Safe metadata only. Protected local credential values are never displayed." />
+          <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+            <Detail label="Store" value={reference.secretStoreName} />
+            <Detail label="Provider" value={secretStoreTypeLabel(reference.secretStoreType)} />
+            <Detail label="Reference" value={reference.hasProtectedSecret ? "Protected local credential" : reference.reference} />
+            <Detail label="Status" value={reference.status} />
+            <Detail label="Usage" value={reference.usageCount > 0 ? `${reference.usageCount} engines` : "No active engines"} />
+            <Detail label="Verification" value={<StatusBadge value={reference.verificationStatus} tone={credentialTone(reference.verificationStatus)} />} />
+          </dl>
+          <div className="mt-4">
+            <SecondaryButton type="button" onClick={() => setUsageExpanded((current) => !current)}>
+              {usageExpanded ? "Hide usage" : "Show usage"}
+            </SecondaryButton>
+          </div>
+          {usageExpanded ? (
+            <div className="mt-4 border-t border-border pt-4">
+              {usage.isLoading || usage.isFetching ? (
+                <p className="text-sm text-muted-foreground">Loading credential usage.</p>
+              ) : usage.isError ? (
+                <p className="text-sm text-destructive">Credential usage could not load.</p>
+              ) : usage.data?.items.length ? (
+                <ul className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                  {usage.data.items.map((item) => (
+                    <li key={item.engineId} className="rounded-ui border border-border bg-muted/30 px-3 py-2">
+                      <span className="block font-medium text-foreground">{item.engineName}</span>
+                      <span>{item.applicationName} / {item.environmentName}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">No active engines currently use this credential reference.</p>
+              )}
+            </div>
+          ) : null}
+        </div>
+        <div className="space-y-4">
+          {reference.status === "Active" && reference.secretStoreType === "LocalEncryptedDatabase" ? (
+            <form
+              className="rounded-ui border border-border bg-surface p-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!canRotate) return;
+                credentialManagement.rotateCredentialReference.mutate({ credentialReferenceId: reference.id, secretValue: rotateValue.trim() }, { onSuccess: () => setRotateValue("") });
+              }}
+            >
+              <SectionHeader title="Rotate credential" description={reference.usageCount > 0 ? `${reference.usageCount} engines use this reference.` : "No active engines currently use this reference."} />
+              <label className="mt-3 block text-sm font-medium">
+                New credential value
+                <Input className="mt-1" type="password" value={rotateValue} onChange={(event) => setRotateValue(event.target.value)} placeholder="New credential value" />
+              </label>
+              <Button type="submit" className="mt-3" disabled={!canRotate || credentialManagement.pendingActionId === reference.id}>
+                Rotate
+              </Button>
+            </form>
+          ) : null}
+          {reference.status === "Active" ? (
+            <div className="rounded-ui border border-border bg-surface p-4">
+              <SectionHeader title="Archive reference" description="Archive only after reassignment or after confirming affected engines no longer need platform control." />
+              {confirmArchive ? (
+                <div className="mt-3 space-y-3">
+                  <p className="text-sm text-muted-foreground">{reference.usageCount > 0 ? `${reference.usageCount} engines currently use this reference.` : "No active engines currently use this reference."}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" disabled={!canManageSetup || credentialManagement.pendingActionId === reference.id} onClick={() => credentialManagement.archiveCredentialReference.mutate(reference.id)}>
+                      Confirm archive
+                    </Button>
+                    <SecondaryButton type="button" onClick={() => setConfirmArchive(false)}>Cancel</SecondaryButton>
+                  </div>
+                </div>
+              ) : (
+                <SecondaryButton type="button" className="mt-3" disabled={!canManageSetup} onClick={() => setConfirmArchive(true)}>
+                  Archive reference
+                </SecondaryButton>
+              )}
+            </div>
+          ) : null}
+          {credentialManagement.error ? <p className="text-sm text-destructive">{credentialManagement.error}</p> : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DeploymentCredentialReferenceEditReady({ context, credentialReferenceId }: { context: DeploymentContext; credentialReferenceId: string }) {
+  const { workspaceId, secretStores, credentialReferences, canManageSetup } = context;
+  const navigate = useNavigate();
+  const credentialManagement = useCredentialManagementMutations(workspaceId);
+  const reference = credentialReferences.find((item) => item.id === credentialReferenceId);
+
+  if (!reference) {
+    return <RequestStateView state="not-found" title="Credential reference not found" description="The selected engine credential reference does not exist in this workspace." />;
+  }
+
+  return (
+    <FormPageShell
+      title={`Edit ${reference.name}`}
+      description="Update safe metadata for this engine credential reference."
+      breadcrumbs={[
+        { label: "Deployments", to: "/admin/deployments" },
+        { label: "Engine credentials", to: "/admin/deployments/credentials" },
+        { label: reference.name, to: `/admin/deployments/credentials/references/${reference.id}` },
+        { label: "Edit" }
+      ]}
+    >
+      <CredentialReferenceForm
+        reference={reference}
+        stores={secretStores}
+        canManageSetup={canManageSetup && reference.status === "Active"}
+        isSubmitting={credentialManagement.updateCredentialReference.isPending}
+        error={credentialManagement.error}
+        onSubmit={(values) => credentialManagement.updateCredentialReference.mutate({ credentialReferenceId: reference.id, values }, { onSuccess: () => navigate(`/admin/deployments/credentials/references/${reference.id}`) })}
+      />
+    </FormPageShell>
   );
 }
 
@@ -1973,6 +2378,7 @@ function DeploymentEngineRegisterReady({
       navigate(enginePath(application.id, environment.id, engine.id));
     }
   });
+  const credentialManagement = useCredentialManagementMutations(workspaceId);
 
   return (
     <FormPageShell
@@ -1991,9 +2397,10 @@ function DeploymentEngineRegisterReady({
           environment={environment}
           secretStores={secretStores}
           credentialReferences={credentialReferences}
-          isSubmitting={registerEngine.isPending}
-          error={registerEngine.error instanceof Error ? registerEngine.error.message : undefined}
+          isSubmitting={registerEngine.isPending || credentialManagement.createCredentialReference.isPending}
+          error={registerEngine.error instanceof Error ? registerEngine.error.message : credentialManagement.error}
           onCancel={() => navigate(environmentPath(application.id, environment.id))}
+          onCreateReference={(values) => credentialManagement.createCredentialReference.mutateAsync(values)}
           onSubmit={(values) => registerEngine.mutate(values)}
         />
       </div>
@@ -2138,6 +2545,7 @@ function DeploymentEngineEditReady({
       navigate(enginePath(application.id, environment.id, engine.id));
     }
   });
+  const credentialManagement = useCredentialManagementMutations(workspaceId);
 
   return (
     <FormPageShell
@@ -2156,9 +2564,10 @@ function DeploymentEngineEditReady({
         engine={engine}
         secretStores={secretStores}
         credentialReferences={credentialReferences}
-        isSubmitting={updateEngine.isPending}
-        error={updateEngine.error instanceof Error ? updateEngine.error.message : undefined}
+        isSubmitting={updateEngine.isPending || credentialManagement.createCredentialReference.isPending}
+        error={updateEngine.error instanceof Error ? updateEngine.error.message : credentialManagement.error}
         onCancel={() => navigate(enginePath(application.id, environment.id, engine.id))}
+        onCreateReference={(values) => credentialManagement.createCredentialReference.mutateAsync(values)}
         onSubmit={(values) => updateEngine.mutate(values)}
       />
     </FormPageShell>
@@ -2811,6 +3220,165 @@ function EnvironmentForm({
   );
 }
 
+function CredentialStoreForm({
+  store,
+  canManageSetup,
+  isSubmitting,
+  error,
+  onSubmit
+}: {
+  store?: WorkspaceDeploymentSecretStore;
+  canManageSetup: boolean;
+  isSubmitting: boolean;
+  error?: string;
+  onSubmit: (values: CredentialStoreValues) => void;
+}) {
+  const [name, setName] = useState(store?.name ?? "");
+  const [type, setType] = useState<DeploymentSecretStoreType>(store?.type ?? "AzureKeyVault");
+  const typeOption = secretStoreTypeOptions.find((option) => option.value === type) ?? secretStoreTypeOptions[0];
+  const canSubmit = canManageSetup && name.trim().length > 0;
+  const isEditing = Boolean(store);
+
+  return (
+    <form
+      className="grid gap-4 rounded-ui border border-border bg-surface p-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!canSubmit) return;
+        onSubmit({ name: name.trim(), provider: null, type, description: store?.description ?? null });
+      }}
+    >
+      {!canManageSetup ? <p className="text-sm text-muted-foreground">Deployment setup permission is required to change engine credential stores.</p> : null}
+      <label className="text-sm font-medium">
+        Store name
+        <Input className="mt-1" value={name} disabled={!canManageSetup} onChange={(event) => setName(event.target.value)} placeholder="Platform engine credentials" />
+      </label>
+      <label className="text-sm font-medium">
+        Store type
+        <Select className="mt-1 w-full" value={type} disabled={!canManageSetup || isEditing} onChange={(event) => setType(event.target.value as DeploymentSecretStoreType)}>
+          {secretStoreTypeOptions.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </Select>
+      </label>
+      <p className="text-xs text-muted-foreground">{typeOption.description}</p>
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={!canSubmit || isSubmitting}>
+          {isEditing ? "Save store" : "Create store"}
+        </Button>
+        <Link to="/admin/deployments/credentials" className={buttonClassName("secondary")}>Cancel</Link>
+      </div>
+    </form>
+  );
+}
+
+function CredentialReferenceForm({
+  reference,
+  stores,
+  canManageSetup,
+  isSubmitting,
+  error,
+  onSubmit
+}: {
+  reference?: WorkspaceDeploymentCredentialReference;
+  stores: WorkspaceDeploymentSecretStore[];
+  canManageSetup: boolean;
+  isSubmitting: boolean;
+  error?: string;
+  onSubmit: (values: CredentialReferenceValues) => void;
+}) {
+  const activeStores = stores.filter((store) => store.status === "Active");
+  const initialStoreId = reference?.secretStoreId ?? activeStores[0]?.id ?? "";
+  const [secretStoreId, setSecretStoreId] = useState(initialStoreId);
+  const [name, setName] = useState(reference?.name ?? "");
+  const [referenceValue, setReferenceValue] = useState(reference?.hasProtectedSecret ? "" : reference?.reference ?? "");
+  const selectedStore = stores.find((store) => store.id === secretStoreId);
+  const selectedStoreType = selectedStore?.type ?? reference?.secretStoreType ?? "GenericExternalReference";
+  const selectedTypeOption = secretStoreTypeOptions.find((option) => option.value === selectedStoreType) ?? secretStoreTypeOptions[secretStoreTypeOptions.length - 1];
+  const isEditing = Boolean(reference);
+  const isProtectedLocalEdit = isEditing && reference?.hasProtectedSecret;
+  const requiresReferenceValue = !isProtectedLocalEdit;
+  const canSubmit = canManageSetup && secretStoreId.length > 0 && name.trim().length > 0 && (!requiresReferenceValue || referenceValue.trim().length > 0);
+
+  if (!isEditing && activeStores.length === 0) {
+    return (
+      <div className="rounded-ui border border-border bg-surface p-4">
+        <EmptyState
+          title="Create a credential store first"
+          description="Credential references are registered under an active engine credential store."
+          action={<Link to="/admin/deployments/credentials/stores/new" className={buttonClassName()}>New credential store</Link>}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className="grid gap-4 rounded-ui border border-border bg-surface p-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!canSubmit) return;
+        const trimmedName = name.trim();
+        const submittedReference = isProtectedLocalEdit
+          ? reference.reference
+          : selectedStoreType === "LocalEncryptedDatabase"
+            ? `local://engine-credentials/${slugify(trimmedName)}`
+            : referenceValue.trim();
+        onSubmit({
+          secretStoreId,
+          name: trimmedName,
+          reference: submittedReference,
+          description: reference?.description ?? null,
+          secretValue: !isEditing && selectedStoreType === "LocalEncryptedDatabase" ? referenceValue.trim() : null
+        });
+      }}
+    >
+      {!canManageSetup ? <p className="text-sm text-muted-foreground">Deployment setup permission is required to change engine credential references.</p> : null}
+      <label className="text-sm font-medium">
+        Engine credential store
+        <Select className="mt-1 w-full" value={secretStoreId} disabled={!canManageSetup || isEditing} onChange={(event) => setSecretStoreId(event.target.value)}>
+          <option value="" disabled>Select an engine credential store</option>
+          {(isEditing ? stores : activeStores).map((store) => (
+            <option key={store.id} value={store.id}>{store.name} ({secretStoreTypeLabel(store.type)})</option>
+          ))}
+        </Select>
+      </label>
+      <label className="text-sm font-medium">
+        Reference name
+        <Input className="mt-1" value={name} disabled={!canManageSetup} onChange={(event) => setName(event.target.value)} placeholder="Test engine API" />
+      </label>
+      {isProtectedLocalEdit ? (
+        <div className="rounded-ui border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+          This reference uses a protected local credential. Rotate the secret from the reference detail page.
+        </div>
+      ) : (
+        <label className="text-sm font-medium">
+          {selectedTypeOption.referenceLabel}
+          <Input
+            className="mt-1"
+            type={selectedStoreType === "LocalEncryptedDatabase" ? "password" : "text"}
+            value={referenceValue}
+            disabled={!canManageSetup}
+            onChange={(event) => setReferenceValue(event.target.value)}
+            placeholder={selectedTypeOption.referencePlaceholder}
+          />
+        </label>
+      )}
+      <p className="text-xs text-muted-foreground">
+        {selectedStoreType === "LocalEncryptedDatabase" ? "The submitted value is protected and never displayed again." : selectedTypeOption.description}
+      </p>
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={!canSubmit || isSubmitting}>
+          {isEditing ? "Save reference" : "Create reference"}
+        </Button>
+        <Link to={reference ? `/admin/deployments/credentials/references/${reference.id}` : "/admin/deployments/credentials"} className={buttonClassName("secondary")}>Cancel</Link>
+      </div>
+    </form>
+  );
+}
+
 function SecretStoresPanel({
   workspaceId,
   stores,
@@ -3262,6 +3830,7 @@ function EngineRegistrationPanel({
   error,
   cancelLabel = "Cancel",
   onCancel,
+  onCreateReference,
   onSubmit
 }: {
   environment: Pick<EnvironmentSummary, "id" | "name">;
@@ -3271,15 +3840,22 @@ function EngineRegistrationPanel({
   error?: string;
   cancelLabel?: string;
   onCancel: () => void;
+  onCreateReference: (values: CredentialReferenceValues) => Promise<WorkspaceDeploymentCredentialReference>;
   onSubmit: (values: EngineRegistrationValues) => void;
 }) {
   const activeSecretStores = secretStores.filter((store) => store.status === "Active");
   const [selectedSecretStoreId, setSelectedSecretStoreId] = useState(activeSecretStores[0]?.id ?? "");
   const scopedCredentialReferences = credentialReferences.filter((reference) => reference.status === "Active" && reference.secretStoreId === selectedSecretStoreId);
+  const selectedSecretStore = activeSecretStores.find((store) => store.id === selectedSecretStoreId);
+  const selectedStoreType = selectedSecretStore?.type ?? "GenericExternalReference";
+  const selectedTypeOption = secretStoreTypeOptions.find((option) => option.value === selectedStoreType) ?? secretStoreTypeOptions[secretStoreTypeOptions.length - 1];
+  const [credentialMode, setCredentialMode] = useState<EngineCredentialMode>(activeSecretStores.length > 0 ? "Create" : "Deferred");
+  const [referenceName, setReferenceName] = useState("");
+  const [referenceValue, setReferenceValue] = useState("");
   const [values, setValues] = useState<EngineRegistrationValues>({
     engineName: "",
     baseUrl: "",
-    credentialAssignmentStatus: scopedCredentialReferences.length > 0 ? "Assigned" : "Deferred",
+    credentialAssignmentStatus: activeSecretStores.length > 0 ? "Assigned" : "Deferred",
     credentialReferenceId: scopedCredentialReferences[0]?.id ?? null
   });
   useEffect(() => {
@@ -3294,22 +3870,55 @@ function EngineRegistrationPanel({
       credentialAssignmentStatus: scopedCredentialReferences.length > 0 ? current.credentialAssignmentStatus ?? "Assigned" : "Deferred"
     }));
   }, [scopedCredentialReferences, values.credentialReferenceId]);
-  const credentialsDeferred = values.credentialAssignmentStatus === "Deferred";
+  useEffect(() => {
+    if (activeSecretStores.length > 0 || credentialMode === "Deferred") return;
+    setCredentialMode("Deferred");
+  }, [activeSecretStores.length, credentialMode]);
+  const credentialsDeferred = credentialMode === "Deferred";
+  const referenceNameForSubmit = referenceName.trim() || `${values.engineName.trim()} engine credential`;
+  const canCreateReference =
+    credentialMode === "Create" &&
+    selectedSecretStore !== undefined &&
+    referenceNameForSubmit.trim().length > 0 &&
+    referenceValue.trim().length > 0;
   const canSubmit =
     values.engineName.trim().length > 0 &&
     values.baseUrl.trim().length > 0 &&
-    (credentialsDeferred || Boolean(values.credentialReferenceId));
+    (credentialsDeferred ||
+      (credentialMode === "Existing" && Boolean(values.credentialReferenceId)) ||
+      canCreateReference);
 
   return (
     <form
-      onSubmit={(event) => {
+      onSubmit={async (event) => {
         event.preventDefault();
         if (!canSubmit) return;
+        if (credentialMode === "Create") {
+          let reference: WorkspaceDeploymentCredentialReference;
+          try {
+            reference = await onCreateReference({
+              secretStoreId: selectedSecretStoreId,
+              name: referenceNameForSubmit,
+              reference: selectedStoreType === "LocalEncryptedDatabase" ? `local://engine-credentials/${slugify(referenceNameForSubmit)}` : referenceValue.trim(),
+              description: null,
+              secretValue: selectedStoreType === "LocalEncryptedDatabase" ? referenceValue.trim() : null
+            });
+          } catch {
+            return;
+          }
+          onSubmit({
+            engineName: values.engineName.trim(),
+            baseUrl: values.baseUrl.trim(),
+            credentialAssignmentStatus: "Assigned",
+            credentialReferenceId: reference.id
+          });
+          return;
+        }
         onSubmit({
           engineName: values.engineName.trim(),
           baseUrl: values.baseUrl.trim(),
           credentialAssignmentStatus: credentialsDeferred ? "Deferred" : "Assigned",
-          credentialReferenceId: credentialsDeferred ? null : values.credentialReferenceId
+          credentialReferenceId: credentialMode === "Existing" ? values.credentialReferenceId : null
         });
       }}
     >
@@ -3326,57 +3935,108 @@ function EngineRegistrationPanel({
           Engine base URL
           <Input className="mt-1" placeholder="https://test-engine.example.com" value={values.baseUrl} onChange={(event) => setValues((current) => ({ ...current, baseUrl: event.target.value }))} />
         </label>
-        <label className="text-sm font-medium">
-          Secret store
-          <Select
-            className="mt-1 w-full"
-            value={selectedSecretStoreId}
-            onChange={(event) => setSelectedSecretStoreId(event.target.value)}
-            disabled={activeSecretStores.length === 0 || credentialsDeferred}
-          >
-            <option value="" disabled>{activeSecretStores.length === 0 ? "No secret stores registered" : "Select a secret store"}</option>
-            {activeSecretStores.map((store) => (
-              <option key={store.id} value={store.id}>{store.name} ({secretStoreTypeLabel(store.type)})</option>
-            ))}
-          </Select>
-        </label>
-        <label className="text-sm font-medium">
-          Credential reference
-          <Select
-            className="mt-1 w-full"
-            value={values.credentialReferenceId ?? ""}
-            onChange={(event) => setValues((current) => ({ ...current, credentialReferenceId: event.target.value }))}
-            disabled={scopedCredentialReferences.length === 0 || credentialsDeferred}
-          >
-            <option value="" disabled>{selectedSecretStoreId ? "Select a credential reference" : "Select a secret store first"}</option>
-            {scopedCredentialReferences.map((reference) => (
-              <option key={reference.id} value={reference.id}>{reference.name} - {reference.reference}</option>
-            ))}
-          </Select>
-        </label>
       </div>
-      <label className="mt-3 flex items-start gap-2 text-sm text-muted-foreground">
-        <input
-          type="checkbox"
-          className="mt-1"
-          checked={credentialsDeferred}
-          onChange={(event) =>
-            setValues((current) => ({
-              ...current,
-              credentialAssignmentStatus: event.target.checked ? "Deferred" : "Assigned",
-              credentialReferenceId: event.target.checked ? null : scopedCredentialReferences[0]?.id ?? current.credentialReferenceId ?? null
-            }))
-          }
-        />
-        <span>Register this engine with credentials deferred.</span>
-      </label>
+      <div className="mt-4 space-y-3 rounded-ui border border-border bg-muted/20 p-3">
+        <SectionHeader title="Engine credentials" description="Create a credential for this engine, reuse an existing reference, or defer credentials." />
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Credential assignment mode">
+          <button
+            type="button"
+            className={buttonClassName(credentialMode === "Create" ? "primary" : "secondary")}
+            disabled={activeSecretStores.length === 0}
+            onClick={() => setCredentialMode("Create")}
+          >
+            Create for this engine
+          </button>
+          <button
+            type="button"
+            className={buttonClassName(credentialMode === "Existing" ? "primary" : "secondary")}
+            disabled={scopedCredentialReferences.length === 0}
+            onClick={() => setCredentialMode("Existing")}
+          >
+            Use existing
+          </button>
+          <button type="button" className={buttonClassName(credentialMode === "Deferred" ? "primary" : "secondary")} onClick={() => setCredentialMode("Deferred")}>
+            Defer credentials
+          </button>
+        </div>
+        {credentialMode === "Create" ? (
+          activeSecretStores.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Create an engine credential store before adding engine-specific credentials, or register this engine with credentials deferred.
+            </p>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-sm font-medium">
+                Credential store
+                <Select className="mt-1 w-full" value={selectedSecretStoreId} onChange={(event) => setSelectedSecretStoreId(event.target.value)}>
+                  {activeSecretStores.map((store) => (
+                    <option key={store.id} value={store.id}>{store.name} ({secretStoreTypeLabel(store.type)})</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="text-sm font-medium">
+                Reference name
+                <Input className="mt-1" value={referenceName} onChange={(event) => setReferenceName(event.target.value)} placeholder={values.engineName.trim() ? `${values.engineName.trim()} engine credential` : "Engine API credential"} />
+              </label>
+              <label className="text-sm font-medium md:col-span-2">
+                {selectedTypeOption.referenceLabel}
+                <Input
+                  className="mt-1"
+                  type={selectedStoreType === "LocalEncryptedDatabase" ? "password" : "text"}
+                  value={referenceValue}
+                  onChange={(event) => setReferenceValue(event.target.value)}
+                  placeholder={selectedTypeOption.referencePlaceholder}
+                />
+              </label>
+              <p className="text-xs text-muted-foreground md:col-span-2">
+                {selectedStoreType === "LocalEncryptedDatabase" ? "The submitted value is protected and never displayed again." : selectedTypeOption.description}
+              </p>
+            </div>
+          )
+        ) : null}
+        {credentialMode === "Existing" ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="text-sm font-medium">
+              Credential store
+              <Select
+                className="mt-1 w-full"
+                value={selectedSecretStoreId}
+                onChange={(event) => setSelectedSecretStoreId(event.target.value)}
+                disabled={activeSecretStores.length === 0}
+              >
+                <option value="" disabled>{activeSecretStores.length === 0 ? "No credential stores registered" : "Select a credential store"}</option>
+                {activeSecretStores.map((store) => (
+                  <option key={store.id} value={store.id}>{store.name} ({secretStoreTypeLabel(store.type)})</option>
+                ))}
+              </Select>
+            </label>
+            <label className="text-sm font-medium">
+              Credential reference
+              <Select
+                className="mt-1 w-full"
+                value={values.credentialReferenceId ?? ""}
+                onChange={(event) => setValues((current) => ({ ...current, credentialReferenceId: event.target.value }))}
+                disabled={scopedCredentialReferences.length === 0}
+              >
+                <option value="" disabled>{selectedSecretStoreId ? "Select a credential reference" : "Select a credential store first"}</option>
+                {scopedCredentialReferences.map((reference) => (
+                  <option key={reference.id} value={reference.id}>{reference.name} - {reference.hasProtectedSecret ? "Protected local credential" : reference.reference}</option>
+                ))}
+              </Select>
+            </label>
+          </div>
+        ) : null}
+        {credentialMode === "Deferred" ? (
+          <p className="text-sm text-muted-foreground">Register this engine now and assign credentials later from the engine edit screen.</p>
+        ) : null}
+      </div>
       {activeSecretStores.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">
-          No engine credential stores are registered. You can continue with credentials deferred or <Link to="/admin/deployments/credentials" className="text-primary hover:underline">manage engine credentials</Link>.
+          No engine credential stores are registered. You can continue with credentials deferred or <Link to="/admin/deployments/credentials/stores/new" className="text-primary hover:underline">create a credential store</Link>.
         </p>
-      ) : selectedSecretStoreId && scopedCredentialReferences.length === 0 ? (
+      ) : credentialMode === "Existing" && selectedSecretStoreId && scopedCredentialReferences.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">
-          No active credential references are registered for the selected store. You can continue with credentials deferred or <Link to="/admin/deployments/credentials" className="text-primary hover:underline">manage engine credentials</Link>.
+          No active credential references are registered for the selected store. Create a credential for this engine or <Link to="/admin/deployments/credentials" className="text-primary hover:underline">open credential inventory</Link>.
         </p>
       ) : null}
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
@@ -3408,6 +4068,7 @@ function EngineEditPanel({
   isSubmitting,
   error,
   onCancel,
+  onCreateReference,
   onSubmit
 }: {
   engine: WorkflowEngineRegistration;
@@ -3416,6 +4077,7 @@ function EngineEditPanel({
   isSubmitting: boolean;
   error?: string;
   onCancel: () => void;
+  onCreateReference: (values: CredentialReferenceValues) => Promise<WorkspaceDeploymentCredentialReference>;
   onSubmit: (values: EngineEditValues) => void;
 }) {
   const activeStores = useMemo(() => secretStores.filter((store) => store.status === "Active"), [secretStores]);
@@ -3432,36 +4094,82 @@ function EngineEditPanel({
   const [region, setRegion] = useState(engine.endpoint.region);
   const [selectedStoreId, setSelectedStoreId] = useState(initialCredentialReference?.secretStoreId ?? "");
   const [selectedReferenceId, setSelectedReferenceId] = useState(initialCredentialReference?.id ?? "");
+  const [credentialMode, setCredentialMode] = useState<EngineCredentialMode>(initialCredentialReference ? "Existing" : "Deferred");
+  const [newReferenceStoreId, setNewReferenceStoreId] = useState(activeStores[0]?.id ?? "");
+  const [newReferenceName, setNewReferenceName] = useState("");
+  const [newReferenceValue, setNewReferenceValue] = useState("");
   useEffect(() => {
     if (selectedReferenceId || !initialCredentialReference) return;
     setSelectedStoreId(initialCredentialReference.secretStoreId);
     setSelectedReferenceId(initialCredentialReference.id);
   }, [initialCredentialReference, selectedReferenceId]);
+  useEffect(() => {
+    if (activeStores.some((store) => store.id === newReferenceStoreId)) return;
+    setNewReferenceStoreId(activeStores[0]?.id ?? "");
+  }, [activeStores, newReferenceStoreId]);
   const scopedReferences = activeReferences.filter((reference) => reference.secretStoreId === selectedStoreId);
   const selectedReference = activeReferences.find((reference) => reference.id === selectedReferenceId) ?? null;
+  const newReferenceStore = activeStores.find((store) => store.id === newReferenceStoreId);
+  const newReferenceStoreType = newReferenceStore?.type ?? "GenericExternalReference";
+  const newReferenceTypeOption = secretStoreTypeOptions.find((option) => option.value === newReferenceStoreType) ?? secretStoreTypeOptions[secretStoreTypeOptions.length - 1];
   const initialReferenceId = initialCredentialReference?.id ?? "";
+  const newReferenceNameForSubmit = newReferenceName.trim() || `${name.trim()} engine credential`;
+  const canCreateReference =
+    credentialMode === "Create" &&
+    newReferenceStore !== undefined &&
+    newReferenceNameForSubmit.trim().length > 0 &&
+    newReferenceValue.trim().length > 0;
   const canSubmit =
     name.trim().length > 0 &&
     baseUrl.trim().length > 0 &&
     (name !== engine.name ||
       baseUrl !== engine.endpoint.baseUrl ||
       region !== engine.endpoint.region ||
-      selectedReferenceId !== initialReferenceId);
+      (credentialMode === "Existing" && selectedReferenceId !== initialReferenceId) ||
+      credentialMode === "Create" ||
+      (credentialMode === "Deferred" && initialReferenceId !== "")) &&
+    (credentialMode === "Deferred" ||
+      (credentialMode === "Existing" && Boolean(selectedReferenceId)) ||
+      canCreateReference);
 
   return (
     <form
       className="rounded-ui border border-border bg-surface p-4"
-      onSubmit={(event) => {
+      onSubmit={async (event) => {
         event.preventDefault();
         if (!canSubmit) return;
+        if (credentialMode === "Create") {
+          let reference: WorkspaceDeploymentCredentialReference;
+          try {
+            reference = await onCreateReference({
+              secretStoreId: newReferenceStoreId,
+              name: newReferenceNameForSubmit,
+              reference: newReferenceStoreType === "LocalEncryptedDatabase" ? `local://engine-credentials/${slugify(newReferenceNameForSubmit)}` : newReferenceValue.trim(),
+              description: null,
+              secretValue: newReferenceStoreType === "LocalEncryptedDatabase" ? newReferenceValue.trim() : null
+            });
+          } catch {
+            return;
+          }
+          onSubmit({
+            name: name.trim(),
+            baseUrl: baseUrl.trim(),
+            region: region.trim() || null,
+            credentialProvider: reference.secretStoreProvider,
+            credentialReference: reference.reference,
+            credentialReferenceId: reference.id,
+            credentialAssignmentStatus: "Assigned"
+          });
+          return;
+        }
         onSubmit({
           name: name.trim(),
           baseUrl: baseUrl.trim(),
           region: region.trim() || null,
-          credentialProvider: selectedReference?.secretStoreProvider ?? null,
-          credentialReference: selectedReference?.reference ?? null,
-          credentialReferenceId: selectedReference?.id ?? null,
-          credentialAssignmentStatus: selectedReference ? "Assigned" : "Deferred"
+          credentialProvider: credentialMode === "Existing" ? selectedReference?.secretStoreProvider ?? null : null,
+          credentialReference: credentialMode === "Existing" ? selectedReference?.reference ?? null : null,
+          credentialReferenceId: credentialMode === "Existing" ? selectedReference?.id ?? null : null,
+          credentialAssignmentStatus: credentialMode === "Existing" && selectedReference ? "Assigned" : "Deferred"
         });
       }}
     >
@@ -3478,46 +4186,110 @@ function EngineEditPanel({
           Region
           <Input className="mt-1" value={region} onChange={(event) => setRegion(event.target.value)} />
         </label>
-        <label className="text-sm font-medium">
-          Credential store
-          <Select
-            className="mt-1 w-full"
-            value={selectedStoreId}
-            onChange={(event) => {
-              const storeId = event.target.value;
-              const firstReference = activeReferences.find((reference) => reference.secretStoreId === storeId);
-              setSelectedStoreId(storeId);
-              setSelectedReferenceId(firstReference?.id ?? "");
-            }}
+      </div>
+      <div className="mt-4 space-y-3 rounded-ui border border-border bg-muted/20 p-3">
+        <SectionHeader title="Engine credentials" description="Create a credential for this engine, reuse an existing reference, or defer credentials." />
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Credential assignment mode">
+          <button
+            type="button"
+            className={buttonClassName(credentialMode === "Create" ? "primary" : "secondary")}
+            disabled={activeStores.length === 0}
+            onClick={() => setCredentialMode("Create")}
           >
-            <option value="">Credentials deferred</option>
-            {activeStores.map((store) => (
-              <option key={store.id} value={store.id}>{store.name} ({secretStoreTypeLabel(store.type)})</option>
-            ))}
-          </Select>
-        </label>
-        <label className="text-sm font-medium">
-          Credential reference
-          <Select
-            className="mt-1"
-            value={selectedReferenceId}
-            disabled={!selectedStoreId || scopedReferences.length === 0}
-            onChange={(event) => setSelectedReferenceId(event.target.value)}
+            Create for this engine
+          </button>
+          <button
+            type="button"
+            className={buttonClassName(credentialMode === "Existing" ? "primary" : "secondary")}
+            disabled={activeReferences.length === 0}
+            onClick={() => setCredentialMode("Existing")}
           >
-            <option value="" disabled>{selectedStoreId ? "No active credential references" : "Select a credential store first"}</option>
-            {scopedReferences.map((reference) => (
-              <option key={reference.id} value={reference.id}>{reference.name} - {reference.reference}</option>
-            ))}
-          </Select>
-        </label>
+            Use existing
+          </button>
+          <button type="button" className={buttonClassName(credentialMode === "Deferred" ? "primary" : "secondary")} onClick={() => setCredentialMode("Deferred")}>
+            Defer credentials
+          </button>
+        </div>
+        {credentialMode === "Create" ? (
+          activeStores.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Create an engine credential store before adding engine-specific credentials.</p>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-sm font-medium">
+                Credential store
+                <Select className="mt-1 w-full" value={newReferenceStoreId} onChange={(event) => setNewReferenceStoreId(event.target.value)}>
+                  {activeStores.map((store) => (
+                    <option key={store.id} value={store.id}>{store.name} ({secretStoreTypeLabel(store.type)})</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="text-sm font-medium">
+                Reference name
+                <Input className="mt-1" value={newReferenceName} onChange={(event) => setNewReferenceName(event.target.value)} placeholder={`${name.trim()} engine credential`} />
+              </label>
+              <label className="text-sm font-medium md:col-span-2">
+                {newReferenceTypeOption.referenceLabel}
+                <Input
+                  className="mt-1"
+                  type={newReferenceStoreType === "LocalEncryptedDatabase" ? "password" : "text"}
+                  value={newReferenceValue}
+                  onChange={(event) => setNewReferenceValue(event.target.value)}
+                  placeholder={newReferenceTypeOption.referencePlaceholder}
+                />
+              </label>
+              <p className="text-xs text-muted-foreground md:col-span-2">
+                {newReferenceStoreType === "LocalEncryptedDatabase" ? "The submitted value is protected and never displayed again." : newReferenceTypeOption.description}
+              </p>
+            </div>
+          )
+        ) : null}
+        {credentialMode === "Existing" ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="text-sm font-medium">
+              Credential store
+              <Select
+                className="mt-1 w-full"
+                value={selectedStoreId}
+                onChange={(event) => {
+                  const storeId = event.target.value;
+                  const firstReference = activeReferences.find((reference) => reference.secretStoreId === storeId);
+                  setSelectedStoreId(storeId);
+                  setSelectedReferenceId(firstReference?.id ?? "");
+                }}
+              >
+                <option value="">Select a credential store</option>
+                {activeStores.map((store) => (
+                  <option key={store.id} value={store.id}>{store.name} ({secretStoreTypeLabel(store.type)})</option>
+                ))}
+              </Select>
+            </label>
+            <label className="text-sm font-medium">
+              Credential reference
+              <Select
+                className="mt-1"
+                value={selectedReferenceId}
+                disabled={!selectedStoreId || scopedReferences.length === 0}
+                onChange={(event) => setSelectedReferenceId(event.target.value)}
+              >
+                <option value="" disabled>{selectedStoreId ? "No active credential references" : "Select a credential store first"}</option>
+                {scopedReferences.map((reference) => (
+                  <option key={reference.id} value={reference.id}>{reference.name} - {reference.hasProtectedSecret ? "Protected local credential" : reference.reference}</option>
+                ))}
+              </Select>
+            </label>
+          </div>
+        ) : null}
+        {credentialMode === "Deferred" ? (
+          <p className="text-sm text-muted-foreground">Save this engine without platform-to-engine credentials.</p>
+        ) : null}
       </div>
       {activeStores.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">
-          No credential stores are registered. Saving will keep this engine's credentials deferred. <Link to="/admin/deployments/credentials" className="text-primary hover:underline">Manage engine credentials</Link>.
+          No credential stores are registered. Saving can keep this engine's credentials deferred, or you can <Link to="/admin/deployments/credentials/stores/new" className="text-primary hover:underline">create a credential store</Link>.
         </p>
-      ) : selectedStoreId && scopedReferences.length === 0 ? (
+      ) : credentialMode === "Existing" && selectedStoreId && scopedReferences.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">
-          No active credential references are registered for the selected store. <Link to="/admin/deployments/credentials" className="text-primary hover:underline">Manage engine credentials</Link>.
+          No active credential references are registered for the selected store. Create a credential for this engine or <Link to="/admin/deployments/credentials" className="text-primary hover:underline">open credential inventory</Link>.
         </p>
       ) : null}
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
