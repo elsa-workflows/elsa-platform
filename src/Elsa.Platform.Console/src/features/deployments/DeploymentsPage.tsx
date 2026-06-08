@@ -48,10 +48,13 @@ import {
   queueDeploymentRun,
   queueRollbackRun,
   registerDeploymentEngine,
+  rotateDeploymentCredentialReference,
   runRuntimeControl,
   updateDeploymentApplication,
+  updateDeploymentCredentialReference,
   updateDeploymentEngine,
   updateDeploymentEnvironment,
+  updateDeploymentSecretStore,
   verifyDeploymentEngine
 } from "@/features/deployments/deploymentApi";
 import { listWorkspaceArtifacts, workspaceArtifactDownloadUrl } from "@/features/artifacts/artifactApi";
@@ -128,6 +131,21 @@ type CreatedSetupApplication = {
 type CreatedSetupEnvironment = {
   id: string;
   name: string;
+};
+
+type CredentialStoreValues = {
+  name: string;
+  provider: string | null;
+  type: DeploymentSecretStoreType;
+  description: string | null;
+};
+
+type CredentialReferenceValues = {
+  secretStoreId: string;
+  name: string;
+  reference: string;
+  description: string | null;
+  secretValue?: string | null;
 };
 
 type SetupWizardStep = "application" | "environment" | "credentials" | "engine";
@@ -391,8 +409,13 @@ export function NewDeploymentSetupPage() {
   return <NewDeploymentSetupReady context={context.value} />;
 }
 
+export function DeploymentCredentialsPage() {
+  const context = useDeploymentContext();
+  if (context.status !== "ready") return context.state;
+  return <DeploymentCredentialsReady context={context.value} />;
+}
+
 function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const {
     workspaceId,
@@ -407,14 +430,9 @@ function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
   const [activeEnvironment, setActiveEnvironment] = useState<CreatedSetupEnvironment | null>(null);
   const [engineFormVersion, setEngineFormVersion] = useState(0);
   const [engineCounts, setEngineCounts] = useState<Record<string, number>>({});
+  const credentialManagement = useCredentialManagementMutations(workspaceId);
 
   const refreshSetupData = () => queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
-  const refreshSecretMetadata = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.deploymentSecretStores(workspaceId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCredentialReferences(workspaceId) })
-    ]);
-  };
   const createApplication = useMutation({
     mutationFn: (values: ApplicationCreateValues) =>
       createDeploymentApplication(workspaceId, { name: values.name, description: null }),
@@ -440,28 +458,6 @@ function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
       setStep("credentials");
       await refreshSetupData();
     }
-  });
-  const createSecretStore = useMutation({
-    mutationFn: (values: { name: string; provider: string | null; type: DeploymentSecretStoreType; description: string | null }) => createDeploymentSecretStore(workspaceId, values),
-    onSuccess: refreshSecretMetadata
-  });
-  const archiveSecretStore = useMutation({
-    mutationFn: (secretStoreId: string) => archiveDeploymentSecretStore(workspaceId, secretStoreId),
-    onSuccess: refreshSecretMetadata
-  });
-  const createCredentialReference = useMutation({
-    mutationFn: (values: { secretStoreId: string; name: string; reference: string; description: string | null; secretValue?: string | null }) =>
-      createDeploymentCredentialReference(workspaceId, values.secretStoreId, {
-        name: values.name,
-        reference: values.reference,
-        description: values.description,
-        secretValue: values.secretValue ?? null
-      }),
-    onSuccess: refreshSecretMetadata
-  });
-  const archiveCredentialReference = useMutation({
-    mutationFn: (credentialReferenceId: string) => archiveDeploymentCredentialReference(workspaceId, credentialReferenceId),
-    onSuccess: refreshSecretMetadata
   });
   const registerEngine = useMutation({
     mutationFn: (values: EngineRegistrationValues) => {
@@ -535,20 +531,17 @@ function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
                 stores={secretStores}
                 references={credentialReferences}
                 canManageSetup={canManageSetup}
-                isCreatingStore={createSecretStore.isPending}
-                isCreatingReference={createCredentialReference.isPending}
-                archivePendingId={archiveSecretStore.variables ?? archiveCredentialReference.variables ?? null}
-                error={
-                  createSecretStore.error instanceof Error ? createSecretStore.error.message :
-                  createCredentialReference.error instanceof Error ? createCredentialReference.error.message :
-                  archiveSecretStore.error instanceof Error ? archiveSecretStore.error.message :
-                  archiveCredentialReference.error instanceof Error ? archiveCredentialReference.error.message :
-                  undefined
-                }
-                onCreateStore={(values) => createSecretStore.mutate(values)}
-                onArchiveStore={(secretStoreId) => archiveSecretStore.mutate(secretStoreId)}
-                onCreateReference={(values) => createCredentialReference.mutate(values)}
-                onArchiveReference={(credentialReferenceId) => archiveCredentialReference.mutate(credentialReferenceId)}
+                isCreatingStore={credentialManagement.createSecretStore.isPending}
+                isCreatingReference={credentialManagement.createCredentialReference.isPending}
+                pendingActionId={credentialManagement.pendingActionId}
+                error={credentialManagement.error}
+                onCreateStore={(values) => credentialManagement.createSecretStore.mutate(values)}
+                onUpdateStore={(secretStoreId, values) => credentialManagement.updateSecretStore.mutate({ secretStoreId, values })}
+                onArchiveStore={(secretStoreId) => credentialManagement.archiveSecretStore.mutate(secretStoreId)}
+                onCreateReference={(values) => credentialManagement.createCredentialReference.mutate(values)}
+                onUpdateReference={(credentialReferenceId, values) => credentialManagement.updateCredentialReference.mutate({ credentialReferenceId, values })}
+                onRotateReference={(credentialReferenceId, secretValue) => credentialManagement.rotateCredentialReference.mutate({ credentialReferenceId, secretValue })}
+                onArchiveReference={(credentialReferenceId) => credentialManagement.archiveCredentialReference.mutate(credentialReferenceId)}
               />
             </div>
             <div className="flex flex-wrap gap-2">
@@ -591,6 +584,40 @@ function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
         ) : null}
       </div>
     </FormPageShell>
+  );
+}
+
+function DeploymentCredentialsReady({ context }: { context: DeploymentContext }) {
+  const { workspaceId, secretStores, credentialReferences, canManageSetup } = context;
+  const credentialManagement = useCredentialManagementMutations(workspaceId);
+
+  return (
+    <section className="space-y-5">
+      <Breadcrumbs items={[{ label: "Deployments", to: "/admin/deployments" }, { label: "Engine credentials" }]} />
+      <PageHeader
+        title="Engine credentials"
+        description="Manage workspace platform-to-engine credential stores and references. Runtime secrets remain managed inside runtimes."
+      />
+      <SecretStoresPanel
+        workspaceId={workspaceId}
+        stores={secretStores}
+        references={credentialReferences}
+        canManageSetup={canManageSetup}
+        isCreatingStore={credentialManagement.createSecretStore.isPending}
+        isCreatingReference={credentialManagement.createCredentialReference.isPending}
+        pendingActionId={credentialManagement.pendingActionId}
+        error={credentialManagement.error}
+        showStatusFilter
+        showManagementCopy
+        onCreateStore={(values) => credentialManagement.createSecretStore.mutate(values)}
+        onUpdateStore={(secretStoreId, values) => credentialManagement.updateSecretStore.mutate({ secretStoreId, values })}
+        onArchiveStore={(secretStoreId) => credentialManagement.archiveSecretStore.mutate(secretStoreId)}
+        onCreateReference={(values) => credentialManagement.createCredentialReference.mutate(values)}
+        onUpdateReference={(credentialReferenceId, values) => credentialManagement.updateCredentialReference.mutate({ credentialReferenceId, values })}
+        onRotateReference={(credentialReferenceId, secretValue) => credentialManagement.rotateCredentialReference.mutate({ credentialReferenceId, secretValue })}
+        onArchiveReference={(credentialReferenceId) => credentialManagement.archiveCredentialReference.mutate(credentialReferenceId)}
+      />
+    </section>
   );
 }
 
@@ -696,7 +723,6 @@ export function DeploymentApplicationPage() {
 }
 
 function DeploymentApplicationReady({ context, applicationId }: { context: DeploymentContext; applicationId: string }) {
-  const queryClient = useQueryClient();
   const { workspaceId, data, secretStores, credentialReferences, canManageSetup } = context;
   const application = findApplication(data, applicationId);
   if (!application) return <RequestStateView state="not-found" title="Application not found" />;
@@ -707,34 +733,7 @@ function DeploymentApplicationReady({ context, applicationId }: { context: Deplo
     () => sortEnvironments(filterEnvironments(application.environments, environmentQuery), environmentSort),
     [application.environments, environmentQuery, environmentSort]
   );
-  const refreshSecretMetadata = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.deploymentSecretStores(workspaceId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCredentialReferences(workspaceId) })
-    ]);
-  };
-  const createSecretStore = useMutation({
-    mutationFn: (values: { name: string; provider: string | null; type: DeploymentSecretStoreType; description: string | null }) => createDeploymentSecretStore(workspaceId, values),
-    onSuccess: refreshSecretMetadata
-  });
-  const archiveSecretStore = useMutation({
-    mutationFn: (secretStoreId: string) => archiveDeploymentSecretStore(workspaceId, secretStoreId),
-    onSuccess: refreshSecretMetadata
-  });
-  const createCredentialReference = useMutation({
-    mutationFn: (values: { secretStoreId: string; name: string; reference: string; description: string | null; secretValue?: string | null }) =>
-      createDeploymentCredentialReference(workspaceId, values.secretStoreId, {
-        name: values.name,
-        reference: values.reference,
-        description: values.description,
-        secretValue: values.secretValue ?? null
-      }),
-    onSuccess: refreshSecretMetadata
-  });
-  const archiveCredentialReference = useMutation({
-    mutationFn: (credentialReferenceId: string) => archiveDeploymentCredentialReference(workspaceId, credentialReferenceId),
-    onSuccess: refreshSecretMetadata
-  });
+  const credentialManagement = useCredentialManagementMutations(workspaceId);
 
   return (
     <section className="space-y-5">
@@ -793,20 +792,17 @@ function DeploymentApplicationReady({ context, applicationId }: { context: Deplo
         stores={secretStores}
         references={credentialReferences}
         canManageSetup={canManageSetup}
-        isCreatingStore={createSecretStore.isPending}
-        isCreatingReference={createCredentialReference.isPending}
-        archivePendingId={archiveSecretStore.variables ?? archiveCredentialReference.variables ?? null}
-        error={
-          createSecretStore.error instanceof Error ? createSecretStore.error.message :
-          createCredentialReference.error instanceof Error ? createCredentialReference.error.message :
-          archiveSecretStore.error instanceof Error ? archiveSecretStore.error.message :
-          archiveCredentialReference.error instanceof Error ? archiveCredentialReference.error.message :
-          undefined
-        }
-        onCreateStore={(values) => createSecretStore.mutate(values)}
-        onArchiveStore={(secretStoreId) => archiveSecretStore.mutate(secretStoreId)}
-        onCreateReference={(values) => createCredentialReference.mutate(values)}
-        onArchiveReference={(credentialReferenceId) => archiveCredentialReference.mutate(credentialReferenceId)}
+        isCreatingStore={credentialManagement.createSecretStore.isPending}
+        isCreatingReference={credentialManagement.createCredentialReference.isPending}
+        pendingActionId={credentialManagement.pendingActionId}
+        error={credentialManagement.error}
+        onCreateStore={(values) => credentialManagement.createSecretStore.mutate(values)}
+        onUpdateStore={(secretStoreId, values) => credentialManagement.updateSecretStore.mutate({ secretStoreId, values })}
+        onArchiveStore={(secretStoreId) => credentialManagement.archiveSecretStore.mutate(secretStoreId)}
+        onCreateReference={(values) => credentialManagement.createCredentialReference.mutate(values)}
+        onUpdateReference={(credentialReferenceId, values) => credentialManagement.updateCredentialReference.mutate({ credentialReferenceId, values })}
+        onRotateReference={(credentialReferenceId, secretValue) => credentialManagement.rotateCredentialReference.mutate({ credentialReferenceId, secretValue })}
+        onArchiveReference={(credentialReferenceId) => credentialManagement.archiveCredentialReference.mutate(credentialReferenceId)}
       />
     </section>
   );
@@ -2169,6 +2165,87 @@ function DeploymentEngineEditReady({
   );
 }
 
+function useCredentialManagementMutations(workspaceId: string) {
+  const queryClient = useQueryClient();
+  const refreshSecretMetadata = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.deploymentSecretStores(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCredentialReferences(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) })
+    ]);
+  };
+  const createSecretStore = useMutation({
+    mutationFn: (values: CredentialStoreValues) => createDeploymentSecretStore(workspaceId, values),
+    onSuccess: refreshSecretMetadata
+  });
+  const updateSecretStore = useMutation({
+    mutationFn: ({ secretStoreId, values }: { secretStoreId: string; values: CredentialStoreValues }) => updateDeploymentSecretStore(workspaceId, secretStoreId, values),
+    onSuccess: refreshSecretMetadata
+  });
+  const archiveSecretStore = useMutation({
+    mutationFn: (secretStoreId: string) => archiveDeploymentSecretStore(workspaceId, secretStoreId),
+    onSuccess: refreshSecretMetadata
+  });
+  const createCredentialReference = useMutation({
+    mutationFn: (values: CredentialReferenceValues) =>
+      createDeploymentCredentialReference(workspaceId, values.secretStoreId, {
+        name: values.name,
+        reference: values.reference,
+        description: values.description,
+        secretValue: values.secretValue ?? null
+      }),
+    onSuccess: refreshSecretMetadata
+  });
+  const updateCredentialReference = useMutation({
+    mutationFn: ({ credentialReferenceId, values }: { credentialReferenceId: string; values: CredentialReferenceValues }) =>
+      updateDeploymentCredentialReference(workspaceId, credentialReferenceId, {
+        name: values.name,
+        reference: values.reference,
+        description: values.description,
+        secretValue: values.secretValue ?? null
+      }),
+    onSuccess: refreshSecretMetadata
+  });
+  const rotateCredentialReference = useMutation({
+    mutationFn: ({ credentialReferenceId, secretValue }: { credentialReferenceId: string; secretValue: string }) =>
+      rotateDeploymentCredentialReference(workspaceId, credentialReferenceId, secretValue),
+    onSuccess: refreshSecretMetadata
+  });
+  const archiveCredentialReference = useMutation({
+    mutationFn: (credentialReferenceId: string) => archiveDeploymentCredentialReference(workspaceId, credentialReferenceId),
+    onSuccess: refreshSecretMetadata
+  });
+  const mutations = [
+    createSecretStore,
+    updateSecretStore,
+    archiveSecretStore,
+    createCredentialReference,
+    updateCredentialReference,
+    rotateCredentialReference,
+    archiveCredentialReference
+  ];
+  const error = mutations.find((mutation) => mutation.error instanceof Error)?.error;
+  const pendingActionId =
+    (archiveSecretStore.isPending ? archiveSecretStore.variables : null) ??
+    (archiveCredentialReference.isPending ? archiveCredentialReference.variables : null) ??
+    (updateSecretStore.isPending ? updateSecretStore.variables?.secretStoreId : null) ??
+    (updateCredentialReference.isPending ? updateCredentialReference.variables?.credentialReferenceId : null) ??
+    (rotateCredentialReference.isPending ? rotateCredentialReference.variables?.credentialReferenceId : null) ??
+    null;
+
+  return {
+    createSecretStore,
+    updateSecretStore,
+    archiveSecretStore,
+    createCredentialReference,
+    updateCredentialReference,
+    rotateCredentialReference,
+    archiveCredentialReference,
+    pendingActionId,
+    error: error instanceof Error ? error.message : undefined
+  };
+}
+
 type DeploymentContextResult = { status: "ready"; value: DeploymentContext } | { status: "state"; state: ReactNode };
 
 function useDeploymentContext(): DeploymentContextResult {
@@ -2741,11 +2818,16 @@ function SecretStoresPanel({
   canManageSetup,
   isCreatingStore,
   isCreatingReference,
-  archivePendingId,
+  pendingActionId,
   error,
+  showStatusFilter = false,
+  showManagementCopy = false,
   onCreateStore,
+  onUpdateStore,
   onArchiveStore,
   onCreateReference,
+  onUpdateReference,
+  onRotateReference,
   onArchiveReference
 }: {
   workspaceId: string;
@@ -2754,15 +2836,23 @@ function SecretStoresPanel({
   canManageSetup: boolean;
   isCreatingStore: boolean;
   isCreatingReference: boolean;
-  archivePendingId: string | null;
+  pendingActionId: string | null;
   error?: string;
-  onCreateStore: (values: { name: string; provider: string | null; type: DeploymentSecretStoreType; description: string | null }) => void;
+  showStatusFilter?: boolean;
+  showManagementCopy?: boolean;
+  onCreateStore: (values: CredentialStoreValues) => void;
+  onUpdateStore: (secretStoreId: string, values: CredentialStoreValues) => void;
   onArchiveStore: (secretStoreId: string) => void;
-  onCreateReference: (values: { secretStoreId: string; name: string; reference: string; description: string | null; secretValue?: string | null }) => void;
+  onCreateReference: (values: CredentialReferenceValues) => void;
+  onUpdateReference: (credentialReferenceId: string, values: CredentialReferenceValues) => void;
+  onRotateReference: (credentialReferenceId: string, secretValue: string) => void;
   onArchiveReference: (credentialReferenceId: string) => void;
 }) {
+  const [statusFilter, setStatusFilter] = useState<"Active" | "Archived">("Active");
   const activeStores = stores.filter((store) => store.status === "Active");
   const activeReferences = references.filter((reference) => reference.status === "Active");
+  const visibleStores = showStatusFilter ? stores.filter((store) => store.status === statusFilter) : activeStores;
+  const visibleReferences = showStatusFilter ? references.filter((reference) => reference.status === statusFilter) : activeReferences;
   const [storeName, setStoreName] = useState("");
   const [storeType, setStoreType] = useState<DeploymentSecretStoreType>("AzureKeyVault");
   const [referenceStoreId, setReferenceStoreId] = useState(activeStores[0]?.id ?? "");
@@ -2770,8 +2860,14 @@ function SecretStoresPanel({
   const [referenceValue, setReferenceValue] = useState("");
   const [usageReferenceId, setUsageReferenceId] = useState<string | null>(null);
   const [activeCredentialForm, setActiveCredentialForm] = useState<"store" | "reference" | null>(null);
+  const [editingStore, setEditingStore] = useState<WorkspaceDeploymentSecretStore | null>(null);
+  const [editingReference, setEditingReference] = useState<WorkspaceDeploymentCredentialReference | null>(null);
+  const [confirmArchiveStoreId, setConfirmArchiveStoreId] = useState<string | null>(null);
+  const [confirmArchiveReferenceId, setConfirmArchiveReferenceId] = useState<string | null>(null);
+  const [rotateReferenceId, setRotateReferenceId] = useState<string | null>(null);
+  const [rotateValue, setRotateValue] = useState("");
   const selectedStore = activeStores.find((store) => store.id === referenceStoreId);
-  const usageReference = activeReferences.find((reference) => reference.id === usageReferenceId);
+  const usageReference = references.find((reference) => reference.id === usageReferenceId);
   const usage = useQuery({
     queryKey: usageReferenceId ? queryKeys.deploymentCredentialReferenceUsage(workspaceId, usageReferenceId) : ["deployments", workspaceId, "credential-references", "usage", "none"],
     queryFn: () => getDeploymentCredentialReferenceUsage(workspaceId, usageReferenceId!),
@@ -2787,10 +2883,27 @@ function SecretStoresPanel({
 
   const canCreateStore = canManageSetup && storeName.trim().length > 0;
   const canCreateReference = canManageSetup && referenceStoreId.length > 0 && referenceName.trim().length > 0 && referenceValue.trim().length > 0;
+  const canUpdateStore = canManageSetup && editingStore !== null && editingStore.name.trim().length > 0;
+  const canUpdateReference = canManageSetup && editingReference !== null && editingReference.name.trim().length > 0 && editingReference.reference.trim().length > 0;
+  const canRotateReference = canManageSetup && rotateReferenceId !== null && rotateValue.trim().length > 0;
 
   return (
     <section className="space-y-3">
       <SectionHeader title="Engine credential stores" description="Register platform-to-engine credentials. Runtime secrets remain managed inside runtimes." />
+      {showManagementCopy ? (
+        <div className="rounded-ui border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+          Engine credentials let Elsa Platform interact with registered workflow engines. Runtime secrets and artifact secret references stay in the runtimes.
+        </div>
+      ) : null}
+      {showStatusFilter ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-sm font-medium" htmlFor="credential-status-filter">Status</label>
+          <Select id="credential-status-filter" className="w-auto min-w-36" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "Active" | "Archived")}>
+            <option value="Active">Active</option>
+            <option value="Archived">Archived</option>
+          </Select>
+        </div>
+      ) : null}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
         <div className="rounded-ui border border-border bg-surface">
           <Table>
@@ -2804,18 +2917,60 @@ function SecretStoresPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {activeStores.length === 0 ? (
+                {visibleStores.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-6 text-center text-sm text-muted-foreground" colSpan={4}>No active engine credential stores registered.</td>
+                    <td className="px-3 py-6 text-center text-sm text-muted-foreground" colSpan={4}>
+                      {statusFilter === "Archived" ? "No archived engine credential stores." : "No active engine credential stores registered."}
+                    </td>
                   </tr>
                 ) : (
-                  activeStores.map((store) => (
+                  visibleStores.map((store) => (
                     <tr key={store.id}>
-                      <td className="px-3 py-3 font-medium">{store.name}</td>
+                      <td className="px-3 py-3 font-medium">
+                        {editingStore?.id === store.id ? (
+                          <Input value={editingStore.name} aria-label={`Store name for ${store.name}`} onChange={(event) => setEditingStore({ ...editingStore, name: event.target.value })} />
+                        ) : store.name}
+                      </td>
                       <td className="px-3 py-3">{secretStoreTypeLabel(store.type)}</td>
                       <td className="px-3 py-3">{activeReferences.filter((reference) => reference.secretStoreId === store.id).length}</td>
                       <td className="px-3 py-3 text-right">
-                        <SecondaryButton type="button" disabled={!canManageSetup || archivePendingId === store.id} onClick={() => onArchiveStore(store.id)}>Archive</SecondaryButton>
+                        {editingStore?.id === store.id ? (
+                          <div className="flex justify-end gap-2">
+                            <SecondaryButton type="button" onClick={() => setEditingStore(null)}>Cancel</SecondaryButton>
+                            <Button
+                              type="button"
+                              disabled={!canUpdateStore || pendingActionId === store.id}
+                              onClick={() => {
+                                onUpdateStore(store.id, { name: editingStore.name.trim(), provider: null, type: store.type, description: store.description });
+                                setEditingStore(null);
+                              }}
+                            >
+                              Save
+                            </Button>
+                          </div>
+                        ) : confirmArchiveStoreId === store.id ? (
+                          <div className="flex flex-col items-end gap-2">
+                            <span className="text-xs text-muted-foreground">{activeReferences.filter((reference) => reference.secretStoreId === store.id).length} active references will be archived with this store.</span>
+                            <div className="flex justify-end gap-2">
+                              <SecondaryButton type="button" onClick={() => setConfirmArchiveStoreId(null)}>Cancel</SecondaryButton>
+                              <Button
+                                type="button"
+                                disabled={!canManageSetup || pendingActionId === store.id}
+                                onClick={() => {
+                                  onArchiveStore(store.id);
+                                  setConfirmArchiveStoreId(null);
+                                }}
+                              >
+                                Confirm archive
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex justify-end gap-2">
+                            {store.status === "Active" ? <SecondaryButton type="button" disabled={!canManageSetup} onClick={() => setEditingStore(store)}>Edit</SecondaryButton> : null}
+                            {store.status === "Active" ? <SecondaryButton type="button" disabled={!canManageSetup || pendingActionId === store.id} onClick={() => setConfirmArchiveStoreId(store.id)}>Archive</SecondaryButton> : null}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -2825,25 +2980,29 @@ function SecretStoresPanel({
           </Table>
         </div>
         <div className="space-y-4 rounded-ui border border-border bg-surface p-4">
-          <div className="space-y-3">
-            <div>
-              <h3 className="text-sm font-semibold">Credential actions</h3>
-              <p className="mt-1 text-xs text-muted-foreground">Create stores and references only when this application needs additional engine credentials.</p>
+          {canManageSetup ? (
+            <div className="space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold">Credential actions</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Create stores and references only when this application needs additional engine credentials.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" disabled={!canManageSetup} onClick={() => setActiveCredentialForm("store")}>
+                  <Plus className="h-4 w-4" />
+                  New credential store
+                </Button>
+                <SecondaryButton type="button" disabled={!canManageSetup || activeStores.length === 0} onClick={() => setActiveCredentialForm("reference")}>
+                  <Plus className="h-4 w-4" />
+                  New credential reference
+                </SecondaryButton>
+              </div>
+              {activeStores.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Create a credential store before adding credential references.</p>
+              ) : null}
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" disabled={!canManageSetup} onClick={() => setActiveCredentialForm("store")}>
-                <Plus className="h-4 w-4" />
-                New credential store
-              </Button>
-              <SecondaryButton type="button" disabled={!canManageSetup || activeStores.length === 0} onClick={() => setActiveCredentialForm("reference")}>
-                <Plus className="h-4 w-4" />
-                New credential reference
-              </SecondaryButton>
-            </div>
-            {activeStores.length === 0 ? (
-              <p className="text-xs text-muted-foreground">Create a credential store before adding credential references.</p>
-            ) : null}
-          </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Deployment setup permission is required to change engine credential stores and references.</p>
+          )}
           {activeCredentialForm === "store" ? (
             <form
               className="grid gap-3 border-t border-border pt-4"
@@ -2902,9 +3061,9 @@ function SecretStoresPanel({
               >
                 <h3 className="text-sm font-semibold">Register credential reference</h3>
                 <label className="text-sm font-medium">
-                  Secret store
-                  <Select className="mt-1 w-full" value={referenceStoreId} onChange={(event) => setReferenceStoreId(event.target.value)}>
-                    <option value="" disabled>Select an engine credential store</option>
+                  Engine credential store
+                  <Select className="mt-1 w-full" value={referenceStoreId} disabled={activeStores.length === 0} onChange={(event) => setReferenceStoreId(event.target.value)}>
+                    <option value="" disabled>{activeStores.length === 0 ? "No engine credential stores" : "Select an engine credential store"}</option>
                     {activeStores.map((store) => <option key={store.id} value={store.id}>{store.name} ({secretStoreTypeLabel(store.type)})</option>)}
                   </Select>
                 </label>
@@ -2933,17 +3092,16 @@ function SecretStoresPanel({
               </form>
             )
           ) : null}
-          {!canManageSetup ? <p className="text-sm text-muted-foreground">Deployment setup permission is required.</p> : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
         </div>
       </div>
-      {activeReferences.length > 0 ? (
+      {visibleReferences.length > 0 ? (
         <div className="rounded-ui border border-border bg-surface">
           <Table>
             <table className="min-w-full text-sm">
               <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-2">Reference</th>
+                  <th className="px-3 py-2">Credential</th>
                   <th className="px-3 py-2">Store</th>
                   <th className="px-3 py-2">Reference</th>
                   <th className="px-3 py-2">Usage</th>
@@ -2952,11 +3110,19 @@ function SecretStoresPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {activeReferences.map((reference) => (
+                {visibleReferences.map((reference) => (
                   <tr key={reference.id}>
-                    <td className="px-3 py-3 font-medium">{reference.name}</td>
+                    <td className="px-3 py-3 font-medium">
+                      {editingReference?.id === reference.id ? (
+                        <Input value={editingReference.name} aria-label={`Reference name for ${reference.name}`} onChange={(event) => setEditingReference({ ...editingReference, name: event.target.value })} />
+                      ) : reference.name}
+                    </td>
                     <td className="px-3 py-3">{reference.secretStoreName}</td>
-                    <td className="px-3 py-3">{reference.hasProtectedSecret ? "Protected local credential" : reference.reference}</td>
+                    <td className="px-3 py-3">
+                      {editingReference?.id === reference.id && !reference.hasProtectedSecret ? (
+                        <Input value={editingReference.reference} aria-label={`Reference locator for ${reference.name}`} onChange={(event) => setEditingReference({ ...editingReference, reference: event.target.value })} />
+                      ) : reference.hasProtectedSecret ? "Protected local credential" : reference.reference}
+                    </td>
                     <td className="px-3 py-3">
                       {reference.usageCount > 0 ? (
                         <button
@@ -2970,7 +3136,83 @@ function SecretStoresPanel({
                     </td>
                     <td className="px-3 py-3"><StatusBadge value={reference.verificationStatus} tone={credentialTone(reference.verificationStatus)} /></td>
                     <td className="px-3 py-3 text-right">
-                      <SecondaryButton type="button" disabled={!canManageSetup || archivePendingId === reference.id} onClick={() => onArchiveReference(reference.id)}>Archive</SecondaryButton>
+                      {editingReference?.id === reference.id ? (
+                        <div className="flex justify-end gap-2">
+                          <SecondaryButton type="button" onClick={() => setEditingReference(null)}>Cancel</SecondaryButton>
+                          <Button
+                            type="button"
+                            disabled={!canUpdateReference || pendingActionId === reference.id}
+                            onClick={() => {
+                              onUpdateReference(reference.id, {
+                                secretStoreId: reference.secretStoreId,
+                                name: editingReference.name.trim(),
+                                reference: editingReference.reference.trim(),
+                                description: editingReference.description,
+                                secretValue: null
+                              });
+                              setEditingReference(null);
+                            }}
+                          >
+                            Save
+                          </Button>
+                        </div>
+                      ) : confirmArchiveReferenceId === reference.id ? (
+                        <div className="flex flex-col items-end gap-2">
+                          <span className="text-xs text-muted-foreground">{reference.usageCount > 0 ? `${reference.usageCount} engines currently use this reference.` : "No active engines currently use this reference."}</span>
+                          <div className="flex justify-end gap-2">
+                            <SecondaryButton type="button" onClick={() => setConfirmArchiveReferenceId(null)}>Cancel</SecondaryButton>
+                            <Button
+                              type="button"
+                              disabled={!canManageSetup || pendingActionId === reference.id}
+                              onClick={() => {
+                                onArchiveReference(reference.id);
+                                setConfirmArchiveReferenceId(null);
+                              }}
+                            >
+                              Confirm archive
+                            </Button>
+                          </div>
+                        </div>
+                      ) : rotateReferenceId === reference.id ? (
+                        <form
+                          className="flex flex-col items-end gap-2"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            if (!canRotateReference) return;
+                            onRotateReference(reference.id, rotateValue.trim());
+                            setRotateReferenceId(null);
+                            setRotateValue("");
+                          }}
+                        >
+                          {reference.usageCount > 0 ? <span className="text-xs text-muted-foreground">{reference.usageCount} engines use this reference.</span> : null}
+                          <Input aria-label={`New credential value for ${reference.name}`} className="w-56" type="password" value={rotateValue} onChange={(event) => setRotateValue(event.target.value)} placeholder="New credential value" />
+                          <div className="flex justify-end gap-2">
+                            <SecondaryButton type="button" onClick={() => { setRotateReferenceId(null); setRotateValue(""); }}>Cancel</SecondaryButton>
+                            <Button type="submit" disabled={!canRotateReference || pendingActionId === reference.id}>Rotate</Button>
+                          </div>
+                        </form>
+                      ) : (
+                        <div className="flex justify-end gap-2">
+                          {reference.status === "Active" ? <SecondaryButton type="button" disabled={!canManageSetup} onClick={() => setEditingReference(reference)}>Edit</SecondaryButton> : null}
+                          {reference.status === "Active" && reference.secretStoreType === "LocalEncryptedDatabase" ? (
+                            <SecondaryButton type="button" disabled={!canManageSetup} onClick={() => { setRotateReferenceId(reference.id); setUsageReferenceId(reference.usageCount > 0 ? reference.id : usageReferenceId); }}>
+                              Rotate
+                            </SecondaryButton>
+                          ) : null}
+                          {reference.status === "Active" ? (
+                            <SecondaryButton
+                              type="button"
+                              disabled={!canManageSetup || pendingActionId === reference.id}
+                              onClick={() => {
+                                setConfirmArchiveReferenceId(reference.id);
+                                if (reference.usageCount > 0) setUsageReferenceId(reference.id);
+                              }}
+                            >
+                              Archive
+                            </SecondaryButton>
+                          ) : null}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -3003,7 +3245,11 @@ function SecretStoresPanel({
             </div>
           ) : null}
         </div>
-      ) : null}
+      ) : statusFilter === "Archived" ? (
+        <EmptyState title="No archived credential references" description="Archived engine credential references will remain inspectable here." />
+      ) : (
+        <EmptyState title="No credential references registered" description="Register a credential reference under an active engine credential store, or continue engine setup with credentials deferred." />
+      )}
     </section>
   );
 }
@@ -3125,9 +3371,13 @@ function EngineRegistrationPanel({
         <span>Register this engine with credentials deferred.</span>
       </label>
       {activeSecretStores.length === 0 ? (
-        <p className="mt-3 text-sm text-muted-foreground">No engine credential stores are registered. You can continue with credentials deferred.</p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          No engine credential stores are registered. You can continue with credentials deferred or <Link to="/admin/deployments/credentials" className="text-primary hover:underline">manage engine credentials</Link>.
+        </p>
       ) : selectedSecretStoreId && scopedCredentialReferences.length === 0 ? (
-        <p className="mt-3 text-sm text-muted-foreground">No active credential references are registered for the selected store. You can continue with credentials deferred.</p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          No active credential references are registered for the selected store. You can continue with credentials deferred or <Link to="/admin/deployments/credentials" className="text-primary hover:underline">manage engine credentials</Link>.
+        </p>
       ) : null}
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
       <div className="mt-4 flex gap-2">
@@ -3262,9 +3512,13 @@ function EngineEditPanel({
         </label>
       </div>
       {activeStores.length === 0 ? (
-        <p className="mt-3 text-sm text-muted-foreground">No credential stores are registered. Saving will keep this engine's credentials deferred.</p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          No credential stores are registered. Saving will keep this engine's credentials deferred. <Link to="/admin/deployments/credentials" className="text-primary hover:underline">Manage engine credentials</Link>.
+        </p>
       ) : selectedStoreId && scopedReferences.length === 0 ? (
-        <p className="mt-3 text-sm text-muted-foreground">No active credential references are registered for the selected store.</p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          No active credential references are registered for the selected store. <Link to="/admin/deployments/credentials" className="text-primary hover:underline">Manage engine credentials</Link>.
+        </p>
       ) : null}
       {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
       <div className="mt-4 flex gap-2">

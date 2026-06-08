@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import type { ReactNode } from "react";
@@ -10,6 +10,7 @@ import { AuthProvider } from "@/lib/auth/AuthProvider";
 
 describe("AppShell", () => {
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
     if (typeof window.localStorage?.clear === "function") {
       window.localStorage.clear();
@@ -28,6 +29,7 @@ describe("AppShell", () => {
     expect(screen.getAllByRole("link", { name: "Sync Runs" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Deployments").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Applications" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Engine credentials" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Tiers" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Artifacts" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Runtime Builder").length).toBeGreaterThan(0);
@@ -35,7 +37,7 @@ describe("AppShell", () => {
     expect(screen.getAllByRole("link", { name: "Console" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Managed Runtimes").length).toBeGreaterThan(0);
     expect(navigationText).toContain("PlatformOverview");
-    expect(navigationText).toContain("DeploymentsOverviewApplicationsArtifactsTiers");
+    expect(navigationText).toContain("DeploymentsOverviewApplicationsEngine credentialsArtifactsTiers");
     expect(navigationText).toContain("Runtime BuilderBuild configurations");
     expect(navigationText).toContain("OperationsConsole");
     expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();

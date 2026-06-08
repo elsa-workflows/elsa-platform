@@ -10,6 +10,7 @@ import {
   DeploymentApplicationsPage,
   DeploymentApplicationPage,
   DeploymentApplicationRevisionsPage,
+  DeploymentCredentialsPage,
   DeploymentEngineEditPage,
   DeploymentEnginePage,
   DeploymentEngineRegisterPage,
@@ -125,7 +126,6 @@ describe("DeploymentsPage", () => {
     });
     expect(await screen.findByText("Prod - 0 engines")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Continue to engines" }));
-
     await userEvent.type(screen.getByLabelText("Engine name"), "claims-prod");
     await userEvent.type(screen.getByLabelText("Engine base URL"), "https://claims-prod.example/elsa");
     await userEvent.click(screen.getByRole("button", { name: "Register engine" }));
@@ -219,6 +219,128 @@ describe("DeploymentsPage", () => {
     expect(screen.queryByRole("heading", { name: "Register engine credential store" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Register credential reference" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Secret store")).not.toBeInTheDocument();
+  });
+
+  it("renders standalone engine credential management for the selected workspace", async () => {
+    renderDeployments(undefined, "/admin/deployments/credentials");
+
+    expect(await screen.findByRole("heading", { name: "Engine credentials", level: 1 })).toBeInTheDocument();
+    expect(screen.getByText("Manage workspace platform-to-engine credential stores and references. Runtime secrets remain managed inside runtimes.")).toBeInTheDocument();
+    expect(screen.getByText("Engine credentials let Elsa Platform interact with registered workflow engines. Runtime secrets and artifact secret references stay in the runtimes.")).toBeInTheDocument();
+    expect(screen.getAllByText("Platform Key Vault").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Local engine credentials").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Protected local credential").length).toBeGreaterThan(0);
+
+    await userEvent.selectOptions(screen.getByLabelText("Status"), "Archived");
+
+    expect(screen.getByText("No archived engine credential stores.")).toBeInTheDocument();
+    expect(screen.getByText("No archived credential references")).toBeInTheDocument();
+  });
+
+  it("creates engine credential stores and write-only local references from the standalone page", async () => {
+    const fetchMock = renderDeployments(undefined, "/admin/deployments/credentials");
+
+    expect(await screen.findByRole("heading", { name: "Engine credentials", level: 1 })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "New credential store" }));
+    await userEvent.type(screen.getByLabelText("Store name"), "Local registration credentials");
+    await userEvent.selectOptions(screen.getByLabelText("Store type"), "LocalEncryptedDatabase");
+    await userEvent.click(screen.getByRole("button", { name: "Register store" }));
+
+    await waitFor(() =>
+      expect(requestBody(fetchMock, "POST", "/deployments/secret-stores")).toMatchObject({
+        name: "Local registration credentials",
+        provider: null,
+        type: "LocalEncryptedDatabase"
+      })
+    );
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "New credential reference" })).toBeEnabled());
+    await userEvent.click(screen.getByRole("button", { name: "New credential reference" }));
+    await waitFor(() => expect(screen.getByRole("option", { name: "Local registration credentials (Local encrypted database)" })).toBeInTheDocument());
+    await userEvent.selectOptions(screen.getByLabelText("Engine credential store"), "secret-store-3");
+    await userEvent.type(screen.getByLabelText("Reference name"), "Local staging engine API");
+    await userEvent.type(screen.getByLabelText("Secret value"), "local-staging-secret");
+    await userEvent.click(screen.getByRole("button", { name: "Register reference" }));
+
+    await waitFor(() =>
+      expect(requestBody(fetchMock, "POST", "/credential-references")).toMatchObject({
+        name: "Local staging engine API",
+        reference: "local://engine-credentials/local-staging-engine-api",
+        secretValue: "local-staging-secret"
+      })
+    );
+    expect(screen.queryByText("local-staging-secret")).not.toBeInTheDocument();
+    expect(await screen.findAllByText("Protected local credential")).not.toHaveLength(0);
+  }, 15000);
+
+  it("renders standalone engine credential management as read-only without setup permission", async () => {
+    renderDeployments(undefined, "/admin/deployments/credentials", { permissions: ["deployments.read"] });
+
+    expect(await screen.findByRole("heading", { name: "Engine credentials", level: 1 })).toBeInTheDocument();
+    expect(screen.getByText("Deployment setup permission is required to change engine credential stores and references.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Register store" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New credential store" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Edit" })[0]).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "Archive" })[0]).toBeDisabled();
+  });
+
+  it("edits, rotates, and archives credential references from the standalone page", async () => {
+    const fetchMock = renderDeployments(undefined, "/admin/deployments/credentials");
+
+    expect(await screen.findByRole("heading", { name: "Engine credentials", level: 1 })).toBeInTheDocument();
+    const devRow = screen.getByRole("row", { name: /Dev engine API/ });
+    await userEvent.click(within(devRow).getByRole("button", { name: "Edit" }));
+    await userEvent.clear(screen.getByLabelText("Reference name for Dev engine API"));
+    await userEvent.type(screen.getByLabelText("Reference name for Dev engine API"), "Development engine API");
+    await userEvent.click(within(devRow).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/credential-references/credential-reference-dev`),
+        expect.objectContaining({ method: "PUT" })
+      )
+    );
+    expect(requestBody(fetchMock, "PUT", "/credential-references/credential-reference-dev")).toMatchObject({
+      name: "Development engine API",
+      reference: "kv://acme-platform/dev/elsa-api"
+    });
+
+    const localRow = screen.getByRole("row", { name: /Local dev engine API/ });
+    await userEvent.click(within(localRow).getByRole("button", { name: "Rotate" }));
+    await userEvent.type(screen.getByLabelText("New credential value for Local dev engine API"), "new-local-secret");
+    await userEvent.click(within(localRow).getByRole("button", { name: "Rotate" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/credential-references/credential-reference-local/rotate`),
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+    expect(requestBody(fetchMock, "POST", "/credential-references/credential-reference-local/rotate")).toMatchObject({
+      secretValue: "new-local-secret"
+    });
+    expect(screen.queryByText("new-local-secret")).not.toBeInTheDocument();
+
+    const updatedDevRow = screen.getByRole("row", { name: /Development engine API/ });
+    await userEvent.click(within(updatedDevRow).getByRole("button", { name: "Archive" }));
+    expect(screen.getByText("1 engines currently use this reference.")).toBeInTheDocument();
+    expect(await screen.findByText("claims-dev-01")).toBeInTheDocument();
+    await userEvent.click(within(updatedDevRow).getByRole("button", { name: "Confirm archive" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/credential-references/credential-reference-dev/archive`),
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+  }, 15000);
+
+  it("links engine setup empty credential states to standalone management", async () => {
+    renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-dev/engines/new", { credentialReferences: [] });
+
+    expect(await screen.findByRole("heading", { name: "Register engine for Dev" })).toBeInTheDocument();
+    expect(screen.getByText(/No active credential references are registered for the selected store/)).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/credentials")).toBeInTheDocument();
   });
 
   it("renders application revisions across environments", async () => {
@@ -689,12 +811,13 @@ describe("DeploymentsPage", () => {
   });
 });
 
-type RenderDeploymentsOptions = {
+type DeploymentFetchMockOptions = {
+  permissions?: string[];
   secretStores?: WorkspaceDeploymentSecretStore[];
   credentialReferences?: WorkspaceDeploymentCredentialReference[];
 };
 
-function renderDeployments(cockpit: DeploymentCockpit = deploymentCockpitFixture, initialEntry = "/admin/deployments", options: RenderDeploymentsOptions = {}) {
+function renderDeployments(cockpit: DeploymentCockpit = deploymentCockpitFixture, initialEntry = "/admin/deployments", options: DeploymentFetchMockOptions = {}) {
   const fetchMock = createDeploymentFetchMock(cockpit, options);
   vi.stubGlobal("fetch", fetchMock);
   render(
@@ -705,6 +828,7 @@ function renderDeployments(cockpit: DeploymentCockpit = deploymentCockpitFixture
             <Routes>
               <Route path="/admin/deployments" element={<DeploymentsPage />} />
               <Route path="/admin/deployments/new" element={<NewDeploymentSetupPage />} />
+              <Route path="/admin/deployments/credentials" element={<DeploymentCredentialsPage />} />
               <Route path="/admin/deployments/applications" element={<DeploymentApplicationsPage />} />
               <Route path="/admin/deployments/applications/:applicationId" element={<DeploymentApplicationPage />} />
               <Route path="/admin/deployments/applications/:applicationId/edit" element={<DeploymentApplicationEditPage />} />
@@ -750,10 +874,19 @@ function desiredStateRequirements(environment: DeploymentCockpit["applications"]
   };
 }
 
-function createDeploymentFetchMock(cockpit: DeploymentCockpit, options: RenderDeploymentsOptions = {}) {
+function createDeploymentFetchMock(cockpit: DeploymentCockpit, options: DeploymentFetchMockOptions = {}) {
   let currentCockpit = cockpit;
   let secretStores = [...(options.secretStores ?? deploymentSecretStores)];
   let credentialReferences = [...(options.credentialReferences ?? deploymentCredentialReferences)];
+  const permissions = options.permissions ?? [
+    "deployments.read",
+    "deployments.setup.manage",
+    "deployments.desired-state.manage",
+    "deployments.promotion.preview",
+    "deployments.run.execute",
+    "deployments.rollback.execute",
+    "deployments.controls.execute"
+  ];
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : input.toString();
     const method = init?.method ?? (input instanceof Request ? input.method : "GET");
@@ -762,17 +895,7 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit, options: RenderDe
     if (url.endsWith("/api/me/organizations"))
       return jsonResponse(workspaceContextFixture());
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/permissions`)) {
-      return jsonResponse({
-        permissions: [
-          "deployments.read",
-          "deployments.setup.manage",
-          "deployments.desired-state.manage",
-          "deployments.promotion.preview",
-          "deployments.run.execute",
-          "deployments.rollback.execute",
-          "deployments.controls.execute"
-        ]
-      });
+      return jsonResponse({ permissions });
     }
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/tier-capabilities`)) {
       return jsonResponse({ capabilities: tierCapabilities });
@@ -914,15 +1037,25 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit, options: RenderDe
       return jsonResponse({ id: environment.id, workspaceId, applicationId: "app-created", name: environment.name }, 201);
     }
     if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/secret-stores`)) {
-      const body = JSON.parse(init?.body?.toString() ?? "{}") as { name: string; provider: string; description?: string | null };
-      const store = deploymentSecretStore(`secret-store-${secretStores.length + 1}`, body.name, body.provider, body.description ?? null);
+      const body = JSON.parse(init?.body?.toString() ?? "{}") as { name: string; provider: string | null; type?: WorkspaceDeploymentSecretStore["type"]; description?: string | null };
+      const store = deploymentSecretStore(`secret-store-${secretStores.length + 1}`, body.name, providerLabel(body.type, body.provider), body.description ?? null, body.type);
       secretStores = [...secretStores, store];
       return jsonResponse(store, 201);
+    }
+    if (method === "PUT" && url.match(new RegExp(`/api/workspaces/${workspaceId}/deployments/secret-stores/[^/]+$`))) {
+      const secretStoreId = decodeURIComponent(url.split("/secret-stores/")[1] ?? "");
+      const body = JSON.parse(init?.body?.toString() ?? "{}") as { name: string; provider: string | null; type?: WorkspaceDeploymentSecretStore["type"]; description?: string | null };
+      secretStores = secretStores.map((store) =>
+        store.id === secretStoreId
+          ? { ...store, name: body.name, provider: providerLabel(body.type ?? store.type, body.provider), type: body.type ?? store.type, description: body.description ?? null }
+          : store
+      );
+      return jsonResponse(secretStores.find((store) => store.id === secretStoreId));
     }
     if (method === "POST" && url.match(new RegExp(`/api/workspaces/${workspaceId}/deployments/secret-stores/[^/]+/credential-references$`))) {
       const secretStoreId = decodeURIComponent(url.split("/secret-stores/")[1]?.split("/credential-references")[0] ?? "");
       const store = secretStores.find((item) => item.id === secretStoreId) ?? secretStores[0];
-      const body = JSON.parse(init?.body?.toString() ?? "{}") as { name: string; reference: string; description?: string | null };
+      const body = JSON.parse(init?.body?.toString() ?? "{}") as { name: string; reference: string; description?: string | null; secretValue?: string | null };
       const reference = deploymentCredentialReference(
         `credential-reference-${credentialReferences.length + 1}`,
         store.id,
@@ -930,10 +1063,31 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit, options: RenderDe
         store.provider,
         body.name,
         body.reference,
-        body.description ?? null
+        body.description ?? null,
+        store.type,
+        Boolean(body.secretValue)
       );
       credentialReferences = [...credentialReferences, reference];
       return jsonResponse(reference, 201);
+    }
+    if (method === "PUT" && url.match(new RegExp(`/api/workspaces/${workspaceId}/deployments/credential-references/[^/]+$`))) {
+      const credentialReferenceId = decodeURIComponent(url.split("/credential-references/")[1] ?? "");
+      const body = JSON.parse(init?.body?.toString() ?? "{}") as { name: string; reference: string; description?: string | null };
+      credentialReferences = credentialReferences.map((reference) =>
+        reference.id === credentialReferenceId
+          ? { ...reference, name: body.name, reference: body.reference, description: body.description ?? null }
+          : reference
+      );
+      return jsonResponse(credentialReferences.find((reference) => reference.id === credentialReferenceId));
+    }
+    if (method === "POST" && url.match(new RegExp(`/api/workspaces/${workspaceId}/deployments/credential-references/[^/]+/rotate$`))) {
+      const credentialReferenceId = decodeURIComponent(url.split("/credential-references/")[1]?.split("/rotate")[0] ?? "");
+      credentialReferences = credentialReferences.map((reference) =>
+        reference.id === credentialReferenceId
+          ? { ...reference, hasProtectedSecret: true, updatedAt: "2026-05-26T12:00:00Z" }
+          : reference
+      );
+      return jsonResponse(credentialReferences.find((reference) => reference.id === credentialReferenceId));
     }
     if (method === "POST" && url.match(new RegExp(`/api/workspaces/${workspaceId}/deployments/secret-stores/[^/]+/archive$`))) {
       const secretStoreId = decodeURIComponent(url.split("/secret-stores/")[1]?.split("/archive")[0] ?? "");
@@ -1448,7 +1602,8 @@ function TestQueryProvider({ children }: { children: ReactNode }) {
 const organizationId = "00000000-0000-0000-0000-000000000001";
 const workspaceId = "00000000-0000-0000-0000-000000000010";
 const deploymentSecretStores: WorkspaceDeploymentSecretStore[] = [
-  deploymentSecretStore("secret-store-azure", "Platform Key Vault", "Azure Key Vault", "Shared deployment credential metadata")
+  deploymentSecretStore("secret-store-azure", "Platform Key Vault", "Azure Key Vault", "Shared deployment credential metadata", "AzureKeyVault"),
+  deploymentSecretStore("secret-store-local", "Local engine credentials", "Local encrypted database", "Protected local engine credentials", "LocalEncryptedDatabase")
 ];
 const deploymentCredentialReferences: WorkspaceDeploymentCredentialReference[] = [
   {
@@ -1459,7 +1614,8 @@ const deploymentCredentialReferences: WorkspaceDeploymentCredentialReference[] =
       "Azure Key Vault",
       "Dev engine API",
       "kv://acme-platform/dev/elsa-api",
-      "Dev workflow engine API credential"
+      "Dev workflow engine API credential",
+      "AzureKeyVault"
     ),
     usageCount: 1
   },
@@ -1470,7 +1626,19 @@ const deploymentCredentialReferences: WorkspaceDeploymentCredentialReference[] =
     "Azure Key Vault",
     "Prod engine API",
     "kv://acme-platform/prod/elsa-api",
-    "Prod workflow engine API credential"
+    "Prod workflow engine API credential",
+    "AzureKeyVault"
+  ),
+  deploymentCredentialReference(
+    "credential-reference-local",
+    "secret-store-local",
+    "Local engine credentials",
+    "Local encrypted database",
+    "Local dev engine API",
+    "local://engine-credentials/local-dev-engine-api",
+    "Local protected workflow engine API credential",
+    "LocalEncryptedDatabase",
+    true
   )
 ];
 const tierCapabilities = [
@@ -1865,13 +2033,19 @@ function engine(
   };
 }
 
-function deploymentSecretStore(id: string, name: string, provider: string, description: string | null): WorkspaceDeploymentSecretStore {
+function deploymentSecretStore(
+  id: string,
+  name: string,
+  provider: string,
+  description: string | null,
+  type: WorkspaceDeploymentSecretStore["type"] = provider === "Azure Key Vault" ? "AzureKeyVault" : "GenericExternalReference"
+): WorkspaceDeploymentSecretStore {
   return {
     id,
     workspaceId,
     name,
     provider,
-    type: provider === "Azure Key Vault" ? "AzureKeyVault" : "GenericExternalReference",
+    type,
     description,
     status: "Active",
     createdAt: "2026-05-26T10:00:00Z",
@@ -1890,7 +2064,9 @@ function deploymentCredentialReference(
   secretStoreProvider: string,
   name: string,
   reference: string,
-  description: string | null
+  description: string | null,
+  secretStoreType: WorkspaceDeploymentSecretStore["type"] = secretStoreProvider === "Azure Key Vault" ? "AzureKeyVault" : "GenericExternalReference",
+  hasProtectedSecret = false
 ): WorkspaceDeploymentCredentialReference {
   return {
     id,
@@ -1898,7 +2074,7 @@ function deploymentCredentialReference(
     secretStoreId,
     secretStoreName,
     secretStoreProvider,
-    secretStoreType: secretStoreProvider === "Azure Key Vault" ? "AzureKeyVault" : "GenericExternalReference",
+    secretStoreType,
     name,
     reference,
     description,
@@ -1911,9 +2087,25 @@ function deploymentCredentialReference(
     updatedByAccountId: "account-1",
     archivedAt: null,
     archivedByAccountId: null,
-    hasProtectedSecret: false,
+    hasProtectedSecret,
     usageCount: 0
   };
+}
+
+function providerLabel(type: WorkspaceDeploymentSecretStore["type"] | undefined, provider: string | null | undefined) {
+  if (provider) return provider;
+  switch (type) {
+    case "LocalEncryptedDatabase":
+      return "Local encrypted database";
+    case "AzureKeyVault":
+      return "Azure Key Vault";
+    case "KubernetesSecrets":
+      return "Kubernetes Secrets";
+    case "EnvironmentVariableName":
+      return "Environment variable name";
+    default:
+      return "Generic external reference";
+  }
 }
 
 function artifactComparison(
