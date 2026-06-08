@@ -124,7 +124,7 @@
 - [X] T030 Run `git diff --check`
 - [X] T031 Run targeted .NET API tests only if API behavior changed: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --no-restore --filter WorkspaceDeploymentApiTests` (not required; no API behavior changed)
 - [X] T032 Perform self-review for critical issues across credential safety, permission gating, workspace scoping, and query invalidation
-- [ ] T033 Open PR, address critical review findings, and merge after checks pass
+- [X] T033 Open PR, address critical review findings, and merge after checks pass
 
 ---
 
