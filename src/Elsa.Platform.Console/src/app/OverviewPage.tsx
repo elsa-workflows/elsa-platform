@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui";
 import { useWorkspaceContext } from "@/app/WorkspaceContextProvider";
 import { listWorkspaceArtifacts } from "@/features/artifacts/artifactApi";
+import { getDeploymentCockpit } from "@/features/deployments/deploymentApi";
 import { listPackages } from "@/features/packages/packageApi";
 import { packageApprovalStatus } from "@/features/packages/packageModels";
 import { queryKeys } from "@/lib/query/queryClient";
@@ -69,9 +70,17 @@ export function OverviewPage() {
     queryKey: queryKeys.packages,
     queryFn: listPackages
   });
+  const deploymentCockpit = useQuery({
+    queryKey: queryKeys.deploymentCockpit(selectedWorkspaceId),
+    queryFn: () => getDeploymentCockpit(selectedWorkspaceId),
+    enabled: Boolean(selectedWorkspaceId)
+  });
   const artifactCount = artifacts.data?.items.length ?? 0;
   const packageItems = packageCatalog.data ?? [];
   const pendingPackageCount = packageItems.filter((packageItem) => packageApprovalStatus(packageItem) === "Pending").length;
+  const applicationCount = deploymentCockpit.data?.applications.length ?? 0;
+  const environmentCount = deploymentCockpit.data?.applications.reduce((total, application) => total + application.environments.length, 0) ?? 0;
+  const engineCount = deploymentCockpit.data?.engines.length ?? 0;
   const deploymentReadinessSignal: Signal = {
     label: "Deployment readiness",
     value: artifacts.isLoading ? "Loading" : pluralize(artifactCount, "artifact"),
@@ -81,6 +90,18 @@ export function OverviewPage() {
     icon: Archive,
     status: artifacts.isLoading ? "Loading" : artifactCount > 0 ? "Ready" : "Setup",
     to: "/admin/artifacts"
+  };
+  const applicationsSignal: Signal = {
+    label: "Applications",
+    value: deploymentCockpit.isLoading ? "Loading" : pluralize(applicationCount, "application"),
+    description: deploymentCockpit.isLoading
+      ? "Loading application environments and engine registrations."
+      : applicationCount === 0
+        ? "Create application setups before defining environments and engines."
+        : `${pluralize(environmentCount, "environment")} and ${pluralize(engineCount, "engine")} registered for deployment management.`,
+    icon: Rocket,
+    status: deploymentCockpit.isLoading ? "Loading" : applicationCount > 0 ? "Ready" : "Setup",
+    to: "/admin/deployments/applications"
   };
   const packageApprovalSignal: Signal = {
     label: "Package approvals",
@@ -93,7 +114,7 @@ export function OverviewPage() {
     tone: pendingPackageCount > 0 || packageCatalog.isLoading ? "warning" : undefined,
     to: pendingPackageCount > 0 ? "/admin/packages?approval=Pending" : "/admin/packages"
   };
-  const signals = [deploymentReadinessSignal, packageApprovalSignal, ...platformSignals];
+  const signals = [deploymentReadinessSignal, applicationsSignal, packageApprovalSignal, ...platformSignals];
 
   return (
     <section className="space-y-8">
@@ -111,7 +132,7 @@ export function OverviewPage() {
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {signals.map((signal) => <SignalCard key={signal.label} signal={signal} />)}
       </div>
 

@@ -249,7 +249,7 @@ export function ArtifactDetailsPage() {
   const workspaceContext = useWorkspaceContext();
   const workspaceId = workspaceContext.selectedWorkspaceId;
   const [isInspectionRefreshing, setIsInspectionRefreshing] = useState(false);
-  const inspectionRefreshTimeout = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const inspectionRefreshTimeout = useRef<number | null>(null);
   const permissions = useQuery({
     queryKey: queryKeys.deploymentPermissions(workspaceId),
     queryFn: () => getDeploymentPermissions(workspaceId),

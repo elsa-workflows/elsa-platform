@@ -462,3 +462,5 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+src/Elsa.Platform.Api/.data-protection-keys/

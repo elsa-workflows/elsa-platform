@@ -1,7 +1,8 @@
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Link, Navigate } from "react-router-dom";
 import { AppShell } from "@/app/AppShell";
 import { OverviewPage } from "@/app/OverviewPage";
 import { RequestStateView } from "@/components/states/RequestStateViews";
+import { Button, EmptyState, buttonClassName } from "@/components/ui";
 import {
   DeploymentApplicationEditPage,
   DeploymentApplicationsPage,
@@ -20,7 +21,7 @@ import {
 } from "@/features/deployments/DeploymentsPage";
 import { DeploymentTierCreatePage, DeploymentTierEditPage, DeploymentTiersPage } from "@/features/deployments/DeploymentTiersPage";
 import { ArtifactCreatePage, ArtifactDetailsPage, ArtifactsPage } from "@/features/artifacts/ArtifactsPage";
-import { RequireCustomerAuth } from "@/lib/auth/AuthProvider";
+import { RequireCustomerAuth, useAuth } from "@/lib/auth/AuthProvider";
 import { NewSourcePage, EditSourcePage } from "@/features/sources/SourceFormPage";
 import { SourceDetailsPage } from "@/features/sources/SourceDetailsPage";
 import { SourcesPage } from "@/features/sources/SourcesPage";
@@ -41,6 +42,51 @@ function PlaceholderPage({ title }: { title: string }) {
   );
 }
 
+export function AdminLoginPage() {
+  const auth = useAuth();
+
+  if (auth.isLoading)
+    return <RequestStateView state="loading" title="Checking customer session" />;
+
+  if (auth.session?.authenticated) {
+    return (
+      <EmptyState
+        title="You are already signed in"
+        description="Your customer session is active. Continue to the platform overview or use the account menu when you need to sign out."
+        action={<Link to="/admin/overview" className={buttonClassName()}>Open overview</Link>}
+      />
+    );
+  }
+
+  if (!auth.session?.loginEnabled) {
+    return (
+      <RequestStateView
+        state="unauthorized"
+        title="Customer login is not configured"
+        description="Workspace features require a configured platform identity provider."
+      />
+    );
+  }
+
+  return (
+    <EmptyState
+      title="Sign in to Elsa Platform"
+      description="Use your configured platform identity provider to continue to the console."
+      action={<Button type="button" onClick={() => auth.signIn("/admin/overview")}>Continue to sign in</Button>}
+    />
+  );
+}
+
+export function ConsoleNotFoundPage() {
+  return (
+    <EmptyState
+      title="Console page not found"
+      description="The requested console page does not exist or is no longer available."
+      action={<Link to="/admin/overview" className={buttonClassName()}>Open overview</Link>}
+    />
+  );
+}
+
 export const router = createBrowserRouter([
   {
     path: "/",
@@ -52,6 +98,7 @@ export const router = createBrowserRouter([
     errorElement: <RequestStateView state="unexpected" title="The console could not load." />,
     children: [
       { index: true, element: <Navigate to="/admin/overview" replace /> },
+      { path: "login", element: <AdminLoginPage /> },
       { path: "overview", element: <OverviewPage /> },
       { path: "sources", element: <SourcesPage /> },
       { path: "sources/new", element: <NewSourcePage /> },
@@ -91,7 +138,8 @@ export const router = createBrowserRouter([
       { path: "runtimes", element: <PlaceholderPage title="Managed Runtimes" /> },
       { path: "operations", element: <PlaceholderPage title="Runtime Operations" /> },
       { path: "weaver/sessions/:sessionId", element: <RequireCustomerAuth><WeaverSessionPage /></RequireCustomerAuth> },
-      { path: "audit", element: <PlaceholderPage title="Audit" /> }
+      { path: "audit", element: <PlaceholderPage title="Audit" /> },
+      { path: "*", element: <ConsoleNotFoundPage /> }
     ]
   }
 ]);

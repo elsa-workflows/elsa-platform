@@ -1711,14 +1711,15 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
 
         var entities = await dbContext.WorkflowEngines
             .AsNoTracking()
+            .OrderBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        return entities
             .Where(x => !x.LastVerificationAt.HasValue || x.LastVerificationAt <= verifyBefore)
             .OrderBy(x => x.LastVerificationAt.HasValue)
             .ThenBy(x => x.LastVerificationAt)
             .ThenBy(x => x.Id)
             .Take(limit)
-            .ToListAsync(cancellationToken);
-
-        return entities
             .Select(ToWorkspaceWorkflowEngine)
             .ToList();
     }
