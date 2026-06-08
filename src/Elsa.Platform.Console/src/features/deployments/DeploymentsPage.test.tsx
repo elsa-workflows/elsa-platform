@@ -64,6 +64,7 @@ describe("DeploymentsPage", () => {
     expect(screen.getByText("Claims Operations")).toBeInTheDocument();
     expect(screen.getByLabelText("Sort applications")).toHaveValue("name");
     expect(within(screen.getByRole("table")).getByRole("columnheader", { name: "Application" })).toBeInTheDocument();
+    expect(within(screen.getByRole("table")).queryByRole("columnheader", { name: "Workspace" })).not.toBeInTheDocument();
 
     await userEvent.type(screen.getByPlaceholderText("Search applications"), "Policy");
 
@@ -88,7 +89,7 @@ describe("DeploymentsPage", () => {
     expect(linkByHref("/admin/deployments/new")).toBeInTheDocument();
   });
 
-  it("creates deployment setup from the guided setup route without registering an engine", async () => {
+  it("creates application setup with environments and engines from the guided setup route", async () => {
     const fetchMock = renderDeployments({
       applications: [],
       engines: [],
@@ -100,13 +101,10 @@ describe("DeploymentsPage", () => {
     }, "/admin/deployments/new");
 
     expect(await screen.findByRole("heading", { name: "New application setup" })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByLabelText("Tier")).toHaveValue("tier-production"));
     await userEvent.type(screen.getByLabelText("Application"), "Claims Operations");
-    await userEvent.clear(screen.getByLabelText("Environment"));
-    await userEvent.type(screen.getByLabelText("Environment"), "Prod");
+    expect(screen.queryByLabelText("Environment")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Engine name")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Engine base URL")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Create setup" }));
+    await userEvent.click(screen.getByRole("button", { name: "Create application" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -114,12 +112,34 @@ describe("DeploymentsPage", () => {
         expect.objectContaining({ method: "POST" })
       )
     );
+    await waitFor(() => expect(screen.getByLabelText("Tier")).toHaveValue("tier-production"));
+    expect(screen.getAllByText("Claims Operations").length).toBeGreaterThan(0);
+    await userEvent.clear(screen.getByLabelText("Environment"));
+    await userEvent.type(screen.getByLabelText("Environment"), "Prod");
+    await userEvent.click(screen.getByRole("button", { name: "Add environment" }));
+
     expect(requestBody(fetchMock, "POST", "/applications/app-created/environments")).toMatchObject({
       name: "Prod",
       tier: "Production",
       tierId: "tier-production"
     });
-    expect(fetchMock.mock.calls.some(([input, init]) => input.toString().includes("/engines") && init?.method === "POST")).toBe(false);
+    expect(await screen.findByText("Prod - 0 engines")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Engine credentials" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Continue to engines" }));
+    await userEvent.type(screen.getByLabelText("Engine name"), "claims-prod");
+    await userEvent.type(screen.getByLabelText("Engine base URL"), "https://claims-prod.example/elsa");
+    await userEvent.click(screen.getByRole("button", { name: "Register engine" }));
+
+    await waitFor(() =>
+      expect(requestBody(fetchMock, "POST", "/environments/env-created/engines")).toMatchObject({
+        name: "claims-prod",
+        baseUrl: "https://claims-prod.example/elsa",
+        credentialReferenceId: "credential-reference-dev"
+      })
+    );
+    expect(await screen.findByText("Prod - 1 engines")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Add another environment" }));
+    expect(screen.getByRole("button", { name: "Add environment" })).toBeInTheDocument();
   }, 15000);
 
   it("renders application detail with an environment table", async () => {
@@ -137,9 +157,17 @@ describe("DeploymentsPage", () => {
     const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops");
 
     expect(await screen.findByRole("heading", { name: "Claims Operations" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Secret stores" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Engine credential stores" })).toBeInTheDocument();
     expect(screen.getAllByText("Platform Key Vault").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Dev engine API").length).toBeGreaterThan(0);
+    expect(screen.getByText("Register platform-to-engine credentials. Runtime secrets remain managed inside runtimes.")).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Store type"), "LocalEncryptedDatabase");
+    expect(screen.getByText("Elsa Platform stores protected engine credential material.")).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Store type"), "AzureKeyVault");
+
+    await userEvent.click(screen.getByRole("button", { name: "1 engines" }));
+    expect(await screen.findByText("claims-dev-01")).toBeInTheDocument();
+    expect(screen.getByText("Claims Operations / Dev")).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText("Store name"), "HashiCorp Vault");
     await userEvent.click(screen.getByRole("button", { name: "Register store" }));
@@ -152,11 +180,12 @@ describe("DeploymentsPage", () => {
     );
     expect(requestBody(fetchMock, "POST", "/deployments/secret-stores")).toMatchObject({
       name: "HashiCorp Vault",
-      provider: "Azure Key Vault"
+      provider: null,
+      type: "AzureKeyVault"
     });
 
     await userEvent.type(screen.getByLabelText("Reference name"), "Secondary dev engine API");
-    await userEvent.type(screen.getByLabelText("Reference"), "kv://acme-platform/dev/elsa-api-secondary");
+    await userEvent.type(screen.getByLabelText("Key Vault reference"), "kv://acme-platform/dev/elsa-api-secondary");
     await userEvent.click(screen.getByRole("button", { name: "Register reference" }));
 
     await waitFor(() =>
@@ -722,6 +751,21 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
     if (method === "GET" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/secret-stores`)) {
       return jsonResponse({ items: secretStores });
     }
+    if (method === "GET" && url.match(new RegExp(`/api/workspaces/${workspaceId}/deployments/credential-references/[^/]+/usage$`))) {
+      const credentialReferenceId = decodeURIComponent(url.split("/credential-references/")[1]?.split("/usage")[0] ?? "");
+      return jsonResponse({
+        items: credentialReferenceId === "credential-reference-dev"
+          ? [{
+              engineId: "engine-dev-1",
+              engineName: "claims-dev-01",
+              applicationId: "claims-ops",
+              applicationName: "Claims Operations",
+              environmentId: "claims-dev",
+              environmentName: "Dev"
+            }]
+          : []
+      });
+    }
     if (method === "GET" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/credential-references`)) {
       return jsonResponse({ items: credentialReferences });
     }
@@ -785,10 +829,52 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
       return jsonResponse(currentCockpit);
     }
     if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications`)) {
-      return jsonResponse({ id: "app-created", workspaceId, name: "Claims Operations" }, 201);
+      const body = JSON.parse(init?.body?.toString() ?? "{}") as { name?: string };
+      const application = {
+        id: "app-created",
+        name: body.name ?? "Claims Operations",
+        workspaceName: "Acme Insurance",
+        environments: []
+      };
+      currentCockpit = {
+        ...currentCockpit,
+        applications: [...currentCockpit.applications, application]
+      };
+      return jsonResponse({ id: application.id, workspaceId, name: application.name }, 201);
     }
     if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications/app-created/environments`)) {
-      return jsonResponse({ id: "env-created", workspaceId, applicationId: "app-created", name: "Prod" }, 201);
+      const body = JSON.parse(init?.body?.toString() ?? "{}") as { name?: string; tier?: DeploymentCockpit["applications"][number]["environments"][number]["tier"]; tierId?: string };
+      const environment = {
+        id: "env-created",
+        name: body.name ?? "Prod",
+        tier: body.tier ?? "Production",
+        tierId: body.tierId ?? "tier-production",
+        tierName: body.tier ?? "Production",
+        tierStatus: "Active",
+        tierCapabilities: [
+          "deployment.tier.production-like",
+          "deployment.promotion.target",
+          "deployment.confirmation.required",
+          "deployment.rollback.enabled",
+          "deployment.secret-verification.required",
+          "deployment.observability.required"
+        ],
+        health: "Healthy",
+        desiredRevision: { id: "", revision: 0, commit: "", label: "No desired revision", authoredAt: "2026-05-26T10:00:00Z" },
+        deployedRevision: null,
+        deploymentStatus: "Succeeded",
+        driftStatus: "Unknown",
+        engineIds: []
+      } satisfies DeploymentCockpit["applications"][number]["environments"][number];
+      currentCockpit = {
+        ...currentCockpit,
+        applications: currentCockpit.applications.map((application) =>
+          application.id === "app-created"
+            ? { ...application, environments: [...application.environments, environment] }
+            : application
+        )
+      };
+      return jsonResponse({ id: environment.id, workspaceId, applicationId: "app-created", name: environment.name }, 201);
     }
     if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/secret-stores`)) {
       const body = JSON.parse(init?.body?.toString() ?? "{}") as { name: string; provider: string; description?: string | null };
@@ -828,11 +914,33 @@ function createDeploymentFetchMock(cockpit: DeploymentCockpit) {
       return jsonResponse(credentialReferences.find((reference) => reference.id === credentialReferenceId));
     }
     if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/environments/env-created/engines`)) {
-      currentCockpit = {
-        ...deploymentCockpitFixture,
-        applications: [{ ...deploymentCockpitFixture.applications[0], id: "app-created", name: "Claims Operations" }]
+      const body = JSON.parse(init?.body?.toString() ?? "{}") as { name?: string; credentialReferenceId?: string | null; baseUrl?: string };
+      const createdEngine = {
+        ...engine("engine-created", body.name ?? "claims-prod", "env-created", "Healthy", "Unverified", [
+          capability("engine.reload-configuration", "Reload engine configuration", "EngineApi")
+        ]),
+        endpoint: {
+          ...engine("engine-created", body.name ?? "claims-prod", "env-created", "Healthy", "Unverified", []).endpoint,
+          baseUrl: body.baseUrl ?? "https://claims-prod.example/elsa"
+        }
       };
-      return jsonResponse({ id: "engine-created", name: "claims-prod", environmentId: "env-created" }, 201);
+      currentCockpit = {
+        ...currentCockpit,
+        applications: currentCockpit.applications.map((application) =>
+          application.id === "app-created"
+            ? {
+                ...application,
+                environments: application.environments.map((environment) =>
+                  environment.id === "env-created"
+                    ? { ...environment, engineIds: [...environment.engineIds, createdEngine.id] }
+                    : environment
+                )
+              }
+            : application
+        ),
+        engines: [...currentCockpit.engines, createdEngine]
+      };
+      return jsonResponse(createdEngine, 201);
     }
     if (method === "POST" && url.endsWith(`/api/workspaces/${workspaceId}/deployments/applications/policy-app/environments`)) {
       return jsonResponse({ id: "policy-prod", workspaceId, applicationId: "policy-app", name: "Prod" }, 201);
@@ -1306,15 +1414,18 @@ const deploymentSecretStores: WorkspaceDeploymentSecretStore[] = [
   deploymentSecretStore("secret-store-azure", "Platform Key Vault", "Azure Key Vault", "Shared deployment credential metadata")
 ];
 const deploymentCredentialReferences: WorkspaceDeploymentCredentialReference[] = [
-  deploymentCredentialReference(
-    "credential-reference-dev",
-    "secret-store-azure",
-    "Platform Key Vault",
-    "Azure Key Vault",
-    "Dev engine API",
-    "kv://acme-platform/dev/elsa-api",
-    "Dev workflow engine API credential"
-  ),
+  {
+    ...deploymentCredentialReference(
+      "credential-reference-dev",
+      "secret-store-azure",
+      "Platform Key Vault",
+      "Azure Key Vault",
+      "Dev engine API",
+      "kv://acme-platform/dev/elsa-api",
+      "Dev workflow engine API credential"
+    ),
+    usageCount: 1
+  },
   deploymentCredentialReference(
     "credential-reference-prod",
     "secret-store-azure",
@@ -1702,6 +1813,7 @@ function engine(
       verificationStatus,
       lastVerifiedAt: verificationStatus === "Verified" ? "2026-05-22T07:50:00Z" : null
     },
+    credentialAssignmentStatus: "Assigned",
     health,
     lastHeartbeatAt: health === "Unreachable" ? null : "2026-05-22T08:16:30Z",
     lastVerificationAt: health === "Unreachable" ? null : "2026-05-22T08:12:30Z",
@@ -1722,6 +1834,7 @@ function deploymentSecretStore(id: string, name: string, provider: string, descr
     workspaceId,
     name,
     provider,
+    type: provider === "Azure Key Vault" ? "AzureKeyVault" : "GenericExternalReference",
     description,
     status: "Active",
     createdAt: "2026-05-26T10:00:00Z",
@@ -1748,6 +1861,7 @@ function deploymentCredentialReference(
     secretStoreId,
     secretStoreName,
     secretStoreProvider,
+    secretStoreType: secretStoreProvider === "Azure Key Vault" ? "AzureKeyVault" : "GenericExternalReference",
     name,
     reference,
     description,
@@ -1759,7 +1873,9 @@ function deploymentCredentialReference(
     createdByAccountId: "account-1",
     updatedByAccountId: "account-1",
     archivedAt: null,
-    archivedByAccountId: null
+    archivedByAccountId: null,
+    hasProtectedSecret: false,
+    usageCount: 0
   };
 }
 

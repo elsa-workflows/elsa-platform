@@ -55,7 +55,7 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.BaseUrl);
-        if (!request.CredentialReferenceId.HasValue)
+        if (request.CredentialAssignmentStatus == EngineCredentialAssignmentStatus.Assigned && !request.CredentialReferenceId.HasValue)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(request.CredentialProvider);
             ArgumentException.ThrowIfNullOrWhiteSpace(request.CredentialReference);
@@ -75,8 +75,11 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.BaseUrl);
-        ArgumentException.ThrowIfNullOrWhiteSpace(request.CredentialProvider);
-        ArgumentException.ThrowIfNullOrWhiteSpace(request.CredentialReference);
+        if (request.CredentialAssignmentStatus == EngineCredentialAssignmentStatus.Assigned && !request.CredentialReferenceId.HasValue)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(request.CredentialProvider);
+            ArgumentException.ThrowIfNullOrWhiteSpace(request.CredentialReference);
+        }
 
         if (!Uri.TryCreate(request.BaseUrl, UriKind.Absolute, out _))
             throw new ArgumentException("Engine base URL must be an absolute URI.", nameof(request));
@@ -96,8 +99,7 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
-        ArgumentException.ThrowIfNullOrWhiteSpace(request.Provider);
-        return store.CreateSecretStoreAsync(workspaceId, request, cancellationToken);
+        return store.CreateSecretStoreAsync(workspaceId, Normalize(request), cancellationToken);
     }
 
     public Task<WorkspaceDeploymentSecretStore> UpdateSecretStoreAsync(
@@ -107,8 +109,7 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
-        ArgumentException.ThrowIfNullOrWhiteSpace(request.Provider);
-        return store.UpdateSecretStoreAsync(workspaceId, secretStoreId, request, cancellationToken);
+        return store.UpdateSecretStoreAsync(workspaceId, secretStoreId, Normalize(request), cancellationToken);
     }
 
     public Task<WorkspaceDeploymentSecretStore> ArchiveSecretStoreAsync(
@@ -125,17 +126,19 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
         CancellationToken cancellationToken = default) =>
         store.ListCredentialReferencesAsync(workspaceId, secretStoreId, includeArchived, cancellationToken);
 
-    public Task<WorkspaceDeploymentCredentialReference> CreateCredentialReferenceAsync(
+    public async Task<WorkspaceDeploymentCredentialReference> CreateCredentialReferenceAsync(
         Guid workspaceId,
         CreateDeploymentCredentialReferenceRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Reference);
-        return store.CreateCredentialReferenceAsync(workspaceId, request, cancellationToken);
+        var secretStore = await GetSecretStoreAsync(workspaceId, request.SecretStoreId, cancellationToken);
+        ValidateProtectedSecret(secretStore.Type, request.ProtectedSecret);
+        return await store.CreateCredentialReferenceAsync(workspaceId, request, cancellationToken);
     }
 
-    public Task<WorkspaceDeploymentCredentialReference> UpdateCredentialReferenceAsync(
+    public async Task<WorkspaceDeploymentCredentialReference> UpdateCredentialReferenceAsync(
         Guid workspaceId,
         Guid credentialReferenceId,
         UpdateDeploymentCredentialReferenceRequest request,
@@ -143,7 +146,23 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Reference);
-        return store.UpdateCredentialReferenceAsync(workspaceId, credentialReferenceId, request, cancellationToken);
+        var reference = await GetCredentialReferenceAsync(workspaceId, credentialReferenceId, cancellationToken);
+        ValidateProtectedSecret(reference.SecretStoreType, request.ProtectedSecret);
+        return await store.UpdateCredentialReferenceAsync(workspaceId, credentialReferenceId, request, cancellationToken);
+    }
+
+    public async Task<WorkspaceDeploymentCredentialReference> RotateCredentialReferenceAsync(
+        Guid workspaceId,
+        Guid credentialReferenceId,
+        RotateDeploymentCredentialReferenceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.ProtectedSecret);
+        var reference = await GetCredentialReferenceAsync(workspaceId, credentialReferenceId, cancellationToken);
+        if (reference.SecretStoreType != DeploymentSecretStoreType.LocalEncryptedDatabase)
+            throw new InvalidOperationException("Only local encrypted database credential references can be rotated in Elsa Platform.");
+
+        return await store.RotateCredentialReferenceAsync(workspaceId, credentialReferenceId, request, cancellationToken);
     }
 
     public Task<WorkspaceDeploymentCredentialReference> ArchiveCredentialReferenceAsync(
@@ -152,6 +171,12 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
         Guid? actorAccountId,
         CancellationToken cancellationToken = default) =>
         store.ArchiveCredentialReferenceAsync(workspaceId, credentialReferenceId, actorAccountId, cancellationToken);
+
+    public Task<IReadOnlyList<WorkspaceDeploymentCredentialUsage>> ListCredentialReferenceUsageAsync(
+        Guid workspaceId,
+        Guid credentialReferenceId,
+        CancellationToken cancellationToken = default) =>
+        store.ListCredentialReferenceUsageAsync(workspaceId, credentialReferenceId, cancellationToken);
 
     public Task<WorkspaceDesiredStateRevision> CreateRevisionAsync(
         Guid workspaceId,
@@ -218,5 +243,45 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
                 element.WriteTo(writer);
                 break;
         }
+    }
+
+    private async Task<WorkspaceDeploymentSecretStore> GetSecretStoreAsync(Guid workspaceId, Guid secretStoreId, CancellationToken cancellationToken)
+    {
+        var stores = await store.ListSecretStoresAsync(workspaceId, includeArchived: true, cancellationToken);
+        return stores.SingleOrDefault(x => x.Id == secretStoreId)
+            ?? throw new KeyNotFoundException("Deployment secret store does not exist in the workspace.");
+    }
+
+    private async Task<WorkspaceDeploymentCredentialReference> GetCredentialReferenceAsync(Guid workspaceId, Guid credentialReferenceId, CancellationToken cancellationToken)
+    {
+        var references = await store.ListCredentialReferencesAsync(workspaceId, secretStoreId: null, includeArchived: true, cancellationToken);
+        return references.SingleOrDefault(x => x.Id == credentialReferenceId)
+            ?? throw new KeyNotFoundException("Deployment credential reference does not exist in the workspace.");
+    }
+
+    private static CreateDeploymentSecretStoreRequest Normalize(CreateDeploymentSecretStoreRequest request) =>
+        request with { Provider = NormalizeProvider(request.Type, request.Provider) };
+
+    private static UpdateDeploymentSecretStoreRequest Normalize(UpdateDeploymentSecretStoreRequest request) =>
+        request with { Provider = NormalizeProvider(request.Type, request.Provider) };
+
+    private static string NormalizeProvider(DeploymentSecretStoreType type, string? provider) =>
+        string.IsNullOrWhiteSpace(provider) ? DefaultProvider(type) : provider.Trim();
+
+    private static string DefaultProvider(DeploymentSecretStoreType type) =>
+        type switch
+        {
+            DeploymentSecretStoreType.LocalEncryptedDatabase => "Local encrypted database",
+            DeploymentSecretStoreType.AzureKeyVault => "Azure Key Vault",
+            DeploymentSecretStoreType.KubernetesSecrets => "Kubernetes Secrets",
+            DeploymentSecretStoreType.EnvironmentVariableName => "Environment variable name",
+            DeploymentSecretStoreType.GenericExternalReference => "Generic external reference",
+            _ => type.ToString()
+        };
+
+    private static void ValidateProtectedSecret(DeploymentSecretStoreType type, string? protectedSecret)
+    {
+        if (type != DeploymentSecretStoreType.LocalEncryptedDatabase && !string.IsNullOrWhiteSpace(protectedSecret))
+            throw new InvalidOperationException("External engine credential stores accept locator metadata only, not secret values.");
     }
 }

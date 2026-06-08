@@ -1169,7 +1169,13 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             throw new InvalidOperationException("Deployment environment does not exist in the workspace.");
 
         var now = DateTimeOffset.UtcNow;
-        var credential = await ResolveCredentialReferenceAsync(workspaceId, request.CredentialReferenceId, request.CredentialProvider, request.CredentialReference, cancellationToken);
+        var credential = await ResolveCredentialReferenceAsync(
+            workspaceId,
+            request.CredentialReferenceId,
+            request.CredentialProvider,
+            request.CredentialReference,
+            request.CredentialAssignmentStatus,
+            cancellationToken);
         var engine = new WorkflowEngineEntity
         {
             Id = Guid.NewGuid(),
@@ -1183,6 +1189,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             CertificateStatus = CertificateStatus.Trusted,
             CredentialProvider = credential.Provider,
             CredentialReference = credential.Reference,
+            CredentialAssignmentStatus = credential.AssignmentStatus,
             CredentialVerificationStatus = CredentialVerificationStatus.Unverified,
             Health = DeploymentHealth.Unreachable,
             VerificationMessage = "Engine has not been verified.",
@@ -1245,7 +1252,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             Id = Guid.NewGuid(),
             WorkspaceId = workspaceId,
             Name = request.Name,
-            Provider = request.Provider,
+            Provider = request.Provider ?? "",
+            Type = request.Type,
             Description = request.Description,
             Status = DeploymentSecretStoreStatus.Active,
             CreatedAt = now,
@@ -1273,7 +1281,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             throw new InvalidOperationException("An active deployment secret store with this name already exists in the workspace.");
 
         entity.Name = request.Name;
-        entity.Provider = request.Provider;
+        entity.Provider = request.Provider ?? "";
+        entity.Type = request.Type;
         entity.Description = request.Description;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
         entity.UpdatedByAccountId = request.ActorAccountId;
@@ -1323,6 +1332,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         var query = dbContext.DeploymentCredentialReferences
             .AsNoTracking()
             .Include(x => x.SecretStore)
+            .Include(x => x.Engines)
             .Where(x => x.WorkspaceId == workspaceId);
         if (secretStoreId.HasValue)
             query = query.Where(x => x.SecretStoreId == secretStoreId.Value);
@@ -1359,6 +1369,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             SecretStore = store,
             Name = request.Name,
             Reference = request.Reference,
+            ProtectedSecret = request.ProtectedSecret,
+            ProtectedSecretUpdatedAt = string.IsNullOrWhiteSpace(request.ProtectedSecret) ? null : now,
             Description = request.Description,
             Status = DeploymentSecretStoreStatus.Active,
             VerificationStatus = CredentialVerificationStatus.Unverified,
@@ -1389,10 +1401,39 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
 
         entity.Name = request.Name;
         entity.Reference = request.Reference;
+        if (!string.IsNullOrWhiteSpace(request.ProtectedSecret))
+        {
+            entity.ProtectedSecret = request.ProtectedSecret;
+            entity.ProtectedSecretUpdatedAt = DateTimeOffset.UtcNow;
+        }
+
         entity.Description = request.Description;
         entity.VerificationStatus = CredentialVerificationStatus.Unverified;
         entity.LastVerifiedAt = null;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
+        entity.UpdatedByAccountId = request.ActorAccountId;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToWorkspaceDeploymentCredentialReference(entity);
+    }
+
+    public async Task<WorkspaceDeploymentCredentialReference> RotateCredentialReferenceAsync(
+        Guid workspaceId,
+        Guid credentialReferenceId,
+        RotateDeploymentCredentialReferenceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await dbContext.DeploymentCredentialReferences
+            .Include(x => x.SecretStore)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == credentialReferenceId, cancellationToken);
+        if (entity is null)
+            throw new KeyNotFoundException("Deployment credential reference does not exist in the workspace.");
+
+        var now = DateTimeOffset.UtcNow;
+        entity.ProtectedSecret = request.ProtectedSecret;
+        entity.ProtectedSecretUpdatedAt = now;
+        entity.VerificationStatus = CredentialVerificationStatus.Unverified;
+        entity.LastVerifiedAt = null;
+        entity.UpdatedAt = now;
         entity.UpdatedByAccountId = request.ActorAccountId;
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToWorkspaceDeploymentCredentialReference(entity);
@@ -1422,6 +1463,34 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         return ToWorkspaceDeploymentCredentialReference(entity);
     }
 
+    public async Task<IReadOnlyList<WorkspaceDeploymentCredentialUsage>> ListCredentialReferenceUsageAsync(
+        Guid workspaceId,
+        Guid credentialReferenceId,
+        CancellationToken cancellationToken = default)
+    {
+        var referenceExists = await dbContext.DeploymentCredentialReferences
+            .AnyAsync(x => x.WorkspaceId == workspaceId && x.Id == credentialReferenceId, cancellationToken);
+        if (!referenceExists)
+            throw new KeyNotFoundException("Deployment credential reference does not exist in the workspace.");
+
+        return await dbContext.WorkflowEngines
+            .AsNoTracking()
+            .Include(x => x.Environment)
+            .ThenInclude(x => x!.Application)
+            .Where(x => x.WorkspaceId == workspaceId && x.CredentialReferenceId == credentialReferenceId)
+            .OrderBy(x => x.Environment!.Application!.Name)
+            .ThenBy(x => x.Environment!.Name)
+            .ThenBy(x => x.Name)
+            .Select(x => new WorkspaceDeploymentCredentialUsage(
+                x.Id,
+                x.Name,
+                x.Environment!.ApplicationId,
+                x.Environment.Application!.Name,
+                x.EnvironmentId,
+                x.Environment.Name))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<WorkspaceWorkflowEngine> UpdateEngineAsync(
         Guid workspaceId,
         Guid engineId,
@@ -1436,8 +1505,17 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         engine.Name = request.Name;
         engine.BaseUrl = request.BaseUrl;
         engine.Region = request.Region;
-        engine.CredentialProvider = request.CredentialProvider;
-        engine.CredentialReference = request.CredentialReference;
+        var credential = await ResolveCredentialReferenceAsync(
+            workspaceId,
+            request.CredentialReferenceId,
+            request.CredentialProvider,
+            request.CredentialReference,
+            request.CredentialAssignmentStatus,
+            cancellationToken);
+        engine.CredentialReferenceId = credential.Id;
+        engine.CredentialProvider = credential.Provider;
+        engine.CredentialReference = credential.Reference;
+        engine.CredentialAssignmentStatus = credential.AssignmentStatus;
         engine.Version = "";
         engine.CertificateStatus = CertificateStatus.Trusted;
         engine.CredentialVerificationStatus = CredentialVerificationStatus.Unverified;
@@ -1625,14 +1703,17 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
 
         var entities = await dbContext.WorkflowEngines
             .AsNoTracking()
+            .OrderBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        return entities
             .Where(x => !x.LastVerificationAt.HasValue || x.LastVerificationAt <= verifyBefore)
             .OrderBy(x => x.LastVerificationAt.HasValue)
             .ThenBy(x => x.LastVerificationAt)
             .ThenBy(x => x.Id)
             .Take(limit)
-            .ToListAsync(cancellationToken);
-
-        return entities.Select(ToWorkspaceWorkflowEngine).ToList();
+            .Select(ToWorkspaceWorkflowEngine)
+            .ToList();
     }
 
     public async Task<EngineHealthResult> UpdateEngineHealthAsync(
@@ -2037,6 +2118,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             store.WorkspaceId,
             store.Name,
             store.Provider,
+            store.Type,
             store.Description,
             store.Status,
             store.CreatedAt,
@@ -2053,6 +2135,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             reference.SecretStoreId,
             reference.SecretStore?.Name ?? "",
             reference.SecretStore?.Provider ?? "",
+            reference.SecretStore?.Type ?? DeploymentSecretStoreType.GenericExternalReference,
             reference.Name,
             reference.Reference,
             reference.Description,
@@ -2064,7 +2147,9 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             reference.CreatedByAccountId,
             reference.UpdatedByAccountId,
             reference.ArchivedAt,
-            reference.ArchivedByAccountId);
+            reference.ArchivedByAccountId,
+            !string.IsNullOrEmpty(reference.ProtectedSecret),
+            reference.Engines.Count);
 
     private static WorkflowEngineRegistration ToEngineRegistration(WorkflowEngineEntity engine) =>
         new(
@@ -2079,7 +2164,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             engine.Controls.OrderBy(x => x.ControlId).Select(x => new RuntimeControl(x.ControlId, x.Label, x.Boundary, x.RequiredCapabilityId, x.Description)).ToList(),
             engine.HostingProvider,
             engine.LastVerificationAt,
-            engine.VerificationMessage);
+            engine.VerificationMessage,
+            engine.CredentialAssignmentStatus);
 
     private static ObservabilityBinding ToObservabilityBinding(ObservabilityBindingEntity binding) =>
         new(
@@ -2122,7 +2208,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             engine.UpdatedAt,
             engine.LastVerificationAt,
             engine.VerificationMessage,
-            engine.CredentialReferenceId);
+            engine.CredentialReferenceId,
+            engine.CredentialAssignmentStatus);
 
     private static WorkspaceArtifact ToWorkspaceArtifact(WorkspaceDeploymentArtifactEntity artifact) =>
         new(
@@ -3109,10 +3196,14 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         Guid? credentialReferenceId,
         string? credentialProvider,
         string? credentialReference,
+        EngineCredentialAssignmentStatus assignmentStatus,
         CancellationToken cancellationToken)
     {
+        if (assignmentStatus == EngineCredentialAssignmentStatus.Deferred)
+            return new ResolvedEngineCredential(null, "", "", EngineCredentialAssignmentStatus.Deferred);
+
         if (!credentialReferenceId.HasValue)
-            return new ResolvedEngineCredential(null, credentialProvider!.Trim(), credentialReference!.Trim());
+            return new ResolvedEngineCredential(null, credentialProvider!.Trim(), credentialReference!.Trim(), EngineCredentialAssignmentStatus.Assigned);
 
         var reference = await dbContext.DeploymentCredentialReferences
             .AsNoTracking()
@@ -3123,10 +3214,10 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         if (reference.Status != DeploymentSecretStoreStatus.Active || reference.SecretStore?.Status != DeploymentSecretStoreStatus.Active)
             throw new InvalidOperationException("Archived deployment credential references cannot be assigned to engines.");
 
-        return new ResolvedEngineCredential(reference.Id, reference.SecretStore.Provider, reference.Reference);
+        return new ResolvedEngineCredential(reference.Id, reference.SecretStore.Provider, reference.Reference, EngineCredentialAssignmentStatus.Assigned);
     }
 
-    private sealed record ResolvedEngineCredential(Guid? Id, string Provider, string Reference);
+    private sealed record ResolvedEngineCredential(Guid? Id, string Provider, string Reference, EngineCredentialAssignmentStatus AssignmentStatus);
 
     private static DeploymentHealth EnvironmentHealth(DeploymentEnvironmentEntity environment, IReadOnlyList<WorkflowEngineEntity> engines)
     {

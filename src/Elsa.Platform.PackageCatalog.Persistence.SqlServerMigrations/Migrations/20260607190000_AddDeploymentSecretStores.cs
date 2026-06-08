@@ -17,6 +17,14 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                 type: "uniqueidentifier",
                 nullable: true);
 
+            migrationBuilder.AddColumn<string>(
+                name: "CredentialAssignmentStatus",
+                table: "WorkflowEngines",
+                type: "nvarchar(32)",
+                maxLength: 32,
+                nullable: false,
+                defaultValue: "Assigned");
+
             migrationBuilder.CreateTable(
                 name: "DeploymentSecretStores",
                 columns: table => new
@@ -25,6 +33,7 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                     WorkspaceId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     Provider = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+                    Type = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
                     Description = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
                     Status = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
                     CreatedAt = table.Column<long>(type: "bigint", nullable: false),
@@ -54,6 +63,8 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                     SecretStoreId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     Reference = table.Column<string>(type: "nvarchar(1024)", maxLength: 1024, nullable: false),
+                    ProtectedSecret = table.Column<string>(type: "nvarchar(4096)", maxLength: 4096, nullable: true),
+                    ProtectedSecretUpdatedAt = table.Column<long>(type: "bigint", nullable: true),
                     Description = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
                     Status = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
                     VerificationStatus = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
@@ -130,6 +141,10 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
 
             migrationBuilder.DropColumn(
                 name: "CredentialReferenceId",
+                table: "WorkflowEngines");
+
+            migrationBuilder.DropColumn(
+                name: "CredentialAssignmentStatus",
                 table: "WorkflowEngines");
         }
     }

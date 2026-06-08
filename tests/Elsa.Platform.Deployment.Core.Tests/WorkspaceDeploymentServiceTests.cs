@@ -70,6 +70,71 @@ public sealed class WorkspaceDeploymentServiceTests
     }
 
     [Fact]
+    public async Task Allows_engine_registration_with_credentials_deferred()
+    {
+        var service = new WorkspaceDeploymentService(_store);
+
+        var engine = await service.RegisterEngineAsync(
+            _workspaceId,
+            new RegisterWorkflowEngineRequest(
+                Guid.NewGuid(),
+                "claims-dev",
+                "https://workflows-dev.example.test/elsa",
+                null,
+                null,
+                null,
+                [],
+                [],
+                null,
+                null,
+                EngineCredentialAssignmentStatus.Deferred));
+
+        engine.CredentialAssignmentStatus.Should().Be(EngineCredentialAssignmentStatus.Deferred);
+        engine.CredentialProvider.Should().BeEmpty();
+        engine.CredentialReference.Should().BeEmpty();
+        _store.RegisteredEngineRequests.Should().ContainSingle().Which.CredentialAssignmentStatus.Should().Be(EngineCredentialAssignmentStatus.Deferred);
+    }
+
+    [Fact]
+    public async Task Derives_secret_store_provider_from_type_when_provider_is_omitted()
+    {
+        var service = new WorkspaceDeploymentService(_store);
+
+        var store = await service.CreateSecretStoreAsync(
+            _workspaceId,
+            new CreateDeploymentSecretStoreRequest(
+                "Local credentials",
+                null,
+                null,
+                null,
+                DeploymentSecretStoreType.LocalEncryptedDatabase));
+
+        store.Provider.Should().Be("Local encrypted database");
+        _store.CreatedSecretStoreRequests.Should().ContainSingle().Which.Provider.Should().Be("Local encrypted database");
+    }
+
+    [Fact]
+    public async Task Validates_protected_secret_usage_against_secret_store_type()
+    {
+        var service = new WorkspaceDeploymentService(_store);
+        var externalStore = SecretStore(Guid.NewGuid(), DeploymentSecretStoreType.AzureKeyVault);
+        var localStore = SecretStore(Guid.NewGuid(), DeploymentSecretStoreType.LocalEncryptedDatabase);
+        _store.SecretStores.Add(externalStore);
+        _store.SecretStores.Add(localStore);
+
+        var external = () => service.CreateCredentialReferenceAsync(
+            _workspaceId,
+            new CreateDeploymentCredentialReferenceRequest(externalStore.Id, "Prod engine", "kv://claims/prod", null, null, "protected:v1"));
+        var local = await service.CreateCredentialReferenceAsync(
+            _workspaceId,
+            new CreateDeploymentCredentialReferenceRequest(localStore.Id, "Dev engine", "local://engine-credentials/dev", null, null, "protected:v1"));
+
+        await external.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("External engine credential stores accept locator metadata only, not secret values.");
+        local.HasProtectedSecret.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Creates_environment_with_selected_tier_id()
     {
         var tierId = Guid.NewGuid();
@@ -115,12 +180,32 @@ public sealed class WorkspaceDeploymentServiceTests
             .WithMessage("Deployment tier must be active in the workspace.");
     }
 
+    private static WorkspaceDeploymentSecretStore SecretStore(Guid id, DeploymentSecretStoreType type) =>
+        new(
+            id,
+            WorkspaceDeploymentTestFixtures.WorkspaceId,
+            "Engine credentials",
+            type.ToString(),
+            type,
+            null,
+            DeploymentSecretStoreStatus.Active,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            null,
+            null,
+            null,
+            null);
+
     private sealed class RecordingDeploymentStore : IWorkspaceDeploymentStore
     {
         public Guid LastWorkspaceId { get; private set; }
         public DeploymentCockpit Cockpit { get; set; } = new([], [], [], [], [], [], []);
         public List<CreateDeploymentEnvironmentRequest> CreatedEnvironmentRequests { get; } = [];
         public List<UpdateDeploymentEnvironmentRequest> UpdatedEnvironmentRequests { get; } = [];
+        public List<RegisterWorkflowEngineRequest> RegisteredEngineRequests { get; } = [];
+        public List<CreateDeploymentSecretStoreRequest> CreatedSecretStoreRequests { get; } = [];
+        public List<CreateDeploymentCredentialReferenceRequest> CreatedCredentialReferenceRequests { get; } = [];
+        public List<WorkspaceDeploymentSecretStore> SecretStores { get; } = [];
         public Exception? CreateEnvironmentException { get; set; }
 
         public Task<DeploymentCockpit> GetCockpitAsync(Guid workspaceId, CancellationToken cancellationToken = default)
@@ -149,8 +234,32 @@ public sealed class WorkspaceDeploymentServiceTests
             return Task.FromResult(Environment(environmentId, workspaceId, request.ApplicationId, request.Name, request.Tier, request.TierId));
         }
 
-        public Task<WorkspaceWorkflowEngine> RegisterEngineAsync(Guid workspaceId, RegisterWorkflowEngineRequest request, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+        public Task<WorkspaceWorkflowEngine> RegisterEngineAsync(Guid workspaceId, RegisterWorkflowEngineRequest request, CancellationToken cancellationToken = default)
+        {
+            RegisteredEngineRequests.Add(request);
+            return Task.FromResult(new WorkspaceWorkflowEngine(
+                Guid.NewGuid(),
+                workspaceId,
+                request.EnvironmentId,
+                request.Name,
+                request.BaseUrl,
+                request.Region,
+                null,
+                CertificateStatus.Trusted,
+                request.CredentialAssignmentStatus == EngineCredentialAssignmentStatus.Deferred ? "" : request.CredentialProvider ?? "",
+                request.CredentialAssignmentStatus == EngineCredentialAssignmentStatus.Deferred ? "" : request.CredentialReference ?? "",
+                CredentialVerificationStatus.Unverified,
+                null,
+                DeploymentHealth.Degraded,
+                null,
+                request.HostingProvider,
+                DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow,
+                null,
+                "",
+                request.CredentialAssignmentStatus == EngineCredentialAssignmentStatus.Deferred ? null : request.CredentialReferenceId,
+                request.CredentialAssignmentStatus));
+        }
 
         public Task<WorkspaceWorkflowEngine> UpdateEngineAsync(Guid workspaceId, Guid engineId, UpdateWorkflowEngineRequest request, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
@@ -166,6 +275,25 @@ public sealed class WorkspaceDeploymentServiceTests
 
         public Task<WorkspaceWorkflowEngine?> GetEngineAsync(Guid workspaceId, Guid engineId, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public Task<IReadOnlyList<WorkspaceDeploymentSecretStore>> ListSecretStoresAsync(Guid workspaceId, bool includeArchived = false, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<WorkspaceDeploymentSecretStore>>(SecretStores);
+
+        public Task<WorkspaceDeploymentSecretStore> CreateSecretStoreAsync(Guid workspaceId, CreateDeploymentSecretStoreRequest request, CancellationToken cancellationToken = default)
+        {
+            CreatedSecretStoreRequests.Add(request);
+            return Task.FromResult(SecretStore(Guid.NewGuid(), request.Type, request.Provider));
+        }
+
+        public Task<IReadOnlyList<WorkspaceDeploymentCredentialReference>> ListCredentialReferencesAsync(Guid workspaceId, Guid? secretStoreId = null, bool includeArchived = false, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<WorkspaceDeploymentCredentialReference>>([]);
+
+        public Task<WorkspaceDeploymentCredentialReference> CreateCredentialReferenceAsync(Guid workspaceId, CreateDeploymentCredentialReferenceRequest request, CancellationToken cancellationToken = default)
+        {
+            CreatedCredentialReferenceRequests.Add(request);
+            var store = SecretStores.Single(x => x.Id == request.SecretStoreId);
+            return Task.FromResult(CredentialReference(Guid.NewGuid(), store, request));
+        }
 
         private static WorkspaceDeploymentEnvironment Environment(
             Guid id,
@@ -190,5 +318,47 @@ public sealed class WorkspaceDeploymentServiceTests
                 tierId is null
                     ? null
                     : new DeploymentTierProfile(tierId.Value, "Custom", DeploymentTierStatus.Active, [DeploymentTierCapabilities.PromotionTarget]));
+
+        private static WorkspaceDeploymentSecretStore SecretStore(Guid id, DeploymentSecretStoreType type, string? provider = null) =>
+            new(
+                id,
+                WorkspaceDeploymentTestFixtures.WorkspaceId,
+                "Engine credentials",
+                provider ?? type.ToString(),
+                type,
+                null,
+                DeploymentSecretStoreStatus.Active,
+                DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow,
+                null,
+                null,
+                null,
+                null);
+
+        private static WorkspaceDeploymentCredentialReference CredentialReference(
+            Guid id,
+            WorkspaceDeploymentSecretStore store,
+            CreateDeploymentCredentialReferenceRequest request) =>
+            new(
+                id,
+                store.WorkspaceId,
+                store.Id,
+                store.Name,
+                store.Provider,
+                store.Type,
+                request.Name,
+                request.Reference,
+                request.Description,
+                DeploymentSecretStoreStatus.Active,
+                CredentialVerificationStatus.Unverified,
+                null,
+                DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow,
+                request.ActorAccountId,
+                request.ActorAccountId,
+                null,
+                null,
+                !string.IsNullOrWhiteSpace(request.ProtectedSecret),
+                0);
     }
 }

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using ConsoleLogStreaming.AspNetCore.DependencyInjection;
 using ConsoleLogStreaming.Core.DependencyInjection;
+using Microsoft.AspNetCore.DataProtection;
 using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
@@ -197,6 +198,7 @@ builder.Services.AddScoped<IWorkspacePermissionStore, DeploymentWorkspaceStore>(
 builder.Services.AddScoped<IWorkspaceDeploymentMutationStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<IWorkspaceDeploymentCommandStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<WorkspaceDeploymentService>();
+builder.Services.AddDataProtection();
 builder.Services.AddScoped<DeploymentTierService>();
 builder.Services.AddSingleton<IArtifactTypeRegistry, ArtifactTypeRegistry>();
 builder.Services.AddSingleton<ArtifactEnvelopeValidator>();

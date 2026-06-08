@@ -29,7 +29,8 @@ public enum CredentialVerificationStatus
     Verified,
     Missing,
     Expired,
-    Unverified
+    Unverified,
+    NotVerifiable
 }
 
 public enum CapabilityBoundary
@@ -161,7 +162,8 @@ public sealed record WorkflowEngineRegistration(
     IReadOnlyList<RuntimeControl> Controls,
     string? HostingProvider,
     DateTimeOffset? LastVerificationAt = null,
-    string VerificationMessage = "");
+    string VerificationMessage = "",
+    EngineCredentialAssignmentStatus CredentialAssignmentStatus = EngineCredentialAssignmentStatus.Assigned);
 
 public sealed record DesiredStateRevision(
     string Id,

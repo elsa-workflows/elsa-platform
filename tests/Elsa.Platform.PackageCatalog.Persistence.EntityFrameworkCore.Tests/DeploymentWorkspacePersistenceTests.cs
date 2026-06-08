@@ -107,7 +107,12 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
         var environment = await _store.CreateEnvironmentAsync(_workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Test", EnvironmentTier.Test));
         var store = await _store.CreateSecretStoreAsync(
             _workspaceId,
-            new CreateDeploymentSecretStoreRequest("Platform Key Vault", "Azure Key Vault", null, _accountId));
+            new CreateDeploymentSecretStoreRequest(
+                "Platform Key Vault",
+                "Azure Key Vault",
+                null,
+                _accountId,
+                DeploymentSecretStoreType.AzureKeyVault));
         var reference = await _store.CreateCredentialReferenceAsync(
             _workspaceId,
             new CreateDeploymentCredentialReferenceRequest(store.Id, "Test engine API", "kv://claims/test/elsa-api", null, _accountId));
@@ -129,14 +134,76 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
 
         var stores = await _store.ListSecretStoresAsync(_workspaceId);
         var references = await _store.ListCredentialReferencesAsync(_workspaceId);
+        var usage = await _store.ListCredentialReferenceUsageAsync(_workspaceId, reference.Id);
         var cockpit = await _store.GetCockpitAsync(_workspaceId);
 
-        stores.Should().ContainSingle(x => x.Id == store.Id && x.Provider == "Azure Key Vault");
-        references.Should().ContainSingle(x => x.Id == reference.Id && x.SecretStoreId == store.Id);
+        stores.Should().ContainSingle(x => x.Id == store.Id && x.Provider == "Azure Key Vault" && x.Type == DeploymentSecretStoreType.AzureKeyVault);
+        references.Should().ContainSingle(x =>
+            x.Id == reference.Id
+            && x.SecretStoreId == store.Id
+            && x.SecretStoreType == DeploymentSecretStoreType.AzureKeyVault
+            && x.UsageCount == 1);
+        usage.Should().ContainSingle(x =>
+            x.EngineId == engine.Id
+            && x.EngineName == "claims-test"
+            && x.ApplicationName == "Claims"
+            && x.EnvironmentName == "Test");
         engine.CredentialProvider.Should().Be("Azure Key Vault");
         engine.CredentialReference.Should().Be("kv://claims/test/elsa-api");
         engine.CredentialReferenceId.Should().Be(reference.Id);
         cockpit.Engines.Should().ContainSingle(x => x.CredentialReference.Reference == "kv://claims/test/elsa-api");
+    }
+
+    [Fact]
+    public async Task Persists_local_protected_engine_credential_metadata_and_deferred_engine_registration()
+    {
+        var application = await _store.CreateApplicationAsync(_workspaceId, new CreateWorkflowApplicationRequest("Claims", null, null));
+        var environment = await _store.CreateEnvironmentAsync(_workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Dev", EnvironmentTier.Dev));
+        var store = await _store.CreateSecretStoreAsync(
+            _workspaceId,
+            new CreateDeploymentSecretStoreRequest(
+                "Local engine credentials",
+                "Local encrypted database",
+                null,
+                _accountId,
+                DeploymentSecretStoreType.LocalEncryptedDatabase));
+        var reference = await _store.CreateCredentialReferenceAsync(
+            _workspaceId,
+            new CreateDeploymentCredentialReferenceRequest(
+                store.Id,
+                "Dev engine API",
+                "local://engine-credentials/dev-engine-api",
+                null,
+                _accountId,
+                "protected:v1"));
+
+        var engine = await _store.RegisterEngineAsync(
+            _workspaceId,
+            new RegisterWorkflowEngineRequest(
+                environment.Id,
+                "claims-dev",
+                "https://workflows-dev.example.test/elsa",
+                null,
+                null,
+                null,
+                [],
+                [],
+                null,
+                null,
+                EngineCredentialAssignmentStatus.Deferred));
+        _db.ChangeTracker.Clear();
+
+        var stores = await _store.ListSecretStoresAsync(_workspaceId);
+        var references = await _store.ListCredentialReferencesAsync(_workspaceId);
+        stores.Should().ContainSingle(x =>
+            x.Id == store.Id
+            && x.Type == DeploymentSecretStoreType.LocalEncryptedDatabase
+            && x.Provider == "Local encrypted database");
+        references.Should().ContainSingle(x => x.Id == reference.Id && x.HasProtectedSecret && x.UsageCount == 0);
+        engine.CredentialAssignmentStatus.Should().Be(EngineCredentialAssignmentStatus.Deferred);
+        engine.CredentialProvider.Should().BeEmpty();
+        engine.CredentialReference.Should().BeEmpty();
+        engine.CredentialReferenceId.Should().BeNull();
     }
 
     [Fact]

@@ -17,6 +17,14 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 type: "TEXT",
                 nullable: true);
 
+            migrationBuilder.AddColumn<string>(
+                name: "CredentialAssignmentStatus",
+                table: "WorkflowEngines",
+                type: "TEXT",
+                maxLength: 32,
+                nullable: false,
+                defaultValue: "Assigned");
+
             migrationBuilder.CreateTable(
                 name: "DeploymentSecretStores",
                 columns: table => new
@@ -25,6 +33,7 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     WorkspaceId = table.Column<Guid>(type: "TEXT", nullable: false),
                     Name = table.Column<string>(type: "TEXT", maxLength: 200, nullable: false),
                     Provider = table.Column<string>(type: "TEXT", maxLength: 200, nullable: false),
+                    Type = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false),
                     Description = table.Column<string>(type: "TEXT", maxLength: 1000, nullable: true),
                     Status = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
                     CreatedAt = table.Column<long>(type: "INTEGER", nullable: false),
@@ -54,6 +63,8 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     SecretStoreId = table.Column<Guid>(type: "TEXT", nullable: false),
                     Name = table.Column<string>(type: "TEXT", maxLength: 200, nullable: false),
                     Reference = table.Column<string>(type: "TEXT", maxLength: 1024, nullable: false),
+                    ProtectedSecret = table.Column<string>(type: "TEXT", maxLength: 4096, nullable: true),
+                    ProtectedSecretUpdatedAt = table.Column<long>(type: "INTEGER", nullable: true),
                     Description = table.Column<string>(type: "TEXT", maxLength: 1000, nullable: true),
                     Status = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
                     VerificationStatus = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
@@ -101,22 +112,13 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 table: "DeploymentCredentialReferences",
                 columns: new[] { "WorkspaceId", "Status" });
 
-            migrationBuilder.AddForeignKey(
-                name: "FK_WorkflowEngines_DeploymentCredentialReferences_CredentialReferenceId",
-                table: "WorkflowEngines",
-                column: "CredentialReferenceId",
-                principalTable: "DeploymentCredentialReferences",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
+            // SQLite cannot add a foreign key constraint to an existing table without rebuilding it.
+            // The nullable reference column and indexes are enough for the development database.
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropForeignKey(
-                name: "FK_WorkflowEngines_DeploymentCredentialReferences_CredentialReferenceId",
-                table: "WorkflowEngines");
-
             migrationBuilder.DropTable(name: "DeploymentCredentialReferences");
             migrationBuilder.DropTable(name: "DeploymentSecretStores");
 
@@ -130,6 +132,10 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
             migrationBuilder.DropColumn(
                 name: "CredentialReferenceId",
+                table: "WorkflowEngines");
+
+            migrationBuilder.DropColumn(
+                name: "CredentialAssignmentStatus",
                 table: "WorkflowEngines");
         }
     }

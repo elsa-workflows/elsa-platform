@@ -265,6 +265,165 @@ public sealed class WorkspaceDeploymentApiTests
     }
 
     [Fact]
+    public async Task Owner_can_create_local_engine_credential_store_without_echoing_secret_values()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("local-secret-store-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+
+        var storeResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/secret-stores",
+            new WorkspaceDeploymentSecretStoreRequest(
+                "Local engine credentials",
+                null,
+                null,
+                DeploymentSecretStoreType.LocalEncryptedDatabase));
+        var store = await storeResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentSecretStore>();
+        var referenceResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/secret-stores/{store!.Id}/credential-references",
+            new WorkspaceDeploymentCredentialReferenceRequest(
+                "Dev engine API",
+                "local://engine-credentials/dev-engine-api",
+                null,
+                "super-secret-token"));
+        var body = await referenceResponse.Content.ReadAsStringAsync();
+        var reference = await referenceResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentCredentialReference>();
+        var rotateResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/credential-references/{reference!.Id}/rotate",
+            new WorkspaceDeploymentCredentialReferenceRotateRequest("rotated-secret-token"));
+        var rotated = await rotateResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentCredentialReference>();
+
+        storeResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        store!.Type.Should().Be(DeploymentSecretStoreType.LocalEncryptedDatabase);
+        store.Provider.Should().Be("Local encrypted database");
+        referenceResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        reference!.SecretStoreType.Should().Be(DeploymentSecretStoreType.LocalEncryptedDatabase);
+        reference.HasProtectedSecret.Should().BeTrue();
+        rotateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        rotated!.HasProtectedSecret.Should().BeTrue();
+        body.Should().NotContain("super-secret-token");
+        (await rotateResponse.Content.ReadAsStringAsync()).Should().NotContain("rotated-secret-token");
+    }
+
+    [Fact]
+    public async Task External_engine_credential_stores_reject_secret_values()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("external-secret-store-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var storeResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/secret-stores",
+            new WorkspaceDeploymentSecretStoreRequest(
+                "Platform Key Vault",
+                null,
+                null,
+                DeploymentSecretStoreType.AzureKeyVault));
+        var store = await storeResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentSecretStore>();
+
+        var referenceResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/secret-stores/{store!.Id}/credential-references",
+            new WorkspaceDeploymentCredentialReferenceRequest(
+                "Prod engine API",
+                "kv://claims/prod/engine-api",
+                null,
+                "do-not-store-here"));
+
+        referenceResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task Owner_can_register_engine_with_credentials_deferred_and_inspect_reference_usage()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("deferred-engine-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var defaults = await owner.GetPlatformJsonAsync<WorkspaceDeploymentTiersResponse>($"/api/workspaces/{workspaceId}/deployments/tiers");
+        var testTier = defaults!.Tiers.Single(x => x.Name == EnvironmentTier.Test.ToString());
+        var applicationResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications",
+            new WorkspaceDeploymentApplicationRequest("Acme", null));
+        var application = await applicationResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentApplication>();
+        var environmentResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications/{application!.Id}/environments",
+            new WorkspaceDeploymentEnvironmentRequest("Test", EnvironmentTier.Test, testTier.Id));
+        var environment = await environmentResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentEnvironment>();
+        var storeResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/secret-stores",
+            new WorkspaceDeploymentSecretStoreRequest("Platform Key Vault", null, null, DeploymentSecretStoreType.AzureKeyVault));
+        var store = await storeResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentSecretStore>();
+        var referenceResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/secret-stores/{store!.Id}/credential-references",
+            new WorkspaceDeploymentCredentialReferenceRequest("Test engine API", "kv://acme/test/engine-api", null));
+        var reference = await referenceResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentCredentialReference>();
+
+        var deferredResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/environments/{environment!.Id}/engines",
+            new WorkspaceWorkflowEngineRequest(
+                "test-weu-deferred",
+                "https://deferred-engine.example.com",
+                null,
+                null,
+                null,
+                [],
+                [],
+                null,
+                null,
+                EngineCredentialAssignmentStatus.Deferred));
+        var assignedResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/environments/{environment.Id}/engines",
+            new WorkspaceWorkflowEngineRequest(
+                "test-weu-assigned",
+                "https://assigned-engine.example.com",
+                null,
+                null,
+                null,
+                [],
+                [],
+                null,
+                reference!.Id));
+        var deferred = await deferredResponse.Content.ReadPlatformJsonAsync<WorkspaceWorkflowEngine>();
+        var assigned = await assignedResponse.Content.ReadPlatformJsonAsync<WorkspaceWorkflowEngine>();
+        var reassignedResponse = await owner.PutPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/engines/{deferred!.Id}",
+            new WorkspaceWorkflowEngineRequest(
+                deferred.Name,
+                deferred.BaseUrl,
+                deferred.Region,
+                null,
+                null,
+                [],
+                [],
+                deferred.HostingProvider,
+                reference.Id,
+                EngineCredentialAssignmentStatus.Assigned));
+        var reassigned = await reassignedResponse.Content.ReadPlatformJsonAsync<WorkspaceWorkflowEngine>();
+        var usage = await owner.GetPlatformJsonAsync<WorkspaceDeploymentCredentialReferenceUsageResponse>(
+            $"/api/workspaces/{workspaceId}/deployments/credential-references/{reference.Id}/usage");
+
+        deferredResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        assignedResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        reassignedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        assigned!.CredentialAssignmentStatus.Should().Be(EngineCredentialAssignmentStatus.Assigned);
+        deferred.CredentialAssignmentStatus.Should().Be(EngineCredentialAssignmentStatus.Deferred);
+        deferred.CredentialReferenceId.Should().BeNull();
+        deferred.CredentialProvider.Should().BeEmpty();
+        deferred.CredentialReference.Should().BeEmpty();
+        reassigned!.CredentialAssignmentStatus.Should().Be(EngineCredentialAssignmentStatus.Assigned);
+        reassigned.CredentialReferenceId.Should().Be(reference.Id);
+        usage!.Items.Should().Contain(x =>
+            x.EngineName == "test-weu-assigned"
+            && x.ApplicationName == "Acme"
+            && x.EnvironmentName == "Test");
+        usage.Items.Should().Contain(x =>
+            x.EngineName == "test-weu-deferred"
+            && x.ApplicationName == "Acme"
+            && x.EnvironmentName == "Test");
+    }
+
+    [Fact]
     public async Task Secret_store_and_credential_reference_reads_require_deployment_read_permission()
     {
         await using var app = new PlatformApiTestApplication();

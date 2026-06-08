@@ -1128,6 +1128,13 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ProtectedSecret")
+                        .HasMaxLength(4096)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("ProtectedSecretUpdatedAt")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Reference")
                         .IsRequired()
                         .HasMaxLength(1024)
@@ -1157,9 +1164,9 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SecretStoreId", "Status", "Name");
-
                     b.HasIndex("WorkspaceId", "Status");
+
+                    b.HasIndex("SecretStoreId", "Status", "Name");
 
                     b.ToTable("DeploymentCredentialReferences");
                 });
@@ -1381,6 +1388,11 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
                     b.Property<long>("UpdatedAt")
@@ -2216,6 +2228,11 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Property<long>("CreatedAt")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("CredentialAssignmentStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset?>("CredentialLastVerifiedAt")
                         .HasColumnType("TEXT");
 
@@ -2281,9 +2298,9 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("EnvironmentId");
-
                     b.HasIndex("CredentialReferenceId");
+
+                    b.HasIndex("EnvironmentId");
 
                     b.HasIndex("WorkspaceId", "CredentialReferenceId");
 

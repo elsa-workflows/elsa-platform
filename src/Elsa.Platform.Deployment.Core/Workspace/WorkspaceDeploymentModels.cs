@@ -47,7 +47,8 @@ public sealed record WorkspaceWorkflowEngine(
     DateTimeOffset UpdatedAt,
     DateTimeOffset? LastVerificationAt = null,
     string VerificationMessage = "",
-    Guid? CredentialReferenceId = null);
+    Guid? CredentialReferenceId = null,
+    EngineCredentialAssignmentStatus CredentialAssignmentStatus = EngineCredentialAssignmentStatus.Assigned);
 
 public enum DeploymentSecretStoreStatus
 {
@@ -55,11 +56,27 @@ public enum DeploymentSecretStoreStatus
     Archived
 }
 
+public enum DeploymentSecretStoreType
+{
+    LocalEncryptedDatabase,
+    AzureKeyVault,
+    KubernetesSecrets,
+    EnvironmentVariableName,
+    GenericExternalReference
+}
+
+public enum EngineCredentialAssignmentStatus
+{
+    Assigned,
+    Deferred
+}
+
 public sealed record WorkspaceDeploymentSecretStore(
     Guid Id,
     Guid WorkspaceId,
     string Name,
     string Provider,
+    DeploymentSecretStoreType Type,
     string? Description,
     DeploymentSecretStoreStatus Status,
     DateTimeOffset CreatedAt,
@@ -75,6 +92,7 @@ public sealed record WorkspaceDeploymentCredentialReference(
     Guid SecretStoreId,
     string SecretStoreName,
     string SecretStoreProvider,
+    DeploymentSecretStoreType SecretStoreType,
     string Name,
     string Reference,
     string? Description,
@@ -86,7 +104,17 @@ public sealed record WorkspaceDeploymentCredentialReference(
     Guid? CreatedByAccountId,
     Guid? UpdatedByAccountId,
     DateTimeOffset? ArchivedAt,
-    Guid? ArchivedByAccountId);
+    Guid? ArchivedByAccountId,
+    bool HasProtectedSecret,
+    int UsageCount);
+
+public sealed record WorkspaceDeploymentCredentialUsage(
+    Guid EngineId,
+    string EngineName,
+    Guid ApplicationId,
+    string ApplicationName,
+    Guid EnvironmentId,
+    string EnvironmentName);
 
 public sealed record WorkspaceEngineCapability(
     Guid Id,
@@ -212,41 +240,52 @@ public sealed record RegisterWorkflowEngineRequest(
     IReadOnlyList<EngineCapability> Capabilities,
     IReadOnlyList<RuntimeControl> Controls,
     string? HostingProvider,
-    Guid? CredentialReferenceId = null);
+    Guid? CredentialReferenceId = null,
+    EngineCredentialAssignmentStatus CredentialAssignmentStatus = EngineCredentialAssignmentStatus.Assigned);
 
 public sealed record UpdateWorkflowEngineRequest(
     string Name,
     string BaseUrl,
     string? Region,
-    string CredentialProvider,
-    string CredentialReference,
+    string? CredentialProvider,
+    string? CredentialReference,
     IReadOnlyList<EngineCapability> Capabilities,
     IReadOnlyList<RuntimeControl> Controls,
-    string? HostingProvider);
+    string? HostingProvider,
+    Guid? CredentialReferenceId = null,
+    EngineCredentialAssignmentStatus CredentialAssignmentStatus = EngineCredentialAssignmentStatus.Assigned);
 
 public sealed record CreateDeploymentSecretStoreRequest(
     string Name,
-    string Provider,
+    string? Provider,
     string? Description,
-    Guid? ActorAccountId);
+    Guid? ActorAccountId,
+    DeploymentSecretStoreType Type = DeploymentSecretStoreType.GenericExternalReference);
 
 public sealed record UpdateDeploymentSecretStoreRequest(
     string Name,
-    string Provider,
+    string? Provider,
     string? Description,
-    Guid? ActorAccountId);
+    Guid? ActorAccountId,
+    DeploymentSecretStoreType Type = DeploymentSecretStoreType.GenericExternalReference);
 
 public sealed record CreateDeploymentCredentialReferenceRequest(
     Guid SecretStoreId,
     string Name,
     string Reference,
     string? Description,
-    Guid? ActorAccountId);
+    Guid? ActorAccountId,
+    string? ProtectedSecret = null);
 
 public sealed record UpdateDeploymentCredentialReferenceRequest(
     string Name,
     string Reference,
     string? Description,
+    Guid? ActorAccountId,
+    string? ProtectedSecret = null);
+
+public sealed record RotateDeploymentCredentialReferenceRequest(
+    string ProtectedSecret,
     Guid? ActorAccountId);
 
 public sealed record CreateDesiredStateRevisionRequest(
