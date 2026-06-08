@@ -12,6 +12,7 @@ import {
   FileClock,
   Gauge,
   Home,
+  KeyRound,
   Layers3,
   Moon,
   PackageSearch,
@@ -51,6 +52,7 @@ const navSections: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { to: "/admin/deployments", label: "Overview", icon: Gauge, end: true },
       { to: "/admin/deployments/applications", label: "Applications", icon: Rocket },
+      { to: "/admin/deployments/credentials", label: "Engine credentials", icon: KeyRound },
       { to: "/admin/artifacts", label: "Artifacts", icon: Archive },
       { to: "/admin/deployments/tiers", label: "Tiers", icon: ShieldCheck }
     ]
