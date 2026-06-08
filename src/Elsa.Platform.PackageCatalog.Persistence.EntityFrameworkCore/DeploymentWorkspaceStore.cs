@@ -1332,7 +1332,6 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         var query = dbContext.DeploymentCredentialReferences
             .AsNoTracking()
             .Include(x => x.SecretStore)
-            .Include(x => x.Engines)
             .Where(x => x.WorkspaceId == workspaceId);
         if (secretStoreId.HasValue)
             query = query.Where(x => x.SecretStoreId == secretStoreId.Value);
@@ -1343,7 +1342,16 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             .OrderBy(x => x.SecretStore!.Name)
             .ThenBy(x => x.Name)
             .ToListAsync(cancellationToken);
-        return references.Select(ToWorkspaceDeploymentCredentialReference).ToList();
+        var referenceIds = references.Select(x => x.Id).ToList();
+        var usageCounts = referenceIds.Count == 0
+            ? new Dictionary<Guid, int>()
+            : await dbContext.WorkflowEngines
+                .AsNoTracking()
+                .Where(x => x.WorkspaceId == workspaceId && x.CredentialReferenceId.HasValue && referenceIds.Contains(x.CredentialReferenceId.Value))
+                .GroupBy(x => x.CredentialReferenceId!.Value)
+                .Select(x => new { CredentialReferenceId = x.Key, Count = x.Count() })
+                .ToDictionaryAsync(x => x.CredentialReferenceId, x => x.Count, cancellationToken);
+        return references.Select(reference => ToWorkspaceDeploymentCredentialReference(reference, usageCounts.GetValueOrDefault(reference.Id))).ToList();
     }
 
     public async Task<WorkspaceDeploymentCredentialReference> CreateCredentialReferenceAsync(
@@ -1703,15 +1711,14 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
 
         var entities = await dbContext.WorkflowEngines
             .AsNoTracking()
-            .OrderBy(x => x.Id)
-            .ToListAsync(cancellationToken);
-
-        return entities
             .Where(x => !x.LastVerificationAt.HasValue || x.LastVerificationAt <= verifyBefore)
             .OrderBy(x => x.LastVerificationAt.HasValue)
             .ThenBy(x => x.LastVerificationAt)
             .ThenBy(x => x.Id)
             .Take(limit)
+            .ToListAsync(cancellationToken);
+
+        return entities
             .Select(ToWorkspaceWorkflowEngine)
             .ToList();
     }
@@ -2128,7 +2135,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             store.ArchivedAt,
             store.ArchivedByAccountId);
 
-    private static WorkspaceDeploymentCredentialReference ToWorkspaceDeploymentCredentialReference(DeploymentCredentialReferenceEntity reference) =>
+    private static WorkspaceDeploymentCredentialReference ToWorkspaceDeploymentCredentialReference(DeploymentCredentialReferenceEntity reference, int? usageCount = null) =>
         new(
             reference.Id,
             reference.WorkspaceId,
@@ -2149,7 +2156,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             reference.ArchivedAt,
             reference.ArchivedByAccountId,
             !string.IsNullOrEmpty(reference.ProtectedSecret),
-            reference.Engines.Count);
+            usageCount ?? reference.Engines.Count);
 
     private static WorkflowEngineRegistration ToEngineRegistration(WorkflowEngineEntity engine) =>
         new(
