@@ -85,12 +85,25 @@ public interface IWorkspaceDeploymentStore
         CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("Deployment credential reference updates are not supported by this store.");
 
+    Task<WorkspaceDeploymentCredentialReference> RotateCredentialReferenceAsync(
+        Guid workspaceId,
+        Guid credentialReferenceId,
+        RotateDeploymentCredentialReferenceRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Deployment credential reference rotation is not supported by this store.");
+
     Task<WorkspaceDeploymentCredentialReference> ArchiveCredentialReferenceAsync(
         Guid workspaceId,
         Guid credentialReferenceId,
         Guid? actorAccountId,
         CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("Deployment credential reference archival is not supported by this store.");
+
+    Task<IReadOnlyList<WorkspaceDeploymentCredentialUsage>> ListCredentialReferenceUsageAsync(
+        Guid workspaceId,
+        Guid credentialReferenceId,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Deployment credential reference usage is not supported by this store.");
 
     Task<WorkspaceDesiredStateRevision> CreateRevisionAsync(
         Guid workspaceId,

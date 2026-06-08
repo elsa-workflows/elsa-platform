@@ -39,21 +39,28 @@ public sealed record WorkspaceWorkflowEngineRequest(
     IReadOnlyList<EngineCapability> Capabilities,
     IReadOnlyList<RuntimeControl> Controls,
     string? HostingProvider,
-    Guid? CredentialReferenceId = null);
+    Guid? CredentialReferenceId = null,
+    EngineCredentialAssignmentStatus CredentialAssignmentStatus = EngineCredentialAssignmentStatus.Assigned);
 
 public sealed record WorkspaceDeploymentSecretStoresResponse(IReadOnlyList<WorkspaceDeploymentSecretStore> Items);
 
 public sealed record WorkspaceDeploymentSecretStoreRequest(
     string Name,
-    string Provider,
-    string? Description);
+    string? Provider,
+    string? Description,
+    DeploymentSecretStoreType Type = DeploymentSecretStoreType.GenericExternalReference);
 
 public sealed record WorkspaceDeploymentCredentialReferencesResponse(IReadOnlyList<WorkspaceDeploymentCredentialReference> Items);
 
 public sealed record WorkspaceDeploymentCredentialReferenceRequest(
     string Name,
     string Reference,
-    string? Description);
+    string? Description,
+    string? SecretValue = null);
+
+public sealed record WorkspaceDeploymentCredentialReferenceRotateRequest(string SecretValue);
+
+public sealed record WorkspaceDeploymentCredentialReferenceUsageResponse(IReadOnlyList<WorkspaceDeploymentCredentialUsage> Items);
 
 public sealed record WorkspaceEngineHeartbeatRequest(
     Guid EnvironmentId,

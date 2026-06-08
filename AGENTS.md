@@ -1,7 +1,7 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-specs/033-artifact-engine-deploy/plan.md
+specs/035-engine-secret-stores/plan.md
 <!-- SPECKIT END -->
 
 ## Active Technologies
@@ -19,6 +19,8 @@ specs/033-artifact-engine-deploy/plan.md
 - Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Organization tables store customer tenant records, memberships, entitlements, workspace ownership references, and safe audit metadata only. (031-organization-tenancy)
 - C# on .NET 10 for API/Core/Persistence/runtime command services; TypeScript/React for the hosted console. + ASP.NET Core minimal APIs, existing workspace identity and deployment permissions, EF Core catalog persistence, `Elsa.Platform.Deployment.Core`, `Elsa.Platform.Deployment.Artifacts`, runtime command APIs, React Router, TanStack Query, Vitest, Playwright where browser verification is needed, xUnit, and FluentAssertions. (033-artifact-engine-deploy)
 - Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore` with SQLite and SQL Server migrations when schema changes are required. Deployment command storage must continue to store safe metadata only: artifact identities, type/schema metadata, digests, per-artifact outcomes, lease metadata, and diagnostics. Raw payloads, workflow definitions, local paths, credentials, provider tokens, and secrets stay out of command/history records. (033-artifact-engine-deploy)
+- C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console. + ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `Elsa.Platform.Deployment.Core` workspace services, React Router, TanStack Query, Vitest, xUnit, and FluentAssertions. (035-engine-secret-stores)
+- Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Existing deployment secret-store and credential-reference tables are extended in place. Local encrypted credential values are stored only as protected ciphertext metadata, while external providers store only safe locators. (035-engine-secret-stores)
 
 ## Recent Changes
 - codex/021-identity-tenancy: Added C# on .NET 10. + ASP.NET Core authentication/authorization, ASP.NET Core cookies, JWT bearer validation, EF Core, existing `Elsa.Platform.PackageCatalog.*` account/workspace services, xUnit and FluentAssertions for tests.

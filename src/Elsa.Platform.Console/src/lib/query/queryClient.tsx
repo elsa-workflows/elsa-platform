@@ -34,6 +34,7 @@ export const queryKeys = {
   deploymentDesiredStateRequirements: (workspaceId: string, environmentId: string) => ["deployments", workspaceId, "environments", environmentId, "desired-state-requirements"] as const,
   deploymentSecretStores: (workspaceId: string) => ["deployments", workspaceId, "secret-stores"] as const,
   deploymentCredentialReferences: (workspaceId: string) => ["deployments", workspaceId, "credential-references"] as const,
+  deploymentCredentialReferenceUsage: (workspaceId: string, credentialReferenceId: string) => ["deployments", workspaceId, "credential-references", credentialReferenceId, "usage"] as const,
   artifacts: (workspaceId: string) => ["artifacts", workspaceId] as const,
   artifactDetails: (workspaceId: string, artifactId: string) => ["artifacts", workspaceId, artifactId] as const,
   overview: ["overview"] as const,

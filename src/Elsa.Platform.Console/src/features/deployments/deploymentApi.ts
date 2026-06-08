@@ -26,6 +26,7 @@ import type {
   WorkspaceDeploymentCredentialReference,
   WorkspaceDeploymentCredentialReferenceRequest,
   WorkspaceDeploymentCredentialReferencesResponse,
+  WorkspaceDeploymentCredentialReferenceUsageResponse,
   WorkspaceDeploymentSecretStore,
   WorkspaceDeploymentSecretStoreRequest,
   WorkspaceDeploymentSecretStoresResponse,
@@ -156,6 +157,22 @@ export function updateDeploymentCredentialReference(workspaceId: string, credent
       method: "PUT",
       body: JSON.stringify(request)
     }
+  );
+}
+
+export function rotateDeploymentCredentialReference(workspaceId: string, credentialReferenceId: string, secretValue: string) {
+  return apiRequest<WorkspaceDeploymentCredentialReference>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/credential-references/${encodeURIComponent(credentialReferenceId)}/rotate`,
+    {
+      method: "POST",
+      body: JSON.stringify({ secretValue })
+    }
+  );
+}
+
+export function getDeploymentCredentialReferenceUsage(workspaceId: string, credentialReferenceId: string) {
+  return apiRequest<WorkspaceDeploymentCredentialReferenceUsageResponse>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/deployments/credential-references/${encodeURIComponent(credentialReferenceId)}/usage`
   );
 }
 

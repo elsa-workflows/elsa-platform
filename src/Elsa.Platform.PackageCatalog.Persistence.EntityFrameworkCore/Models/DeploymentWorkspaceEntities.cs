@@ -98,6 +98,7 @@ internal sealed class WorkflowEngineEntity
     public CertificateStatus CertificateStatus { get; set; }
     public string CredentialProvider { get; set; } = "";
     public string CredentialReference { get; set; } = "";
+    public EngineCredentialAssignmentStatus CredentialAssignmentStatus { get; set; }
     public CredentialVerificationStatus CredentialVerificationStatus { get; set; }
     public DateTimeOffset? CredentialLastVerifiedAt { get; set; }
     public DeploymentHealth Health { get; set; }
@@ -117,6 +118,7 @@ internal sealed class DeploymentSecretStoreEntity
     public Guid WorkspaceId { get; set; }
     public string Name { get; set; } = "";
     public string Provider { get; set; } = "";
+    public DeploymentSecretStoreType Type { get; set; }
     public string? Description { get; set; }
     public DeploymentSecretStoreStatus Status { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
@@ -136,6 +138,8 @@ internal sealed class DeploymentCredentialReferenceEntity
     public DeploymentSecretStoreEntity? SecretStore { get; set; }
     public string Name { get; set; } = "";
     public string Reference { get; set; } = "";
+    public string? ProtectedSecret { get; set; }
+    public DateTimeOffset? ProtectedSecretUpdatedAt { get; set; }
     public string? Description { get; set; }
     public DeploymentSecretStoreStatus Status { get; set; }
     public CredentialVerificationStatus VerificationStatus { get; set; }

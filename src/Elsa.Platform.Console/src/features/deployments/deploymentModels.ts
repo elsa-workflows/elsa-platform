@@ -6,7 +6,8 @@ export type DeploymentTierCapabilityCategory = "Classification" | "Promotion" | 
 export type WorkspaceDeploymentRunStatus = "Queued" | "Running" | "Succeeded" | "Failed" | "Blocked" | "Cancelled" | "RolledBack" | "RecoveryRequired";
 export type DeploymentCommandAction = "Deploy" | "Rollback" | "Validate" | "RuntimeControl";
 export type DeploymentCommandStatus = "Pending" | "Claimed" | "Running" | "Completed" | "Failed" | "Rejected" | "Cancelled" | "RecoveryRequired" | "Expired";
-export type CredentialVerificationStatus = "Verified" | "Missing" | "Expired" | "Unverified";
+export type CredentialVerificationStatus = "Verified" | "Missing" | "Expired" | "Unverified" | "NotVerifiable";
+export type EngineCredentialAssignmentStatus = "Assigned" | "Deferred";
 export type CapabilityBoundary = "Workflow" | "EngineApi" | "Shell" | "Hosting";
 export type ValidationSeverity = "Pass" | "Warning" | "Blocker";
 export type DiffCategory = "Workflows" | "Features" | "ShellConfiguration" | "RuntimeConfiguration" | "SecretReferences" | "Observability" | "EngineBindings";
@@ -104,6 +105,7 @@ export type WorkflowEngineRegistration = {
     verificationStatus: CredentialVerificationStatus;
     lastVerifiedAt: string | null;
   };
+  credentialAssignmentStatus: EngineCredentialAssignmentStatus;
   health: DeploymentHealth;
   lastHeartbeatAt: string | null;
   lastVerificationAt: string | null;
@@ -624,6 +626,7 @@ export type RegisterDeploymentEngineRequest = {
   credentialProvider?: string | null;
   credentialReference?: string | null;
   credentialReferenceId?: string | null;
+  credentialAssignmentStatus?: EngineCredentialAssignmentStatus;
   capabilities: EngineCapability[];
   controls: RuntimeControl[];
   hostingProvider: string | null;
@@ -632,12 +635,19 @@ export type RegisterDeploymentEngineRequest = {
 export type UpdateDeploymentEngineRequest = RegisterDeploymentEngineRequest;
 
 export type DeploymentSecretStoreStatus = "Active" | "Archived";
+export type DeploymentSecretStoreType =
+  | "LocalEncryptedDatabase"
+  | "AzureKeyVault"
+  | "KubernetesSecrets"
+  | "EnvironmentVariableName"
+  | "GenericExternalReference";
 
 export type WorkspaceDeploymentSecretStore = {
   id: string;
   workspaceId: string;
   name: string;
   provider: string;
+  type: DeploymentSecretStoreType;
   description: string | null;
   status: DeploymentSecretStoreStatus;
   createdAt: string;
@@ -654,6 +664,7 @@ export type WorkspaceDeploymentCredentialReference = {
   secretStoreId: string;
   secretStoreName: string;
   secretStoreProvider: string;
+  secretStoreType: DeploymentSecretStoreType;
   name: string;
   reference: string;
   description: string | null;
@@ -666,6 +677,8 @@ export type WorkspaceDeploymentCredentialReference = {
   updatedByAccountId: string | null;
   archivedAt: string | null;
   archivedByAccountId: string | null;
+  hasProtectedSecret: boolean;
+  usageCount: number;
 };
 
 export type WorkspaceDeploymentSecretStoresResponse = {
@@ -674,7 +687,8 @@ export type WorkspaceDeploymentSecretStoresResponse = {
 
 export type WorkspaceDeploymentSecretStoreRequest = {
   name: string;
-  provider: string;
+  provider?: string | null;
+  type: DeploymentSecretStoreType;
   description: string | null;
 };
 
@@ -686,6 +700,20 @@ export type WorkspaceDeploymentCredentialReferenceRequest = {
   name: string;
   reference: string;
   description: string | null;
+  secretValue?: string | null;
+};
+
+export type WorkspaceDeploymentCredentialReferenceUsage = {
+  engineId: string;
+  engineName: string;
+  applicationId: string;
+  applicationName: string;
+  environmentId: string;
+  environmentName: string;
+};
+
+export type WorkspaceDeploymentCredentialReferenceUsageResponse = {
+  items: WorkspaceDeploymentCredentialReferenceUsage[];
 };
 
 export type CreatedDeploymentApplication = {

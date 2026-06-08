@@ -4,6 +4,7 @@ using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.Api.Authentication;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace Elsa.Platform.Api.Workspace;
 
@@ -306,7 +307,7 @@ public static class WorkspaceDeploymentEndpoints
             {
                 var store = await deployments.CreateSecretStoreAsync(
                     workspaceId,
-                    new CreateDeploymentSecretStoreRequest(request.Name, request.Provider, request.Description, access.Access!.AccountId),
+                    new CreateDeploymentSecretStoreRequest(request.Name, request.Provider, request.Description, access.Access!.AccountId, request.Type),
                     cancellationToken);
                 return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/secret-stores/{store.Id:D}", store);
             }
@@ -341,7 +342,7 @@ public static class WorkspaceDeploymentEndpoints
                 return Results.Ok(await deployments.UpdateSecretStoreAsync(
                     workspaceId,
                     secretStoreId,
-                    new UpdateDeploymentSecretStoreRequest(request.Name, request.Provider, request.Description, access.Access!.AccountId),
+                    new UpdateDeploymentSecretStoreRequest(request.Name, request.Provider, request.Description, access.Access!.AccountId, request.Type),
                     cancellationToken));
             }
             catch (KeyNotFoundException)
@@ -380,6 +381,14 @@ public static class WorkspaceDeploymentEndpoints
             catch (KeyNotFoundException)
             {
                 return Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
             }
         });
 
@@ -430,6 +439,7 @@ public static class WorkspaceDeploymentEndpoints
             WorkspaceAccessResolver accessResolver,
             WorkspacePermissionService permissions,
             WorkspaceDeploymentService deployments,
+            IDataProtectionProvider dataProtectionProvider,
             CancellationToken cancellationToken) =>
         {
             var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
@@ -442,7 +452,13 @@ public static class WorkspaceDeploymentEndpoints
             {
                 var reference = await deployments.CreateCredentialReferenceAsync(
                     workspaceId,
-                    new CreateDeploymentCredentialReferenceRequest(secretStoreId, request.Name, request.Reference, request.Description, access.Access!.AccountId),
+                    new CreateDeploymentCredentialReferenceRequest(
+                        secretStoreId,
+                        request.Name,
+                        request.Reference,
+                        request.Description,
+                        access.Access!.AccountId,
+                        ProtectSecretValue(dataProtectionProvider, request.SecretValue)),
                     cancellationToken);
                 return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/credential-references/{reference.Id:D}", reference);
             }
@@ -468,6 +484,7 @@ public static class WorkspaceDeploymentEndpoints
             WorkspaceAccessResolver accessResolver,
             WorkspacePermissionService permissions,
             WorkspaceDeploymentService deployments,
+            IDataProtectionProvider dataProtectionProvider,
             CancellationToken cancellationToken) =>
         {
             var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
@@ -481,7 +498,12 @@ public static class WorkspaceDeploymentEndpoints
                 return Results.Ok(await deployments.UpdateCredentialReferenceAsync(
                     workspaceId,
                     credentialReferenceId,
-                    new UpdateDeploymentCredentialReferenceRequest(request.Name, request.Reference, request.Description, access.Access!.AccountId),
+                    new UpdateDeploymentCredentialReferenceRequest(
+                        request.Name,
+                        request.Reference,
+                        request.Description,
+                        access.Access!.AccountId,
+                        ProtectSecretValue(dataProtectionProvider, request.SecretValue)),
                     cancellationToken));
             }
             catch (KeyNotFoundException)
@@ -495,6 +517,74 @@ public static class WorkspaceDeploymentEndpoints
             catch (InvalidOperationException ex)
             {
                 return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        group.MapPost("/credential-references/{credentialReferenceId:guid}/rotate", async (
+            Guid workspaceId,
+            Guid credentialReferenceId,
+            WorkspaceDeploymentCredentialReferenceRotateRequest request,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            IDataProtectionProvider dataProtectionProvider,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.ManageSetup, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(await deployments.RotateCredentialReferenceAsync(
+                    workspaceId,
+                    credentialReferenceId,
+                    new RotateDeploymentCredentialReferenceRequest(
+                        ProtectSecretValue(dataProtectionProvider, request.SecretValue)
+                            ?? throw new ArgumentException("Secret value is required.", nameof(request)),
+                        access.Access!.AccountId),
+                    cancellationToken));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        group.MapGet("/credential-references/{credentialReferenceId:guid}/usage", async (
+            Guid workspaceId,
+            Guid credentialReferenceId,
+            HttpContext context,
+            WorkspaceAccessResolver accessResolver,
+            WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            CancellationToken cancellationToken) =>
+        {
+            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
+            if (!access.Succeeded)
+                return access.ToHttpResult();
+            if (!await HasDeploymentPermissionAsync(access.Access!, permissions, workspaceId, WorkspaceDeploymentPermissions.Read, cancellationToken))
+                return DeploymentPermissionDenied();
+
+            try
+            {
+                return Results.Ok(new WorkspaceDeploymentCredentialReferenceUsageResponse(
+                    await deployments.ListCredentialReferenceUsageAsync(workspaceId, credentialReferenceId, cancellationToken)));
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
             }
         });
 
@@ -747,7 +837,8 @@ public static class WorkspaceDeploymentEndpoints
                         request.Capabilities,
                         request.Controls,
                         request.HostingProvider,
-                        request.CredentialReferenceId),
+                        request.CredentialReferenceId,
+                        request.CredentialAssignmentStatus),
                     cancellationToken);
                 var healthResult = await health.VerifyEngineAsync(
                     workspaceId,
@@ -795,7 +886,9 @@ public static class WorkspaceDeploymentEndpoints
                         request.CredentialReference ?? string.Empty,
                         request.Capabilities,
                         request.Controls,
-                        request.HostingProvider),
+                        request.HostingProvider,
+                        request.CredentialReferenceId,
+                        request.CredentialAssignmentStatus),
                     cancellationToken);
                 var healthResult = await health.VerifyEngineAsync(
                     workspaceId,
@@ -1148,6 +1241,16 @@ public static class WorkspaceDeploymentEndpoints
         Results.Problem(
             title: "Deployment permission is required.",
             statusCode: StatusCodes.Status403Forbidden);
+
+    private static string? ProtectSecretValue(IDataProtectionProvider dataProtectionProvider, string? secretValue)
+    {
+        if (string.IsNullOrWhiteSpace(secretValue))
+            return null;
+
+        return dataProtectionProvider
+            .CreateProtector("Elsa.Platform.EngineCredentialReferences")
+            .Protect(secretValue);
+    }
 
     private static WorkspaceWorkflowEngine ApplyHealthResult(WorkspaceWorkflowEngine engine, EngineHealthResult result) =>
         engine with

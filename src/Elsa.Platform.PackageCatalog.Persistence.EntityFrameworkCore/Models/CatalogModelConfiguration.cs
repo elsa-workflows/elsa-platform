@@ -375,6 +375,7 @@ internal sealed class WorkflowEngineConfiguration : IEntityTypeConfiguration<Wor
         builder.Property(x => x.CertificateStatus).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.CredentialProvider).HasMaxLength(200).IsRequired();
         builder.Property(x => x.CredentialReference).HasMaxLength(1024).IsRequired();
+        builder.Property(x => x.CredentialAssignmentStatus).HasConversion<string>().HasMaxLength(32).IsRequired();
         builder.Property(x => x.CredentialVerificationStatus).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.Health).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.VerificationMessage).HasMaxLength(1024).IsRequired();
@@ -396,6 +397,7 @@ internal sealed class DeploymentSecretStoreConfiguration : IEntityTypeConfigurat
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Name).HasMaxLength(200).IsRequired();
         builder.Property(x => x.Provider).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Type).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.Description).HasMaxLength(1000);
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
@@ -414,6 +416,8 @@ internal sealed class DeploymentCredentialReferenceConfiguration : IEntityTypeCo
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Name).HasMaxLength(200).IsRequired();
         builder.Property(x => x.Reference).HasMaxLength(1024).IsRequired();
+        builder.Property(x => x.ProtectedSecret).HasMaxLength(4096);
+        builder.Property(x => x.ProtectedSecretUpdatedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
         builder.Property(x => x.Description).HasMaxLength(1000);
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
         builder.Property(x => x.VerificationStatus).HasConversion<string>().HasMaxLength(32).IsRequired();

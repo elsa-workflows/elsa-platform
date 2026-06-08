@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using ConsoleLogStreaming.AspNetCore.DependencyInjection;
 using ConsoleLogStreaming.Core.DependencyInjection;
+using Microsoft.AspNetCore.DataProtection;
 using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
@@ -197,6 +198,21 @@ builder.Services.AddScoped<IWorkspacePermissionStore, DeploymentWorkspaceStore>(
 builder.Services.AddScoped<IWorkspaceDeploymentMutationStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<IWorkspaceDeploymentCommandStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<WorkspaceDeploymentService>();
+var dataProtection = builder.Services.AddDataProtection()
+    .SetApplicationName("Elsa.Platform.Api");
+var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"];
+if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
+{
+    dataProtection.PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
+}
+else if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
+{
+    dataProtection.PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(AppContext.BaseDirectory, "data-protection-keys")));
+}
+else
+{
+    throw new InvalidOperationException("DataProtection:KeysPath must be configured to a stable, shared key-ring location before local engine credentials can be protected in production.");
+}
 builder.Services.AddScoped<DeploymentTierService>();
 builder.Services.AddSingleton<IArtifactTypeRegistry, ArtifactTypeRegistry>();
 builder.Services.AddSingleton<ArtifactEnvelopeValidator>();

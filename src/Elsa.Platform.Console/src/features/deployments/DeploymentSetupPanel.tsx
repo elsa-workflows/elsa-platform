@@ -12,6 +12,7 @@ export type DeploymentSetupValues = {
 export type EngineRegistrationValues = {
   engineName: string;
   baseUrl: string;
+  credentialAssignmentStatus?: "Assigned" | "Deferred";
   credentialReferenceId?: string | null;
   credentialProvider?: string | null;
   credentialReference?: string | null;
@@ -143,6 +144,7 @@ export function engineRegistrationRequest(values: EngineRegistrationValues): Reg
     credentialProvider: values.credentialProvider ?? null,
     credentialReference: values.credentialReference ?? null,
     credentialReferenceId: values.credentialReferenceId ?? null,
+    credentialAssignmentStatus: values.credentialAssignmentStatus ?? (values.credentialReferenceId ? "Assigned" : "Deferred"),
     capabilities: [{ id: "engine.reload-configuration", label: "Reload engine configuration", boundary: "EngineApi" }],
     controls: [
       {
