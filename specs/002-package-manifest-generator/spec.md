@@ -339,10 +339,10 @@ Default inclusion rules:
 - Exclude internal classes.
 - Use stable type identity metadata for CLR type names.
 - Infer the CShells feature name from `ShellFeatureAttribute.Name` first, then from the CShells type-name convention.
-- Infer feature ID from manifest override metadata first, then from stable package ID plus CShells feature name.
+- Infer the feature's own ID from manifest override metadata first, then from stable package ID plus CShells feature name (for example `Elsa.JavaScript.JintEngine`). This package-qualified ID is the feature's own identity and is distinct from how the feature is referenced as a dependency (see below).
 - Infer display name from `ShellFeatureAttribute.DisplayName`, XML documentation title-equivalent metadata when available, or readable feature name.
 - Infer category only from explicit metadata or overrides; do not invent categories from namespace segments unless later explicitly approved.
-- Infer dependencies from `ShellFeatureAttribute.DependsOn` and represent type dependencies using resolved CShells feature names where possible.
+- Infer dependencies from `ShellFeatureAttribute.DependsOn`. Emit each dependency reference using the **bare CShells feature name** in `featureId` (for example `JintEngine`) with **no package qualification** — leave `packageId` unset. The CShells runtime dependency resolver keys features by their bare short name, so dependency references must not be package-qualified even though the feature's own ID is.
 
 ## Feature Setting Discovery Rules
 
