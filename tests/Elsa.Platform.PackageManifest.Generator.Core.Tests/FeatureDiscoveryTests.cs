@@ -855,6 +855,45 @@ public sealed class StudioWidgetFeature : IShellFeature
         document.RootElement.GetProperty("features")[0].GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().Equal("elsa.server");
     }
 
+    [Fact]
+    public async Task Generate_emits_bare_cshells_feature_name_for_dependencies()
+    {
+        await using var project = new SampleProjectBuilder()
+            .WithSource("""
+using CShells.Features;
+
+namespace Sample.Features;
+
+[ShellFeature("JintEngine", DisplayName = "Jint Engine")]
+public sealed class JintEngineFeature : IShellFeature
+{
+}
+
+[ShellFeature("JavaScript", DisplayName = "JavaScript", DependsOn = new[] { typeof(JintEngineFeature) })]
+public sealed class JavaScriptFeature : IShellFeature
+{
+}
+""");
+
+        var build = await project.BuildAsync();
+        build.ExitCode.Should().Be(0, build.CombinedOutput);
+
+        var result = Generate(project);
+        result.diagnostics.Items.Where(x => x.Severity == GenerationDiagnosticSeverity.Error).Should().BeEmpty();
+
+        using var document = JsonDocument.Parse(result.artifact.ManifestJson);
+        var javaScriptFeature = document.RootElement.GetProperty("features")
+            .EnumerateArray()
+            .Single(x => x.GetProperty("id").GetString() == "Sample.Elsa.Package.JavaScript");
+
+        var dependency = javaScriptFeature.GetProperty("dependencies").EnumerateArray().Single();
+
+        // The dependency references the bare CShells feature name that the runtime resolver keys on,
+        // not the package-qualified feature id.
+        dependency.GetProperty("featureId").GetString().Should().Be("JintEngine");
+        dependency.TryGetProperty("packageId", out _).Should().BeFalse();
+    }
+
     private static (GeneratedManifestArtifact artifact, GenerationDiagnostics diagnostics) Generate(
         SampleProjectBuilder project,
         string? overridePath = null,
