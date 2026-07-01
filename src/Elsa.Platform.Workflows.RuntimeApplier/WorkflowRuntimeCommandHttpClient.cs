@@ -10,6 +10,7 @@ public sealed class WorkflowRuntimeCommandHttpClient(
     HttpClient httpClient,
     WorkflowArtifactRuntimeOptions options) : IWorkflowRuntimeCommandClient
 {
+    private const string EngineSecretHeaderName = "X-Elsa-Engine-Secret";
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private readonly WorkflowArtifactRuntimeOptions _options = ValidateOptions(options);
 
@@ -20,9 +21,10 @@ public sealed class WorkflowRuntimeCommandHttpClient(
         if (limit <= 0)
             throw new InvalidOperationException("Runtime command poll limit must be positive.");
 
-        using var response = await httpClient.GetAsync(
-            BuildUri($"/deployments/runtime/engines/{_options.EngineId!.Value:D}/commands?limit={limit}"),
-            cancellationToken);
+        using var request = CreateRequest(
+            HttpMethod.Get,
+            BuildUri($"/deployments/runtime/engines/{_options.EngineId!.Value:D}/commands?limit={limit}"));
+        using var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
         var body = await ReadJsonAsync<RuntimeCommandListResponse>(response, cancellationToken)
             ?? throw new InvalidOperationException("Platform runtime command poll response could not be read.");
@@ -33,10 +35,9 @@ public sealed class WorkflowRuntimeCommandHttpClient(
         Guid commandId,
         CancellationToken cancellationToken = default)
     {
-        using var response = await httpClient.PostAsJsonAsync(
+        using var response = await SendJsonAsync(
             BuildUri($"/deployments/runtime/commands/{commandId:D}/claim"),
             new RuntimeCommandClaimRequest(_options.EngineId!.Value, _options.WorkerId, (int)_options.ClaimLeaseDuration.TotalSeconds),
-            JsonOptions,
             cancellationToken);
         if (response.StatusCode == HttpStatusCode.OK)
         {
@@ -116,10 +117,9 @@ public sealed class WorkflowRuntimeCommandHttpClient(
         TRequest request,
         CancellationToken cancellationToken)
     {
-        using var response = await httpClient.PostAsJsonAsync(
+        using var response = await SendJsonAsync(
             BuildUri($"/deployments/runtime/commands/{commandId:D}/{action}"),
             request,
-            JsonOptions,
             cancellationToken);
         if (response.StatusCode == HttpStatusCode.OK)
         {
@@ -137,6 +137,24 @@ public sealed class WorkflowRuntimeCommandHttpClient(
         var endpoint = _options.PlatformEndpoint ?? httpClient.BaseAddress
             ?? throw new InvalidOperationException("Platform endpoint is required before runtime command sync can start.");
         return new Uri($"{endpoint.AbsoluteUri.TrimEnd('/')}/api/workspaces/{_options.WorkspaceId!.Value:D}{relativePath}");
+    }
+
+    private HttpRequestMessage CreateRequest(HttpMethod method, Uri uri)
+    {
+        var request = new HttpRequestMessage(method, uri);
+        if (!string.IsNullOrWhiteSpace(_options.EngineSecret))
+            request.Headers.TryAddWithoutValidation(EngineSecretHeaderName, _options.EngineSecret);
+        return request;
+    }
+
+    private async Task<HttpResponseMessage> SendJsonAsync<TRequest>(
+        Uri uri,
+        TRequest body,
+        CancellationToken cancellationToken)
+    {
+        using var request = CreateRequest(HttpMethod.Post, uri);
+        request.Content = JsonContent.Create(body, options: JsonOptions);
+        return await httpClient.SendAsync(request, cancellationToken);
     }
 
     private static WorkflowArtifactRuntimeOptions ValidateOptions(WorkflowArtifactRuntimeOptions options)

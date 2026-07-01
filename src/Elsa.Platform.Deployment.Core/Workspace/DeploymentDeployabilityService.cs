@@ -105,7 +105,7 @@ public sealed class DeploymentDeployabilityService(
 
     public static IReadOnlyList<string> RequiredCapabilities(WorkspaceArtifact artifact, ArtifactTypeDefinition? artifactType)
     {
-        var artifactTypeId = artifact.ArtifactTypeId ?? ArtifactTypeIds.ElsaWorkflowDefinition;
+        var artifactTypeId = artifact.ArtifactTypeId ?? ArtifactTypeIds.ElsaLoomRecipe;
         var requiredCapabilities = (artifact.CompatibilityHints ?? [])
             .Where(x => string.Equals(x.RequiredArtifactType, artifactTypeId, StringComparison.OrdinalIgnoreCase))
             .SelectMany(x => x.RequiredCapabilities)
@@ -140,7 +140,7 @@ public sealed class DeploymentDeployabilityService(
         if (artifact is null)
             return BlockedArtifact(reference, diagnostics, "artifact.reference.missing", $"{reference.Name} references an artifact that is not visible in this workspace.");
 
-        var artifactTypeId = artifact.ArtifactTypeId ?? ArtifactTypeIds.ElsaWorkflowDefinition;
+        var artifactTypeId = artifact.ArtifactTypeId ?? ArtifactTypeIds.ElsaLoomRecipe;
         var artifactType = _artifactTypes.FindType(artifactTypeId);
         if (reference.ArtifactRecordId is not null && reference.ArtifactRecordId != artifact.Id)
             diagnostics.Add(Validation("artifact.record.mismatch", $"{reference.Name} artifact record does not match the registered artifact."));

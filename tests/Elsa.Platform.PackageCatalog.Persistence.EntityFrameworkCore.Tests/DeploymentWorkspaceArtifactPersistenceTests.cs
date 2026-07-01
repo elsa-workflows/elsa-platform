@@ -44,10 +44,10 @@ public sealed class DeploymentWorkspaceArtifactPersistenceTests : IDisposable
 
         loaded.Should().NotBeNull();
         loaded!.ArtifactId.Should().Be("sha256:claims-prod");
-        loaded.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
+        loaded.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaLoomRecipe);
         loaded.Producer!.ProducerType.Should().Be("manual");
         loaded.DisplayMetadata!.Name.Should().Be("claims");
-        loaded.CompatibilityHints.Should().ContainSingle(x => x.RequiredArtifactType == ArtifactTypeIds.ElsaWorkflowDefinition);
+        loaded.CompatibilityHints.Should().ContainSingle(x => x.RequiredArtifactType == ArtifactTypeIds.ElsaLoomRecipe);
         loaded.Manifest.Name.Should().Be("claims");
         loaded.Resources.Should().ContainSingle(x => x.LogicalId == "payment-retry");
         listed.Should().ContainSingle(x => x.Id == artifact.Id);
@@ -73,10 +73,10 @@ public sealed class DeploymentWorkspaceArtifactPersistenceTests : IDisposable
                 CompatibilityHints =
                 [
                     new ArtifactCompatibilityHint(
-                        ArtifactTypeIds.ElsaWorkflowDefinition,
+                        ArtifactTypeIds.ElsaLoomRecipe,
                         "elsa-workflows",
                         ">=4.0.0",
-                        ["workflow-definition.apply"],
+                        ["loom.recipe.apply"],
                         new Dictionary<string, string>())
                 ]
             });
@@ -129,7 +129,7 @@ public sealed class DeploymentWorkspaceArtifactPersistenceTests : IDisposable
                 WorkspaceArtifactChecksumStatus.Mismatched,
                 WorkspaceArtifactInspectionStatus.Invalid,
                 inspectedAt,
-                [ArtifactResource("workflowDefinition", "payment-retry-v2")],
+                [ArtifactResource(ArtifactTypeIds.ElsaLoomRecipe, "payment-retry-v2")],
                 [new WorkspaceArtifactDiagnostic("artifact.identity.mismatch", WorkspaceArtifactDiagnosticSeverity.Error, "Referenced artifact identity does not match.")]));
         _db.ChangeTracker.Clear();
         var loaded = await _store.GetArtifactAsync(_workspaceId, artifact.Id);
@@ -252,7 +252,7 @@ public sealed class DeploymentWorkspaceArtifactPersistenceTests : IDisposable
             _accountId);
 
     private static WorkspaceArtifactResourceSummary ArtifactResource(
-        string type = "workflowDefinition",
+        string type = ArtifactTypeIds.ElsaLoomRecipe,
         string logicalId = "payment-retry") =>
         new(type, logicalId, null, "8", new WorkspaceArtifactDigest("sha256", "workflow-hash"));
 

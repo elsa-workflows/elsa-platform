@@ -34,9 +34,9 @@ public sealed class WorkspaceArtifactApiTests
         list!.Items.Should().ContainSingle(x => x.Id == registered.Id);
         detail!.Manifest.Name.Should().Be("claims");
         detail.Status.Should().Be(WorkspaceArtifactLifecycleStatus.Active);
-        detail.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
+        detail.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaLoomRecipe);
         detail.Producer!.ProducerType.Should().Be("manual");
-        detail.CompatibilityHints.Should().ContainSingle(x => x.RequiredArtifactType == ArtifactTypeIds.ElsaWorkflowDefinition);
+        detail.CompatibilityHints.Should().ContainSingle(x => x.RequiredArtifactType == ArtifactTypeIds.ElsaLoomRecipe);
         detail.Resources.Should().ContainSingle(x => x.LogicalId == "payment-retry");
         responseText.Should().NotContain("workflow definition payload");
         responseText.Should().NotContain("secret value");
@@ -66,16 +66,16 @@ public sealed class WorkspaceArtifactApiTests
                 CompatibilityHints =
                 [
                     new ArtifactCompatibilityHint(
-                        ArtifactTypeIds.ElsaWorkflowDefinition,
+                        ArtifactTypeIds.ElsaLoomRecipe,
                         "elsa-workflows",
                         ">=4.0.0",
-                        ["workflow-definition.apply"],
+                        ["loom.recipe.apply"],
                         new Dictionary<string, string>())
                 ]
             });
         var registered = await registerResponse.Content.ReadPlatformJsonAsync<WorkspaceArtifact>();
 
-        types!.Items.Should().ContainSingle(x => x.TypeId == ArtifactTypeIds.ElsaWorkflowDefinition);
+        types!.Items.Should().ContainSingle(x => x.TypeId == ArtifactTypeIds.ElsaLoomRecipe);
         registerResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         registered!.Producer!.ProducerType.Should().Be("studio");
         registered.DisplayMetadata!.Labels.Should().ContainKey("domain");
@@ -370,7 +370,7 @@ public sealed class WorkspaceArtifactApiTests
                     new WorkspaceArtifactManifestSummary("claims", "1.0.0", "prod"),
                     [
                         new WorkspaceArtifactResourceSummary(
-                            "workflowDefinition",
+                            ArtifactTypeIds.ElsaLoomRecipe,
                             $"payment-retry-{i:000}",
                             null,
                             "8",

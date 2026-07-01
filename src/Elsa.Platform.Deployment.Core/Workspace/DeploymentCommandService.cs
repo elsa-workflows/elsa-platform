@@ -25,6 +25,12 @@ public sealed class DeploymentCommandService(
         CancellationToken cancellationToken = default) =>
         store.PollPendingCommandsAsync(workspaceId, engineId, Math.Clamp(limit, 1, 100), _timeProvider.GetUtcNow(), cancellationToken);
 
+    public Task<DeploymentCommand?> GetCommandAsync(
+        Guid workspaceId,
+        Guid commandId,
+        CancellationToken cancellationToken = default) =>
+        store.GetCommandAsync(workspaceId, commandId, cancellationToken);
+
     public async Task<DeploymentCommandClaim> ClaimCommandAsync(
         Guid workspaceId,
         Guid commandId,

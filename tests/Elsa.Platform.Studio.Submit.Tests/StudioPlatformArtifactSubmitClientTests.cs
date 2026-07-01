@@ -21,7 +21,7 @@ public sealed class StudioPlatformArtifactSubmitClientTests
         var handler = new RecordingHandler(HttpStatusCode.Created, """
             {
               "id": "20000000-0000-0000-0000-000000000001",
-              "artifactId": "elsa.workflow-definition:payment-retry:abc",
+              "artifactId": "elsa.loom.recipe:payment-retry:abc",
               "contentDigest": { "algorithm": "sha256", "value": "abc" },
               "registeredAt": "2026-05-29T08:00:00Z"
             }
@@ -31,11 +31,11 @@ public sealed class StudioPlatformArtifactSubmitClientTests
         var result = await client.SubmitAsync(Package(), _options);
 
         result.Status.Should().Be(StudioSubmitStatus.Submitted);
-        result.ArtifactId.Should().Be("elsa.workflow-definition:payment-retry:abc");
+        result.ArtifactId.Should().Be("elsa.loom.recipe:payment-retry:abc");
         result.ArtifactDigest.Should().Be("sha256:abc");
         handler.RequestUri.Should().Be(new Uri("https://platform.example.test/api/workspaces/10000000-0000-0000-0000-000000000001/artifacts"));
         using var document = JsonDocument.Parse(handler.RequestBody!);
-        document.RootElement.GetProperty("artifactTypeId").GetString().Should().Be("elsa.workflow-definition");
+        document.RootElement.GetProperty("artifactTypeId").GetString().Should().Be("elsa.loom.recipe");
         document.RootElement.GetProperty("format").GetString().Should().Be("Unknown");
         document.RootElement.GetProperty("manifest").GetProperty("environment").ValueKind.Should().Be(JsonValueKind.Null);
         document.RootElement.GetProperty("payloadReference").GetProperty("provider").GetString().Should().Be("producer-managed");
@@ -67,7 +67,7 @@ public sealed class StudioPlatformArtifactSubmitClientTests
         var handler = new RecordingHandler(HttpStatusCode.OK, """
             {
               "id": "20000000-0000-0000-0000-000000000001",
-              "artifactId": "elsa.workflow-definition:payment-retry:abc",
+              "artifactId": "elsa.loom.recipe:payment-retry:abc",
               "contentDigest": { "algorithm": "sha256", "value": "abc" },
               "registeredAt": "2026-05-29T08:00:00Z"
             }

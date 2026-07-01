@@ -23,13 +23,13 @@ public sealed class DeploymentDeployabilityServiceTests
         var fixture = new DeployabilityFixture(_workspaceId, _applicationId, _environmentId, _revisionId, _engineId, _now);
         var artifact = fixture.AddArtifact();
         fixture.SetRevisionFor(artifact);
-        fixture.SetEngineCapabilities([new EngineCapability("workflow-definition.apply", "Apply workflow definitions", CapabilityBoundary.EngineApi)]);
+        fixture.SetEngineCapabilities([new EngineCapability("loom.recipe.apply", "Apply Loom recipes", CapabilityBoundary.EngineApi)]);
 
         var result = await fixture.Service.EvaluateAsync(_workspaceId, _revisionId, fixture.Request);
 
         result.Status.Should().Be(DeploymentDeployabilityStatus.Deployable);
         result.Blockers.Should().BeEmpty();
-        result.Artifacts.Single().RequiredCapabilities.Should().ContainSingle(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaWorkflowDefinition));
+        result.Artifacts.Single().RequiredCapabilities.Should().ContainSingle(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe));
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public sealed class DeploymentDeployabilityServiceTests
             payloadAvailable: false,
             inspectionStatus: WorkspaceArtifactInspectionStatus.Unavailable);
         fixture.SetRevisionFor(archived, unsupported, unavailable);
-        fixture.SetEngineCapabilities([new EngineCapability(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaWorkflowDefinition), "Apply workflow definitions", CapabilityBoundary.EngineApi)]);
+        fixture.SetEngineCapabilities([new EngineCapability(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe), "Apply Loom recipes", CapabilityBoundary.EngineApi)]);
 
         var result = await fixture.Service.EvaluateAsync(_workspaceId, _revisionId, fixture.Request);
 
@@ -77,7 +77,7 @@ public sealed class DeploymentDeployabilityServiceTests
         var fixture = new DeployabilityFixture(_workspaceId, _applicationId, _environmentId, _revisionId, _engineId, _now);
         var artifact = fixture.AddArtifact(schemaVersion: "v9");
         fixture.SetRevisionFor(artifact);
-        fixture.SetEngineCapabilities([new EngineCapability(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaWorkflowDefinition), "Apply workflow definitions", CapabilityBoundary.EngineApi)]);
+        fixture.SetEngineCapabilities([new EngineCapability(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe), "Apply Loom recipes", CapabilityBoundary.EngineApi)]);
 
         var result = await fixture.Service.EvaluateAsync(_workspaceId, _revisionId, fixture.Request);
 
@@ -96,7 +96,7 @@ public sealed class DeploymentDeployabilityServiceTests
         fixture.SetEngines(Enumerable.Range(0, 10)
             .Select(index => fixture.Engine(
                 index == 0 ? _engineId : Guid.Parse($"80000000-0000-0000-0000-{index + 1:000000000000}"),
-                [new EngineCapability(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaWorkflowDefinition), "Apply workflow definitions", CapabilityBoundary.EngineApi)]))
+                [new EngineCapability(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe), "Apply Loom recipes", CapabilityBoundary.EngineApi)]))
             .ToArray());
 
         var stopwatch = Stopwatch.StartNew();
@@ -138,7 +138,7 @@ public sealed class DeploymentDeployabilityServiceTests
         public WorkspaceArtifact AddArtifact(
             string artifactId = "sha256:claims-prod",
             string digestValue = "claims-prod",
-            string artifactTypeId = ArtifactTypeIds.ElsaWorkflowDefinition,
+            string artifactTypeId = ArtifactTypeIds.ElsaLoomRecipe,
             string schemaVersion = ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion,
             WorkspaceArtifactLifecycleStatus status = WorkspaceArtifactLifecycleStatus.Active,
             WorkspaceArtifactInspectionStatus inspectionStatus = WorkspaceArtifactInspectionStatus.Valid,
@@ -292,7 +292,7 @@ public sealed class DeploymentDeployabilityServiceTests
                 new EngineCredentialReference("External secret store", "kv://runtime", CredentialVerificationStatus.Verified, _now),
                 DeploymentHealth.Healthy,
                 _now,
-                [new EngineCapability(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaWorkflowDefinition), "Apply workflow definitions", CapabilityBoundary.EngineApi)],
+                [new EngineCapability(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe), "Apply Loom recipes", CapabilityBoundary.EngineApi)],
                 [],
                 "container-apps");
     }

@@ -27,9 +27,9 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
 
         result.Created.Should().BeTrue();
         result.Artifact.ArtifactId.Should().Be("sha256:claims-prod");
-        result.Artifact.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
+        result.Artifact.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaLoomRecipe);
         result.Artifact.Producer!.ProducerType.Should().Be("manual");
-        result.Artifact.CompatibilityHints.Should().ContainSingle(x => x.RequiredArtifactType == ArtifactTypeIds.ElsaWorkflowDefinition);
+        result.Artifact.CompatibilityHints.Should().ContainSingle(x => x.RequiredArtifactType == ArtifactTypeIds.ElsaLoomRecipe);
         result.Artifact.Resources.Should().ContainSingle(x => x.LogicalId == "payment-retry");
         _store.RegisteredRequests.Should().ContainSingle();
     }
@@ -209,7 +209,7 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
                 new DeploymentArtifactManifestMetadata("claims", "1.0.0", "prod", new Dictionary<string, string>(), new Dictionary<string, string>()),
                 [
                     new DeploymentArtifactResourceSummary(
-                        "workflowDefinition",
+                        ArtifactTypeIds.ElsaLoomRecipe,
                         "payment-retry",
                         null,
                         "8",

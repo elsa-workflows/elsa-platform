@@ -10,6 +10,8 @@ public sealed record WorkflowArtifactRuntimeOptions
 
     public Guid? EngineId { get; init; }
 
+    public string? EngineSecret { get; init; }
+
     public string WorkerId { get; init; } = $"{Environment.MachineName}:{Environment.ProcessId}";
 
     public TimeSpan PollInterval { get; init; } = TimeSpan.FromSeconds(5);

@@ -108,6 +108,14 @@ public sealed record WorkspaceDeploymentCredentialReference(
     bool HasProtectedSecret,
     int UsageCount);
 
+public sealed record WorkspaceEngineCredentialSecret(
+    Guid EngineId,
+    Guid CredentialReferenceId,
+    DeploymentSecretStoreStatus SecretStoreStatus,
+    DeploymentSecretStoreStatus CredentialReferenceStatus,
+    DeploymentSecretStoreType SecretStoreType,
+    string? ProtectedSecret);
+
 public sealed record WorkspaceDeploymentCredentialUsage(
     Guid EngineId,
     string EngineName,

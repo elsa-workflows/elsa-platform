@@ -21,7 +21,18 @@ public sealed class ArtifactEnvelopeValidationTests
         type.Should().NotBeNull();
         type!.Enabled.Should().BeTrue();
         type.DefaultRuntimeFamily.Should().Be("elsa-workflows");
-        type.DefaultRequiredCapabilities.Should().Contain("workflow-definition.apply");
+        type.DefaultRequiredCapabilities.Should().Contain(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaWorkflowDefinition));
+    }
+
+    [Fact]
+    public void Built_in_type_registry_contains_loom_recipe_type()
+    {
+        var type = _types.FindType(ArtifactTypeIds.ElsaLoomRecipe);
+
+        type.Should().NotBeNull();
+        type!.Enabled.Should().BeTrue();
+        type.DefaultRuntimeFamily.Should().Be("elsa-workflows");
+        type.DefaultRequiredCapabilities.Should().Contain(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe));
     }
 
     [Fact]

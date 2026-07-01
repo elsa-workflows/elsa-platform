@@ -631,8 +631,6 @@ function DeploymentCredentialsReady({ context }: { context: DeploymentContext })
   const [statusFilter, setStatusFilter] = useSearchParams();
   const selectedStatus = statusFilter.get("status") === "archived" ? "Archived" : "Active";
   const visibleStores = secretStores.filter((store) => store.status === selectedStatus);
-  const visibleReferences = credentialReferences.filter((reference) => reference.status === selectedStatus);
-  const activeStores = secretStores.filter((store) => store.status === "Active");
 
   const setSelectedStatus = (status: "Active" | "Archived") => {
     setStatusFilter(status === "Archived" ? { status: "archived" } : {});
@@ -643,23 +641,13 @@ function DeploymentCredentialsReady({ context }: { context: DeploymentContext })
       <Breadcrumbs items={[{ label: "Deployments", to: "/admin/deployments" }, { label: "Engine credentials" }]} />
       <PageHeader
         title="Engine credentials"
-        description="Manage workspace platform-to-engine credential stores and references. Runtime secrets remain managed inside runtimes."
+        description="Manage workspace platform-to-engine credential stores. Runtime secrets remain managed inside runtimes."
         actions={
           canManageSetup ? (
-            <>
-              <Link to="/admin/deployments/credentials/stores/new" className={buttonClassName("secondary")}>
-                <Plus className="h-4 w-4" />
-                New credential store
-              </Link>
-              <Link
-                to="/admin/deployments/credentials/references/new"
-                className={buttonClassName("primary", activeStores.length === 0 ? "pointer-events-none opacity-50" : undefined)}
-                aria-disabled={activeStores.length === 0}
-              >
-                <Plus className="h-4 w-4" />
-                New credential reference
-              </Link>
-            </>
+            <Link to="/admin/deployments/credentials/stores/new" className={buttonClassName("primary")}>
+              <Plus className="h-4 w-4" />
+              New credential store
+            </Link>
           ) : null
         }
       />
@@ -687,7 +675,7 @@ function DeploymentCredentialsReady({ context }: { context: DeploymentContext })
                 <tr>
                   <th className="px-3 py-2">Store</th>
                   <th className="px-3 py-2">Type</th>
-                  <th className="px-3 py-2">Credential references</th>
+                  <th className="px-3 py-2">Credentials</th>
                   <th className="px-3 py-2 text-right">Actions</th>
                 </tr>
               </thead>
@@ -705,54 +693,7 @@ function DeploymentCredentialsReady({ context }: { context: DeploymentContext })
                       <td className="px-3 py-3">{secretStoreTypeLabel(store.type)}</td>
                       <td className="px-3 py-3">{credentialReferences.filter((reference) => reference.status === "Active" && reference.secretStoreId === store.id).length}</td>
                       <td className="px-3 py-3 text-right">
-                        {store.status === "Active" && canManageSetup ? (
-                          <Link to={`/admin/deployments/credentials/stores/${store.id}/edit`} className={buttonClassName("secondary")}>
-                            Edit
-                          </Link>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">{store.status === "Archived" ? "Archived" : "View only"}</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </Table>
-        </div>
-      </section>
-      <section className="space-y-3">
-        <SectionHeader title="Credential references" description="Named references that engines can use for platform control-plane credentials." />
-        <div className="rounded-ui border border-border bg-surface">
-          <Table>
-            <table className="min-w-full text-sm">
-              <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2">Credential</th>
-                  <th className="px-3 py-2">Store</th>
-                  <th className="px-3 py-2">Reference</th>
-                  <th className="px-3 py-2">Usage</th>
-                  <th className="px-3 py-2">Verification</th>
-                  <th className="px-3 py-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {visibleReferences.length === 0 ? (
-                  <tr>
-                    <td className="px-3 py-6 text-center text-sm text-muted-foreground" colSpan={6}>
-                      {selectedStatus === "Archived" ? "No archived credential references." : "No credential references registered."}
-                    </td>
-                  </tr>
-                ) : (
-                  visibleReferences.map((reference) => (
-                    <tr key={reference.id}>
-                      <td className="px-3 py-3 font-medium">{reference.name}</td>
-                      <td className="px-3 py-3">{reference.secretStoreName}</td>
-                      <td className="px-3 py-3">{reference.hasProtectedSecret ? "Protected local credential" : reference.reference}</td>
-                      <td className="px-3 py-3">{reference.usageCount > 0 ? `${reference.usageCount} engines` : "0"}</td>
-                      <td className="px-3 py-3"><StatusBadge value={reference.verificationStatus} tone={credentialTone(reference.verificationStatus)} /></td>
-                      <td className="px-3 py-3 text-right">
-                        <Link to={`/admin/deployments/credentials/references/${reference.id}`} className={buttonClassName("secondary")}>
+                        <Link to={`/admin/deployments/credentials/stores/${store.id}/edit`} className={buttonClassName("secondary")}>
                           Open
                         </Link>
                       </td>
@@ -798,7 +739,8 @@ function DeploymentCredentialStoreEditReady({ context, secretStoreId }: { contex
   const navigate = useNavigate();
   const credentialManagement = useCredentialManagementMutations(workspaceId);
   const store = secretStores.find((item) => item.id === secretStoreId);
-  const activeReferenceCount = credentialReferences.filter((reference) => reference.status === "Active" && reference.secretStoreId === secretStoreId).length;
+  const storeReferences = credentialReferences.filter((reference) => reference.secretStoreId === secretStoreId);
+  const activeReferenceCount = storeReferences.filter((reference) => reference.status === "Active").length;
   const [confirmArchive, setConfirmArchive] = useState(false);
 
   if (!store) {
@@ -821,6 +763,11 @@ function DeploymentCredentialStoreEditReady({ context, secretStoreId }: { contex
         isSubmitting={credentialManagement.updateSecretStore.isPending}
         error={credentialManagement.error}
         onSubmit={(values) => credentialManagement.updateSecretStore.mutate({ secretStoreId, values }, { onSuccess: () => navigate("/admin/deployments/credentials") })}
+      />
+      <CredentialStoreReferencesSection
+        store={store}
+        references={storeReferences}
+        canManageSetup={canManageSetup}
       />
       {store.status === "Active" ? (
         <div className="rounded-ui border border-border bg-surface p-4">
@@ -849,7 +796,10 @@ function DeploymentCredentialStoreEditReady({ context, secretStoreId }: { contex
 function DeploymentCredentialReferenceCreateReady({ context }: { context: DeploymentContext }) {
   const { workspaceId, secretStores, canManageSetup } = context;
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const credentialManagement = useCredentialManagementMutations(workspaceId);
+  const initialStoreId = searchParams.get("storeId") ?? undefined;
+  const returnPath = initialStoreId ? `/admin/deployments/credentials/stores/${initialStoreId}/edit` : "/admin/deployments/credentials";
 
   return (
     <FormPageShell
@@ -863,10 +813,12 @@ function DeploymentCredentialReferenceCreateReady({ context }: { context: Deploy
     >
       <CredentialReferenceForm
         stores={secretStores}
+        initialStoreId={initialStoreId}
+        cancelTo={returnPath}
         canManageSetup={canManageSetup}
         isSubmitting={credentialManagement.createCredentialReference.isPending}
         error={credentialManagement.error}
-        onSubmit={(values) => credentialManagement.createCredentialReference.mutate(values, { onSuccess: () => navigate("/admin/deployments/credentials") })}
+        onSubmit={(values) => credentialManagement.createCredentialReference.mutate(values, { onSuccess: () => navigate(returnPath) })}
       />
     </FormPageShell>
   );
@@ -1026,6 +978,66 @@ function DeploymentCredentialReferenceEditReady({ context, credentialReferenceId
   );
 }
 
+function CredentialStoreReferencesSection({
+  store,
+  references,
+  canManageSetup
+}: {
+  store: WorkspaceDeploymentSecretStore;
+  references: WorkspaceDeploymentCredentialReference[];
+  canManageSetup: boolean;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <SectionHeader title="Credentials" description="Credential references registered under this store." />
+        {store.status === "Active" && canManageSetup ? (
+          <Link to={`/admin/deployments/credentials/references/new?storeId=${encodeURIComponent(store.id)}`} className={buttonClassName("secondary")}>
+            <Plus className="h-4 w-4" />
+            New credential reference
+          </Link>
+        ) : null}
+      </div>
+      <div className="rounded-ui border border-border bg-surface">
+        {references.length === 0 ? (
+          <EmptyState title="No credentials registered" description="Create credential references from this store before assigning them to engines." />
+        ) : (
+          <Table>
+            <table className="min-w-full text-sm">
+              <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2">Credential</th>
+                  <th className="px-3 py-2">Reference</th>
+                  <th className="px-3 py-2">Usage</th>
+                  <th className="px-3 py-2">Verification</th>
+                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {references.map((reference) => (
+                  <tr key={reference.id}>
+                    <td className="px-3 py-3 font-medium">{reference.name}</td>
+                    <td className="px-3 py-3">{reference.hasProtectedSecret ? "Protected local credential" : reference.reference}</td>
+                    <td className="px-3 py-3">{reference.usageCount > 0 ? `${reference.usageCount} engines` : "0"}</td>
+                    <td className="px-3 py-3"><StatusBadge value={reference.verificationStatus} tone={credentialTone(reference.verificationStatus)} /></td>
+                    <td className="px-3 py-3">{reference.status}</td>
+                    <td className="px-3 py-3 text-right">
+                      <Link to={`/admin/deployments/credentials/references/${reference.id}`} className={buttonClassName("secondary")}>
+                        Open
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Table>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function SetupWizardProgress({ step }: { step: SetupWizardStep }) {
   const steps: { id: SetupWizardStep; label: string }[] = [
     { id: "application", label: "Application" },
@@ -1128,7 +1140,7 @@ export function DeploymentApplicationPage() {
 }
 
 function DeploymentApplicationReady({ context, applicationId }: { context: DeploymentContext; applicationId: string }) {
-  const { workspaceId, data, secretStores, credentialReferences, canManageSetup } = context;
+  const { data, canManageSetup } = context;
   const application = findApplication(data, applicationId);
   if (!application) return <RequestStateView state="not-found" title="Application not found" />;
 
@@ -1138,7 +1150,6 @@ function DeploymentApplicationReady({ context, applicationId }: { context: Deplo
     () => sortEnvironments(filterEnvironments(application.environments, environmentQuery), environmentSort),
     [application.environments, environmentQuery, environmentSort]
   );
-  const credentialManagement = useCredentialManagementMutations(workspaceId);
 
   return (
     <section className="space-y-5">
@@ -1192,23 +1203,6 @@ function DeploymentApplicationReady({ context, applicationId }: { context: Deplo
           <EnvironmentTable application={application} environments={environments} data={data} />
         )}
       </section>
-      <SecretStoresPanel
-        workspaceId={workspaceId}
-        stores={secretStores}
-        references={credentialReferences}
-        canManageSetup={canManageSetup}
-        isCreatingStore={credentialManagement.createSecretStore.isPending}
-        isCreatingReference={credentialManagement.createCredentialReference.isPending}
-        pendingActionId={credentialManagement.pendingActionId}
-        error={credentialManagement.error}
-        onCreateStore={(values) => credentialManagement.createSecretStore.mutate(values)}
-        onUpdateStore={(secretStoreId, values) => credentialManagement.updateSecretStore.mutate({ secretStoreId, values })}
-        onArchiveStore={(secretStoreId) => credentialManagement.archiveSecretStore.mutate(secretStoreId)}
-        onCreateReference={(values) => credentialManagement.createCredentialReference.mutate(values)}
-        onUpdateReference={(credentialReferenceId, values) => credentialManagement.updateCredentialReference.mutate({ credentialReferenceId, values })}
-        onRotateReference={(credentialReferenceId, secretValue) => credentialManagement.rotateCredentialReference.mutate({ credentialReferenceId, secretValue })}
-        onArchiveReference={(credentialReferenceId) => credentialManagement.archiveCredentialReference.mutate(credentialReferenceId)}
-      />
     </section>
   );
 }
@@ -3276,6 +3270,8 @@ function CredentialStoreForm({
 function CredentialReferenceForm({
   reference,
   stores,
+  initialStoreId,
+  cancelTo = "/admin/deployments/credentials",
   canManageSetup,
   isSubmitting,
   error,
@@ -3283,14 +3279,17 @@ function CredentialReferenceForm({
 }: {
   reference?: WorkspaceDeploymentCredentialReference;
   stores: WorkspaceDeploymentSecretStore[];
+  initialStoreId?: string;
+  cancelTo?: string;
   canManageSetup: boolean;
   isSubmitting: boolean;
   error?: string;
   onSubmit: (values: CredentialReferenceValues) => void;
 }) {
   const activeStores = stores.filter((store) => store.status === "Active");
-  const initialStoreId = reference?.secretStoreId ?? activeStores[0]?.id ?? "";
-  const [secretStoreId, setSecretStoreId] = useState(initialStoreId);
+  const normalizedInitialStoreId = !reference && initialStoreId && activeStores.some((store) => store.id === initialStoreId) ? initialStoreId : undefined;
+  const defaultStoreId = reference?.secretStoreId ?? normalizedInitialStoreId ?? activeStores[0]?.id ?? "";
+  const [secretStoreId, setSecretStoreId] = useState(defaultStoreId);
   const [name, setName] = useState(reference?.name ?? "");
   const [referenceValue, setReferenceValue] = useState(reference?.hasProtectedSecret ? "" : reference?.reference ?? "");
   const selectedStore = stores.find((store) => store.id === secretStoreId);
@@ -3373,7 +3372,7 @@ function CredentialReferenceForm({
         <Button type="submit" disabled={!canSubmit || isSubmitting}>
           {isEditing ? "Save reference" : "Create reference"}
         </Button>
-        <Link to={reference ? `/admin/deployments/credentials/references/${reference.id}` : "/admin/deployments/credentials"} className={buttonClassName("secondary")}>Cancel</Link>
+        <Link to={reference ? `/admin/deployments/credentials/references/${reference.id}` : cancelTo} className={buttonClassName("secondary")}>Cancel</Link>
       </div>
     </form>
   );

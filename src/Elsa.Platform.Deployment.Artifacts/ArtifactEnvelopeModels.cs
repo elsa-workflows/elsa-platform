@@ -11,6 +11,7 @@ public static class ArtifactEnvelopeConstants
 public static class ArtifactTypeIds
 {
     public const string ElsaWorkflowDefinition = "elsa.workflow-definition";
+    public const string ElsaLoomRecipe = "elsa.loom.recipe";
 }
 
 public sealed record ArtifactEnvelope(

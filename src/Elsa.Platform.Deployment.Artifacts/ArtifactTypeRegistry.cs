@@ -12,10 +12,21 @@ public sealed class ArtifactTypeRegistry : IArtifactTypeRegistry
         DefaultRuntimeFamily: "elsa-workflows",
         DefaultRequiredCapabilities: [ArtifactApplyCapability.For(ArtifactTypeIds.ElsaWorkflowDefinition)]);
 
+    private static readonly ArtifactTypeDefinition LoomRecipe = new(
+        ArtifactTypeIds.ElsaLoomRecipe,
+        "Elsa Loom Recipe",
+        "Loom recipe artifact submitted to Platform for promotion and runtime application.",
+        "platform",
+        [ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion],
+        Enabled: true,
+        DefaultRuntimeFamily: "elsa-workflows",
+        DefaultRequiredCapabilities: [ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe)]);
+
     private readonly IReadOnlyDictionary<string, ArtifactTypeDefinition> _types =
         new Dictionary<string, ArtifactTypeDefinition>(StringComparer.OrdinalIgnoreCase)
         {
-            [WorkflowDefinition.TypeId] = WorkflowDefinition
+            [WorkflowDefinition.TypeId] = WorkflowDefinition,
+            [LoomRecipe.TypeId] = LoomRecipe
         };
 
     public IReadOnlyList<ArtifactTypeDefinition> ListTypes() =>
@@ -41,6 +52,10 @@ public static class ArtifactApplyCapability
         if (string.Equals(artifactTypeId, ArtifactTypeIds.ElsaWorkflowDefinition, StringComparison.OrdinalIgnoreCase)
             && string.Equals(trimmed, "workflow-definition.apply", StringComparison.OrdinalIgnoreCase))
             return For(ArtifactTypeIds.ElsaWorkflowDefinition);
+
+        if (string.Equals(artifactTypeId, ArtifactTypeIds.ElsaLoomRecipe, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(trimmed, "loom.recipe.apply", StringComparison.OrdinalIgnoreCase))
+            return For(ArtifactTypeIds.ElsaLoomRecipe);
 
         return trimmed;
     }

@@ -1,6 +1,7 @@
 using Elsa.Platform.Api.Workspace;
 using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.Deployment.Core.Cockpit;
+using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.Studio.Submit;
 using FluentAssertions;
 
@@ -39,9 +40,50 @@ public sealed class StudioSubmitClientApiTests
         submitted.ArtifactDigest.Should().Be($"{package.Envelope.ContentDigest.Algorithm}:{package.Envelope.ContentDigest.Value}");
         artifacts!.Items.Should().ContainSingle(x => x.ArtifactId == package.Envelope.ArtifactId)
             .Which.Producer!.ProducerType.Should().Be("studio");
-        artifacts.Items.Single().ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
+        artifacts.Items.Single().ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaLoomRecipe);
         artifacts.Items.Single().DisplayMetadata!.Source.Should().Be("studio://workflows/payment-retry");
         cockpit!.History.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Studio_submit_client_uploads_artifact_and_creates_desired_state_revision()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("studio-submit-revision-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var applicationResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications",
+            new WorkspaceDeploymentApplicationRequest("Claims", null));
+        var application = (await applicationResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentApplication>())!;
+        var environmentResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications/{application.Id}/environments",
+            new WorkspaceDeploymentEnvironmentRequest("Dev", EnvironmentTier.Dev));
+        var environment = (await environmentResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentEnvironment>())!;
+        var options = new StudioSubmitOptions
+        {
+            PlatformEndpoint = owner.BaseAddress!,
+            WorkspaceId = workspaceId,
+            ApplicationId = application.Id,
+            EnvironmentId = environment.Id,
+            ProducerVersion = "4.0.0",
+            RuntimeVersionRange = ">=4.0.0"
+        };
+        var package = _packager.Package(Snapshot(), options);
+        var submitClient = new StudioPlatformArtifactSubmitClient(owner);
+
+        var submitted = await submitClient.SubmitRevisionAsync(package, options);
+        var artifacts = await owner.GetPlatformJsonAsync<WorkspaceArtifactListResponse>($"/api/workspaces/{workspaceId}/artifacts");
+        var revisions = await owner.GetPlatformJsonAsync<WorkspaceApplicationRevisionsResponse>(
+            $"/api/workspaces/{workspaceId}/deployments/applications/{application.Id}/revisions");
+
+        submitted.Status.Should().Be(StudioSubmitStatus.Submitted);
+        submitted.ArtifactRecordId.Should().NotBeNull();
+        submitted.RevisionId.Should().NotBeNull();
+        artifacts!.Items.Should().ContainSingle(x => x.Id == submitted.ArtifactRecordId)
+            .Which.Format.Should().Be(WorkspaceArtifactFormat.Zip);
+        revisions!.Items.Should().ContainSingle()
+            .Which.Revision.Id.Should().Be(submitted.RevisionId!.Value);
     }
 
     private static WorkflowSubmissionSnapshot Snapshot() =>

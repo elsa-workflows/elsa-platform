@@ -9,5 +9,5 @@ public static class DeploymentManifestConstants
     public const string VariableResourceType = "variable";
     public const string FeatureResourceType = "feature";
     public const string PackageResourceType = "package";
-    public const string RecipeResourceType = "recipe";
+    public const string RecipeResourceType = "elsa.loom.recipe";
 }

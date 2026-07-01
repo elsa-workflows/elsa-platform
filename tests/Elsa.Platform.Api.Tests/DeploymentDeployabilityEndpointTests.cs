@@ -70,7 +70,7 @@ public sealed class DeploymentDeployabilityEndpointTests
                 "westeurope",
                 "External secret store",
                 "kv://runtime/dev",
-                [new EngineCapability("workflow-definition.apply", "Apply workflow definitions", CapabilityBoundary.EngineApi)],
+                [new EngineCapability("loom.recipe.apply", "Apply Loom recipes", CapabilityBoundary.EngineApi)],
                 [],
                 "container-apps"));
         var blockedEngine = await store.RegisterEngineAsync(
@@ -94,7 +94,7 @@ public sealed class DeploymentDeployabilityEndpointTests
                   "payload": {
                     "artifactRecordId": "{{artifact.Id:D}}",
                     "artifactId": "{{artifact.ArtifactId}}",
-                    "artifactTypeId": "{{ArtifactTypeIds.ElsaWorkflowDefinition}}",
+                    "artifactTypeId": "{{ArtifactTypeIds.ElsaLoomRecipe}}",
                     "contentDigest": {
                       "algorithm": "{{artifact.ContentDigest.Algorithm}}",
                       "value": "{{artifact.ContentDigest.Value}}"

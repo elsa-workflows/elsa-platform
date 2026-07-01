@@ -123,14 +123,14 @@ public sealed record WorkspaceArtifact(
         new(
             ArtifactId,
             EnvelopeVersion ?? ArtifactEnvelopeConstants.EnvelopeVersion,
-            ArtifactTypeId ?? ArtifactTypeIds.ElsaWorkflowDefinition,
+            ArtifactTypeId ?? ArtifactTypeIds.ElsaLoomRecipe,
             ArtifactSchemaVersion ?? ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion,
             new ArtifactDigest(ContentDigest.Algorithm, ContentDigest.Value),
             ManifestDigest is null ? null : new ArtifactDigest(ManifestDigest.Algorithm, ManifestDigest.Value),
             PayloadReference ?? new ArtifactPayloadReference(ReferenceProvider, Reference),
             Producer ?? new ArtifactProducer("manual", "Manual registration"),
             DisplayMetadata ?? new ArtifactDisplayMetadata(Manifest.Name, Manifest.Version, null, new Dictionary<string, string>(), new Dictionary<string, string>(), Manifest.Environment),
-            CompatibilityHints ?? [new ArtifactCompatibilityHint(ArtifactTypeIds.ElsaWorkflowDefinition, "elsa-workflows", null, [ArtifactApplyCapability.For(ArtifactTypeIds.ElsaWorkflowDefinition)], new Dictionary<string, string>())],
+            CompatibilityHints ?? [new ArtifactCompatibilityHint(ArtifactTypeIds.ElsaLoomRecipe, "elsa-workflows", null, [ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe)], new Dictionary<string, string>())],
             Diagnostics.Select(x => new ArtifactEnvelopeDiagnostic(x.Code, x.Severity.ToEnvelopeSeverity(), x.Message)).ToList());
 }
 

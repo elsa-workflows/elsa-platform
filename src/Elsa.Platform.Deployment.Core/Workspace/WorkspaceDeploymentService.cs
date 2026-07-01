@@ -178,6 +178,12 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
         CancellationToken cancellationToken = default) =>
         store.ListCredentialReferenceUsageAsync(workspaceId, credentialReferenceId, cancellationToken);
 
+    public Task<WorkspaceEngineCredentialSecret?> GetEngineCredentialSecretAsync(
+        Guid workspaceId,
+        Guid engineId,
+        CancellationToken cancellationToken = default) =>
+        store.GetEngineCredentialSecretAsync(workspaceId, engineId, cancellationToken);
+
     public Task<WorkspaceDesiredStateRevision> CreateRevisionAsync(
         Guid workspaceId,
         CreateDesiredStateRevisionRequest request,

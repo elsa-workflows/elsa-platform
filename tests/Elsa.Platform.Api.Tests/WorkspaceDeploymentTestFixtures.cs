@@ -78,7 +78,7 @@ internal static class WorkspaceDeploymentTestFixtures
             new WorkspaceArtifactManifestSummary("claims", "1.0.0", "prod"),
             [
                 new WorkspaceArtifactResourceSummary(
-                    "workflowDefinition",
+                    ArtifactTypeIds.ElsaLoomRecipe,
                     "payment-retry",
                     null,
                     "8",

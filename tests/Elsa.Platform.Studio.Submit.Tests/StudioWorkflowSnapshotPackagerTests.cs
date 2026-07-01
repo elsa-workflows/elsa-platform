@@ -16,7 +16,7 @@ public sealed class StudioWorkflowSnapshotPackagerTests
     };
 
     [Fact]
-    public void Packages_workflow_snapshot_as_elsa_workflow_artifact_envelope()
+    public void Packages_workflow_snapshot_as_elsa_loom_recipe_artifact_envelope()
     {
         var packagedAt = DateTimeOffset.Parse("2026-05-29T08:00:00Z");
 
@@ -24,13 +24,13 @@ public sealed class StudioWorkflowSnapshotPackagerTests
 
         package.PackagedAt.Should().Be(packagedAt);
         package.WorkflowDefinitionJson.Should().Contain("\"PaymentRetry\"");
-        package.Envelope.ArtifactId.Should().StartWith("elsa.workflow-definition:payment-retry:");
-        package.Envelope.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
+        package.Envelope.ArtifactId.Should().StartWith("elsa.loom.recipe:payment-retry:");
+        package.Envelope.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaLoomRecipe);
         package.Envelope.EnvelopeVersion.Should().Be(ArtifactEnvelopeConstants.EnvelopeVersion);
         package.Envelope.ArtifactSchemaVersion.Should().Be(ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion);
         package.Envelope.ContentDigest.Algorithm.Should().Be("sha256");
         package.Envelope.PayloadReference.Provider.Should().Be("producer-managed");
-        package.Envelope.PayloadReference.Uri.Should().StartWith("studio://workflows/payment-retry/snapshots/");
+        package.Envelope.PayloadReference.Uri.Should().StartWith("studio://loom-recipes/payment-retry/snapshots/");
         package.Envelope.PayloadReference.ReferenceDigest.Should().Be(package.Envelope.ContentDigest);
         package.Envelope.Producer.ProducerType.Should().Be("studio");
         package.Envelope.Producer.ProducerName.Should().Be("Elsa Studio");
@@ -39,7 +39,9 @@ public sealed class StudioWorkflowSnapshotPackagerTests
         package.Envelope.DisplayMetadata.Name.Should().Be("Payment Retry");
         package.Envelope.DisplayMetadata.Labels.Should().Contain("domain", "payments");
         package.Envelope.CompatibilityHints.Should().ContainSingle();
-        package.Envelope.CompatibilityHints.Single().RequiredCapabilities.Should().Contain("workflow-definition.apply");
+        package.Envelope.CompatibilityHints.Single().RequiredCapabilities.Should().Contain("loom.recipe.apply");
+        package.WorkflowDefinitionJson.Should().Contain("\"schemaVersion\"");
+        package.WorkflowDefinitionJson.Should().Contain("\"workflowDefinition.upsert\"");
     }
 
     [Fact]
@@ -73,7 +75,7 @@ public sealed class StudioWorkflowSnapshotPackagerTests
         var packageA = _packager.Package(snapshotA, _options);
         var packageB = _packager.Package(snapshotB, _options);
 
-        packageA.Envelope.ContentDigest.Should().Be(packageB.Envelope.ContentDigest);
+        packageA.Envelope.ContentDigest.Should().NotBe(packageB.Envelope.ContentDigest);
         packageA.Envelope.ArtifactId.Should().NotBe(packageB.Envelope.ArtifactId);
         packageA.Envelope.ArtifactId.Length.Should().BeLessThanOrEqualTo(256);
         packageB.Envelope.ArtifactId.Length.Should().BeLessThanOrEqualTo(256);

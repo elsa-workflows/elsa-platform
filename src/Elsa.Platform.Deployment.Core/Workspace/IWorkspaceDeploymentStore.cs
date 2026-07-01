@@ -105,6 +105,12 @@ public interface IWorkspaceDeploymentStore
         CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("Deployment credential reference usage is not supported by this store.");
 
+    Task<WorkspaceEngineCredentialSecret?> GetEngineCredentialSecretAsync(
+        Guid workspaceId,
+        Guid engineId,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Engine credential secret lookup is not supported by this store.");
+
     Task<WorkspaceDesiredStateRevision> CreateRevisionAsync(
         Guid workspaceId,
         CreateDesiredStateRevisionRequest request,

@@ -6,6 +6,14 @@ public sealed record StudioSubmitOptions
 
     public Guid? WorkspaceId { get; init; }
 
+    public Guid? ApplicationId { get; init; }
+
+    public Guid? EnvironmentId { get; init; }
+
+    public string? RevisionLabel { get; init; }
+
+    public string? RevisionCommit { get; init; }
+
     public StudioSubmitAuthenticationMode AuthenticationMode { get; init; } = StudioSubmitAuthenticationMode.PlatformBearerToken;
 
     public string? CredentialReference { get; init; }
@@ -22,7 +30,7 @@ public sealed record StudioSubmitOptions
 
     public string? RuntimeVersionRange { get; init; }
 
-    public IReadOnlyList<string> RequiredCapabilities { get; init; } = ["workflow-definition.apply"];
+    public IReadOnlyList<string> RequiredCapabilities { get; init; } = ["loom.recipe.apply"];
 }
 
 public enum StudioSubmitAuthenticationMode

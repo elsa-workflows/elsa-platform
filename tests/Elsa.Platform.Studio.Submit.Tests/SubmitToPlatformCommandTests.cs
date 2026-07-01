@@ -23,7 +23,7 @@ public sealed class SubmitToPlatformCommandTests
         result.Status.Should().Be(StudioSubmitStatus.Submitted);
         result.Succeeded.Should().BeTrue();
         client.Package.Should().NotBeNull();
-        client.Package!.Envelope.ArtifactTypeId.Should().Be("elsa.workflow-definition");
+        client.Package!.Envelope.ArtifactTypeId.Should().Be("elsa.loom.recipe");
     }
 
     [Fact]

@@ -21,7 +21,11 @@ public sealed class SubmitToPlatformCommand(
 
         try
         {
-            var result = await submitClient.SubmitAsync(package, options, cancellationToken);
+            var result = submitClient is IStudioPlatformRevisionSubmitClient revisionSubmitClient
+                         && options.ApplicationId is not null
+                         && options.EnvironmentId is not null
+                ? await revisionSubmitClient.SubmitRevisionAsync(package, options, cancellationToken)
+                : await submitClient.SubmitAsync(package, options, cancellationToken);
             return result with { Message = StudioSubmitMessageSanitizer.SafeMessage(result.Message) };
         }
         catch (OperationCanceledException)

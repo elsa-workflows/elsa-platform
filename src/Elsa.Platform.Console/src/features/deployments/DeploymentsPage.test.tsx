@@ -164,71 +164,10 @@ describe("DeploymentsPage", () => {
     expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-dev")).toBeInTheDocument();
     expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-prod")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Policy/i })).not.toBeInTheDocument();
-  });
-
-  it("manages secret stores and credential references from the application route", async () => {
-    const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops");
-
-    expect(await screen.findByRole("heading", { name: "Claims Operations" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Engine credential stores" })).toBeInTheDocument();
-    expect(screen.getAllByText("Platform Key Vault").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Dev engine API").length).toBeGreaterThan(0);
-    expect(screen.getByText("Register platform-to-engine credentials. Runtime secrets remain managed inside runtimes.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New credential store" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New credential reference" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Register engine credential store" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Register credential reference" })).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "New credential store" }));
-    await userEvent.selectOptions(screen.getByLabelText("Store type"), "LocalEncryptedDatabase");
-    expect(screen.getByText("Elsa Platform stores protected engine credential material.")).toBeInTheDocument();
-    await userEvent.selectOptions(screen.getByLabelText("Store type"), "AzureKeyVault");
-
-    await userEvent.click(screen.getByRole("button", { name: "1 engines" }));
-    expect(await screen.findByText("claims-dev-01")).toBeInTheDocument();
-    expect(screen.getByText("Claims Operations / Dev")).toBeInTheDocument();
-
-    await userEvent.type(screen.getByLabelText("Store name"), "HashiCorp Vault");
-    await userEvent.click(screen.getByRole("button", { name: "Register store" }));
-
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/secret-stores`),
-        expect.objectContaining({ method: "POST" })
-      )
-    );
-    expect(requestBody(fetchMock, "POST", "/deployments/secret-stores")).toMatchObject({
-      name: "HashiCorp Vault",
-      provider: null,
-      type: "AzureKeyVault"
-    });
-
-    await userEvent.click(screen.getByRole("button", { name: "New credential reference" }));
-    await userEvent.type(screen.getByLabelText("Reference name"), "Secondary dev engine API");
-    await userEvent.type(screen.getByLabelText("Key Vault reference"), "kv://acme-platform/dev/elsa-api-secondary");
-    await userEvent.click(screen.getByRole("button", { name: "Register reference" }));
-
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/secret-stores/secret-store-azure/credential-references`),
-        expect.objectContaining({ method: "POST" })
-      )
-    );
-    expect(requestBody(fetchMock, "POST", "/credential-references")).toMatchObject({
-      name: "Secondary dev engine API",
-      reference: "kv://acme-platform/dev/elsa-api-secondary"
-    });
-  }, 15000);
-
-  it("hides credential reference registration until a credential store exists", async () => {
-    renderDeployments(undefined, "/admin/deployments/applications/claims-ops", { secretStores: [], credentialReferences: [] });
-
-    expect(await screen.findByRole("heading", { name: "Claims Operations" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Engine credential stores" })).toBeInTheDocument();
-    expect(screen.getByText("No active engine credential stores registered.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New credential store" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New credential reference" })).toBeDisabled();
-    expect(screen.getByText("Create a credential store before adding credential references.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Engine credential stores" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Register platform-to-engine credentials. Runtime secrets remain managed inside runtimes.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New credential store" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New credential reference" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Register engine credential store" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Register credential reference" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Secret store")).not.toBeInTheDocument();
@@ -238,22 +177,36 @@ describe("DeploymentsPage", () => {
     renderDeployments(undefined, "/admin/deployments/credentials");
 
     expect(await screen.findByRole("heading", { name: "Engine credentials", level: 1 })).toBeInTheDocument();
-    expect(screen.getByText("Manage workspace platform-to-engine credential stores and references. Runtime secrets remain managed inside runtimes.")).toBeInTheDocument();
+    expect(screen.getByText("Manage workspace platform-to-engine credential stores. Runtime secrets remain managed inside runtimes.")).toBeInTheDocument();
     expect(screen.getByText("Engine credentials let Elsa Platform interact with registered workflow engines. Runtime secrets and artifact secret references stay in the runtimes.")).toBeInTheDocument();
     expect(linkByHref("/admin/deployments/credentials/stores/new")).toBeInTheDocument();
-    expect(linkByHref("/admin/deployments/credentials/references/new")).toBeInTheDocument();
     expect(screen.getAllByText("Platform Key Vault").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Local engine credentials").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Protected local credential").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("link", { name: "New credential reference" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Credential references" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Dev engine API")).not.toBeInTheDocument();
+    expect(screen.queryByText("Protected local credential")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Credential actions" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Register credential reference" })).not.toBeInTheDocument();
     expect(linkByHref("/admin/deployments/credentials/stores/secret-store-azure/edit")).toBeInTheDocument();
-    expect(linkByHref("/admin/deployments/credentials/references/credential-reference-dev")).toBeInTheDocument();
 
     await userEvent.selectOptions(screen.getByLabelText("Status"), "Archived");
 
     expect(screen.getByText("No archived engine credential stores.")).toBeInTheDocument();
-    expect(screen.getByText("No archived credential references.")).toBeInTheDocument();
+    expect(screen.queryByText("No archived credential references.")).not.toBeInTheDocument();
+  });
+
+  it("lists credential references from the selected credential store", async () => {
+    renderDeployments(undefined, "/admin/deployments/credentials/stores/secret-store-azure/edit");
+
+    expect(await screen.findByRole("heading", { name: "Edit Platform Key Vault", level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Credentials" })).toBeInTheDocument();
+    expect(screen.getByText("Dev engine API")).toBeInTheDocument();
+    expect(screen.getByText("Prod engine API")).toBeInTheDocument();
+    expect(screen.queryByText("Local dev engine API")).not.toBeInTheDocument();
+    expect(screen.queryByText("Protected local credential")).not.toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/credentials/references/new?storeId=secret-store-azure")).toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/credentials/references/credential-reference-dev")).toBeInTheDocument();
   });
 
   it("creates engine credential stores from a dedicated create page", async () => {
@@ -275,10 +228,10 @@ describe("DeploymentsPage", () => {
   });
 
   it("creates write-only local references from a dedicated create page", async () => {
-    const fetchMock = renderDeployments(undefined, "/admin/deployments/credentials/references/new");
+    const fetchMock = renderDeployments(undefined, "/admin/deployments/credentials/references/new?storeId=secret-store-local");
 
     expect(await screen.findByRole("heading", { name: "New credential reference", level: 1 })).toBeInTheDocument();
-    await userEvent.selectOptions(screen.getByLabelText("Engine credential store"), "secret-store-local");
+    expect(screen.getByLabelText("Engine credential store")).toHaveValue("secret-store-local");
     await userEvent.type(screen.getByLabelText("Reference name"), "Local staging engine API");
     await userEvent.type(screen.getByLabelText("Secret value"), "local-staging-secret");
     await userEvent.click(screen.getByRole("button", { name: "Create reference" }));
@@ -291,7 +244,7 @@ describe("DeploymentsPage", () => {
       })
     );
     expect(screen.queryByText("local-staging-secret")).not.toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Engine credentials", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Edit Local engine credentials", level: 1 })).toBeInTheDocument();
   }, 15000);
 
   it("renders standalone engine credential management as read-only without setup permission", async () => {
@@ -301,8 +254,9 @@ describe("DeploymentsPage", () => {
     expect(screen.getByText("Deployment setup permission is required to change engine credential stores and references.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "New credential store" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "New credential store" })).not.toBeInTheDocument();
-    expect(linkByHref("/admin/deployments/credentials/references/credential-reference-dev")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
+    expect(linkByHref("/admin/deployments/credentials/stores/secret-store-azure/edit")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Credential references" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "New credential reference" })).not.toBeInTheDocument();
   });
 
   it("edits credential references from a dedicated edit page", async () => {

@@ -55,6 +55,46 @@ public sealed class RuntimeCommandApiTests
     }
 
     [Fact]
+    public async Task Runtime_applier_client_can_use_engine_secret_without_workspace_identity()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("runtime-engine-secret-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var seeded = await SeedRunWithLocalEngineSecretAsync(app, owner, workspaceId, "runtime-engine-secret-owner", "engine-secret-token");
+        var anonymous = app.CreateClient();
+        using var deniedRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/workspaces/{workspaceId:D}/deployments/runtime/engines/{seeded.EngineId:D}/commands");
+        deniedRequest.Headers.Add("X-Elsa-Engine-Secret", "wrong-secret");
+        var denied = await anonymous.SendAsync(deniedRequest);
+        var client = new WorkflowRuntimeCommandHttpClient(anonymous, new WorkflowArtifactRuntimeOptions
+        {
+            PlatformEndpoint = anonymous.BaseAddress!,
+            WorkspaceId = workspaceId,
+            EngineId = seeded.EngineId,
+            EngineSecret = "engine-secret-token",
+            WorkerId = "runtime-secret-worker",
+            ClaimLeaseDuration = TimeSpan.FromSeconds(90)
+        });
+
+        var polled = await client.PollAsync();
+        var command = polled.Single();
+        var claim = await client.ClaimAsync(command.Id);
+        var complete = await client.CompleteAsync(
+            command.Id,
+            claim.Claim!.LeaseToken,
+            null,
+            "elsa://workflows/secret-authorized",
+            []);
+
+        denied.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        claim.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Succeeded);
+        complete.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Succeeded);
+        complete.Command!.RuntimeReference.Should().Be("elsa://workflows/secret-authorized");
+    }
+
+    [Fact]
     public async Task Runtime_can_poll_claim_report_progress_and_complete_command()
     {
         await using var app = new PlatformApiTestApplication();
@@ -271,6 +311,69 @@ public sealed class RuntimeCommandApiTests
         return (await claimResponse.Content.ReadPlatformJsonAsync<RuntimeCommandClaimResponse>())!;
     }
 
+    private static async Task<SeededRun> SeedRunWithLocalEngineSecretAsync(
+        PlatformApiTestApplication app,
+        HttpClient owner,
+        Guid workspaceId,
+        string subject,
+        string engineSecret)
+    {
+        var applicationResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId:D}/deployments/applications",
+            new WorkspaceDeploymentApplicationRequest($"Claims {Guid.NewGuid():N}", null));
+        var application = (await applicationResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentApplication>())!;
+        var environmentResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId:D}/deployments/applications/{application.Id:D}/environments",
+            new WorkspaceDeploymentEnvironmentRequest("Prod", EnvironmentTier.Production));
+        var environment = (await environmentResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentEnvironment>())!;
+        var storeResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId:D}/deployments/secret-stores",
+            new WorkspaceDeploymentSecretStoreRequest(
+                "Local engine credentials",
+                null,
+                null,
+                DeploymentSecretStoreType.LocalEncryptedDatabase));
+        var secretStore = (await storeResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentSecretStore>())!;
+        var referenceResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId:D}/deployments/secret-stores/{secretStore.Id:D}/credential-references",
+            new WorkspaceDeploymentCredentialReferenceRequest(
+                "Runtime engine API",
+                $"local://engine-credentials/{Guid.NewGuid():N}",
+                null,
+                engineSecret));
+        var reference = (await referenceResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentCredentialReference>())!;
+        var engineResponse = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId:D}/deployments/environments/{environment.Id:D}/engines",
+            new WorkspaceWorkflowEngineRequest(
+                "claims-prod",
+                "https://runtime.example.test",
+                "westeurope",
+                null,
+                null,
+                [new EngineCapability("workflow-definition.apply", "Apply workflow definitions", CapabilityBoundary.EngineApi)],
+                [],
+                "container-apps",
+                reference.Id));
+        var engine = (await engineResponse.Content.ReadPlatformJsonAsync<WorkspaceWorkflowEngine>())!;
+
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        var accountId = await db.ExternalIdentities
+            .Where(x => x.Issuer == WorkspaceDeploymentTestFixtures.DefaultIssuer && x.Subject == subject)
+            .Select(x => x.AccountId)
+            .SingleAsync();
+        var store = scope.ServiceProvider.GetRequiredService<IWorkspaceDeploymentStore>();
+        var mutationStore = scope.ServiceProvider.GetRequiredService<IWorkspaceDeploymentMutationStore>();
+        var revision = await store.CreateRevisionAsync(
+            workspaceId,
+            new CreateDesiredStateRevisionRequest(application.Id, environment.Id, "v1", "abc123", "{\"records\":[]}", accountId));
+        var run = await mutationStore.CreateRunAsync(
+            workspaceId,
+            new QueueWorkspaceDeploymentRunRequest(revision.Id, environment.Id, engine.Id, Guid.NewGuid(), accountId, null),
+            DateTimeOffset.UtcNow);
+        return new SeededRun(engine.Id, run.Id);
+    }
+
     private static async Task<SeededRun> SeedRunAsync(PlatformApiTestApplication app, Guid workspaceId, string subject)
     {
         await using var scope = app.Services.CreateAsyncScope();
@@ -340,7 +443,7 @@ public sealed class RuntimeCommandApiTests
                 "westeurope",
                 "Azure Key Vault",
                 "kv://claims/runtime",
-                [new EngineCapability("workflow-definition.apply", "Apply workflow definitions", CapabilityBoundary.EngineApi)],
+                [new EngineCapability("loom.recipe.apply", "Apply Loom recipes", CapabilityBoundary.EngineApi)],
                 [],
                 "container-apps"));
         var desiredStateJson = $$"""
@@ -352,7 +455,7 @@ public sealed class RuntimeCommandApiTests
                   "payload": {
                     "artifactRecordId": "{{artifact.Id:D}}",
                     "artifactId": "{{artifact.ArtifactId}}",
-                    "artifactTypeId": "{{ArtifactTypeIds.ElsaWorkflowDefinition}}",
+                    "artifactTypeId": "{{ArtifactTypeIds.ElsaLoomRecipe}}",
                     "contentDigest": {
                       "algorithm": "{{artifact.ContentDigest.Algorithm}}",
                       "value": "{{artifact.ContentDigest.Value}}"

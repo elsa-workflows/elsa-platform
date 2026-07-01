@@ -1499,6 +1499,29 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<WorkspaceEngineCredentialSecret?> GetEngineCredentialSecretAsync(
+        Guid workspaceId,
+        Guid engineId,
+        CancellationToken cancellationToken = default)
+    {
+        var engine = await dbContext.WorkflowEngines
+            .AsNoTracking()
+            .Include(x => x.CredentialReferenceMetadata)
+                .ThenInclude(x => x!.SecretStore)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == engineId, cancellationToken);
+        var credential = engine?.CredentialReferenceMetadata;
+        var store = credential?.SecretStore;
+        return engine is null || credential is null || store is null
+            ? null
+            : new WorkspaceEngineCredentialSecret(
+                engine.Id,
+                credential.Id,
+                store.Status,
+                credential.Status,
+                store.Type,
+                credential.ProtectedSecret);
+    }
+
     public async Task<WorkspaceWorkflowEngine> UpdateEngineAsync(
         Guid workspaceId,
         Guid engineId,
@@ -2301,7 +2324,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         string.IsNullOrWhiteSpace(envelopeVersion) ? ArtifactEnvelopeConstants.EnvelopeVersion : envelopeVersion;
 
     private static string NormalizeArtifactTypeId(string? artifactTypeId) =>
-        string.IsNullOrWhiteSpace(artifactTypeId) ? ArtifactTypeIds.ElsaWorkflowDefinition : artifactTypeId;
+        string.IsNullOrWhiteSpace(artifactTypeId) ? ArtifactTypeIds.ElsaLoomRecipe : artifactTypeId;
 
     private static string NormalizeArtifactSchemaVersion(string? artifactSchemaVersion) =>
         string.IsNullOrWhiteSpace(artifactSchemaVersion) ? ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion : artifactSchemaVersion;
@@ -2322,7 +2345,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             request.Manifest.Environment);
 
     private static IReadOnlyList<ArtifactCompatibilityHint> NormalizeCompatibilityHints(string? artifactTypeId, IReadOnlyList<ArtifactCompatibilityHint>? compatibilityHints) =>
-        compatibilityHints ?? [new ArtifactCompatibilityHint(NormalizeArtifactTypeId(artifactTypeId), "elsa-workflows", null, ["workflow-definition.apply"], new Dictionary<string, string>())];
+        compatibilityHints ?? [new ArtifactCompatibilityHint(NormalizeArtifactTypeId(artifactTypeId), "elsa-workflows", null, ["loom.recipe.apply"], new Dictionary<string, string>())];
 
     private static ArtifactPayloadReference DeserializePayloadReference(string json, string referenceProvider, string reference) =>
         string.IsNullOrWhiteSpace(json)

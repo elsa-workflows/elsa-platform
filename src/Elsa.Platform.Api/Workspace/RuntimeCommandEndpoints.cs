@@ -1,11 +1,16 @@
 using Elsa.Platform.Api.Authentication;
 using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
+using Microsoft.AspNetCore.DataProtection;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Elsa.Platform.Api.Workspace;
 
 public static class RuntimeCommandEndpoints
 {
+    private const string EngineSecretHeaderName = "X-Elsa-Engine-Secret";
+
     public static IEndpointRouteBuilder MapRuntimeCommandEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/workspaces/{workspaceId:guid}/deployments/runtime")
@@ -18,10 +23,12 @@ public static class RuntimeCommandEndpoints
             HttpContext context,
             WorkspaceAccessResolver accessResolver,
             WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            IDataProtectionProvider dataProtectionProvider,
             DeploymentCommandService commands,
             CancellationToken cancellationToken) =>
         {
-            var permission = await RequireRuntimeCommandAccessAsync(context, accessResolver, permissions, workspaceId, cancellationToken);
+            var permission = await RequireRuntimeCommandAccessAsync(context, accessResolver, permissions, deployments, dataProtectionProvider, workspaceId, engineId, null, null, cancellationToken);
             if (permission is not null)
                 return permission;
 
@@ -36,10 +43,12 @@ public static class RuntimeCommandEndpoints
             HttpContext context,
             WorkspaceAccessResolver accessResolver,
             WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            IDataProtectionProvider dataProtectionProvider,
             DeploymentCommandService commands,
             CancellationToken cancellationToken) =>
         {
-            var permission = await RequireRuntimeCommandAccessAsync(context, accessResolver, permissions, workspaceId, cancellationToken);
+            var permission = await RequireRuntimeCommandAccessAsync(context, accessResolver, permissions, deployments, dataProtectionProvider, workspaceId, request.EngineId, null, null, cancellationToken);
             if (permission is not null)
                 return permission;
 
@@ -70,10 +79,12 @@ public static class RuntimeCommandEndpoints
             WorkspaceAccessResolver accessResolver,
             WorkspacePermissionService permissions,
             DeploymentCommandService commands,
+            WorkspaceDeploymentService deployments,
+            IDataProtectionProvider dataProtectionProvider,
             WorkspaceArtifactService artifacts,
             CancellationToken cancellationToken) =>
         {
-            var permission = await RequireRuntimeCommandAccessAsync(context, accessResolver, permissions, workspaceId, cancellationToken);
+            var permission = await RequireRuntimeCommandAccessAsync(context, accessResolver, permissions, deployments, dataProtectionProvider, workspaceId, null, commandId, commands, cancellationToken);
             if (permission is not null)
                 return permission;
 
@@ -111,12 +122,16 @@ public static class RuntimeCommandEndpoints
             HttpContext context,
             WorkspaceAccessResolver accessResolver,
             WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            IDataProtectionProvider dataProtectionProvider,
             DeploymentCommandService commands,
             CancellationToken cancellationToken) =>
             await HandleCommandMutationAsync(
                 context,
                 accessResolver,
                 permissions,
+                deployments,
+                dataProtectionProvider,
                 commands,
                 workspaceId,
                 commandId,
@@ -134,12 +149,16 @@ public static class RuntimeCommandEndpoints
             HttpContext context,
             WorkspaceAccessResolver accessResolver,
             WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            IDataProtectionProvider dataProtectionProvider,
             DeploymentCommandService commands,
             CancellationToken cancellationToken) =>
             await HandleCommandMutationAsync(
                 context,
                 accessResolver,
                 permissions,
+                deployments,
+                dataProtectionProvider,
                 commands,
                 workspaceId,
                 commandId,
@@ -157,12 +176,16 @@ public static class RuntimeCommandEndpoints
             HttpContext context,
             WorkspaceAccessResolver accessResolver,
             WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            IDataProtectionProvider dataProtectionProvider,
             DeploymentCommandService commands,
             CancellationToken cancellationToken) =>
             await HandleCommandMutationAsync(
                 context,
                 accessResolver,
                 permissions,
+                deployments,
+                dataProtectionProvider,
                 commands,
                 workspaceId,
                 commandId,
@@ -185,12 +208,16 @@ public static class RuntimeCommandEndpoints
             HttpContext context,
             WorkspaceAccessResolver accessResolver,
             WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            IDataProtectionProvider dataProtectionProvider,
             DeploymentCommandService commands,
             CancellationToken cancellationToken) =>
             await HandleCommandMutationAsync(
                 context,
                 accessResolver,
                 permissions,
+                deployments,
+                dataProtectionProvider,
                 commands,
                 workspaceId,
                 commandId,
@@ -208,12 +235,16 @@ public static class RuntimeCommandEndpoints
             HttpContext context,
             WorkspaceAccessResolver accessResolver,
             WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            IDataProtectionProvider dataProtectionProvider,
             DeploymentCommandService commands,
             CancellationToken cancellationToken) =>
             await HandleCommandMutationAsync(
                 context,
                 accessResolver,
                 permissions,
+                deployments,
+                dataProtectionProvider,
                 commands,
                 workspaceId,
                 commandId,
@@ -231,10 +262,12 @@ public static class RuntimeCommandEndpoints
             HttpContext context,
             WorkspaceAccessResolver accessResolver,
             WorkspacePermissionService permissions,
+            WorkspaceDeploymentService deployments,
+            IDataProtectionProvider dataProtectionProvider,
             DeploymentCommandService commands,
             CancellationToken cancellationToken) =>
         {
-            var permission = await RequireRuntimeCommandAccessAsync(context, accessResolver, permissions, workspaceId, cancellationToken);
+            var permission = await RequireRuntimeCommandAccessAsync(context, accessResolver, permissions, deployments, dataProtectionProvider, workspaceId, request.EngineId, null, null, cancellationToken);
             if (permission is not null)
                 return permission;
 
@@ -260,13 +293,15 @@ public static class RuntimeCommandEndpoints
         HttpContext context,
         WorkspaceAccessResolver accessResolver,
         WorkspacePermissionService permissions,
+        WorkspaceDeploymentService deployments,
+        IDataProtectionProvider dataProtectionProvider,
         DeploymentCommandService commands,
         Guid workspaceId,
         Guid commandId,
         Func<DeploymentCommandService, Task<DeploymentCommand>> mutateAsync,
         CancellationToken cancellationToken)
     {
-        var permission = await RequireRuntimeCommandAccessAsync(context, accessResolver, permissions, workspaceId, cancellationToken);
+        var permission = await RequireRuntimeCommandAccessAsync(context, accessResolver, permissions, deployments, dataProtectionProvider, workspaceId, null, commandId, commands, cancellationToken);
         if (permission is not null)
             return permission;
 
@@ -289,9 +324,17 @@ public static class RuntimeCommandEndpoints
         HttpContext context,
         WorkspaceAccessResolver accessResolver,
         WorkspacePermissionService permissions,
+        WorkspaceDeploymentService deployments,
+        IDataProtectionProvider dataProtectionProvider,
         Guid workspaceId,
+        Guid? engineId,
+        Guid? commandId,
+        DeploymentCommandService? commands,
         CancellationToken cancellationToken)
     {
+        if (await TryAuthorizeEngineAsync(context, deployments, dataProtectionProvider, workspaceId, engineId, commandId, commands, cancellationToken))
+            return null;
+
         var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
         if (!access.Succeeded)
             return access.ToHttpResult();
@@ -302,5 +345,60 @@ public static class RuntimeCommandEndpoints
         return effective.Has(WorkspaceDeploymentPermissions.Read)
             ? null
             : Results.Problem(title: "Deployment permission is required.", statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    private static async Task<bool> TryAuthorizeEngineAsync(
+        HttpContext context,
+        WorkspaceDeploymentService deployments,
+        IDataProtectionProvider dataProtectionProvider,
+        Guid workspaceId,
+        Guid? engineId,
+        Guid? commandId,
+        DeploymentCommandService? commands,
+        CancellationToken cancellationToken)
+    {
+        var submittedSecret = context.Request.Headers[EngineSecretHeaderName].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(submittedSecret))
+            return false;
+
+        var resolvedEngineId = engineId;
+        if (resolvedEngineId is null && commandId is not null && commands is not null)
+        {
+            var command = await commands.GetCommandAsync(workspaceId, commandId.Value, cancellationToken);
+            resolvedEngineId = command?.EngineId;
+        }
+
+        if (resolvedEngineId is null || resolvedEngineId == Guid.Empty)
+            return false;
+
+        var secret = await deployments.GetEngineCredentialSecretAsync(workspaceId, resolvedEngineId.Value, cancellationToken);
+        if (secret is null
+            || secret.SecretStoreStatus != DeploymentSecretStoreStatus.Active
+            || secret.CredentialReferenceStatus != DeploymentSecretStoreStatus.Active
+            || secret.SecretStoreType != DeploymentSecretStoreType.LocalEncryptedDatabase
+            || string.IsNullOrWhiteSpace(secret.ProtectedSecret))
+            return false;
+
+        string expectedSecret;
+        try
+        {
+            expectedSecret = dataProtectionProvider
+                .CreateProtector("Elsa.Platform.EngineCredentialReferences")
+                .Unprotect(secret.ProtectedSecret);
+        }
+        catch (Exception ex) when (ex is CryptographicException or FormatException)
+        {
+            return false;
+        }
+
+        return FixedTimeEquals(expectedSecret, submittedSecret);
+    }
+
+    private static bool FixedTimeEquals(string expected, string actual)
+    {
+        var expectedBytes = Encoding.UTF8.GetBytes(expected);
+        var actualBytes = Encoding.UTF8.GetBytes(actual);
+        return expectedBytes.Length == actualBytes.Length
+            && CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
     }
 }

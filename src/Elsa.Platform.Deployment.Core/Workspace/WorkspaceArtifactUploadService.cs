@@ -366,13 +366,13 @@ public sealed class WorkspaceArtifactUploadService(
             inspection.Diagnostics.Select(ToWorkspaceDiagnostic).ToList(),
             actorAccountId,
             ArtifactEnvelopeConstants.EnvelopeVersion,
-            ArtifactTypeIds.ElsaWorkflowDefinition,
+            ArtifactTypeIds.ElsaLoomRecipe,
             ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion,
             manifestDigest,
             payloadReference,
             new ArtifactProducer("upload", "Elsa Platform Console", null, metadata.Source),
             displayMetadata,
-            [new ArtifactCompatibilityHint(ArtifactTypeIds.ElsaWorkflowDefinition, "elsa-workflows", null, ["workflow-definition.apply"], new Dictionary<string, string>())]);
+            [new ArtifactCompatibilityHint(ArtifactTypeIds.ElsaLoomRecipe, "elsa-workflows", null, ["loom.recipe.apply"], new Dictionary<string, string>())]);
     }
 
     private string CreateStagingPath(Guid workspaceId, Guid uploadId) =>

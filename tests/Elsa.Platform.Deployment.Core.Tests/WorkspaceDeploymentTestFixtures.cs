@@ -43,7 +43,7 @@ internal static class WorkspaceDeploymentTestFixtures
             actorAccountId ?? Guid.Parse("20000000-0000-0000-0000-000000000001"));
 
     public static WorkspaceArtifactResourceSummary ArtifactResource(
-        string type = "workflowDefinition",
+        string type = ArtifactTypeIds.ElsaLoomRecipe,
         string logicalId = "payment-retry") =>
         new(type, logicalId, null, "8", new WorkspaceArtifactDigest("sha256", "workflow-hash"));
 
@@ -58,13 +58,13 @@ internal static class WorkspaceDeploymentTestFixtures
             new Dictionary<string, string> { ["domain"] = "claims" },
             new Dictionary<string, string>());
 
-    public static IReadOnlyList<ArtifactCompatibilityHint> WorkflowCompatibilityHints() =>
+    public static IReadOnlyList<ArtifactCompatibilityHint> LoomRecipeCompatibilityHints() =>
     [
         new ArtifactCompatibilityHint(
-            ArtifactTypeIds.ElsaWorkflowDefinition,
+            ArtifactTypeIds.ElsaLoomRecipe,
             "elsa-workflows",
             ">=4.0.0",
-            ["workflow-definition.apply"],
+            ["loom.recipe.apply"],
             new Dictionary<string, string>())
     ];
 }

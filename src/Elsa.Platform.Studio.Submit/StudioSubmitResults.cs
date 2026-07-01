@@ -12,7 +12,9 @@ public sealed record StudioSubmitResult(
     string Message,
     string? ArtifactId = null,
     string? ArtifactDigest = null,
-    DateTimeOffset? SubmittedAt = null)
+    DateTimeOffset? SubmittedAt = null,
+    Guid? ArtifactRecordId = null,
+    Guid? RevisionId = null)
 {
     public bool Succeeded => Status is StudioSubmitStatus.Submitted or StudioSubmitStatus.Duplicate;
 }
