@@ -3,13 +3,13 @@ using Elsa.Platform.Deployment.Artifacts;
 namespace Elsa.Platform.Workflows.RuntimeApplier;
 
 public sealed record WorkflowArtifactRuntimeCapability(
-    IReadOnlyList<string> SupportedArtifactTypes,
+    string ArtifactTypeId,
     string RuntimeFamily,
     string? RuntimeVersion,
     IReadOnlyList<string> SupportedSchemaVersions,
     IReadOnlyList<string> Capabilities)
 {
-    private static readonly IReadOnlyList<string> ApplicableArtifactTypes =
+    private static readonly string[] KnownArtifactTypeIds =
     [
         ArtifactTypeIds.ElsaWorkflowDefinition,
         ArtifactTypeIds.ElsaLoomRecipe
@@ -25,47 +25,33 @@ public sealed record WorkflowArtifactRuntimeCapability(
         var capabilities = Normalize(options.Capabilities);
 
         return new WorkflowArtifactRuntimeCapability(
-            ApplicableArtifactTypes,
+            ArtifactTypeIds.ElsaWorkflowDefinition,
             options.RuntimeFamily.Trim(),
             options.RuntimeVersion.Trim(),
             schemaVersions,
-            ExpandApplyCapabilities(capabilities));
+            capabilities);
     }
-
-    public bool SupportsArtifactType(string artifactTypeId) =>
-        SupportedArtifactTypes.Contains(artifactTypeId, StringComparer.OrdinalIgnoreCase);
 
     public bool Supports(ArtifactEnvelope envelope) =>
         SupportsArtifactType(envelope.ArtifactTypeId)
         && SupportedSchemaVersions.Contains(envelope.ArtifactSchemaVersion, StringComparer.OrdinalIgnoreCase)
         && envelope.CompatibilityHints.Any(SatisfiesCompatibilityHint);
 
+    public bool SupportsArtifactType(string artifactTypeId) =>
+        KnownArtifactTypeIds.Contains(artifactTypeId, StringComparer.OrdinalIgnoreCase)
+        && NormalizedCapabilities(artifactTypeId).Contains(ArtifactApplyCapability.For(artifactTypeId), StringComparer.OrdinalIgnoreCase);
+
     private bool SatisfiesCompatibilityHint(ArtifactCompatibilityHint hint) =>
         SupportsArtifactType(hint.RequiredArtifactType)
         && (string.IsNullOrWhiteSpace(hint.RuntimeFamily) || hint.RuntimeFamily.Equals(RuntimeFamily, StringComparison.OrdinalIgnoreCase))
         && WorkflowArtifactRuntimeVersionRange.Includes(hint.RuntimeVersionRange, RuntimeVersion)
         && hint.RequiredCapabilities.All(required =>
-            Capabilities.Contains(ArtifactApplyCapability.Normalize(hint.RequiredArtifactType, required), StringComparer.OrdinalIgnoreCase));
+            NormalizedCapabilities(hint.RequiredArtifactType).Contains(
+                ArtifactApplyCapability.Normalize(hint.RequiredArtifactType, required),
+                StringComparer.OrdinalIgnoreCase));
 
-    // Advertise each configured capability alongside its canonical `artifact.<type>.apply` form,
-    // so hints comparing against either spelling resolve. Normalize only rewrites a capability for
-    // the artifact type it belongs to and echoes it back otherwise, so at most one extra form is added.
-    private static IReadOnlyList<string> ExpandApplyCapabilities(IReadOnlyList<string> capabilities) =>
-        capabilities
-            .SelectMany(NormalizedForms)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-    private static IEnumerable<string> NormalizedForms(string capability)
-    {
-        yield return capability;
-        foreach (var typeId in ApplicableArtifactTypes)
-        {
-            var normalized = ArtifactApplyCapability.Normalize(typeId, capability);
-            if (!normalized.Equals(capability, StringComparison.OrdinalIgnoreCase))
-                yield return normalized;
-        }
-    }
+    private IEnumerable<string> NormalizedCapabilities(string artifactTypeId) =>
+        Capabilities.Select(capability => ArtifactApplyCapability.Normalize(artifactTypeId, capability));
 
     private static IReadOnlyList<string> Normalize(IReadOnlyList<string> values) =>
         values

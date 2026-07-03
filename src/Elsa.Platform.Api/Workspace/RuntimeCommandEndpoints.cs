@@ -14,7 +14,8 @@ public static class RuntimeCommandEndpoints
     public static IEndpointRouteBuilder MapRuntimeCommandEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/workspaces/{workspaceId:guid}/deployments/runtime")
-            .WithTags("Runtime Deployment Commands");
+            .WithTags("Runtime Deployment Commands")
+            .MapCommonApiExceptions();
 
         group.MapGet("/engines/{engineId:guid}/commands", async (
             Guid workspaceId,
@@ -52,23 +53,12 @@ public static class RuntimeCommandEndpoints
             if (permission is not null)
                 return permission;
 
-            try
-            {
-                var claim = await commands.ClaimCommandAsync(
-                    workspaceId,
-                    commandId,
-                    new ClaimDeploymentCommandRequest(request.EngineId, request.WorkerId, TimeSpan.FromSeconds(request.LeaseSeconds)),
-                    cancellationToken);
-                return Results.Ok(new RuntimeCommandClaimResponse(RuntimeCommandDto.FromCommand(claim.Command), claim.LeaseToken));
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
-            }
+            var claim = await commands.ClaimCommandAsync(
+                workspaceId,
+                commandId,
+                new ClaimDeploymentCommandRequest(request.EngineId, request.WorkerId, TimeSpan.FromSeconds(request.LeaseSeconds)),
+                cancellationToken);
+            return Results.Ok(new RuntimeCommandClaimResponse(RuntimeCommandDto.FromCommand(claim.Command), claim.LeaseToken));
         });
 
         group.MapGet("/commands/{commandId:guid}/artifacts/{artifactRecordId:guid}/download", async (
@@ -93,26 +83,11 @@ public static class RuntimeCommandEndpoints
             if (string.IsNullOrWhiteSpace(leaseToken) || string.IsNullOrWhiteSpace(workerId))
                 return Results.Problem(title: "Command lease and worker identity are required.", statusCode: StatusCodes.Status409Conflict);
 
-            try
-            {
-                var item = await commands.ValidateRuntimeArtifactDownloadAsync(workspaceId, commandId, artifactRecordId, leaseToken, workerId, cancellationToken);
-                var download = await artifacts.OpenDownloadAsync(workspaceId, artifactRecordId, cancellationToken);
-                context.Response.Headers["X-Elsa-Artifact-Digest-Algorithm"] = item.ContentDigest.Algorithm;
-                context.Response.Headers["X-Elsa-Artifact-Digest"] = item.ContentDigest.Value;
-                return Results.File(download.Content, download.ContentType, download.FileName);
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
-            catch (FileNotFoundException)
-            {
-                return Results.NotFound();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
-            }
+            var item = await commands.ValidateRuntimeArtifactDownloadAsync(workspaceId, commandId, artifactRecordId, leaseToken, workerId, cancellationToken);
+            var download = await artifacts.OpenDownloadAsync(workspaceId, artifactRecordId, cancellationToken);
+            context.Response.Headers["X-Elsa-Artifact-Digest-Algorithm"] = item.ContentDigest.Algorithm;
+            context.Response.Headers["X-Elsa-Artifact-Digest"] = item.ContentDigest.Value;
+            return Results.File(download.Content, download.ContentType, download.FileName);
         });
 
         group.MapPost("/commands/{commandId:guid}/heartbeat", async (
@@ -271,19 +246,8 @@ public static class RuntimeCommandEndpoints
             if (permission is not null)
                 return permission;
 
-            try
-            {
-                var notification = await commands.CreateWebhookNotificationAsync(workspaceId, request.EngineId, commandId, cancellationToken);
-                return Results.Ok(RuntimeCommandWebhookNotificationResponse.FromNotification(notification));
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
-            }
+            var notification = await commands.CreateWebhookNotificationAsync(workspaceId, request.EngineId, commandId, cancellationToken);
+            return Results.Ok(RuntimeCommandWebhookNotificationResponse.FromNotification(notification));
         });
 
         return endpoints;
@@ -305,19 +269,8 @@ public static class RuntimeCommandEndpoints
         if (permission is not null)
             return permission;
 
-        try
-        {
-            var command = await mutateAsync(commands);
-            return Results.Ok(RuntimeCommandDto.FromCommand(command));
-        }
-        catch (KeyNotFoundException)
-        {
-            return Results.NotFound();
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
-        }
+        var command = await mutateAsync(commands);
+        return Results.Ok(RuntimeCommandDto.FromCommand(command));
     }
 
     private static async Task<IResult?> RequireRuntimeCommandAccessAsync(
@@ -339,12 +292,9 @@ public static class RuntimeCommandEndpoints
         if (!access.Succeeded)
             return access.ToHttpResult();
 
-        var effective = access.Access!.Role is WorkspaceRole.Owner
-            ? await permissions.BootstrapOwnerPermissionsAsync(workspaceId, access.Access.AccountId, cancellationToken)
-            : await permissions.GetEffectivePermissionsAsync(workspaceId, access.Access.AccountId, cancellationToken);
-        return effective.Has(WorkspaceDeploymentPermissions.Read)
+        return await permissions.HasDeploymentPermissionAsync(access.Access!, WorkspaceDeploymentPermissions.Read, cancellationToken)
             ? null
-            : Results.Problem(title: "Deployment permission is required.", statusCode: StatusCodes.Status403Forbidden);
+            : DeploymentPermissionEndpointFilters.DeploymentPermissionDenied();
     }
 
     private static async Task<bool> TryAuthorizeEngineAsync(

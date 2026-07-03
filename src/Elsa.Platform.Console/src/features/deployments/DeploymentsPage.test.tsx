@@ -108,7 +108,6 @@ describe("DeploymentsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "New application setup" })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("Application"), "Claims Operations");
-    expect(screen.queryByLabelText("Environment")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Engine name")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Create application" }));
 
@@ -118,17 +117,25 @@ describe("DeploymentsPage", () => {
         expect.objectContaining({ method: "POST" })
       )
     );
-    await waitFor(() => expect(screen.getByLabelText("Tier")).toHaveValue("tier-production"));
+    // The environments step is a multi-row editor pre-filled with a Dev/Test/Production ladder.
+    await waitFor(() => expect(screen.getAllByLabelText("Tier").length).toBeGreaterThan(1));
     expect(screen.getAllByText("Claims Operations").length).toBeGreaterThan(0);
-    await userEvent.clear(screen.getByLabelText("Environment"));
-    await userEvent.type(screen.getByLabelText("Environment"), "Prod");
-    await userEvent.click(screen.getByRole("button", { name: "Add environment" }));
+    // Reduce the ladder to a single Production environment to keep the engine target unambiguous.
+    const removeButtons = screen.getAllByRole("button", { name: /Remove .* row/ });
+    await userEvent.click(removeButtons[0]);
+    await userEvent.click(screen.getAllByRole("button", { name: /Remove .* row/ })[0]);
+    const nameInputs = screen.getAllByLabelText("Name");
+    await userEvent.clear(nameInputs[0]);
+    await userEvent.type(nameInputs[0], "Prod");
+    await userEvent.click(screen.getByRole("button", { name: /Create 1 environment/ }));
 
-    expect(requestBody(fetchMock, "POST", "/applications/app-created/environments")).toMatchObject({
-      name: "Prod",
-      tier: "Production",
-      tierId: "tier-production"
-    });
+    await waitFor(() =>
+      expect(requestBody(fetchMock, "POST", "/applications/app-created/environments")).toMatchObject({
+        name: "Prod",
+        tier: "Production",
+        tierId: "tier-production"
+      })
+    );
     expect(await screen.findByText("Prod - 0 engines")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Continue to engines" }));
     await userEvent.type(screen.getByLabelText("Engine name"), "claims-prod");
@@ -151,8 +158,9 @@ describe("DeploymentsPage", () => {
       })
     );
     expect(await screen.findByText("Prod - 1 engines")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Add another environment" }));
-    expect(screen.getByRole("button", { name: "Add environment" })).toBeInTheDocument();
+    // The wizard now continues to an artifact step so it can deliver the first version.
+    await userEvent.click(screen.getByRole("button", { name: "Continue to artifact" }));
+    expect(await screen.findByRole("heading", { name: "Pick an artifact" })).toBeInTheDocument();
   }, 15000);
 
   it("renders application detail with an environment table", async () => {
@@ -723,7 +731,7 @@ describe("DeploymentsPage", () => {
     expect(screen.getByLabelText("Promote into")).toHaveValue("claims-test");
     await userEvent.click(screen.getByRole("button", { name: "Preview promotion" }));
     expect(await screen.findByText("Live validation passed for Test.")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Create Target Revision" }));
+    await userEvent.click(screen.getByRole("button", { name: "Promote only" }));
     expect(await screen.findByRole("status")).toHaveTextContent("Target revision r43 created");
     await userEvent.click(screen.getByRole("button", { name: "Deploy Target Revision" }));
     expect(await screen.findByRole("status")).toHaveTextContent("Deployment run queued");
@@ -738,6 +746,29 @@ describe("DeploymentsPage", () => {
     );
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/runs`),
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(requestBody(fetchMock, "POST", "/deployments/runs")).toMatchObject({
+      sourceRevisionId: "00000000-0000-0000-0000-000000000243"
+    });
+  }, 10000);
+
+  it("promotes and deploys in one step from the promotion gate", async () => {
+    const fetchMock = renderDeployments(undefined, "/admin/deployments/applications/claims-ops/environments/claims-dev");
+
+    expect(await screen.findByRole("heading", { name: "Dev" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Preview promotion" }));
+    expect(await screen.findByText("Live validation passed for Test.")).toBeInTheDocument();
+    // Promote & deploy chains promotion, confirmation, and the run behind a single primary action.
+    await userEvent.click(screen.getByRole("button", { name: "Promote & deploy" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("promoted and deployment run");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/promotions`),
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/workspaces/${workspaceId}/deployments/confirmations`),
       expect.objectContaining({ method: "POST" })
     );
     expect(requestBody(fetchMock, "POST", "/deployments/runs")).toMatchObject({

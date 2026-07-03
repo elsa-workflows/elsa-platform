@@ -22,16 +22,11 @@ public sealed class WorkflowArtifactRuntimeContractTests
     {
         var capability = WorkflowArtifactRuntimeCapability.FromOptions(_options);
 
-        capability.SupportedArtifactTypes.Should().Contain([ArtifactTypeIds.ElsaWorkflowDefinition, ArtifactTypeIds.ElsaLoomRecipe]);
+        capability.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
         capability.RuntimeFamily.Should().Be("elsa-workflows");
         capability.RuntimeVersion.Should().Be("4.0.0");
         capability.SupportedSchemaVersions.Should().Contain(ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion);
-        capability.Capabilities.Should().Contain([
-            "workflow-definition.apply",
-            "loom.recipe.apply",
-            ArtifactApplyCapability.For(ArtifactTypeIds.ElsaWorkflowDefinition),
-            ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe)
-        ]);
+        capability.Capabilities.Should().Contain("workflow-definition.apply");
         capability.Supports(Envelope(Payload())).Should().BeTrue();
     }
 
@@ -327,11 +322,50 @@ public sealed class WorkflowArtifactRuntimeContractTests
         rejected.Succeeded.Should().BeFalse();
     }
 
+    [Fact]
+    public void Validates_loom_recipe_artifacts_with_default_capabilities()
+    {
+        var payload = Payload();
+        var envelope = LoomRecipeEnvelope(payload);
+        var validator = new WorkflowArtifactRuntimeContractValidator(_options);
+
+        var result = validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference));
+
+        result.Status.Should().Be(WorkflowArtifactValidationStatus.Valid);
+    }
+
+    [Fact]
+    public void Rejects_loom_recipe_artifacts_when_loom_capability_is_not_advertised()
+    {
+        var payload = Payload();
+        var envelope = LoomRecipeEnvelope(payload);
+        var validator = new WorkflowArtifactRuntimeContractValidator(_options with { Capabilities = ["workflow-definition.apply"] });
+
+        var result = validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference));
+
+        result.Status.Should().Be(WorkflowArtifactValidationStatus.UnsupportedArtifactType);
+    }
+
     private static byte[] Payload(string json = """{"id":"payment-retry","version":42}""") =>
         Encoding.UTF8.GetBytes(json);
 
     private static WorkflowArtifactPayload PayloadResult(byte[] payload, ArtifactPayloadReference reference) =>
         new(reference, payload, "application/vnd.elsa.workflow-definition+json");
+
+    private static ArtifactEnvelope LoomRecipeEnvelope(byte[] payload) =>
+        Envelope(payload) with
+        {
+            ArtifactTypeId = ArtifactTypeIds.ElsaLoomRecipe,
+            CompatibilityHints =
+            [
+                new ArtifactCompatibilityHint(
+                    ArtifactTypeIds.ElsaLoomRecipe,
+                    "elsa-workflows",
+                    ">=4.0.0",
+                    [ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe)],
+                    new Dictionary<string, string>())
+            ]
+        };
 
     private static ArtifactEnvelope Envelope(byte[] payload)
     {

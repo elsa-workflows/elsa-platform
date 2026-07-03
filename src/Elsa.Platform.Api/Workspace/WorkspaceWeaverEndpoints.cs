@@ -1,5 +1,4 @@
 using Elsa.Platform.Api.Authentication;
-using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Elsa.Platform.Weaver.Core.Plans;
 using Elsa.Platform.Weaver.Core.Sessions;
 
@@ -10,19 +9,11 @@ public static class WorkspaceWeaverEndpoints
     public static IEndpointRouteBuilder MapWorkspaceWeaverEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/workspaces/{workspaceId:guid}/weaver")
-            .WithTags("Workspace Weaver");
+            .WithTags("Workspace Weaver")
+            .MapCommonApiExceptions();
 
-        group.MapGet("/configuration", async (
-            Guid workspaceId,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
-            WeaverSessionService weaver,
-            CancellationToken cancellationToken) =>
+        group.MapGet("/configuration", (WeaverSessionService weaver) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
             var availability = weaver.GetAvailability();
             return Results.Ok(new WorkspaceWeaverConfigurationResponse(
                 availability.Enabled,
@@ -32,26 +23,22 @@ public static class WorkspaceWeaverEndpoints
                 availability.StreamingEnabled,
                 availability.Modes,
                 availability.DisabledReason));
-        });
+        }).RequireWorkspaceAccess();
 
         group.MapPost("/sessions", async (
             Guid workspaceId,
             WorkspaceWeaverCreateSessionRequest request,
             HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             WeaverSessionService weaver,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
+            var access = context.GetWorkspaceAccess();
             try
             {
                 var session = await weaver.CreateSessionAsync(
                     workspaceId,
-                    access.Access!.OrganizationId == Guid.Empty ? null : access.Access.OrganizationId,
-                    access.Access.AccountId,
+                    access.OrganizationId == Guid.Empty ? null : access.OrganizationId,
+                    access.AccountId,
                     new CreateWeaverSessionRequest(request.RoutePath, request.Mode, request.Context ?? new Dictionary<string, string>()),
                     cancellationToken);
                 return Results.Created(
@@ -62,190 +49,96 @@ public static class WorkspaceWeaverEndpoints
             {
                 return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
             }
-        });
+        }).RequireWorkspaceAccess();
 
         group.MapGet("/sessions/{sessionId:guid}", async (
             Guid workspaceId,
             Guid sessionId,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             WeaverSessionService weaver,
             CancellationToken cancellationToken) =>
-        {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
-            try
-            {
-                return Results.Ok(ToDetailResponse(await weaver.GetSessionDetailAsync(workspaceId, sessionId, cancellationToken)));
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
-        });
+            Results.Ok(ToDetailResponse(await weaver.GetSessionDetailAsync(workspaceId, sessionId, cancellationToken))))
+            .RequireWorkspaceAccess();
 
         group.MapPost("/sessions/{sessionId:guid}/messages", async (
             Guid workspaceId,
             Guid sessionId,
             WorkspaceWeaverSendMessageRequest request,
             HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             WeaverSessionService weaver,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
             if (string.IsNullOrWhiteSpace(request.Prompt))
                 return Results.Problem(title: "Prompt is required.", statusCode: StatusCodes.Status400BadRequest);
 
-            try
-            {
-                var result = await weaver.SendMessageAsync(
-                    workspaceId,
-                    sessionId,
-                    access.Access!.AccountId,
-                    new SendWeaverMessageRequest(request.Prompt, request.Mode),
-                    cancellationToken);
-                return Results.Ok(new WorkspaceWeaverSendMessageResponse(result.MessageId, result.AssistantMessageId, result.SessionStatus));
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
-        });
+            var result = await weaver.SendMessageAsync(
+                workspaceId,
+                sessionId,
+                context.GetWorkspaceAccess().AccountId,
+                new SendWeaverMessageRequest(request.Prompt, request.Mode),
+                cancellationToken);
+            return Results.Ok(new WorkspaceWeaverSendMessageResponse(result.MessageId, result.AssistantMessageId, result.SessionStatus));
+        }).RequireWorkspaceAccess();
 
         group.MapGet("/sessions/{sessionId:guid}/events", async (
             Guid workspaceId,
             Guid sessionId,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             WeaverSessionService weaver,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
-            try
-            {
-                await weaver.GetSessionDetailAsync(workspaceId, sessionId, cancellationToken);
-                return Results.Ok(new[] { new WorkspaceWeaverEventResponse("session.idle", null) });
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
-        });
+            await weaver.GetSessionDetailAsync(workspaceId, sessionId, cancellationToken);
+            return Results.Ok(new[] { new WorkspaceWeaverEventResponse("session.idle", null) });
+        }).RequireWorkspaceAccess();
 
         group.MapPost("/sessions/{sessionId:guid}/cancel", async (
             Guid workspaceId,
             Guid sessionId,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             WeaverSessionService weaver,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
-            try
-            {
-                await weaver.GetSessionDetailAsync(workspaceId, sessionId, cancellationToken);
-                return Results.Accepted();
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
-        });
+            await weaver.GetSessionDetailAsync(workspaceId, sessionId, cancellationToken);
+            return Results.Accepted();
+        }).RequireWorkspaceAccess();
 
         group.MapGet("/plans/{planId:guid}", async (
             Guid workspaceId,
             Guid planId,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             IWeaverSessionStore store,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
             var plan = await store.GetPlanAsync(workspaceId, planId, cancellationToken);
             return plan is null ? Results.NotFound() : Results.Ok(ToPlanResponse(plan));
-        });
+        }).RequireWorkspaceAccess();
 
         group.MapPost("/plans/{planId:guid}/approvals", async (
             Guid workspaceId,
             Guid planId,
             WorkspaceWeaverPlanApprovalRequest request,
             HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             WeaverPlanExecutionService execution,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-            if (access.Access!.Role is not WorkspaceRole.Owner)
-                return Results.Forbid();
-
-            try
-            {
-                var plan = await execution.RecordApprovalAsync(
-                    workspaceId,
-                    planId,
-                    request.Version,
-                    access.Access.AccountId,
-                    request.Decision,
-                    request.ConfirmationId,
-                    request.Reason,
-                    cancellationToken);
-                return Results.Ok(new WorkspaceWeaverPlanApprovalResponse(plan.Id, plan.Version, plan.Status));
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
-            }
-        });
+            var plan = await execution.RecordApprovalAsync(
+                workspaceId,
+                planId,
+                request.Version,
+                context.GetWorkspaceAccess().AccountId,
+                request.Decision,
+                request.ConfirmationId,
+                request.Reason,
+                cancellationToken);
+            return Results.Ok(new WorkspaceWeaverPlanApprovalResponse(plan.Id, plan.Version, plan.Status));
+        }).RequireWorkspaceOwner();
 
         group.MapPost("/plans/{planId:guid}/execute", async (
             Guid workspaceId,
             Guid planId,
             WorkspaceWeaverPlanExecuteRequest request,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             WeaverPlanExecutionService execution,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-            if (access.Access!.Role is not WorkspaceRole.Owner)
-                return Results.Forbid();
-
-            try
-            {
-                var result = await execution.ExecuteAsync(workspaceId, planId, request.Version, cancellationToken);
-                return Results.Ok(new WorkspaceWeaverPlanExecuteResponse(result.Id, result.Status, result.LinkedResourceJson));
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Results.Problem(title: ex.Message, statusCode: StatusCodes.Status409Conflict);
-            }
-        });
+            var result = await execution.ExecuteAsync(workspaceId, planId, request.Version, cancellationToken);
+            return Results.Ok(new WorkspaceWeaverPlanExecuteResponse(result.Id, result.Status, result.LinkedResourceJson));
+        }).RequireWorkspaceOwner();
 
         return endpoints;
     }

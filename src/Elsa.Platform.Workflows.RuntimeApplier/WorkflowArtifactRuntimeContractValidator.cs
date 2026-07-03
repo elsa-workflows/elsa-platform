@@ -28,7 +28,7 @@ public sealed class WorkflowArtifactRuntimeContractValidator(WorkflowArtifactRun
         {
             return WorkflowArtifactValidationResult.Invalid(
                 WorkflowArtifactValidationStatus.UnsupportedArtifactType,
-                Error("workflow-artifact.unsupported-type", "Workflow runtime does not support this artifact type."));
+                Error("workflow-artifact.unsupported-type", "Workflow artifact type is not supported by this runtime."));
         }
 
         if (!capability.SupportedSchemaVersions.Contains(envelope.ArtifactSchemaVersion, StringComparer.OrdinalIgnoreCase))

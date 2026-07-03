@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Elsa.Platform.Deployment.Artifacts;
 using Elsa.Platform.Deployment.Core.Cockpit;
 
 namespace Elsa.Platform.Deployment.Core.Workspace;
@@ -195,8 +196,12 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
             validations.Add(new DeploymentValidation($"artifact-{artifactName}-engine", ValidationSeverity.Blocker, "Runtime compatibility", "Target engine is not visible in this workspace."));
         else if (engineRegistration is not null)
         {
-            var engineCapabilities = engineRegistration.Capabilities.Select(x => x.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var artifactTypeId = artifact.ArtifactTypeId ?? "";
+            var engineCapabilities = engineRegistration.Capabilities
+                .Select(x => ArtifactApplyCapability.Normalize(artifactTypeId, x.Id))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             var missing = artifact.CompatibilityHints
+                .Select(hint => ArtifactApplyCapability.Normalize(artifactTypeId, hint))
                 .Where(hint => !engineCapabilities.Contains(hint))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
