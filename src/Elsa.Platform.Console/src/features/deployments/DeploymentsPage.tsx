@@ -45,7 +45,6 @@ import {
   getRevisionDetail,
   previewPromotion,
   promoteRevision,
-  queueDeploymentRun,
   queueRollbackRun,
   registerDeploymentEngine,
   rotateDeploymentCredentialReference,
@@ -57,8 +56,23 @@ import {
   updateDeploymentSecretStore,
   verifyDeploymentEngine
 } from "@/features/deployments/deploymentApi";
-import { listWorkspaceArtifacts, workspaceArtifactDownloadUrl } from "@/features/artifacts/artifactApi";
+import { getArtifactUploadCapabilities, listWorkspaceArtifacts, workspaceArtifactDownloadUrl } from "@/features/artifacts/artifactApi";
 import type { WorkspaceArtifact } from "@/features/artifacts/artifactModels";
+import {
+  artifactDisplayName,
+  artifactRevisionRecord,
+  runDeployChain,
+  useDeployChain
+} from "@/features/deployments/deployFlow";
+import { seedDefaultTiers } from "@/features/deployments/tierPresets";
+import {
+  EnvironmentRowsEditor,
+  TierSeedCard,
+  WizardArtifactStep,
+  WizardDeployStep,
+  WizardDoneScreen,
+  type EnvironmentRow
+} from "@/features/deployments/SetupWizardSteps";
 import {
   DeploymentSetupPanel,
   engineRegistrationRequest,
@@ -131,6 +145,7 @@ type CreatedSetupApplication = {
 type CreatedSetupEnvironment = {
   id: string;
   name: string;
+  tierId: string | null;
 };
 
 type CredentialStoreValues = {
@@ -150,7 +165,7 @@ type CredentialReferenceValues = {
 
 type EngineCredentialMode = "Create" | "Existing" | "Deferred";
 
-type SetupWizardStep = "application" | "environment" | "credentials" | "engine";
+type SetupWizardStep = "application" | "environment" | "credentials" | "engine" | "artifact" | "deploy" | "done";
 
 const secretStoreTypeOptions: { value: DeploymentSecretStoreType; label: string; description: string; referenceLabel: string; referencePlaceholder: string }[] = [
   {
@@ -457,20 +472,57 @@ function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
   const queryClient = useQueryClient();
   const {
     workspaceId,
+    data,
     activeTiers,
     canManageSetup,
+    canManageDesiredState,
+    canExecuteDeployment,
     secretStores,
     credentialReferences
   } = context;
+  const canManageTiers = useWorkspaceContext().selectedWorkspace?.role === "Owner";
   const [step, setStep] = useState<SetupWizardStep>("application");
   const [createdApplication, setCreatedApplication] = useState<CreatedSetupApplication | null>(null);
   const [createdEnvironments, setCreatedEnvironments] = useState<CreatedSetupEnvironment[]>([]);
-  const [activeEnvironment, setActiveEnvironment] = useState<CreatedSetupEnvironment | null>(null);
   const [engineFormVersion, setEngineFormVersion] = useState(0);
   const [engineCounts, setEngineCounts] = useState<Record<string, number>>({});
+  const [selectedArtifact, setSelectedArtifact] = useState<WorkspaceArtifact | null>(null);
+  const [selectedEngineId, setSelectedEngineId] = useState("");
+  const [runId, setRunId] = useState<string | null>(null);
   const credentialManagement = useCredentialManagementMutations(workspaceId);
+  const deployChain = useDeployChain(workspaceId);
+
+  const uploadCapabilities = useQuery({
+    queryKey: ["artifacts", workspaceId, "upload-capabilities"],
+    queryFn: () => getArtifactUploadCapabilities(workspaceId),
+    enabled: Boolean(workspaceId)
+  });
+
+  // The "deliver v1" chain deploys into the first Dev-tier environment (falling back to the first
+  // created environment), so the wizard always ends at a running workflow in the lowest tier.
+  const deployEnvironment = useMemo(() => {
+    const devTierIds = new Set(activeTiers.filter((tier) => tier.name.toLowerCase() === "dev").map((tier) => tier.id));
+    return createdEnvironments.find((environment) => environment.tierId && devTierIds.has(environment.tierId)) ?? createdEnvironments[0] ?? null;
+  }, [activeTiers, createdEnvironments]);
+  const deployEnginesForEnvironment = deployEnvironment ? enginesForEnvironment(data, deployEnvironment.id) : [];
+  // The engine form registers against the most recently created environment.
+  const activeEnvironment = createdEnvironments[createdEnvironments.length - 1] ?? null;
+
+  useEffect(() => {
+    if (deployEnginesForEnvironment.some((engine) => engine.id === selectedEngineId)) return;
+    setSelectedEngineId(deployEnginesForEnvironment.length === 1 ? deployEnginesForEnvironment[0].id : "");
+  }, [deployEnginesForEnvironment, selectedEngineId]);
 
   const refreshSetupData = () => queryClient.invalidateQueries({ queryKey: queryKeys.deploymentCockpit(workspaceId) });
+  const seedTiers = useMutation({
+    mutationFn: () => seedDefaultTiers(workspaceId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.deploymentTiers(workspaceId) }),
+        refreshSetupData()
+      ]);
+    }
+  });
   const createApplication = useMutation({
     mutationFn: (values: ApplicationCreateValues) =>
       createDeploymentApplication(workspaceId, { name: values.name, description: null }),
@@ -480,19 +532,22 @@ function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
       await refreshSetupData();
     }
   });
-  const createEnvironment = useMutation({
-    mutationFn: async (values: DeploymentSetupValues) => {
+  const createEnvironments = useMutation({
+    mutationFn: async (rows: EnvironmentRow[]) => {
       if (!createdApplication) throw new Error("Create the application before adding environments.");
-      const environment = await createDeploymentEnvironment(workspaceId, createdApplication.id, {
-        name: values.environmentName,
-        tier: values.environmentTier,
-        tierId: values.environmentTierId
-      });
-      return { id: environment.id, name: environment.name || values.environmentName };
+      const created: CreatedSetupEnvironment[] = [];
+      for (const row of rows) {
+        const environment = await createDeploymentEnvironment(workspaceId, createdApplication.id, {
+          name: row.name,
+          tier: row.tier,
+          tierId: row.tierId
+        });
+        created.push({ id: environment.id, name: environment.name || row.name, tierId: environment.tierId ?? row.tierId });
+      }
+      return created;
     },
-    onSuccess: async (environment) => {
-      setCreatedEnvironments((current) => [...current, environment]);
-      setActiveEnvironment(environment);
+    onSuccess: async (created) => {
+      setCreatedEnvironments((current) => [...current, ...created]);
       setStep("credentials");
       await refreshSetupData();
     }
@@ -508,12 +563,39 @@ function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
       await refreshSetupData();
     }
   });
+  // The deploy step chains revision creation -> deployability check -> confirmation -> run behind a
+  // single action. The user only ever sees "Deploy" and progress; confirmation is internal.
+  const deploy = useMutation({
+    mutationFn: async () => {
+      if (!createdApplication || !deployEnvironment) throw new Error("Create an environment before deploying.");
+      if (!selectedArtifact) throw new Error("Choose an artifact before deploying.");
+      if (!selectedEngineId) throw new Error("Choose a target engine before deploying.");
+      const revision = await createDesiredStateRevision(workspaceId, createdApplication.id, deployEnvironment.id, {
+        label: `v1 - ${artifactDisplayName(selectedArtifact)}`,
+        commit: null,
+        records: [artifactRevisionRecord(selectedArtifact)]
+      });
+      const run = await deployChain.start({
+        revisionId: revision.id,
+        targetEnvironmentId: deployEnvironment.id,
+        targetEngineId: selectedEngineId
+      });
+      return run;
+    },
+    onSuccess: async (run) => {
+      setRunId(run.id);
+      setStep("done");
+      await refreshSetupData();
+    }
+  });
+
   const finishPath = createdApplication ? applicationPath(createdApplication.id) : "/admin/deployments/applications";
+  const needsTierSeeding = activeTiers.length === 0;
 
   return (
     <FormPageShell
       title="New application setup"
-      description="Create an application, then add deployment environments and engines."
+      description="Create an application, add environments and engines, then deliver the first version to Dev."
       breadcrumbs={[
         { label: "Deployments", to: "/admin/deployments" },
         { label: "Applications", to: "/admin/deployments/applications" },
@@ -522,7 +604,15 @@ function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
     >
       <div className="space-y-4">
         <SetupWizardProgress step={step} />
-        {createdApplication ? (
+        {needsTierSeeding && step !== "done" ? (
+          <TierSeedCard
+            isSeeding={seedTiers.isPending}
+            error={seedTiers.error instanceof Error ? seedTiers.error.message : undefined}
+            canManageTiers={canManageTiers}
+            onSeed={() => seedTiers.mutate()}
+          />
+        ) : null}
+        {createdApplication && step !== "done" ? (
           <SetupWizardSummary
             application={createdApplication}
             environments={createdEnvironments}
@@ -539,19 +629,21 @@ function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
         ) : null}
         {step === "environment" && createdApplication ? (
           <div className="space-y-3">
-            <DeploymentSetupPanel
-              fixedApplicationName={createdApplication.name}
+            <EnvironmentRowsEditor
+              activeTiers={activeTiers}
               canManageSetup={canManageSetup}
-              tiers={activeTiers}
-              submitLabel="Add environment"
-              isSubmitting={createEnvironment.isPending}
-              error={createEnvironment.error instanceof Error ? createEnvironment.error.message : undefined}
-              onSubmit={(values) => createEnvironment.mutate(values)}
+              isSubmitting={createEnvironments.isPending}
+              error={createEnvironments.error instanceof Error ? createEnvironments.error.message : undefined}
+              createdEnvironmentNames={createdEnvironments.map((environment) => environment.name)}
+              onCreate={(rows) => createEnvironments.mutate(rows)}
             />
             {createdEnvironments.length > 0 ? (
               <div className="flex flex-wrap gap-2">
-                <Link to={finishPath} className={buttonClassName()}>
-                  Finish setup
+                <Button type="button" onClick={() => setStep("credentials")}>
+                  Continue to credentials
+                </Button>
+                <Link to={finishPath} className={buttonClassName("secondary")}>
+                  Finish without deploying
                 </Link>
               </div>
             ) : null}
@@ -612,14 +704,56 @@ function NewDeploymentSetupReady({ context }: { context: DeploymentContext }) {
               />
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button type="button" onClick={() => setStep("artifact")}>
+                Continue to artifact
+              </Button>
               <SecondaryButton type="button" onClick={() => setStep("environment")}>
                 Add another environment
               </SecondaryButton>
-              <Link to={finishPath} className={buttonClassName()}>
-                Finish setup
+              <Link to={finishPath} className={buttonClassName("secondary")}>
+                Finish without deploying
               </Link>
             </div>
           </div>
+        ) : null}
+        {step === "artifact" && createdApplication ? (
+          <WizardArtifactStep
+            workspaceId={workspaceId}
+            canManageSetup={canManageSetup}
+            maxUploadBytes={uploadCapabilities.data?.maxUploadBytes ?? 52_428_800}
+            selectedArtifactId={selectedArtifact?.id ?? ""}
+            onSelectArtifact={setSelectedArtifact}
+            onContinue={() => setStep("deploy")}
+            onBack={() => setStep("engine")}
+          />
+        ) : null}
+        {step === "deploy" && createdApplication && deployEnvironment ? (
+          <div className="space-y-3">
+            {!canManageDesiredState || !canExecuteDeployment ? (
+              <p className="rounded-ui border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                Desired-state and deployment execute permissions are required to deploy the first version.
+              </p>
+            ) : null}
+            <WizardDeployStep
+              phase={deployChain.phase}
+              error={deploy.error instanceof Error ? deploy.error.message : deployChain.error ?? undefined}
+              environmentName={deployEnvironment.name}
+              artifactName={selectedArtifact ? artifactDisplayName(selectedArtifact) : ""}
+              engineOptions={deployEnginesForEnvironment.map((engine) => ({ id: engine.id, name: engine.name }))}
+              selectedEngineId={selectedEngineId}
+              onSelectEngine={setSelectedEngineId}
+              onDeploy={() => deploy.mutate()}
+              onBack={() => setStep("artifact")}
+            />
+          </div>
+        ) : null}
+        {step === "done" && createdApplication && deployEnvironment && runId ? (
+          <WizardDoneScreen
+            workspaceId={workspaceId}
+            runId={runId}
+            environmentName={deployEnvironment.name}
+            applicationPath={applicationPath(createdApplication.id)}
+          />
         ) : null}
       </div>
     </FormPageShell>
@@ -1038,22 +1172,31 @@ function CredentialStoreReferencesSection({
   );
 }
 
+const setupWizardSteps: { id: SetupWizardStep; label: string }[] = [
+  { id: "application", label: "Application" },
+  { id: "environment", label: "Environments" },
+  { id: "credentials", label: "Credentials" },
+  { id: "engine", label: "Engines" },
+  { id: "artifact", label: "Artifact" },
+  { id: "deploy", label: "Deploy" }
+];
+
 function SetupWizardProgress({ step }: { step: SetupWizardStep }) {
-  const steps: { id: SetupWizardStep; label: string }[] = [
-    { id: "application", label: "Application" },
-    { id: "environment", label: "Environments" },
-    { id: "credentials", label: "Credentials" },
-    { id: "engine", label: "Engines" }
-  ];
+  const activeIndex = setupWizardSteps.findIndex((item) => item.id === step);
+  const effectiveIndex = step === "done" ? setupWizardSteps.length : activeIndex;
 
   return (
     <div className="flex flex-wrap gap-2 text-xs font-medium uppercase text-muted-foreground">
-      {steps.map((item) => (
+      {setupWizardSteps.map((item, index) => (
         <span
           key={item.id}
           className={cn(
             "rounded-ui border border-border px-3 py-1",
-            step === item.id ? "border-primary bg-primary/10 text-primary" : "bg-surface"
+            step === item.id
+              ? "border-primary bg-primary/10 text-primary"
+              : index < effectiveIndex
+                ? "border-success/40 bg-success/10 text-success"
+                : "bg-surface"
           )}
         >
           {item.label}
@@ -1358,18 +1501,13 @@ function DeploymentRevisionDetailReady({ context, applicationId, revisionId }: {
         throw new Error("Revision has not loaded.");
       if (!selectedEngineId)
         throw new Error("Choose an engine before deploying this revision.");
-      const confirmation = await createActionConfirmation(workspaceId, {
-        actionType: "Deploy",
-        targetId: summary.revision.id,
-        lifetimeSeconds: null
-      });
-      return queueDeploymentRun(workspaceId, {
-        sourceRevisionId: summary.revision.id,
+      const { run } = await runDeployChain(workspaceId, {
+        revisionId: summary.revision.id,
         targetEnvironmentId: summary.revision.environmentId,
         targetEngineId: selectedEngineId,
-        confirmationId: confirmation.id,
-        mode: "Apply"
+        skipDeployabilityCheck: true
       });
+      return run;
     },
     onSuccess: async () => {
       await Promise.all([
@@ -1761,22 +1899,55 @@ function DeploymentEnvironmentReady({
       if (!comparison || !targetEngine || !promotedTargetRevisionId)
         throw new Error("Create a target revision before deployment.");
 
-      const confirmation = await createActionConfirmation(workspaceId, {
-        actionType: "Deploy",
-        targetId: promotedTargetRevisionId,
-        lifetimeSeconds: null
-      });
-      return queueDeploymentRun(workspaceId, {
-        sourceRevisionId: promotedTargetRevisionId,
+      const { run } = await runDeployChain(workspaceId, {
+        revisionId: promotedTargetRevisionId,
         targetEnvironmentId: comparison.targetEnvironmentId,
         targetEngineId: targetEngine.id,
-        confirmationId: confirmation.id,
-        mode: "Apply"
+        skipDeployabilityCheck: true
       });
+      return run;
     },
     onSuccess: (run) => {
       setPromotionNotice(`Deployment run ${run.status.toLowerCase()} for revision ${run.sourceRevisionId}.`);
       void context.refreshDeploymentCockpit();
+    }
+  });
+  // One-click "Promote & deploy": create the target revision, then deploy it behind a single action.
+  // The confirmation token is minted internally as part of the deploy chain.
+  const promoteAndDeploy = useMutation({
+    mutationFn: async () => {
+      assertPromotionReady(promotionReadinessIssues);
+      const source = getEnvironment(sourceEnvironmentId);
+      const targetEngine = getTargetEngine(targetEnvironmentId);
+      if (!source?.desiredRevision.id || !targetEngine)
+        throw new Error("Choose a source revision and target engine before promoting and deploying.");
+
+      const promotion = await promoteRevision(workspaceId, {
+        sourceEnvironmentId,
+        targetEnvironmentId,
+        sourceRevisionId: source.desiredRevision.id,
+        targetEngineId: targetEngine.id,
+        label: `Promoted from ${source.name} r${source.desiredRevision.revision}`,
+        commit: source.desiredRevision.commit || null
+      });
+      setPreviewComparison(promotion.comparison);
+      setPromotedTargetRevisionId(promotion.targetRevision.id);
+
+      // The promotion preview already ran live validation, so the deploy chain skips the redundant
+      // deployability check and goes straight to minting the confirmation and queueing the run.
+      const { run } = await runDeployChain(workspaceId, {
+        revisionId: promotion.targetRevision.id,
+        targetEnvironmentId: promotion.comparison.targetEnvironmentId,
+        targetEngineId: targetEngine.id,
+        skipDeployabilityCheck: true
+      });
+      return { promotion, run };
+    },
+    onSuccess: async ({ promotion, run }) => {
+      setPromotionNotice(
+        `Target revision r${promotion.targetRevision.revisionNumber} promoted and deployment run ${run.status.toLowerCase()}.`
+      );
+      await context.refreshDeploymentCockpit();
     }
   });
   const rollbackRevision = useMutation({
@@ -1829,6 +2000,7 @@ function DeploymentEnvironmentReady({
     setPromotionNotice("");
     preview.reset();
     promoteTargetRevision.reset();
+    promoteAndDeploy.reset();
     deployRevision.reset();
     rollbackRevision.reset();
   }
@@ -1937,12 +2109,15 @@ function DeploymentEnvironmentReady({
               isQueueingDeployment={deployRevision.isPending}
               isQueueingRollback={rollbackRevision.isPending}
               isPromoting={promoteTargetRevision.isPending}
+              isPromotingAndDeploying={promoteAndDeploy.isPending}
               notice={promotionNotice}
               error={
                 preview.error instanceof Error
                   ? preview.error.message
                   : promoteTargetRevision.error instanceof Error
                     ? promoteTargetRevision.error.message
+                  : promoteAndDeploy.error instanceof Error
+                    ? promoteAndDeploy.error.message
                   : deployRevision.error instanceof Error
                     ? deployRevision.error.message
                     : rollbackRevision.error instanceof Error
@@ -1956,6 +2131,7 @@ function DeploymentEnvironmentReady({
                 preview.mutate();
               }}
               onPromote={() => promoteTargetRevision.mutate()}
+              onPromoteAndDeploy={() => promoteAndDeploy.mutate()}
               onDeploy={() => deployRevision.mutate()}
               onRollback={() => rollbackRevision.mutate()}
             />
@@ -4588,26 +4764,6 @@ function newRevisionPathForEnvironment(data: DeploymentCockpit, environmentId: s
 
 function enginePath(applicationId: string, environmentId: string, engineId: string) {
   return `${environmentPath(applicationId, environmentId)}/engines/${encodeURIComponent(engineId)}`;
-}
-
-function artifactDisplayName(artifact: WorkspaceArtifact) {
-  const name = artifact.displayMetadata?.name ?? artifact.manifest.name ?? artifact.artifactId;
-  const version = artifact.displayMetadata?.version ?? artifact.manifest.version;
-  return version ? `${name} ${version}` : name;
-}
-
-function artifactRevisionRecord(artifact: WorkspaceArtifact): WorkspaceDesiredStateRecordRequest {
-  return {
-    kind: "ArtifactReference",
-    name: artifactDisplayName(artifact),
-    payload: {
-      artifactRecordId: artifact.id,
-      artifactId: artifact.artifactId,
-      artifactTypeId: artifact.artifactTypeId ?? "elsa.workflow-definition",
-      contentDigest: artifact.contentDigest,
-      metadata: artifact.displayMetadata?.labels ?? {}
-    }
-  };
 }
 
 function observabilityRevisionRecord({

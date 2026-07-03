@@ -27,7 +27,8 @@ describe("AppShell", () => {
     expect(screen.getAllByRole("link", { name: "Sources" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Packages" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Sync Runs" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Deployments").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Deliver").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Operate").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Applications" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Engine credentials" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Tiers" }).length).toBeGreaterThan(0);
@@ -37,9 +38,9 @@ describe("AppShell", () => {
     expect(screen.getAllByRole("link", { name: "Console" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Managed Runtimes").length).toBeGreaterThan(0);
     expect(navigationText).toContain("PlatformOverview");
-    expect(navigationText).toContain("DeploymentsOverviewApplicationsEngine credentialsArtifactsTiers");
+    expect(navigationText).toContain("DeliverOverviewApplicationsArtifacts");
+    expect(navigationText).toContain("OperateTiersEngine credentialsConsole");
     expect(navigationText).toContain("Runtime BuilderBuild configurations");
-    expect(navigationText).toContain("OperationsConsole");
     expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
     expect(await screen.findAllByRole("combobox", { name: "Organization" }, { timeout: 5_000 })).toHaveLength(2);
     expect(screen.getAllByRole("combobox", { name: "Workspace" })).toHaveLength(2);
