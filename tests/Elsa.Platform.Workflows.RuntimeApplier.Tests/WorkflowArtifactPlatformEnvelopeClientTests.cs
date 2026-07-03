@@ -52,6 +52,18 @@ public sealed class WorkflowArtifactPlatformEnvelopeClientTests
     }
 
     [Fact]
+    public async Task Rejects_artifact_detail_without_an_artifact_type()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, ArtifactJson(artifactTypeId: null));
+        var client = new WorkflowArtifactPlatformEnvelopeClient(new HttpClient(handler), _options);
+
+        var act = () => client.GetEnvelopeAsync(CommandArtifact());
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Platform artifact response does not include an artifact type.");
+    }
+
+    [Fact]
     public async Task Rejects_artifact_detail_from_different_workspace()
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, ArtifactJson(workspaceId: Guid.Parse("90000000-0000-0000-0000-000000000001")));
@@ -78,7 +90,7 @@ public sealed class WorkflowArtifactPlatformEnvelopeClientTests
     private static WorkflowRuntimeCommandArtifactReference CommandArtifact() =>
         new(ArtifactRecordId, "elsa.workflow-definition:payment-retry", ArtifactTypeIds.ElsaWorkflowDefinition, Digest);
 
-    private static string ArtifactJson(Guid? workspaceId = null) =>
+    private static string ArtifactJson(Guid? workspaceId = null, string? artifactTypeId = "elsa.workflow-definition") =>
         $$"""
           {
             "id": "{{ArtifactRecordId:D}}",
@@ -100,7 +112,7 @@ public sealed class WorkflowArtifactPlatformEnvelopeClientTests
             "createdAt": "2026-05-29T12:00:00Z",
             "updatedAt": "2026-05-29T12:00:00Z",
             "envelopeVersion": "platform.elsa.io/artifact-envelope/v1alpha1",
-            "artifactTypeId": "elsa.workflow-definition",
+            "artifactTypeId": {{(artifactTypeId is null ? "null" : $"\"{artifactTypeId}\"")}},
             "artifactSchemaVersion": "1.0",
             "manifestDigest": null,
             "payloadReference": {

@@ -146,10 +146,8 @@ public sealed class WorkspaceArtifactService(
 
     private RegisterWorkspaceArtifactRequest NormalizeRegistration(RegisterWorkspaceArtifactRequest request)
     {
-        var artifactTypeId = string.IsNullOrWhiteSpace(request.ArtifactTypeId)
-            ? ArtifactTypeIds.ElsaLoomRecipe
-            : request.ArtifactTypeId.Trim();
-        var producer = request.Producer ?? new ArtifactProducer("manual", "Manual registration");
+        var artifactTypeId = ArtifactEnvelopeDefaults.ArtifactTypeIdOrDefault(request.ArtifactTypeId);
+        var producer = request.Producer ?? ArtifactEnvelopeDefaults.DefaultProducer();
         var displayMetadata = request.DisplayMetadata ?? new ArtifactDisplayMetadata(
             request.Manifest.Name,
             request.Manifest.Version,
@@ -158,9 +156,7 @@ public sealed class WorkspaceArtifactService(
             new Dictionary<string, string>(),
             request.Manifest.Environment);
         var payloadReference = request.PayloadReference ?? new ArtifactPayloadReference(request.ReferenceProvider, request.Reference);
-        var compatibilityHints = (request.CompatibilityHints ?? [new ArtifactCompatibilityHint(artifactTypeId, "elsa-workflows", null, [ArtifactApplyCapability.For(artifactTypeId)], new Dictionary<string, string>())])
-            .Select(NormalizeCompatibilityHint)
-            .ToList();
+        var compatibilityHints = ArtifactEnvelopeDefaults.NormalizeCompatibilityHints(artifactTypeId, request.CompatibilityHints);
 
         return request with
         {
@@ -205,30 +201,19 @@ public sealed class WorkspaceArtifactService(
         new(code, severity, _envelopeValidator.SafeMessage(message));
 
     private static ArtifactEnvelope ToEnvelope(RegisterWorkspaceArtifactRequest request) =>
-        new(
+        ArtifactEnvelopeDefaults.CreateEnvelope(
             request.ArtifactId,
-            request.EnvelopeVersion ?? ArtifactEnvelopeConstants.EnvelopeVersion,
-            request.ArtifactTypeId ?? ArtifactTypeIds.ElsaLoomRecipe,
-            request.ArtifactSchemaVersion ?? ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion,
+            request.EnvelopeVersion,
+            request.ArtifactTypeId,
+            request.ArtifactSchemaVersion,
             new Elsa.Platform.Deployment.Abstractions.Artifacts.ArtifactDigest(request.ContentDigest.Algorithm, request.ContentDigest.Value),
             request.ManifestDigest is null ? null : new Elsa.Platform.Deployment.Abstractions.Artifacts.ArtifactDigest(request.ManifestDigest.Algorithm, request.ManifestDigest.Value),
-            request.PayloadReference ?? new ArtifactPayloadReference(request.ReferenceProvider, request.Reference),
-            request.Producer ?? new ArtifactProducer("manual", "Manual registration"),
-            request.DisplayMetadata ?? new ArtifactDisplayMetadata(request.Manifest.Name, request.Manifest.Version, null, new Dictionary<string, string>(), new Dictionary<string, string>(), request.Manifest.Environment),
-            (request.CompatibilityHints ?? [new ArtifactCompatibilityHint(request.ArtifactTypeId ?? ArtifactTypeIds.ElsaLoomRecipe, "elsa-workflows", null, [ArtifactApplyCapability.For(request.ArtifactTypeId ?? ArtifactTypeIds.ElsaLoomRecipe)], new Dictionary<string, string>())])
-                .Select(NormalizeCompatibilityHint)
-                .ToList(),
-            request.Diagnostics.Select(x => new ArtifactEnvelopeDiagnostic(x.Code, x.Severity.ToEnvelopeSeverity(), x.Message)).ToList());
-
-    private static ArtifactCompatibilityHint NormalizeCompatibilityHint(ArtifactCompatibilityHint hint) =>
-        hint with
-        {
-            RequiredCapabilities = hint.RequiredCapabilities
-                .Select(capability => ArtifactApplyCapability.Normalize(hint.RequiredArtifactType, capability))
-                .Where(capability => !string.IsNullOrWhiteSpace(capability))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList()
-        };
+            request.PayloadReference,
+            request.Producer,
+            request.DisplayMetadata,
+            request.CompatibilityHints,
+            request.Diagnostics.Select(x => new ArtifactEnvelopeDiagnostic(x.Code, x.Severity.ToEnvelopeSeverity(), x.Message)).ToList(),
+            new ArtifactEnvelopeFallback(request.ReferenceProvider, request.Reference, request.Manifest.Name, request.Manifest.Version, request.Manifest.Environment));
 
     private static string? ResolveLocalPath(string reference)
     {

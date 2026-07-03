@@ -372,7 +372,7 @@ public sealed class WorkspaceArtifactUploadService(
             payloadReference,
             new ArtifactProducer("upload", "Elsa Platform Console", null, metadata.Source),
             displayMetadata,
-            [new ArtifactCompatibilityHint(ArtifactTypeIds.ElsaLoomRecipe, "elsa-workflows", null, ["loom.recipe.apply"], new Dictionary<string, string>())]);
+            ArtifactEnvelopeDefaults.DefaultCompatibilityHints(ArtifactTypeIds.ElsaLoomRecipe));
     }
 
     private string CreateStagingPath(Guid workspaceId, Guid uploadId) =>
