@@ -37,7 +37,7 @@ public sealed record WorkflowArtifactRuntimeOptions
     public IReadOnlyList<string> SupportedArtifactSchemaVersions { get; init; } =
         [ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion];
 
-    public IReadOnlyList<string> Capabilities { get; init; } = ["workflow-definition.apply"];
+    public IReadOnlyList<string> Capabilities { get; init; } = ["workflow-definition.apply", "loom.recipe.apply"];
 
     public long MaxPayloadBytes { get; init; } = 4 * 1024 * 1024;
 

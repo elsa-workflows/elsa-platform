@@ -2324,43 +2324,40 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         string.IsNullOrWhiteSpace(envelopeVersion) ? ArtifactEnvelopeConstants.EnvelopeVersion : envelopeVersion;
 
     private static string NormalizeArtifactTypeId(string? artifactTypeId) =>
-        string.IsNullOrWhiteSpace(artifactTypeId) ? ArtifactTypeIds.ElsaLoomRecipe : artifactTypeId;
+        ArtifactEnvelopeDefaults.ArtifactTypeIdOrDefault(artifactTypeId);
 
     private static string NormalizeArtifactSchemaVersion(string? artifactSchemaVersion) =>
         string.IsNullOrWhiteSpace(artifactSchemaVersion) ? ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion : artifactSchemaVersion;
 
     private static ArtifactPayloadReference NormalizePayloadReference(RegisterWorkspaceArtifactRequest request) =>
-        request.PayloadReference ?? new ArtifactPayloadReference(request.ReferenceProvider, request.Reference);
+        request.PayloadReference ?? ArtifactEnvelopeDefaults.DefaultPayloadReference(request.ReferenceProvider, request.Reference);
 
     private static ArtifactProducer NormalizeProducer(ArtifactProducer? producer) =>
-        producer ?? new ArtifactProducer("manual", "Manual registration");
+        producer ?? ArtifactEnvelopeDefaults.DefaultProducer();
 
     private static ArtifactDisplayMetadata NormalizeDisplayMetadata(RegisterWorkspaceArtifactRequest request) =>
-        request.DisplayMetadata ?? new ArtifactDisplayMetadata(
+        request.DisplayMetadata ?? ArtifactEnvelopeDefaults.DefaultDisplayMetadata(
             request.Manifest.Name,
             request.Manifest.Version,
-            null,
-            new Dictionary<string, string>(),
-            new Dictionary<string, string>(),
             request.Manifest.Environment);
 
     private static IReadOnlyList<ArtifactCompatibilityHint> NormalizeCompatibilityHints(string? artifactTypeId, IReadOnlyList<ArtifactCompatibilityHint>? compatibilityHints) =>
-        compatibilityHints ?? [new ArtifactCompatibilityHint(NormalizeArtifactTypeId(artifactTypeId), "elsa-workflows", null, ["loom.recipe.apply"], new Dictionary<string, string>())];
+        compatibilityHints ?? ArtifactEnvelopeDefaults.DefaultCompatibilityHints(artifactTypeId);
 
     private static ArtifactPayloadReference DeserializePayloadReference(string json, string referenceProvider, string reference) =>
         string.IsNullOrWhiteSpace(json)
-            ? new ArtifactPayloadReference(referenceProvider, reference)
-            : JsonSerializer.Deserialize<ArtifactPayloadReference>(json) ?? new ArtifactPayloadReference(referenceProvider, reference);
+            ? ArtifactEnvelopeDefaults.DefaultPayloadReference(referenceProvider, reference)
+            : JsonSerializer.Deserialize<ArtifactPayloadReference>(json) ?? ArtifactEnvelopeDefaults.DefaultPayloadReference(referenceProvider, reference);
 
     private static ArtifactProducer DeserializeProducer(string json) =>
         string.IsNullOrWhiteSpace(json)
-            ? new ArtifactProducer("manual", "Manual registration")
-            : JsonSerializer.Deserialize<ArtifactProducer>(json) ?? new ArtifactProducer("manual", "Manual registration");
+            ? ArtifactEnvelopeDefaults.DefaultProducer()
+            : JsonSerializer.Deserialize<ArtifactProducer>(json) ?? ArtifactEnvelopeDefaults.DefaultProducer();
 
     private static ArtifactDisplayMetadata DeserializeDisplayMetadata(string json, string? manifestName, string? manifestVersion, string? manifestEnvironment) =>
         string.IsNullOrWhiteSpace(json)
-            ? new ArtifactDisplayMetadata(manifestName, manifestVersion, null, new Dictionary<string, string>(), new Dictionary<string, string>(), manifestEnvironment)
-            : JsonSerializer.Deserialize<ArtifactDisplayMetadata>(json) ?? new ArtifactDisplayMetadata(manifestName, manifestVersion, null, new Dictionary<string, string>(), new Dictionary<string, string>(), manifestEnvironment);
+            ? ArtifactEnvelopeDefaults.DefaultDisplayMetadata(manifestName, manifestVersion, manifestEnvironment)
+            : JsonSerializer.Deserialize<ArtifactDisplayMetadata>(json) ?? ArtifactEnvelopeDefaults.DefaultDisplayMetadata(manifestName, manifestVersion, manifestEnvironment);
 
     private static IReadOnlyList<ArtifactCompatibilityHint> DeserializeCompatibilityHints(string json, string? artifactTypeId) =>
         string.IsNullOrWhiteSpace(json)

@@ -22,11 +22,16 @@ public sealed class WorkflowArtifactRuntimeContractTests
     {
         var capability = WorkflowArtifactRuntimeCapability.FromOptions(_options);
 
-        capability.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
+        capability.SupportedArtifactTypes.Should().Contain([ArtifactTypeIds.ElsaWorkflowDefinition, ArtifactTypeIds.ElsaLoomRecipe]);
         capability.RuntimeFamily.Should().Be("elsa-workflows");
         capability.RuntimeVersion.Should().Be("4.0.0");
         capability.SupportedSchemaVersions.Should().Contain(ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion);
-        capability.Capabilities.Should().Contain("workflow-definition.apply");
+        capability.Capabilities.Should().Contain([
+            "workflow-definition.apply",
+            "loom.recipe.apply",
+            ArtifactApplyCapability.For(ArtifactTypeIds.ElsaWorkflowDefinition),
+            ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe)
+        ]);
         capability.Supports(Envelope(Payload())).Should().BeTrue();
     }
 

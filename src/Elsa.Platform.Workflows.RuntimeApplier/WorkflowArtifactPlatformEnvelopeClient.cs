@@ -60,19 +60,29 @@ public sealed class WorkflowArtifactPlatformEnvelopeClient(
         return options;
     }
 
-    private static ArtifactEnvelope ToEnvelope(WorkspaceArtifactDto dto) =>
-        new(
+    private static ArtifactEnvelope ToEnvelope(WorkspaceArtifactDto dto)
+    {
+        // The runtime consumes an untrusted platform response and routes strictly on the artifact
+        // type (loom recipe vs plain workflow definition), so a missing type is a malformed response
+        // to reject rather than silently default — an assumed type could route the payload to the
+        // wrong applier path.
+        if (string.IsNullOrWhiteSpace(dto.ArtifactTypeId))
+            throw new InvalidOperationException("Platform artifact response does not include an artifact type.");
+
+        return ArtifactEnvelopeDefaults.CreateEnvelope(
             dto.ArtifactId,
-            dto.EnvelopeVersion ?? ArtifactEnvelopeConstants.EnvelopeVersion,
-            dto.ArtifactTypeId ?? ArtifactTypeIds.ElsaWorkflowDefinition,
-            dto.ArtifactSchemaVersion ?? ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion,
+            dto.EnvelopeVersion,
+            dto.ArtifactTypeId,
+            dto.ArtifactSchemaVersion,
             ToArtifactDigest(dto.ContentDigest),
             dto.ManifestDigest is null ? null : ToArtifactDigest(dto.ManifestDigest),
-            dto.PayloadReference ?? new ArtifactPayloadReference(dto.ReferenceProvider, dto.Reference),
-            dto.Producer ?? new ArtifactProducer("manual", "Manual registration"),
-            dto.DisplayMetadata ?? new ArtifactDisplayMetadata(dto.Manifest.Name, dto.Manifest.Version, null, new Dictionary<string, string>(), new Dictionary<string, string>(), dto.Manifest.Environment),
-            dto.CompatibilityHints ?? [new ArtifactCompatibilityHint(ArtifactTypeIds.ElsaWorkflowDefinition, "elsa-workflows", null, ["workflow-definition.apply"], new Dictionary<string, string>())],
-            dto.Diagnostics.Select(x => new ArtifactEnvelopeDiagnostic(x.Code, ToEnvelopeSeverity(x.Severity), x.Message)).ToList());
+            dto.PayloadReference,
+            dto.Producer,
+            dto.DisplayMetadata,
+            dto.CompatibilityHints,
+            dto.Diagnostics.Select(x => new ArtifactEnvelopeDiagnostic(x.Code, ToEnvelopeSeverity(x.Severity), x.Message)).ToList(),
+            new ArtifactEnvelopeFallback(dto.ReferenceProvider, dto.Reference, dto.Manifest.Name, dto.Manifest.Version, dto.Manifest.Environment));
+    }
 
     private static bool DigestEquals(ArtifactDigest left, ArtifactDigest right) =>
         left.Algorithm.Equals(right.Algorithm, StringComparison.OrdinalIgnoreCase)

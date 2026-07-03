@@ -120,18 +120,19 @@ public sealed record WorkspaceArtifact(
     Guid? ArchivedByAccountId = null)
 {
     public ArtifactEnvelope ToEnvelope() =>
-        new(
+        ArtifactEnvelopeDefaults.CreateEnvelope(
             ArtifactId,
-            EnvelopeVersion ?? ArtifactEnvelopeConstants.EnvelopeVersion,
-            ArtifactTypeId ?? ArtifactTypeIds.ElsaLoomRecipe,
-            ArtifactSchemaVersion ?? ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion,
+            EnvelopeVersion,
+            ArtifactTypeId,
+            ArtifactSchemaVersion,
             new ArtifactDigest(ContentDigest.Algorithm, ContentDigest.Value),
             ManifestDigest is null ? null : new ArtifactDigest(ManifestDigest.Algorithm, ManifestDigest.Value),
-            PayloadReference ?? new ArtifactPayloadReference(ReferenceProvider, Reference),
-            Producer ?? new ArtifactProducer("manual", "Manual registration"),
-            DisplayMetadata ?? new ArtifactDisplayMetadata(Manifest.Name, Manifest.Version, null, new Dictionary<string, string>(), new Dictionary<string, string>(), Manifest.Environment),
-            CompatibilityHints ?? [new ArtifactCompatibilityHint(ArtifactTypeIds.ElsaLoomRecipe, "elsa-workflows", null, [ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe)], new Dictionary<string, string>())],
-            Diagnostics.Select(x => new ArtifactEnvelopeDiagnostic(x.Code, x.Severity.ToEnvelopeSeverity(), x.Message)).ToList());
+            PayloadReference,
+            Producer,
+            DisplayMetadata,
+            CompatibilityHints,
+            Diagnostics.Select(x => new ArtifactEnvelopeDiagnostic(x.Code, x.Severity.ToEnvelopeSeverity(), x.Message)).ToList(),
+            new ArtifactEnvelopeFallback(ReferenceProvider, Reference, Manifest.Name, Manifest.Version, Manifest.Environment));
 }
 
 public sealed record WorkspaceArtifactInspectionResult(

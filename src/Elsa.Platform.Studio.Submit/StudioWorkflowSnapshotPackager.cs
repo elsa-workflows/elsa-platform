@@ -114,18 +114,18 @@ public sealed partial class StudioWorkflowSnapshotPackager(
             ?? throw new InvalidOperationException("Workflow definition snapshot is not valid JSON.");
         var recipe = new JsonObject
         {
-            ["schemaVersion"] = "1.0",
+            [LoomRecipeContract.SchemaVersionProperty] = LoomRecipeContract.SchemaVersion,
             ["id"] = snapshot.WorkflowDefinitionId.Trim(),
             ["name"] = snapshot.Name.Trim(),
             ["version"] = TrimToNull(snapshot.Version),
-            ["steps"] = new JsonArray
+            [LoomRecipeContract.StepsProperty] = new JsonArray
             {
                 new JsonObject
                 {
                     ["id"] = $"upsert-{SafeIdentitySegment(snapshot.WorkflowDefinitionId)}",
-                    ["type"] = "workflowDefinition.upsert",
+                    [LoomRecipeContract.StepTypeProperty] = LoomRecipeContract.WorkflowDefinitionUpsertStep,
                     ["publish"] = true,
-                    ["payload"] = workflowDefinition
+                    [LoomRecipeContract.StepPayloadProperty] = workflowDefinition
                 }
             }
         };
