@@ -24,11 +24,11 @@ public sealed class WorkflowArtifactRuntimeContractValidator(WorkflowArtifactRun
         WorkflowArtifactPayload payload,
         WorkflowArtifactRuntimeCapability capability)
     {
-        if (!envelope.ArtifactTypeId.Equals(ArtifactTypeIds.ElsaWorkflowDefinition, StringComparison.OrdinalIgnoreCase))
+        if (!capability.SupportsArtifactType(envelope.ArtifactTypeId))
         {
             return WorkflowArtifactValidationResult.Invalid(
                 WorkflowArtifactValidationStatus.UnsupportedArtifactType,
-                Error("workflow-artifact.unsupported-type", "Workflow runtime only supports Elsa workflow definition artifacts."));
+                Error("workflow-artifact.unsupported-type", "Workflow artifact type is not supported by this runtime."));
         }
 
         if (!capability.SupportedSchemaVersions.Contains(envelope.ArtifactSchemaVersion, StringComparer.OrdinalIgnoreCase))

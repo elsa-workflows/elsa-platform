@@ -136,6 +136,40 @@ public sealed class WorkflowArtifactCommandProcessorTests
         commands.Failed.Single().Single().Message.Should().Contain("[redacted]");
     }
 
+    [Fact]
+    public async Task Applies_loom_recipe_artifact_by_unwrapping_workflow_definition_steps()
+    {
+        var payload = Payload("""{"schemaVersion":"1.0","id":"payment-retry","steps":[{"id":"upsert-payment-retry","type":"workflowDefinition.upsert","publish":true,"payload":{"id":"payment-retry","version":42}}]}""");
+        var envelope = LoomRecipeEnvelope(payload);
+        var commands = new RecordingRuntimeCommandClient();
+        var store = new InMemoryWorkflowDefinitionRuntimeStore();
+        var processor = Processor(commands, envelope, payload, new WorkflowDefinitionJsonApplier(store));
+
+        var result = await processor.ProcessAsync(Claim(envelope));
+
+        result.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Completed);
+        result.RuntimeReference.Should().Be("elsa://workflows/payment-retry");
+        store.Definitions.Should().ContainSingle(x =>
+            x.WorkflowDefinitionId == "payment-retry"
+            && x.WorkflowDefinitionJson.Contains("\"version\":42", StringComparison.Ordinal));
+        commands.Completed.Should().ContainSingle(x => x.RuntimeReference == "elsa://workflows/payment-retry");
+    }
+
+    [Fact]
+    public async Task Rejects_loom_recipe_without_supported_workflow_definition_steps()
+    {
+        var payload = Payload("""{"schemaVersion":"1.0","id":"payment-retry","steps":[]}""");
+        var envelope = LoomRecipeEnvelope(payload);
+        var commands = new RecordingRuntimeCommandClient();
+        var processor = Processor(commands, envelope, payload, new WorkflowDefinitionJsonApplier(new InMemoryWorkflowDefinitionRuntimeStore()));
+
+        var result = await processor.ProcessAsync(Claim(envelope));
+
+        result.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Rejected);
+        result.Diagnostics.Should().ContainSingle(x => x.Code == "workflow-artifact.local-validation-failed");
+        commands.Rejected.Should().ContainSingle();
+    }
+
     private WorkflowArtifactCommandProcessor Processor(
         RecordingRuntimeCommandClient commands,
         ArtifactEnvelope envelope,
@@ -182,6 +216,21 @@ public sealed class WorkflowArtifactCommandProcessorTests
 
     private static byte[] Payload(string json = """{"id":"payment-retry","version":42}""") =>
         Encoding.UTF8.GetBytes(json);
+
+    private static ArtifactEnvelope LoomRecipeEnvelope(byte[] payload) =>
+        Envelope(payload) with
+        {
+            ArtifactTypeId = ArtifactTypeIds.ElsaLoomRecipe,
+            CompatibilityHints =
+            [
+                new ArtifactCompatibilityHint(
+                    ArtifactTypeIds.ElsaLoomRecipe,
+                    "elsa-workflows",
+                    ">=4.0.0",
+                    [ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe)],
+                    new Dictionary<string, string>())
+            ]
+        };
 
     private static ArtifactEnvelope Envelope(byte[] payload)
     {

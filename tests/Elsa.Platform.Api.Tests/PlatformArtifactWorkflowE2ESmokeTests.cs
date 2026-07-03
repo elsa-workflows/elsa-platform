@@ -234,7 +234,10 @@ public sealed class PlatformArtifactWorkflowE2ESmokeTests
                 "westeurope",
                 "Azure Key Vault",
                 "kv://claims/runtime",
-                [new EngineCapability("workflow-definition.apply", "Apply workflow definitions", CapabilityBoundary.EngineApi)],
+                [
+                    new EngineCapability("workflow-definition.apply", "Apply workflow definitions", CapabilityBoundary.EngineApi),
+                    new EngineCapability("loom.recipe.apply", "Apply Loom recipes", CapabilityBoundary.EngineApi)
+                ],
                 [],
                 "container-apps"));
 

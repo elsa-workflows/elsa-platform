@@ -9,6 +9,12 @@ public sealed record WorkflowArtifactRuntimeCapability(
     IReadOnlyList<string> SupportedSchemaVersions,
     IReadOnlyList<string> Capabilities)
 {
+    private static readonly string[] KnownArtifactTypeIds =
+    [
+        ArtifactTypeIds.ElsaWorkflowDefinition,
+        ArtifactTypeIds.ElsaLoomRecipe
+    ];
+
     public static WorkflowArtifactRuntimeCapability FromOptions(WorkflowArtifactRuntimeOptions options)
     {
         options.Validate();
@@ -27,15 +33,25 @@ public sealed record WorkflowArtifactRuntimeCapability(
     }
 
     public bool Supports(ArtifactEnvelope envelope) =>
-        ArtifactTypeId.Equals(envelope.ArtifactTypeId, StringComparison.OrdinalIgnoreCase)
+        SupportsArtifactType(envelope.ArtifactTypeId)
         && SupportedSchemaVersions.Contains(envelope.ArtifactSchemaVersion, StringComparer.OrdinalIgnoreCase)
         && envelope.CompatibilityHints.Any(SatisfiesCompatibilityHint);
 
+    public bool SupportsArtifactType(string artifactTypeId) =>
+        KnownArtifactTypeIds.Contains(artifactTypeId, StringComparer.OrdinalIgnoreCase)
+        && NormalizedCapabilities(artifactTypeId).Contains(ArtifactApplyCapability.For(artifactTypeId), StringComparer.OrdinalIgnoreCase);
+
     private bool SatisfiesCompatibilityHint(ArtifactCompatibilityHint hint) =>
-        hint.RequiredArtifactType.Equals(ArtifactTypeId, StringComparison.OrdinalIgnoreCase)
+        SupportsArtifactType(hint.RequiredArtifactType)
         && (string.IsNullOrWhiteSpace(hint.RuntimeFamily) || hint.RuntimeFamily.Equals(RuntimeFamily, StringComparison.OrdinalIgnoreCase))
         && WorkflowArtifactRuntimeVersionRange.Includes(hint.RuntimeVersionRange, RuntimeVersion)
-        && hint.RequiredCapabilities.All(required => Capabilities.Contains(required, StringComparer.OrdinalIgnoreCase));
+        && hint.RequiredCapabilities.All(required =>
+            NormalizedCapabilities(hint.RequiredArtifactType).Contains(
+                ArtifactApplyCapability.Normalize(hint.RequiredArtifactType, required),
+                StringComparer.OrdinalIgnoreCase));
+
+    private IEnumerable<string> NormalizedCapabilities(string artifactTypeId) =>
+        Capabilities.Select(capability => ArtifactApplyCapability.Normalize(artifactTypeId, capability));
 
     private static IReadOnlyList<string> Normalize(IReadOnlyList<string> values) =>
         values
