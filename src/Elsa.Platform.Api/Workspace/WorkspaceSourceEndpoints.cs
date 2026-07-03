@@ -14,34 +14,22 @@ public static class WorkspaceSourceEndpoints
 
         group.MapGet("/", async (
             Guid workspaceId,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             IAccountWorkspaceStore store,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
             var sources = await store.ListVisibleSourcesAsync(workspaceId, cancellationToken);
             var counts = await store.GetPackageCountsAsync(sources.Select(x => x.Id).ToList(), cancellationToken);
             return Results.Ok(sources.Select(source => ToResponse(source, counts.GetValueOrDefault(source.Id))));
-        });
+        }).RequireWorkspaceAccess();
 
         group.MapPost("/", async (
-            Guid workspaceId,
             WorkspaceSourceRequest request,
             HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             WorkspaceSourceService workspaceSources,
             PackageSourceService packageSources,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.ManageSources, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
-            var result = await workspaceSources.CreateSourceAsync(access.Access!, ToCreateRequest(request), cancellationToken);
+            var result = await workspaceSources.CreateSourceAsync(context.GetWorkspaceAccess(), ToCreateRequest(request), cancellationToken);
             if (result.ForbiddenResult)
                 return Results.Problem(title: "Workspace source creation is not allowed.", detail: string.Join(" ", result.Errors), statusCode: StatusCodes.Status403Forbidden);
 
@@ -50,7 +38,7 @@ public static class WorkspaceSourceEndpoints
 
             var packageCount = await packageSources.GetPackageCountAsync(result.Source!.Id, cancellationToken);
             return Results.Ok(ToResponse(result.Source!, packageCount));
-        });
+        }).RequireWorkspaceAccess(WorkspaceOperation.ManageSources);
 
         return endpoints;
     }

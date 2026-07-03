@@ -17,157 +17,104 @@ public static class WorkspaceRuntimeConfigurationEndpoints
 
         group.MapGet("/", async (
             Guid workspaceId,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
             var items = await configurations.ListAsync(workspaceId, cancellationToken);
             return Results.Ok(items.Select(ToResponse));
-        });
+        }).RequireWorkspaceAccess();
 
         group.MapPost("/", async (
             Guid workspaceId,
             WorkspaceRuntimeConfigurationRequest request,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.MutateWorkspaceResource, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
             if (request.Intent is null)
                 return Results.BadRequest(new { error = "intent is required." });
 
             var configuration = await configurations.CreateAsync(workspaceId, request.Name, request.Description, request.Intent, cancellationToken);
             return Results.Ok(ToResponse(configuration));
-        });
+        }).RequireWorkspaceAccess(WorkspaceOperation.MutateWorkspaceResource);
 
         group.MapGet("/{id:guid}", async (
             Guid workspaceId,
             Guid id,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
             var configuration = await configurations.GetAsync(workspaceId, id, cancellationToken);
             return configuration is null ? Results.NotFound() : Results.Ok(ToResponse(configuration));
-        });
+        }).RequireWorkspaceAccess();
 
         group.MapPut("/{id:guid}", async (
             Guid workspaceId,
             Guid id,
             WorkspaceRuntimeConfigurationRequest request,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.MutateWorkspaceResource, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
             if (request.Intent is null)
                 return Results.BadRequest(new { error = "intent is required." });
 
             var configuration = await configurations.UpdateAsync(workspaceId, id, request.Name, request.Description, request.Intent, cancellationToken);
             return configuration is null ? Results.NotFound() : Results.Ok(ToResponse(configuration));
-        });
+        }).RequireWorkspaceAccess(WorkspaceOperation.MutateWorkspaceResource);
 
         group.MapDelete("/{id:guid}", async (
             Guid workspaceId,
             Guid id,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
-        {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.MutateWorkspaceResource, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
-            return await configurations.DeleteAsync(workspaceId, id, cancellationToken)
+            await configurations.DeleteAsync(workspaceId, id, cancellationToken)
                 ? Results.NoContent()
-                : Results.NotFound();
-        });
+                : Results.NotFound())
+            .RequireWorkspaceAccess(WorkspaceOperation.MutateWorkspaceResource);
 
         group.MapPost("/{id:guid}/clone", async (
             Guid workspaceId,
             Guid id,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.MutateWorkspaceResource, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
             var clone = await configurations.CloneAsync(workspaceId, id, cancellationToken);
             return clone is null ? Results.NotFound() : Results.Ok(ToResponse(clone));
-        });
+        }).RequireWorkspaceAccess(WorkspaceOperation.MutateWorkspaceResource);
 
         group.MapPost("/{id:guid}/versions", async (
             Guid workspaceId,
             Guid id,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.MutateWorkspaceResource, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
             var version = await configurations.CreateVersionAsync(workspaceId, id, cancellationToken);
             return version is null ? Results.NotFound() : Results.Ok(ToResponse(version));
-        });
+        }).RequireWorkspaceAccess(WorkspaceOperation.MutateWorkspaceResource);
 
         group.MapGet("/{id:guid}/versions", async (
             Guid workspaceId,
             Guid id,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
             var versions = await configurations.ListVersionsAsync(workspaceId, id, cancellationToken);
             return Results.Ok(versions.Select(ToResponse));
-        });
+        }).RequireWorkspaceAccess();
 
         group.MapPost("/{id:guid}/bundle", async (
             Guid workspaceId,
             Guid id,
-            HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             RuntimeConfigurationService configurations,
             BundleGenerationService bundles,
             CancellationToken cancellationToken) =>
         {
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
             var configuration = await configurations.GetAsync(workspaceId, id, cancellationToken);
             if (configuration is null)
                 return Results.NotFound();
 
             var result = await bundles.GenerateAsync(RuntimeConfigurationService.DeserializeIntent(configuration.IntentJson), workspaceId, cancellationToken);
             return Results.Ok(BuilderEndpoints.ToResponse(result));
-        });
+        }).RequireWorkspaceAccess();
 
         return endpoints;
     }
