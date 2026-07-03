@@ -33,6 +33,7 @@ type PromotionPreviewPanelProps = {
   rollbackBlockedReason?: string;
   isPreviewing: boolean;
   isPromoting: boolean;
+  isPromotingAndDeploying: boolean;
   isQueueingDeployment: boolean;
   isQueueingRollback: boolean;
   notice: string;
@@ -41,6 +42,7 @@ type PromotionPreviewPanelProps = {
   onSelectedEnvironmentChange: (environmentId: string) => void;
   onRefreshPreview: () => void;
   onPromote: () => void;
+  onPromoteAndDeploy: () => void;
   onDeploy: () => void;
   onRollback: () => void;
 };
@@ -63,6 +65,7 @@ export function PromotionPreviewPanel({
   rollbackBlockedReason,
   isPreviewing,
   isPromoting,
+  isPromotingAndDeploying,
   isQueueingDeployment,
   isQueueingRollback,
   notice,
@@ -71,6 +74,7 @@ export function PromotionPreviewPanel({
   onSelectedEnvironmentChange,
   onRefreshPreview,
   onPromote,
+  onPromoteAndDeploy,
   onDeploy,
   onRollback
 }: PromotionPreviewPanelProps) {
@@ -225,10 +229,17 @@ export function PromotionPreviewPanel({
             <div className="rounded-ui border border-border bg-surface p-3">
               <div className="mb-3 text-sm font-medium">Deployment gate</div>
               <div className="flex flex-col gap-2">
-                <Button disabled={previewBlocked || blocked || !canManageDesiredState || isPromoting} onClick={onPromote}>
-                  <GitBranch className="h-4 w-4" />
-                  {isPromoting ? "Creating Target Revision" : "Create Target Revision"}
+                <Button
+                  disabled={previewBlocked || blocked || !canManageDesiredState || !canDeploy || hasPromotedTargetRevision || isPromoting || isPromotingAndDeploying}
+                  onClick={onPromoteAndDeploy}
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  {isPromotingAndDeploying ? "Promoting & deploying" : "Promote & deploy"}
                 </Button>
+                <SecondaryButton disabled={previewBlocked || blocked || !canManageDesiredState || isPromoting || isPromotingAndDeploying} onClick={onPromote}>
+                  <GitBranch className="h-4 w-4" />
+                  {isPromoting ? "Promoting" : "Promote only"}
+                </SecondaryButton>
                 <Button disabled={blocked || !canDeploy || !hasPromotedTargetRevision || isQueueingDeployment} onClick={onDeploy}>
                   <CheckCircle2 className="h-4 w-4" />
                   {isQueueingDeployment ? "Queueing Deployment" : "Deploy Target Revision"}
@@ -238,8 +249,11 @@ export function PromotionPreviewPanel({
                   {isQueueingRollback ? "Queueing Rollback" : `Roll Back to r${comparison.rollbackRevision ?? "-"}`}
                 </SecondaryButton>
               </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Promote &amp; deploy creates the target revision and deploys it in one step. Use Promote only to review the target revision before deploying.
+              </p>
               {blocked ? <p className="mt-3 text-xs text-destructive">Resolve validation blockers before promotion or deployment can start.</p> : null}
-              {!hasPromotedTargetRevision ? <p className="mt-3 text-xs text-muted-foreground">Create the target revision before deployment can be queued.</p> : null}
+              {hasPromotedTargetRevision ? <p className="mt-3 text-xs text-muted-foreground">Target revision created. Use Deploy Target Revision to apply it.</p> : null}
               {rollbackBlockedReason ? <p className="mt-3 text-xs text-muted-foreground">{rollbackBlockedReason}</p> : null}
               {!canDeploy || !canRollback ? <p className="mt-3 text-xs text-muted-foreground">Deployment and rollback actions require execute permissions and single-user confirmation.</p> : null}
             </div>

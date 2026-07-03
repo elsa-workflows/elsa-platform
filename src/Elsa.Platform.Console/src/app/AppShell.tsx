@@ -48,13 +48,28 @@ const navSections: Array<{ label: string; items: NavItem[] }> = [
     ]
   },
   {
-    label: "Deployments",
+    // "Deliver" gathers everything an operator touches to ship a version from artifact to running:
+    // the deployments cockpit, application pipeline, versions/revisions, and artifacts.
+    label: "Deliver",
     items: [
       { to: "/admin/deployments", label: "Overview", icon: Gauge, end: true },
       { to: "/admin/deployments/applications", label: "Applications", icon: Rocket },
+      { to: "/admin/artifacts", label: "Artifacts", icon: Archive }
+    ]
+  },
+  {
+    // "Operate" holds the advanced control-plane surfaces: tier definitions, engine credential
+    // stores, and the raw operational tools. These are configuration-and-diagnostics screens rather
+    // than day-to-day delivery steps.
+    label: "Operate",
+    items: [
+      { to: "/admin/deployments/tiers", label: "Tiers", icon: ShieldCheck },
       { to: "/admin/deployments/credentials", label: "Engine credentials", icon: KeyRound },
-      { to: "/admin/artifacts", label: "Artifacts", icon: Archive },
-      { to: "/admin/deployments/tiers", label: "Tiers", icon: ShieldCheck }
+      { to: "/admin/console", label: "Console", icon: Terminal },
+      { to: "/admin/targets", label: "Targets", icon: Cloud, disabled: true },
+      { to: "/admin/runtimes", label: "Managed Runtimes", icon: Gauge, disabled: true },
+      { to: "/admin/operations", label: "Runtime Operations", icon: Activity, disabled: true },
+      { to: "/admin/audit", label: "Audit", icon: FileClock, disabled: true }
     ]
   },
   {
@@ -69,16 +84,6 @@ const navSections: Array<{ label: string; items: NavItem[] }> = [
     label: "Runtime Builder",
     items: [
       { to: "/admin/runtime-builder", label: "Build configurations", icon: Layers3 }
-    ]
-  },
-  {
-    label: "Operations",
-    items: [
-      { to: "/admin/console", label: "Console", icon: Terminal },
-      { to: "/admin/targets", label: "Targets", icon: Cloud, disabled: true },
-      { to: "/admin/runtimes", label: "Managed Runtimes", icon: Gauge, disabled: true },
-      { to: "/admin/operations", label: "Runtime Operations", icon: Activity, disabled: true },
-      { to: "/admin/audit", label: "Audit", icon: FileClock, disabled: true }
     ]
   }
 ];
