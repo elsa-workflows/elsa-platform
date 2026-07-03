@@ -15,6 +15,39 @@ namespace Elsa.Platform.Api.Tests;
 
 public sealed class WorkspaceDeploymentApiTests
 {
+    // Regression guard for the endpoint-filter refactor: the shared ApiExceptionMappingEndpointFilter
+    // now maps service exceptions on handlers that previously had no try/catch (and therefore returned
+    // 500). These two pin the normalized 400/409 contract so the mapping can't silently regress.
+    [Fact]
+    public async Task Creating_application_with_blank_name_returns_bad_request()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("blank-app-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+
+        var response = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications",
+            new WorkspaceDeploymentApplicationRequest("   ", null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Creating_revision_for_missing_environment_returns_conflict()
+    {
+        await using var app = new PlatformApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("missing-env-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+
+        var response = await owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/applications/{Guid.NewGuid()}/environments/{Guid.NewGuid()}/revisions",
+            new WorkspaceDesiredStateRevisionRequest("rev-1", null, []));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
     [Fact]
     public async Task Workspace_member_can_read_persisted_deployment_cockpit()
     {
