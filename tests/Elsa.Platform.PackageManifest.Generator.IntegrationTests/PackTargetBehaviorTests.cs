@@ -36,6 +36,43 @@ public sealed class PackTargetBehaviorTests
     }
 
     [Fact]
+    public async Task Pack_with_package_reference_resolves_reference_closure_and_includes_manifest()
+    {
+        // Regression: during `dotnet pack` the manifest target runs in the pack evaluation where
+        // @(ReferencePath) is not populated unless it is forced. When a feature surface references
+        // types from a NuGet PackageReference (whose assembly is not copied to the output directory),
+        // the generator must still resolve that assembly to discover features and pack must succeed.
+        await using var project = new SampleProjectBuilder()
+            .WithLocalGeneratorPackage()
+            .WithExternalCShellsPackageReference()
+            .WithSource(FeatureSource);
+
+        var pack = await project.PackWithBuildAsync("Release");
+
+        pack.ExitCode.Should().Be(0, pack.CombinedOutput);
+        pack.CombinedOutput.Should().NotContain("Could not find assembly");
+        NuGetPackageInspector.AssertSingleEntry(project.ReleasePackagePath, "elsa-package.json");
+        NuGetPackageInspector.ReadEntry(project.ReleasePackagePath, "elsa-package.json").Should().Contain("Pack Feature");
+    }
+
+    [Fact]
+    public async Task Pack_of_non_packable_project_does_not_run_manifest_generation()
+    {
+        // Non-packable projects (test/host projects) produce no package, and `dotnet pack` skips their build,
+        // so the target assembly may not exist. The generator must not run for them instead of failing with
+        // "Assembly path does not exist".
+        await using var project = new SampleProjectBuilder()
+            .WithLocalGeneratorPackage()
+            .WithProperty("IsPackable", "false")
+            .WithSource(FeatureSource);
+
+        var pack = await project.PackWithBuildAsync("Release");
+
+        pack.ExitCode.Should().Be(0, pack.CombinedOutput);
+        pack.CombinedOutput.Should().NotContain("Assembly path does not exist");
+    }
+
+    [Fact]
     public async Task Pack_no_build_reports_missing_required_manifest_clearly()
     {
         await using var project = CreateProjectWithReferencedFeatureAssembly();

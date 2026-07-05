@@ -12,7 +12,8 @@
   <Target Name="GenerateElsaPackageManifest"
           AfterTargets="Build"
           BeforeTargets="GenerateNuspec"
-          Condition="'$(GenerateElsaPackageManifest)' == 'true' and '$(NoBuild)' != 'true' and '$(IsCrossTargetingBuild)' != 'true'">
+          DependsOnTargets="ResolveReferences"
+          Condition="'$(GenerateElsaPackageManifest)' == 'true' and '$(IsPackable)' != 'false' and '$(NoBuild)' != 'true' and '$(IsCrossTargetingBuild)' != 'true'">
     <PropertyGroup>
       <_ElsaPackageManifestOverrideFile Condition="'$(ElsaPackageManifestOverrideFile)' != ''">$(ElsaPackageManifestOverrideFile)</_ElsaPackageManifestOverrideFile>
       <_ElsaPackageManifestOverrideFile Condition="'$(_ElsaPackageManifestOverrideFile)' == '' and Exists('$(MSBuildProjectDirectory)\elsa-package.overrides.json')">$(MSBuildProjectDirectory)\elsa-package.overrides.json</_ElsaPackageManifestOverrideFile>
