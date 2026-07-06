@@ -25,6 +25,7 @@ export default defineConfig(({ mode }) => {
   const devIdentitySubject = env.CATALOG_DEV_IDENTITY_SUBJECT ?? "local-admin";
   const devIdentityEmail = env.CATALOG_DEV_IDENTITY_EMAIL ?? "local-admin@example.test";
   const devIdentityName = env.CATALOG_DEV_IDENTITY_NAME ?? "Local Admin";
+  const devAdminApiKey = env.CATALOG_DEV_ADMIN_API_KEY ?? "local-dev-key";
 
   return {
     base: "/admin/",
@@ -43,12 +44,19 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           ws: true,
           configure: (proxy) => {
-            proxy.on("proxyReq", (proxyReq) => {
+            proxy.on("proxyReq", (proxyReq, req) => {
               proxyReq.setHeader("Origin", catalogApiProxyOrigin);
               proxyReq.setHeader("X-Catalog-Identity-Issuer", devIdentityIssuer);
               proxyReq.setHeader("X-Catalog-Identity-Subject", devIdentitySubject);
               proxyReq.setHeader("X-Catalog-Identity-Email", devIdentityEmail);
               proxyReq.setHeader("X-Catalog-Identity-Name", devIdentityName);
+              if (requestTargetsAdminConsoleLogs(req.url))
+                proxyReq.setHeader("X-Api-Key", devAdminApiKey);
+            });
+            proxy.on("proxyReqWs", (proxyReq, req) => {
+              proxyReq.setHeader("Origin", catalogApiProxyOrigin);
+              if (requestTargetsAdminConsoleLogs(req.url))
+                proxyReq.setHeader("X-Api-Key", devAdminApiKey);
             });
           }
         }
@@ -56,3 +64,10 @@ export default defineConfig(({ mode }) => {
     }
   };
 });
+
+function requestTargetsAdminConsoleLogs(url: string | undefined) {
+  if (!url)
+    return false;
+
+  return url === "/api/admin/console-logs" || url.startsWith("/api/admin/console-logs/");
+}
