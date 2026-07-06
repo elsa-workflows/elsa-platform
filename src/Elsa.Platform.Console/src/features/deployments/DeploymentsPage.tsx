@@ -3421,7 +3421,7 @@ function CredentialStoreForm({
       {!canManageSetup ? <p className="text-sm text-muted-foreground">Deployment setup permission is required to change engine credential stores.</p> : null}
       <label className="text-sm font-medium">
         Store name
-        <Input className="mt-1" value={name} disabled={!canManageSetup} onChange={(event) => setName(event.target.value)} placeholder="Platform engine credentials" />
+        <Input className="mt-1" value={name} disabled={!canManageSetup} onChange={(event) => setName(event.target.value)} placeholder="Platform engine credentials" acceptPlaceholderOnTab />
       </label>
       <label className="text-sm font-medium">
         Store type
@@ -3521,7 +3521,7 @@ function CredentialReferenceForm({
       </label>
       <label className="text-sm font-medium">
         Reference name
-        <Input className="mt-1" value={name} disabled={!canManageSetup} onChange={(event) => setName(event.target.value)} placeholder="Test engine API" />
+        <Input className="mt-1" value={name} disabled={!canManageSetup} onChange={(event) => setName(event.target.value)} placeholder="Test engine API" acceptPlaceholderOnTab />
       </label>
       {isProtectedLocalEdit ? (
         <div className="rounded-ui border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
@@ -3759,7 +3759,7 @@ function SecretStoresPanel({
               <h3 className="text-sm font-semibold">Register engine credential store</h3>
               <label className="text-sm font-medium">
                 Store name
-                <Input className="mt-1" value={storeName} onChange={(event) => setStoreName(event.target.value)} placeholder="Platform engine credentials" />
+                <Input className="mt-1" value={storeName} onChange={(event) => setStoreName(event.target.value)} placeholder="Platform engine credentials" acceptPlaceholderOnTab />
               </label>
               <label className="text-sm font-medium">
                 Store type
@@ -3812,7 +3812,7 @@ function SecretStoresPanel({
                 </label>
                 <label className="text-sm font-medium">
                   Reference name
-                  <Input className="mt-1" value={referenceName} onChange={(event) => setReferenceName(event.target.value)} placeholder="Test engine API" />
+                  <Input className="mt-1" value={referenceName} onChange={(event) => setReferenceName(event.target.value)} placeholder="Test engine API" acceptPlaceholderOnTab />
                 </label>
                 <label className="text-sm font-medium">
                   {selectedTypeOption.referenceLabel}
@@ -4151,7 +4151,7 @@ function EngineRegistrationPanel({
               </label>
               <label className="text-sm font-medium">
                 Reference name
-                <Input className="mt-1" value={referenceName} onChange={(event) => setReferenceName(event.target.value)} placeholder={values.engineName.trim() ? `${values.engineName.trim()} engine credential` : "Engine API credential"} />
+                <Input className="mt-1" value={referenceName} onChange={(event) => setReferenceName(event.target.value)} placeholder={values.engineName.trim() ? `${values.engineName.trim()} engine credential` : "Engine API credential"} acceptPlaceholderOnTab />
               </label>
               <label className="text-sm font-medium md:col-span-2">
                 {selectedTypeOption.referenceLabel}
@@ -4400,7 +4400,7 @@ function EngineEditPanel({
               </label>
               <label className="text-sm font-medium">
                 Reference name
-                <Input className="mt-1" value={newReferenceName} onChange={(event) => setNewReferenceName(event.target.value)} placeholder={`${name.trim()} engine credential`} />
+                <Input className="mt-1" value={newReferenceName} onChange={(event) => setNewReferenceName(event.target.value)} placeholder={`${name.trim()} engine credential`} acceptPlaceholderOnTab />
               </label>
               <label className="text-sm font-medium md:col-span-2">
                 {newReferenceTypeOption.referenceLabel}

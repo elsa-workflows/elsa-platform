@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, InputHTMLAttributes, KeyboardEvent, ReactNode, SelectHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
 export function buttonClassName(variant: "primary" | "secondary" = "primary", className?: string) {
@@ -18,13 +18,35 @@ export const SecondaryButton = forwardRef<HTMLButtonElement, ButtonHTMLAttribute
   return <button ref={ref} className={buttonClassName("secondary", className)} {...props} />;
 });
 
-export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+type InputProps = InputHTMLAttributes<HTMLInputElement> & {
+  acceptPlaceholderOnTab?: boolean;
+};
+
+export function Input({ className, acceptPlaceholderOnTab = false, onKeyDown, type, ...props }: InputProps) {
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    onKeyDown?.(event);
+    if (event.defaultPrevented) return;
+    if (!acceptPlaceholderOnTab) return;
+    if (event.key !== "Tab" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (type === "password") return;
+
+    const placeholder = event.currentTarget.placeholder?.trim();
+    if (!placeholder || event.currentTarget.value.trim().length > 0) return;
+
+    event.preventDefault();
+    const setNativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    setNativeValue?.call(event.currentTarget, placeholder);
+    event.currentTarget.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
   return (
     <input
+      type={type}
       className={cn(
         "h-9 w-full rounded-ui border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground",
         className
       )}
+      onKeyDown={handleKeyDown}
       {...props}
     />
   );
