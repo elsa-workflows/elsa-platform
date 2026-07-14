@@ -26,3 +26,11 @@ specs/036-engine-credential-management/plan.md
 
 ## Recent Changes
 - codex/021-identity-tenancy: Added C# on .NET 10. + ASP.NET Core authentication/authorization, ASP.NET Core cookies, JWT bearer validation, EF Core, existing `Elsa.Platform.PackageCatalog.*` account/workspace services, xUnit and FluentAssertions for tests.
+
+<!-- MANUAL ADDITIONS START -->
+## Workroom model fallback
+
+- Root agent: use Sol 5.6 High. If unavailable, use the closest available Sol/Terra model at high reasoning, then the closest available frontier model; report the exact fallback.
+- Delegates: use Luna Extra High. If unavailable, use Luna High, then the closest available model at high reasoning; report the exact fallback.
+- Treat model unavailability separately from delegation timeouts or failures. After a bounded wait, the root agent continues, owns integration and QA, and reports when no delegated result was available for review.
+<!-- MANUAL ADDITIONS END -->
