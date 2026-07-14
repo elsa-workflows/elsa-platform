@@ -14,11 +14,14 @@ public static class CustomerAuthEndpoints
         group.MapGet("/session", async (
             HttpContext context,
             IOptions<PlatformIdentityOptions> options,
-            CustomerSessionIdentityReader sessionIdentityReader) =>
+            IWorkspaceIdentityReader workspaceIdentityReader,
+            IConfiguration configuration) =>
         {
-            var identity = await sessionIdentityReader.ReadAsync(context);
+            var identity = await workspaceIdentityReader.ReadAsync(context);
+            var trustedHeadersEnabled = configuration.GetValue<bool>(TrustedHeaderWorkspaceIdentityReader.EnabledConfigurationKey);
+            var loginEnabled = options.Value.IsCustomerLoginConfigured || trustedHeadersEnabled;
             return Results.Ok(new CustomerAuthSessionResponse(
-                options.Value.IsCustomerLoginConfigured,
+                loginEnabled,
                 identity is not null,
                 identity?.DisplayName,
                 identity?.Email,
