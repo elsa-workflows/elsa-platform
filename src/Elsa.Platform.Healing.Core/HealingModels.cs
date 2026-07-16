@@ -6,10 +6,26 @@ public enum ComponentManifestTrustState { Unverified, Verified, Rejected, Revoke
 public enum ComponentKind { Unknown = 0, Application = 1, Package = 2, Assembly = 3 }
 public enum SourceSelectorKind { Application, Package, Assembly, ComponentKey }
 public enum SourceOwnershipBindingStatus { Draft, Active, Suspended, Revoked }
-public enum IncidentClassification { UnhandledRequest, FatalStartup, FatalBackground, UnexpectedWorkflow, UnexpectedActivity, TransientExhausted, ExplicitIncident, Unknown }
+public enum IncidentClassification
+{
+    UnhandledRequest = 0,
+    FatalStartup = 1,
+    FatalBackground = 2,
+    UnexpectedWorkflow = 3,
+    UnexpectedActivity = 4,
+    TransientExhausted = 5,
+    ExplicitIncident = 6,
+    Unknown = 7,
+    Validation = 8,
+    Authorization = 9,
+    Cancellation = 10,
+    Handled = 11,
+    TransientRetrying = 12
+}
 public enum IncidentSeverity { Informational, Warning, Error, Fatal }
 public enum IncidentRetryState { None, Retrying, Exhausted }
 public enum EvidenceTier { DefaultRedacted, Elevated }
+public enum HealingTelemetrySourceStatus { Active, Revoked }
 
 [Flags]
 public enum AttributionBasis { None = 0, StackFrame = 1, Assembly = 2, Package = 4, SourceLink = 8, ExplicitComponent = 16 }
@@ -70,6 +86,7 @@ public sealed class HealingConfiguration
     public long InferenceBudget { get; set; }
     public int RepositoryRunBudget { get; set; }
     public bool ApplicationKillSwitch { get; set; }
+    public string ClassificationPolicyJson { get; set; } = "{}";
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public byte[] Version { get; set; } = [];
@@ -98,8 +115,30 @@ public sealed class HealingEnvironmentConfiguration
     public int? OccurrenceThreshold { get; set; }
     public TimeSpan? DebounceWindow { get; set; }
     public bool EnvironmentKillSwitch { get; set; }
+    public string ClassificationPolicyJson { get; set; } = "{}";
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+    public byte[] Version { get; set; } = [];
+}
+
+/// <summary>
+/// A server-owned OTLP source registration. Credential material is persisted only as a salted hash;
+/// workspace, application, and environment scope is never supplied by the monitored process.
+/// </summary>
+public sealed class HealingTelemetrySource
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid ApplicationId { get; set; }
+    public Guid EnvironmentId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public byte[] CredentialSalt { get; set; } = [];
+    public byte[] CredentialHash { get; set; } = [];
+    public int CredentialVersion { get; set; } = 1;
+    public HealingTelemetrySourceStatus Status { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? RotatedAt { get; set; }
+    public DateTimeOffset? RevokedAt { get; set; }
     public byte[] Version { get; set; } = [];
 }
 
@@ -237,6 +276,8 @@ public sealed class IncidentOccurrence
 {
     public Guid Id { get; set; }
     public Guid InboxItemId { get; set; }
+    public Guid IncidentId { get; set; }
+    public Guid EpisodeId { get; set; }
     public Guid WorkspaceId { get; set; }
     public Guid ApplicationId { get; set; }
     public Guid EnvironmentId { get; set; }
@@ -307,6 +348,7 @@ public sealed class HealingIncident
     public Guid? ActiveEpisodeId { get; set; }
     public Guid? WorkItemProjectionId { get; set; }
     public NeedsHumanReason? NeedsHumanReason { get; set; }
+    public DateTimeOffset? ReadyAfter { get; set; }
     public byte[] Version { get; set; } = [];
 
     public HealingTransitionResult TryTransitionTo(HealingIncidentStatus target)
@@ -355,6 +397,12 @@ public sealed class EnvironmentImpact
     public string ProducingRevisionsJson { get; set; } = "[]";
     public string? CurrentDeployedRevision { get; set; }
     public VerificationOutcome VerificationStatus { get; set; }
+    public int OccurrenceThreshold { get; set; }
+    public TimeSpan DebounceWindow { get; set; }
+    public DateTimeOffset? ThresholdReachedAt { get; set; }
+    public DateTimeOffset? ReadyAfter { get; set; }
+    public string ClassificationPolicyVersion { get; set; } = "1";
+    public string ClassificationPolicyHash { get; set; } = string.Empty;
     public string? ClosedByActorId { get; set; }
     public DateTimeOffset? ClosedAt { get; set; }
     public byte[] Version { get; set; } = [];

@@ -80,6 +80,7 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     InferenceBudget = table.Column<long>(type: "INTEGER", nullable: false),
                     RepositoryRunBudget = table.Column<int>(type: "INTEGER", nullable: false),
                     ApplicationKillSwitch = table.Column<bool>(type: "INTEGER", nullable: false),
+                    ClassificationPolicyJson = table.Column<string>(type: "TEXT", maxLength: 8192, nullable: false),
                     CreatedAt = table.Column<long>(type: "INTEGER", nullable: false),
                     UpdatedAt = table.Column<long>(type: "INTEGER", nullable: false),
                     Version = table.Column<byte[]>(type: "BLOB", nullable: false)
@@ -231,6 +232,29 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "HealingTelemetrySources",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
+                    WorkspaceId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    ApplicationId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    EnvironmentId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    Name = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
+                    CredentialSalt = table.Column<byte[]>(type: "BLOB", maxLength: 32, nullable: false),
+                    CredentialHash = table.Column<byte[]>(type: "BLOB", maxLength: 32, nullable: false),
+                    CredentialVersion = table.Column<int>(type: "INTEGER", nullable: false),
+                    Status = table.Column<int>(type: "INTEGER", nullable: false),
+                    CreatedAt = table.Column<long>(type: "INTEGER", nullable: false),
+                    RotatedAt = table.Column<long>(type: "INTEGER", nullable: true),
+                    RevokedAt = table.Column<long>(type: "INTEGER", nullable: true),
+                    Version = table.Column<byte[]>(type: "BLOB", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_HealingTelemetrySources", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "HealingWorkspaceConfigurations",
                 columns: table => new
                 {
@@ -256,6 +280,7 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     ApplicationId = table.Column<Guid>(type: "TEXT", nullable: false),
                     ComponentKey = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
                     Kind = table.Column<int>(type: "INTEGER", nullable: false),
+                    KindName = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false),
                     Name = table.Column<string>(type: "TEXT", maxLength: 512, nullable: false),
                     Version = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
                     PackageId = table.Column<string>(type: "TEXT", maxLength: 512, nullable: true),
@@ -264,7 +289,7 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     AssemblyVersion = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
                     PublicKeyToken = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
                     ContentHash = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false),
-                    RelativePath = table.Column<string>(type: "TEXT", maxLength: 2048, nullable: false),
+                    RelativePath = table.Column<string>(type: "TEXT", maxLength: 2048, nullable: true),
                     RepositoryUrl = table.Column<string>(type: "TEXT", maxLength: 2048, nullable: true),
                     RepositoryCommit = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
                     SourceRoot = table.Column<string>(type: "TEXT", maxLength: 2048, nullable: true),
@@ -275,8 +300,33 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     table.PrimaryKey("PK_HealingComponentManifestEntries", x => x.Id);
                     table.UniqueConstraint("AK_HealingComponentManifestEntries_ManifestId_Id", x => new { x.ManifestId, x.Id });
                     table.UniqueConstraint("AK_HealingComponentManifestEntries_WorkspaceId_ApplicationId_Id", x => new { x.WorkspaceId, x.ApplicationId, x.Id });
+                    table.UniqueConstraint("AK_HealingComponentManifestEntries_WorkspaceId_ApplicationId_ManifestId_Id", x => new { x.WorkspaceId, x.ApplicationId, x.ManifestId, x.Id });
                     table.ForeignKey(
                         name: "FK_HealingComponentManifestEntries_HealingComponentManifests_WorkspaceId_ApplicationId_ManifestId",
+                        columns: x => new { x.WorkspaceId, x.ApplicationId, x.ManifestId },
+                        principalTable: "HealingComponentManifests",
+                        principalColumns: new[] { "WorkspaceId", "ApplicationId", "Id" },
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "HealingComponentManifestRegistrations",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
+                    WorkspaceId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    ApplicationId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    RevisionId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    IdempotencyKey = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
+                    PayloadHash = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false),
+                    ManifestId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    CreatedAt = table.Column<long>(type: "INTEGER", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_HealingComponentManifestRegistrations", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_HealingComponentManifestRegistrations_HealingComponentManifests_WorkspaceId_ApplicationId_ManifestId",
                         columns: x => new { x.WorkspaceId, x.ApplicationId, x.ManifestId },
                         principalTable: "HealingComponentManifests",
                         principalColumns: new[] { "WorkspaceId", "ApplicationId", "Id" },
@@ -297,6 +347,7 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     OccurrenceThreshold = table.Column<int>(type: "INTEGER", nullable: true),
                     DebounceWindow = table.Column<TimeSpan>(type: "TEXT", nullable: true),
                     EnvironmentKillSwitch = table.Column<bool>(type: "INTEGER", nullable: false),
+                    ClassificationPolicyJson = table.Column<string>(type: "TEXT", maxLength: 8192, nullable: false),
                     CreatedAt = table.Column<long>(type: "INTEGER", nullable: false),
                     UpdatedAt = table.Column<long>(type: "INTEGER", nullable: false),
                     Version = table.Column<byte[]>(type: "BLOB", nullable: false)
@@ -371,44 +422,6 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "HealingIncidentOccurrences",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    InboxItemId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    WorkspaceId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    ApplicationId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    EnvironmentId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    RevisionId = table.Column<Guid>(type: "TEXT", nullable: true),
-                    OccurrenceKey = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
-                    OccurredAt = table.Column<long>(type: "INTEGER", nullable: false),
-                    AcceptedAt = table.Column<long>(type: "INTEGER", nullable: false),
-                    Classification = table.Column<int>(type: "INTEGER", nullable: false),
-                    Severity = table.Column<int>(type: "INTEGER", nullable: false),
-                    ExceptionType = table.Column<string>(type: "TEXT", maxLength: 512, nullable: false),
-                    OperationName = table.Column<string>(type: "TEXT", maxLength: 512, nullable: false),
-                    NormalizedStackJson = table.Column<string>(type: "TEXT", maxLength: 262144, nullable: false),
-                    TraceId = table.Column<string>(type: "TEXT", maxLength: 64, nullable: true),
-                    SpanId = table.Column<string>(type: "TEXT", maxLength: 32, nullable: true),
-                    RetryState = table.Column<int>(type: "INTEGER", nullable: false),
-                    FingerprintVersion = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
-                    Fingerprint = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false),
-                    EvidenceTier = table.Column<int>(type: "INTEGER", nullable: false),
-                    EvidenceDigest = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_HealingIncidentOccurrences", x => x.Id);
-                    table.UniqueConstraint("AK_HealingIncidentOccurrences_WorkspaceId_ApplicationId_Id", x => new { x.WorkspaceId, x.ApplicationId, x.Id });
-                    table.ForeignKey(
-                        name: "FK_HealingIncidentOccurrences_HealingSignalInboxItems_WorkspaceId_ApplicationId_InboxItemId",
-                        columns: x => new { x.WorkspaceId, x.ApplicationId, x.InboxItemId },
-                        principalTable: "HealingSignalInboxItems",
-                        principalColumns: new[] { "WorkspaceId", "ApplicationId", "Id" },
-                        onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "HealingComponentDependencies",
                 columns: table => new
                 {
@@ -441,6 +454,32 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "HealingComponentManifestAssemblies",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
+                    ManifestId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    ComponentEntryId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    WorkspaceId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    ApplicationId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    Name = table.Column<string>(type: "TEXT", maxLength: 512, nullable: false),
+                    Version = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
+                    PublicKeyToken = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
+                    RelativePath = table.Column<string>(type: "TEXT", maxLength: 2048, nullable: false),
+                    ContentHash = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_HealingComponentManifestAssemblies", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_HealingComponentManifestAssemblies_HealingComponentManifestEntries_WorkspaceId_ApplicationId_ManifestId_ComponentEntryId",
+                        columns: x => new { x.WorkspaceId, x.ApplicationId, x.ManifestId, x.ComponentEntryId },
+                        principalTable: "HealingComponentManifestEntries",
+                        principalColumns: new[] { "WorkspaceId", "ApplicationId", "ManifestId", "Id" },
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "HealingComponentAttributions",
                 columns: table => new
                 {
@@ -462,12 +501,6 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                         name: "FK_HealingComponentAttributions_HealingComponentManifestEntries_WorkspaceId_ApplicationId_ComponentEntryId",
                         columns: x => new { x.WorkspaceId, x.ApplicationId, x.ComponentEntryId },
                         principalTable: "HealingComponentManifestEntries",
-                        principalColumns: new[] { "WorkspaceId", "ApplicationId", "Id" },
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_HealingComponentAttributions_HealingIncidentOccurrences_WorkspaceId_ApplicationId_OccurrenceId",
-                        columns: x => new { x.WorkspaceId, x.ApplicationId, x.OccurrenceId },
-                        principalTable: "HealingIncidentOccurrences",
                         principalColumns: new[] { "WorkspaceId", "ApplicationId", "Id" },
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
@@ -493,6 +526,12 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     ProducingRevisionsJson = table.Column<string>(type: "TEXT", maxLength: 8192, nullable: false),
                     CurrentDeployedRevision = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
                     VerificationStatus = table.Column<int>(type: "INTEGER", nullable: false),
+                    OccurrenceThreshold = table.Column<int>(type: "INTEGER", nullable: false),
+                    DebounceWindow = table.Column<TimeSpan>(type: "TEXT", nullable: false),
+                    ThresholdReachedAt = table.Column<long>(type: "INTEGER", nullable: true),
+                    ReadyAfter = table.Column<long>(type: "INTEGER", nullable: true),
+                    ClassificationPolicyVersion = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
+                    ClassificationPolicyHash = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false),
                     ClosedByActorId = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
                     ClosedAt = table.Column<long>(type: "INTEGER", nullable: true),
                     Version = table.Column<byte[]>(type: "BLOB", nullable: false)
@@ -605,6 +644,52 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "HealingIncidentOccurrences",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
+                    InboxItemId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    IncidentId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    EpisodeId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    WorkspaceId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    ApplicationId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    EnvironmentId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    RevisionId = table.Column<Guid>(type: "TEXT", nullable: true),
+                    OccurrenceKey = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
+                    OccurredAt = table.Column<long>(type: "INTEGER", nullable: false),
+                    AcceptedAt = table.Column<long>(type: "INTEGER", nullable: false),
+                    Classification = table.Column<int>(type: "INTEGER", nullable: false),
+                    Severity = table.Column<int>(type: "INTEGER", nullable: false),
+                    ExceptionType = table.Column<string>(type: "TEXT", maxLength: 512, nullable: false),
+                    OperationName = table.Column<string>(type: "TEXT", maxLength: 512, nullable: false),
+                    NormalizedStackJson = table.Column<string>(type: "TEXT", maxLength: 262144, nullable: false),
+                    TraceId = table.Column<string>(type: "TEXT", maxLength: 64, nullable: true),
+                    SpanId = table.Column<string>(type: "TEXT", maxLength: 32, nullable: true),
+                    RetryState = table.Column<int>(type: "INTEGER", nullable: false),
+                    FingerprintVersion = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
+                    Fingerprint = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false),
+                    EvidenceTier = table.Column<int>(type: "INTEGER", nullable: false),
+                    EvidenceDigest = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_HealingIncidentOccurrences", x => x.Id);
+                    table.UniqueConstraint("AK_HealingIncidentOccurrences_WorkspaceId_ApplicationId_Id", x => new { x.WorkspaceId, x.ApplicationId, x.Id });
+                    table.ForeignKey(
+                        name: "FK_HealingIncidentOccurrences_HealingIncidentEpisodes_WorkspaceId_ApplicationId_EpisodeId",
+                        columns: x => new { x.WorkspaceId, x.ApplicationId, x.EpisodeId },
+                        principalTable: "HealingIncidentEpisodes",
+                        principalColumns: new[] { "WorkspaceId", "ApplicationId", "Id" },
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_HealingIncidentOccurrences_HealingSignalInboxItems_WorkspaceId_ApplicationId_InboxItemId",
+                        columns: x => new { x.WorkspaceId, x.ApplicationId, x.InboxItemId },
+                        principalTable: "HealingSignalInboxItems",
+                        principalColumns: new[] { "WorkspaceId", "ApplicationId", "Id" },
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "HealingVerificationResults",
                 columns: table => new
                 {
@@ -670,6 +755,7 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     ActiveEpisodeId = table.Column<Guid>(type: "TEXT", nullable: true),
                     WorkItemProjectionId = table.Column<Guid>(type: "TEXT", nullable: true),
                     NeedsHumanReason = table.Column<int>(type: "INTEGER", nullable: true),
+                    ReadyAfter = table.Column<long>(type: "INTEGER", nullable: true),
                     Version = table.Column<byte[]>(type: "BLOB", nullable: false)
                 },
                 constraints: table =>
@@ -1011,6 +1097,12 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                 });
 
             migrationBuilder.CreateIndex(
+                name: "IX_HealingAuditEvents_WorkspaceId_AggregateType_AggregateId_EventType_CorrelationId",
+                table: "HealingAuditEvents",
+                columns: new[] { "WorkspaceId", "AggregateType", "AggregateId", "EventType", "CorrelationId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_HealingAuditEvents_WorkspaceId_AggregateType_AggregateId_Sequence",
                 table: "HealingAuditEvents",
                 columns: new[] { "WorkspaceId", "AggregateType", "AggregateId", "Sequence" },
@@ -1054,15 +1146,32 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                 columns: new[] { "ManifestId", "ToEntryId" });
 
             migrationBuilder.CreateIndex(
+                name: "IX_HealingComponentManifestAssemblies_ManifestId_ComponentEntryId_RelativePath",
+                table: "HealingComponentManifestAssemblies",
+                columns: new[] { "ManifestId", "ComponentEntryId", "RelativePath" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HealingComponentManifestAssemblies_WorkspaceId_ApplicationId_ManifestId_ComponentEntryId",
+                table: "HealingComponentManifestAssemblies",
+                columns: new[] { "WorkspaceId", "ApplicationId", "ManifestId", "ComponentEntryId" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_HealingComponentManifestEntries_ManifestId_ComponentKey",
                 table: "HealingComponentManifestEntries",
                 columns: new[] { "ManifestId", "ComponentKey" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_HealingComponentManifestEntries_WorkspaceId_ApplicationId_ManifestId",
-                table: "HealingComponentManifestEntries",
+                name: "IX_HealingComponentManifestRegistrations_WorkspaceId_ApplicationId_ManifestId",
+                table: "HealingComponentManifestRegistrations",
                 columns: new[] { "WorkspaceId", "ApplicationId", "ManifestId" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HealingComponentManifestRegistrations_WorkspaceId_ApplicationId_RevisionId_IdempotencyKey",
+                table: "HealingComponentManifestRegistrations",
+                columns: new[] { "WorkspaceId", "ApplicationId", "RevisionId", "IdempotencyKey" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_HealingComponentManifests_WorkspaceId_ApplicationId_RevisionId",
@@ -1151,22 +1260,22 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                 columns: new[] { "IncidentId", "OpenedAt" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_HealingIncidentEpisodes_PreviousEpisodeId",
-                table: "HealingIncidentEpisodes",
-                column: "PreviousEpisodeId",
-                unique: true);
-
-            migrationBuilder.CreateIndex(
                 name: "IX_HealingIncidentEpisodes_WorkspaceId_ApplicationId_PreviousEpisodeId",
                 table: "HealingIncidentEpisodes",
                 columns: new[] { "WorkspaceId", "ApplicationId", "PreviousEpisodeId" },
-                unique: true);
+                unique: true,
+                filter: "\"PreviousEpisodeId\" IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_HealingIncidentOccurrences_InboxItemId",
                 table: "HealingIncidentOccurrences",
                 column: "InboxItemId",
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HealingIncidentOccurrences_WorkspaceId_ApplicationId_EpisodeId",
+                table: "HealingIncidentOccurrences",
+                columns: new[] { "WorkspaceId", "ApplicationId", "EpisodeId" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_HealingIncidentOccurrences_WorkspaceId_ApplicationId_FingerprintVersion_Fingerprint",
@@ -1180,10 +1289,27 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_HealingIncidentOccurrences_WorkspaceId_ApplicationId_IncidentId",
+                table: "HealingIncidentOccurrences",
+                columns: new[] { "WorkspaceId", "ApplicationId", "IncidentId" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_HealingIncidentOccurrences_WorkspaceId_ApplicationId_OccurrenceKey",
                 table: "HealingIncidentOccurrences",
                 columns: new[] { "WorkspaceId", "ApplicationId", "OccurrenceKey" },
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HealingIncidents_Status_ReadyAfter",
+                table: "HealingIncidents",
+                columns: new[] { "Status", "ReadyAfter" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HealingIncidents_WorkspaceId_ApplicationId_FingerprintVersion_Fingerprint_RepairRepositoryKey",
+                table: "HealingIncidents",
+                columns: new[] { "WorkspaceId", "ApplicationId", "FingerprintVersion", "Fingerprint", "RepairRepositoryKey" },
+                unique: true,
+                filter: "\"Status\" NOT IN (8, 11, 13, 14)");
 
             migrationBuilder.CreateIndex(
                 name: "IX_HealingIncidents_WorkspaceId_ApplicationId_Id_ActiveEpisodeId",
@@ -1213,13 +1339,6 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                 columns: new[] { "WorkspaceId", "ApplicationId", "Status", "LastSeenAt" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_HealingIncidents_WorkspaceId_FingerprintVersion_Fingerprint_RepairRepositoryKey",
-                table: "HealingIncidents",
-                columns: new[] { "WorkspaceId", "FingerprintVersion", "Fingerprint", "RepairRepositoryKey" },
-                unique: true,
-                filter: "\"Status\" NOT IN (8, 11, 13, 14)");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_HealingPolicies_WorkspaceId_ApplicationId_Name_PolicyVersion",
                 table: "HealingPolicies",
                 columns: new[] { "WorkspaceId", "ApplicationId", "Name", "PolicyVersion" },
@@ -1243,8 +1362,7 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_HealingProviderConnections_WorkspaceId_Provider_RepositoryProviderId",
                 table: "HealingProviderConnections",
-                columns: new[] { "WorkspaceId", "Provider", "RepositoryProviderId" },
-                unique: true);
+                columns: new[] { "WorkspaceId", "Provider", "RepositoryProviderId" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_HealingProviderOperations_Status_NextAttemptAt_LeaseExpiresAt",
@@ -1410,6 +1528,16 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                 columns: new[] { "WorkspaceId", "ProviderConnectionId" });
 
             migrationBuilder.CreateIndex(
+                name: "IX_HealingTelemetrySources_WorkspaceId_ApplicationId_EnvironmentId_Name",
+                table: "HealingTelemetrySources",
+                columns: new[] { "WorkspaceId", "ApplicationId", "EnvironmentId", "Name" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HealingTelemetrySources_WorkspaceId_ApplicationId_EnvironmentId_Status",
+                table: "HealingTelemetrySources",
+                columns: new[] { "WorkspaceId", "ApplicationId", "EnvironmentId", "Status" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_HealingVerificationResults_EpisodeId_EnvironmentId_RepairedRevision",
                 table: "HealingVerificationResults",
                 columns: new[] { "EpisodeId", "EnvironmentId", "RepairedRevision" },
@@ -1459,6 +1587,14 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                 unique: true);
 
             migrationBuilder.AddForeignKey(
+                name: "FK_HealingComponentAttributions_HealingIncidentOccurrences_WorkspaceId_ApplicationId_OccurrenceId",
+                table: "HealingComponentAttributions",
+                columns: new[] { "WorkspaceId", "ApplicationId", "OccurrenceId" },
+                principalTable: "HealingIncidentOccurrences",
+                principalColumns: new[] { "WorkspaceId", "ApplicationId", "Id" },
+                onDelete: ReferentialAction.Restrict);
+
+            migrationBuilder.AddForeignKey(
                 name: "FK_HealingEnvironmentImpacts_HealingIncidentEpisodes_WorkspaceId_ApplicationId_EpisodeId",
                 table: "HealingEnvironmentImpacts",
                 columns: new[] { "WorkspaceId", "ApplicationId", "EpisodeId" },
@@ -1501,6 +1637,14 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
             migrationBuilder.AddForeignKey(
                 name: "FK_HealingIncidentEpisodes_HealingIncidents_WorkspaceId_ApplicationId_IncidentId",
                 table: "HealingIncidentEpisodes",
+                columns: new[] { "WorkspaceId", "ApplicationId", "IncidentId" },
+                principalTable: "HealingIncidents",
+                principalColumns: new[] { "WorkspaceId", "ApplicationId", "Id" },
+                onDelete: ReferentialAction.Restrict);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_HealingIncidentOccurrences_HealingIncidents_WorkspaceId_ApplicationId_IncidentId",
+                table: "HealingIncidentOccurrences",
                 columns: new[] { "WorkspaceId", "ApplicationId", "IncidentId" },
                 principalTable: "HealingIncidents",
                 principalColumns: new[] { "WorkspaceId", "ApplicationId", "Id" },
@@ -1568,6 +1712,12 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                 name: "HealingComponentDependencies");
 
             migrationBuilder.DropTable(
+                name: "HealingComponentManifestAssemblies");
+
+            migrationBuilder.DropTable(
+                name: "HealingComponentManifestRegistrations");
+
+            migrationBuilder.DropTable(
                 name: "HealingEnvironmentConfigurations");
 
             migrationBuilder.DropTable(
@@ -1590,6 +1740,9 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
 
             migrationBuilder.DropTable(
                 name: "HealingRepairResults");
+
+            migrationBuilder.DropTable(
+                name: "HealingTelemetrySources");
 
             migrationBuilder.DropTable(
                 name: "HealingVerificationResults");

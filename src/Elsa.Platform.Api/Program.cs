@@ -48,6 +48,7 @@ using Elsa.Platform.Weaver.Core.Runtime;
 using Elsa.Platform.Weaver.Core.Safety;
 using Elsa.Platform.Weaver.Core.Sessions;
 using Elsa.Platform.Weaver.Core.Tools;
+using Elsa.Diagnostics.OpenTelemetry.Extensions;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -165,7 +166,10 @@ builder.Services.AddSingleton<BuilderClientApiKeyValidator>();
 builder.Services.AddPlatformHealing(builder.Configuration, builder.Environment)
     .AddEndpointModule<WorkspaceHealingConfigurationEndpointModule>()
     .AddEndpointModule<WorkspaceHealingAuthorityEndpointModule>()
-    .AddEndpointModule<PlatformManagedManifestAttestationEndpointModule>();
+    .AddEndpointModule<PlatformManagedManifestAttestationEndpointModule>()
+    .AddEndpointModule<HealingIntakeEndpointModule>()
+    .AddEndpointModule<WorkspaceHealingIncidentEndpointModule>()
+    .AddHostedWorker<HealingSignalInboxHostedService>();
 builder.Services.AddCatalogDbContext(builder.Configuration);
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
 builder.Services.AddScoped<IPublicCatalogQueries, PublicCatalogQueries>();
@@ -382,6 +386,7 @@ app.MapWorkspaceRuntimeConfigurationEndpoints();
 app.MapWorkspaceDeploymentEndpoints();
 app.MapWorkspacePermissionManagementEndpoints();
 app.MapWorkspaceArtifactEndpoints();
+app.MapOpenTelemetryOtlpReceiver();
 app.MapPlatformHealingEndpoints();
 app.MapWorkspaceWeaverEndpoints();
 app.MapRuntimeCommandEndpoints();

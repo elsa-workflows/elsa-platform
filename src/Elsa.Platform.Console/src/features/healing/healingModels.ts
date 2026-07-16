@@ -12,6 +12,7 @@ export type HealingEnvironmentConfiguration = {
   environmentKillSwitch: boolean;
   occurrenceThreshold?: number | null;
   debounceWindow?: string | null;
+  classificationPolicyJson?: string;
 };
 
 export type HealingApplicationConfiguration = {
@@ -28,6 +29,7 @@ export type HealingApplicationConfiguration = {
   concurrencyBudget: number;
   inferenceBudget: number;
   repositoryRunBudget: number;
+  classificationPolicyJson?: string;
   version: string;
   manifestReadiness: "Ready" | "Missing" | "Stale" | "Untrusted" | string;
   providerReadiness: "Ready" | "Missing" | "Unavailable" | string;
@@ -47,6 +49,7 @@ export type UpdateHealingConfigurationRequest = Pick<
   | "concurrencyBudget"
   | "inferenceBudget"
   | "repositoryRunBudget"
+  | "classificationPolicyJson"
   | "version"
   | "environments"
 > & { confirmationId?: string };
@@ -171,4 +174,122 @@ export type HealingAuthorityProfile = {
   pathPolicy: HealingPolicyReference;
   evidencePolicy: HealingPolicyReference;
   mergePolicy: HealingPolicyReference;
+};
+
+export type HealingIncidentStatus =
+  | "Observed"
+  | "ThresholdPending"
+  | "ReadyForRepair"
+  | "Repairing"
+  | "PullRequestOpen"
+  | "ObservationOnly"
+  | "Suppressed"
+  | "NeedsHuman"
+  | "Failed"
+  | "Merged"
+  | "Verifying"
+  | "Healed"
+  | "FailedVerification"
+  | "Superseded"
+  | "Waived"
+  | string;
+
+export type HealingEnvironmentImpact = {
+  episodeId: string;
+  environmentId: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  occurrenceCount: number;
+  producingRevisions: string[];
+  currentDeployedRevision?: string | null;
+  verificationStatus: string;
+  occurrenceThreshold: number;
+  debounceWindow: string;
+  thresholdReachedAt?: string | null;
+  readyAfter?: string | null;
+};
+
+export type HealingIncidentSummary = {
+  id: string;
+  applicationId: string;
+  status: HealingIncidentStatus;
+  severity: string;
+  classification: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  occurrenceCount: number;
+  activeEpisodeId?: string | null;
+  repairable: boolean;
+  needsHumanReason?: string | null;
+  readyAfter?: string | null;
+  environmentImpacts: HealingEnvironmentImpact[];
+};
+
+export type HealingIncidentListResponse = {
+  items: HealingIncidentSummary[];
+  nextCursor?: string | null;
+};
+
+export type HealingIncidentEpisode = {
+  id: string;
+  previousEpisodeId?: string | null;
+  openedAt: string;
+  closedAt?: string | null;
+  producingRevisions: string[];
+  targetRevision?: string | null;
+  outcome: string;
+  regressionReason?: string | null;
+};
+
+export type HealingIncidentOccurrence = {
+  id: string;
+  environmentId: string;
+  revisionId?: string | null;
+  occurredAt: string;
+  acceptedAt: string;
+  classification: string;
+  severity: string;
+  exceptionType: string;
+  operationName: string;
+  retryState: string;
+  evidenceTier: string;
+};
+
+export type HealingComponentAttribution = {
+  id: string;
+  occurrenceId: string;
+  componentEntryId: string;
+  bindingId?: string | null;
+  confidence: number;
+  basis: string | number;
+  resolution: string;
+  reasonCodes: string[];
+};
+
+export type HealingWorkItemSummary = {
+  id: string;
+  episodeId: string;
+  number?: number | null;
+  url?: string | null;
+  providerState?: string | null;
+  projectionStatus: string;
+  lastProjectedAt?: string | null;
+  lastObservedAt?: string | null;
+};
+
+export type HealingIncidentDetail = HealingIncidentSummary & {
+  episodes: HealingIncidentEpisode[];
+  occurrences: HealingIncidentOccurrence[];
+  attributions: HealingComponentAttribution[];
+  workItem?: HealingWorkItemSummary | null;
+};
+
+export type HealingIncidentFilters = {
+  applicationId?: string;
+  environmentId?: string;
+  status?: string;
+  severity?: string;
+  repairable?: boolean;
+  cursor?: string;
+  take?: number;
 };

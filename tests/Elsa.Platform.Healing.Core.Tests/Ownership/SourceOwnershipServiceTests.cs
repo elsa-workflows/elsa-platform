@@ -30,6 +30,13 @@ public sealed class SourceOwnershipServiceTests
         var denied = await service.SaveAsync(configuration, Owner(applicationId: Guid.NewGuid()));
 
         saved.Succeeded.Should().BeTrue();
+        store.WorkspaceConfiguration.Should().BeEquivalentTo(new
+        {
+            WorkspaceId = _workspaceId,
+            WorkspaceKillSwitch = false,
+            CreatedAt = _now,
+            UpdatedAt = _now
+        });
         effective.Should().BeEquivalentTo(new EffectiveHealingConfiguration(
             DiscoveryEnabled: false,
             RepairEnabled: true,
@@ -831,6 +838,7 @@ public sealed class SourceOwnershipServiceTests
     private sealed class FakeOwnershipStore : IHealingOwnershipStore, IHealingAdministrationStore, IHealingAuditStore
     {
         public HealingConfiguration? Configuration { get; private set; }
+        public HealingWorkspaceConfiguration? WorkspaceConfiguration { get; private set; }
         public List<ComponentManifestEntity> Manifests { get; } = [];
         public List<SourceOwnershipBinding> Bindings { get; } = [];
         public List<ProviderConnection> ProviderConnections { get; } = [];
@@ -845,6 +853,17 @@ public sealed class SourceOwnershipServiceTests
 
         public ValueTask<HealingConfiguration?> GetConfigurationAsync(Guid workspaceId, Guid applicationId, CancellationToken cancellationToken) =>
             ValueTask.FromResult(Configuration is { } value && value.WorkspaceId == workspaceId && value.ApplicationId == applicationId ? value : null);
+
+        public ValueTask<HealingWorkspaceConfiguration?> GetWorkspaceConfigurationAsync(Guid workspaceId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(WorkspaceConfiguration is { } value && value.WorkspaceId == workspaceId ? value : null);
+
+        public ValueTask<HealingWorkspaceConfiguration> UpsertWorkspaceConfigurationAsync(
+            HealingWorkspaceConfiguration configuration,
+            CancellationToken cancellationToken = default)
+        {
+            WorkspaceConfiguration = configuration;
+            return ValueTask.FromResult(configuration);
+        }
 
         public ValueTask<HealingConfiguration> SaveConfigurationAsync(HealingConfiguration configuration, CancellationToken cancellationToken)
         {

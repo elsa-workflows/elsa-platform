@@ -5,6 +5,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Elsa.Diagnostics.OpenTelemetry" />
     <PackageReference Include="Elsa.Diagnostics.OpenTelemetry.Core" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />

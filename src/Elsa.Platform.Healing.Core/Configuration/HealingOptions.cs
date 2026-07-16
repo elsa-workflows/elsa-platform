@@ -84,6 +84,7 @@ public static class HealingGateReasonCodes
 {
     public const string Allowed = "allowed";
     public const string PlatformKillSwitch = "platform-kill-switch";
+    public const string WorkspaceConfigurationNotFound = "workspace-configuration-not-found";
     public const string WorkspaceKillSwitch = "workspace-kill-switch";
     public const string ApplicationKillSwitch = "application-kill-switch";
     public const string EnvironmentKillSwitch = "environment-kill-switch";

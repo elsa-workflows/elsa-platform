@@ -107,24 +107,24 @@
 
 ### Tests for User Story 2
 
-- [ ] T048 [P] [US2] Add failing post-redaction durable contributor/idempotency tests in `tests/Elsa.Platform.Healing.OpenTelemetry.Tests/HealingOpenTelemetryContributorTests.cs`
-- [ ] T049 [P] [US2] Add failing signal profile normalization, curated classification, and fingerprint stability tests in `tests/Elsa.Platform.Healing.Core.Tests/Incidents/HealingSignalClassifierTests.cs`
-- [ ] T050 [P] [US2] Add failing concurrent deduplication, threshold, environment aggregation, and regression-episode tests in `tests/Elsa.Platform.Healing.Persistence.EntityFrameworkCore.Tests/IncidentProjectionConcurrencyTests.cs`
-- [ ] T051 [P] [US2] Add failing OTLP and explicit incident API tests in `tests/Elsa.Platform.Api.Tests/Healing/HealingIntakeApiTests.cs`
-- [ ] T052 [P] [US2] Add failing incident list/detail UI tests in `src/Elsa.Platform.Console/src/features/healing/HealingIncidentsPage.test.tsx`
+- [x] T048 [P] [US2] Add failing post-redaction durable contributor/idempotency tests in `tests/Elsa.Platform.Healing.OpenTelemetry.Tests/HealingOpenTelemetryContributorTests.cs`
+- [x] T049 [P] [US2] Add failing signal profile normalization, curated classification, and fingerprint stability tests in `tests/Elsa.Platform.Healing.Core.Tests/Incidents/HealingSignalClassifierTests.cs`
+- [x] T050 [P] [US2] Add failing concurrent deduplication, threshold, environment aggregation, and regression-episode tests in `tests/Elsa.Platform.Healing.Persistence.EntityFrameworkCore.Tests/IncidentProjectionConcurrencyTests.cs`
+- [x] T051 [P] [US2] Add failing OTLP and explicit incident API tests in `tests/Elsa.Platform.Api.Tests/Healing/HealingIntakeApiTests.cs`
+- [x] T052 [P] [US2] Add failing incident list/detail UI tests in `src/Elsa.Platform.Console/src/features/healing/HealingIncidentsPage.test.tsx`
 
 ### Implementation for User Story 2
 
-- [ ] T053 [P] [US2] Implement v1 profile normalization and stable occurrence identity in `src/Elsa.Platform.Healing.Core/Incidents/HealingSignalNormalizer.cs`
-- [ ] T054 [P] [US2] Implement curated classification and policy override service in `src/Elsa.Platform.Healing.Core/Incidents/HealingSignalClassifier.cs`
-- [ ] T055 [P] [US2] Implement versioned deterministic fingerprinting and normalized frame extraction in `src/Elsa.Platform.Healing.Core/Incidents/HealingFingerprintService.cs`
-- [ ] T056 [US2] Implement component attribution against the producing manifest and approved bindings in `src/Elsa.Platform.Healing.Core/Incidents/ComponentAttributionService.cs`
-- [ ] T057 [US2] Implement idempotent incident/episode/environment projection and thresholds in `src/Elsa.Platform.Healing.Core/Incidents/HealingIncidentService.cs`
-- [ ] T058 [US2] Implement the Foundation contributor bridge that only appends durable inbox items in `src/Elsa.Platform.Healing.OpenTelemetry/HealingOpenTelemetryIngestionContributor.cs`
-- [ ] T059 [US2] Implement leased inbox processing and dead-letter outcomes in `src/Elsa.Platform.Healing.Core/Incidents/HealingSignalInboxWorker.cs`
-- [ ] T060 [US2] Map Platform OTLP composition/query routes and explicit incident intake in `src/Elsa.Platform.Api/Workspace/Healing/HealingIntakeEndpoints.cs`
-- [ ] T061 [US2] Implement incident list/detail queries in `src/Elsa.Platform.Api/Workspace/Healing/WorkspaceHealingIncidentEndpoints.cs`
-- [ ] T062 [US2] Implement incident list and detail pages in `src/Elsa.Platform.Console/src/features/healing/HealingIncidentsPage.tsx` and `src/Elsa.Platform.Console/src/features/healing/HealingIncidentPage.tsx`
+- [x] T053 [P] [US2] Implement v1 profile normalization and stable occurrence identity in `src/Elsa.Platform.Healing.Core/Incidents/HealingSignalNormalizer.cs`
+- [x] T054 [P] [US2] Implement curated classification and policy override service in `src/Elsa.Platform.Healing.Core/Incidents/HealingSignalClassifier.cs`
+- [x] T055 [P] [US2] Implement versioned deterministic fingerprinting and normalized frame extraction in `src/Elsa.Platform.Healing.Core/Incidents/HealingFingerprintService.cs`
+- [x] T056 [US2] Implement component attribution against the producing manifest and approved bindings in `src/Elsa.Platform.Healing.Core/Incidents/ComponentAttributionService.cs`
+- [x] T057 [US2] Implement idempotent incident/episode/environment projection and thresholds in `src/Elsa.Platform.Healing.Core/Incidents/HealingIncidentService.cs`
+- [x] T058 [US2] Implement the Foundation contributor bridge that only appends durable inbox items in `src/Elsa.Platform.Healing.OpenTelemetry/HealingOpenTelemetryIngestionContributor.cs`
+- [x] T059 [US2] Implement leased inbox processing and dead-letter outcomes in `src/Elsa.Platform.Healing.Core/Incidents/HealingSignalInboxWorker.cs`
+- [x] T060 [US2] Map Platform OTLP composition/query routes and explicit incident intake in `src/Elsa.Platform.Api/Workspace/Healing/HealingIntakeEndpoints.cs`
+- [x] T061 [US2] Implement incident list/detail queries in `src/Elsa.Platform.Api/Workspace/Healing/WorkspaceHealingIncidentEndpoints.cs`
+- [x] T062 [US2] Implement incident list and detail pages in `src/Elsa.Platform.Console/src/features/healing/HealingIncidentsPage.tsx` and `src/Elsa.Platform.Console/src/features/healing/HealingIncidentPage.tsx`
 
 **Checkpoint**: User Story 2 passes normal, retry, duplicate, concurrent-worker, exclusion, ambiguity, and later-regression scenarios without GitHub/inference adapters.
 

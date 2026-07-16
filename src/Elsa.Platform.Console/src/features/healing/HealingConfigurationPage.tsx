@@ -31,9 +31,9 @@ import { queryKeys } from "@/lib/query/queryClient";
 export function HealingLandingPage() {
   return (
     <EmptyState
-      title="Choose an application to configure Healing"
-      description="Open a deployed application, then configure exception discovery and approved component ownership. Automatic discovery also requires the Platform OpenTelemetry module."
-      action={<Link className={buttonClassName()} to="/admin/deployments/applications">Open applications</Link>}
+      title="Healing operations"
+      description="Review normalized incidents, or open a deployed application to configure exception discovery and approved component ownership. Automatic discovery also requires the Platform OpenTelemetry module."
+      action={<div className="flex flex-wrap justify-center gap-2"><Link className={buttonClassName()} to="/admin/healing/incidents">View incidents</Link><Link className={buttonClassName("secondary")} to="/admin/deployments/applications">Open applications</Link></div>}
     />
   );
 }
@@ -138,6 +138,21 @@ export function HealingConfigurationPage() {
             <LabeledInput label="Verification window" value={draft.verificationWindow} onChange={(value) => setDraft({ ...draft, verificationWindow: value })} />
           </fieldset>
 
+          <fieldset className="space-y-2" disabled={!canConfigure || save.isPending}>
+            <legend className="text-base font-semibold">Classification policy</legend>
+            <p className="text-xs text-muted-foreground">
+              Versioned JSON may set failure-class thresholds, debounceSeconds, and authorized class overrides.
+            </p>
+            <label className="block text-sm font-medium" htmlFor="healing-classification-policy">Application policy JSON</label>
+            <textarea
+              id="healing-classification-policy"
+              className="min-h-28 w-full rounded-ui border border-border bg-background px-3 py-2 font-mono text-sm"
+              value={draft.classificationPolicyJson ?? "{}"}
+              onChange={(event) => setDraft({ ...draft, classificationPolicyJson: event.target.value })}
+              spellCheck={false}
+            />
+          </fieldset>
+
           <fieldset className="space-y-4" disabled={!canConfigure || save.isPending}>
             <legend className="text-base font-semibold">Environment overrides</legend>
             {draft.environments.map((environment, index) => (
@@ -150,6 +165,16 @@ export function HealingConfigurationPage() {
                   <LabeledInput label={`${environment.name} occurrence threshold`} type="number" min={1} value={environment.occurrenceThreshold ?? 1} onChange={(value) => setDraft(updateEnvironment(draft, index, { occurrenceThreshold: Number(value) }))} />
                   <LabeledInput label={`${environment.name} debounce window`} value={environment.debounceWindow ?? "00:00:00"} onChange={(value) => setDraft(updateEnvironment(draft, index, { debounceWindow: value }))} />
                 </div>
+                <label className="block text-sm font-medium" htmlFor={`healing-environment-policy-${environment.environmentId}`}>
+                  {environment.name} classification policy JSON
+                </label>
+                <textarea
+                  id={`healing-environment-policy-${environment.environmentId}`}
+                  className="min-h-24 w-full rounded-ui border border-border bg-background px-3 py-2 font-mono text-sm"
+                  value={environment.classificationPolicyJson ?? "{}"}
+                  onChange={(event) => setDraft(updateEnvironment(draft, index, { classificationPolicyJson: event.target.value }))}
+                  spellCheck={false}
+                />
               </div>
             ))}
           </fieldset>
@@ -511,7 +536,7 @@ const bindingFields: ReadonlyArray<{ key: "name" | "targetBranch" | "workflowIde
 ];
 
 function HealingPageHeader({ applicationId, title, applicationName }: { applicationId: string; title: string; applicationName?: string }) {
-  return <header className="space-y-3"><div><h1 className="font-display text-xl font-semibold">{title}</h1>{applicationName ? <p className="mt-1 text-sm text-muted-foreground">{applicationName}</p> : null}</div><nav aria-label="Healing application"><Link className="mr-4 text-sm text-primary" to={`/admin/healing/applications/${applicationId}/configuration`}>Configuration</Link><Link className="text-sm text-primary" to={`/admin/healing/applications/${applicationId}/components`}>Components</Link></nav></header>;
+  return <header className="space-y-3"><div><h1 className="font-display text-xl font-semibold">{title}</h1>{applicationName ? <p className="mt-1 text-sm text-muted-foreground">{applicationName}</p> : null}</div><nav className="flex flex-wrap gap-4" aria-label="Healing application"><Link className="text-sm text-primary" to={`/admin/healing/applications/${applicationId}/configuration`}>Configuration</Link><Link className="text-sm text-primary" to={`/admin/healing/applications/${applicationId}/components`}>Components</Link><Link className="text-sm text-primary" to={`/admin/healing/incidents?applicationId=${encodeURIComponent(applicationId)}`}>Incidents</Link></nav></header>;
 }
 
 function Toggle({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
@@ -576,6 +601,7 @@ function toUpdateRequest(value: HealingApplicationConfiguration): UpdateHealingC
     concurrencyBudget: value.concurrencyBudget,
     inferenceBudget: value.inferenceBudget,
     repositoryRunBudget: value.repositoryRunBudget,
+    classificationPolicyJson: value.classificationPolicyJson,
     version: value.version,
     environments: value.environments
   };

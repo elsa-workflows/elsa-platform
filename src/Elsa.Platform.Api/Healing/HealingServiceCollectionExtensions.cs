@@ -1,11 +1,18 @@
 using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.Healing.Abstractions;
 using Elsa.Platform.Healing.Core.Configuration;
+using Elsa.Platform.Healing.Core.Incidents;
 using Elsa.Platform.Healing.Core.Manifests;
 using Elsa.Platform.Healing.Core.Ownership;
+using Elsa.Platform.Healing.Core.OpenTelemetry;
 using Elsa.Platform.Healing.Core.Security;
 using Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
 using Elsa.Platform.Healing.GitHub;
+using Elsa.Platform.Healing.OpenTelemetry;
+using Elsa.Platform.Api.Workspace.Healing;
+using Elsa.Diagnostics.OpenTelemetry.Core.Contracts;
+using Elsa.Diagnostics.OpenTelemetry.Extensions;
+using Elsa.Diagnostics.OpenTelemetry.Ingestion;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -43,11 +50,32 @@ public static class HealingServiceCollectionExtensions
             serviceProvider.GetRequiredService<HealingStore>());
         services.TryAddScoped<IHealingAuditStore>(serviceProvider =>
             serviceProvider.GetRequiredService<HealingStore>());
+        services.TryAddScoped<IHealingIncidentStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<HealingStore>());
+        services.TryAddScoped<IHealingSignalInboxStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<HealingStore>());
+        services.TryAddScoped<IHealingTelemetrySourceStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<HealingStore>());
         services.TryAddScoped<HealingAuditService>();
         services.TryAddScoped<HealingConfigurationService>();
         services.TryAddScoped<ComponentManifestService>();
         services.TryAddScoped<IComponentManifestAttestationAuthority, PlatformManagedComponentManifestAttestationAuthority>();
         services.TryAddScoped<SourceOwnershipService>();
+        services.TryAddScoped<ComponentAttributionService>();
+        services.TryAddScoped<HealingIncidentService>();
+        services.TryAddScoped<HealingSignalInboxWorker>();
+        services.TryAddSingleton<HealingSignalNormalizer>();
+        services.TryAddSingleton<HealingSignalClassifier>();
+        services.TryAddSingleton<HealingFingerprintService>();
+        services.TryAddScoped<IHealingSignalInboxAppender, PlatformHealingSignalInboxAppender>();
+        services.TryAddScoped<IHealingTelemetryScopeResolver, AuthenticatedClaimHealingTelemetryScopeResolver>();
+        services.TryAddSingleton<HealingTelemetrySourceTokenService>();
+        services.TryAddScoped<HealingTelemetrySourceService>();
+        services.Replace(ServiceDescriptor.Scoped<IOtlpRequestAuthenticator, PlatformHealingOtlpRequestAuthenticator>());
+        services.AddOpenTelemetryDiagnosticsServices(options =>
+            configuration.GetSection("Healing:OpenTelemetry").Bind(options));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOpenTelemetryIngestionContributor, HealingOpenTelemetryIngestionContributor>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHealingEndpointModule, WorkspaceHealingTelemetrySourceEndpointModule>());
         services.TryAddScoped<HealingAdministrationService>();
         services.TryAddScoped<IHealingProviderCredentialResolver, WorkspaceHealingProviderCredentialResolver>();
         services.AddHttpClient<GitHubAppTokenProvider>(client => client.BaseAddress = new Uri("https://api.github.com/"));

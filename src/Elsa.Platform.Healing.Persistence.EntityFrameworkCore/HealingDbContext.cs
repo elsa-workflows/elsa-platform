@@ -9,6 +9,7 @@ public sealed class HealingDbContext(DbContextOptions<HealingDbContext> options)
     public DbSet<HealingConfiguration> HealingConfigurations => Set<HealingConfiguration>();
     public DbSet<HealingWorkspaceConfiguration> HealingWorkspaceConfigurations => Set<HealingWorkspaceConfiguration>();
     public DbSet<HealingEnvironmentConfiguration> HealingEnvironmentConfigurations => Set<HealingEnvironmentConfiguration>();
+    public DbSet<HealingTelemetrySource> HealingTelemetrySources => Set<HealingTelemetrySource>();
     public DbSet<HealingSignalInboxItem> HealingSignalInboxItems => Set<HealingSignalInboxItem>();
     public DbSet<ComponentManifestModel> ComponentManifests => Set<ComponentManifestModel>();
     public DbSet<ComponentManifestRegistration> ComponentManifestRegistrations => Set<ComponentManifestRegistration>();

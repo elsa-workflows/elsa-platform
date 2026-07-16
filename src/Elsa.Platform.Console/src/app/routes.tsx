@@ -39,6 +39,8 @@ import { SyncRunsPage } from "@/features/sync-runs/SyncRunsPage";
 import { WeaverSessionPage } from "@/features/weaver/WeaverSessionPage";
 import { ConsoleLogsPage } from "@/features/console/ConsoleLogsPage";
 import { HealingComponentsPage, HealingConfigurationPage, HealingLandingPage } from "@/features/healing/HealingConfigurationPage";
+import { HealingIncidentPage } from "@/features/healing/HealingIncidentPage";
+import { HealingIncidentsPage } from "@/features/healing/HealingIncidentsPage";
 
 function PlaceholderPage({ title }: { title: string }) {
   return (
@@ -148,6 +150,8 @@ export const router = createBrowserRouter([
       { path: "runtime-builder/:configurationId/edit", element: <RequireCustomerAuth><EditRuntimeBuilderPage /></RequireCustomerAuth> },
       { path: "console", element: <RequireCustomerAuth><ConsoleLogsPage /></RequireCustomerAuth> },
       { path: "healing", element: <RequireCustomerAuth><HealingLandingPage /></RequireCustomerAuth> },
+      { path: "healing/incidents", element: <RequireCustomerAuth><HealingIncidentsPage /></RequireCustomerAuth> },
+      { path: "healing/incidents/:incidentId", element: <RequireCustomerAuth><HealingIncidentPage /></RequireCustomerAuth> },
       { path: "healing/applications/:applicationId/configuration", element: <RequireCustomerAuth><HealingConfigurationPage /></RequireCustomerAuth> },
       { path: "healing/applications/:applicationId/components", element: <RequireCustomerAuth><HealingComponentsPage /></RequireCustomerAuth> },
       { path: "targets", element: <PlaceholderPage title="Targets" /> },

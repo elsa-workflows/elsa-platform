@@ -21,6 +21,14 @@ public interface IHealingOwnershipStore
         Guid applicationId,
         CancellationToken cancellationToken = default);
 
+    ValueTask<HealingWorkspaceConfiguration?> GetWorkspaceConfigurationAsync(
+        Guid workspaceId,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<HealingWorkspaceConfiguration> UpsertWorkspaceConfigurationAsync(
+        HealingWorkspaceConfiguration configuration,
+        CancellationToken cancellationToken = default);
+
     ValueTask<HealingConfiguration> SaveConfigurationAsync(
         HealingConfiguration configuration,
         CancellationToken cancellationToken = default);

@@ -52,6 +52,46 @@ public sealed class HealingDbContextTests
     }
 
     [Fact]
+    public async Task Audit_append_is_idempotent_for_the_same_decision_identity()
+    {
+        await using var fixture = await HealingPersistenceFixture.CreateAsync();
+        var candidate = new HealingAuditEvent
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = Guid.NewGuid(),
+            AggregateType = "healing-incident",
+            AggregateId = Guid.NewGuid(),
+            EventType = "occurrence-projected",
+            ReasonCode = "accepted",
+            ActorType = "platform",
+            ActorId = "healing-inbox-worker",
+            CorrelationId = Guid.NewGuid(),
+            SafeDetailJson = "{\"outcomeCode\":\"accepted\"}",
+            OccurredAt = DateTimeOffset.UtcNow
+        };
+        var store = new HealingStore(fixture.Db);
+
+        var first = await store.AppendAsync(candidate);
+        var replay = await store.AppendAsync(new HealingAuditEvent
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = candidate.WorkspaceId,
+            AggregateType = candidate.AggregateType,
+            AggregateId = candidate.AggregateId,
+            EventType = candidate.EventType,
+            ReasonCode = candidate.ReasonCode,
+            ActorType = candidate.ActorType,
+            ActorId = candidate.ActorId,
+            CorrelationId = candidate.CorrelationId,
+            SafeDetailJson = candidate.SafeDetailJson,
+            OccurredAt = candidate.OccurredAt.AddSeconds(1)
+        });
+
+        replay.Id.Should().Be(first.Id);
+        (await fixture.Db.Set<HealingAuditEvent>().CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
     public async Task Mutable_aggregates_reject_lost_updates_from_a_stale_context()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"elsa-healing-{Guid.NewGuid():N}.db");
@@ -107,6 +147,10 @@ public sealed class HealingDbContextTests
 
         ForeignKeyProperties<ComponentAttribution, IncidentOccurrence>(db)
             .Should().BeEquivalentTo("WorkspaceId", "ApplicationId", "OccurrenceId");
+        ForeignKeyProperties<IncidentOccurrence, HealingIncident>(db)
+            .Should().BeEquivalentTo("WorkspaceId", "ApplicationId", "IncidentId");
+        ForeignKeyProperties<IncidentOccurrence, IncidentEpisode>(db)
+            .Should().BeEquivalentTo("WorkspaceId", "ApplicationId", "EpisodeId");
         ForeignKeyProperties<ComponentAttribution, SourceOwnershipBinding>(db)
             .Should().BeEquivalentTo("WorkspaceId", "ApplicationId", "BindingId");
         ForeignKeyProperties<RepairAttempt, HealingIncident>(db)
@@ -119,6 +163,19 @@ public sealed class HealingDbContextTests
             .Should().BeEquivalentTo("WorkspaceId", "ProviderConnectionId");
         ForeignKeyProperties<ProviderOperation, RepairAttempt>(db)
             .Should().BeEquivalentTo("WorkspaceId", "ApplicationId", "AttemptId");
+    }
+
+    [Fact]
+    public void Active_incident_identity_is_scoped_by_workspace_and_application()
+    {
+        using var db = new HealingDbContext(new DbContextOptionsBuilder<HealingDbContext>()
+            .UseSqlite("Data Source=:memory:").Options);
+
+        var index = db.Model.FindEntityType(typeof(HealingIncident))!.GetIndexes()
+            .Single(x => x.IsUnique && x.GetFilter()?.Contains("Status", StringComparison.Ordinal) == true);
+
+        index.Properties.Select(x => x.Name).Should().Equal(
+            "WorkspaceId", "ApplicationId", "FingerprintVersion", "Fingerprint", "RepairRepositoryKey");
     }
 
     [Fact]

@@ -159,6 +159,57 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     b.ToTable("HealingComponentManifests", (string)null);
                 });
 
+            modelBuilder.Entity("Elsa.Platform.Healing.Core.ComponentManifestAssemblyArtifact", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ComponentEntryId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ManifestId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PublicKeyToken")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RelativePath")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Version")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ManifestId", "ComponentEntryId", "RelativePath")
+                        .IsUnique();
+
+                    b.HasIndex("WorkspaceId", "ApplicationId", "ManifestId", "ComponentEntryId");
+
+                    b.ToTable("HealingComponentManifestAssemblies", (string)null);
+                });
+
             modelBuilder.Entity("Elsa.Platform.Healing.Core.ComponentManifestEntry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -192,6 +243,11 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     b.Property<int>("Kind")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("KindName")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("ManifestId")
                         .HasColumnType("TEXT");
 
@@ -213,7 +269,6 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RelativePath")
-                        .IsRequired()
                         .HasMaxLength(2048)
                         .HasColumnType("TEXT");
 
@@ -241,9 +296,48 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     b.HasIndex("ManifestId", "ComponentKey")
                         .IsUnique();
 
+                    b.ToTable("HealingComponentManifestEntries", (string)null);
+                });
+
+            modelBuilder.Entity("Elsa.Platform.Healing.Core.ComponentManifestRegistration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ManifestId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RevisionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
                     b.HasIndex("WorkspaceId", "ApplicationId", "ManifestId");
 
-                    b.ToTable("HealingComponentManifestEntries", (string)null);
+                    b.HasIndex("WorkspaceId", "ApplicationId", "RevisionId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("HealingComponentManifestRegistrations", (string)null);
                 });
 
             modelBuilder.Entity("Elsa.Platform.Healing.Core.DeploymentObservation", b =>
@@ -309,6 +403,16 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     b.Property<Guid>("ApplicationId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ClassificationPolicyHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClassificationPolicyVersion")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
                     b.Property<long?>("ClosedAt")
                         .HasColumnType("INTEGER");
 
@@ -318,6 +422,9 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
 
                     b.Property<string>("CurrentDeployedRevision")
                         .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<TimeSpan>("DebounceWindow")
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("EnvironmentId")
@@ -335,10 +442,19 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     b.Property<long>("OccurrenceCount")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("OccurrenceThreshold")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("ProducingRevisionsJson")
                         .IsRequired()
                         .HasMaxLength(8192)
                         .HasColumnType("TEXT");
+
+                    b.Property<long?>("ReadyAfter")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("ThresholdReachedAt")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int>("VerificationStatus")
                         .HasColumnType("INTEGER");
@@ -553,6 +669,9 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     b.HasIndex("WorkspaceId", "AggregateType", "AggregateId", "Sequence")
                         .IsUnique();
 
+                    b.HasIndex("WorkspaceId", "AggregateType", "AggregateId", "EventType", "CorrelationId")
+                        .IsUnique();
+
                     b.ToTable("HealingAuditEvents", (string)null);
                 });
 
@@ -570,6 +689,11 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
 
                     b.Property<bool>("AutomaticMergeEnabled")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("ClassificationPolicyJson")
+                        .IsRequired()
+                        .HasMaxLength(8192)
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("ConcurrencyBudget")
                         .HasColumnType("INTEGER");
@@ -629,6 +753,11 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("ApplicationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClassificationPolicyJson")
+                        .IsRequired()
+                        .HasMaxLength(8192)
                         .HasColumnType("TEXT");
 
                     b.Property<long>("CreatedAt")
@@ -712,6 +841,9 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     b.Property<long>("OccurrenceCount")
                         .HasColumnType("INTEGER");
 
+                    b.Property<long?>("ReadyAfter")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("RepairRepositoryKey")
                         .IsRequired()
                         .HasMaxLength(512)
@@ -742,6 +874,8 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Status", "ReadyAfter");
+
                     b.HasIndex("WorkspaceId", "ApplicationId", "SelectedBindingId");
 
                     b.HasIndex("WorkspaceId", "ApplicationId", "SelectedComponentEntryId");
@@ -754,7 +888,7 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
 
                     b.HasIndex("WorkspaceId", "ApplicationId", "Status", "LastSeenAt");
 
-                    b.HasIndex("WorkspaceId", "FingerprintVersion", "Fingerprint", "RepairRepositoryKey")
+                    b.HasIndex("WorkspaceId", "ApplicationId", "FingerprintVersion", "Fingerprint", "RepairRepositoryKey")
                         .IsUnique()
                         .HasFilter("\"Status\" NOT IN (8, 11, 13, 14)");
 
@@ -896,6 +1030,65 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                         .IsUnique();
 
                     b.ToTable("HealingSignalInboxItems", (string)null);
+                });
+
+            modelBuilder.Entity("Elsa.Platform.Healing.Core.HealingTelemetrySource", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("CredentialHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("BLOB");
+
+                    b.Property<byte[]>("CredentialSalt")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("BLOB");
+
+                    b.Property<int>("CredentialVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("RevokedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("RotatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("Version")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasColumnType("BLOB");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId", "ApplicationId", "EnvironmentId", "Name");
+
+                    b.HasIndex("WorkspaceId", "ApplicationId", "EnvironmentId", "Status");
+
+                    b.ToTable("HealingTelemetrySources", (string)null);
                 });
 
             modelBuilder.Entity("Elsa.Platform.Healing.Core.HealingWorkspaceConfiguration", b =>
@@ -1047,13 +1240,11 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("PreviousEpisodeId")
-                        .IsUnique();
-
                     b.HasIndex("IncidentId", "OpenedAt");
 
                     b.HasIndex("WorkspaceId", "ApplicationId", "PreviousEpisodeId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"PreviousEpisodeId\" IS NOT NULL");
 
                     b.ToTable("HealingIncidentEpisodes", (string)null);
                 });
@@ -1074,6 +1265,9 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EpisodeId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("EvidenceDigest")
@@ -1100,6 +1294,9 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("InboxItemId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("IncidentId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("NormalizedStackJson")
@@ -1145,8 +1342,12 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     b.HasIndex("InboxItemId")
                         .IsUnique();
 
+                    b.HasIndex("WorkspaceId", "ApplicationId", "EpisodeId");
+
                     b.HasIndex("WorkspaceId", "ApplicationId", "InboxItemId")
                         .IsUnique();
+
+                    b.HasIndex("WorkspaceId", "ApplicationId", "IncidentId");
 
                     b.HasIndex("WorkspaceId", "ApplicationId", "OccurrenceKey")
                         .IsUnique();
@@ -1274,8 +1475,7 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("WorkspaceId", "Provider", "RepositoryProviderId")
-                        .IsUnique();
+                    b.HasIndex("WorkspaceId", "Provider", "RepositoryProviderId");
 
                     b.ToTable("HealingProviderConnections", (string)null);
                 });
@@ -2266,10 +2466,30 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Elsa.Platform.Healing.Core.ComponentManifestAssemblyArtifact", b =>
+                {
+                    b.HasOne("Elsa.Platform.Healing.Core.ComponentManifestEntry", null)
+                        .WithMany("Assemblies")
+                        .HasForeignKey("WorkspaceId", "ApplicationId", "ManifestId", "ComponentEntryId")
+                        .HasPrincipalKey("WorkspaceId", "ApplicationId", "ManifestId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Elsa.Platform.Healing.Core.ComponentManifestEntry", b =>
                 {
                     b.HasOne("Elsa.Platform.Healing.Core.ComponentManifest", null)
                         .WithMany("Entries")
+                        .HasForeignKey("WorkspaceId", "ApplicationId", "ManifestId")
+                        .HasPrincipalKey("WorkspaceId", "ApplicationId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elsa.Platform.Healing.Core.ComponentManifestRegistration", b =>
+                {
+                    b.HasOne("Elsa.Platform.Healing.Core.ComponentManifest", null)
+                        .WithMany()
                         .HasForeignKey("WorkspaceId", "ApplicationId", "ManifestId")
                         .HasPrincipalKey("WorkspaceId", "ApplicationId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -2377,10 +2597,24 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
 
             modelBuilder.Entity("Elsa.Platform.Healing.Core.IncidentOccurrence", b =>
                 {
+                    b.HasOne("Elsa.Platform.Healing.Core.IncidentEpisode", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "ApplicationId", "EpisodeId")
+                        .HasPrincipalKey("WorkspaceId", "ApplicationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Elsa.Platform.Healing.Core.HealingSignalInboxItem", null)
                         .WithOne()
                         .HasForeignKey("Elsa.Platform.Healing.Core.IncidentOccurrence", "WorkspaceId", "ApplicationId", "InboxItemId")
                         .HasPrincipalKey("Elsa.Platform.Healing.Core.HealingSignalInboxItem", "WorkspaceId", "ApplicationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Elsa.Platform.Healing.Core.HealingIncident", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId", "ApplicationId", "IncidentId")
+                        .HasPrincipalKey("WorkspaceId", "ApplicationId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -2579,6 +2813,11 @@ namespace Elsa.Platform.Healing.Persistence.SqliteMigrations.Migrations
                     b.Navigation("Dependencies");
 
                     b.Navigation("Entries");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.Healing.Core.ComponentManifestEntry", b =>
+                {
+                    b.Navigation("Assemblies");
                 });
 
             modelBuilder.Entity("Elsa.Platform.Healing.Core.HealingConfiguration", b =>

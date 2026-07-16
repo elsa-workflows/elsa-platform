@@ -1,6 +1,8 @@
 using Elsa.Platform.Healing.Abstractions;
 using Elsa.Platform.Healing.Core.Ownership;
 using Elsa.Platform.Healing.Core.Security;
+using System.Text;
+using System.Text.Json;
 
 namespace Elsa.Platform.Healing.Core.Configuration;
 
@@ -62,6 +64,20 @@ public sealed class HealingConfigurationService(
 
         var saved = await store.ExecuteInTransactionAsync(async transactionCancellationToken =>
         {
+            var workspaceConfiguration = await store.GetWorkspaceConfigurationAsync(
+                configuration.WorkspaceId,
+                transactionCancellationToken);
+            if (workspaceConfiguration is null)
+            {
+                await store.UpsertWorkspaceConfigurationAsync(new HealingWorkspaceConfiguration
+                {
+                    Id = Guid.NewGuid(),
+                    WorkspaceId = configuration.WorkspaceId,
+                    WorkspaceKillSwitch = false,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                }, transactionCancellationToken);
+            }
             var persisted = await store.SaveConfigurationAsync(configuration, transactionCancellationToken);
             await AuditAsync(persisted, "configuration-saved", "configured", authorization, transactionCancellationToken);
             return persisted;
@@ -167,7 +183,8 @@ public sealed class HealingConfigurationService(
             configuration.TimeBudget <= TimeSpan.Zero || configuration.TimeBudget > HealingBudgetOptions.MaximumTimeBudget ||
             configuration.ConcurrencyBudget is < 1 or > HealingBudgetOptions.MaximumConcurrency ||
             configuration.InferenceBudget is < 0 or > HealingBudgetOptions.MaximumInferenceUnits ||
-            configuration.RepositoryRunBudget is < 0 or > HealingBudgetOptions.MaximumRepositoryRuns)
+            configuration.RepositoryRunBudget is < 0 or > HealingBudgetOptions.MaximumRepositoryRuns ||
+            !IsValidClassificationPolicy(configuration.ClassificationPolicyJson))
             return false;
 
         return configuration.Environments
@@ -175,7 +192,23 @@ public sealed class HealingConfigurationService(
             .All(group => group.Key != Guid.Empty && group.Count() == 1) &&
                configuration.Environments.All(x =>
                    (x.OccurrenceThreshold is null or >= 1) &&
-                   (x.DebounceWindow is null || x.DebounceWindow >= TimeSpan.Zero));
+                   (x.DebounceWindow is null || x.DebounceWindow >= TimeSpan.Zero) &&
+                   IsValidClassificationPolicy(x.ClassificationPolicyJson));
+    }
+
+    private static bool IsValidClassificationPolicy(string policyJson)
+    {
+        if (string.IsNullOrWhiteSpace(policyJson) || Encoding.UTF8.GetByteCount(policyJson) > 8_192)
+            return false;
+        try
+        {
+            using var document = JsonDocument.Parse(policyJson);
+            return document.RootElement.ValueKind == JsonValueKind.Object;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private ValueTask<HealingAuditEvent> AuditAsync(

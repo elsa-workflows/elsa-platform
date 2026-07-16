@@ -217,6 +217,37 @@ public sealed class SourceOwnershipService(
         if (authorizationFailure is not null || component.WorkspaceId != workspaceId || component.ApplicationId != applicationId)
             return new SourceOwnershipResolution(SourceOwnershipResolutionStatus.Unauthorized, null, [], [HealingOwnershipReasonCodes.Unauthorized]);
 
+        return await ResolveTrustedComponentAsync(workspaceId, applicationId, component, cancellationToken);
+    }
+
+    /// <summary>
+    /// Resolves repair authority for a Platform-owned background operation. The supplied component remains evidence
+    /// only: it must be found in an automation-authoritative persisted manifest before any binding can be selected.
+    /// </summary>
+    public ValueTask<SourceOwnershipResolution> ResolveForAutomationAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        ComponentManifestEntry component,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(component);
+        if (component.WorkspaceId != workspaceId || component.ApplicationId != applicationId)
+            return ValueTask.FromResult(new SourceOwnershipResolution(
+                SourceOwnershipResolutionStatus.Unauthorized,
+                null,
+                [],
+                [HealingOwnershipReasonCodes.Unauthorized]));
+
+        return ResolveTrustedComponentAsync(workspaceId, applicationId, component, cancellationToken);
+    }
+
+    private async ValueTask<SourceOwnershipResolution> ResolveTrustedComponentAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        ComponentManifestEntry component,
+        CancellationToken cancellationToken)
+    {
+
         var manifests = (await store.ListManifestsAsync(workspaceId, applicationId, trustedOnly: true, cancellationToken))
             .Where(ComponentManifestService.IsAutomationAuthoritative);
         var persistedComponent = manifests

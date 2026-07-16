@@ -1,8 +1,11 @@
 using Elsa.Platform.Healing.Core;
+using Elsa.Platform.Healing.Core.Incidents;
+using Elsa.Platform.Healing.Core.OpenTelemetry;
 using Elsa.Platform.Healing.Core.Ownership;
 using Elsa.Platform.Healing.Core.Security;
 using Microsoft.EntityFrameworkCore;
 using System.Data;
+using System.Text.Json;
 using ComponentManifestModel = Elsa.Platform.Healing.Core.ComponentManifest;
 
 namespace Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
@@ -17,7 +20,7 @@ public sealed class HealingIdempotencyConflictException(string message) : Invali
 /// Healing-owned durable store. Idempotency, atomic leases, and append-only audit behavior are kept behind
 /// this interface so callers do not need provider-specific persistence knowledge.
 /// </summary>
-public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStore, IHealingOwnershipStore, IHealingAdministrationStore
+public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStore, IHealingOwnershipStore, IHealingAdministrationStore, IHealingIncidentStore, IHealingSignalInboxStore, IHealingTelemetrySourceStore
 {
     public async ValueTask<T> ExecuteInTransactionAsync<T>(
         Func<CancellationToken, ValueTask<T>> operation,
@@ -91,6 +94,110 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
         new(dbContext.HealingWorkspaceConfigurations.AsNoTracking()
             .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId, cancellationToken));
 
+    public async ValueTask<HealingTelemetrySource> AddTelemetrySourceAsync(
+        HealingTelemetrySource source,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ValidateTelemetrySource(source);
+        if (source.Id == Guid.Empty)
+            source.Id = Guid.NewGuid();
+        dbContext.HealingTelemetrySources.Add(source);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return source;
+    }
+
+    public async ValueTask<IReadOnlyList<HealingTelemetrySource>> ListTelemetrySourcesAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        Guid environmentId,
+        CancellationToken cancellationToken = default) =>
+        await dbContext.HealingTelemetrySources.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId &&
+                        x.ApplicationId == applicationId &&
+                        x.EnvironmentId == environmentId)
+            .OrderBy(x => x.Name)
+            .ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+    public ValueTask<HealingTelemetrySource?> GetTelemetrySourceAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        Guid environmentId,
+        Guid sourceId,
+        CancellationToken cancellationToken = default) =>
+        new(dbContext.HealingTelemetrySources.AsNoTracking().SingleOrDefaultAsync(
+            x => x.WorkspaceId == workspaceId &&
+                 x.ApplicationId == applicationId &&
+                 x.EnvironmentId == environmentId &&
+                 x.Id == sourceId,
+            cancellationToken));
+
+    public ValueTask<HealingTelemetrySource?> GetActiveTelemetrySourceForAuthenticationAsync(
+        Guid sourceId,
+        CancellationToken cancellationToken = default) =>
+        new(dbContext.HealingTelemetrySources.AsNoTracking().SingleOrDefaultAsync(
+            x => x.Id == sourceId && x.Status == HealingTelemetrySourceStatus.Active,
+            cancellationToken));
+
+    public async ValueTask<HealingTelemetrySource?> RotateTelemetrySourceAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        Guid environmentId,
+        Guid sourceId,
+        byte[] expectedVersion,
+        byte[] credentialSalt,
+        byte[] credentialHash,
+        DateTimeOffset rotatedAt,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateCredential(credentialSalt, credentialHash);
+        var source = await dbContext.HealingTelemetrySources.SingleOrDefaultAsync(
+            x => x.WorkspaceId == workspaceId &&
+                 x.ApplicationId == applicationId &&
+                 x.EnvironmentId == environmentId &&
+                 x.Id == sourceId &&
+                 x.Status == HealingTelemetrySourceStatus.Active,
+            cancellationToken);
+        if (source is null)
+            return null;
+
+        EnsureExpectedVersion(expectedVersion, source.Version, "Healing telemetry source");
+        source.CredentialSalt = credentialSalt;
+        source.CredentialHash = credentialHash;
+        source.CredentialVersion++;
+        source.RotatedAt = rotatedAt;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return source;
+    }
+
+    public async ValueTask<HealingTelemetrySource?> RevokeTelemetrySourceAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        Guid environmentId,
+        Guid sourceId,
+        byte[] expectedVersion,
+        DateTimeOffset revokedAt,
+        CancellationToken cancellationToken = default)
+    {
+        var source = await dbContext.HealingTelemetrySources.SingleOrDefaultAsync(
+            x => x.WorkspaceId == workspaceId &&
+                 x.ApplicationId == applicationId &&
+                 x.EnvironmentId == environmentId &&
+                 x.Id == sourceId,
+            cancellationToken);
+        if (source is null)
+            return null;
+        if (source.Status == HealingTelemetrySourceStatus.Revoked)
+            return source;
+
+        EnsureExpectedVersion(expectedVersion, source.Version, "Healing telemetry source");
+        source.Status = HealingTelemetrySourceStatus.Revoked;
+        source.RevokedAt = revokedAt;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return source;
+    }
+
     public async ValueTask<HealingConfiguration> UpsertConfigurationAsync(
         HealingConfiguration configuration,
         CancellationToken cancellationToken = default)
@@ -148,6 +255,7 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
         existing.InferenceBudget = configuration.InferenceBudget;
         existing.RepositoryRunBudget = configuration.RepositoryRunBudget;
         existing.ApplicationKillSwitch = configuration.ApplicationKillSwitch;
+        existing.ClassificationPolicyJson = configuration.ClassificationPolicyJson;
         existing.UpdatedAt = configuration.UpdatedAt;
         existing.Version = NewVersion();
         ReconcileEnvironmentOverrides(existing, configuration.Environments);
@@ -555,6 +663,7 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
         ArgumentNullException.ThrowIfNull(incident);
         var existing = await ActiveIncidents()
             .SingleOrDefaultAsync(x => x.WorkspaceId == incident.WorkspaceId &&
+                                       x.ApplicationId == incident.ApplicationId &&
                                        x.FingerprintVersion == incident.FingerprintVersion &&
                                        x.Fingerprint == incident.Fingerprint &&
                                        x.RepairRepositoryKey == incident.RepairRepositoryKey, cancellationToken);
@@ -573,6 +682,7 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
             dbContext.Entry(incident).State = EntityState.Detached;
             existing = await ActiveIncidents()
                 .SingleOrDefaultAsync(x => x.WorkspaceId == incident.WorkspaceId &&
+                                           x.ApplicationId == incident.ApplicationId &&
                                            x.FingerprintVersion == incident.FingerprintVersion &&
                                            x.Fingerprint == incident.Fingerprint &&
                                            x.RepairRepositoryKey == incident.RepairRepositoryKey, cancellationToken);
@@ -580,6 +690,342 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
                 throw;
             return new HealingStoreWriteResult<HealingIncident>(existing, true);
         }
+    }
+
+    public async ValueTask<HealingIncidentProjectionResult> ProjectOccurrenceAsync(
+        HealingIncidentProjectionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ValidateProjectionRequest(request);
+
+        const int maximumAttempts = 12;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await ExecuteInTransactionAsync(
+                    transactionCancellationToken => ProjectOccurrenceCoreAsync(request, transactionCancellationToken),
+                    cancellationToken);
+            }
+            catch (Exception exception) when (attempt < maximumAttempts && IsRetryableProjectionFailure(exception))
+            {
+                dbContext.ChangeTracker.Clear();
+                await Task.Delay(TimeSpan.FromMilliseconds(Math.Min(250, attempt * 15)), cancellationToken);
+            }
+        }
+    }
+
+    public async ValueTask<int> PromoteDueIncidentsAsync(
+        DateTimeOffset now,
+        int batchSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (batchSize < 1)
+            throw new ArgumentOutOfRangeException(nameof(batchSize));
+
+        const int maximumAttempts = 12;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await ExecuteInTransactionAsync(async transactionCancellationToken =>
+                {
+                    var due = await dbContext.HealingIncidents
+                        .Where(x => x.Status == HealingIncidentStatus.ThresholdPending &&
+                                    x.SelectedBindingId != null &&
+                                    x.ReadyAfter != null &&
+                                    x.ReadyAfter <= now)
+                        .OrderBy(x => x.ReadyAfter)
+                        .ThenBy(x => x.Id)
+                        .Take(batchSize)
+                        .ToArrayAsync(transactionCancellationToken);
+                    foreach (var incident in due)
+                    {
+                        incident.Status = HealingIncidentStatus.ReadyForRepair;
+                        await EnsureWorkItemProjectionAsync(incident, transactionCancellationToken);
+                    }
+                    await dbContext.SaveChangesAsync(transactionCancellationToken);
+                    return due.Length;
+                }, cancellationToken);
+            }
+            catch (Exception exception) when (attempt < maximumAttempts && IsRetryableProjectionFailure(exception))
+            {
+                dbContext.ChangeTracker.Clear();
+                await Task.Delay(TimeSpan.FromMilliseconds(Math.Min(250, attempt * 15)), cancellationToken);
+            }
+        }
+    }
+
+    public async ValueTask<IReadOnlyList<HealingIncident>> ListIncidentsAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        CancellationToken cancellationToken = default) =>
+        await dbContext.HealingIncidents.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.ApplicationId == applicationId)
+            .OrderByDescending(x => x.LastSeenAt)
+            .ThenBy(x => x.Id)
+            .ToArrayAsync(cancellationToken);
+
+    public ValueTask<HealingIncident?> GetIncidentAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        Guid incidentId,
+        CancellationToken cancellationToken = default) =>
+        new(dbContext.HealingIncidents.AsNoTracking().SingleOrDefaultAsync(
+            x => x.WorkspaceId == workspaceId && x.ApplicationId == applicationId && x.Id == incidentId,
+            cancellationToken));
+
+    private async ValueTask<HealingIncidentProjectionResult> ProjectOccurrenceCoreAsync(
+        HealingIncidentProjectionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var replay = await dbContext.IncidentOccurrences.AsNoTracking().SingleOrDefaultAsync(
+            x => x.WorkspaceId == request.WorkspaceId &&
+                 x.ApplicationId == request.ApplicationId &&
+                 x.OccurrenceKey == request.OccurrenceKey,
+            cancellationToken);
+        if (replay is not null)
+        {
+            var replayIncident = await dbContext.HealingIncidents.AsNoTracking()
+                .SingleAsync(x => x.Id == replay.IncidentId, cancellationToken);
+            var replayEpisode = await dbContext.IncidentEpisodes.AsNoTracking()
+                .SingleAsync(x => x.Id == replay.EpisodeId, cancellationToken);
+            var replayImpact = await dbContext.EnvironmentImpacts.AsNoTracking()
+                .SingleAsync(x => x.EpisodeId == replay.EpisodeId && x.EnvironmentId == replay.EnvironmentId, cancellationToken);
+            return new HealingIncidentProjectionResult(
+                replay,
+                replayIncident,
+                replayEpisode,
+                replayImpact,
+                IsReplay: true,
+                IsRegression: replayEpisode.PreviousEpisodeId is not null);
+        }
+
+        var incident = await ActiveIncidents().SingleOrDefaultAsync(
+            x => x.WorkspaceId == request.WorkspaceId &&
+                 x.ApplicationId == request.ApplicationId &&
+                 x.FingerprintVersion == request.FingerprintVersion &&
+                 x.Fingerprint == request.Fingerprint &&
+                 x.RepairRepositoryKey == request.RepairRepositoryKey,
+            cancellationToken);
+        IncidentEpisode episode;
+        var isRegression = false;
+        if (incident is null)
+        {
+            var predecessor = await dbContext.HealingIncidents.AsNoTracking()
+                .Where(x => x.WorkspaceId == request.WorkspaceId &&
+                            x.ApplicationId == request.ApplicationId &&
+                            x.FingerprintVersion == request.FingerprintVersion &&
+                            x.Fingerprint == request.Fingerprint &&
+                            x.RepairRepositoryKey == request.RepairRepositoryKey &&
+                            (x.Status == HealingIncidentStatus.Failed ||
+                             x.Status == HealingIncidentStatus.Healed ||
+                             x.Status == HealingIncidentStatus.Superseded ||
+                             x.Status == HealingIncidentStatus.Waived))
+                .OrderByDescending(x => x.LastSeenAt)
+                .ThenByDescending(x => x.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+            Guid? previousEpisodeId = null;
+            if (predecessor is not null)
+            {
+                previousEpisodeId = predecessor.ActiveEpisodeId ?? await dbContext.IncidentEpisodes.AsNoTracking()
+                    .Where(x => x.IncidentId == predecessor.Id)
+                    .OrderByDescending(x => x.OpenedAt)
+                    .Select(x => (Guid?)x.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+                isRegression = previousEpisodeId is not null;
+            }
+
+            incident = new HealingIncident
+            {
+                Id = Guid.NewGuid(),
+                WorkspaceId = request.WorkspaceId,
+                ApplicationId = request.ApplicationId,
+                FingerprintVersion = request.FingerprintVersion,
+                Fingerprint = request.Fingerprint,
+                RepairRepositoryKey = request.RepairRepositoryKey,
+                Status = InitialIncidentStatus(request),
+                Severity = request.Severity,
+                Classification = request.Classification,
+                SelectedBindingId = request.SelectedBindingId,
+                SelectedComponentEntryId = request.SelectedComponentEntryId,
+                FirstSeenAt = request.OccurredAt,
+                LastSeenAt = request.OccurredAt,
+                OccurrenceCount = 0,
+                ReadyAfter = request.OccurrenceThreshold == 1
+                    ? request.AcceptedAt.Add(request.DebounceWindow)
+                    : null,
+                Version = NewVersion()
+            };
+            dbContext.HealingIncidents.Add(incident);
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            episode = new IncidentEpisode
+            {
+                Id = Guid.NewGuid(),
+                WorkspaceId = request.WorkspaceId,
+                ApplicationId = request.ApplicationId,
+                IncidentId = incident.Id,
+                PreviousEpisodeId = previousEpisodeId,
+                OpenedAt = request.OccurredAt,
+                ProducingRevisionsJson = SerializeRevisions(request.RevisionId),
+                Outcome = IncidentEpisodeOutcome.Active,
+                RegressionReason = isRegression ? "fingerprint-recurred" : null,
+                Version = NewVersion()
+            };
+            dbContext.IncidentEpisodes.Add(episode);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            incident.ActiveEpisodeId = episode.Id;
+        }
+        else
+        {
+            incident = await dbContext.HealingIncidents.SingleAsync(x => x.Id == incident.Id, cancellationToken);
+            episode = await dbContext.IncidentEpisodes.SingleAsync(
+                x => x.Id == incident.ActiveEpisodeId,
+                cancellationToken);
+        }
+
+        incident.FirstSeenAt = Earlier(incident.FirstSeenAt, request.OccurredAt);
+        incident.LastSeenAt = Later(incident.LastSeenAt, request.OccurredAt);
+        incident.OccurrenceCount++;
+        if (request.Severity > incident.Severity)
+            incident.Severity = request.Severity;
+        episode.ProducingRevisionsJson = AddRevision(episode.ProducingRevisionsJson, request.RevisionId);
+
+        var impact = await dbContext.EnvironmentImpacts.SingleOrDefaultAsync(
+            x => x.EpisodeId == episode.Id && x.EnvironmentId == request.EnvironmentId,
+            cancellationToken);
+        if (impact is null)
+        {
+            impact = new EnvironmentImpact
+            {
+                Id = Guid.NewGuid(),
+                WorkspaceId = request.WorkspaceId,
+                ApplicationId = request.ApplicationId,
+                EpisodeId = episode.Id,
+                EnvironmentId = request.EnvironmentId,
+                FirstSeenAt = request.OccurredAt,
+                LastSeenAt = request.OccurredAt,
+                OccurrenceCount = 1,
+                ProducingRevisionsJson = SerializeRevisions(request.RevisionId),
+                VerificationStatus = VerificationOutcome.PendingDeployment,
+                OccurrenceThreshold = request.OccurrenceThreshold,
+                DebounceWindow = request.DebounceWindow,
+                ClassificationPolicyVersion = request.ClassificationPolicyVersion,
+                ClassificationPolicyHash = request.ClassificationPolicyHash,
+                Version = NewVersion()
+            };
+            dbContext.EnvironmentImpacts.Add(impact);
+        }
+        else
+        {
+            impact.FirstSeenAt = Earlier(impact.FirstSeenAt, request.OccurredAt);
+            impact.LastSeenAt = Later(impact.LastSeenAt, request.OccurredAt);
+            impact.OccurrenceCount++;
+            impact.ProducingRevisionsJson = AddRevision(impact.ProducingRevisionsJson, request.RevisionId);
+        }
+
+        if (impact.OccurrenceCount >= request.OccurrenceThreshold && incident.SelectedBindingId is not null)
+        {
+            var thresholdReachedAt = impact.ThresholdReachedAt ?? request.AcceptedAt;
+            impact.ThresholdReachedAt ??= thresholdReachedAt;
+            impact.ReadyAfter ??= thresholdReachedAt.Add(request.DebounceWindow);
+            if (incident.ReadyAfter is null || impact.ReadyAfter < incident.ReadyAfter)
+                incident.ReadyAfter = impact.ReadyAfter;
+            if (incident.Status != HealingIncidentStatus.ReadyForRepair)
+            {
+                incident.Status = incident.ReadyAfter <= request.AcceptedAt
+                    ? HealingIncidentStatus.ReadyForRepair
+                    : HealingIncidentStatus.ThresholdPending;
+            }
+        }
+
+        var occurrence = new IncidentOccurrence
+        {
+            Id = Guid.NewGuid(),
+            InboxItemId = request.InboxItemId,
+            IncidentId = incident.Id,
+            EpisodeId = episode.Id,
+            WorkspaceId = request.WorkspaceId,
+            ApplicationId = request.ApplicationId,
+            EnvironmentId = request.EnvironmentId,
+            RevisionId = request.RevisionId,
+            OccurrenceKey = request.OccurrenceKey,
+            OccurredAt = request.OccurredAt,
+            AcceptedAt = request.AcceptedAt,
+            Classification = request.Classification,
+            Severity = request.Severity,
+            ExceptionType = request.ExceptionType,
+            OperationName = request.OperationName,
+            NormalizedStackJson = request.NormalizedStackJson,
+            TraceId = request.TraceId,
+            SpanId = request.SpanId,
+            RetryState = request.RetryState,
+            FingerprintVersion = request.FingerprintVersion,
+            Fingerprint = request.Fingerprint,
+            EvidenceTier = request.EvidenceTier,
+            EvidenceDigest = request.EvidenceDigest
+        };
+        dbContext.IncidentOccurrences.Add(occurrence);
+        foreach (var attribution in request.Attributions)
+        {
+            dbContext.ComponentAttributions.Add(new ComponentAttribution
+            {
+                Id = Guid.NewGuid(),
+                WorkspaceId = request.WorkspaceId,
+                ApplicationId = request.ApplicationId,
+                OccurrenceId = occurrence.Id,
+                ComponentEntryId = attribution.ComponentEntryId,
+                BindingId = attribution.BindingId,
+                Confidence = attribution.Confidence,
+                Basis = attribution.Basis,
+                Resolution = attribution.Resolution,
+                ReasonCodesJson = JsonSerializer.Serialize(attribution.ReasonCodes)
+            });
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        if (incident.Status == HealingIncidentStatus.ReadyForRepair)
+        {
+            await EnsureWorkItemProjectionAsync(incident, cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        return new HealingIncidentProjectionResult(occurrence, incident, episode, impact, false, isRegression);
+    }
+
+    private async ValueTask EnsureWorkItemProjectionAsync(
+        HealingIncident incident,
+        CancellationToken cancellationToken)
+    {
+        if (incident.WorkItemProjectionId is not null || incident.ActiveEpisodeId is null || incident.SelectedBindingId is null)
+            return;
+        var binding = await dbContext.SourceOwnershipBindings.AsNoTracking().SingleOrDefaultAsync(
+            x => x.WorkspaceId == incident.WorkspaceId &&
+                 x.ApplicationId == incident.ApplicationId &&
+                 x.Id == incident.SelectedBindingId &&
+                 x.Status == SourceOwnershipBindingStatus.Active,
+            cancellationToken);
+        if (binding is null)
+        {
+            incident.Status = HealingIncidentStatus.ObservationOnly;
+            return;
+        }
+
+        var projection = new RepairWorkItemProjection
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = incident.WorkspaceId,
+            ApplicationId = incident.ApplicationId,
+            IncidentId = incident.Id,
+            EpisodeId = incident.ActiveEpisodeId.Value,
+            ProviderConnectionId = binding.ProviderConnectionId,
+            MachineSummaryHash = incident.Fingerprint,
+            ProjectionStatus = WorkItemProjectionStatus.Pending
+        };
+        dbContext.RepairWorkItemProjections.Add(projection);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        incident.WorkItemProjectionId = projection.Id;
     }
 
     public async ValueTask<HealingStoreWriteResult<RepairAttempt>> AppendAttemptAsync(
@@ -823,6 +1269,54 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
         return updated == 1;
     }
 
+    public async ValueTask<HealingInboxLease?> TryLeaseNextAsync(
+        string leaseOwner,
+        DateTimeOffset now,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default)
+    {
+        var lease = await TryLeaseNextInboxAsync(leaseOwner, now, leaseDuration, cancellationToken);
+        return lease is null ? null : new HealingInboxLease(lease.Value, lease.LeaseToken);
+    }
+
+    public ValueTask<bool> CompleteAsync(
+        Guid itemId,
+        string leaseToken,
+        DateTimeOffset now,
+        HealingInboxStatus terminalStatus,
+        string outcomeCode,
+        string? safeOutcomeDetail,
+        CancellationToken cancellationToken = default) =>
+        CompleteInboxAsync(itemId, leaseToken, now, terminalStatus, outcomeCode, safeOutcomeDetail, cancellationToken);
+
+    public async ValueTask<bool> RetryAsync(
+        Guid itemId,
+        string leaseToken,
+        DateTimeOffset now,
+        DateTimeOffset nextAttemptAt,
+        string outcomeCode,
+        string? safeOutcomeDetail,
+        CancellationToken cancellationToken = default)
+    {
+        if (nextAttemptAt < now)
+            throw new ArgumentOutOfRangeException(nameof(nextAttemptAt));
+        var updated = await dbContext.HealingSignalInboxItems
+            .Where(x => x.Id == itemId &&
+                        x.Status == HealingInboxStatus.Leased &&
+                        x.LeaseToken == leaseToken &&
+                        x.LeaseExpiresAt >= now)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, HealingInboxStatus.Pending)
+                .SetProperty(x => x.LeaseOwner, (string?)null)
+                .SetProperty(x => x.LeaseToken, (string?)null)
+                .SetProperty(x => x.LeaseExpiresAt, (DateTimeOffset?)null)
+                .SetProperty(x => x.NextAttemptAt, nextAttemptAt)
+                .SetProperty(x => x.OutcomeCode, outcomeCode)
+                .SetProperty(x => x.SafeOutcomeDetail, safeOutcomeDetail)
+                .SetProperty(x => x.Version, NewVersion()), cancellationToken);
+        return updated == 1;
+    }
+
     public async ValueTask<HealingStoreWriteResult<ProviderOperation>> AppendProviderOperationAsync(
         ProviderOperation operation,
         CancellationToken cancellationToken = default)
@@ -941,6 +1435,10 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
         const int maxCollisions = 8;
         for (var attempt = 0; attempt < maxCollisions; attempt++)
         {
+            var replay = await FindAuditReplayAsync(auditEvent, cancellationToken);
+            if (replay is not null)
+                return MatchAuditReplay(replay, auditEvent);
+
             auditEvent.Sequence = await dbContext.HealingAuditEvents.AsNoTracking()
                 .Where(x => x.WorkspaceId == auditEvent.WorkspaceId &&
                             x.AggregateType == auditEvent.AggregateType &&
@@ -956,6 +1454,9 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
             catch (DbUpdateException)
             {
                 dbContext.Entry(auditEvent).State = EntityState.Detached;
+                replay = await FindAuditReplayAsync(auditEvent, cancellationToken);
+                if (replay is not null)
+                    return MatchAuditReplay(replay, auditEvent);
                 var sequenceCollision = await dbContext.HealingAuditEvents.AsNoTracking().AnyAsync(
                     x => x.WorkspaceId == auditEvent.WorkspaceId &&
                          x.AggregateType == auditEvent.AggregateType &&
@@ -969,6 +1470,34 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
         }
 
         throw new DbUpdateConcurrencyException("Could not allocate a Healing audit sequence after bounded collision retries.");
+    }
+
+    private ValueTask<HealingAuditEvent?> FindAuditReplayAsync(
+        HealingAuditEvent auditEvent,
+        CancellationToken cancellationToken) =>
+        new(dbContext.HealingAuditEvents.AsNoTracking().SingleOrDefaultAsync(
+            x => x.WorkspaceId == auditEvent.WorkspaceId &&
+                 x.AggregateType == auditEvent.AggregateType &&
+                 x.AggregateId == auditEvent.AggregateId &&
+                 x.EventType == auditEvent.EventType &&
+                 x.CorrelationId == auditEvent.CorrelationId,
+            cancellationToken));
+
+    private static HealingAuditEvent MatchAuditReplay(
+        HealingAuditEvent existing,
+        HealingAuditEvent candidate)
+    {
+        if (existing.ReasonCode != candidate.ReasonCode ||
+            existing.ActorType != candidate.ActorType ||
+            existing.ActorId != candidate.ActorId ||
+            existing.CausationId != candidate.CausationId ||
+            existing.PolicyVersion != candidate.PolicyVersion ||
+            existing.InputHash != candidate.InputHash ||
+            existing.OutputHash != candidate.OutputHash ||
+            existing.SafeDetailJson != candidate.SafeDetailJson)
+            throw new HealingIdempotencyConflictException(
+                "Healing audit idempotency identity was reused with different decision details.");
+        return existing;
     }
 
     public async ValueTask<IReadOnlyList<HealingAuditEvent>> QueryAsync(
@@ -998,6 +1527,24 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
 
     private static byte[] NewVersion() => Guid.NewGuid().ToByteArray();
 
+    private static void ValidateTelemetrySource(HealingTelemetrySource source)
+    {
+        if (source.WorkspaceId == Guid.Empty || source.ApplicationId == Guid.Empty || source.EnvironmentId == Guid.Empty)
+            throw new ArgumentException("Telemetry source scope is required.", nameof(source));
+        ArgumentException.ThrowIfNullOrWhiteSpace(source.Name);
+        ValidateCredential(source.CredentialSalt, source.CredentialHash);
+        if (source.CredentialVersion < 1)
+            throw new ArgumentOutOfRangeException(nameof(source), "Telemetry source credential version must be positive.");
+    }
+
+    private static void ValidateCredential(byte[] salt, byte[] hash)
+    {
+        ArgumentNullException.ThrowIfNull(salt);
+        ArgumentNullException.ThrowIfNull(hash);
+        if (salt.Length != 32 || hash.Length != 32)
+            throw new ArgumentException("Telemetry source credential salts and hashes must contain exactly 32 bytes.");
+    }
+
     private static void EnsureExpectedVersion(byte[] expected, byte[] current, string aggregate)
     {
         if (expected.Length == 0 || !expected.AsSpan().SequenceEqual(current))
@@ -1019,6 +1566,7 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
             left.InferenceBudget != right.InferenceBudget ||
             left.RepositoryRunBudget != right.RepositoryRunBudget ||
             left.ApplicationKillSwitch != right.ApplicationKillSwitch ||
+            left.ClassificationPolicyJson != right.ClassificationPolicyJson ||
             left.Environments.Count != right.Environments.Count)
             return false;
 
@@ -1031,7 +1579,8 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
             environment.RepairEnabled == candidate.RepairEnabled &&
             environment.OccurrenceThreshold == candidate.OccurrenceThreshold &&
             environment.DebounceWindow == candidate.DebounceWindow &&
-            environment.EnvironmentKillSwitch == candidate.EnvironmentKillSwitch);
+            environment.EnvironmentKillSwitch == candidate.EnvironmentKillSwitch &&
+            environment.ClassificationPolicyJson == candidate.ClassificationPolicyJson);
     }
 
     private static bool VerificationsEquivalent(VerificationResult left, VerificationResult right) =>
@@ -1084,6 +1633,7 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
             current.OccurrenceThreshold = requested.OccurrenceThreshold;
             current.DebounceWindow = requested.DebounceWindow;
             current.EnvironmentKillSwitch = requested.EnvironmentKillSwitch;
+            current.ClassificationPolicyJson = requested.ClassificationPolicyJson;
             current.UpdatedAt = requested.UpdatedAt;
         }
     }
@@ -1122,4 +1672,60 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
                     x.Status != HealingIncidentStatus.Healed &&
                     x.Status != HealingIncidentStatus.Superseded &&
                     x.Status != HealingIncidentStatus.Waived);
+
+    private static HealingIncidentStatus InitialIncidentStatus(HealingIncidentProjectionRequest request)
+    {
+        if (request.SelectedBindingId is null || request.SelectedComponentEntryId is null || request.ProviderConnectionId is null)
+            return HealingIncidentStatus.ObservationOnly;
+        if (request.OccurrenceThreshold > 1 || request.DebounceWindow > TimeSpan.Zero)
+            return HealingIncidentStatus.ThresholdPending;
+        return HealingIncidentStatus.ReadyForRepair;
+    }
+
+    private static void ValidateProjectionRequest(HealingIncidentProjectionRequest request)
+    {
+        if (request.InboxItemId == Guid.Empty || request.WorkspaceId == Guid.Empty ||
+            request.ApplicationId == Guid.Empty || request.EnvironmentId == Guid.Empty)
+            throw new ArgumentException("Projection scope and inbox identity are required.", nameof(request));
+        if (request.OccurrenceThreshold < 1)
+            throw new ArgumentOutOfRangeException(nameof(request), "Occurrence threshold must be positive.");
+        if (request.DebounceWindow < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(request), "Debounce window cannot be negative.");
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.OccurrenceKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.FingerprintVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Fingerprint);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.RepairRepositoryKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.ClassificationPolicyVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.ClassificationPolicyHash);
+    }
+
+    private static bool IsRetryableProjectionFailure(Exception exception)
+    {
+        if (exception is DbUpdateConcurrencyException)
+            return true;
+        var message = exception.ToString();
+        return message.Contains("database is locked", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("database table is locked", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("SQLITE_BUSY", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("SQLITE_LOCKED", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("duplicate key", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static DateTimeOffset Earlier(DateTimeOffset left, DateTimeOffset right) => left <= right ? left : right;
+
+    private static DateTimeOffset Later(DateTimeOffset left, DateTimeOffset right) => left >= right ? left : right;
+
+    private static string SerializeRevisions(Guid? revisionId) =>
+        JsonSerializer.Serialize(revisionId is null ? Array.Empty<Guid>() : new[] { revisionId.Value });
+
+    private static string AddRevision(string currentJson, Guid? revisionId)
+    {
+        if (revisionId is null)
+            return currentJson;
+        var revisions = JsonSerializer.Deserialize<Guid[]>(currentJson) ?? [];
+        return revisions.Contains(revisionId.Value)
+            ? currentJson
+            : JsonSerializer.Serialize(revisions.Append(revisionId.Value).Order().ToArray());
+    }
 }

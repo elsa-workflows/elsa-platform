@@ -487,6 +487,7 @@ public sealed class WorkspaceHealingConfigurationEndpointModule : IHealingEndpoi
         ConcurrencyBudget = request.ConcurrencyBudget,
         InferenceBudget = request.InferenceBudget,
         RepositoryRunBudget = request.RepositoryRunBudget,
+        ClassificationPolicyJson = request.ClassificationPolicyJson,
         ApplicationKillSwitch = existing?.ApplicationKillSwitch ?? false,
         CreatedAt = existing?.CreatedAt ?? default,
         Version = existing?.Version ?? [],
@@ -498,6 +499,7 @@ public sealed class WorkspaceHealingConfigurationEndpointModule : IHealingEndpoi
             RepairEnabled = x.RepairDispatchEnabled,
             OccurrenceThreshold = x.OccurrenceThreshold,
             DebounceWindow = x.DebounceWindow,
+            ClassificationPolicyJson = x.ClassificationPolicyJson,
             EnvironmentKillSwitch = x.EnvironmentKillSwitch
         }).ToList()
     };
@@ -520,6 +522,7 @@ public sealed class WorkspaceHealingConfigurationEndpointModule : IHealingEndpoi
             configuration.ConcurrencyBudget,
             configuration.InferenceBudget,
             configuration.RepositoryRunBudget,
+            configuration.ClassificationPolicyJson,
             Version = Convert.ToBase64String(configuration.Version),
             ManifestReadiness = await ManifestReadinessAsync(context, configuration.ApplicationId, authorization, cancellationToken),
             ProviderReadiness = await ProviderReadinessAsync(context, configuration.ApplicationId, authorization, cancellationToken),
@@ -534,7 +537,8 @@ public sealed class WorkspaceHealingConfigurationEndpointModule : IHealingEndpoi
                     RepairDispatchEnabled = item?.RepairEnabled ?? configuration.RepairEnabled,
                     EnvironmentKillSwitch = item?.EnvironmentKillSwitch ?? false,
                     item?.OccurrenceThreshold,
-                    item?.DebounceWindow
+                    item?.DebounceWindow,
+                    ClassificationPolicyJson = item?.ClassificationPolicyJson ?? "{}"
                 };
             }),
             Permissions = authorization.Permissions.Order()
@@ -811,6 +815,6 @@ public static class HealingPermissionEndpointFilters
 
 public sealed record HealingConfirmationRequest(ConfirmationActionType ActionType, bool? AutomaticMergeEnabled);
 public sealed record HealingStopRequest(Guid ConfirmationId);
-public sealed record HealingEnvironmentConfigurationRequest(Guid EnvironmentId, bool DiscoveryEnabled, bool RepairDispatchEnabled, bool EnvironmentKillSwitch, int? OccurrenceThreshold, TimeSpan? DebounceWindow);
-public sealed record UpdateHealingConfigurationRequest(bool DiscoveryEnabled, bool RepairDispatchEnabled, bool AutomaticMergeEnabled, string SignalProfileVersion, int DefaultAttemptLimit, TimeSpan VerificationWindow, TimeSpan TimeBudget, int ConcurrencyBudget, long InferenceBudget, int RepositoryRunBudget, IReadOnlyList<HealingEnvironmentConfigurationRequest> Environments, string Version, Guid? ConfirmationId);
+public sealed record HealingEnvironmentConfigurationRequest(Guid EnvironmentId, bool DiscoveryEnabled, bool RepairDispatchEnabled, bool EnvironmentKillSwitch, int? OccurrenceThreshold, TimeSpan? DebounceWindow, string ClassificationPolicyJson = "{}");
+public sealed record UpdateHealingConfigurationRequest(bool DiscoveryEnabled, bool RepairDispatchEnabled, bool AutomaticMergeEnabled, string SignalProfileVersion, int DefaultAttemptLimit, TimeSpan VerificationWindow, TimeSpan TimeBudget, int ConcurrencyBudget, long InferenceBudget, int RepositoryRunBudget, IReadOnlyList<HealingEnvironmentConfigurationRequest> Environments, string Version, Guid? ConfirmationId, string ClassificationPolicyJson = "{}");
 public sealed record SourceOwnershipBindingRequest(string Name, SourceSelectorKind SelectorKind, string SelectorPattern, int Priority, Guid ProviderConnectionId, string RepositoryProviderId, string RepositoryOwner, string RepositoryName, string TargetBranch, string WorkflowIdentity, string WorkflowRevision, Guid PathPolicyId, Guid EvidencePolicyId, Guid MergePolicyId, string? Version = null);

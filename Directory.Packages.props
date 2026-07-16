@@ -4,8 +4,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
-    <PackageVersion Include="Elsa.Diagnostics.OpenTelemetry" Version="0.0.1-local" />
-    <PackageVersion Include="Elsa.Diagnostics.OpenTelemetry.Core" Version="0.0.1-local" />
+    <PackageVersion Include="Elsa.Diagnostics.OpenTelemetry" Version="4.0.0-preview.167" />
+    <PackageVersion Include="Elsa.Diagnostics.OpenTelemetry.Core" Version="4.0.0-preview.167" />
     <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.3.5" />
     <PackageVersion Include="Aspire.Hosting.Keycloak" Version="13.3.5-preview.1.26270.6" />
     <PackageVersion Include="Aspire.Hosting.Azure.AppService" Version="13.3.5" />
@@ -26,7 +26,7 @@
     <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.7" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.7" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.5.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.8" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.5.0" />
     <PackageVersion Include="Microsoft.Build.Framework" Version="17.14.28" />

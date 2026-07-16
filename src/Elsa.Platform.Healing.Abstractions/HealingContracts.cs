@@ -133,7 +133,10 @@ public sealed record HealingSignal(
     string? ComponentKey = null,
     string? WorkflowDefinitionId = null,
     string? WorkflowActivityType = null,
-    HealingTraceContext? Trace = null);
+    HealingTraceContext? Trace = null,
+    string? ServiceName = null,
+    string? ResourceIdentity = null,
+    string? Severity = null);
 
 public sealed record HealingExceptionEvidence(
     string Type,

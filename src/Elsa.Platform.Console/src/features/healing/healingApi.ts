@@ -8,7 +8,10 @@ import type {
   HealingComponentManifestsResponse,
   ActivateSourceOwnershipBindingRequest,
   SourceOwnershipBindingsResponse,
-  UpdateHealingConfigurationRequest
+  UpdateHealingConfigurationRequest,
+  HealingIncidentDetail,
+  HealingIncidentFilters,
+  HealingIncidentListResponse
 } from "@/features/healing/healingModels";
 
 function applicationBase(workspaceId: string, applicationId: string) {
@@ -154,4 +157,25 @@ export function transitionSourceOwnershipBinding(
   transition: "suspend" | "revoke"
 ) {
   return apiRequest(`${applicationBase(workspaceId, applicationId)}/source-ownership-bindings/${encodeURIComponent(bindingId)}/${transition}`, { method: "POST" });
+}
+
+function incidentBase(workspaceId: string) {
+  return `/api/workspaces/${encodeURIComponent(workspaceId)}/healing/incidents`;
+}
+
+export function listHealingIncidents(workspaceId: string, filters: HealingIncidentFilters = {}) {
+  const params = new URLSearchParams();
+  if (filters.applicationId) params.set("applicationId", filters.applicationId);
+  if (filters.environmentId) params.set("environmentId", filters.environmentId);
+  if (filters.status) params.set("status", filters.status);
+  if (filters.severity) params.set("severity", filters.severity);
+  if (filters.repairable !== undefined) params.set("repairable", String(filters.repairable));
+  if (filters.cursor) params.set("cursor", filters.cursor);
+  if (filters.take !== undefined) params.set("take", String(filters.take));
+  const query = params.size > 0 ? `?${params.toString()}` : "";
+  return apiRequest<HealingIncidentListResponse>(`${incidentBase(workspaceId)}${query}`);
+}
+
+export function getHealingIncident(workspaceId: string, incidentId: string) {
+  return apiRequest<HealingIncidentDetail>(`${incidentBase(workspaceId)}/${encodeURIComponent(incidentId)}`);
 }

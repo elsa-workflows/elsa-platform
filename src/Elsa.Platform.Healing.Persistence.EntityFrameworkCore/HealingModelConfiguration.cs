@@ -20,6 +20,7 @@ public static class HealingModelConfiguration
         ConfigureConfiguration(modelBuilder.Entity<HealingConfiguration>());
         ConfigureWorkspaceConfiguration(modelBuilder.Entity<HealingWorkspaceConfiguration>());
         ConfigureEnvironmentConfiguration(modelBuilder.Entity<HealingEnvironmentConfiguration>());
+        ConfigureTelemetrySource(modelBuilder.Entity<HealingTelemetrySource>());
         ConfigureInbox(modelBuilder.Entity<HealingSignalInboxItem>());
         ConfigureManifest(modelBuilder.Entity<ComponentManifestModel>());
         ConfigureManifestRegistration(modelBuilder.Entity<ComponentManifestRegistration>());
@@ -30,7 +31,7 @@ public static class HealingModelConfiguration
         ConfigureOccurrence(modelBuilder.Entity<IncidentOccurrence>());
         ConfigureAttribution(modelBuilder.Entity<ComponentAttribution>());
         ConfigureIncident(modelBuilder.Entity<HealingIncident>(), providerName);
-        ConfigureEpisode(modelBuilder.Entity<IncidentEpisode>());
+        ConfigureEpisode(modelBuilder.Entity<IncidentEpisode>(), providerName);
         ConfigureEnvironmentImpact(modelBuilder.Entity<EnvironmentImpact>());
         ConfigureWorkItemProjection(modelBuilder.Entity<RepairWorkItemProjection>());
         ConfigureAttempt(modelBuilder.Entity<RepairAttempt>());
@@ -58,6 +59,7 @@ public static class HealingModelConfiguration
         entity.HasAlternateKey(x => new { x.WorkspaceId, x.ApplicationId, x.Id });
         entity.HasIndex(x => new { x.WorkspaceId, x.ApplicationId }).IsUnique();
         entity.Property(x => x.SignalProfileVersion).HasMaxLength(32).IsRequired();
+        Required(entity, x => x.ClassificationPolicyJson, SafeDetailLength);
         Concurrency(entity, x => x.Version);
         entity.HasMany(x => x.Environments).WithOne()
             .HasForeignKey(x => new { x.WorkspaceId, x.ApplicationId, x.HealingConfigurationId })
@@ -78,6 +80,19 @@ public static class HealingModelConfiguration
         entity.ToTable("HealingEnvironmentConfigurations");
         entity.HasKey(x => x.Id);
         entity.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.EnvironmentId }).IsUnique();
+        Required(entity, x => x.ClassificationPolicyJson, SafeDetailLength);
+        Concurrency(entity, x => x.Version);
+    }
+
+    private static void ConfigureTelemetrySource(EntityTypeBuilder<HealingTelemetrySource> entity)
+    {
+        entity.ToTable("HealingTelemetrySources");
+        entity.HasKey(x => x.Id);
+        entity.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.EnvironmentId, x.Status });
+        entity.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.EnvironmentId, x.Name });
+        Required(entity, x => x.Name, KeyLength);
+        entity.Property(x => x.CredentialSalt).HasMaxLength(32).IsRequired();
+        entity.Property(x => x.CredentialHash).HasMaxLength(32).IsRequired();
         Concurrency(entity, x => x.Version);
     }
 
@@ -239,6 +254,14 @@ public static class HealingModelConfiguration
             .HasForeignKey<IncidentOccurrence>(x => new { x.WorkspaceId, x.ApplicationId, x.InboxItemId })
             .HasPrincipalKey<HealingSignalInboxItem>(x => new { x.WorkspaceId, x.ApplicationId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<HealingIncident>().WithMany()
+            .HasForeignKey(x => new { x.WorkspaceId, x.ApplicationId, x.IncidentId })
+            .HasPrincipalKey(x => new { x.WorkspaceId, x.ApplicationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<IncidentEpisode>().WithMany()
+            .HasForeignKey(x => new { x.WorkspaceId, x.ApplicationId, x.EpisodeId })
+            .HasPrincipalKey(x => new { x.WorkspaceId, x.ApplicationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
         Required(entity, x => x.OccurrenceKey, KeyLength);
         Required(entity, x => x.ExceptionType, NameLength);
         Required(entity, x => x.OperationName, NameLength);
@@ -283,11 +306,12 @@ public static class HealingModelConfiguration
             HealingIncidentStatus.Superseded,
             HealingIncidentStatus.Waived
         }.Select(x => (int)x));
-        var activeIndex = entity.HasIndex(x => new { x.WorkspaceId, x.FingerprintVersion, x.Fingerprint, x.RepairRepositoryKey }).IsUnique();
+        var activeIndex = entity.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.FingerprintVersion, x.Fingerprint, x.RepairRepositoryKey }).IsUnique();
         activeIndex.HasFilter(providerName == "Microsoft.EntityFrameworkCore.SqlServer"
             ? $"[Status] NOT IN ({terminalStatuses})"
             : $"\"Status\" NOT IN ({terminalStatuses})");
         entity.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.Status, x.LastSeenAt });
+        entity.HasIndex(x => new { x.Status, x.ReadyAfter });
         entity.HasOne<SourceOwnershipBinding>().WithMany()
             .HasForeignKey(x => new { x.WorkspaceId, x.ApplicationId, x.SelectedBindingId })
             .HasPrincipalKey(x => new { x.WorkspaceId, x.ApplicationId, x.Id })
@@ -310,14 +334,17 @@ public static class HealingModelConfiguration
         Concurrency(entity, x => x.Version);
     }
 
-    private static void ConfigureEpisode(EntityTypeBuilder<IncidentEpisode> entity)
+    private static void ConfigureEpisode(EntityTypeBuilder<IncidentEpisode> entity, string? providerName)
     {
         entity.ToTable("HealingIncidentEpisodes");
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.WorkspaceId, x.ApplicationId, x.Id });
         entity.HasAlternateKey(x => new { x.WorkspaceId, x.ApplicationId, x.IncidentId, EpisodeId = x.Id });
         entity.HasIndex(x => new { x.IncidentId, x.OpenedAt });
-        entity.HasIndex(x => x.PreviousEpisodeId).IsUnique();
+        var previousEpisodeIndex = entity.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.PreviousEpisodeId }).IsUnique();
+        previousEpisodeIndex.HasFilter(providerName == "Microsoft.EntityFrameworkCore.SqlServer"
+            ? "[PreviousEpisodeId] IS NOT NULL"
+            : "\"PreviousEpisodeId\" IS NOT NULL");
         entity.HasOne<HealingIncident>().WithMany()
             .HasForeignKey(x => new { x.WorkspaceId, x.ApplicationId, x.IncidentId })
             .HasPrincipalKey(x => new { x.WorkspaceId, x.ApplicationId, x.Id })
@@ -344,6 +371,8 @@ public static class HealingModelConfiguration
         Required(entity, x => x.ProducingRevisionsJson, SafeDetailLength);
         entity.Property(x => x.CurrentDeployedRevision).HasMaxLength(KeyLength);
         entity.Property(x => x.ClosedByActorId).HasMaxLength(KeyLength);
+        Required(entity, x => x.ClassificationPolicyVersion, 32);
+        Required(entity, x => x.ClassificationPolicyHash, HashLength);
         Concurrency(entity, x => x.Version);
     }
 
@@ -690,6 +719,7 @@ public static class HealingModelConfiguration
         entity.ToTable("HealingAuditEvents");
         entity.HasKey(x => x.Id);
         entity.HasIndex(x => new { x.WorkspaceId, x.AggregateType, x.AggregateId, x.Sequence }).IsUnique();
+        entity.HasIndex(x => new { x.WorkspaceId, x.AggregateType, x.AggregateId, x.EventType, x.CorrelationId }).IsUnique();
         entity.HasIndex(x => new { x.WorkspaceId, x.CorrelationId, x.OccurredAt });
         Required(entity, x => x.AggregateType, KeyLength);
         Required(entity, x => x.EventType, KeyLength);
