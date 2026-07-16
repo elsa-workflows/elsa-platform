@@ -12,6 +12,7 @@ Dockerfile*
 .dockerignore
 .vs/
 .idea/
+.vscode/
 .azure/
 artifacts/
 .artifacts/
@@ -21,3 +22,5 @@ artifacts/
 *.rsuser
 *.env
 !.env.example
+.DS_Store
+Thumbs.db

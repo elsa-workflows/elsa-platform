@@ -20,6 +20,7 @@ using Elsa.Platform.Api.Public.Features;
 using Elsa.Platform.Api.Public.Packages;
 using Elsa.Platform.Api.Public.Sources;
 using Elsa.Platform.Api.Workspace;
+using Elsa.Platform.Api.Healing;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Elsa.Platform.PackageCatalog.Core.Approvals;
 using Elsa.Platform.RuntimeBuilder.Abstractions;
@@ -158,6 +159,7 @@ builder.Services.AddBuilderClientAuthorization();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AdminApiKeyValidator>();
 builder.Services.AddSingleton<BuilderClientApiKeyValidator>();
+builder.Services.AddPlatformHealing(builder.Configuration, builder.Environment);
 builder.Services.AddCatalogDbContext(builder.Configuration);
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
 builder.Services.AddScoped<IPublicCatalogQueries, PublicCatalogQueries>();
@@ -331,6 +333,7 @@ if (!app.Environment.IsEnvironment("Testing"))
     await using var scope = app.Services.CreateAsyncScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
     await dbContext.Database.MigrateAsync();
+    await scope.ServiceProvider.MigratePlatformHealingDatabaseAsync();
 }
 
 app.UseExceptionHandler();
@@ -371,6 +374,7 @@ app.MapWorkspaceBuilderEndpoints();
 app.MapWorkspaceRuntimeConfigurationEndpoints();
 app.MapWorkspaceDeploymentEndpoints();
 app.MapWorkspaceArtifactEndpoints();
+app.MapPlatformHealingEndpoints();
 app.MapWorkspaceWeaverEndpoints();
 app.MapRuntimeCommandEndpoints();
 app.MapAdminApplicationEndpoints();

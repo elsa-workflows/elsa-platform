@@ -17,16 +17,16 @@
 
 **Purpose**: Establish clean cross-repository branches and explicit package boundaries before behavior work.
 
-- [ ] T001 Add Healing Abstractions, Core, Agent, GitHub, OpenTelemetry, Client, ComponentManifest, ComponentManifest.Generator.MSBuild, EF persistence, and provider migration projects to `Elsa.Platform.sln`
-- [ ] T002 [P] Add matching Healing test projects and references to `Elsa.Platform.sln`
-- [ ] T003 [P] Add centrally managed Healing/Foundation/GitHub/JWT dependency versions to `Directory.Packages.props`
-- [ ] T004 [P] Create dependency-light project references in `src/Elsa.Platform.Healing.Abstractions/Elsa.Platform.Healing.Abstractions.csproj`
-- [ ] T005 [P] Create domain project references in `src/Elsa.Platform.Healing.Core/Elsa.Platform.Healing.Core.csproj`
-- [ ] T006 [P] Create adapter and persistence project references in `src/Elsa.Platform.Healing.GitHub/Elsa.Platform.Healing.GitHub.csproj`, `src/Elsa.Platform.Healing.Agent/Elsa.Platform.Healing.Agent.csproj`, `src/Elsa.Platform.Healing.OpenTelemetry/Elsa.Platform.Healing.OpenTelemetry.csproj`, and `src/Elsa.Platform.Healing.Persistence.EntityFrameworkCore/Elsa.Platform.Healing.Persistence.EntityFrameworkCore.csproj`
-- [ ] T007 [P] Create publishable client/manifest/MSBuild project metadata in `src/Elsa.Platform.Healing.Client/Elsa.Platform.Healing.Client.csproj`, `src/Elsa.Platform.Healing.ComponentManifest/Elsa.Platform.Healing.ComponentManifest.csproj`, and `src/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild.csproj`
-- [ ] T008 [P] Add Healing projects to API and test composition in `src/Elsa.Platform.Api/Elsa.Platform.Api.csproj` and `tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj`
+- [x] T001 Add Healing Abstractions, Core, Agent, GitHub, OpenTelemetry, Client, ComponentManifest, ComponentManifest.Generator.MSBuild, EF persistence, and provider migration projects to `Elsa.Platform.sln`
+- [x] T002 [P] Add matching Healing test projects and references to `Elsa.Platform.sln`
+- [x] T003 [P] Add centrally managed Healing/Foundation/GitHub/JWT dependency versions to `Directory.Packages.props`
+- [x] T004 [P] Create dependency-light project references in `src/Elsa.Platform.Healing.Abstractions/Elsa.Platform.Healing.Abstractions.csproj`
+- [x] T005 [P] Create domain project references in `src/Elsa.Platform.Healing.Core/Elsa.Platform.Healing.Core.csproj`
+- [x] T006 [P] Create adapter and persistence project references in `src/Elsa.Platform.Healing.GitHub/Elsa.Platform.Healing.GitHub.csproj`, `src/Elsa.Platform.Healing.Agent/Elsa.Platform.Healing.Agent.csproj`, `src/Elsa.Platform.Healing.OpenTelemetry/Elsa.Platform.Healing.OpenTelemetry.csproj`, and `src/Elsa.Platform.Healing.Persistence.EntityFrameworkCore/Elsa.Platform.Healing.Persistence.EntityFrameworkCore.csproj`
+- [x] T007 [P] Create publishable client/manifest/MSBuild project metadata in `src/Elsa.Platform.Healing.Client/Elsa.Platform.Healing.Client.csproj`, `src/Elsa.Platform.Healing.ComponentManifest/Elsa.Platform.Healing.ComponentManifest.csproj`, and `src/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild.csproj`
+- [x] T008 [P] Add Healing projects to API and test composition in `src/Elsa.Platform.Api/Elsa.Platform.Api.csproj` and `tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj`
 - [x] T009 Remove unconditional identity PII logging and add an explicit local-development switch in `src/Elsa.Platform.Api/Program.cs`
-- [ ] T010 Verify required .NET, Node, Docker, and universal ignore patterns in `.gitignore`, `.dockerignore`, and `src/Elsa.Platform.Console/.gitignore`
+- [x] T010 Verify required .NET, Node, Docker, and universal ignore patterns in `.gitignore`, `.dockerignore`, and `src/Elsa.Platform.Console/.gitignore`
 
 ---
 
@@ -38,31 +38,31 @@
 
 ### Foundation contribution seam (tests first)
 
-- [ ] T011 [P] Add failing ordering/redaction/failure/cancellation tests to `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/tests/Elsa/Diagnostics/OpenTelemetry/Tests/OpenTelemetryIngestorTests.cs`
-- [ ] T012 [P] Add failing additive DI resolution tests to `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/tests/Elsa/Diagnostics/OpenTelemetry/Tests/OpenTelemetryFeatureTests.cs`
-- [ ] T013 Add `IOpenTelemetryIngestionContributor` to `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/Core/Contracts/IOpenTelemetryIngestionContributor.cs`
-- [ ] T014 Invoke all contributors after redaction and before store/live publication in `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/Services/OpenTelemetryIngestor.cs`
-- [ ] T015 Add additive contributor registration helpers in `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/Extensions/ServiceCollectionExtensions.cs`
-- [ ] T016 [P] Document the contribution contract and durability semantics in `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/README.md` and `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/EXTENSION_POINTS.md`
-- [ ] T017 Run Foundation OpenTelemetry tests and pack coordinated local packages from `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/Elsa.Diagnostics.OpenTelemetry.csproj`
+- [x] T011 [P] Add failing ordering/redaction/failure/cancellation tests to `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/tests/Elsa/Diagnostics/OpenTelemetry/Tests/OpenTelemetryIngestorTests.cs`
+- [x] T012 [P] Add failing additive DI resolution tests to `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/tests/Elsa/Diagnostics/OpenTelemetry/Tests/OpenTelemetryFeatureTests.cs`
+- [x] T013 Add `IOpenTelemetryIngestionContributor` to `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/Core/Contracts/IOpenTelemetryIngestionContributor.cs`
+- [x] T014 Invoke all contributors after redaction and before store/live publication in `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/Services/OpenTelemetryIngestor.cs`
+- [x] T015 Add additive contributor registration helpers in `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/Extensions/ServiceCollectionExtensions.cs`
+- [x] T016 [P] Document the contribution contract and durability semantics in `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/README.md` and `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/EXTENSION_POINTS.md`
+- [x] T017 Run Foundation OpenTelemetry tests and pack coordinated local packages from `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/Elsa.Diagnostics.OpenTelemetry.csproj`
 
 ### Platform shared contracts and persistence (tests first)
 
-- [ ] T018 [P] Add failing package-boundary and contract-version tests in `tests/Elsa.Platform.Healing.Abstractions.Tests/HealingBoundaryTests.cs`
-- [ ] T019 [P] Add failing SQLite/SQL Server model, uniqueness, lease, and append-only audit tests in `tests/Elsa.Platform.Healing.Persistence.EntityFrameworkCore.Tests/HealingDbContextTests.cs`
-- [ ] T020 Define versioned signal, manifest, provider, agent, workload, policy, deployment, and audit contracts in `src/Elsa.Platform.Healing.Abstractions/HealingContracts.cs`
-- [ ] T021 [P] Define stable Healing permissions and actor/command vocabularies in `src/Elsa.Platform.Healing.Abstractions/HealingPermissions.cs`
-- [ ] T022 [P] Define shared entity/state enums and transition result types in `src/Elsa.Platform.Healing.Core/HealingModels.cs`
-- [ ] T023 Implement `HealingDbContext` and entity mappings in `src/Elsa.Platform.Healing.Persistence.EntityFrameworkCore/HealingDbContext.cs` and `src/Elsa.Platform.Healing.Persistence.EntityFrameworkCore/HealingModelConfiguration.cs`
-- [ ] T024 Implement provider selection and separate migration-history configuration in `src/Elsa.Platform.Healing.Persistence.EntityFrameworkCore/HealingDatabaseServiceCollectionExtensions.cs`
-- [ ] T025 [P] Add initial SQLite migration and snapshot in `src/Elsa.Platform.Healing.Persistence.SqliteMigrations/Migrations/20260716000000_InitialHealing.cs` and `src/Elsa.Platform.Healing.Persistence.SqliteMigrations/Migrations/HealingDbContextModelSnapshot.cs`
-- [ ] T026 [P] Add initial SQL Server migration and snapshot in `src/Elsa.Platform.Healing.Persistence.SqlServerMigrations/Migrations/20260716000000_InitialHealing.cs` and `src/Elsa.Platform.Healing.Persistence.SqlServerMigrations/Migrations/HealingDbContextModelSnapshot.cs`
-- [ ] T027 Implement idempotent inbox, leased operation, configuration, manifest, incident, attempt, verification, and append-only audit stores in `src/Elsa.Platform.Healing.Persistence.EntityFrameworkCore/HealingStore.cs`
-- [ ] T028 Implement Healing options, application/platform kill switches, bounded budgets, and validation in `src/Elsa.Platform.Healing.Core/Configuration/HealingOptions.cs`
-- [ ] T029 Implement append/query-only audit service with safe structured details in `src/Elsa.Platform.Healing.Core/Security/HealingAuditService.cs`
-- [ ] T030 Implement reusable leased background-operation worker and stale recovery in `src/Elsa.Platform.Healing.Core/Operations/HealingOperationWorker.cs`
-- [ ] T031 Add `AddPlatformHealing` composition and hosted-worker registration in `src/Elsa.Platform.Api/Healing/HealingServiceCollectionExtensions.cs`
-- [ ] T032 Register Healing persistence migrations, services, and endpoint modules in `src/Elsa.Platform.Api/Program.cs`
+- [x] T018 [P] Add failing package-boundary and contract-version tests in `tests/Elsa.Platform.Healing.Abstractions.Tests/HealingBoundaryTests.cs`
+- [x] T019 [P] Add failing SQLite/SQL Server model, uniqueness, lease, and append-only audit tests in `tests/Elsa.Platform.Healing.Persistence.EntityFrameworkCore.Tests/HealingDbContextTests.cs`
+- [x] T020 Define versioned signal, manifest, provider, agent, workload, policy, deployment, and audit contracts in `src/Elsa.Platform.Healing.Abstractions/HealingContracts.cs`
+- [x] T021 [P] Define stable Healing permissions and actor/command vocabularies in `src/Elsa.Platform.Healing.Abstractions/HealingPermissions.cs`
+- [x] T022 [P] Define shared entity/state enums and transition result types in `src/Elsa.Platform.Healing.Core/HealingModels.cs`
+- [x] T023 Implement `HealingDbContext` and entity mappings in `src/Elsa.Platform.Healing.Persistence.EntityFrameworkCore/HealingDbContext.cs` and `src/Elsa.Platform.Healing.Persistence.EntityFrameworkCore/HealingModelConfiguration.cs`
+- [x] T024 Implement provider selection and separate migration-history configuration in `src/Elsa.Platform.Healing.Persistence.EntityFrameworkCore/HealingDatabaseServiceCollectionExtensions.cs`
+- [x] T025 [P] Add initial SQLite migration and snapshot in `src/Elsa.Platform.Healing.Persistence.SqliteMigrations/Migrations/20260716000000_InitialHealing.cs` and `src/Elsa.Platform.Healing.Persistence.SqliteMigrations/Migrations/HealingDbContextModelSnapshot.cs`
+- [x] T026 [P] Add initial SQL Server migration and snapshot in `src/Elsa.Platform.Healing.Persistence.SqlServerMigrations/Migrations/20260716000000_InitialHealing.cs` and `src/Elsa.Platform.Healing.Persistence.SqlServerMigrations/Migrations/HealingDbContextModelSnapshot.cs`
+- [x] T027 Implement idempotent inbox, leased operation, configuration, manifest, incident, attempt, verification, and append-only audit stores in `src/Elsa.Platform.Healing.Persistence.EntityFrameworkCore/HealingStore.cs`
+- [x] T028 Implement Healing options, application/platform kill switches, bounded budgets, and validation in `src/Elsa.Platform.Healing.Core/Configuration/HealingOptions.cs`
+- [x] T029 Implement append/query-only audit service with safe structured details in `src/Elsa.Platform.Healing.Core/Security/HealingAuditService.cs`
+- [x] T030 Implement reusable leased background-operation worker and stale recovery in `src/Elsa.Platform.Healing.Core/Operations/HealingOperationWorker.cs`
+- [x] T031 Add `AddPlatformHealing` composition and hosted-worker registration in `src/Elsa.Platform.Api/Healing/HealingServiceCollectionExtensions.cs`
+- [x] T032 Register Healing persistence migrations, services, and endpoint modules in `src/Elsa.Platform.Api/Program.cs`
 
 **Checkpoint**: Foundation contributor tests, Healing boundary tests, both persistence-provider model tests, audit immutability, and leased operation recovery pass.
 

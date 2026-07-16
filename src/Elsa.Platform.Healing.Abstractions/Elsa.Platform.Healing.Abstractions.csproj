@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Provider-neutral contracts for Elsa Platform self-healing.</Description>
+  </PropertyGroup>
+</Project>

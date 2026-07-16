@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Elsa.Platform.Healing.Client</PackageId>
+    <Description>ASP.NET Core integration client for Elsa Platform self-healing.</Description>
+    <PackageTags>elsa;platform;healing;opentelemetry</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Elsa.Platform.Healing.Abstractions\Elsa.Platform.Healing.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

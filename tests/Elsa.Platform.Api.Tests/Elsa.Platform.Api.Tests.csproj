@@ -14,6 +14,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Elsa.Platform.Api\Elsa.Platform.Api.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Platform.Healing.Abstractions\Elsa.Platform.Healing.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Platform.Healing.Agent\Elsa.Platform.Healing.Agent.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Platform.Healing.ComponentManifest\Elsa.Platform.Healing.ComponentManifest.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Platform.Healing.Core\Elsa.Platform.Healing.Core.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Platform.Healing.GitHub\Elsa.Platform.Healing.GitHub.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Platform.Healing.OpenTelemetry\Elsa.Platform.Healing.OpenTelemetry.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Platform.Healing.Persistence.EntityFrameworkCore\Elsa.Platform.Healing.Persistence.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Platform.Healing.Persistence.SqliteMigrations\Elsa.Platform.Healing.Persistence.SqliteMigrations.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Platform.Healing.Persistence.SqlServerMigrations\Elsa.Platform.Healing.Persistence.SqlServerMigrations.csproj" />
     <ProjectReference Include="..\..\src\Elsa.Platform.PackageCatalog.Core\Elsa.Platform.PackageCatalog.Core.csproj" />
     <ProjectReference Include="..\..\src\Elsa.Platform.Studio.Submit\Elsa.Platform.Studio.Submit.csproj" />
     <ProjectReference Include="..\..\src\Elsa.Platform.Workflows.RuntimeApplier\Elsa.Platform.Workflows.RuntimeApplier.csproj" />

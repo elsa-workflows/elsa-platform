@@ -24,6 +24,8 @@ Controls adoption and safety for one application.
 
 Related `HealingEnvironmentConfiguration` rows override discovery, repair, thresholds, and kill-switch state for an application environment without weakening platform maximums.
 
+`HealingWorkspaceConfiguration` is unique by `WorkspaceId` and holds the workspace emergency kill switch, timestamps, and optimistic concurrency token. Every discovery, repair-dispatch, publication, and automatic-merge gate resolves this row explicitly; absence is not treated as permission to bypass the workspace stop.
+
 ## 2. HealingSignalInboxItem
 
 Durable post-redaction handoff from telemetry or the explicit incident API.

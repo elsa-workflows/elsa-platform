@@ -16,5 +16,6 @@
     <PackageReference Include="Aspire.Hosting.Keycloak" />
     <PackageReference Include="Aspire.Hosting.Azure.AppService" />
     <PackageReference Include="Aspire.Hosting.Azure.Sql" />
+    <PackageReference Include="MessagePack" />
   </ItemGroup>
 </Project>

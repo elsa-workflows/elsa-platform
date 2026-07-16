@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Elsa.Platform.Healing.ComponentManifest</PackageId>
+    <Description>Versioned component manifest contracts for Elsa Platform self-healing.</Description>
+    <PackageTags>elsa;platform;healing;manifest</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+</Project>
