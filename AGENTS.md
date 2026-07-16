@@ -1,7 +1,7 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-specs/036-engine-credential-management/plan.md
+specs/039-platform-self-healing/plan.md
 <!-- SPECKIT END -->
 
 ## Active Technologies
@@ -23,6 +23,8 @@ specs/036-engine-credential-management/plan.md
 - Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Existing deployment secret-store and credential-reference tables are extended in place. Local encrypted credential values are stored only as protected ciphertext metadata, while external providers store only safe locators. (035-engine-secret-stores)
 - TypeScript/React for the hosted console, backed by existing C# on .NET 10 workspace deployment APIs. + React Router, TanStack Query, existing deployment console components and API client, existing workspace identity/authorization and deployment permissions, Vitest and Testing Library; xUnit/FluentAssertions only if backend contract behavior changes. (036-engine-credential-management)
 - Existing catalog deployment secret-store and credential-reference tables; no schema changes expected. The dedicated console surface manages existing workspace-scoped metadata and local protected credential ciphertext only through existing APIs. (036-engine-credential-management)
+- C# 14 / .NET 10; TypeScript 5.7 with React 18 + ASP.NET Core minimal APIs; Entity Framework Core 10; Foundation `Elsa.Diagnostics.OpenTelemetry` packages; `HttpClientFactory`; React Query; existing Platform deployment, workspace authorization, and Weaver inference infrastructure (039-platform-self-healing)
+- Healing-owned `HealingDbContext` and SQLite/SQL Server migrations, using the same configured physical database where desired but a separate migration history; Foundation telemetry storage remains an observability concern and is not the Healing queue (039-platform-self-healing)
 
 ## Recent Changes
 - codex/021-identity-tenancy: Added C# on .NET 10. + ASP.NET Core authentication/authorization, ASP.NET Core cookies, JWT bearer validation, EF Core, existing `Elsa.Platform.PackageCatalog.*` account/workspace services, xUnit and FluentAssertions for tests.
