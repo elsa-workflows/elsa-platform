@@ -17,7 +17,7 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.8")
+                .HasAnnotation("ProductVersion", "10.0.10")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -1135,7 +1135,7 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
 
                     b.Property<string>("ProtectedSecret")
                         .HasMaxLength(4096)
-                        .HasColumnType("nvarchar(4096)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<long?>("ProtectedSecretUpdatedAt")
                         .HasColumnType("bigint");
@@ -1169,9 +1169,9 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SecretStoreId", "Status", "Name");
-
                     b.HasIndex("WorkspaceId", "Status");
+
+                    b.HasIndex("SecretStoreId", "Status", "Name");
 
                     b.ToTable("DeploymentCredentialReferences");
                 });
@@ -2233,13 +2233,13 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                     b.Property<long>("CreatedAt")
                         .HasColumnType("bigint");
 
-                    b.Property<DateTimeOffset?>("CredentialLastVerifiedAt")
-                        .HasColumnType("datetimeoffset");
-
                     b.Property<string>("CredentialAssignmentStatus")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTimeOffset?>("CredentialLastVerifiedAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("CredentialProvider")
                         .IsRequired()
@@ -2303,9 +2303,9 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
 
                     b.HasKey("Id");
 
-                    b.HasIndex("EnvironmentId");
-
                     b.HasIndex("CredentialReferenceId");
+
+                    b.HasIndex("EnvironmentId");
 
                     b.HasIndex("WorkspaceId", "CredentialReferenceId");
 
@@ -2533,6 +2533,51 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                     b.ToTable("WorkspaceDeploymentArtifacts");
                 });
 
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkspacePermissionAuditRecordEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<Guid?>("ActorAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("GrantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("OccurredAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Permission")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("GrantId", "Action")
+                        .IsUnique();
+
+                    b.HasIndex("WorkspaceId", "AccountId", "OccurredAt");
+
+                    b.HasIndex("WorkspaceId", "OccurredAt", "Id");
+
+                    b.ToTable("WorkspacePermissionAuditRecords");
+                });
+
             modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkspacePermissionGrantEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2555,6 +2600,9 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
 
                     b.Property<long?>("RevokedAt")
                         .HasColumnType("bigint");
+
+                    b.Property<Guid?>("RevokedByAccountId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<long>("UpdatedAt")
                         .HasColumnType("bigint");
@@ -3100,6 +3148,21 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations.Migration
                     b.Navigation("CredentialReferenceMetadata");
 
                     b.Navigation("Environment");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkspacePermissionAuditRecordEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Account", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Workspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkspacePermissionGrantEntity", b =>

@@ -1,6 +1,11 @@
+using Elsa.Platform.Deployment.Core.Workspace;
+using Elsa.Platform.Healing.Abstractions;
 using Elsa.Platform.Healing.Core.Configuration;
+using Elsa.Platform.Healing.Core.Manifests;
+using Elsa.Platform.Healing.Core.Ownership;
 using Elsa.Platform.Healing.Core.Security;
 using Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
+using Elsa.Platform.Healing.GitHub;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -27,12 +32,27 @@ public static class HealingServiceCollectionExtensions
             .ValidateOnStart();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<HealingOptions>, HealingOptionsValidator>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IWorkspacePermissionContribution, HealingWorkspacePermissionContribution>());
 
         services.AddHealingDbContext(configuration);
         services.TryAddScoped<HealingStore>();
+        services.TryAddScoped<IHealingOwnershipStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<HealingStore>());
+        services.TryAddScoped<IHealingAdministrationStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<HealingStore>());
         services.TryAddScoped<IHealingAuditStore>(serviceProvider =>
             serviceProvider.GetRequiredService<HealingStore>());
         services.TryAddScoped<HealingAuditService>();
+        services.TryAddScoped<HealingConfigurationService>();
+        services.TryAddScoped<ComponentManifestService>();
+        services.TryAddScoped<IComponentManifestAttestationAuthority, PlatformManagedComponentManifestAttestationAuthority>();
+        services.TryAddScoped<SourceOwnershipService>();
+        services.TryAddScoped<HealingAdministrationService>();
+        services.TryAddScoped<IHealingProviderCredentialResolver, WorkspaceHealingProviderCredentialResolver>();
+        services.AddHttpClient<GitHubAppTokenProvider>(client => client.BaseAddress = new Uri("https://api.github.com/"));
+        services.AddHttpClient<IProviderConnectionValidator, GitHubProviderConnectionValidator>(
+            client => client.BaseAddress = new Uri("https://api.github.com/"));
         services.TryAddSingleton(serviceProvider =>
             new HealingKillSwitch(serviceProvider.GetRequiredService<IOptionsMonitor<HealingOptions>>()));
 
@@ -96,4 +116,10 @@ public sealed class PlatformHealingBuilder
 public interface IHealingEndpointModule
 {
     void MapEndpoints(IEndpointRouteBuilder endpoints);
+}
+
+internal sealed class HealingWorkspacePermissionContribution : IWorkspacePermissionContribution
+{
+    public IReadOnlySet<string> All => HealingPermissions.All;
+    public IReadOnlySet<string> OwnerDefaults => HealingPermissions.All;
 }

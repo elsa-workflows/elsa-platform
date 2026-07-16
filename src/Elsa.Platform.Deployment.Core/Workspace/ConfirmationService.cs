@@ -33,11 +33,25 @@ public sealed class ConfirmationService(IWorkspaceDeploymentMutationStore? store
         if (confirmation is null)
             return new ConfirmationConsumptionResult(null, Blocker("deployment.confirmation.missing", "Confirmation does not exist."));
 
-        var validation = Validate(confirmation, accountId, actionType, targetId, _timeProvider.GetUtcNow());
-        if (validation.Severity == ValidationSeverity.Pass)
-            confirmation = await store.MarkConfirmationUsedAsync(workspaceId, confirmation.Id, _timeProvider.GetUtcNow(), cancellationToken);
+        var now = _timeProvider.GetUtcNow();
+        var validation = Validate(confirmation, accountId, actionType, targetId, now);
+        if (validation.Severity != ValidationSeverity.Pass)
+            return new ConfirmationConsumptionResult(confirmation, validation);
 
-        return new ConfirmationConsumptionResult(confirmation, validation);
+        var useAttempt = await store.TryMarkConfirmationUsedAsync(
+            workspaceId,
+            confirmation.Id,
+            now,
+            cancellationToken);
+        if (useAttempt is null)
+            return new ConfirmationConsumptionResult(null, Blocker("deployment.confirmation.missing", "Confirmation does not exist."));
+
+        if (!useAttempt.Consumed)
+            return new ConfirmationConsumptionResult(
+                useAttempt.Confirmation,
+                Blocker("deployment.confirmation.used", "Confirmation has already been used."));
+
+        return new ConfirmationConsumptionResult(useAttempt.Confirmation, validation);
     }
 
     public DeploymentValidation Validate(ActionConfirmation confirmation, Guid accountId, ConfirmationActionType actionType, string targetId, DateTimeOffset now)

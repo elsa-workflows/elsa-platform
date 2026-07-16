@@ -20,6 +20,7 @@ using Elsa.Platform.Api.Public.Features;
 using Elsa.Platform.Api.Public.Packages;
 using Elsa.Platform.Api.Public.Sources;
 using Elsa.Platform.Api.Workspace;
+using Elsa.Platform.Api.Workspace.Healing;
 using Elsa.Platform.Api.Healing;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Elsa.Platform.PackageCatalog.Core.Approvals;
@@ -65,6 +66,8 @@ IdentityModelEventSource.ShowPII = builder.Environment.IsDevelopment()
 builder.AddServiceDefaults();
 
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<HealingBadRequestExceptionHandler>();
+builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = true);
 builder.Services.AddOpenApi();
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient(AdminDashboardAuthenticationDefaults.DevelopmentUrlConfigurationKey);
@@ -159,7 +162,10 @@ builder.Services.AddBuilderClientAuthorization();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AdminApiKeyValidator>();
 builder.Services.AddSingleton<BuilderClientApiKeyValidator>();
-builder.Services.AddPlatformHealing(builder.Configuration, builder.Environment);
+builder.Services.AddPlatformHealing(builder.Configuration, builder.Environment)
+    .AddEndpointModule<WorkspaceHealingConfigurationEndpointModule>()
+    .AddEndpointModule<WorkspaceHealingAuthorityEndpointModule>()
+    .AddEndpointModule<PlatformManagedManifestAttestationEndpointModule>();
 builder.Services.AddCatalogDbContext(builder.Configuration);
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
 builder.Services.AddScoped<IPublicCatalogQueries, PublicCatalogQueries>();
@@ -167,6 +173,7 @@ builder.Services.AddScoped<PublicCatalogQueryService>();
 builder.Services.AddScoped<IPublicSourceQueries, PublicSourceQueries>();
 builder.Services.AddScoped<PublicSourceQueryService>();
 builder.Services.AddScoped<IAccountWorkspaceStore, AccountWorkspaceStore>();
+builder.Services.AddScoped<IWorkspaceOwnerProvisioner, WorkspacePermissionOwnerProvisioner>();
 builder.Services.AddScoped<AccountWorkspaceService>();
 builder.Services.AddScoped<WorkspaceSourceService>();
 builder.Services.AddScoped<RuntimeConfigurationService>();
@@ -373,6 +380,7 @@ app.MapWorkspacePackageEndpoints();
 app.MapWorkspaceBuilderEndpoints();
 app.MapWorkspaceRuntimeConfigurationEndpoints();
 app.MapWorkspaceDeploymentEndpoints();
+app.MapWorkspacePermissionManagementEndpoints();
 app.MapWorkspaceArtifactEndpoints();
 app.MapPlatformHealingEndpoints();
 app.MapWorkspaceWeaverEndpoints();

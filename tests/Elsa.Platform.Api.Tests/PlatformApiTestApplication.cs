@@ -6,6 +6,7 @@ using Elsa.Platform.Api.Authentication;
 using Elsa.Platform.Deployment.Core.Cockpit;
 using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
+using Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -24,6 +25,7 @@ internal sealed class PlatformApiTestApplication : WebApplicationFactory<Program
     public const string TestPlatformIdentitySigningKey = "local-test-platform-identity-signing-key-change-me-12345";
 
     private readonly string _databasePath = Path.Combine(Path.GetTempPath(), $"elsa-catalog-{Guid.NewGuid():N}.db");
+    private readonly string _healingDatabasePath = Path.Combine(Path.GetTempPath(), $"elsa-healing-{Guid.NewGuid():N}.db");
     private readonly IReadOnlyDictionary<string, string?> _configuration;
     private readonly Action<IServiceCollection>? _configureServices;
 
@@ -68,6 +70,7 @@ internal sealed class PlatformApiTestApplication : WebApplicationFactory<Program
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<DbContextOptions<CatalogDbContext>>();
+            services.RemoveAll<DbContextOptions<HealingDbContext>>();
             services.AddSingleton<IStartupFilter, TestRemoteIpStartupFilter>();
 
             services.AddDbContext<CatalogDbContext>(options =>
@@ -75,6 +78,7 @@ internal sealed class PlatformApiTestApplication : WebApplicationFactory<Program
                 {
                     sqlite.MigrationsAssembly(CatalogDatabaseServiceCollectionExtensions.SqliteMigrationsAssembly);
                 }));
+            services.AddDbContext<HealingDbContext>(options => options.UseSqlite($"Data Source={_healingDatabasePath}"));
             services.RemoveAll<IEngineHealthProbe>();
             services.AddSingleton<IEngineHealthProbe, TestEngineHealthProbe>();
             _configureServices?.Invoke(services);
@@ -88,6 +92,17 @@ internal sealed class PlatformApiTestApplication : WebApplicationFactory<Program
         await db.Database.EnsureDeletedAsync();
         await db.Database.EnsureCreatedAsync();
         await seed(db);
+        await db.SaveChangesAsync();
+    }
+
+    public async Task SeedHealingAsync(Func<HealingDbContext, Task>? seed = null)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HealingDbContext>();
+        await db.Database.EnsureDeletedAsync();
+        await db.Database.EnsureCreatedAsync();
+        if (seed is not null)
+            await seed(db);
         await db.SaveChangesAsync();
     }
 
@@ -108,6 +123,8 @@ internal sealed class PlatformApiTestApplication : WebApplicationFactory<Program
 
         if (File.Exists(_databasePath))
             File.Delete(_databasePath);
+        if (File.Exists(_healingDatabasePath))
+            File.Delete(_healingDatabasePath);
     }
 
     private sealed class TestRemoteIpStartupFilter : IStartupFilter

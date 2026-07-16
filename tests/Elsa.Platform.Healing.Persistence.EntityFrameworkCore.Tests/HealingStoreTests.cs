@@ -1,11 +1,182 @@
 using Elsa.Platform.Healing.Core;
+using Elsa.Platform.Healing.Core.Ownership;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using ComponentManifestModel = Elsa.Platform.Healing.Core.ComponentManifest;
 
 namespace Elsa.Platform.Healing.Persistence.EntityFrameworkCore.Tests;
 
 public sealed class HealingStoreTests
 {
+    [Fact]
+    public async Task Revoked_provider_history_does_not_block_a_new_validated_authorization_generation()
+    {
+        await using var fixture = await HealingPersistenceFixture.CreateAsync();
+        var store = new HealingStore(fixture.Db);
+        var workspaceId = Guid.NewGuid();
+        var now = DateTimeOffset.Parse("2026-07-16T10:00:00Z");
+        var first = await store.SaveProviderConnectionAsync(new ProviderConnection
+        {
+            Id = Guid.NewGuid(), WorkspaceId = workspaceId, Provider = "GitHub", InstallationId = "42",
+            RepositoryProviderId = "repo-42", RepositoryOwner = "acme", RepositoryName = "claims",
+            CredentialReference = $"credential://{Guid.NewGuid():D}", Status = ProviderConnectionStatus.Active,
+            CreatedAt = now, UpdatedAt = now
+        });
+        first.Status = ProviderConnectionStatus.Revoked;
+        first.UpdatedAt = now.AddMinutes(1);
+        await store.SaveProviderConnectionAsync(first);
+
+        var second = await store.SaveProviderConnectionAsync(new ProviderConnection
+        {
+            Id = Guid.NewGuid(), WorkspaceId = workspaceId, Provider = "GitHub", InstallationId = "84",
+            RepositoryProviderId = $"pending-{Guid.NewGuid():N}", RepositoryOwner = "acme", RepositoryName = "claims",
+            CredentialReference = $"credential://{Guid.NewGuid():D}", Status = ProviderConnectionStatus.PendingValidation,
+            CreatedAt = now.AddMinutes(2), UpdatedAt = now.AddMinutes(2)
+        });
+        second.RepositoryProviderId = "repo-42";
+        second.Status = ProviderConnectionStatus.Active;
+        second.UpdatedAt = now.AddMinutes(3);
+        var authorized = await store.SaveProviderConnectionAsync(second);
+
+        authorized.Status.Should().Be(ProviderConnectionStatus.Active);
+        authorized.RepositoryProviderId.Should().Be("repo-42");
+        (await store.ListProviderConnectionsAsync(workspaceId)).Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task Ownership_port_scopes_manifest_reads_and_atomically_transitions_trust()
+    {
+        await using var fixture = await HealingPersistenceFixture.CreateAsync();
+        IHealingOwnershipStore store = new HealingStore(fixture.Db);
+        var workspaceId = Guid.NewGuid();
+        var applicationId = Guid.NewGuid();
+        var revisionId = Guid.NewGuid();
+        var manifest = CreateManifest(workspaceId, applicationId, revisionId, "digest-a", "component-a");
+        var entry = manifest.Entries.Single();
+        entry.Assemblies =
+        [
+            CreateAssembly(manifest, entry, "lib/net10.0/Component.dll"),
+            CreateAssembly(manifest, entry, "lib/net10.0/Component.Contracts.dll")
+        ];
+
+        var accepted = await store.AddManifestAsync(manifest);
+        var conflicting = await store.AddManifestAsync(
+            CreateManifest(workspaceId, applicationId, revisionId, "digest-b", "component-b"));
+        var crossWorkspace = await store.GetManifestAsync(Guid.NewGuid(), applicationId, manifest.Id);
+        var crossWorkspaceTransition = await store.TransitionManifestTrustAsync(
+            Guid.NewGuid(), applicationId, manifest.Id, ComponentManifestTrustState.Unverified,
+            ComponentManifestTrustState.Verified, "owner", "workspace-owner-verification", DateTimeOffset.UtcNow);
+        var verified = await store.TransitionManifestTrustAsync(
+            workspaceId, applicationId, manifest.Id, ComponentManifestTrustState.Unverified,
+            ComponentManifestTrustState.Verified, "owner", "workspace-owner-verification", DateTimeOffset.UtcNow);
+        var staleTransition = await store.TransitionManifestTrustAsync(
+            workspaceId, applicationId, manifest.Id, ComponentManifestTrustState.Unverified,
+            ComponentManifestTrustState.Revoked, "owner", "workspace-owner-verification", DateTimeOffset.UtcNow);
+        var trusted = await store.ListManifestsAsync(workspaceId, applicationId, trustedOnly: true);
+
+        accepted.IsReplay.Should().BeFalse();
+        conflicting.IsConsistentReplay.Should().BeFalse();
+        crossWorkspace.Should().BeNull();
+        crossWorkspaceTransition.Should().BeFalse();
+        verified.Should().BeTrue();
+        staleTransition.Should().BeFalse();
+        trusted.Should().ContainSingle().Which.Id.Should().Be(manifest.Id);
+        trusted.Single().Entries.Single().Assemblies.Select(x => x.RelativePath).Should().BeEquivalentTo(
+            "lib/net10.0/Component.dll", "lib/net10.0/Component.Contracts.dll");
+    }
+
+    [Fact]
+    public async Task Manifest_registration_idempotency_is_persistent_payload_bound_and_scope_isolated()
+    {
+        await using var fixture = await HealingPersistenceFixture.CreateAsync();
+        var store = new HealingStore(fixture.Db);
+        var workspaceId = Guid.NewGuid();
+        var applicationId = Guid.NewGuid();
+        var revisionId = Guid.NewGuid();
+        const string key = "delivery-42";
+        const string payloadHash = "sha256:payload-a";
+
+        var accepted = await store.ExecuteInTransactionAsync(cancellationToken => store.RegisterManifestAsync(
+            CreateManifest(workspaceId, applicationId, revisionId, "digest-a", "component-a"), key, payloadHash, cancellationToken));
+        var replay = await store.ExecuteInTransactionAsync(cancellationToken => store.RegisterManifestAsync(
+            CreateManifest(workspaceId, applicationId, revisionId, "digest-a", "component-a"), key, payloadHash, cancellationToken));
+        var conflict = await store.ExecuteInTransactionAsync(cancellationToken => store.RegisterManifestAsync(
+            CreateManifest(workspaceId, applicationId, revisionId, "digest-a", "component-a"), key, "sha256:payload-b", cancellationToken));
+        var otherApplication = await store.ExecuteInTransactionAsync(cancellationToken => store.RegisterManifestAsync(
+            CreateManifest(workspaceId, Guid.NewGuid(), revisionId, "digest-a", "component-a"), key, payloadHash, cancellationToken));
+        var otherRevision = await store.ExecuteInTransactionAsync(cancellationToken => store.RegisterManifestAsync(
+            CreateManifest(workspaceId, applicationId, Guid.NewGuid(), "digest-a", "component-a"), key, payloadHash, cancellationToken));
+        var otherWorkspace = await store.ExecuteInTransactionAsync(cancellationToken => store.RegisterManifestAsync(
+            CreateManifest(Guid.NewGuid(), applicationId, revisionId, "digest-a", "component-a"), key, payloadHash, cancellationToken));
+
+        accepted.IsReplay.Should().BeFalse();
+        replay.IsReplay.Should().BeTrue();
+        replay.Value.Id.Should().Be(accepted.Value.Id);
+        conflict.FailureReasonCode.Should().Be(HealingOwnershipReasonCodes.IdempotencyConflict);
+        otherApplication.FailureReasonCode.Should().BeNull();
+        otherRevision.FailureReasonCode.Should().BeNull();
+        otherWorkspace.FailureReasonCode.Should().BeNull();
+        (await fixture.Db.ComponentManifestRegistrations.CountAsync()).Should().Be(4);
+    }
+
+    [Fact]
+    public async Task Ownership_transaction_rolls_back_mutation_when_required_audit_step_fails()
+    {
+        await using var fixture = await HealingPersistenceFixture.CreateAsync();
+        IHealingOwnershipStore store = new HealingStore(fixture.Db);
+        var workspaceId = Guid.NewGuid();
+        var applicationId = Guid.NewGuid();
+        var configuration = CreateConfiguration(workspaceId, applicationId);
+
+        var operation = () => store.ExecuteInTransactionAsync<HealingConfiguration>(async cancellationToken =>
+        {
+            await store.SaveConfigurationAsync(configuration, cancellationToken);
+            throw new InvalidOperationException("simulated-audit-failure");
+        }).AsTask();
+
+        await operation.Should().ThrowAsync<InvalidOperationException>();
+        (await store.GetConfigurationAsync(workspaceId, applicationId)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Binding_update_rotates_version_and_rejects_the_previous_version()
+    {
+        await using var fixture = await HealingPersistenceFixture.CreateAsync();
+        var workspaceId = Guid.NewGuid();
+        var applicationId = Guid.NewGuid();
+        var provider = new ProviderConnection
+        {
+            Id = Guid.NewGuid(), WorkspaceId = workspaceId, Provider = "github", InstallationId = "installation",
+            RepositoryProviderId = "repo", RepositoryOwner = "acme", RepositoryName = "workflows",
+            CredentialReference = "secret-ref", Status = ProviderConnectionStatus.Active
+        };
+        var path = CreatePolicy<PathPolicy>(workspaceId, applicationId, "path");
+        var evidence = CreatePolicy<EvidencePolicy>(workspaceId, applicationId, "evidence");
+        var merge = CreatePolicy<MergePolicy>(workspaceId, applicationId, "merge");
+        var binding = new SourceOwnershipBinding
+        {
+            Id = Guid.NewGuid(), WorkspaceId = workspaceId, ApplicationId = applicationId, Name = "binding",
+            SelectorKind = SourceSelectorKind.Package, SelectorPattern = "Acme.*", ProviderConnectionId = provider.Id,
+            RepositoryProviderId = provider.RepositoryProviderId, RepositoryOwner = provider.RepositoryOwner,
+            RepositoryName = provider.RepositoryName, TargetBranch = "main", WorkflowIdentity = "healing.yml",
+            WorkflowRevision = "abcdef1", PathPolicyId = path.Id, EvidencePolicyId = evidence.Id, MergePolicyId = merge.Id,
+            Status = SourceOwnershipBindingStatus.Draft
+        };
+        fixture.Db.AddRange(provider, path, evidence, merge, binding);
+        await fixture.Db.SaveChangesAsync();
+        var store = new HealingStore(fixture.Db);
+        var candidate = (await store.GetBindingAsync(workspaceId, applicationId, binding.Id))!;
+        var stale = CloneBinding(candidate);
+        candidate.Name = "updated";
+
+        var updated = await store.SaveBindingAsync(candidate);
+        stale.Name = "stale";
+        var staleWrite = () => store.SaveBindingAsync(stale).AsTask();
+
+        updated.Version.Should().NotEqual(stale.Version);
+        await staleWrite.Should().ThrowAsync<DbUpdateConcurrencyException>();
+    }
+
     [Fact]
     public async Task Inbox_append_is_idempotent_for_matching_payload_and_rejects_key_reuse()
     {
@@ -338,14 +509,14 @@ public sealed class HealingStoreTests
         UpdatedAt = DateTimeOffset.Parse("2026-07-16T10:00:00Z")
     };
 
-    private static ComponentManifest CreateManifest(
+    private static ComponentManifestModel CreateManifest(
         Guid workspaceId,
         Guid applicationId,
         Guid revisionId,
         string digest,
         string componentKey)
     {
-        var manifest = new ComponentManifest
+        var manifest = new ComponentManifestModel
         {
             Id = Guid.NewGuid(),
             WorkspaceId = workspaceId,
@@ -371,6 +542,36 @@ public sealed class HealingStoreTests
         });
         return manifest;
     }
+
+    private static ComponentManifestAssemblyArtifact CreateAssembly(
+        ComponentManifestModel manifest,
+        ComponentManifestEntry entry,
+        string relativePath) => new()
+    {
+        Id = Guid.NewGuid(), ManifestId = manifest.Id, ComponentEntryId = entry.Id,
+        WorkspaceId = manifest.WorkspaceId, ApplicationId = manifest.ApplicationId,
+        Name = Path.GetFileNameWithoutExtension(relativePath), Version = "1.0.0.0",
+        RelativePath = relativePath, ContentHash = "hash"
+    };
+
+    private static T CreatePolicy<T>(Guid workspaceId, Guid applicationId, string name)
+        where T : HealingPolicyDefinition, new() => new()
+    {
+        Id = Guid.NewGuid(), WorkspaceId = workspaceId, ApplicationId = applicationId,
+        Name = name, PolicyVersion = "1", PolicyHash = "hash"
+    };
+
+    private static SourceOwnershipBinding CloneBinding(SourceOwnershipBinding source) => new()
+    {
+        Id = source.Id, WorkspaceId = source.WorkspaceId, ApplicationId = source.ApplicationId, Name = source.Name,
+        SelectorKind = source.SelectorKind, SelectorPattern = source.SelectorPattern, Priority = source.Priority,
+        ProviderConnectionId = source.ProviderConnectionId, RepositoryProviderId = source.RepositoryProviderId,
+        RepositoryOwner = source.RepositoryOwner, RepositoryName = source.RepositoryName, TargetBranch = source.TargetBranch,
+        WorkflowIdentity = source.WorkflowIdentity, WorkflowRevision = source.WorkflowRevision,
+        PathPolicyId = source.PathPolicyId, EvidencePolicyId = source.EvidencePolicyId, MergePolicyId = source.MergePolicyId,
+        Status = source.Status, ApprovedBy = source.ApprovedBy, ApprovedAt = source.ApprovedAt,
+        CreatedAt = source.CreatedAt, UpdatedAt = source.UpdatedAt, Version = source.Version.ToArray()
+    };
 
     private static HealingDbContext CreateFileContext(string connectionString) => new(
         new DbContextOptionsBuilder<HealingDbContext>().UseSqlite(connectionString).Options);

@@ -9,6 +9,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Elsa.Platform.Healing.GitHub\Elsa.Platform.Healing.GitHub.csproj" />
+    <ProjectReference Include="..\..\src\Elsa.Platform.Healing.Core\Elsa.Platform.Healing.Core.csproj" />
   </ItemGroup>
   <ItemGroup><Using Include="Xunit" /></ItemGroup>
 </Project>

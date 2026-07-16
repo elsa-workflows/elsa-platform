@@ -36,10 +36,11 @@ describe("AppShell", () => {
     expect(screen.getAllByText("Runtime Builder").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Build configurations" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Console" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Healing" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Managed Runtimes").length).toBeGreaterThan(0);
     expect(navigationText).toContain("PlatformOverview");
     expect(navigationText).toContain("DeliverOverviewApplicationsArtifacts");
-    expect(navigationText).toContain("OperateTiersEngine credentialsConsole");
+    expect(navigationText).toContain("OperateTiersEngine credentialsHealingConsole");
     expect(navigationText).toContain("Runtime BuilderBuild configurations");
     expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
     expect(await screen.findAllByRole("combobox", { name: "Organization" }, { timeout: 5_000 })).toHaveLength(2);

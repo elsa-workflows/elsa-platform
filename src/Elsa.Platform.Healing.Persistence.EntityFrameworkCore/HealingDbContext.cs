@@ -1,5 +1,6 @@
 using Elsa.Platform.Healing.Core;
 using Microsoft.EntityFrameworkCore;
+using ComponentManifestModel = Elsa.Platform.Healing.Core.ComponentManifest;
 
 namespace Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
 
@@ -9,8 +10,10 @@ public sealed class HealingDbContext(DbContextOptions<HealingDbContext> options)
     public DbSet<HealingWorkspaceConfiguration> HealingWorkspaceConfigurations => Set<HealingWorkspaceConfiguration>();
     public DbSet<HealingEnvironmentConfiguration> HealingEnvironmentConfigurations => Set<HealingEnvironmentConfiguration>();
     public DbSet<HealingSignalInboxItem> HealingSignalInboxItems => Set<HealingSignalInboxItem>();
-    public DbSet<ComponentManifest> ComponentManifests => Set<ComponentManifest>();
+    public DbSet<ComponentManifestModel> ComponentManifests => Set<ComponentManifestModel>();
+    public DbSet<ComponentManifestRegistration> ComponentManifestRegistrations => Set<ComponentManifestRegistration>();
     public DbSet<ComponentManifestEntry> ComponentManifestEntries => Set<ComponentManifestEntry>();
+    public DbSet<ComponentManifestAssemblyArtifact> ComponentManifestAssemblyArtifacts => Set<ComponentManifestAssemblyArtifact>();
     public DbSet<ComponentDependency> ComponentDependencies => Set<ComponentDependency>();
     public DbSet<SourceOwnershipBinding> SourceOwnershipBindings => Set<SourceOwnershipBinding>();
     public DbSet<IncidentOccurrence> IncidentOccurrences => Set<IncidentOccurrence>();

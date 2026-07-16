@@ -402,15 +402,32 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         }
     }
 
+    public Task<DateTimeOffset?> GetWorkspaceMembershipCreatedAtAsync(
+        Guid workspaceId,
+        Guid accountId,
+        CancellationToken cancellationToken = default) =>
+        dbContext.WorkspaceMemberships.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.AccountId == accountId)
+            .Select(x => (DateTimeOffset?)x.CreatedAt)
+            .SingleOrDefaultAsync(cancellationToken);
+
     public async Task<IReadOnlyList<WorkspacePermissionGrant>> GetPermissionGrantsAsync(
         Guid workspaceId,
         Guid accountId,
         CancellationToken cancellationToken = default)
+        => await ListPermissionGrantsAsync(workspaceId, accountId, cancellationToken);
+
+    public async Task<IReadOnlyList<WorkspacePermissionGrant>> ListPermissionGrantsAsync(
+        Guid workspaceId,
+        Guid? accountId = null,
+        CancellationToken cancellationToken = default)
     {
         return await dbContext.WorkspacePermissionGrants
             .AsNoTracking()
-            .Where(x => x.WorkspaceId == workspaceId && x.AccountId == accountId)
-            .OrderBy(x => x.Permission)
+            .Where(x => x.WorkspaceId == workspaceId && (!accountId.HasValue || x.AccountId == accountId.Value))
+            .OrderBy(x => x.AccountId)
+            .ThenBy(x => x.Permission)
+            .ThenByDescending(x => x.CreatedAt)
             .Select(x => new WorkspacePermissionGrant(
                 x.Id,
                 x.WorkspaceId,
@@ -419,9 +436,30 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
                 x.GrantedByAccountId,
                 x.CreatedAt,
                 x.UpdatedAt,
-                x.RevokedAt))
+                x.RevokedAt,
+                x.RevokedByAccountId))
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<WorkspacePermissionAuditRecord>> ListPermissionAuditRecordsAsync(
+        Guid workspaceId,
+        Guid? accountId = null,
+        CancellationToken cancellationToken = default) =>
+        await dbContext.WorkspacePermissionAuditRecords
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && (!accountId.HasValue || x.AccountId == accountId.Value))
+            .OrderByDescending(x => x.OccurredAt)
+            .ThenByDescending(x => x.Id)
+            .Select(x => new WorkspacePermissionAuditRecord(
+                x.Id,
+                x.WorkspaceId,
+                x.GrantId,
+                x.AccountId,
+                x.Permission,
+                x.Action,
+                x.ActorAccountId,
+                x.OccurredAt))
+            .ToListAsync(cancellationToken);
 
     public async Task<WorkspacePermissionGrant> GrantPermissionAsync(
         Guid workspaceId,
@@ -429,11 +467,13 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
+        var membershipCreatedAt = await GetWorkspaceMembershipCreatedAtAsync(workspaceId, request.AccountId, cancellationToken);
         var existing = await dbContext.WorkspacePermissionGrants
             .Where(x => x.WorkspaceId == workspaceId
                     && x.AccountId == request.AccountId
                     && x.Permission == request.Permission
-                    && x.RevokedAt == null)
+                    && x.RevokedAt == null
+                    && (!membershipCreatedAt.HasValue || x.CreatedAt >= membershipCreatedAt.Value))
             .OrderBy(x => x.CreatedAt)
             .ThenBy(x => x.Id)
             .FirstOrDefaultAsync(cancellationToken);
@@ -453,8 +493,53 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         };
 
         await dbContext.WorkspacePermissionGrants.AddAsync(entity, cancellationToken);
+        await dbContext.WorkspacePermissionAuditRecords.AddAsync(
+            PermissionAuditRecord(entity, WorkspacePermissionAuditAction.Granted, request.GrantedByAccountId, now),
+            cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToPermissionGrant(entity);
+    }
+
+    public async Task<RevokeWorkspacePermissionResult> RevokePermissionAsync(
+        Guid workspaceId,
+        RevokeWorkspacePermissionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var active = await dbContext.WorkspacePermissionGrants
+            .Where(x => x.WorkspaceId == workspaceId
+                        && x.AccountId == request.AccountId
+                        && x.Permission == request.Permission
+                        && x.RevokedAt == null)
+            .OrderBy(x => x.CreatedAt)
+            .ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        if (active.Count == 0)
+        {
+            var latest = await dbContext.WorkspacePermissionGrants
+                .AsNoTracking()
+                .Where(x => x.WorkspaceId == workspaceId
+                            && x.AccountId == request.AccountId
+                            && x.Permission == request.Permission)
+                .OrderByDescending(x => x.UpdatedAt)
+                .ThenByDescending(x => x.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+            return new RevokeWorkspacePermissionResult(latest is null ? [] : [ToPermissionGrant(latest)], false);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var entity in active)
+        {
+            entity.RevokedAt = now;
+            entity.RevokedByAccountId = request.RevokedByAccountId;
+            entity.UpdatedAt = now;
+            await dbContext.WorkspacePermissionAuditRecords.AddAsync(
+                PermissionAuditRecord(entity, WorkspacePermissionAuditAction.Revoked, request.RevokedByAccountId, now),
+                cancellationToken);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new RevokeWorkspacePermissionResult(active.Select(ToPermissionGrant).ToList(), true);
     }
 
     public async Task<ActionConfirmation> CreateConfirmationAsync(
@@ -490,18 +575,19 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         return entity is null ? null : ToActionConfirmation(entity);
     }
 
-    public async Task<ActionConfirmation> MarkConfirmationUsedAsync(
+    public async Task<ConfirmationUseAttempt?> TryMarkConfirmationUsedAsync(
         Guid workspaceId,
         Guid confirmationId,
         DateTimeOffset usedAt,
         CancellationToken cancellationToken = default)
     {
-        var entity = await dbContext.ActionConfirmations
-            .SingleAsync(x => x.WorkspaceId == workspaceId && x.Id == confirmationId, cancellationToken);
-        if (entity.UsedAt is null)
-            entity.UsedAt = usedAt;
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return ToActionConfirmation(entity);
+        var affectedRows = await dbContext.ActionConfirmations
+            .Where(x => x.WorkspaceId == workspaceId && x.Id == confirmationId && x.UsedAt == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(x => x.UsedAt, usedAt),
+                cancellationToken);
+        var confirmation = await GetConfirmationAsync(workspaceId, confirmationId, cancellationToken);
+        return confirmation is null ? null : new ConfirmationUseAttempt(confirmation, affectedRows == 1);
     }
 
     public Task<bool> HasActiveRunAsync(
@@ -1515,6 +1601,28 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             ? null
             : new WorkspaceEngineCredentialSecret(
                 engine.Id,
+                credential.Id,
+                store.Status,
+                credential.Status,
+                store.Type,
+                credential.ProtectedSecret);
+    }
+
+    public async Task<WorkspaceDeploymentCredentialSecret?> GetCredentialSecretAsync(
+        Guid workspaceId,
+        Guid credentialReferenceId,
+        CancellationToken cancellationToken = default)
+    {
+        var credential = await dbContext.DeploymentCredentialReferences
+            .AsNoTracking()
+            .Include(x => x.SecretStore)
+            .SingleOrDefaultAsync(
+                x => x.WorkspaceId == workspaceId && x.Id == credentialReferenceId,
+                cancellationToken);
+        var store = credential?.SecretStore;
+        return credential is null || store is null
+            ? null
+            : new WorkspaceDeploymentCredentialSecret(
                 credential.Id,
                 store.Status,
                 credential.Status,
@@ -2609,7 +2717,25 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             entity.GrantedByAccountId,
             entity.CreatedAt,
             entity.UpdatedAt,
-            entity.RevokedAt);
+            entity.RevokedAt,
+            entity.RevokedByAccountId);
+
+    private static WorkspacePermissionAuditRecordEntity PermissionAuditRecord(
+        WorkspacePermissionGrantEntity grant,
+        WorkspacePermissionAuditAction action,
+        Guid? actorAccountId,
+        DateTimeOffset occurredAt) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = grant.WorkspaceId,
+            GrantId = grant.Id,
+            AccountId = grant.AccountId,
+            Permission = grant.Permission,
+            Action = action,
+            ActorAccountId = actorAccountId,
+            OccurredAt = occurredAt
+        };
 
     private static ActionConfirmation ToActionConfirmation(ActionConfirmationEntity entity) =>
         new(

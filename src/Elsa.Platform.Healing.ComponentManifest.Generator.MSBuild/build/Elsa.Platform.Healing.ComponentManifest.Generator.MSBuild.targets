@@ -1,0 +1,47 @@
+<Project>
+  <PropertyGroup>
+    <GenerateElsaHealingComponentManifest Condition="'$(GenerateElsaHealingComponentManifest)' == ''">true</GenerateElsaHealingComponentManifest>
+    <ElsaHealingRequireSourceRevision Condition="'$(ElsaHealingRequireSourceRevision)' == ''">true</ElsaHealingRequireSourceRevision>
+    <ElsaHealingSourceRevision Condition="'$(ElsaHealingSourceRevision)' == '' and '$(SourceRevisionId)' != ''">$(SourceRevisionId)</ElsaHealingSourceRevision>
+    <ElsaHealingSourceRevision Condition="'$(ElsaHealingSourceRevision)' == '' and '$(RepositoryCommit)' != ''">$(RepositoryCommit)</ElsaHealingSourceRevision>
+    <ElsaHealingRepositoryUrl Condition="'$(ElsaHealingRepositoryUrl)' == ''">$(RepositoryUrl)</ElsaHealingRepositoryUrl>
+    <ElsaHealingBuildId Condition="'$(ElsaHealingBuildId)' == ''">$(BuildNumber)</ElsaHealingBuildId>
+    <ElsaHealingComponentManifestOutputPath Condition="'$(ElsaHealingComponentManifestOutputPath)' == ''">$(TargetDir)elsa-healing-component-manifest.json</ElsaHealingComponentManifestOutputPath>
+  </PropertyGroup>
+
+  <UsingTask
+    TaskName="Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild.GenerateHealingComponentManifestTask"
+    AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild.dll"
+    Condition="Exists('$(MSBuildThisFileDirectory)..\tasks\Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild.dll')" />
+
+  <Target Name="GenerateElsaHealingComponentManifest"
+          AfterTargets="Build"
+          DependsOnTargets="ResolvePackageAssets"
+          Condition="'$(GenerateElsaHealingComponentManifest)' == 'true' and '$(IsCrossTargetingBuild)' != 'true'">
+    <GenerateHealingComponentManifestTask
+      ProjectAssetsFile="$(ProjectAssetsFile)"
+      ProjectDirectory="$(MSBuildProjectDirectory)"
+      ApplicationAssemblyPath="$(TargetPath)"
+      OutputPath="$(ElsaHealingComponentManifestOutputPath)"
+      ApplicationName="$(AssemblyName)"
+      ApplicationVersion="$(Version)"
+      TargetFramework="$(TargetFramework)"
+      RuntimeIdentifier="$(RuntimeIdentifier)"
+      SourceRevision="$(ElsaHealingSourceRevision)"
+      RepositoryUrl="$(ElsaHealingRepositoryUrl)"
+      BuildId="$(ElsaHealingBuildId)"
+      CreatedAt="$(ElsaHealingManifestCreatedAt)"
+      RequireSourceRevision="$(ElsaHealingRequireSourceRevision)" />
+
+    <ItemGroup>
+      <FileWrites Include="$(ElsaHealingComponentManifestOutputPath)" />
+      <ElsaHealingComponentManifest Include="$(ElsaHealingComponentManifestOutputPath)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="CleanElsaHealingComponentManifest"
+          AfterTargets="Clean"
+          Condition="'$(IsCrossTargetingBuild)' != 'true'">
+    <Delete Files="$(ElsaHealingComponentManifestOutputPath)" />
+  </Target>
+</Project>

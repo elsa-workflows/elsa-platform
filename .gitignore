@@ -28,6 +28,8 @@ obj/
 node_modules/
 dist/
 build/
+!src/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild/build/
+!src/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild/build/*.targets
 coverage/
 playwright-report/
 test-results/

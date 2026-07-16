@@ -297,6 +297,19 @@ internal sealed class WorkspacePermissionGrantEntity
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? RevokedAt { get; set; }
+    public Guid? RevokedByAccountId { get; set; }
+}
+
+internal sealed class WorkspacePermissionAuditRecordEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid GrantId { get; set; }
+    public Guid AccountId { get; set; }
+    public string Permission { get; set; } = "";
+    public WorkspacePermissionAuditAction Action { get; set; }
+    public Guid? ActorAccountId { get; set; }
+    public DateTimeOffset OccurredAt { get; set; }
 }
 
 internal sealed class ActionConfirmationEntity

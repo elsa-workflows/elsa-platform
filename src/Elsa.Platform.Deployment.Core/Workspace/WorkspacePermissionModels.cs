@@ -32,12 +32,42 @@ public sealed record WorkspacePermissionGrant(
     Guid? GrantedByAccountId,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    DateTimeOffset? RevokedAt);
+    DateTimeOffset? RevokedAt,
+    Guid? RevokedByAccountId = null);
 
 public sealed record GrantWorkspacePermissionRequest(
     Guid AccountId,
     string Permission,
     Guid? GrantedByAccountId);
+
+public sealed record RevokeWorkspacePermissionRequest(
+    Guid AccountId,
+    string Permission,
+    Guid? RevokedByAccountId);
+
+public sealed record RevokeWorkspacePermissionResult(
+    IReadOnlyList<WorkspacePermissionGrant> Grants,
+    bool Changed);
+
+public enum WorkspacePermissionAuditAction
+{
+    Granted,
+    Revoked
+}
+
+public sealed record WorkspacePermissionAuditRecord(
+    Guid Id,
+    Guid WorkspaceId,
+    Guid GrantId,
+    Guid AccountId,
+    string Permission,
+    WorkspacePermissionAuditAction Action,
+    Guid? ActorAccountId,
+    DateTimeOffset OccurredAt);
+
+public sealed record WorkspacePermissionCatalog(
+    IReadOnlySet<string> All,
+    IReadOnlySet<string> OwnerDefaults);
 
 public sealed record EffectiveWorkspacePermissions(
     Guid WorkspaceId,

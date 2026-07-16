@@ -125,10 +125,13 @@ public sealed class DeploymentRunServiceTests
         public Task<ActionConfirmation?> GetConfirmationAsync(Guid workspaceId, Guid confirmationId, CancellationToken cancellationToken = default) =>
             Task.FromResult(Confirmations.GetValueOrDefault(confirmationId));
 
-        public Task<ActionConfirmation> MarkConfirmationUsedAsync(Guid workspaceId, Guid confirmationId, DateTimeOffset usedAt, CancellationToken cancellationToken = default)
+        public Task<ConfirmationUseAttempt?> TryMarkConfirmationUsedAsync(Guid workspaceId, Guid confirmationId, DateTimeOffset usedAt, CancellationToken cancellationToken = default)
         {
+            if (Confirmations[confirmationId].UsedAt is not null)
+                return Task.FromResult<ConfirmationUseAttempt?>(new ConfirmationUseAttempt(Confirmations[confirmationId], false));
+
             Confirmations[confirmationId] = Confirmations[confirmationId] with { UsedAt = usedAt };
-            return Task.FromResult(Confirmations[confirmationId]);
+            return Task.FromResult<ConfirmationUseAttempt?>(new ConfirmationUseAttempt(Confirmations[confirmationId], true));
         }
 
         public Task<bool> HasActiveRunAsync(Guid workspaceId, Guid environmentId, CancellationToken cancellationToken = default) =>

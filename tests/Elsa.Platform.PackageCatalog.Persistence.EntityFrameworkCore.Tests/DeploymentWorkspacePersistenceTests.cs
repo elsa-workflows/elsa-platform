@@ -195,11 +195,18 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
 
         var stores = await _store.ListSecretStoresAsync(_workspaceId);
         var references = await _store.ListCredentialReferencesAsync(_workspaceId);
+        var secret = await _store.GetCredentialSecretAsync(_workspaceId, reference.Id);
         stores.Should().ContainSingle(x =>
             x.Id == store.Id
             && x.Type == DeploymentSecretStoreType.LocalEncryptedDatabase
             && x.Provider == "Local encrypted database");
         references.Should().ContainSingle(x => x.Id == reference.Id && x.HasProtectedSecret && x.UsageCount == 0);
+        secret.Should().BeEquivalentTo(new WorkspaceDeploymentCredentialSecret(
+            reference.Id,
+            DeploymentSecretStoreStatus.Active,
+            DeploymentSecretStoreStatus.Active,
+            DeploymentSecretStoreType.LocalEncryptedDatabase,
+            "protected:v1"));
         engine.CredentialAssignmentStatus.Should().Be(EngineCredentialAssignmentStatus.Deferred);
         engine.CredentialProvider.Should().BeEmpty();
         engine.CredentialReference.Should().BeEmpty();
@@ -278,6 +285,63 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
         var grants = await _store.GetPermissionGrantsAsync(_workspaceId, _accountId);
 
         grants.Should().ContainSingle(x => x.Permission == WorkspaceDeploymentPermissions.Read && x.RevokedAt == null);
+    }
+
+    [Fact]
+    public async Task Permission_grant_and_revoke_are_idempotent_and_audited_with_actor_provenance()
+    {
+        var actorId = _accountId;
+        var first = await _store.GrantPermissionAsync(
+            _workspaceId,
+            new GrantWorkspacePermissionRequest(_accountId, WorkspaceDeploymentPermissions.Read, actorId));
+        var replay = await _store.GrantPermissionAsync(
+            _workspaceId,
+            new GrantWorkspacePermissionRequest(_accountId, WorkspaceDeploymentPermissions.Read, actorId));
+
+        var revoked = await _store.RevokePermissionAsync(
+            _workspaceId,
+            new RevokeWorkspacePermissionRequest(_accountId, WorkspaceDeploymentPermissions.Read, actorId));
+        var revokeReplay = await _store.RevokePermissionAsync(
+            _workspaceId,
+            new RevokeWorkspacePermissionRequest(_accountId, WorkspaceDeploymentPermissions.Read, actorId));
+        var audit = await _store.ListPermissionAuditRecordsAsync(_workspaceId, _accountId);
+
+        replay.Id.Should().Be(first.Id);
+        revoked.Changed.Should().BeTrue();
+        revoked.Grants.Should().ContainSingle(x => x.Id == first.Id && x.RevokedByAccountId == actorId);
+        revokeReplay.Changed.Should().BeFalse();
+        audit.Should().HaveCount(2);
+        audit.Select(x => x.Action).Should().BeEquivalentTo([
+            WorkspacePermissionAuditAction.Granted,
+            WorkspacePermissionAuditAction.Revoked
+        ]);
+        audit.Should().OnlyContain(x => x.GrantId == first.Id && x.ActorAccountId == actorId);
+    }
+
+    [Fact]
+    public async Task Revoking_permission_clears_all_duplicate_active_grants()
+    {
+        var firstGrantId = Guid.NewGuid();
+        var secondGrantId = Guid.NewGuid();
+        var createdAt = DateTimeOffset.UtcNow.UtcTicks;
+        await _db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO WorkspacePermissionGrants (Id, WorkspaceId, AccountId, Permission, GrantedByAccountId, CreatedAt, UpdatedAt, RevokedAt, RevokedByAccountId)
+            VALUES ({firstGrantId}, {_workspaceId}, {_accountId}, {WorkspaceDeploymentPermissions.Read}, NULL, {createdAt}, {createdAt}, NULL, NULL)
+            """);
+        await _db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO WorkspacePermissionGrants (Id, WorkspaceId, AccountId, Permission, GrantedByAccountId, CreatedAt, UpdatedAt, RevokedAt, RevokedByAccountId)
+            VALUES ({secondGrantId}, {_workspaceId}, {_accountId}, {WorkspaceDeploymentPermissions.Read}, NULL, {createdAt + 1}, {createdAt + 1}, NULL, NULL)
+            """);
+
+        var result = await _store.RevokePermissionAsync(
+            _workspaceId,
+            new RevokeWorkspacePermissionRequest(_accountId, WorkspaceDeploymentPermissions.Read, _accountId));
+
+        result.Changed.Should().BeTrue();
+        result.Grants.Should().HaveCount(2).And.OnlyContain(x => x.RevokedAt.HasValue);
+        (await _store.GetPermissionGrantsAsync(_workspaceId, _accountId)).Should().NotContain(x => !x.RevokedAt.HasValue);
+        (await _store.ListPermissionAuditRecordsAsync(_workspaceId, _accountId))
+            .Should().HaveCount(2).And.OnlyContain(x => x.Action == WorkspacePermissionAuditAction.Revoked);
     }
 
     [Fact]
@@ -508,7 +572,7 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
             _workspaceId,
             new CreateActionConfirmationRequest(ConfirmationActionType.Deploy, revision.Id.ToString("D"), _accountId),
             now);
-        var usedConfirmation = await mutationStore.MarkConfirmationUsedAsync(_workspaceId, confirmation.Id, now.AddSeconds(1));
+        var useAttempt = await mutationStore.TryMarkConfirmationUsedAsync(_workspaceId, confirmation.Id, now.AddSeconds(1));
         var run = await mutationStore.CreateRunAsync(
             _workspaceId,
             new QueueWorkspaceDeploymentRunRequest(revision.Id, targetEnvironment.Id, engine.Id, confirmation.Id, _accountId),
@@ -519,7 +583,8 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
         var loaded = await mutationStore.GetRunAsync(_workspaceId, run.Id);
         var history = await mutationStore.GetRunHistoryAsync(_workspaceId, run.Id);
 
-        usedConfirmation.UsedAt.Should().Be(now.AddSeconds(1));
+        useAttempt!.Consumed.Should().BeTrue();
+        useAttempt.Confirmation.UsedAt.Should().Be(now.AddSeconds(1));
         claimed!.Id.Should().Be(run.Id);
         completed.Status.Should().Be(WorkspaceDeploymentRunStatus.Succeeded);
         loaded!.Status.Should().Be(WorkspaceDeploymentRunStatus.Succeeded);

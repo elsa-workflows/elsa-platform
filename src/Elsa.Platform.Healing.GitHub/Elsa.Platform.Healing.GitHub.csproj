@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <ProjectReference Include="..\Elsa.Platform.Healing.Abstractions\Elsa.Platform.Healing.Abstractions.csproj" />
+    <ProjectReference Include="..\Elsa.Platform.Healing.Core\Elsa.Platform.Healing.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

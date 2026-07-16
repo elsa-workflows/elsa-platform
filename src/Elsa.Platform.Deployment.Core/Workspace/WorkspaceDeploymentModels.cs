@@ -116,6 +116,13 @@ public sealed record WorkspaceEngineCredentialSecret(
     DeploymentSecretStoreType SecretStoreType,
     string? ProtectedSecret);
 
+public sealed record WorkspaceDeploymentCredentialSecret(
+    Guid CredentialReferenceId,
+    DeploymentSecretStoreStatus SecretStoreStatus,
+    DeploymentSecretStoreStatus CredentialReferenceStatus,
+    DeploymentSecretStoreType SecretStoreType,
+    string? ProtectedSecret);
+
 public sealed record WorkspaceDeploymentCredentialUsage(
     Guid EngineId,
     string EngineName,

@@ -17,7 +17,10 @@ public sealed class AccountWorkspaceServiceTests
     [Fact]
     public async Task First_sign_in_provisions_owner_organization_and_personal_workspace()
     {
-        var context = await _service.GetOrCreateAsync(Identity("first-user"));
+        var provisioner = new RecordingOwnerProvisioner();
+        var service = new AccountWorkspaceService(_store, [provisioner]);
+
+        var context = await service.GetOrCreateAsync(Identity("first-user"));
 
         context.Account.Id.Should().NotBeEmpty();
         context.Organizations.Should().ContainSingle(x => x.Role == OrganizationRole.Owner);
@@ -26,6 +29,36 @@ public sealed class AccountWorkspaceServiceTests
         _store.AddedAccounts.Should().ContainSingle();
         _store.AddedAccounts.Single().OrganizationMemberships.Should().ContainSingle(x => x.Role == OrganizationRole.Owner);
         _store.AddedAccounts.Single().Memberships.Should().ContainSingle(x => x.Role == WorkspaceRole.Owner);
+        provisioner.Provisioned.Should().ContainSingle().Which.Should().Be((context.Workspaces.Single().Id, context.Account.Id));
+    }
+
+    [Fact]
+    public async Task Existing_owner_reads_idempotently_reconcile_owner_provisioning()
+    {
+        var provisioner = new RecordingOwnerProvisioner();
+        var service = new AccountWorkspaceService(_store, [provisioner]);
+        await service.GetOrCreateAsync(Identity("existing-user"));
+
+        await service.GetOrCreateAsync(Identity("existing-user"));
+
+        provisioner.Provisioned.Should().HaveCount(2);
+        provisioner.Provisioned.Distinct().Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Existing_owner_retry_repairs_a_transient_provisioning_failure()
+    {
+        await _service.GetOrCreateAsync(Identity("retry-owner"));
+        var provisioner = new FailOnceOwnerProvisioner();
+        var service = new AccountWorkspaceService(_store, [provisioner]);
+
+        var firstAttempt = () => service.GetOrCreateAsync(Identity("retry-owner"));
+        await firstAttempt.Should().ThrowAsync<InvalidOperationException>();
+        var context = await service.GetOrCreateAsync(Identity("retry-owner"));
+
+        provisioner.Attempts.Should().Be(2);
+        provisioner.Provisioned.Should().ContainSingle()
+            .Which.Should().Be((context.Workspaces.Single().Id, context.Account.Id));
     }
 
     [Fact]
@@ -50,6 +83,32 @@ public sealed class AccountWorkspaceServiceTests
 
     private static TrustedWorkspaceIdentity Identity(string subject) =>
         new("issuer", subject, "Member", $"{subject}@example.test");
+
+    private sealed class RecordingOwnerProvisioner : IWorkspaceOwnerProvisioner
+    {
+        public List<(Guid WorkspaceId, Guid AccountId)> Provisioned { get; } = [];
+
+        public Task ProvisionAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken = default)
+        {
+            Provisioned.Add((workspaceId, accountId));
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FailOnceOwnerProvisioner : IWorkspaceOwnerProvisioner
+    {
+        public int Attempts { get; private set; }
+        public List<(Guid WorkspaceId, Guid AccountId)> Provisioned { get; } = [];
+
+        public Task ProvisionAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken = default)
+        {
+            Attempts++;
+            if (Attempts == 1)
+                throw new InvalidOperationException("Transient provisioning failure.");
+            Provisioned.Add((workspaceId, accountId));
+            return Task.CompletedTask;
+        }
+    }
 
     private sealed class FakeAccountWorkspaceStore : IAccountWorkspaceStore
     {

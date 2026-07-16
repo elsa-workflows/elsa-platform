@@ -1,8 +1,12 @@
 using Elsa.Platform.Api.Healing;
+using Elsa.Platform.Deployment.Core.Workspace;
+using Elsa.Platform.Healing.Abstractions;
 using Elsa.Platform.Healing.Core;
 using Elsa.Platform.Healing.Core.Configuration;
 using Elsa.Platform.Healing.Core.Security;
 using Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
+using Elsa.Platform.Healing.GitHub;
+using Elsa.Platform.Healing.Core.Ownership;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
@@ -26,17 +30,23 @@ public sealed class HealingCompositionTests
             ["ConnectionStrings:Healing"] = "Data Source=:memory:"
         });
         var services = new ServiceCollection();
+        services.AddSingleton<IHealingProviderCredentialResolver, UnusedCredentialResolver>();
 
         services.AddPlatformHealing(configuration, Environment("Development"));
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         provider.GetRequiredService<IOptions<HealingOptions>>().Value.DiscoveryEnabled.Should().BeFalse();
         provider.GetRequiredService<HealingKillSwitch>().Should().NotBeNull();
+        var permissionContribution = provider.GetServices<IWorkspacePermissionContribution>().Single();
+        permissionContribution.All.Should().BeEquivalentTo(HealingPermissions.All);
+        permissionContribution.OwnerDefaults.Should().BeEquivalentTo(HealingPermissions.All);
         using var scope = provider.CreateScope();
         scope.ServiceProvider.GetRequiredService<HealingDbContext>().Should().NotBeNull();
         var store = scope.ServiceProvider.GetRequiredService<HealingStore>();
         scope.ServiceProvider.GetRequiredService<IHealingAuditStore>().Should().BeSameAs(store);
         scope.ServiceProvider.GetRequiredService<HealingAuditService>().Should().NotBeNull();
+        scope.ServiceProvider.GetRequiredService<IProviderConnectionValidator>()
+            .Should().BeOfType<GitHubProviderConnectionValidator>();
     }
 
     [Fact]
@@ -155,6 +165,12 @@ public sealed class HealingCompositionTests
     {
         public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class UnusedCredentialResolver : IHealingProviderCredentialResolver
+    {
+        public ValueTask<string?> ResolveAsync(Guid workspaceId, string credentialReference, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<string?>(null);
     }
 
     private sealed class TestEndpointModule : IHealingEndpointModule

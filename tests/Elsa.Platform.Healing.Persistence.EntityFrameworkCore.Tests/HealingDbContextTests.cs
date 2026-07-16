@@ -1,6 +1,7 @@
 using Elsa.Platform.Healing.Core;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using ComponentManifestModel = Elsa.Platform.Healing.Core.ComponentManifest;
 using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Elsa.Platform.Healing.Persistence.EntityFrameworkCore.Tests;
@@ -293,7 +294,7 @@ public sealed class HealingDbContextTests
         });
     }
 
-    private static ComponentManifest CreateManifest(Guid revisionId) => new()
+    private static ComponentManifestModel CreateManifest(Guid revisionId) => new()
     {
         Id = Guid.NewGuid(),
         WorkspaceId = Guid.NewGuid(),
@@ -306,7 +307,7 @@ public sealed class HealingDbContextTests
         CreatedAt = DateTimeOffset.UtcNow
     };
 
-    private static ComponentManifestEntry CreateManifestEntry(ComponentManifest manifest, string componentKey) => new()
+    private static ComponentManifestEntry CreateManifestEntry(ComponentManifestModel manifest, string componentKey) => new()
     {
         Id = Guid.NewGuid(),
         ManifestId = manifest.Id,

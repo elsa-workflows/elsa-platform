@@ -25,6 +25,10 @@ public sealed record ConfirmationConsumptionResult(
     public bool Succeeded => Validation.Severity == ValidationSeverity.Pass;
 }
 
+public sealed record ConfirmationUseAttempt(
+    ActionConfirmation Confirmation,
+    bool Consumed);
+
 public sealed record WorkspaceDeploymentRun(
     Guid Id,
     Guid WorkspaceId,
@@ -124,7 +128,10 @@ public enum ConfirmationActionType
 {
     Deploy,
     Rollback,
-    RuntimeControl
+    RuntimeControl,
+    HealingEmergencyStop,
+    HealingEmergencyResume,
+    HealingAutomaticMerge
 }
 
 public enum WorkspaceDeploymentRunStatus

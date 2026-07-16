@@ -76,24 +76,24 @@
 
 ### Tests for User Story 1
 
-- [ ] T033 [P] [US1] Add failing canonicalization, hashing, path-safety, dependency-graph, and secret-exclusion tests in `tests/Elsa.Platform.Healing.ComponentManifest.Tests/ComponentManifestTests.cs`
-- [ ] T034 [P] [US1] Add failing resolved-assets/MSBuild generation tests in `tests/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild.Tests/GenerateHealingComponentManifestTaskTests.cs`
-- [ ] T035 [P] [US1] Add failing configuration, trust, selector overlap, suggestion, and authorization tests in `tests/Elsa.Platform.Healing.Core.Tests/Ownership/SourceOwnershipServiceTests.cs`
-- [ ] T036 [P] [US1] Add failing workspace configuration/manifest/binding API tests in `tests/Elsa.Platform.Api.Tests/Healing/WorkspaceHealingConfigurationApiTests.cs`
-- [ ] T037 [P] [US1] Add failing components/configuration page tests in `src/Elsa.Platform.Console/src/features/healing/HealingConfigurationPage.test.tsx`
+- [x] T033 [P] [US1] Add failing canonicalization, hashing, path-safety, dependency-graph, and secret-exclusion tests in `tests/Elsa.Platform.Healing.ComponentManifest.Tests/ComponentManifestTests.cs`
+- [x] T034 [P] [US1] Add failing resolved-assets/MSBuild generation tests in `tests/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild.Tests/GenerateHealingComponentManifestTaskTests.cs`
+- [x] T035 [P] [US1] Add failing configuration, trust, selector overlap, suggestion, and authorization tests in `tests/Elsa.Platform.Healing.Core.Tests/Ownership/SourceOwnershipServiceTests.cs`
+- [x] T036 [P] [US1] Add failing workspace configuration/manifest/binding API tests in `tests/Elsa.Platform.Api.Tests/Healing/WorkspaceHealingConfigurationApiTests.cs`
+- [x] T037 [P] [US1] Add failing components/configuration page tests in `src/Elsa.Platform.Console/src/features/healing/HealingConfigurationPage.test.tsx`
 
 ### Implementation for User Story 1
 
-- [ ] T038 [P] [US1] Implement canonical manifest records, serializer, validator, and digest calculator in `src/Elsa.Platform.Healing.ComponentManifest/ComponentManifest.cs`
-- [ ] T039 [P] [US1] Implement safe resolved NuGet/assembly inventory and hash generation in `src/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild/GenerateHealingComponentManifestTask.cs`
-- [ ] T040 [US1] Add build target/package assets that emit the manifest in `src/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild/build/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild.targets`
-- [ ] T041 [P] [US1] Implement configuration and environment override service in `src/Elsa.Platform.Healing.Core/Configuration/HealingConfigurationService.cs`
-- [ ] T042 [P] [US1] Implement manifest registration/trust/revocation service in `src/Elsa.Platform.Healing.Core/Manifests/ComponentManifestService.cs`
-- [ ] T043 [US1] Implement deterministic selector matching, ambiguity detection, metadata suggestions, and ownership activation in `src/Elsa.Platform.Healing.Core/Ownership/SourceOwnershipService.cs`
-- [ ] T044 [US1] Map configuration, manifest, binding, and emergency-stop endpoints in `src/Elsa.Platform.Api/Workspace/Healing/WorkspaceHealingConfigurationEndpoints.cs`
-- [ ] T045 [P] [US1] Add Healing API types/client queries in `src/Elsa.Platform.Console/src/features/healing/healingModels.ts` and `src/Elsa.Platform.Console/src/features/healing/healingApi.ts`
-- [ ] T046 [US1] Implement application configuration and component ownership UI in `src/Elsa.Platform.Console/src/features/healing/HealingConfigurationPage.tsx`
-- [ ] T047 [US1] Register Healing routes/navigation in `src/Elsa.Platform.Console/src/app/routes.tsx` and `src/Elsa.Platform.Console/src/app/AppShell.tsx`
+- [x] T038 [P] [US1] Implement canonical manifest records, serializer, validator, and digest calculator in `src/Elsa.Platform.Healing.ComponentManifest/ComponentManifest.cs`
+- [x] T039 [P] [US1] Implement safe resolved NuGet/assembly inventory and hash generation in `src/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild/GenerateHealingComponentManifestTask.cs`
+- [x] T040 [US1] Add build target/package assets that emit the manifest in `src/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild/build/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild.targets`
+- [x] T041 [P] [US1] Implement configuration and environment override service in `src/Elsa.Platform.Healing.Core/Configuration/HealingConfigurationService.cs`
+- [x] T042 [P] [US1] Implement manifest registration/trust/revocation service in `src/Elsa.Platform.Healing.Core/Manifests/ComponentManifestService.cs`
+- [x] T043 [US1] Implement deterministic selector matching, ambiguity detection, metadata suggestions, and ownership activation in `src/Elsa.Platform.Healing.Core/Ownership/SourceOwnershipService.cs`
+- [x] T044 [US1] Map configuration, manifest, binding, and emergency-stop endpoints in `src/Elsa.Platform.Api/Workspace/Healing/WorkspaceHealingConfigurationEndpoints.cs`
+- [x] T045 [P] [US1] Add Healing API types/client queries in `src/Elsa.Platform.Console/src/features/healing/healingModels.ts` and `src/Elsa.Platform.Console/src/features/healing/healingApi.ts`
+- [x] T046 [US1] Implement application configuration and component ownership UI in `src/Elsa.Platform.Console/src/features/healing/HealingConfigurationPage.tsx`
+- [x] T047 [US1] Register Healing routes/navigation in `src/Elsa.Platform.Console/src/app/routes.tsx` and `src/Elsa.Platform.Console/src/app/AppShell.tsx`
 
 **Checkpoint**: User Story 1 passes independently with trusted and ambiguous manifest/binding fixtures.
 

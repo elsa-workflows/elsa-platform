@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   GitBranch,
+  HeartPulse,
   KeyRound,
   Pencil,
   Plus,
@@ -1308,6 +1309,10 @@ function DeploymentApplicationReady({ context, applicationId }: { context: Deplo
         description="Manage environments for this workflow application."
         actions={
           <>
+            <Link to={`/admin/healing/applications/${application.id}/configuration`} className={buttonClassName("secondary")}>
+              <HeartPulse className="h-4 w-4" />
+              Healing
+            </Link>
             <Link to={applicationRevisionsPath(application.id)} className={buttonClassName("secondary")}>
               <GitBranch className="h-4 w-4" />
               Revisions

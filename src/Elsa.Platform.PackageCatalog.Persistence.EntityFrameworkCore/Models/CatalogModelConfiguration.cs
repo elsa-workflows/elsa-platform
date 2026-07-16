@@ -583,6 +583,22 @@ internal sealed class WorkspacePermissionGrantConfiguration : IEntityTypeConfigu
     }
 }
 
+internal sealed class WorkspacePermissionAuditRecordConfiguration : IEntityTypeConfiguration<WorkspacePermissionAuditRecordEntity>
+{
+    public void Configure(EntityTypeBuilder<WorkspacePermissionAuditRecordEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Permission).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Action).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(x => x.OccurredAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.GrantId, x.Action }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.OccurredAt, x.Id });
+        builder.HasIndex(x => new { x.WorkspaceId, x.AccountId, x.OccurredAt });
+        builder.HasOne<Workspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Account>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 internal sealed class ActionConfirmationConfiguration : IEntityTypeConfiguration<ActionConfirmationEntity>
 {
     public void Configure(EntityTypeBuilder<ActionConfirmationEntity> builder)

@@ -43,7 +43,5 @@ public static class DeploymentPermissionEndpointFilters
         this WorkspacePermissionService permissions,
         WorkspaceAccess access,
         CancellationToken cancellationToken) =>
-        access.Role is WorkspaceRole.Owner
-            ? permissions.BootstrapOwnerPermissionsAsync(access.WorkspaceId, access.AccountId, cancellationToken)
-            : permissions.GetEffectivePermissionsAsync(access.WorkspaceId, access.AccountId, cancellationToken);
+        permissions.GetEffectivePermissionsAsync(access.WorkspaceId, access.AccountId, cancellationToken);
 }

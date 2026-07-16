@@ -38,6 +38,7 @@ import { SyncRunDetailsPage } from "@/features/sync-runs/SyncRunDetailsPage";
 import { SyncRunsPage } from "@/features/sync-runs/SyncRunsPage";
 import { WeaverSessionPage } from "@/features/weaver/WeaverSessionPage";
 import { ConsoleLogsPage } from "@/features/console/ConsoleLogsPage";
+import { HealingComponentsPage, HealingConfigurationPage, HealingLandingPage } from "@/features/healing/HealingConfigurationPage";
 
 function PlaceholderPage({ title }: { title: string }) {
   return (
@@ -146,6 +147,9 @@ export const router = createBrowserRouter([
       { path: "runtime-builder/new", element: <RequireCustomerAuth><NewRuntimeBuilderPage /></RequireCustomerAuth> },
       { path: "runtime-builder/:configurationId/edit", element: <RequireCustomerAuth><EditRuntimeBuilderPage /></RequireCustomerAuth> },
       { path: "console", element: <RequireCustomerAuth><ConsoleLogsPage /></RequireCustomerAuth> },
+      { path: "healing", element: <RequireCustomerAuth><HealingLandingPage /></RequireCustomerAuth> },
+      { path: "healing/applications/:applicationId/configuration", element: <RequireCustomerAuth><HealingConfigurationPage /></RequireCustomerAuth> },
+      { path: "healing/applications/:applicationId/components", element: <RequireCustomerAuth><HealingComponentsPage /></RequireCustomerAuth> },
       { path: "targets", element: <PlaceholderPage title="Targets" /> },
       { path: "runtimes", element: <PlaceholderPage title="Managed Runtimes" /> },
       { path: "operations", element: <PlaceholderPage title="Runtime Operations" /> },

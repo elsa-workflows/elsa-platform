@@ -45,6 +45,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.DesiredStateRevisionEntity> DesiredStateRevisions => Set<Models.DesiredStateRevisionEntity>();
     internal DbSet<Models.StructuredDesiredStateRecordEntity> StructuredDesiredStateRecords => Set<Models.StructuredDesiredStateRecordEntity>();
     internal DbSet<Models.WorkspacePermissionGrantEntity> WorkspacePermissionGrants => Set<Models.WorkspacePermissionGrantEntity>();
+    internal DbSet<Models.WorkspacePermissionAuditRecordEntity> WorkspacePermissionAuditRecords => Set<Models.WorkspacePermissionAuditRecordEntity>();
     internal DbSet<Models.ActionConfirmationEntity> ActionConfirmations => Set<Models.ActionConfirmationEntity>();
     internal DbSet<Models.DeploymentRunEntity> DeploymentRuns => Set<Models.DeploymentRunEntity>();
     internal DbSet<Models.DeploymentRunHistoryEventEntity> DeploymentRunHistoryEvents => Set<Models.DeploymentRunHistoryEventEntity>();
@@ -98,6 +99,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.DesiredStateRevisionConfiguration());
         modelBuilder.ApplyConfiguration(new Models.StructuredDesiredStateRecordConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WorkspacePermissionGrantConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.WorkspacePermissionAuditRecordConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ActionConfirmationConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DeploymentRunConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DeploymentRunHistoryEventConfiguration());
@@ -116,14 +118,24 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
 
     public override int SaveChanges()
     {
+        EnsureWorkspacePermissionAuditIsAppendOnly();
         EnsureOrganizationsForNewWorkspaces();
         return base.SaveChanges();
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
+        EnsureWorkspacePermissionAuditIsAppendOnly();
         EnsureOrganizationsForNewWorkspaces();
         return base.SaveChangesAsync(cancellationToken);
+    }
+
+    private void EnsureWorkspacePermissionAuditIsAppendOnly()
+    {
+        var mutatedAuditRecord = ChangeTracker.Entries<Models.WorkspacePermissionAuditRecordEntity>()
+            .FirstOrDefault(entry => entry.State is EntityState.Modified or EntityState.Deleted);
+        if (mutatedAuditRecord is not null)
+            throw new InvalidOperationException("Workspace permission audit records are append-only.");
     }
 
     private void EnsureOrganizationsForNewWorkspaces()

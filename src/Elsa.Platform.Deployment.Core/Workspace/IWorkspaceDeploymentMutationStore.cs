@@ -13,7 +13,7 @@ public interface IWorkspaceDeploymentMutationStore
         Guid confirmationId,
         CancellationToken cancellationToken = default);
 
-    Task<ActionConfirmation> MarkConfirmationUsedAsync(
+    Task<ConfirmationUseAttempt?> TryMarkConfirmationUsedAsync(
         Guid workspaceId,
         Guid confirmationId,
         DateTimeOffset usedAt,

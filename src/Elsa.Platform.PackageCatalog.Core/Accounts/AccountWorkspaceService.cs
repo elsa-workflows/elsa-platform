@@ -1,14 +1,33 @@
 namespace Elsa.Platform.PackageCatalog.Core.Accounts;
 
-public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
+public sealed class AccountWorkspaceService
 {
+    private readonly IAccountWorkspaceStore _store;
+    private readonly IReadOnlyList<IWorkspaceOwnerProvisioner> _ownerProvisioners;
+
+    public AccountWorkspaceService(IAccountWorkspaceStore store)
+        : this(store, [])
+    {
+    }
+
+    public AccountWorkspaceService(
+        IAccountWorkspaceStore store,
+        IEnumerable<IWorkspaceOwnerProvisioner> ownerProvisioners)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(ownerProvisioners);
+        _store = store;
+        _ownerProvisioners = ownerProvisioners.ToList();
+    }
+
     public async Task<AccountWorkspaceContext> GetOrCreateAsync(TrustedWorkspaceIdentity identity, CancellationToken cancellationToken = default)
     {
         var normalized = identity.Normalize();
-        var existing = await store.FindByExternalIdentityAsync(normalized.Issuer, normalized.Subject, cancellationToken);
+        var existing = await _store.FindByExternalIdentityAsync(normalized.Issuer, normalized.Subject, cancellationToken);
         if (existing is not null)
         {
-            await store.UpdateExternalIdentitySeenAsync(existing.ExternalIdentityId, normalized.DisplayName, normalized.Email, cancellationToken);
+            await _store.UpdateExternalIdentitySeenAsync(existing.ExternalIdentityId, normalized.DisplayName, normalized.Email, cancellationToken);
+            await ProvisionOwnedWorkspacesAsync(existing.Context, cancellationToken);
             return existing.Context with
             {
                 Account = existing.Context.Account with
@@ -62,18 +81,19 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
         organization.Memberships.Add(organizationMembership);
         workspace.Memberships.Add(membership);
 
-        await store.AddAccountAsync(account, cancellationToken);
+        await _store.AddAccountAsync(account, cancellationToken);
         try
         {
-            await store.SaveChangesAsync(cancellationToken);
+            await _store.SaveChangesAsync(cancellationToken);
         }
         catch (AccountWorkspaceConflictException)
         {
-            var concurrent = await store.FindByExternalIdentityAsync(normalized.Issuer, normalized.Subject, cancellationToken);
+            var concurrent = await _store.FindByExternalIdentityAsync(normalized.Issuer, normalized.Subject, cancellationToken);
             if (concurrent is null)
                 throw;
 
-            await store.UpdateExternalIdentitySeenAsync(concurrent.ExternalIdentityId, normalized.DisplayName, normalized.Email, cancellationToken);
+            await _store.UpdateExternalIdentitySeenAsync(concurrent.ExternalIdentityId, normalized.DisplayName, normalized.Email, cancellationToken);
+            await ProvisionOwnedWorkspacesAsync(concurrent.Context, cancellationToken);
             return concurrent.Context with
             {
                 Account = concurrent.Context.Account with
@@ -83,6 +103,8 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
                 }
             };
         }
+
+        await ProvisionOwnerAsync(workspace.Id, account.Id, cancellationToken);
 
         return new AccountWorkspaceContext(
             new AccountSummary(account.Id, account.DisplayName, account.Email),
@@ -95,7 +117,7 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
     public async Task<WorkspaceAccess?> GetWorkspaceAccessAsync(TrustedWorkspaceIdentity identity, Guid workspaceId, CancellationToken cancellationToken = default)
     {
         var normalized = identity.Normalize();
-        var existing = await store.FindByExternalIdentityAsync(normalized.Issuer, normalized.Subject, cancellationToken);
+        var existing = await _store.FindByExternalIdentityAsync(normalized.Issuer, normalized.Subject, cancellationToken);
         if (existing is null)
             return null;
 
@@ -103,7 +125,9 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
         if (workspace is null)
             return null;
 
-        await store.UpdateExternalIdentitySeenAsync(existing.ExternalIdentityId, normalized.DisplayName, normalized.Email, cancellationToken);
+        await _store.UpdateExternalIdentitySeenAsync(existing.ExternalIdentityId, normalized.DisplayName, normalized.Email, cancellationToken);
+        if (workspace.Role == WorkspaceRole.Owner)
+            await ProvisionOwnerAsync(workspace.Id, existing.Context.Account.Id, cancellationToken);
         return new WorkspaceAccess(existing.Context.Account.Id, workspace.Id, workspace.Role, workspace.OrganizationId, workspace.OrganizationRole);
     }
 
@@ -115,7 +139,7 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
             return OrganizationWorkspaceListResult.Denied(OrganizationWorkspaceFailure.OrganizationNotAllowed);
 
         var canSeeAll = OrganizationRolePolicy.Allows(organization.Role, OrganizationOperation.ManageWorkspaces);
-        var workspaces = await store.ListOrganizationWorkspacesAsync(organizationId, accountContext.Account.Id, canSeeAll, cancellationToken);
+        var workspaces = await _store.ListOrganizationWorkspacesAsync(organizationId, accountContext.Account.Id, canSeeAll, cancellationToken);
         return OrganizationWorkspaceListResult.Success(workspaces);
     }
 
@@ -127,11 +151,23 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
 
         foreach (var accountId in request.InitialMembers.Select(x => x.AccountId).Where(x => x != access.AccountId!.Value).Distinct())
         {
-            if (!await store.OrganizationAccountMembershipExistsAsync(organizationId, accountId, cancellationToken))
+            if (!await _store.OrganizationAccountMembershipExistsAsync(organizationId, accountId, cancellationToken))
                 return OrganizationWorkspaceMutationResult.Denied(OrganizationWorkspaceFailure.TargetAccountNotOrganizationMember);
         }
 
-        return await store.CreateOrganizationWorkspaceAsync(organizationId, access.AccountId!.Value, request, cancellationToken);
+        var result = await _store.CreateOrganizationWorkspaceAsync(organizationId, access.AccountId!.Value, request, cancellationToken);
+        if (!result.Succeeded)
+            return result;
+
+        var ownerAccountIds = request.InitialMembers
+            .Where(x => x.Role is WorkspaceRole.Owner)
+            .Select(x => x.AccountId)
+            .Append(access.AccountId.Value)
+            .Distinct();
+        foreach (var ownerAccountId in ownerAccountIds)
+            await ProvisionOwnerAsync(result.Workspace!.Id, ownerAccountId, cancellationToken);
+
+        return result;
     }
 
     public async Task<OrganizationWorkspaceMutationResult> UpdateOrganizationWorkspaceAsync(TrustedWorkspaceIdentity identity, Guid organizationId, Guid workspaceId, UpdateOrganizationWorkspaceRequest request, CancellationToken cancellationToken = default)
@@ -140,13 +176,13 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
         if (!access.Succeeded)
             return OrganizationWorkspaceMutationResult.Denied(access.Failure!.Value);
 
-        if (!await store.WorkspaceBelongsToOrganizationAsync(organizationId, workspaceId, cancellationToken))
+        if (!await _store.WorkspaceBelongsToOrganizationAsync(organizationId, workspaceId, cancellationToken))
             return OrganizationWorkspaceMutationResult.Denied(OrganizationWorkspaceFailure.WorkspaceNotFound);
 
-        if (await store.OrganizationWorkspaceNameExistsAsync(organizationId, request.Name, workspaceId, cancellationToken))
+        if (await _store.OrganizationWorkspaceNameExistsAsync(organizationId, request.Name, workspaceId, cancellationToken))
             return OrganizationWorkspaceMutationResult.Denied(OrganizationWorkspaceFailure.DuplicateWorkspaceName);
 
-        var workspace = await store.UpdateOrganizationWorkspaceAsync(organizationId, workspaceId, access.AccountId!.Value, request, cancellationToken);
+        var workspace = await _store.UpdateOrganizationWorkspaceAsync(organizationId, workspaceId, access.AccountId!.Value, request, cancellationToken);
         return workspace is null
             ? OrganizationWorkspaceMutationResult.Denied(OrganizationWorkspaceFailure.WorkspaceNotFound)
             : OrganizationWorkspaceMutationResult.Success(workspace);
@@ -158,13 +194,15 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
         if (!access.Succeeded)
             return OrganizationWorkspaceMembershipResult.Denied(access.Failure!.Value);
 
-        if (!await store.WorkspaceBelongsToOrganizationAsync(organizationId, workspaceId, cancellationToken))
+        if (!await _store.WorkspaceBelongsToOrganizationAsync(organizationId, workspaceId, cancellationToken))
             return OrganizationWorkspaceMembershipResult.Denied(OrganizationWorkspaceFailure.WorkspaceNotFound);
 
-        if (!await store.OrganizationAccountMembershipExistsAsync(organizationId, accountId, cancellationToken))
+        if (!await _store.OrganizationAccountMembershipExistsAsync(organizationId, accountId, cancellationToken))
             return OrganizationWorkspaceMembershipResult.Denied(OrganizationWorkspaceFailure.TargetAccountNotOrganizationMember);
 
-        var membership = await store.SetWorkspaceMembershipAsync(organizationId, workspaceId, accountId, role, cancellationToken);
+        var membership = await _store.SetWorkspaceMembershipAsync(organizationId, workspaceId, accountId, role, cancellationToken);
+        if (role is WorkspaceRole.Owner)
+            await ProvisionOwnerAsync(workspaceId, accountId, cancellationToken);
         return OrganizationWorkspaceMembershipResult.Success(membership);
     }
 
@@ -174,13 +212,13 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
         if (!access.Succeeded)
             return OrganizationWorkspaceMembershipResult.Denied(access.Failure!.Value);
 
-        if (!await store.WorkspaceBelongsToOrganizationAsync(organizationId, workspaceId, cancellationToken))
+        if (!await _store.WorkspaceBelongsToOrganizationAsync(organizationId, workspaceId, cancellationToken))
             return OrganizationWorkspaceMembershipResult.Denied(OrganizationWorkspaceFailure.WorkspaceNotFound);
 
-        if (!await store.CanRemoveWorkspaceMembershipAsync(workspaceId, accountId, cancellationToken))
+        if (!await _store.CanRemoveWorkspaceMembershipAsync(workspaceId, accountId, cancellationToken))
             return OrganizationWorkspaceMembershipResult.Denied(OrganizationWorkspaceFailure.LastWorkspaceOwner);
 
-        await store.RemoveWorkspaceMembershipAsync(workspaceId, accountId, cancellationToken);
+        await _store.RemoveWorkspaceMembershipAsync(workspaceId, accountId, cancellationToken);
         return OrganizationWorkspaceMembershipResult.Removed();
     }
 
@@ -194,6 +232,20 @@ public sealed class AccountWorkspaceService(IAccountWorkspaceStore store)
         return OrganizationRolePolicy.Allows(organization.Role, operation)
             ? OrganizationAccessResult.Success(accountContext.Account.Id, organization.Role)
             : OrganizationAccessResult.Denied(OrganizationWorkspaceFailure.OrganizationRoleNotAllowed);
+    }
+
+    private async Task ProvisionOwnerAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken)
+    {
+        foreach (var provisioner in _ownerProvisioners)
+            await provisioner.ProvisionAsync(workspaceId, accountId, cancellationToken);
+    }
+
+    private async Task ProvisionOwnedWorkspacesAsync(
+        AccountWorkspaceContext context,
+        CancellationToken cancellationToken)
+    {
+        foreach (var workspace in context.Workspaces.Where(x => x.Role == WorkspaceRole.Owner))
+            await ProvisionOwnerAsync(workspace.Id, context.Account.Id, cancellationToken);
     }
 }
 

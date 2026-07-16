@@ -3,7 +3,7 @@ namespace Elsa.Platform.Healing.Core;
 public enum HealingSignalSource { OpenTelemetry, ExplicitIncident }
 public enum HealingInboxStatus { Pending, Leased, Completed, Rejected, DeadLettered }
 public enum ComponentManifestTrustState { Unverified, Verified, Rejected, Revoked }
-public enum ComponentKind { Application, Package, Assembly }
+public enum ComponentKind { Unknown = 0, Application = 1, Package = 2, Assembly = 3 }
 public enum SourceSelectorKind { Application, Package, Assembly, ComponentKey }
 public enum SourceOwnershipBindingStatus { Draft, Active, Suspended, Revoked }
 public enum IncidentClassification { UnhandledRequest, FatalStartup, FatalBackground, UnexpectedWorkflow, UnexpectedActivity, TransientExhausted, ExplicitIncident, Unknown }
@@ -26,7 +26,7 @@ public enum PullRequestMergeState { Open, MergeRequested, Merged, Closed }
 public enum PolicyKind { Path, Evidence, Merge }
 public enum PolicyGateResult { Pass, Block, Unknown, Stale }
 public enum PolicyDecision { Deny, HumanOnly, AllowPublication, AllowAutomaticMerge }
-public enum ProviderConnectionStatus { Active, Suspended, Revoked }
+public enum ProviderConnectionStatus { Active, Suspended, Revoked, PendingValidation }
 public enum ProviderOperationKind { UpsertWorkItem, DispatchWorkflow, PublishPullRequest, RefreshChecks, RequestMerge }
 public enum ProviderOperationStatus { Pending, Leased, Completed, Failed, DeadLettered }
 public enum WorkloadIdentityExchangeStatus { Pending, Exchanged, Expired, Revoked }
@@ -147,6 +147,18 @@ public sealed class ComponentManifest
     public List<ComponentDependency> Dependencies { get; set; } = [];
 }
 
+public sealed class ComponentManifestRegistration
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid ApplicationId { get; set; }
+    public Guid RevisionId { get; set; }
+    public string IdempotencyKey { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public Guid ManifestId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
 public sealed class ComponentManifestEntry
 {
     public Guid Id { get; set; }
@@ -155,6 +167,7 @@ public sealed class ComponentManifestEntry
     public Guid ApplicationId { get; set; }
     public string ComponentKey { get; set; } = string.Empty;
     public ComponentKind Kind { get; set; }
+    public string KindName { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? Version { get; set; }
     public string? PackageId { get; set; }
@@ -163,11 +176,26 @@ public sealed class ComponentManifestEntry
     public string? AssemblyVersion { get; set; }
     public string? PublicKeyToken { get; set; }
     public string ContentHash { get; set; } = string.Empty;
-    public string RelativePath { get; set; } = string.Empty;
+    public string? RelativePath { get; set; }
     public string? RepositoryUrl { get; set; }
     public string? RepositoryCommit { get; set; }
     public string? SourceRoot { get; set; }
     public bool IsDirectDependency { get; set; }
+    public List<ComponentManifestAssemblyArtifact> Assemblies { get; set; } = [];
+}
+
+public sealed class ComponentManifestAssemblyArtifact
+{
+    public Guid Id { get; set; }
+    public Guid ManifestId { get; set; }
+    public Guid ComponentEntryId { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid ApplicationId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Version { get; set; }
+    public string? PublicKeyToken { get; set; }
+    public string RelativePath { get; set; } = string.Empty;
+    public string ContentHash { get; set; } = string.Empty;
 }
 
 public sealed class ComponentDependency

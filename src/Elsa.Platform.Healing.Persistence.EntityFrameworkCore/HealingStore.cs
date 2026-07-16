@@ -1,6 +1,9 @@
 using Elsa.Platform.Healing.Core;
+using Elsa.Platform.Healing.Core.Ownership;
 using Elsa.Platform.Healing.Core.Security;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
+using ComponentManifestModel = Elsa.Platform.Healing.Core.ComponentManifest;
 
 namespace Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
 
@@ -14,8 +17,32 @@ public sealed class HealingIdempotencyConflictException(string message) : Invali
 /// Healing-owned durable store. Idempotency, atomic leases, and append-only audit behavior are kept behind
 /// this interface so callers do not need provider-specific persistence knowledge.
 /// </summary>
-public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStore
+public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStore, IHealingOwnershipStore, IHealingAdministrationStore
 {
+    public async ValueTask<T> ExecuteInTransactionAsync<T>(
+        Func<CancellationToken, ValueTask<T>> operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        var executionStrategy = dbContext.Database.CreateExecutionStrategy();
+        try
+        {
+            return await executionStrategy.ExecuteAsync(async () =>
+            {
+                await using var transaction = await dbContext.Database.BeginTransactionAsync(
+                    IsolationLevel.Serializable, cancellationToken);
+                var result = await operation(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return result;
+            });
+        }
+        catch
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
     public async ValueTask<HealingWorkspaceConfiguration> UpsertWorkspaceConfigurationAsync(
         HealingWorkspaceConfiguration configuration,
         CancellationToken cancellationToken = default)
@@ -136,12 +163,19 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
             .Include(x => x.Environments)
             .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.ApplicationId == applicationId, cancellationToken));
 
-    public async ValueTask<HealingStoreWriteResult<ComponentManifest>> AppendManifestAsync(
-        ComponentManifest manifest,
+    public ValueTask<HealingConfiguration> SaveConfigurationAsync(
+        HealingConfiguration configuration,
+        CancellationToken cancellationToken = default) =>
+        UpsertConfigurationAsync(configuration, cancellationToken);
+
+    public async ValueTask<HealingStoreWriteResult<ComponentManifestModel>> AppendManifestAsync(
+        ComponentManifestModel manifest,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(manifest);
         var existing = await dbContext.ComponentManifests.AsNoTracking()
+            .Include(x => x.Entries).ThenInclude(x => x.Assemblies)
+            .Include(x => x.Dependencies)
             .SingleOrDefaultAsync(x => x.WorkspaceId == manifest.WorkspaceId &&
                                        x.ApplicationId == manifest.ApplicationId &&
                                        x.RevisionId == manifest.RevisionId, cancellationToken);
@@ -152,12 +186,14 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
-            return new HealingStoreWriteResult<ComponentManifest>(manifest, false);
+            return new HealingStoreWriteResult<ComponentManifestModel>(manifest, false);
         }
         catch (DbUpdateException)
         {
             DetachManifestGraph(manifest);
             existing = await dbContext.ComponentManifests.AsNoTracking()
+                .Include(x => x.Entries).ThenInclude(x => x.Assemblies)
+                .Include(x => x.Dependencies)
                 .SingleOrDefaultAsync(x => x.WorkspaceId == manifest.WorkspaceId &&
                                            x.ApplicationId == manifest.ApplicationId &&
                                            x.RevisionId == manifest.RevisionId, cancellationToken);
@@ -165,6 +201,351 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
                 throw;
             return MatchReplay(existing, manifest.ManifestDigest, existing.ManifestDigest, "Component manifest revision");
         }
+    }
+
+    public async ValueTask<OwnershipWriteResult<ComponentManifestModel>> AddManifestAsync(
+        ComponentManifestModel manifest,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var result = await AppendManifestAsync(manifest, cancellationToken);
+            return new OwnershipWriteResult<ComponentManifestModel>(result.Value, result.IsReplay);
+        }
+        catch (HealingIdempotencyConflictException)
+        {
+            var existing = await dbContext.ComponentManifests.AsNoTracking()
+                .Include(x => x.Entries).ThenInclude(x => x.Assemblies)
+                .Include(x => x.Dependencies)
+                .SingleAsync(x => x.WorkspaceId == manifest.WorkspaceId &&
+                                  x.ApplicationId == manifest.ApplicationId &&
+                                  x.RevisionId == manifest.RevisionId, cancellationToken);
+            return new OwnershipWriteResult<ComponentManifestModel>(existing, true, false);
+        }
+    }
+
+    public async ValueTask<ManifestRegistrationWriteResult> RegisterManifestAsync(
+        ComponentManifestModel manifest,
+        string idempotencyKey,
+        string payloadHash,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(payloadHash);
+
+        var registration = await dbContext.ComponentManifestRegistrations.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == manifest.WorkspaceId &&
+                                       x.ApplicationId == manifest.ApplicationId &&
+                                       x.RevisionId == manifest.RevisionId &&
+                                       x.IdempotencyKey == idempotencyKey, cancellationToken);
+        if (registration is not null)
+        {
+            var registeredManifest = await GetManifestAsync(
+                manifest.WorkspaceId, manifest.ApplicationId, registration.ManifestId, cancellationToken)
+                ?? throw new InvalidOperationException("A manifest registration references a missing manifest.");
+            return string.Equals(registration.PayloadHash, payloadHash, StringComparison.Ordinal)
+                ? new ManifestRegistrationWriteResult(registeredManifest, true)
+                : new ManifestRegistrationWriteResult(registeredManifest, true, HealingOwnershipReasonCodes.IdempotencyConflict);
+        }
+
+        var persisted = await AddManifestAsync(manifest, cancellationToken);
+        if (!persisted.IsConsistentReplay)
+            return new ManifestRegistrationWriteResult(
+                persisted.Value, true, HealingOwnershipReasonCodes.ImmutableRevisionConflict);
+
+        dbContext.ComponentManifestRegistrations.Add(new ComponentManifestRegistration
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = manifest.WorkspaceId,
+            ApplicationId = manifest.ApplicationId,
+            RevisionId = manifest.RevisionId,
+            IdempotencyKey = idempotencyKey,
+            PayloadHash = payloadHash,
+            ManifestId = persisted.Value.Id,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new ManifestRegistrationWriteResult(persisted.Value, persisted.IsReplay);
+    }
+
+    public ValueTask<ComponentManifestModel?> GetManifestAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        Guid manifestId,
+        CancellationToken cancellationToken = default) =>
+        new(dbContext.ComponentManifests.AsNoTracking()
+            .Include(x => x.Entries).ThenInclude(x => x.Assemblies)
+            .Include(x => x.Dependencies)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId &&
+                                       x.ApplicationId == applicationId &&
+                                       x.Id == manifestId, cancellationToken));
+
+    public async ValueTask<IReadOnlyList<ComponentManifestModel>> ListManifestsAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        bool trustedOnly,
+        CancellationToken cancellationToken = default)
+    {
+        var manifests = dbContext.ComponentManifests.AsNoTracking()
+            .Include(x => x.Entries).ThenInclude(x => x.Assemblies)
+            .Include(x => x.Dependencies)
+            .Where(x => x.WorkspaceId == workspaceId && x.ApplicationId == applicationId);
+        if (trustedOnly)
+            manifests = manifests.Where(x => x.TrustState == ComponentManifestTrustState.Verified);
+        return await manifests.OrderByDescending(x => x.CreatedAt).ThenBy(x => x.Id).ToListAsync(cancellationToken);
+    }
+
+    public async ValueTask<bool> TransitionManifestTrustAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        Guid manifestId,
+        ComponentManifestTrustState expected,
+        ComponentManifestTrustState target,
+        string actorId,
+        string method,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(actorId))
+            throw new ArgumentException("Actor identity is required.", nameof(actorId));
+        if (string.IsNullOrWhiteSpace(method))
+            throw new ArgumentException("Trust method is required.", nameof(method));
+
+        var query = dbContext.ComponentManifests.Where(x =>
+            x.WorkspaceId == workspaceId && x.ApplicationId == applicationId &&
+            x.Id == manifestId && x.TrustState == expected);
+        var changed = target == ComponentManifestTrustState.Verified
+            ? await query.ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.TrustState, target)
+                .SetProperty(x => x.VerifiedBy, actorId)
+                .SetProperty(x => x.VerifiedAt, now)
+                .SetProperty(x => x.VerificationMethod, method), cancellationToken)
+            : await query.ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.TrustState, target), cancellationToken);
+        return changed == 1;
+    }
+
+    public async ValueTask<IReadOnlyList<SourceOwnershipBinding>> ListBindingsAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        bool activeOnly,
+        CancellationToken cancellationToken = default)
+    {
+        var bindings = dbContext.SourceOwnershipBindings.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.ApplicationId == applicationId);
+        if (activeOnly)
+            bindings = bindings.Where(x => x.Status == SourceOwnershipBindingStatus.Active);
+        return await bindings.OrderByDescending(x => x.Priority).ThenBy(x => x.Id).ToListAsync(cancellationToken);
+    }
+
+    public ValueTask<SourceOwnershipBinding?> GetBindingAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        Guid bindingId,
+        CancellationToken cancellationToken = default) =>
+        new(dbContext.SourceOwnershipBindings.AsNoTracking().SingleOrDefaultAsync(
+            x => x.WorkspaceId == workspaceId && x.ApplicationId == applicationId && x.Id == bindingId,
+            cancellationToken));
+
+    public ValueTask<ProviderConnection?> GetProviderConnectionAsync(
+        Guid workspaceId,
+        Guid providerConnectionId,
+        CancellationToken cancellationToken = default) =>
+        new(dbContext.ProviderConnections.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == providerConnectionId, cancellationToken));
+
+    public async ValueTask<IReadOnlyList<ProviderConnection>> ListProviderConnectionsAsync(
+        Guid workspaceId,
+        CancellationToken cancellationToken = default) =>
+        await dbContext.ProviderConnections.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId)
+            .OrderBy(x => x.RepositoryOwner).ThenBy(x => x.RepositoryName).ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+    public async ValueTask<IReadOnlyList<PathPolicy>> ListPathPoliciesAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        CancellationToken cancellationToken = default) =>
+        await dbContext.PathPolicies.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.ApplicationId == applicationId)
+            .OrderBy(x => x.Name).ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+    public async ValueTask<IReadOnlyList<EvidencePolicy>> ListEvidencePoliciesAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        CancellationToken cancellationToken = default) =>
+        await dbContext.EvidencePolicies.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.ApplicationId == applicationId)
+            .OrderBy(x => x.Name).ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+    public async ValueTask<IReadOnlyList<MergePolicy>> ListMergePoliciesAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        CancellationToken cancellationToken = default) =>
+        await dbContext.MergePolicies.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.ApplicationId == applicationId)
+            .OrderBy(x => x.Name).ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+    public async ValueTask<ProviderConnection> SaveProviderConnectionAsync(
+        ProviderConnection connection,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        var existing = await dbContext.ProviderConnections.SingleOrDefaultAsync(
+            x => x.WorkspaceId == connection.WorkspaceId && x.Id == connection.Id,
+            cancellationToken);
+        if (existing is not null)
+        {
+            EnsureExpectedVersion(connection.Version, existing.Version, "Provider connection");
+            var initialValidation = existing.Status == ProviderConnectionStatus.PendingValidation &&
+                                    connection.Status == ProviderConnectionStatus.Active;
+            var revalidation = existing.Status == ProviderConnectionStatus.Suspended &&
+                               connection.Status == ProviderConnectionStatus.Active;
+            if (!string.Equals(existing.Provider, connection.Provider, StringComparison.Ordinal) ||
+                !string.Equals(existing.InstallationId, connection.InstallationId, StringComparison.Ordinal) ||
+                !initialValidation && !string.Equals(existing.RepositoryProviderId, connection.RepositoryProviderId, StringComparison.Ordinal) ||
+                !string.Equals(existing.RepositoryOwner, connection.RepositoryOwner, StringComparison.Ordinal) ||
+                !string.Equals(existing.RepositoryName, connection.RepositoryName, StringComparison.Ordinal) ||
+                !string.Equals(existing.CredentialReference, connection.CredentialReference, StringComparison.Ordinal))
+                throw new HealingAdministrationConflictException("Provider connection authority is immutable.");
+            if (initialValidation || revalidation)
+            {
+                var repositoryConflict = await dbContext.ProviderConnections.AnyAsync(
+                    x => x.WorkspaceId == connection.WorkspaceId &&
+                         x.Provider == connection.Provider &&
+                         x.RepositoryProviderId == connection.RepositoryProviderId &&
+                         x.Id != connection.Id &&
+                         x.Status != ProviderConnectionStatus.Revoked,
+                    cancellationToken);
+                if (repositoryConflict)
+                    throw new HealingAdministrationConflictException("A provider connection already authorizes this repository.");
+                if (initialValidation)
+                    existing.RepositoryProviderId = connection.RepositoryProviderId;
+            }
+            existing.Status = connection.Status;
+            existing.UpdatedAt = connection.UpdatedAt;
+            existing.Version = NewVersion();
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return existing;
+        }
+
+        var existingRepository = await dbContext.ProviderConnections.SingleOrDefaultAsync(
+            x => x.WorkspaceId == connection.WorkspaceId &&
+                 x.Provider == connection.Provider &&
+                 x.RepositoryProviderId == connection.RepositoryProviderId &&
+                 x.Status != ProviderConnectionStatus.Revoked,
+            cancellationToken);
+        if (existingRepository is not null)
+            throw new HealingAdministrationConflictException("A provider connection already authorizes this repository.");
+
+        dbContext.ProviderConnections.Add(connection);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception)
+        {
+            throw new HealingAdministrationConflictException($"Provider connection could not be saved: {exception.GetType().Name}.");
+        }
+        return connection;
+    }
+
+    public async ValueTask SavePoliciesAsync(
+        PathPolicy pathPolicy,
+        EvidencePolicy evidencePolicy,
+        MergePolicy mergePolicy,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(pathPolicy);
+        ArgumentNullException.ThrowIfNull(evidencePolicy);
+        ArgumentNullException.ThrowIfNull(mergePolicy);
+        if (pathPolicy.WorkspaceId != evidencePolicy.WorkspaceId || pathPolicy.WorkspaceId != mergePolicy.WorkspaceId ||
+            pathPolicy.ApplicationId != evidencePolicy.ApplicationId || pathPolicy.ApplicationId != mergePolicy.ApplicationId)
+            throw new InvalidOperationException("Policy bundle scope must match.");
+        var duplicateName = await dbContext.PathPolicies.AnyAsync(
+                                x => x.WorkspaceId == pathPolicy.WorkspaceId && x.ApplicationId == pathPolicy.ApplicationId &&
+                                     x.Name == pathPolicy.Name && x.PolicyVersion == pathPolicy.PolicyVersion, cancellationToken) ||
+                            await dbContext.EvidencePolicies.AnyAsync(
+                                x => x.WorkspaceId == evidencePolicy.WorkspaceId && x.ApplicationId == evidencePolicy.ApplicationId &&
+                                     x.Name == evidencePolicy.Name && x.PolicyVersion == evidencePolicy.PolicyVersion, cancellationToken) ||
+                            await dbContext.MergePolicies.AnyAsync(
+                                x => x.WorkspaceId == mergePolicy.WorkspaceId && x.ApplicationId == mergePolicy.ApplicationId &&
+                                     x.Name == mergePolicy.Name && x.PolicyVersion == mergePolicy.PolicyVersion, cancellationToken);
+        if (duplicateName)
+            throw new HealingAdministrationConflictException("A policy profile with this name and version already exists.");
+        dbContext.PathPolicies.Add(pathPolicy);
+        dbContext.EvidencePolicies.Add(evidencePolicy);
+        dbContext.MergePolicies.Add(mergePolicy);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception)
+        {
+            throw new HealingAdministrationConflictException($"Policy profile could not be saved: {exception.GetType().Name}.");
+        }
+    }
+
+    public async ValueTask<bool> PoliciesAreTrustedAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        Guid pathPolicyId,
+        Guid evidencePolicyId,
+        Guid mergePolicyId,
+        CancellationToken cancellationToken = default) =>
+        await dbContext.PathPolicies.AsNoTracking().AnyAsync(
+            x => x.WorkspaceId == workspaceId && x.ApplicationId == applicationId && x.Id == pathPolicyId &&
+                 x.PolicyVersion != "" && x.PolicyHash != "", cancellationToken) &&
+        await dbContext.EvidencePolicies.AsNoTracking().AnyAsync(
+            x => x.WorkspaceId == workspaceId && x.ApplicationId == applicationId && x.Id == evidencePolicyId &&
+                 x.PolicyVersion != "" && x.PolicyHash != "", cancellationToken) &&
+        await dbContext.MergePolicies.AsNoTracking().AnyAsync(
+            x => x.WorkspaceId == workspaceId && x.ApplicationId == applicationId && x.Id == mergePolicyId &&
+                 x.PolicyVersion != "" && x.PolicyHash != "", cancellationToken);
+
+    public async ValueTask<SourceOwnershipBinding> SaveBindingAsync(
+        SourceOwnershipBinding binding,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        var existing = await dbContext.SourceOwnershipBindings.SingleOrDefaultAsync(
+            x => x.WorkspaceId == binding.WorkspaceId &&
+                 x.ApplicationId == binding.ApplicationId &&
+                 x.Id == binding.Id, cancellationToken);
+        if (existing is null)
+        {
+            binding.Version = NewVersion();
+            dbContext.SourceOwnershipBindings.Add(binding);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return binding;
+        }
+
+        EnsureExpectedVersion(binding.Version, existing.Version, "Source ownership binding");
+        existing.Name = binding.Name;
+        existing.SelectorKind = binding.SelectorKind;
+        existing.SelectorPattern = binding.SelectorPattern;
+        existing.Priority = binding.Priority;
+        existing.ProviderConnectionId = binding.ProviderConnectionId;
+        existing.RepositoryProviderId = binding.RepositoryProviderId;
+        existing.RepositoryOwner = binding.RepositoryOwner;
+        existing.RepositoryName = binding.RepositoryName;
+        existing.TargetBranch = binding.TargetBranch;
+        existing.WorkflowIdentity = binding.WorkflowIdentity;
+        existing.WorkflowRevision = binding.WorkflowRevision;
+        existing.PathPolicyId = binding.PathPolicyId;
+        existing.EvidencePolicyId = binding.EvidencePolicyId;
+        existing.MergePolicyId = binding.MergePolicyId;
+        existing.Status = binding.Status;
+        existing.ApprovedBy = binding.ApprovedBy;
+        existing.ApprovedAt = binding.ApprovedAt;
+        existing.UpdatedAt = binding.UpdatedAt;
+        existing.Version = NewVersion();
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return existing;
     }
 
     public async ValueTask<HealingStoreWriteResult<HealingIncident>> GetOrAddIncidentAsync(
@@ -707,10 +1088,14 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
         }
     }
 
-    private void DetachManifestGraph(ComponentManifest manifest)
+    private void DetachManifestGraph(ComponentManifestModel manifest)
     {
         var entryIds = manifest.Entries.Select(x => x.Id).ToHashSet();
+        var assemblyIds = manifest.Entries.SelectMany(x => x.Assemblies).Select(x => x.Id).ToHashSet();
         var dependencyIds = manifest.Dependencies.Select(x => x.Id).ToHashSet();
+        foreach (var entry in dbContext.ChangeTracker.Entries<ComponentManifestAssemblyArtifact>()
+                     .Where(x => x.Entity.ManifestId == manifest.Id || assemblyIds.Contains(x.Entity.Id)).ToList())
+            entry.State = EntityState.Detached;
         foreach (var entry in dbContext.ChangeTracker.Entries<ComponentDependency>()
                      .Where(x => x.Entity.ManifestId == manifest.Id || dependencyIds.Contains(x.Entity.Id)).ToList())
             entry.State = EntityState.Detached;

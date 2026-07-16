@@ -15,7 +15,7 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.8");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
 
             modelBuilder.Entity("Elsa.Platform.PackageCatalog.Core.Accounts.Account", b =>
                 {
@@ -2528,6 +2528,51 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.ToTable("WorkspaceDeploymentArtifacts");
                 });
 
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkspacePermissionAuditRecordEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ActorAccountId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("GrantId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("OccurredAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Permission")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("GrantId", "Action")
+                        .IsUnique();
+
+                    b.HasIndex("WorkspaceId", "AccountId", "OccurredAt");
+
+                    b.HasIndex("WorkspaceId", "OccurredAt", "Id");
+
+                    b.ToTable("WorkspacePermissionAuditRecords");
+                });
+
             modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkspacePermissionGrantEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2550,6 +2595,9 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.Property<long?>("RevokedAt")
                         .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("RevokedByAccountId")
+                        .HasColumnType("TEXT");
 
                     b.Property<long>("UpdatedAt")
                         .HasColumnType("INTEGER");
@@ -3095,6 +3143,21 @@ namespace Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Navigation("CredentialReferenceMetadata");
 
                     b.Navigation("Environment");
+                });
+
+            modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkspacePermissionAuditRecordEntity", b =>
+                {
+                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Account", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Elsa.Platform.PackageCatalog.Core.Accounts.Workspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Models.WorkspacePermissionGrantEntity", b =>

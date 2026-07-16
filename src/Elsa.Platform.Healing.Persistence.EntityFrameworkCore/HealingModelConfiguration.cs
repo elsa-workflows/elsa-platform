@@ -2,6 +2,7 @@ using Elsa.Platform.Healing.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using ComponentManifestModel = Elsa.Platform.Healing.Core.ComponentManifest;
 
 namespace Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
 
@@ -20,8 +21,10 @@ public static class HealingModelConfiguration
         ConfigureWorkspaceConfiguration(modelBuilder.Entity<HealingWorkspaceConfiguration>());
         ConfigureEnvironmentConfiguration(modelBuilder.Entity<HealingEnvironmentConfiguration>());
         ConfigureInbox(modelBuilder.Entity<HealingSignalInboxItem>());
-        ConfigureManifest(modelBuilder.Entity<ComponentManifest>());
+        ConfigureManifest(modelBuilder.Entity<ComponentManifestModel>());
+        ConfigureManifestRegistration(modelBuilder.Entity<ComponentManifestRegistration>());
         ConfigureManifestEntry(modelBuilder.Entity<ComponentManifestEntry>());
+        ConfigureManifestAssembly(modelBuilder.Entity<ComponentManifestAssemblyArtifact>());
         ConfigureComponentDependency(modelBuilder.Entity<ComponentDependency>());
         ConfigureBinding(modelBuilder.Entity<SourceOwnershipBinding>(), providerName);
         ConfigureOccurrence(modelBuilder.Entity<IncidentOccurrence>());
@@ -96,7 +99,7 @@ public static class HealingModelConfiguration
         Concurrency(entity, x => x.Version);
     }
 
-    private static void ConfigureManifest(EntityTypeBuilder<ComponentManifest> entity)
+    private static void ConfigureManifest(EntityTypeBuilder<ComponentManifestModel> entity)
     {
         entity.ToTable("HealingComponentManifests");
         entity.HasKey(x => x.Id);
@@ -116,6 +119,20 @@ public static class HealingModelConfiguration
         entity.HasMany(x => x.Dependencies).WithOne().HasForeignKey(x => x.ManifestId).OnDelete(DeleteBehavior.Cascade);
     }
 
+    private static void ConfigureManifestRegistration(EntityTypeBuilder<ComponentManifestRegistration> entity)
+    {
+        entity.ToTable("HealingComponentManifestRegistrations");
+        entity.HasKey(x => x.Id);
+        entity.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.RevisionId, x.IdempotencyKey }).IsUnique();
+        entity.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.ManifestId });
+        Required(entity, x => x.IdempotencyKey, KeyLength);
+        Required(entity, x => x.PayloadHash, HashLength);
+        entity.HasOne<ComponentManifestModel>().WithMany()
+            .HasForeignKey(x => new { x.WorkspaceId, x.ApplicationId, x.ManifestId })
+            .HasPrincipalKey(x => new { x.WorkspaceId, x.ApplicationId, x.Id })
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+
     private static void ConfigureManifestEntry(EntityTypeBuilder<ComponentManifestEntry> entity)
     {
         entity.ToTable("HealingComponentManifestEntries");
@@ -123,7 +140,9 @@ public static class HealingModelConfiguration
         entity.HasIndex(x => new { x.ManifestId, x.ComponentKey }).IsUnique();
         entity.HasAlternateKey(x => new { x.ManifestId, x.Id });
         entity.HasAlternateKey(x => new { x.WorkspaceId, x.ApplicationId, x.Id });
+        entity.HasAlternateKey(x => new { x.WorkspaceId, x.ApplicationId, x.ManifestId, x.Id });
         Required(entity, x => x.ComponentKey, KeyLength);
+        Required(entity, x => x.KindName, 64);
         Required(entity, x => x.Name, NameLength);
         entity.Property(x => x.Version).HasMaxLength(KeyLength);
         entity.Property(x => x.PackageId).HasMaxLength(NameLength);
@@ -132,10 +151,27 @@ public static class HealingModelConfiguration
         entity.Property(x => x.AssemblyVersion).HasMaxLength(KeyLength);
         entity.Property(x => x.PublicKeyToken).HasMaxLength(KeyLength);
         Required(entity, x => x.ContentHash, HashLength);
-        Required(entity, x => x.RelativePath, 2_048);
+        entity.Property(x => x.RelativePath).HasMaxLength(2_048);
         entity.Property(x => x.RepositoryUrl).HasMaxLength(2_048);
         entity.Property(x => x.RepositoryCommit).HasMaxLength(KeyLength);
         entity.Property(x => x.SourceRoot).HasMaxLength(2_048);
+        entity.HasMany(x => x.Assemblies).WithOne()
+            .HasForeignKey(x => new { x.WorkspaceId, x.ApplicationId, x.ManifestId, x.ComponentEntryId })
+            .HasPrincipalKey(x => new { x.WorkspaceId, x.ApplicationId, x.ManifestId, x.Id })
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+
+    private static void ConfigureManifestAssembly(EntityTypeBuilder<ComponentManifestAssemblyArtifact> entity)
+    {
+        entity.ToTable("HealingComponentManifestAssemblies");
+        entity.HasKey(x => x.Id);
+        entity.HasIndex(x => new { x.ManifestId, x.ComponentEntryId, x.RelativePath }).IsUnique();
+        entity.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.ManifestId, x.ComponentEntryId });
+        Required(entity, x => x.Name, NameLength);
+        entity.Property(x => x.Version).HasMaxLength(KeyLength);
+        entity.Property(x => x.PublicKeyToken).HasMaxLength(KeyLength);
+        Required(entity, x => x.RelativePath, 2_048);
+        Required(entity, x => x.ContentHash, HashLength);
     }
 
     private static void ConfigureComponentDependency(EntityTypeBuilder<ComponentDependency> entity)
@@ -512,7 +548,7 @@ public static class HealingModelConfiguration
         entity.ToTable("HealingProviderConnections");
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.WorkspaceId, x.Id });
-        entity.HasIndex(x => new { x.WorkspaceId, x.Provider, x.RepositoryProviderId }).IsUnique();
+        entity.HasIndex(x => new { x.WorkspaceId, x.Provider, x.RepositoryProviderId });
         Required(entity, x => x.Provider, 64);
         Required(entity, x => x.InstallationId, KeyLength);
         Required(entity, x => x.RepositoryProviderId, KeyLength);

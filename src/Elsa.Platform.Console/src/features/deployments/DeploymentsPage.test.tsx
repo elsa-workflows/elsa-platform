@@ -167,6 +167,7 @@ describe("DeploymentsPage", () => {
     renderDeployments(multipleApplicationsCockpit, "/admin/deployments/applications/claims-ops");
 
     expect(await screen.findByRole("heading", { name: "Claims Operations" })).toBeInTheDocument();
+    expect(linkByHref("/admin/healing/applications/claims-ops/configuration")).toBeInTheDocument();
     expect(linkByHref("/admin/deployments/applications/claims-ops/revisions")).toBeInTheDocument();
     expect(linkByHref("/admin/deployments/applications/claims-ops/environments/new")).toBeInTheDocument();
     expect(linkByHref("/admin/deployments/applications/claims-ops/environments/claims-dev")).toBeInTheDocument();
