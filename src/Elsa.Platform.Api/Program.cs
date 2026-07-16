@@ -56,9 +56,10 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 
-IdentityModelEventSource.ShowPII = true;
-
 var builder = WebApplication.CreateBuilder(args);
+
+IdentityModelEventSource.ShowPII = builder.Environment.IsDevelopment()
+    && builder.Configuration.GetValue<bool>("Diagnostics:IdentityModel:ShowPII");
 
 builder.AddServiceDefaults();
 

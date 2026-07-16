@@ -25,7 +25,7 @@
 - [ ] T006 [P] Create adapter and persistence project references in `src/Elsa.Platform.Healing.GitHub/Elsa.Platform.Healing.GitHub.csproj`, `src/Elsa.Platform.Healing.Agent/Elsa.Platform.Healing.Agent.csproj`, `src/Elsa.Platform.Healing.OpenTelemetry/Elsa.Platform.Healing.OpenTelemetry.csproj`, and `src/Elsa.Platform.Healing.Persistence.EntityFrameworkCore/Elsa.Platform.Healing.Persistence.EntityFrameworkCore.csproj`
 - [ ] T007 [P] Create publishable client/manifest/MSBuild project metadata in `src/Elsa.Platform.Healing.Client/Elsa.Platform.Healing.Client.csproj`, `src/Elsa.Platform.Healing.ComponentManifest/Elsa.Platform.Healing.ComponentManifest.csproj`, and `src/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild/Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild.csproj`
 - [ ] T008 [P] Add Healing projects to API and test composition in `src/Elsa.Platform.Api/Elsa.Platform.Api.csproj` and `tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj`
-- [ ] T009 Remove unconditional identity PII logging and add an explicit local-development switch in `src/Elsa.Platform.Api/Program.cs`
+- [x] T009 Remove unconditional identity PII logging and add an explicit local-development switch in `src/Elsa.Platform.Api/Program.cs`
 - [ ] T010 Verify required .NET, Node, Docker, and universal ignore patterns in `.gitignore`, `.dockerignore`, and `src/Elsa.Platform.Console/.gitignore`
 
 ---
