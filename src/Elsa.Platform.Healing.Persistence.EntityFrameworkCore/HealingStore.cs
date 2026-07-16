@@ -1,7 +1,11 @@
 using Elsa.Platform.Healing.Core;
+using Elsa.Platform.Healing.Core.Configuration;
 using Elsa.Platform.Healing.Core.Incidents;
 using Elsa.Platform.Healing.Core.OpenTelemetry;
+using Elsa.Platform.Healing.Core.Operations;
 using Elsa.Platform.Healing.Core.Ownership;
+using Elsa.Platform.Healing.Core.Providers;
+using Elsa.Platform.Healing.Core.Repairs;
 using Elsa.Platform.Healing.Core.Security;
 using Microsoft.EntityFrameworkCore;
 using System.Data;
@@ -20,7 +24,7 @@ public sealed class HealingIdempotencyConflictException(string message) : Invali
 /// Healing-owned durable store. Idempotency, atomic leases, and append-only audit behavior are kept behind
 /// this interface so callers do not need provider-specific persistence knowledge.
 /// </summary>
-public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStore, IHealingOwnershipStore, IHealingAdministrationStore, IHealingIncidentStore, IHealingSignalInboxStore, IHealingTelemetrySourceStore
+public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStore, IHealingOwnershipStore, IHealingAdministrationStore, IHealingIncidentStore, IHealingSignalInboxStore, IHealingTelemetrySourceStore, IProviderOperationStore, IHealingEvidenceStore, IRepairOrchestrationStore
 {
     public async ValueTask<T> ExecuteInTransactionAsync<T>(
         Func<CancellationToken, ValueTask<T>> operation,
@@ -643,6 +647,7 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
         existing.RepositoryName = binding.RepositoryName;
         existing.TargetBranch = binding.TargetBranch;
         existing.WorkflowIdentity = binding.WorkflowIdentity;
+        existing.WorkflowReference = binding.WorkflowReference;
         existing.WorkflowRevision = binding.WorkflowRevision;
         existing.PathPolicyId = binding.PathPolicyId;
         existing.EvidencePolicyId = binding.EvidencePolicyId;
@@ -991,6 +996,17 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
             await EnsureWorkItemProjectionAsync(incident, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
         }
+        if (incident.WorkItemProjectionId is { } projectionId)
+        {
+            var projection = await dbContext.RepairWorkItemProjections.SingleOrDefaultAsync(
+                x => x.Id == projectionId && x.ProjectionStatus != WorkItemProjectionStatus.Deleted,
+                cancellationToken);
+            if (projection is not null && projection.ProjectionStatus != WorkItemProjectionStatus.Pending)
+            {
+                projection.ProjectionStatus = WorkItemProjectionStatus.Pending;
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+        }
         return new HealingIncidentProjectionResult(occurrence, incident, episode, impact, false, isRegression);
     }
 
@@ -1064,6 +1080,281 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
                 throw new HealingIdempotencyConflictException("Repair attempt identity was reused with different authority or evidence.");
             return new HealingStoreWriteResult<RepairAttempt>(existing, true);
         }
+    }
+
+    public async ValueTask<RepairAttemptStoreCreateResult> TryCreateAttemptAsync(
+        RepairAttempt attempt,
+        int maximumAttempts,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(attempt);
+        if (maximumAttempts is < 1 or > HealingBudgetOptions.MaximumRepairAttempts)
+            throw new ArgumentOutOfRangeException(nameof(maximumAttempts));
+
+        async Task<RepairAttemptStoreCreateResult> CreateAsync()
+        {
+            var attemptCount = await dbContext.RepairAttempts.CountAsync(
+                x => x.WorkspaceId == attempt.WorkspaceId &&
+                     x.ApplicationId == attempt.ApplicationId &&
+                     x.EpisodeId == attempt.EpisodeId &&
+                     x.TargetRevision == attempt.TargetRevision,
+                cancellationToken);
+            var activeAttemptExists = await dbContext.RepairAttempts.AnyAsync(
+                x => x.WorkspaceId == attempt.WorkspaceId &&
+                     x.ApplicationId == attempt.ApplicationId &&
+                     x.EpisodeId == attempt.EpisodeId &&
+                     x.TargetRevision == attempt.TargetRevision &&
+                     (x.Status == RepairAttemptStatus.Queued || x.Status == RepairAttemptStatus.Dispatched ||
+                      x.Status == RepairAttemptStatus.Running || x.Status == RepairAttemptStatus.ProposalReady ||
+                      x.Status == RepairAttemptStatus.ResultReceived ||
+                      x.Status == RepairAttemptStatus.Publishing || x.Status == RepairAttemptStatus.PullRequestOpen),
+                cancellationToken);
+            if (activeAttemptExists)
+                return new RepairAttemptStoreCreateResult(RepairAttemptStoreOutcome.Conflict, null);
+            if (attemptCount >= maximumAttempts)
+                return new RepairAttemptStoreCreateResult(RepairAttemptStoreOutcome.AttemptLimitReached, null);
+
+            attempt.AttemptNumber = attemptCount + 1;
+            attempt.Version = NewVersion();
+            dbContext.RepairAttempts.Add(attempt);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return new RepairAttemptStoreCreateResult(RepairAttemptStoreOutcome.Created, attempt);
+        }
+
+        try
+        {
+            if (dbContext.Database.CurrentTransaction is not null)
+                return await CreateAsync();
+
+            var executionStrategy = dbContext.Database.CreateExecutionStrategy();
+            return await executionStrategy.ExecuteAsync(async () =>
+            {
+                await using var transaction = await dbContext.Database.BeginTransactionAsync(
+                    IsolationLevel.Serializable,
+                    cancellationToken);
+                var result = await CreateAsync();
+                if (result.Outcome != RepairAttemptStoreOutcome.Created)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return result;
+                }
+                await transaction.CommitAsync(cancellationToken);
+                return result;
+            });
+        }
+        catch (DbUpdateException)
+        {
+            dbContext.ChangeTracker.Clear();
+            var count = await dbContext.RepairAttempts.AsNoTracking().CountAsync(
+                x => x.WorkspaceId == attempt.WorkspaceId &&
+                     x.ApplicationId == attempt.ApplicationId &&
+                     x.EpisodeId == attempt.EpisodeId &&
+                     x.TargetRevision == attempt.TargetRevision,
+                cancellationToken);
+            return count >= maximumAttempts
+                ? new RepairAttemptStoreCreateResult(RepairAttemptStoreOutcome.AttemptLimitReached, null)
+                : new RepairAttemptStoreCreateResult(RepairAttemptStoreOutcome.Conflict, null);
+        }
+    }
+
+    public ValueTask<RepairAttempt?> FindAttemptAsync(
+        Guid workspaceId,
+        Guid attemptId,
+        CancellationToken cancellationToken = default) =>
+        new(dbContext.RepairAttempts.AsNoTracking().SingleOrDefaultAsync(
+            x => x.WorkspaceId == workspaceId && x.Id == attemptId,
+            cancellationToken));
+
+    public async ValueTask<bool> TryAcquireLeaseAsync(
+        Guid workspaceId,
+        Guid attemptId,
+        string leaseOwner,
+        string leaseTokenHash,
+        DateTimeOffset now,
+        DateTimeOffset expiresAt,
+        CancellationToken cancellationToken = default)
+    {
+        var updated = await dbContext.RepairAttempts
+            .Where(x => x.WorkspaceId == workspaceId &&
+                        x.Id == attemptId &&
+                        x.Status != RepairAttemptStatus.Succeeded &&
+                        x.Status != RepairAttemptStatus.Failed &&
+                        x.Status != RepairAttemptStatus.Stopped &&
+                        x.Status != RepairAttemptStatus.Expired &&
+                        (x.LeaseToken == null || x.LeaseExpiresAt < now))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, RepairAttemptStatus.Running)
+                .SetProperty(x => x.LeaseOwner, leaseOwner)
+                .SetProperty(x => x.LeaseToken, leaseTokenHash)
+                .SetProperty(x => x.LeaseExpiresAt, expiresAt)
+                .SetProperty(x => x.StartedAt, x => x.StartedAt ?? now)
+                .SetProperty(x => x.Version, NewVersion()), cancellationToken);
+        return updated == 1;
+    }
+
+    public async ValueTask<bool> TryHeartbeatLeaseAsync(
+        Guid workspaceId,
+        Guid attemptId,
+        string leaseTokenHash,
+        DateTimeOffset now,
+        DateTimeOffset expiresAt,
+        CancellationToken cancellationToken = default)
+    {
+        var updated = await dbContext.RepairAttempts
+            .Where(x => x.WorkspaceId == workspaceId &&
+                        x.Id == attemptId &&
+                        x.Status == RepairAttemptStatus.Running &&
+                        x.LeaseToken == leaseTokenHash &&
+                        x.LeaseExpiresAt >= now)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.LeaseExpiresAt, expiresAt)
+                .SetProperty(x => x.Version, NewVersion()), cancellationToken);
+        return updated == 1;
+    }
+
+    public async ValueTask<bool> TryRecordReproductionAsync(
+        Guid workspaceId,
+        Guid attemptId,
+        string leaseTokenHash,
+        RepairClassification classification,
+        string reproductionJson,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        var updated = await dbContext.RepairAttempts
+            .Where(x => x.WorkspaceId == workspaceId &&
+                        x.Id == attemptId &&
+                        x.Status == RepairAttemptStatus.Running &&
+                        x.LeaseToken == leaseTokenHash &&
+                        x.LeaseExpiresAt >= now)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.RepairClassification, classification)
+                .SetProperty(x => x.OutcomeCode, "reproduction-recorded")
+                .SetProperty(x => x.SafeOutcomeDetail, reproductionJson)
+                .SetProperty(x => x.Version, NewVersion()), cancellationToken);
+        return updated == 1;
+    }
+
+    public async ValueTask<bool> TryAppendBundleAsync(
+        EvidenceBundle bundle,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(bundle);
+        if (bundle.Id == Guid.Empty || bundle.WorkspaceId == Guid.Empty || bundle.ApplicationId == Guid.Empty || bundle.IncidentId == Guid.Empty)
+            throw new ArgumentException("Evidence bundle scope is required.", nameof(bundle));
+        if (await dbContext.EvidenceBundles.AsNoTracking().AnyAsync(x => x.Id == bundle.Id, cancellationToken))
+            return false;
+
+        dbContext.EvidenceBundles.Add(bundle);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateException)
+        {
+            dbContext.Entry(bundle).State = EntityState.Detached;
+            if (await dbContext.EvidenceBundles.AsNoTracking().AnyAsync(
+                    x => x.Id == bundle.Id,
+                    cancellationToken))
+                return false;
+            throw;
+        }
+    }
+
+    public ValueTask<EvidenceBundle?> FindBundleAsync(
+        Guid workspaceId,
+        Guid bundleId,
+        CancellationToken cancellationToken = default) =>
+        new(dbContext.EvidenceBundles.AsNoTracking().SingleOrDefaultAsync(
+            x => x.WorkspaceId == workspaceId && x.Id == bundleId,
+            cancellationToken));
+
+    public async ValueTask<bool> TryAppendElevatedBundleAsync(
+        EvidenceBundle bundle,
+        EvidenceAccessDecision decision,
+        Guid targetAttemptId,
+        Guid expectedBaseBundleId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(bundle);
+        ArgumentNullException.ThrowIfNull(decision);
+        if (bundle.Tier != EvidenceTier.Elevated ||
+            !decision.Authorized ||
+            decision.ReleasedBundleId != bundle.Id ||
+            decision.WorkspaceId != bundle.WorkspaceId ||
+            decision.ApplicationId != bundle.ApplicationId ||
+            decision.IncidentId != bundle.IncidentId)
+        {
+            throw new ArgumentException("An elevated bundle requires its matching authorized access decision.");
+        }
+
+        var executionStrategy = dbContext.Database.CreateExecutionStrategy();
+        try
+        {
+            return await executionStrategy.ExecuteAsync(async () =>
+            {
+                await using var transaction = await dbContext.Database.BeginTransactionAsync(
+                    IsolationLevel.Serializable,
+                    cancellationToken);
+                var conflict = await dbContext.EvidenceBundles.AsNoTracking().AnyAsync(
+                    x => x.Id == bundle.Id,
+                    cancellationToken);
+                if (conflict)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return false;
+                }
+
+                var attempt = await dbContext.RepairAttempts.SingleOrDefaultAsync(
+                    x => x.WorkspaceId == bundle.WorkspaceId &&
+                         x.ApplicationId == bundle.ApplicationId &&
+                         x.IncidentId == bundle.IncidentId &&
+                         x.Id == targetAttemptId &&
+                         x.EvidenceBundleId == expectedBaseBundleId,
+                    cancellationToken);
+                if (attempt is null)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return false;
+                }
+
+                dbContext.EvidenceBundles.Add(bundle);
+                dbContext.EvidenceAccessDecisions.Add(decision);
+                attempt.EvidenceBundleId = bundle.Id;
+                await dbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return true;
+            });
+        }
+        catch (DbUpdateException)
+        {
+            dbContext.ChangeTracker.Clear();
+            var conflict = await dbContext.EvidenceBundles.AsNoTracking().AnyAsync(
+                    x => x.Id == bundle.Id,
+                    cancellationToken);
+            var targetStillEligible = await dbContext.RepairAttempts.AsNoTracking().AnyAsync(
+                x => x.WorkspaceId == bundle.WorkspaceId &&
+                     x.ApplicationId == bundle.ApplicationId &&
+                     x.IncidentId == bundle.IncidentId &&
+                     x.Id == targetAttemptId &&
+                     x.EvidenceBundleId == expectedBaseBundleId,
+                cancellationToken);
+            if (conflict || !targetStillEligible)
+                return false;
+            throw;
+        }
+    }
+
+    public async ValueTask AppendAccessDecisionAsync(
+        EvidenceAccessDecision decision,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(decision);
+        if (decision.Id == Guid.Empty || decision.WorkspaceId == Guid.Empty || decision.ApplicationId == Guid.Empty || decision.IncidentId == Guid.Empty)
+            throw new ArgumentException("Evidence access decision scope is required.", nameof(decision));
+        dbContext.EvidenceAccessDecisions.Add(decision);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     public async ValueTask<VerificationResult> UpsertVerificationAsync(
@@ -1325,6 +1616,7 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
         var existing = await dbContext.ProviderOperations.SingleOrDefaultAsync(
             x => x.WorkspaceId == operation.WorkspaceId &&
                  x.ProviderConnectionId == operation.ProviderConnectionId &&
+                 x.Kind == operation.Kind &&
                  x.IdempotencyKey == operation.IdempotencyKey,
             cancellationToken);
         if (existing is not null)
@@ -1343,6 +1635,7 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
             existing = await dbContext.ProviderOperations.SingleOrDefaultAsync(
                 x => x.WorkspaceId == operation.WorkspaceId &&
                      x.ProviderConnectionId == operation.ProviderConnectionId &&
+                     x.Kind == operation.Kind &&
                      x.IdempotencyKey == operation.IdempotencyKey,
                 cancellationToken);
             if (existing is null)
@@ -1425,6 +1718,102 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
                 .SetProperty(x => x.UpdatedAt, now)
                 .SetProperty(x => x.Version, NewVersion()), cancellationToken);
         return updated == 1;
+    }
+
+    public async ValueTask<bool> RetryProviderOperationAsync(
+        Guid operationId,
+        string leaseToken,
+        DateTimeOffset now,
+        DateTimeOffset nextAttemptAt,
+        string outcomeCode,
+        string? safeError,
+        CancellationToken cancellationToken = default)
+    {
+        if (nextAttemptAt < now)
+            throw new ArgumentOutOfRangeException(nameof(nextAttemptAt));
+
+        var updated = await dbContext.ProviderOperations
+            .Where(x => x.Id == operationId &&
+                        x.Status == ProviderOperationStatus.Leased &&
+                        x.LeaseToken == leaseToken &&
+                        x.LeaseExpiresAt >= now)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, ProviderOperationStatus.Pending)
+                .SetProperty(x => x.LeaseOwner, (string?)null)
+                .SetProperty(x => x.LeaseToken, (string?)null)
+                .SetProperty(x => x.LeaseExpiresAt, (DateTimeOffset?)null)
+                .SetProperty(x => x.NextAttemptAt, nextAttemptAt)
+                .SetProperty(x => x.OutcomeCode, outcomeCode)
+                .SetProperty(x => x.SafeError, safeError)
+                .SetProperty(x => x.UpdatedAt, now)
+                .SetProperty(x => x.Version, NewVersion()), cancellationToken);
+        return updated == 1;
+    }
+
+    async ValueTask<ProviderOperationAppendResult> IProviderOperationStore.AppendAsync(
+        ProviderOperation operation,
+        CancellationToken cancellationToken)
+    {
+        var result = await AppendProviderOperationAsync(operation, cancellationToken);
+        return new ProviderOperationAppendResult(result.Value, result.IsReplay);
+    }
+
+    async ValueTask<int> IHealingLeasedOperationStore<ProviderOperation>.RecoverStaleLeasesAsync(
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.ProviderOperations
+            .Where(x => x.Status == ProviderOperationStatus.Leased && x.LeaseExpiresAt < now)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, ProviderOperationStatus.Pending)
+                .SetProperty(x => x.LeaseOwner, (string?)null)
+                .SetProperty(x => x.LeaseToken, (string?)null)
+                .SetProperty(x => x.LeaseExpiresAt, (DateTimeOffset?)null)
+                .SetProperty(x => x.NextAttemptAt, now)
+                .SetProperty(x => x.UpdatedAt, now)
+                .SetProperty(x => x.Version, NewVersion()), cancellationToken);
+    }
+
+    async ValueTask<HealingOperationLease<ProviderOperation>?> IHealingLeasedOperationStore<ProviderOperation>.TryLeaseNextAsync(
+        string workerId,
+        DateTimeOffset now,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken)
+    {
+        var lease = await TryLeaseNextProviderOperationAsync(workerId, now, leaseDuration, cancellationToken);
+        return lease is null
+            ? null
+            : new HealingOperationLease<ProviderOperation>(
+                lease.Value.Id,
+                lease.LeaseToken,
+                lease.Value,
+                lease.Value.AttemptCount,
+                1);
+    }
+
+    async ValueTask IHealingLeasedOperationStore<ProviderOperation>.FinishAsync(
+        HealingOperationLease<ProviderOperation> lease,
+        HealingOperationOutcome outcome,
+        DateTimeOffset finishedAt,
+        DateTimeOffset? nextAttemptAt,
+        CancellationToken cancellationToken)
+    {
+        var completed = outcome.Disposition switch
+        {
+            HealingOperationDisposition.Completed => await CompleteProviderOperationAsync(
+                lease.OperationId, lease.LeaseToken, finishedAt, ProviderOperationStatus.Completed,
+                lease.Operation.ProviderCorrelationId, outcome.OutcomeCode, outcome.SafeDetail, cancellationToken),
+            HealingOperationDisposition.DeadLettered => await CompleteProviderOperationAsync(
+                lease.OperationId, lease.LeaseToken, finishedAt, ProviderOperationStatus.DeadLettered,
+                lease.Operation.ProviderCorrelationId, outcome.OutcomeCode, outcome.SafeDetail, cancellationToken),
+            HealingOperationDisposition.Retry when nextAttemptAt is not null => await RetryProviderOperationAsync(
+                lease.OperationId, lease.LeaseToken, finishedAt, nextAttemptAt.Value,
+                outcome.OutcomeCode, outcome.SafeDetail, cancellationToken),
+            _ => throw new InvalidOperationException("A retry outcome requires a next-attempt timestamp.")
+        };
+
+        if (!completed)
+            throw new DbUpdateConcurrencyException("The provider operation lease was lost before completion.");
     }
 
     public async ValueTask<HealingAuditEvent> AppendAsync(

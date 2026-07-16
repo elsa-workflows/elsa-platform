@@ -71,6 +71,7 @@ export type ActivateSourceOwnershipBindingRequest = {
   repositoryName: string;
   targetBranch: string;
   workflowIdentity: string;
+  workflowReference: string;
   workflowRevision: string;
   pathPolicyId: string;
   evidencePolicyId: string;
@@ -89,7 +90,7 @@ export type HealingComponent = {
   ownershipResolution: "Selected" | "Suggested" | "Ambiguous" | "Unmapped" | string;
   repairEligibility: "Repairable" | "ObservationOnly" | "Ambiguous" | "Unauthorized" | string;
   assemblies?: Array<{ name: string; version: string | null; publicKeyToken: string | null; relativePath: string; contentHash: string }>;
-  matchingBindings?: Array<{ id: string; name: string; priority: number; repository: string; targetBranch: string; workflowIdentity: string; status: string }>;
+  matchingBindings?: Array<{ id: string; name: string; priority: number; repository: string; targetBranch: string; workflowIdentity: string; workflowReference: string; status: string }>;
   reasonCodes?: string[];
 };
 
@@ -114,6 +115,7 @@ export type SourceOwnershipBinding = {
   repository: string;
   targetBranch: string;
   workflowIdentity: string;
+  workflowReference: string;
   status: "Draft" | "Active" | "Suspended" | "Revoked" | string;
   version: string;
 };
@@ -153,6 +155,7 @@ export type CreateHealingAuthorityProfileRequest = {
   repositoryOwner: string;
   repositoryName: string;
   credentialReferenceId: string;
+  webhookSecretCredentialReferenceId?: string;
   allowedRoots?: string[];
   forbiddenRoots?: string[];
   maxFiles?: number;
@@ -282,6 +285,7 @@ export type HealingIncidentDetail = HealingIncidentSummary & {
   occurrences: HealingIncidentOccurrence[];
   attributions: HealingComponentAttribution[];
   workItem?: HealingWorkItemSummary | null;
+  attempts: HealingRepairAttemptView[];
 };
 
 export type HealingIncidentFilters = {
@@ -292,4 +296,47 @@ export type HealingIncidentFilters = {
   repairable?: boolean;
   cursor?: string;
   take?: number;
+};
+
+export type HealingRepairEvidenceView = {
+  tier: string;
+  omittedFields: string[];
+  expiresAt?: string | null;
+};
+
+export type HealingRepairReproductionView = {
+  wasAttempted: boolean;
+  wasReproduced: boolean;
+  classification: string;
+  summary: string;
+};
+
+export type HealingRepairValidationView = {
+  kind: string;
+  outcome: string;
+  safeSummary: string;
+};
+
+export type HealingRepairPullRequestView = {
+  number: number;
+  url: string;
+  isDraft: boolean;
+  mergeState: string;
+  checksState: string;
+};
+
+/** Safe UI projection. Raw diffs and provider credentials are deliberately absent. */
+export type HealingRepairAttemptView = {
+  id: string;
+  attemptNumber: number;
+  status: string;
+  targetRevision: string;
+  producingRevision?: string | null;
+  evidence: HealingRepairEvidenceView;
+  classification: string;
+  confidence?: number | null;
+  causalSummary?: string | null;
+  reproduction: HealingRepairReproductionView;
+  validations: HealingRepairValidationView[];
+  pullRequest?: HealingRepairPullRequestView | null;
 };

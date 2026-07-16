@@ -111,7 +111,8 @@ public sealed class WorkspaceHealingAuthorityEndpointModule : IHealingEndpointMo
                 request.RequiredChecks ?? [],
                 request.IndependentVerifier,
                 request.ForbiddenChangeCategories ?? ["workflow", "build-infrastructure", "credentials"],
-                request.RequireRollbackOrStopCapability ?? true),
+                request.RequireRollbackOrStopCapability ?? true,
+                request.WebhookSecretCredentialReferenceId),
             authorization,
             cancellationToken);
         return result.Succeeded
@@ -308,6 +309,7 @@ public sealed record CreateHealingAuthorityProfileRequest(
     string? IndependentVerifier = null,
     IReadOnlyList<string>? ForbiddenChangeCategories = null,
     bool? RequireRollbackOrStopCapability = null,
+    Guid? WebhookSecretCredentialReferenceId = null,
     Guid? ConfirmationId = null);
 
 public sealed record ProviderConnectionTransitionRequest(string? Version);

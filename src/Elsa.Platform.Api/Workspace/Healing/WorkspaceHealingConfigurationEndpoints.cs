@@ -633,7 +633,7 @@ public sealed class WorkspaceHealingConfigurationEndpointModule : IHealingEndpoi
                 {
                     binding.Id, binding.Name, binding.Priority,
                     Repository = $"{binding.RepositoryOwner}/{binding.RepositoryName}",
-                    binding.TargetBranch, binding.WorkflowIdentity, binding.Status
+                    binding.TargetBranch, binding.WorkflowIdentity, binding.WorkflowReference, binding.Status
                 }),
                 ReasonCodes = governedResolution?.ReasonCodes ?? (ambiguous
                     ? [HealingOwnershipReasonCodes.AmbiguousAuthority]
@@ -650,7 +650,7 @@ public sealed class WorkspaceHealingConfigurationEndpointModule : IHealingEndpoi
         SelectorKind = request.SelectorKind, SelectorPattern = request.SelectorPattern, Priority = request.Priority,
         ProviderConnectionId = request.ProviderConnectionId, RepositoryProviderId = request.RepositoryProviderId,
         RepositoryOwner = request.RepositoryOwner, RepositoryName = request.RepositoryName, TargetBranch = request.TargetBranch,
-        WorkflowIdentity = request.WorkflowIdentity, WorkflowRevision = request.WorkflowRevision,
+        WorkflowIdentity = request.WorkflowIdentity, WorkflowReference = request.WorkflowReference!, WorkflowRevision = request.WorkflowRevision,
         PathPolicyId = request.PathPolicyId, EvidencePolicyId = request.EvidencePolicyId, MergePolicyId = request.MergePolicyId,
         Status = SourceOwnershipBindingStatus.Draft
     };
@@ -658,7 +658,7 @@ public sealed class WorkspaceHealingConfigurationEndpointModule : IHealingEndpoi
     private static object ToBindingResponse(SourceOwnershipBinding binding) => new
     {
         binding.Id, binding.Name, binding.SelectorKind, binding.SelectorPattern,
-        Repository = $"{binding.RepositoryOwner}/{binding.RepositoryName}", binding.TargetBranch, binding.WorkflowIdentity, binding.Status,
+        Repository = $"{binding.RepositoryOwner}/{binding.RepositoryName}", binding.TargetBranch, binding.WorkflowIdentity, binding.WorkflowReference, binding.Status,
         Version = Convert.ToBase64String(binding.Version)
     };
 
@@ -714,6 +714,11 @@ public sealed class WorkspaceHealingConfigurationEndpointModule : IHealingEndpoi
 
     internal static string Sha256(string value) => $"sha256:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant()}";
 
+    private static bool ValidWorkflowReference(string? value) =>
+        ValidRequired(value, MaxKeyLength) &&
+        (value!.StartsWith("refs/heads/", StringComparison.Ordinal) ||
+         value.StartsWith("refs/tags/", StringComparison.Ordinal));
+
     private static IResult? ValidateBindingRequest(HttpContext context, SourceOwnershipBindingRequest request, bool requireVersion, out byte[] version)
     {
         version = [];
@@ -725,6 +730,7 @@ public sealed class WorkspaceHealingConfigurationEndpointModule : IHealingEndpoi
             !ValidRequired(request.RepositoryName, MaxNameLength) ||
             !ValidRequired(request.TargetBranch, MaxKeyLength) ||
             !ValidRequired(request.WorkflowIdentity, MaxPathLength) ||
+            !ValidWorkflowReference(request.WorkflowReference) ||
             !ValidRequired(request.WorkflowRevision, MaxKeyLength) ||
             request.ProviderConnectionId == Guid.Empty || request.PathPolicyId == Guid.Empty ||
             request.EvidencePolicyId == Guid.Empty || request.MergePolicyId == Guid.Empty)
@@ -817,4 +823,4 @@ public sealed record HealingConfirmationRequest(ConfirmationActionType ActionTyp
 public sealed record HealingStopRequest(Guid ConfirmationId);
 public sealed record HealingEnvironmentConfigurationRequest(Guid EnvironmentId, bool DiscoveryEnabled, bool RepairDispatchEnabled, bool EnvironmentKillSwitch, int? OccurrenceThreshold, TimeSpan? DebounceWindow, string ClassificationPolicyJson = "{}");
 public sealed record UpdateHealingConfigurationRequest(bool DiscoveryEnabled, bool RepairDispatchEnabled, bool AutomaticMergeEnabled, string SignalProfileVersion, int DefaultAttemptLimit, TimeSpan VerificationWindow, TimeSpan TimeBudget, int ConcurrencyBudget, long InferenceBudget, int RepositoryRunBudget, IReadOnlyList<HealingEnvironmentConfigurationRequest> Environments, string Version, Guid? ConfirmationId, string ClassificationPolicyJson = "{}");
-public sealed record SourceOwnershipBindingRequest(string Name, SourceSelectorKind SelectorKind, string SelectorPattern, int Priority, Guid ProviderConnectionId, string RepositoryProviderId, string RepositoryOwner, string RepositoryName, string TargetBranch, string WorkflowIdentity, string WorkflowRevision, Guid PathPolicyId, Guid EvidencePolicyId, Guid MergePolicyId, string? Version = null);
+public sealed record SourceOwnershipBindingRequest(string Name, SourceSelectorKind SelectorKind, string SelectorPattern, int Priority, Guid ProviderConnectionId, string RepositoryProviderId, string RepositoryOwner, string RepositoryName, string TargetBranch, string WorkflowIdentity, string WorkflowRevision, Guid PathPolicyId, Guid EvidencePolicyId, Guid MergePolicyId, string? Version = null, string? WorkflowReference = null);

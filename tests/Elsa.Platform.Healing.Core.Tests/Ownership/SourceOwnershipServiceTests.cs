@@ -768,6 +768,7 @@ public sealed class SourceOwnershipServiceTests
             SelectorKind = kind, SelectorPattern = pattern, Priority = priority, ProviderConnectionId = authority.Id,
             RepositoryProviderId = authority.RepositoryProviderId, RepositoryOwner = authority.RepositoryOwner,
             RepositoryName = authority.RepositoryName, TargetBranch = "main", WorkflowIdentity = ".github/workflows/healing.yml",
+            WorkflowReference = "refs/tags/elsa-healing-v1",
             WorkflowRevision = new string('b', 40), PathPolicyId = Guid.NewGuid(), EvidencePolicyId = Guid.NewGuid(),
             MergePolicyId = Guid.NewGuid(), Status = SourceOwnershipBindingStatus.Draft, CreatedAt = _now, UpdatedAt = _now
         };

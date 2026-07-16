@@ -138,28 +138,28 @@
 
 ### Tests for User Story 3
 
-- [ ] T063 [P] [US3] Add failing evidence minimization/elevation and attempt-cap tests in `tests/Elsa.Platform.Healing.Core.Tests/Repairs/RepairOrchestrationTests.cs`
-- [ ] T064 [P] [US3] Add failing GitHub App token narrowing, issue projection, workflow dispatch, and idempotency tests in `tests/Elsa.Platform.Healing.GitHub.Tests/GitHubRepairProviderTests.cs`
-- [ ] T065 [P] [US3] Add failing GitHub OIDC issuer/audience/claim/nonce/replay tests in `tests/Elsa.Platform.Healing.GitHub.Tests/GitHubWorkloadIdentityValidatorTests.cs`
-- [ ] T066 [P] [US3] Add failing patch traversal/binary/symlink/submodule/stale-SHA/forbidden-path tests in `tests/Elsa.Platform.Healing.GitHub.Tests/TrustedPatchPublisherTests.cs`
-- [ ] T067 [P] [US3] Add failing bounded repair-gateway request/result and credential-isolation tests in `tests/Elsa.Platform.Healing.Agent.Tests/RepairAgentGatewayTests.cs`
-- [ ] T068 [P] [US3] Add failing workload evidence/heartbeat/result and webhook API tests in `tests/Elsa.Platform.Api.Tests/Healing/HealingRepairWorkflowApiTests.cs`
-- [ ] T069 [P] [US3] Add failing repair-attempt/PR UI tests in `src/Elsa.Platform.Console/src/features/healing/HealingRepairPanel.test.tsx`
+- [x] T063 [P] [US3] Add failing evidence minimization/elevation and attempt-cap tests in `tests/Elsa.Platform.Healing.Core.Tests/Repairs/RepairOrchestrationTests.cs`
+- [x] T064 [P] [US3] Add failing GitHub App token narrowing, issue projection, workflow dispatch, and idempotency tests in `tests/Elsa.Platform.Healing.GitHub.Tests/GitHubRepairProviderTests.cs`
+- [x] T065 [P] [US3] Add failing GitHub OIDC issuer/audience/claim/nonce/replay tests in `tests/Elsa.Platform.Healing.GitHub.Tests/GitHubWorkloadIdentityValidatorTests.cs`
+- [x] T066 [P] [US3] Add failing patch traversal/binary/symlink/submodule/stale-SHA/forbidden-path tests in `tests/Elsa.Platform.Healing.GitHub.Tests/TrustedPatchPublisherTests.cs`
+- [x] T067 [P] [US3] Add failing bounded repair-gateway request/result and credential-isolation tests in `tests/Elsa.Platform.Healing.Agent.Tests/RepairAgentGatewayTests.cs`
+- [x] T068 [P] [US3] Add failing workload evidence/heartbeat/result and webhook API tests in `tests/Elsa.Platform.Api.Tests/Healing/HealingRepairWorkflowApiTests.cs`
+- [x] T069 [P] [US3] Add failing repair-attempt/PR UI tests in `src/Elsa.Platform.Console/src/features/healing/HealingRepairPanel.test.tsx`
 
 ### Implementation for User Story 3
 
-- [ ] T070 [P] [US3] Implement evidence bundle minimization, immutable tiers, and audited elevation in `src/Elsa.Platform.Healing.Core/Repairs/HealingEvidenceService.cs`
-- [ ] T071 [P] [US3] Implement bounded provider-neutral repair request/result gateway in `src/Elsa.Platform.Healing.Agent/RepairAgentGateway.cs`
-- [ ] T072 [US3] Implement attempt creation, two-attempt cap, leases, reproduction tiers, and already-fixed detection in `src/Elsa.Platform.Healing.Core/Repairs/RepairOrchestrationService.cs`
-- [ ] T073 [P] [US3] Implement GitHub App JWT and narrowed installation-token provider in `src/Elsa.Platform.Healing.GitHub/GitHubAppTokenProvider.cs`
-- [ ] T074 [P] [US3] Implement machine-owned issue projection and approved workflow dispatch in `src/Elsa.Platform.Healing.GitHub/GitHubRepairWorkProvider.cs`
-- [ ] T075 [P] [US3] Implement GitHub Actions OIDC validation and incident capability exchange in `src/Elsa.Platform.Healing.GitHub/GitHubWorkloadIdentityValidator.cs`
-- [ ] T076 [P] [US3] Implement HMAC webhook verification, delivery replay protection, and allowlisting in `src/Elsa.Platform.Healing.GitHub/GitHubWebhookVerifier.cs`
-- [ ] T077 [US3] Implement unified-diff parsing, deterministic publication policy, and trusted branch/PR publication in `src/Elsa.Platform.Healing.GitHub/TrustedGitHubPatchPublisher.cs`
-- [ ] T078 [US3] Implement leased provider-operation dispatch and retry outcomes in `src/Elsa.Platform.Healing.Core/Providers/ProviderOperationService.cs`
-- [ ] T079 [US3] Map OIDC exchange, evidence, heartbeat, result, and verified webhook routes in `src/Elsa.Platform.Api/Workspace/Healing/HealingRepairWorkflowEndpoints.cs`
-- [ ] T080 [US3] Implement repair attempt, evidence tier, and PR presentation in `src/Elsa.Platform.Console/src/features/healing/HealingRepairPanel.tsx`
-- [ ] T081 [US3] Add a least-privilege reusable repository workflow template in `templates/healing/github/elsa-healing-repair.yml`
+- [x] T070 [P] [US3] Implement evidence bundle minimization, immutable tiers, and audited elevation in `src/Elsa.Platform.Healing.Core/Repairs/HealingEvidenceService.cs`
+- [x] T071 [P] [US3] Implement bounded provider-neutral repair request/result gateway in `src/Elsa.Platform.Healing.Agent/RepairAgentGateway.cs`
+- [x] T072 [US3] Implement attempt creation, two-attempt cap, leases, reproduction tiers, and already-fixed detection in `src/Elsa.Platform.Healing.Core/Repairs/RepairOrchestrationService.cs`
+- [x] T073 [P] [US3] Implement GitHub App JWT and narrowed installation-token provider in `src/Elsa.Platform.Healing.GitHub/GitHubAppTokenProvider.cs`
+- [x] T074 [P] [US3] Implement machine-owned issue projection and approved workflow dispatch in `src/Elsa.Platform.Healing.GitHub/GitHubRepairWorkProvider.cs`
+- [x] T075 [P] [US3] Implement GitHub Actions OIDC validation and incident capability exchange in `src/Elsa.Platform.Healing.GitHub/GitHubWorkloadIdentityValidator.cs`
+- [x] T076 [P] [US3] Implement HMAC webhook verification, delivery replay protection, and allowlisting in `src/Elsa.Platform.Healing.GitHub/GitHubWebhookVerifier.cs`
+- [x] T077 [US3] Implement unified-diff parsing, deterministic publication policy, and trusted branch/PR publication in `src/Elsa.Platform.Healing.GitHub/TrustedGitHubPatchPublisher.cs`
+- [x] T078 [US3] Implement leased provider-operation dispatch and retry outcomes in `src/Elsa.Platform.Healing.Core/Providers/ProviderOperationService.cs`
+- [x] T079 [US3] Map OIDC exchange, evidence, heartbeat, result, and verified webhook routes in `src/Elsa.Platform.Api/Workspace/Healing/HealingRepairWorkflowEndpoints.cs`
+- [x] T080 [US3] Implement repair attempt, evidence tier, and PR presentation in `src/Elsa.Platform.Console/src/features/healing/HealingRepairPanel.tsx`
+- [x] T081 [US3] Add a least-privilege reusable repository workflow template in `templates/healing/github/elsa-healing-repair.yml`
 
 **Checkpoint**: User Story 3 passes reproduced, inferred, revision-unverified, insufficient-confidence, already-fixed, provider-retry, and malicious-patch scenarios with no agent access to Git credentials.
 

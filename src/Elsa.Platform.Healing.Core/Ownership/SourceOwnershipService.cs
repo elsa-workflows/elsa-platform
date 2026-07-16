@@ -401,6 +401,7 @@ public sealed class SourceOwnershipService(
         binding.ProviderConnectionId != Guid.Empty && !string.IsNullOrWhiteSpace(binding.RepositoryProviderId) &&
         !string.IsNullOrWhiteSpace(binding.RepositoryOwner) && !string.IsNullOrWhiteSpace(binding.RepositoryName) &&
         !string.IsNullOrWhiteSpace(binding.TargetBranch) && !string.IsNullOrWhiteSpace(binding.WorkflowIdentity) &&
+        IsCanonicalWorkflowReference(binding.WorkflowReference) &&
         !string.IsNullOrWhiteSpace(binding.WorkflowRevision) && binding.PathPolicyId != Guid.Empty &&
         binding.EvidencePolicyId != Guid.Empty && binding.MergePolicyId != Guid.Empty &&
         (binding.Status is SourceOwnershipBindingStatus.Draft or SourceOwnershipBindingStatus.Suspended ||
@@ -412,6 +413,10 @@ public sealed class SourceOwnershipService(
         string.Equals(provider.RepositoryOwner, binding.RepositoryOwner, StringComparison.OrdinalIgnoreCase) &&
         string.Equals(provider.RepositoryName, binding.RepositoryName, StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsCanonicalWorkflowReference(string value) =>
+        value.StartsWith("refs/heads/", StringComparison.Ordinal) ||
+        value.StartsWith("refs/tags/", StringComparison.Ordinal);
+
     public static bool HasSameAuthority(SourceOwnershipBinding left, SourceOwnershipBinding right) =>
         string.Equals(AuthorityKey(left), AuthorityKey(right), StringComparison.Ordinal);
 
@@ -420,6 +425,7 @@ public sealed class SourceOwnershipService(
         binding.RepositoryProviderId,
         binding.TargetBranch,
         binding.WorkflowIdentity,
+        binding.WorkflowReference,
         binding.WorkflowRevision,
         binding.PathPolicyId.ToString("N"),
         binding.EvidencePolicyId.ToString("N"),

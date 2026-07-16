@@ -30,7 +30,8 @@ public sealed record CreateHealingAuthorityProfile(
     IReadOnlyList<string>? RequiredChecks,
     string? IndependentVerifier,
     IReadOnlyList<string>? ForbiddenChangeCategories,
-    bool RequireRollbackOrStopCapability);
+    bool RequireRollbackOrStopCapability,
+    Guid? WebhookSecretCredentialReferenceId = null);
 
 public sealed record HealingAuthorityProfile(
     ProviderConnection ProviderConnection,
@@ -92,6 +93,9 @@ public sealed class HealingAdministrationService(
             InstallationId = request.InstallationId!.Trim(), RepositoryProviderId = $"pending-{providerId:N}",
             RepositoryOwner = request.RepositoryOwner!.Trim(), RepositoryName = request.RepositoryName!.Trim(),
             CredentialReference = $"credential://{request.CredentialReferenceId:D}", Status = ProviderConnectionStatus.PendingValidation,
+            WebhookSecretReference = request.WebhookSecretCredentialReferenceId is { } webhookReferenceId
+                ? $"credential://{webhookReferenceId:D}"
+                : null,
             CreatedAt = now, UpdatedAt = now
         };
         var pathPolicy = new PathPolicy
@@ -267,6 +271,8 @@ public sealed class HealingAdministrationService(
         !string.IsNullOrWhiteSpace(request.RepositoryOwner) && SafeIdentifier.IsMatch(request.RepositoryOwner.Trim()) &&
         !string.IsNullOrWhiteSpace(request.RepositoryName) && SafeIdentifier.IsMatch(request.RepositoryName.Trim()) &&
         request.CredentialReferenceId != Guid.Empty &&
+        (request.WebhookSecretCredentialReferenceId is null ||
+         request.WebhookSecretCredentialReferenceId != Guid.Empty && request.WebhookSecretCredentialReferenceId != request.CredentialReferenceId) &&
         request.AllowedRoots is { Count: > 0 and <= 32 } && request.AllowedRoots.All(IsSafePath) &&
         request.ForbiddenRoots is { Count: <= 64 } && request.ForbiddenRoots.All(IsSafePath) &&
         request.MaxFiles is > 0 and <= 100 && request.MaxChangedLines is > 0 and <= 10_000 &&

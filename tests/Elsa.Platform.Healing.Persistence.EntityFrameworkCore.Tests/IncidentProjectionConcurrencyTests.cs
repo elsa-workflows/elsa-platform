@@ -729,6 +729,7 @@ public sealed class IncidentProjectionConcurrencyTests
             RepositoryName = "checkout",
             TargetBranch = "main",
             WorkflowIdentity = ".github/workflows/heal.yml",
+            WorkflowReference = "refs/tags/elsa-healing-v1",
             WorkflowRevision = "abc123",
             PathPolicyId = pathPolicyId,
             EvidencePolicyId = evidencePolicyId,

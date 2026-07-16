@@ -1,5 +1,10 @@
+using System.Security.Cryptography;
+using System.Text;
 using Elsa.Platform.Healing.Core;
+using Elsa.Platform.Healing.Core.Operations;
 using Elsa.Platform.Healing.Core.Ownership;
+using Elsa.Platform.Healing.Core.Providers;
+using Elsa.Platform.Healing.Core.Repairs;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using ComponentManifestModel = Elsa.Platform.Healing.Core.ComponentManifest;
@@ -159,6 +164,7 @@ public sealed class HealingStoreTests
             SelectorKind = SourceSelectorKind.Package, SelectorPattern = "Acme.*", ProviderConnectionId = provider.Id,
             RepositoryProviderId = provider.RepositoryProviderId, RepositoryOwner = provider.RepositoryOwner,
             RepositoryName = provider.RepositoryName, TargetBranch = "main", WorkflowIdentity = "healing.yml",
+            WorkflowReference = "refs/tags/elsa-healing-v1",
             WorkflowRevision = "abcdef1", PathPolicyId = path.Id, EvidencePolicyId = evidence.Id, MergePolicyId = merge.Id,
             Status = SourceOwnershipBindingStatus.Draft
         };
@@ -272,6 +278,161 @@ public sealed class HealingStoreTests
         accepted.IsReplay.Should().BeFalse();
         replay.IsReplay.Should().BeTrue();
         staleCompletion.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Provider_operation_idempotency_is_scoped_by_operation_kind()
+    {
+        await using var fixture = await HealingPersistenceFixture.CreateAsync();
+        var store = new HealingStore(fixture.Db);
+        var now = DateTimeOffset.Parse("2026-07-16T10:00:00Z");
+        var dispatch = CreateProviderOperation("shared-key", "dispatch-payload", now);
+        var publish = CreateProviderOperation("shared-key", "publish-payload", now);
+        publish.Kind = ProviderOperationKind.PublishPullRequest;
+        fixture.Db.ProviderConnections.Add(new ProviderConnection
+        {
+            Id = dispatch.ProviderConnectionId,
+            WorkspaceId = dispatch.WorkspaceId,
+            Provider = "GitHub",
+            InstallationId = "installation-1",
+            RepositoryProviderId = "repository-1",
+            RepositoryOwner = "acme",
+            RepositoryName = "workflow-app",
+            CredentialReference = "secret://github-app",
+            Status = ProviderConnectionStatus.Active,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await fixture.Db.SaveChangesAsync();
+
+        var dispatchResult = await store.AppendProviderOperationAsync(dispatch);
+        var publishResult = await store.AppendProviderOperationAsync(publish);
+
+        dispatchResult.IsReplay.Should().BeFalse();
+        publishResult.IsReplay.Should().BeFalse();
+        (await fixture.Db.ProviderOperations.CountAsync()).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Provider_operation_port_retries_durably_and_rejects_a_lost_lease()
+    {
+        await using var fixture = await HealingPersistenceFixture.CreateAsync();
+        var concreteStore = new HealingStore(fixture.Db);
+        IProviderOperationStore store = concreteStore;
+        var now = DateTimeOffset.Parse("2026-07-16T10:00:00Z");
+        var operation = CreateProviderOperation("dispatch-port-1", "payload-a", now);
+        fixture.Db.ProviderConnections.Add(new ProviderConnection
+        {
+            Id = operation.ProviderConnectionId,
+            WorkspaceId = operation.WorkspaceId,
+            Provider = "github",
+            InstallationId = "installation-1",
+            RepositoryProviderId = "repository-1",
+            RepositoryOwner = "acme",
+            RepositoryName = "workflow-app",
+            CredentialReference = "secret://github-app",
+            Status = ProviderConnectionStatus.Active,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await fixture.Db.SaveChangesAsync();
+        await store.AppendAsync(operation);
+        var lease = await store.TryLeaseNextAsync("provider-worker", now, TimeSpan.FromMinutes(5));
+        lease.Should().NotBeNull();
+        var claimed = lease!;
+
+        await store.FinishAsync(
+            claimed,
+            HealingOperationOutcome.Retry("github-rate-limited"),
+            now.AddMinutes(1),
+            now.AddMinutes(2));
+        var pending = await fixture.Db.ProviderOperations.AsNoTracking().SingleAsync(x => x.Id == operation.Id);
+        var lostLease = () => store.FinishAsync(
+            claimed,
+            HealingOperationOutcome.Completed("late-completion"),
+            now.AddMinutes(1),
+            null).AsTask();
+        var retryLease = await store.TryLeaseNextAsync("provider-worker", now.AddMinutes(2), TimeSpan.FromMinutes(5));
+
+        pending.Status.Should().Be(ProviderOperationStatus.Pending);
+        pending.NextAttemptAt.Should().Be(now.AddMinutes(2));
+        retryLease.Should().NotBeNull();
+        await lostLease.Should().ThrowAsync<DbUpdateConcurrencyException>();
+    }
+
+    [Fact]
+    public async Task Repair_attempt_cap_and_lease_predicates_are_enforced_atomically()
+    {
+        await using var fixture = await HealingPersistenceFixture.CreateAsync();
+        var workspaceId = Guid.NewGuid();
+        var applicationId = Guid.NewGuid();
+        var now = DateTimeOffset.Parse("2026-07-16T10:00:00Z");
+        var incident = CreateIncident(workspaceId, applicationId);
+        var episode = CreateEpisode(workspaceId, applicationId, incident.Id);
+        var provider = new ProviderConnection
+        {
+            Id = Guid.NewGuid(), WorkspaceId = workspaceId, Provider = "github", InstallationId = "installation",
+            RepositoryProviderId = "repo", RepositoryOwner = "acme", RepositoryName = "workflows",
+            CredentialReference = "secret-ref", Status = ProviderConnectionStatus.Active
+        };
+        var path = CreatePolicy<PathPolicy>(workspaceId, applicationId, "path");
+        var evidencePolicy = CreatePolicy<EvidencePolicy>(workspaceId, applicationId, "evidence");
+        var merge = CreatePolicy<MergePolicy>(workspaceId, applicationId, "merge");
+        var binding = new SourceOwnershipBinding
+        {
+            Id = Guid.NewGuid(), WorkspaceId = workspaceId, ApplicationId = applicationId, Name = "binding",
+            SelectorKind = SourceSelectorKind.Package, SelectorPattern = "Acme.*", ProviderConnectionId = provider.Id,
+            RepositoryProviderId = provider.RepositoryProviderId, RepositoryOwner = provider.RepositoryOwner,
+            RepositoryName = provider.RepositoryName, TargetBranch = "main", WorkflowIdentity = "healing.yml",
+            WorkflowReference = "refs/tags/elsa-healing-v1",
+            WorkflowRevision = "abcdef1", PathPolicyId = path.Id, EvidencePolicyId = evidencePolicy.Id,
+            MergePolicyId = merge.Id, Status = SourceOwnershipBindingStatus.Active
+        };
+        var evidence = new EvidenceBundle
+        {
+            Id = Guid.NewGuid(), WorkspaceId = workspaceId, ApplicationId = applicationId, IncidentId = incident.Id,
+            Tier = EvidenceTier.DefaultRedacted, CanonicalJson = "{}", Digest = new string('a', 64),
+            ProvenanceJson = "{}", OmissionsJson = "[]", CreatedAt = now, ExpiresAt = now.AddHours(1)
+        };
+        fixture.Db.AddRange(incident, episode, provider, path, evidencePolicy, merge, binding, evidence);
+        await fixture.Db.SaveChangesAsync();
+        IRepairOrchestrationStore store = new HealingStore(fixture.Db);
+        RepairAttempt NewAttempt() => new()
+        {
+            Id = Guid.NewGuid(), WorkspaceId = workspaceId, ApplicationId = applicationId,
+            IncidentId = incident.Id, EpisodeId = episode.Id, BindingId = binding.Id,
+            TargetRevision = "abcdef1", Status = RepairAttemptStatus.Queued, EvidenceBundleId = evidence.Id,
+            RepairClassification = RepairClassification.InsufficientConfidence,
+            NonceHash = Convert.ToHexStringLower(SHA256.HashData(Guid.NewGuid().ToByteArray())),
+            BudgetJson = "{}", UsageJson = "{}"
+        };
+
+        var first = await store.TryCreateAttemptAsync(NewAttempt(), 2);
+        var tokenHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("lease-token")));
+        var leased = await store.TryAcquireLeaseAsync(
+            workspaceId, first.Attempt!.Id, "workflow-1", tokenHash, now, now.AddMinutes(5));
+        var wrongHeartbeat = await store.TryHeartbeatLeaseAsync(
+            workspaceId, first.Attempt.Id, new string('c', 64), now.AddMinutes(1), now.AddMinutes(6));
+        var recorded = await store.TryRecordReproductionAsync(
+            workspaceId, first.Attempt.Id, tokenHash, RepairClassification.Reproduced,
+            "{\"reproduced\":true}", now.AddMinutes(1));
+        await fixture.Db.RepairAttempts.Where(x => x.Id == first.Attempt.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, RepairAttemptStatus.Failed));
+        var second = await store.TryCreateAttemptAsync(NewAttempt(), 2);
+        await fixture.Db.RepairAttempts.Where(x => x.Id == second.Attempt!.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, RepairAttemptStatus.Failed));
+        var capped = await store.TryCreateAttemptAsync(NewAttempt(), 2);
+
+        first.Outcome.Should().Be(RepairAttemptStoreOutcome.Created);
+        first.Attempt.AttemptNumber.Should().Be(1);
+        second.Outcome.Should().Be(RepairAttemptStoreOutcome.Created);
+        second.Attempt!.AttemptNumber.Should().Be(2);
+        capped.Outcome.Should().Be(RepairAttemptStoreOutcome.AttemptLimitReached);
+        leased.Should().BeTrue();
+        wrongHeartbeat.Should().BeFalse();
+        recorded.Should().BeTrue();
+        (await store.FindAttemptAsync(workspaceId, first.Attempt.Id))!.RepairClassification
+            .Should().Be(RepairClassification.Reproduced);
     }
 
     [Fact]
@@ -567,7 +728,7 @@ public sealed class HealingStoreTests
         SelectorKind = source.SelectorKind, SelectorPattern = source.SelectorPattern, Priority = source.Priority,
         ProviderConnectionId = source.ProviderConnectionId, RepositoryProviderId = source.RepositoryProviderId,
         RepositoryOwner = source.RepositoryOwner, RepositoryName = source.RepositoryName, TargetBranch = source.TargetBranch,
-        WorkflowIdentity = source.WorkflowIdentity, WorkflowRevision = source.WorkflowRevision,
+        WorkflowIdentity = source.WorkflowIdentity, WorkflowReference = source.WorkflowReference, WorkflowRevision = source.WorkflowRevision,
         PathPolicyId = source.PathPolicyId, EvidencePolicyId = source.EvidencePolicyId, MergePolicyId = source.MergePolicyId,
         Status = source.Status, ApprovedBy = source.ApprovedBy, ApprovedAt = source.ApprovedAt,
         CreatedAt = source.CreatedAt, UpdatedAt = source.UpdatedAt, Version = source.Version.ToArray()

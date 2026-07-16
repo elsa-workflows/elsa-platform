@@ -1,10 +1,13 @@
 using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.Healing.Abstractions;
+using Elsa.Platform.Healing.Agent;
 using Elsa.Platform.Healing.Core.Configuration;
 using Elsa.Platform.Healing.Core.Incidents;
 using Elsa.Platform.Healing.Core.Manifests;
 using Elsa.Platform.Healing.Core.Ownership;
 using Elsa.Platform.Healing.Core.OpenTelemetry;
+using Elsa.Platform.Healing.Core.Providers;
+using Elsa.Platform.Healing.Core.Repairs;
 using Elsa.Platform.Healing.Core.Security;
 using Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
 using Elsa.Platform.Healing.GitHub;
@@ -37,6 +40,23 @@ public static class HealingServiceCollectionExtensions
         services.AddOptions<HealingOptions>()
             .Bind(configuration.GetSection(HealingOptions.SectionName))
             .ValidateOnStart();
+        services.AddOptions<HealingGitHubOptions>()
+            .Bind(configuration.GetSection(HealingGitHubOptions.SectionName))
+            .Validate(options => !string.IsNullOrWhiteSpace(options.WorkloadAudience), "A Healing GitHub workload audience is required.")
+            .Validate(options => options.CapabilityLifetime > TimeSpan.Zero &&
+                                 options.CapabilityLifetime <= TimeSpan.FromHours(1) &&
+                                 options.AttemptLeaseLifetime > TimeSpan.Zero &&
+                                 options.AttemptLeaseLifetime <= RepairOrchestrationService.MaximumLeaseDuration &&
+                                 options.ProposalLifetime > options.AttemptLeaseLifetime &&
+                                 options.ProposalLifetime <= TimeSpan.FromHours(24),
+                "Healing GitHub capability, lease, and proposal lifetimes must be positive and bounded.")
+            .ValidateOnStart();
+        services.AddOptions<CopilotRepairProposalOptions>()
+            .Bind(configuration.GetSection("Healing:ManagedInference:Copilot"))
+            .Validate(options => !string.IsNullOrWhiteSpace(options.Model) &&
+                                 options.MaximumTurnSeconds is > 0 and <= 3_600,
+                "Managed repair inference configuration is invalid.")
+            .ValidateOnStart();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<HealingOptions>, HealingOptionsValidator>());
         services.TryAddEnumerable(
@@ -56,6 +76,14 @@ public static class HealingServiceCollectionExtensions
             serviceProvider.GetRequiredService<HealingStore>());
         services.TryAddScoped<IHealingTelemetrySourceStore>(serviceProvider =>
             serviceProvider.GetRequiredService<HealingStore>());
+        services.TryAddScoped<IProviderOperationStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<HealingStore>());
+        services.TryAddScoped<IHealingEvidenceStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<HealingStore>());
+        services.TryAddScoped<IRepairOrchestrationStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<HealingStore>());
+        services.TryAddScoped<IHealingEvidenceSource, HealingEvidenceSource>();
+        services.TryAddScoped<IHealingEvidenceElevationAuthorizer, DenyHealingEvidenceElevationAuthorizer>();
         services.TryAddScoped<HealingAuditService>();
         services.TryAddScoped<HealingConfigurationService>();
         services.TryAddScoped<ComponentManifestService>();
@@ -64,6 +92,15 @@ public static class HealingServiceCollectionExtensions
         services.TryAddScoped<ComponentAttributionService>();
         services.TryAddScoped<HealingIncidentService>();
         services.TryAddScoped<HealingSignalInboxWorker>();
+        services.TryAddScoped<HealingEvidenceService>();
+        services.TryAddScoped<RepairOrchestrationService>();
+        services.TryAddScoped<HealingRepairCoordinator>();
+        services.TryAddScoped<HealingRepairAuthorityService>();
+        services.TryAddScoped(serviceProvider => new ProviderOperationService(
+            serviceProvider.GetRequiredService<IProviderOperationStore>(),
+            serviceProvider.GetServices<IProviderOperationHandler>(),
+            serviceProvider.GetRequiredService<IOptions<HealingOptions>>().Value,
+            $"provider:{Environment.MachineName}:{Guid.NewGuid():N}"));
         services.TryAddSingleton<HealingSignalNormalizer>();
         services.TryAddSingleton<HealingSignalClassifier>();
         services.TryAddSingleton<HealingFingerprintService>();
@@ -79,8 +116,43 @@ public static class HealingServiceCollectionExtensions
         services.TryAddScoped<HealingAdministrationService>();
         services.TryAddScoped<IHealingProviderCredentialResolver, WorkspaceHealingProviderCredentialResolver>();
         services.AddHttpClient<GitHubAppTokenProvider>(client => client.BaseAddress = new Uri("https://api.github.com/"));
+        services.AddHttpClient<IRepairWorkProvider, GitHubRepairWorkProvider>(client =>
+            client.BaseAddress = new Uri("https://api.github.com/"));
+        services.AddHttpClient<ITrustedGitHubRepositoryPublisher, GitHubHttpTrustedRepositoryPublisher>(client =>
+            client.BaseAddress = new Uri("https://api.github.com/"));
+        services.AddHttpClient<GitHubOidcConfigurationSigningKeyProvider>();
         services.AddHttpClient<IProviderConnectionValidator, GitHubProviderConnectionValidator>(
             client => client.BaseAddress = new Uri("https://api.github.com/"));
+        services.TryAddScoped<IGitHubRepositoryAuthorizationResolver, PlatformGitHubRepositoryAuthorizationResolver>();
+        services.TryAddScoped<IGitHubProviderOperationLedger, PlatformGitHubProviderOperationLedger>();
+        services.TryAddScoped<PlatformGitHubReplayStore>();
+        services.TryAddScoped<IGitHubWorkloadReplayStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<PlatformGitHubReplayStore>());
+        services.TryAddScoped<IGitHubWebhookReplayStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<PlatformGitHubReplayStore>());
+        services.TryAddScoped<IGitHubOidcSigningKeyProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<GitHubOidcConfigurationSigningKeyProvider>());
+        services.TryAddScoped(serviceProvider => new GitHubWorkloadIdentityValidator(
+            serviceProvider.GetRequiredService<IOptions<HealingGitHubOptions>>().Value.WorkloadAudience,
+            serviceProvider.GetRequiredService<IGitHubOidcSigningKeyProvider>(),
+            serviceProvider.GetRequiredService<IGitHubWorkloadReplayStore>(),
+            serviceProvider.GetRequiredService<TimeProvider>()));
+        services.TryAddScoped(serviceProvider => new GitHubWebhookVerifier(
+            serviceProvider.GetRequiredService<IGitHubWebhookReplayStore>(),
+            serviceProvider.GetRequiredService<TimeProvider>()));
+        services.TryAddScoped<ITrustedGitHubPublicationContextResolver, PlatformTrustedGitHubPublicationContextResolver>();
+        services.TryAddScoped<ITrustedPatchPublisher, TrustedGitHubPatchPublisher>();
+        services.TryAddScoped<IRepairTargetInspector, PlatformGitHubRepairTargetInspector>();
+        services.TryAddScoped<HealingGitHubOptions>(serviceProvider =>
+            serviceProvider.GetRequiredService<IOptions<HealingGitHubOptions>>().Value);
+        services.TryAddScoped<IHealingWorkloadRequestAuthorizer, PlatformHealingWorkloadRequestAuthorizer>();
+        services.TryAddScoped<IManagedRepairCopilotRuntime, CopilotRepairRuntime>();
+        services.TryAddScoped<IRepairProposalProvider, CopilotRepairProposalProvider>();
+        services.TryAddScoped<IHealingWorkloadApi, PlatformHealingWorkloadApi>();
+        services.TryAddScoped<IHealingVerifiedWebhookHandler, PlatformHealingVerifiedWebhookHandler>();
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IProviderOperationHandler, GitHubUpsertWorkItemOperationHandler>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IProviderOperationHandler, GitHubDispatchWorkflowOperationHandler>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IProviderOperationHandler, GitHubPublishPullRequestOperationHandler>());
         services.TryAddSingleton(serviceProvider =>
             new HealingKillSwitch(serviceProvider.GetRequiredService<IOptionsMonitor<HealingOptions>>()));
 
@@ -150,4 +222,12 @@ internal sealed class HealingWorkspacePermissionContribution : IWorkspacePermiss
 {
     public IReadOnlySet<string> All => HealingPermissions.All;
     public IReadOnlySet<string> OwnerDefaults => HealingPermissions.All;
+}
+
+internal sealed class DenyHealingEvidenceElevationAuthorizer : IHealingEvidenceElevationAuthorizer
+{
+    public ValueTask<EvidenceElevationAuthorization> AuthorizeAsync(
+        EvidenceElevationAuthorizationRequest request,
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(EvidenceElevationAuthorization.Denied("evidence-elevation-requires-explicit-authorization"));
 }

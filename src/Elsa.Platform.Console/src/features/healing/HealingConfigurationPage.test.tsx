@@ -165,6 +165,7 @@ describe("Healing configuration", () => {
     await userEvent.selectOptions(screen.getByLabelText("Evidence policy"), "evidence-policy-1");
     await userEvent.selectOptions(screen.getByLabelText("Merge policy"), "merge-policy-1");
     await userEvent.type(screen.getByLabelText("Workflow identity"), ".github/workflows/healing.yml");
+    await userEvent.type(screen.getByLabelText("Workflow branch or tag"), "refs/tags/elsa-healing-v1");
     await userEvent.type(screen.getByLabelText("Workflow revision"), "refs/heads/main");
     await userEvent.click(screen.getByRole("button", { name: "Create binding draft" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/source-ownership-bindings"), expect.objectContaining({ method: "POST" })));
@@ -181,6 +182,7 @@ describe("Healing configuration", () => {
     await userEvent.type(screen.getByLabelText("GitHub repository owner"), "elsa-workflows");
     await userEvent.type(screen.getByLabelText("GitHub repository name"), "elsa-core");
     await userEvent.selectOptions(screen.getByLabelText("GitHub App credential"), "credential-1");
+    await userEvent.selectOptions(screen.getByLabelText("GitHub webhook HMAC credential"), "credential-2");
     await userEvent.click(screen.getByRole("checkbox", { name: "Allow automatic merge when all gates pass" }));
     await userEvent.click(screen.getByRole("button", { name: "Create pending connection and policies" }));
     expect(screen.getByRole("dialog", { name: "Enable automatic merge for this repair authority" })).toBeInTheDocument();
@@ -191,6 +193,7 @@ describe("Healing configuration", () => {
       repositoryOwner: "elsa-workflows",
       repositoryName: "elsa-core",
       credentialReferenceId: "credential-1",
+      webhookSecretCredentialReferenceId: "credential-2",
       requireReproduction: false,
       allowHighConfidenceInference: true,
       automaticMergeEnabled: true,
@@ -306,7 +309,10 @@ function renderPage(
     if (url.endsWith(`/applications/${applicationId}/source-ownership-bindings`))
       return json({ items: emptyComponents ? [] : bindingItems, permissions: options.permissions ?? ["healing.read", "healing.configure"], canApproveOwnership: options.canApproveOwnership ?? true });
     if (url.endsWith(`/api/workspaces/${workspaceId}/deployments/credential-references`))
-      return json({ items: [{ id: "credential-1", name: "Healing GitHub App", secretStoreName: "Local protected credentials", status: "Active" }] });
+      return json({ items: [
+        { id: "credential-1", name: "Healing GitHub App", secretStoreName: "Local protected credentials", status: "Active" },
+        { id: "credential-2", name: "Healing webhook HMAC", secretStoreName: "Local protected credentials", status: "Active" }
+      ] });
     return json({ title: "Not found" }, 404);
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -392,7 +398,8 @@ const bindingFixture = {
   selectorPattern: "Elsa.Acme.*",
   repository: "acme/claims",
   targetBranch: "main",
-  workflowIdentity: ".github/workflows/elsa-healing.yml@refs/heads/main",
+  workflowIdentity: ".github/workflows/elsa-healing.yml",
+  workflowReference: "refs/tags/elsa-healing-v1",
   status: "Active",
   version: "AQID"
 };

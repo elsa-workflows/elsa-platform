@@ -204,7 +204,7 @@ public sealed class ComponentAttributionService(
         new([], null, null, null, "observation-only", [reasonCode]);
 
     private static string AuthorityKey(SourceOwnershipBinding binding) =>
-        $"{binding.ProviderConnectionId:N}:{binding.RepositoryProviderId}:{binding.RepositoryOwner}:{binding.RepositoryName}:{binding.TargetBranch}:{binding.WorkflowIdentity}:{binding.WorkflowRevision}";
+        $"{binding.ProviderConnectionId:N}:{binding.RepositoryProviderId}:{binding.RepositoryOwner}:{binding.RepositoryName}:{binding.TargetBranch}:{binding.WorkflowIdentity}:{binding.WorkflowReference}:{binding.WorkflowRevision}";
 
     private sealed record EvidenceCandidate(
         ComponentManifestEntry Component,

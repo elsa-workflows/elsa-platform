@@ -382,6 +382,7 @@ export function HealingComponentsPage() {
               <LabeledInput label="GitHub repository owner" required value={authorityDraft.repositoryOwner} onChange={(repositoryOwner) => setAuthorityDraft({ ...authorityDraft, repositoryOwner })} />
               <LabeledInput label="GitHub repository name" required value={authorityDraft.repositoryName} onChange={(repositoryName) => setAuthorityDraft({ ...authorityDraft, repositoryName })} />
               <LabeledSelect label="GitHub App credential" required value={authorityDraft.credentialReferenceId} onChange={(credentialReferenceId) => setAuthorityDraft({ ...authorityDraft, credentialReferenceId })} options={(credentialReferences.data?.items ?? []).filter((item) => item.status === "Active").map((item) => ({ value: item.id, label: `${item.name} · ${item.secretStoreName}` }))} />
+              <LabeledSelect label="GitHub webhook HMAC credential" required value={authorityDraft.webhookSecretCredentialReferenceId ?? ""} onChange={(webhookSecretCredentialReferenceId) => setAuthorityDraft({ ...authorityDraft, webhookSecretCredentialReferenceId })} options={(credentialReferences.data?.items ?? []).filter((item) => item.status === "Active" && item.id !== authorityDraft.credentialReferenceId).map((item) => ({ value: item.id, label: `${item.name} · ${item.secretStoreName}` }))} />
               <LabeledInput label="Allowed source roots" required value={(authorityDraft.allowedRoots ?? []).join(", ")} onChange={(value) => setAuthorityDraft({ ...authorityDraft, allowedRoots: splitList(value) })} />
               <LabeledInput label="Forbidden source roots" value={(authorityDraft.forbiddenRoots ?? []).join(", ")} onChange={(value) => setAuthorityDraft({ ...authorityDraft, forbiddenRoots: splitList(value) })} />
               <LabeledInput label="Required checks" value={(authorityDraft.requiredChecks ?? []).join(", ")} onChange={(value) => setAuthorityDraft({ ...authorityDraft, requiredChecks: splitList(value) })} />
@@ -500,6 +501,7 @@ const emptyBindingDraft: ActivateSourceOwnershipBindingRequest = {
   repositoryName: "",
   targetBranch: "main",
   workflowIdentity: "",
+  workflowReference: "",
   workflowRevision: "",
   pathPolicyId: "",
   evidencePolicyId: "",
@@ -513,6 +515,7 @@ const emptyAuthorityDraft: CreateHealingAuthorityProfileRequest = {
   repositoryOwner: "",
   repositoryName: "",
   credentialReferenceId: "",
+  webhookSecretCredentialReferenceId: "",
   allowedRoots: ["src", "tests"],
   forbiddenRoots: [".github", ".azure", "eng", "scripts"],
   maxFiles: 20,
@@ -527,10 +530,11 @@ const emptyAuthorityDraft: CreateHealingAuthorityProfileRequest = {
   requireRollbackOrStopCapability: true
 };
 
-const bindingFields: ReadonlyArray<{ key: "name" | "targetBranch" | "workflowIdentity" | "workflowRevision" | "priority"; label: string }> = [
+const bindingFields: ReadonlyArray<{ key: "name" | "targetBranch" | "workflowIdentity" | "workflowReference" | "workflowRevision" | "priority"; label: string }> = [
   { key: "name", label: "Binding name" },
   { key: "targetBranch", label: "Target branch" },
   { key: "workflowIdentity", label: "Workflow identity" },
+  { key: "workflowReference", label: "Workflow branch or tag" },
   { key: "workflowRevision", label: "Workflow revision" },
   { key: "priority", label: "Priority" }
 ];

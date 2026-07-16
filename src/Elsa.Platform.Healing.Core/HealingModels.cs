@@ -36,7 +36,7 @@ public enum NeedsHumanReason { AttemptLimitReached, AmbiguousOwnership, Unauthor
 public enum IncidentEpisodeOutcome { Active, Healed, Failed, Superseded, Waived }
 public enum VerificationOutcome { PendingDeployment, Deployed, DeployedUnverified, Healed, FailedVerification, Superseded, Waived }
 public enum WorkItemProjectionStatus { Pending, Current, Stale, Failed, Deleted }
-public enum RepairAttemptStatus { Queued, Dispatched, Running, ResultReceived, Publishing, PullRequestOpen, Succeeded, Failed, Stopped, Expired }
+public enum RepairAttemptStatus { Queued, Dispatched, Running, ProposalReady, ResultReceived, Publishing, PullRequestOpen, Succeeded, Failed, Stopped, Expired }
 public enum RepairClassification { Reproduced, InferredHighConfidence, InsufficientConfidence, RevisionUnverified }
 public enum PullRequestMergeState { Open, MergeRequested, Merged, Closed }
 public enum PolicyKind { Path, Evidence, Merge }
@@ -260,6 +260,7 @@ public sealed class SourceOwnershipBinding
     public string RepositoryName { get; set; } = string.Empty;
     public string TargetBranch { get; set; } = string.Empty;
     public string WorkflowIdentity { get; set; } = string.Empty;
+    public string WorkflowReference { get; set; } = string.Empty;
     public string WorkflowRevision { get; set; } = string.Empty;
     public Guid PathPolicyId { get; set; }
     public Guid EvidencePolicyId { get; set; }
@@ -454,6 +455,28 @@ public sealed class RepairAttempt
     public byte[] Version { get; set; } = [];
 }
 
+public enum ManagedRepairProposalStatus { Ready, Finalized, Expired, Rejected }
+
+/// <summary>Immutable Platform-generated patch proposal. Repository runners may validate it but cannot replace it.</summary>
+public sealed class ManagedRepairProposal
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid ApplicationId { get; set; }
+    public Guid AttemptId { get; set; }
+    public string IdempotencyKey { get; set; } = string.Empty;
+    public string SourceContextDigest { get; set; } = string.Empty;
+    public string ProposalDigest { get; set; } = string.Empty;
+    public string ProposalJson { get; set; } = "{}";
+    public string FinalizationNonceHash { get; set; } = string.Empty;
+    public string ProtectedFinalizationNonce { get; set; } = string.Empty;
+    public ManagedRepairProposalStatus Status { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? FinalizedAt { get; set; }
+    public byte[] Version { get; set; } = [];
+}
+
 public sealed class EvidenceBundle
 {
     public Guid Id { get; set; }
@@ -493,6 +516,8 @@ public sealed class RepairResult
     public Guid WorkspaceId { get; set; }
     public Guid ApplicationId { get; set; }
     public Guid AttemptId { get; set; }
+    public Guid? ProposalId { get; set; }
+    public string? ProposalDigest { get; set; }
     public string IdempotencyKey { get; set; } = string.Empty;
     public string WorkflowRunId { get; set; } = string.Empty;
     public int WorkflowRunAttempt { get; set; }
@@ -502,6 +527,7 @@ public sealed class RepairResult
     public decimal Confidence { get; set; }
     public string UnifiedDiff { get; set; } = string.Empty;
     public string PatchDigest { get; set; } = string.Empty;
+    public string EnvelopeDigest { get; set; } = string.Empty;
     public string ChangedPathsJson { get; set; } = "[]";
     public string ReproductionJson { get; set; } = "{}";
     public string RegressionJson { get; set; } = "{}";
@@ -606,6 +632,7 @@ public sealed class ProviderConnection
     public string RepositoryOwner { get; set; } = string.Empty;
     public string RepositoryName { get; set; } = string.Empty;
     public string CredentialReference { get; set; } = string.Empty;
+    public string? WebhookSecretReference { get; set; }
     public ProviderConnectionStatus Status { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
@@ -631,8 +658,29 @@ public sealed class ProviderOperation
     public DateTimeOffset? LeaseExpiresAt { get; set; }
     public DateTimeOffset? NextAttemptAt { get; set; }
     public string? ProviderCorrelationId { get; set; }
+    public string? ResultJson { get; set; }
     public string? OutcomeCode { get; set; }
     public string? SafeError { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public byte[] Version { get; set; } = [];
+}
+
+/// <summary>
+/// Durable provider-side idempotency journal. This is deliberately separate from the leased provider outbox:
+/// a remote mutation may reserve a receipt while an outbox operation itself is already leased.
+/// </summary>
+public sealed class ProviderMutationJournalEntry
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid ProviderConnectionId { get; set; }
+    public ProviderOperationKind Kind { get; set; }
+    public string IdempotencyKey { get; set; } = string.Empty;
+    public string SafePayloadJson { get; set; } = "{}";
+    public string PayloadHash { get; set; } = string.Empty;
+    public bool Completed { get; set; }
+    public string? ResultJson { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public byte[] Version { get; set; } = [];
@@ -644,6 +692,9 @@ public sealed class WorkloadIdentityExchange
     public Guid WorkspaceId { get; set; }
     public Guid ApplicationId { get; set; }
     public Guid AttemptId { get; set; }
+    public Guid? ProposalId { get; set; }
+    public string Phase { get; set; } = string.Empty;
+    public string ScopesJson { get; set; } = "[]";
     public string Issuer { get; set; } = string.Empty;
     public string Audience { get; set; } = string.Empty;
     public string Subject { get; set; } = string.Empty;
@@ -665,6 +716,18 @@ public sealed class WorkloadIdentityExchange
     public string? CapabilityTokenHash { get; set; }
     public WorkloadIdentityExchangeStatus Status { get; set; }
     public byte[] Version { get; set; } = [];
+}
+
+public sealed class WorkloadHeartbeat
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid ApplicationId { get; set; }
+    public Guid AttemptId { get; set; }
+    public string IdempotencyKey { get; set; } = string.Empty;
+    public DateTimeOffset RequestedAt { get; set; }
+    public DateTimeOffset LeaseExpiresAt { get; set; }
+    public DateTimeOffset AcceptedAt { get; set; }
 }
 
 public sealed class ProviderWebhookDelivery

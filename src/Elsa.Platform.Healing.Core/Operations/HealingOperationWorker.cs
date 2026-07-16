@@ -173,7 +173,9 @@ public sealed class HealingOperationWorker<T> where T : class
             outcome = HealingOperationOutcome.Retry("operation-handler-failed", "The operation handler failed.");
         }
 
-        if (outcome.Disposition == HealingOperationDisposition.Retry && lease.AttemptCount >= lease.AttemptLimit)
+        if (outcome.Disposition == HealingOperationDisposition.Retry &&
+            outcome.OutcomeCode != "provider-operation-reservation-active" &&
+            lease.AttemptCount >= lease.AttemptLimit)
             outcome = HealingOperationOutcome.DeadLettered("attempt-limit-reached", "The operation exhausted its bounded attempt limit.");
 
         var finishedAt = _timeProvider.GetUtcNow();

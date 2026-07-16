@@ -24,6 +24,7 @@ public sealed class HealingDbContext(DbContextOptions<HealingDbContext> options)
     public DbSet<EnvironmentImpact> EnvironmentImpacts => Set<EnvironmentImpact>();
     public DbSet<RepairWorkItemProjection> RepairWorkItemProjections => Set<RepairWorkItemProjection>();
     public DbSet<RepairAttempt> RepairAttempts => Set<RepairAttempt>();
+    public DbSet<ManagedRepairProposal> ManagedRepairProposals => Set<ManagedRepairProposal>();
     public DbSet<EvidenceBundle> EvidenceBundles => Set<EvidenceBundle>();
     public DbSet<EvidenceAccessDecision> EvidenceAccessDecisions => Set<EvidenceAccessDecision>();
     public DbSet<RepairResult> RepairResults => Set<RepairResult>();
@@ -34,7 +35,9 @@ public sealed class HealingDbContext(DbContextOptions<HealingDbContext> options)
     public DbSet<PolicyEvaluation> PolicyEvaluations => Set<PolicyEvaluation>();
     public DbSet<ProviderConnection> ProviderConnections => Set<ProviderConnection>();
     public DbSet<ProviderOperation> ProviderOperations => Set<ProviderOperation>();
+    public DbSet<ProviderMutationJournalEntry> ProviderMutationJournalEntries => Set<ProviderMutationJournalEntry>();
     public DbSet<WorkloadIdentityExchange> WorkloadIdentityExchanges => Set<WorkloadIdentityExchange>();
+    public DbSet<WorkloadHeartbeat> WorkloadHeartbeats => Set<WorkloadHeartbeat>();
     public DbSet<ProviderWebhookDelivery> ProviderWebhookDeliveries => Set<ProviderWebhookDelivery>();
     public DbSet<HumanCommand> HumanCommands => Set<HumanCommand>();
     public DbSet<DeploymentObservation> DeploymentObservations => Set<DeploymentObservation>();
@@ -47,6 +50,7 @@ public sealed class HealingDbContext(DbContextOptions<HealingDbContext> options)
     public override int SaveChanges()
     {
         EnforceAppendOnlyAudit();
+        EnforceAppendOnlyEvidence();
         StampConcurrencyTokens();
         return base.SaveChanges();
     }
@@ -54,6 +58,7 @@ public sealed class HealingDbContext(DbContextOptions<HealingDbContext> options)
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         EnforceAppendOnlyAudit();
+        EnforceAppendOnlyEvidence();
         StampConcurrencyTokens();
         return base.SaveChangesAsync(cancellationToken);
     }
@@ -62,6 +67,15 @@ public sealed class HealingDbContext(DbContextOptions<HealingDbContext> options)
     {
         if (ChangeTracker.Entries<HealingAuditEvent>().Any(x => x.State is EntityState.Modified or EntityState.Deleted))
             throw new InvalidOperationException("Healing audit events are append-only and cannot be updated or deleted.");
+    }
+
+    private void EnforceAppendOnlyEvidence()
+    {
+        if (ChangeTracker.Entries<EvidenceBundle>().Any(x => x.State is EntityState.Modified or EntityState.Deleted) ||
+            ChangeTracker.Entries<EvidenceAccessDecision>().Any(x => x.State is EntityState.Modified or EntityState.Deleted))
+        {
+            throw new InvalidOperationException("Healing evidence bundles and access decisions are append-only.");
+        }
     }
 
     private void StampConcurrencyTokens()

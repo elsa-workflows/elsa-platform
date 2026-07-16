@@ -6,6 +6,7 @@ import { RequestStateView } from "@/components/states/RequestStateViews";
 import { Badge, EmptyState, Table } from "@/components/ui";
 import { getHealingIncident } from "@/features/healing/healingApi";
 import { humanize } from "@/features/healing/HealingIncidentsPage";
+import { HealingRepairPanel } from "@/features/healing/HealingRepairPanel";
 import type { HealingIncidentDetail } from "@/features/healing/healingModels";
 import { formatDateTime } from "@/lib/formatters";
 import { statusToneClass, type StatusTone } from "@/lib/status/statusBadges";
@@ -136,20 +137,22 @@ function AttributionTab({ incident }: { incident: HealingIncidentDetail }) {
 
 function RepairTab({ incident }: { incident: HealingIncidentDetail }) {
   const item = incident.workItem;
-  if (!item)
+  if (!item && incident.attempts.length === 0)
     return <EmptyState title="No repair work item" description={incident.repairable ? "The incident is eligible, but repair work has not been projected yet." : "Repair dispatch is blocked by the current attribution or policy state."} />;
-  const providerUrl = safeProviderUrl(item.url);
+  const providerUrl = safeProviderUrl(item?.url);
   return (
-    <Panel title={item.number ? `Provider work item #${item.number}` : "Provider work item"}>
-      <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-        <Detail label="Projection" value={humanize(item.projectionStatus)} />
-        <Detail label="Provider state" value={item.providerState ? humanize(item.providerState) : "Not reported"} />
-        <Detail label="Last projected" value={formatDateTime(item.lastProjectedAt)} />
-        <Detail label="Last observed" value={formatDateTime(item.lastObservedAt)} />
-      </dl>
-      {providerUrl ? <a className="mt-4 inline-block text-sm text-primary" href={providerUrl} target="_blank" rel="noreferrer">Open provider work item</a> : null}
-      <p className="mt-4 text-sm text-muted-foreground">Reproduction, agent result, checks, and merge eligibility are not present in this response. They must not be inferred from provider state.</p>
-    </Panel>
+    <div className="space-y-5">
+      {item ? <Panel title={item.number ? `Provider work item #${item.number}` : "Provider work item"}>
+        <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <Detail label="Projection" value={humanize(item.projectionStatus)} />
+          <Detail label="Provider state" value={item.providerState ? humanize(item.providerState) : "Not reported"} />
+          <Detail label="Last projected" value={formatDateTime(item.lastProjectedAt)} />
+          <Detail label="Last observed" value={formatDateTime(item.lastObservedAt)} />
+        </dl>
+        {providerUrl ? <a className="mt-4 inline-block text-sm text-primary" href={providerUrl} target="_blank" rel="noreferrer">Open provider work item</a> : null}
+      </Panel> : null}
+      <HealingRepairPanel attempts={incident.attempts} />
+    </div>
   );
 }
 

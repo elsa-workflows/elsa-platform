@@ -289,6 +289,7 @@ public sealed class HealingDbContextTests
         RepositoryName = "workflow-app",
         TargetBranch = "main",
         WorkflowIdentity = ".github/workflows/heal.yml",
+        WorkflowReference = "refs/tags/elsa-healing-v1",
         WorkflowRevision = "abc123",
         PathPolicyId = authority?.PathPolicyId ?? Guid.NewGuid(),
         EvidencePolicyId = authority?.EvidencePolicyId ?? Guid.NewGuid(),

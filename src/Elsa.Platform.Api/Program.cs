@@ -169,7 +169,9 @@ builder.Services.AddPlatformHealing(builder.Configuration, builder.Environment)
     .AddEndpointModule<PlatformManagedManifestAttestationEndpointModule>()
     .AddEndpointModule<HealingIntakeEndpointModule>()
     .AddEndpointModule<WorkspaceHealingIncidentEndpointModule>()
-    .AddHostedWorker<HealingSignalInboxHostedService>();
+    .AddEndpointModule<HealingRepairWorkflowEndpointModule>()
+    .AddHostedWorker<HealingSignalInboxHostedService>()
+    .AddHostedWorker<HealingProviderOperationHostedService>();
 builder.Services.AddCatalogDbContext(builder.Configuration);
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
 builder.Services.AddScoped<IPublicCatalogQueries, PublicCatalogQueries>();

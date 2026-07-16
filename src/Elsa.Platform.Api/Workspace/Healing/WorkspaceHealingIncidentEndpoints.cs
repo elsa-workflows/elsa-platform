@@ -147,6 +147,26 @@ public sealed class WorkspaceHealingIncidentEndpointModule : IHealingEndpointMod
             .OrderByDescending(x => x.LastObservedAt ?? x.LastProjectedAt)
             .ThenBy(x => x.Id)
             .FirstOrDefaultAsync(cancellationToken);
+        var attempts = episodeIds.Length == 0
+            ? []
+            : await dbContext.RepairAttempts.AsNoTracking()
+                .Where(x => x.WorkspaceId == workspaceId &&
+                            x.ApplicationId == incident.ApplicationId &&
+                            episodeIds.Contains(x.EpisodeId))
+                .OrderByDescending(x => x.AttemptNumber)
+                .ThenBy(x => x.Id)
+                .ToArrayAsync(cancellationToken);
+        var attemptIds = attempts.Select(x => x.Id).ToArray();
+        var evidenceIds = attempts.Select(x => x.EvidenceBundleId).ToArray();
+        var evidence = await dbContext.EvidenceBundles.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && evidenceIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+        var results = await dbContext.RepairResults.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && attemptIds.Contains(x.AttemptId))
+            .ToDictionaryAsync(x => x.AttemptId, cancellationToken);
+        var pullRequests = await dbContext.RepairPullRequests.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && attemptIds.Contains(x.AttemptId))
+            .ToDictionaryAsync(x => x.AttemptId, cancellationToken);
 
         return Results.Ok(new HealingIncidentDetailResponse(
             incident.Id,
@@ -165,7 +185,12 @@ public sealed class WorkspaceHealingIncidentEndpointModule : IHealingEndpointMod
             impacts.Select(ToEnvironmentImpact).ToArray(),
             occurrences.Select(ToOccurrence).ToArray(),
             attributions.Select(ToAttribution).ToArray(),
-            workItem is null ? null : ToWorkItem(workItem)));
+            workItem is null ? null : ToWorkItem(workItem),
+            attempts.Select(attempt => ToRepairAttempt(
+                attempt,
+                evidence.GetValueOrDefault(attempt.EvidenceBundleId),
+                results.GetValueOrDefault(attempt.Id),
+                pullRequests.GetValueOrDefault(attempt.Id))).ToArray()));
     }
 
     private static HealingIncidentSummaryResponse ToSummary(
@@ -241,6 +266,65 @@ public sealed class WorkspaceHealingIncidentEndpointModule : IHealingEndpointMod
         workItem.ProjectionStatus,
         workItem.LastProjectedAt,
         workItem.LastObservedAt);
+
+    private static HealingRepairAttemptResponse ToRepairAttempt(
+        RepairAttempt attempt,
+        EvidenceBundle? evidence,
+        RepairResult? result,
+        RepairPullRequest? pullRequest)
+    {
+        var reproduction = ParseJson<RepairReproductionEvidence>(result?.ReproductionJson) ??
+                           new RepairReproductionEvidence(false, false, "not-attempted", "No result has been received.", []);
+        var validations = ParseJson<IReadOnlyList<RepairValidationResult>>(result?.ValidationJson) ?? [];
+        var risk = ParseJson<HealingRepairRiskProjection>(result?.RiskJson);
+        return new HealingRepairAttemptResponse(
+            attempt.Id,
+            attempt.AttemptNumber,
+            attempt.Status,
+            attempt.TargetRevision,
+            attempt.ProducingRevision,
+            new HealingRepairEvidenceResponse(
+                evidence?.Tier.ToString() ?? "Unavailable",
+                ParseStringArray(evidence?.OmissionsJson ?? "[]"),
+                evidence?.ExpiresAt),
+            attempt.RepairClassification,
+            result?.Confidence,
+            risk?.CausalSummary,
+            new HealingRepairReproductionResponse(
+                reproduction.WasAttempted,
+                reproduction.WasReproduced,
+                reproduction.Classification,
+                reproduction.Summary),
+            validations.Select(x => new HealingRepairValidationResponse(x.Kind, x.Outcome, x.SafeSummary)).ToArray(),
+            pullRequest is null ? null : new HealingRepairPullRequestResponse(
+                pullRequest.Number,
+                pullRequest.Url,
+                pullRequest.IsDraft,
+                pullRequest.MergeState,
+                CheckState(pullRequest.CheckSnapshotJson)));
+    }
+
+    private static T? ParseJson<T>(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return default;
+        try { return JsonSerializer.Deserialize<T>(json); }
+        catch (JsonException) { return default; }
+    }
+
+    private static string CheckState(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.TryGetProperty("state", out var state) && state.ValueKind == JsonValueKind.String
+                ? state.GetString() ?? "NotReported"
+                : "NotReported";
+        }
+        catch (JsonException)
+        {
+            return "NotReported";
+        }
+    }
 
     private static IReadOnlyList<string> ParseStringArray(string json)
     {
@@ -324,7 +408,28 @@ public sealed record HealingIncidentDetailResponse(
     IReadOnlyList<HealingEnvironmentImpactResponse> EnvironmentImpacts,
     IReadOnlyList<HealingIncidentOccurrenceResponse> Occurrences,
     IReadOnlyList<HealingComponentAttributionResponse> Attributions,
-    HealingWorkItemSummaryResponse? WorkItem);
+    HealingWorkItemSummaryResponse? WorkItem,
+    IReadOnlyList<HealingRepairAttemptResponse> Attempts);
+
+public sealed record HealingRepairAttemptResponse(
+    Guid Id,
+    int AttemptNumber,
+    RepairAttemptStatus Status,
+    string TargetRevision,
+    string? ProducingRevision,
+    HealingRepairEvidenceResponse Evidence,
+    RepairClassification Classification,
+    decimal? Confidence,
+    string? CausalSummary,
+    HealingRepairReproductionResponse Reproduction,
+    IReadOnlyList<HealingRepairValidationResponse> Validations,
+    HealingRepairPullRequestResponse? PullRequest);
+
+public sealed record HealingRepairEvidenceResponse(string Tier, IReadOnlyList<string> OmittedFields, DateTimeOffset? ExpiresAt);
+public sealed record HealingRepairReproductionResponse(bool WasAttempted, bool WasReproduced, string Classification, string Summary);
+public sealed record HealingRepairValidationResponse(string Kind, string Outcome, string SafeSummary);
+public sealed record HealingRepairPullRequestResponse(long Number, string Url, bool IsDraft, PullRequestMergeState MergeState, string ChecksState);
+internal sealed record HealingRepairRiskProjection(string CausalSummary);
 
 public sealed record HealingIncidentEpisodeResponse(
     Guid Id,

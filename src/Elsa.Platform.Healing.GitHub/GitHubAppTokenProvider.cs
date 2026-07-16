@@ -10,6 +10,26 @@ namespace Elsa.Platform.Healing.GitHub;
 
 public sealed record GitHubInstallationToken(string Value, DateTimeOffset ExpiresAt);
 
+public sealed record GitHubInstallationTokenRequest(
+    string RepositoryName,
+    IReadOnlyDictionary<string, string> Permissions)
+{
+    public static GitHubInstallationTokenRequest MetadataRead(string repositoryName) =>
+        new(repositoryName, PermissionSet(("metadata", "read")));
+
+    public static GitHubInstallationTokenRequest IssueWrite(string repositoryName) =>
+        new(repositoryName, PermissionSet(("issues", "write"), ("metadata", "read")));
+
+    public static GitHubInstallationTokenRequest WorkflowDispatch(string repositoryName) =>
+        new(repositoryName, PermissionSet(("actions", "write"), ("metadata", "read")));
+
+    public static GitHubInstallationTokenRequest ContentAndPullRequestWrite(string repositoryName) =>
+        new(repositoryName, PermissionSet(("contents", "write"), ("pull_requests", "write"), ("metadata", "read")));
+
+    private static IReadOnlyDictionary<string, string> PermissionSet(params (string Name, string Access)[] permissions) =>
+        permissions.ToDictionary(x => x.Name, x => x.Access, StringComparer.Ordinal);
+}
+
 public sealed class GitHubAppTokenProvider(HttpClient httpClient, TimeProvider? timeProvider = null)
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
@@ -19,9 +39,23 @@ public sealed class GitHubAppTokenProvider(HttpClient httpClient, TimeProvider? 
         string installationId,
         string repositoryName,
         CancellationToken cancellationToken = default)
+        => await CreateRepositoryTokenAsync(
+            credential,
+            installationId,
+            GitHubInstallationTokenRequest.MetadataRead(repositoryName),
+            cancellationToken);
+
+    public async ValueTask<GitHubInstallationToken?> CreateRepositoryTokenAsync(
+        GitHubAppCredential credential,
+        string installationId,
+        GitHubInstallationTokenRequest tokenRequest,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(credential);
-        if (string.IsNullOrWhiteSpace(installationId) || string.IsNullOrWhiteSpace(repositoryName))
+        ArgumentNullException.ThrowIfNull(tokenRequest);
+        if (string.IsNullOrWhiteSpace(installationId) ||
+            !IsRepositoryName(tokenRequest.RepositoryName) ||
+            !AreNarrowPermissions(tokenRequest.Permissions))
             return null;
 
         string appJwt;
@@ -38,9 +72,9 @@ public sealed class GitHubAppTokenProvider(HttpClient httpClient, TimeProvider? 
             HttpMethod.Post,
             $"app/installations/{Uri.EscapeDataString(installationId)}/access_tokens")
         {
-            Content = JsonContent.Create(new InstallationTokenRequest(
-                [repositoryName],
-                new Dictionary<string, string>(StringComparer.Ordinal) { ["metadata"] = "read" }))
+            Content = JsonContent.Create(new InstallationTokenPayload(
+                [tokenRequest.RepositoryName],
+                tokenRequest.Permissions))
         };
         AddGitHubHeaders(request, appJwt);
         try
@@ -60,18 +94,41 @@ public sealed class GitHubAppTokenProvider(HttpClient httpClient, TimeProvider? 
         }
     }
 
+    private static bool IsRepositoryName(string value) =>
+        value.Length is > 0 and <= 100 && value.All(x => char.IsLetterOrDigit(x) || x is '.' or '-' or '_');
+
+    private static bool AreNarrowPermissions(IReadOnlyDictionary<string, string> permissions)
+    {
+        if (permissions.Count is < 1 or > 3 || !permissions.ContainsKey("metadata"))
+            return false;
+
+        foreach (var (permission, access) in permissions)
+        {
+            if (permission is not ("metadata" or "issues" or "actions" or "contents" or "pull_requests") ||
+                access is not ("read" or "write") ||
+                permission == "metadata" && access != "read")
+                return false;
+        }
+
+        return true;
+    }
+
     private string CreateAppJwt(GitHubAppCredential credential)
     {
         using var rsa = RSA.Create();
         rsa.ImportFromPem(credential.PrivateKeyPem);
         var now = _timeProvider.GetUtcNow();
+        var signingKey = new RsaSecurityKey(rsa)
+        {
+            CryptoProviderFactory = new CryptoProviderFactory { CacheSignatureProviders = false }
+        };
         var descriptor = new SecurityTokenDescriptor
         {
             Issuer = credential.AppId,
             IssuedAt = now.AddSeconds(-60).UtcDateTime,
             NotBefore = now.AddSeconds(-60).UtcDateTime,
             Expires = now.AddMinutes(9).UtcDateTime,
-            SigningCredentials = new SigningCredentials(new RsaSecurityKey(rsa), SecurityAlgorithms.RsaSha256)
+            SigningCredentials = new SigningCredentials(signingKey, SecurityAlgorithms.RsaSha256)
         };
         return new JwtSecurityTokenHandler().CreateEncodedJwt(descriptor);
     }
@@ -88,7 +145,7 @@ public sealed class GitHubAppTokenProvider(HttpClient httpClient, TimeProvider? 
         exception is HttpRequestException or JsonException or IOException ||
         exception is OperationCanceledException && !cancellationToken.IsCancellationRequested;
 
-    private sealed record InstallationTokenRequest(
+    private sealed record InstallationTokenPayload(
         [property: JsonPropertyName("repositories")] IReadOnlyList<string> Repositories,
         [property: JsonPropertyName("permissions")] IReadOnlyDictionary<string, string> Permissions);
 

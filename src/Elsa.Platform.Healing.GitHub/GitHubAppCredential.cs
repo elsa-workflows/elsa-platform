@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Elsa.Platform.Healing.GitHub;
 
-public sealed record GitHubAppCredential(string AppId, string PrivateKeyPem)
+public sealed record GitHubAppCredential(string AppId, string PrivateKeyPem, string? WebhookSecret = null)
 {
     private const int MaximumCredentialLength = 16_384;
 
@@ -35,14 +35,19 @@ public sealed record GitHubAppCredential(string AppId, string PrivateKeyPem)
             var privateKey = privateKeyElement.ValueKind == JsonValueKind.String
                 ? privateKeyElement.GetString()
                 : null;
+            var webhookSecret = root.TryGetProperty("webhookSecret", out var webhookSecretElement) &&
+                                webhookSecretElement.ValueKind == JsonValueKind.String
+                ? webhookSecretElement.GetString()
+                : null;
             if (string.IsNullOrWhiteSpace(appId) || appId.Length > 128 ||
                 !appId.All(char.IsLetterOrDigit) ||
                 string.IsNullOrWhiteSpace(privateKey) ||
                 privateKey.Length > 12_288 ||
-                !privateKey.Contains("BEGIN", StringComparison.Ordinal))
+                !privateKey.Contains("BEGIN", StringComparison.Ordinal) ||
+                webhookSecret is not null && (webhookSecret.Length is < 16 or > 4_096 || webhookSecret.Any(char.IsControl)))
                 return false;
 
-            credential = new GitHubAppCredential(appId, privateKey);
+            credential = new GitHubAppCredential(appId, privateKey, webhookSecret);
             return true;
         }
         catch (JsonException)

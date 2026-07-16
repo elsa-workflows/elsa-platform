@@ -228,7 +228,9 @@ public sealed record ProviderWorkItemReference(
 public sealed record RepairWorkflowDispatchRequest(
     string ProtocolVersion,
     ProviderRepositoryReference Repository,
+    Guid WorkspaceId,
     string WorkflowIdentity,
+    string WorkflowReference,
     string WorkflowRevision,
     Uri PlatformBaseUrl,
     Guid IncidentId,
@@ -238,7 +240,9 @@ public sealed record RepairWorkflowDispatchRequest(
     string ProducingRevisionStatus,
     string TargetBranch,
     string ExpectedTargetRevision,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    string WorkloadAudience = "elsa-platform-healing",
+    string? ProducingRevision = null);
 
 public sealed record ProviderOperationReceipt(
     string IdempotencyKey,
@@ -279,7 +283,9 @@ public sealed record RepairResultEnvelope(
     string RollbackSummary,
     RepairUsageSummary Usage,
     RepairTimingSummary Timing,
-    DateTimeOffset SubmittedAt);
+    DateTimeOffset SubmittedAt,
+    Guid? ProposalId = null,
+    string? ProposalDigest = null);
 
 public sealed record RepairChangedPathSuggestion(string Path, string ChangeKind, string? RiskCategory);
 
@@ -306,7 +312,8 @@ public sealed record RepairUsageSummary(
     long InputUnits,
     long OutputUnits,
     TimeSpan AgentDuration,
-    TimeSpan RepositoryRunDuration);
+    TimeSpan RepositoryRunDuration,
+    long RepositoryRuns = 0);
 
 public sealed record RepairTimingSummary(DateTimeOffset StartedAt, DateTimeOffset CompletedAt);
 
@@ -452,12 +459,16 @@ public interface IRepairMergeProvider
 public static class WorkloadCapabilityScopes
 {
     public const string ReadEvidence = "evidence.read";
+    public const string CreateProposal = "proposal.create";
+    public const string FinalizeProposal = "proposal.finalize";
     public const string HeartbeatAttempt = "attempt.heartbeat";
     public const string UploadResult = "result.upload";
 
     public static IReadOnlySet<string> All { get; } = new[]
     {
         ReadEvidence,
+        CreateProposal,
+        FinalizeProposal,
         HeartbeatAttempt,
         UploadResult
     }.ToFrozenSet(StringComparer.Ordinal);
@@ -481,7 +492,68 @@ public sealed record WorkloadEvidenceRequest(string ProtocolVersion, Guid Attemp
 public sealed record WorkloadEvidenceResponse(
     string ProtocolVersion,
     Guid AttemptId,
-    RepairEvidenceBundle Evidence);
+    RepairEvidenceBundle Evidence,
+    RepairAgentBudget? Budget = null);
+
+/// <summary>
+/// Bounded source text collected by the trusted proposal job. The Platform treats this as inert input and
+/// grants the managed inference provider no repository, process, filesystem, credential, or network tools.
+/// </summary>
+public sealed record WorkloadRepairSourceContext(
+    string TargetRevision,
+    string Digest,
+    IReadOnlyList<WorkloadRepairSourceFile> Files,
+    IReadOnlyList<string> OmittedPaths);
+
+public sealed record WorkloadRepairSourceFile(
+    string Path,
+    string Content,
+    string Digest,
+    bool IsTruncated = false);
+
+public sealed record WorkloadProposalCreateRequest(
+    string ProtocolVersion,
+    Guid AttemptId,
+    string IdempotencyKey,
+    WorkloadRepairSourceContext SourceContext);
+
+/// <summary>
+/// Immutable Platform-owned repair proposal. Repository jobs may apply and validate this exact patch, but
+/// cannot replace any inference-owned field when they submit the final result.
+/// </summary>
+public sealed record ManagedRepairProposalEnvelope(
+    string ProtocolVersion,
+    Guid AttemptId,
+    Guid ProposalId,
+    string ProposalDigest,
+    string SourceContextDigest,
+    string BaseRevision,
+    string TargetRevision,
+    string Classification,
+    decimal Confidence,
+    string CausalSummary,
+    string UnifiedDiff,
+    string PatchDigest,
+    IReadOnlyList<RepairChangedPathSuggestion> ChangedPaths,
+    IReadOnlyList<string> RiskSuggestions,
+    string RollbackSummary,
+    RepairUsageSummary Usage,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset ExpiresAt);
+
+public sealed record WorkloadProposalCreateResponse(
+    string ProtocolVersion,
+    Guid AttemptId,
+    ManagedRepairProposalEnvelope Proposal,
+    string FinalizationNonce,
+    bool IsReplay);
+
+public sealed record WorkloadProposalFinalizationExchangeRequest(
+    string ProtocolVersion,
+    Guid AttemptId,
+    Guid ProposalId,
+    string OneTimeNonce,
+    string IdentityAssertion);
 
 public sealed record WorkloadHeartbeatRequest(
     string ProtocolVersion,
@@ -516,6 +588,14 @@ public interface IHealingWorkloadApi
 
     ValueTask<WorkloadEvidenceResponse> GetEvidenceAsync(
         WorkloadEvidenceRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<WorkloadProposalCreateResponse> CreateProposalAsync(
+        WorkloadProposalCreateRequest request,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<WorkloadCapabilityGrant> ExchangeFinalizationAsync(
+        WorkloadProposalFinalizationExchangeRequest request,
         CancellationToken cancellationToken = default);
 
     ValueTask<WorkloadHeartbeatReceipt> HeartbeatAsync(
