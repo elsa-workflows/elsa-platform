@@ -31,7 +31,7 @@
 
 ## Current licence and final-MIT tag status
 
-The current repository remains MIT-licensed under `LICENSE`. The current committed revision is `af6c054fc932fb0c3d5b4682b2f39f7e981c1e70`, authored by Sipke Schoorstra, with subject `feat(healing): govern repair pull requests`. The working tree was dirty before this task, so the revision is not marked as the final MIT revision. The local and remote `last-mit-licensed-revision` tag did not exist and was not created.
+The current repository remains MIT-licensed under `LICENSE`. The default branch revision observed at audit time is `210d8fa84cb85654ddd29c392bd1f685d3d564f6` (`origin/main`), authored by Sipke Schoorstra with subject `Updated AGENTS.md (#78)`. The audit checkout was the separate self-healing revision `af6c054fc932fb0c3d5b4682b2f39f7e981c1e70`. The working tree was dirty before this task, so no revision is marked as the final MIT revision. The local and remote `last-mit-licensed-revision` tag did not exist and was not created.
 
 ## Contributor findings
 

@@ -4,7 +4,7 @@ Audit date: 2026-07-21
 
 This is a factual repository audit prepared for a possible future transition from the current MIT licence to a source-available commercial model. It is not a legal opinion and does not determine copyright ownership, licence compatibility, or whether relicensing is legally available.
 
-The audit was performed against the local repository at commit `af6c054fc932fb0c3d5b4682b2f39f7e981c1e70`. The working tree already contained substantial uncommitted Platform Self-Healing changes before this audit. Those changes are intentionally not treated as a clean release revision.
+The audit was performed against the local repository before this transition work was committed, at checkout commit `af6c054fc932fb0c3d5b4682b2f39f7e981c1e70`. The working tree already contained substantial uncommitted Platform Self-Healing changes before this audit. Those changes are intentionally not treated as a clean release revision.
 
 ## Repository identity
 
@@ -15,7 +15,9 @@ The audit was performed against the local repository at commit `af6c054fc932fb0c
 | Additional remote | `package-catalog` → `https://github.com/elsa-workflows/elsa-package-catalog.git` |
 | Default branch | `main` |
 | Local working branch | `chore/commercial-license-transition` |
-| Current committed revision | `af6c054fc932fb0c3d5b4682b2f39f7e981c1e70` |
+| Default branch revision at audit time | `210d8fa84cb85654ddd29c392bd1f685d3d564f6` (`origin/main`) |
+| Audit checkout revision before transition commits | `af6c054fc932fb0c3d5b4682b2f39f7e981c1e70` |
+| Transition branch tip after documentation commits | `67708b43fa6e757288b4b1bdfc7084d4b0887505` |
 | Current licence | MIT License, from `LICENSE` |
 | Repository visibility | Public |
 | Local tags | None |
@@ -215,7 +217,7 @@ The two npm lockfiles expose licence labels locally. The labels observed are MIT
 
 ## Final-MIT revision marker
 
-The tag `last-mit-licensed-revision` did not exist locally or remotely when inspected. It was intentionally not created because the working tree had uncommitted changes and there is uncertainty about whether commit `af6c054fc932fb0c3d5b4682b2f39f7e981c1e70` should be the final MIT revision.
+The tag `last-mit-licensed-revision` did not exist locally or remotely when inspected. It was intentionally not created because the working tree had uncommitted changes and there is uncertainty about whether the default-branch commit `210d8fa84cb85654ddd29c392bd1f685d3d564f6` should be the final MIT revision. The self-healing checkout commit `af6c054fc932fb0c3d5b4682b2f39f7e981c1e70` is not the default-branch candidate.
 
 After human confirmation on a clean, approved revision, the annotated tag can be created locally with:
 
