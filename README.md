@@ -2,6 +2,10 @@
 
 Elsa Platform is the control plane for building, packaging, cataloging, and deploying Elsa-based systems. It brings together the pieces needed to govern professional Elsa solutions: manifest contracts, safe package inspection, catalog ingestion, runtime bundle planning, immutable deployment artifacts, workspace-scoped APIs, and an operator console.
 
+## Licensing status
+
+This repository is currently licensed under the MIT License. A future source-available commercial model is being prepared, but it is not yet in effect. The current `LICENSE` file remains authoritative, and previously published MIT revisions retain their original licence. See [LICENSING.md](LICENSING.md) for transition information.
+
 The repository is organized as a set of bounded subsystems rather than one large application. Package Catalog owns package governance and workspace-owned catalog data. Runtime Builder turns catalog selections into deployable runtime bundles. Deployment owns artifact, environment, promotion, deployment-run, and runtime-command contracts. The React console provides a shared admin and workspace shell for those capabilities.
 
 ## What Is Here
