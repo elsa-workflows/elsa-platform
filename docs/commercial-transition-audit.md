@@ -222,7 +222,7 @@ The tag `last-mit-licensed-revision` did not exist locally or remotely when insp
 After human confirmation on a clean, approved revision, the annotated tag can be created locally with:
 
 ```bash
-git tag -a last-mit-licensed-revision <approved-commit> -m "Final repository revision intended to remain published as the last MIT-licensed revision before the planned commercial licensing transition. Previously published versions remain available under their original terms."
+git tag -a last-mit-licensed-revision 210d8fa84cb85654ddd29c392bd1f685d3d564f6 -m "Final repository revision intended to remain published as the last MIT-licensed revision before the planned commercial licensing transition. Previously published versions remain available under their original terms."
 git show --format=fuller --stat last-mit-licensed-revision
 ```
 
