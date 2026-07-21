@@ -87,7 +87,9 @@ The checked-in publication workflow (`.github/workflows/packages.yml`) explicitl
 - `Elsa.Platform.PackageManifests` (the project has no explicit `PackageId` in its project file); and
 - `Elsa.Platform.PackageManifest.Generator`.
 
-The current source tree also contains packable Platform Healing package projects, including `Elsa.Platform.Healing.Client`, `Elsa.Platform.Healing.ComponentManifest`, and `Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild`. They are not included in the current publication workflow’s explicit pack list. The workflow publishes preview packages to Feedz.io and release packages to NuGet.org, using `FEEDZ_API_KEY` and `NUGET_API_KEY` secrets.
+The current source tree also contains four explicitly packable projects: `Elsa.Platform.PackageManifest.Generator`, `Elsa.Platform.Healing.Client`, `Elsa.Platform.Healing.ComponentManifest`, and `Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild`. The Healing projects are not included in the current publication workflow’s explicit pack list. `Elsa.Platform.PackageManifests` is packed by the workflow despite having no explicit package ID or package licence metadata. The workflow publishes preview packages to Feedz.io and release packages to NuGet.org, using `FEEDZ_API_KEY` and `NUGET_API_KEY` secrets.
+
+The workflow has no licence validation gate, SBOM generation, third-party notice generation, package signing, or provenance attestation step. The root `LICENSE` is not declared as package content in the checked-in packable project files, so package inclusion of the repository notice requires verification.
 
 No GitHub Packages publication configuration was found. `NuGet.config` references `elsa-workflows/elsa-3`, `elsa-workflows/elsa-4`, and a `valence-works/consolelogstream` Feedz source; ownership and continued authorization for each feed require confirmation.
 
@@ -99,9 +101,12 @@ No GitHub Packages publication configuration was found. `NuGet.config` reference
 
 - `src/Elsa.Platform.Api/Dockerfile` builds the React console and the .NET API.
 - Base images are `node:22-alpine`, `mcr.microsoft.com/dotnet/sdk:10.0.300`, and `mcr.microsoft.com/dotnet/aspnet:10.0`.
+- The base-image references use mutable tags rather than digests.
+- The Dockerfile has no OCI licence/source/revision labels and does not explicitly copy `LICENSE` or third-party notices into the final image.
 - Azure deployment pushes `${AZURE_CONTAINER_REGISTRY_ENDPOINT}/elsa-platform/api:<commit>` to an Azure Container Registry.
 - The infrastructure script uses `src/Elsa.Platform.Api/Dockerfile`.
 - The app-only path in `.github/workflows/azure-api-deploy.yml` currently names `src/Elsa.Platform.PackageCatalog.Api/Dockerfile`, which does not match the checked-in Dockerfile path and should be corrected or confirmed before a release transition.
+- The same workflow tests `tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj`, which is also absent from the checked-in tree.
 - No Docker image licence labels were found.
 
 ### Other artifacts
@@ -117,6 +122,7 @@ The current repository is `elsa-workflows/elsa-platform`. A future destination o
 - `docs/platform-integration-packaging.md`, `docs/runtime-transport-trust-policy.md`, `docs/platform-artifact-workflow-e2e-smoke.md`, `src/Elsa.Platform.Healing.Client/README.md`, and multiple specification documents contain `github.com/elsa-workflows/...` links.
 - `docs/deployment-platform-phased-strategy.md` and related ADRs link to other Elsa repositories and should be reviewed separately from the Platform transfer.
 - `NuGet.config` and `.github/workflows/packages.yml` refer to Feedz organizations and feeds; package ownership, tokens, and publication destinations must be confirmed.
+- The workflow publishes to the Feedz `elsa-3` feed while `NuGet.config` also references an `elsa-4` preview feed; the intended feed and transition ownership need confirmation.
 - Azure deployment uses GitHub Actions environments, repository variables, OIDC identity, Azure resource names, registry permissions, and secrets. These are external configuration and cannot be transferred by editing this repository.
 - The container image path includes the stable `elsa-platform/api` name inside a destination registry and needs an ownership decision.
 
@@ -173,6 +179,7 @@ The two npm lockfiles expose licence labels locally. The labels observed are MIT
 - Source-available or proprietary dependencies: `ConsoleLogStreaming.AspNetCore`, Elsa diagnostics packages, and `GitHub.Copilot.SDK` require provenance and distribution-term review; this audit makes no classification conclusion.
 - Unknown or incomplete metadata: NuGet package licences, Docker base-image terms, and dependencies embedded in produced packages are not fully represented in the repository.
 - Attribution: npm lockfile labels and any third-party notices in NuGet or container layers require an attribution inventory.
+- No checked-in SBOM, generated dependency licence report, or third-party notices file was found.
 
 ## Risk summary
 

@@ -45,6 +45,8 @@ The local history contains 563 commits by Sipke Schoorstra and two commits by `c
 - The destination GitHub organization and repository name are not confirmed.
 - Current GitHub settings, secrets, Apps, webhooks, deploy keys, environments, branch protections, Pages, package permissions, and releases require manual inventory.
 - The app-only Azure workflow references `src/Elsa.Platform.PackageCatalog.Api/Dockerfile`, while the checked-in Dockerfile is `src/Elsa.Platform.Api/Dockerfile`; this should be resolved before release automation is relied on.
+- The Azure workflow also references the absent `tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj`.
+- The package workflow has no licence validation, SBOM, third-party notice, signing, or provenance step, and the container has no explicit licence/source/revision labels or copied licence notices.
 
 ## Recommended next action
 
