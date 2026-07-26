@@ -32,3 +32,39 @@ fork network and removed public star/watcher relationships where GitHub requires
 that behaviour. Repository rulesets also became unavailable under the
 destination organisation's current GitHub plan and require plan or policy
 follow-up.
+
+## Migration validation
+
+Validation performed on 26–27 July 2026 produced the following results:
+
+- `dotnet restore ValenceControl.sln` passed.
+- `dotnet build ValenceControl.sln --configuration Release --no-restore`
+  passed with zero warnings and zero errors.
+- The .NET test run was not fully green. All non-API test projects passed. The
+  latest API run passed 384 of 386 tests. The self-healing end-to-end test
+  `Otlp_occurrences_group_then_fake_provider_pr_merge_and_positive_deployment_verification_close_the_incident`
+  consistently failed because no verification result was recorded. The
+  `Manual_sync_creates_running_sync_run_and_completes_in_background` test timed
+  out during heavy host contention but passed when rerun in isolation.
+- The console production build and type check passed. A single-worker Vitest
+  run passed all 184 tests.
+- Playwright ran against local Chromium: the package-details and source
+  workflows passed. The deployment workflow failed because its fixture still
+  uses the retired `/api/me/workspaces` context endpoint and an older
+  deployment setup flow; this pre-existing test requires a separate update to
+  the organization-aware guided wizard.
+- Both owned NuGet packages packed locally without publishing. Inspection
+  confirmed the proprietary `LICENSE` and only `ValenceControl.*` owned
+  binaries. `ElsaRuntimeKinds.cs` remains intentionally Elsa-named because it
+  models compatibility with external Elsa runtimes.
+- The API container image built locally as
+  `valence-control-api:migration-validation` without being pushed. The clean
+  container restore exposed and prompted correction of the missing public
+  `cshells-preview` package source mapping. Publishing also required accepting
+  the identical Copilot CLI output contributed by Weaver and Healing Agent.
+- Shell syntax checks and Bicep compilation passed.
+- `dotnet format --verify-no-changes` is not green: it reported widespread
+  pre-existing whitespace violations across the solution. The migration does
+  not mix a repository-wide formatting rewrite into the rename.
+- `npm ci` reported 11 dependency audit findings: 1 low, 5 moderate, 4 high,
+  and 1 critical. These require dependency review before release.

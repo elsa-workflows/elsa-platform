@@ -13,7 +13,7 @@ WORKDIR /src
 COPY . .
 RUN mkdir -p src/ValenceControl.Api/wwwroot/admin
 COPY --from=console-build /src/src/ValenceControl.Console/dist/ src/ValenceControl.Api/wwwroot/admin/
-RUN dotnet restore ValenceControl.sln
+RUN dotnet restore src/ValenceControl.Api/ValenceControl.Api.csproj
 RUN dotnet publish src/ValenceControl.Api/ValenceControl.Api.csproj \
     --configuration Release \
     --output /app/publish \

@@ -1,4 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <!-- Weaver and Healing Agent use the same Copilot SDK version and publish the same CLI binary. -->
+    <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ValenceControl.PackageCatalog.Abstractions\ValenceControl.PackageCatalog.Abstractions.csproj" />
     <ProjectReference Include="..\ValenceControl.PackageManifests\ValenceControl.PackageManifests.csproj" />
