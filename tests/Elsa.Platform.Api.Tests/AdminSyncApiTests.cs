@@ -14,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Elsa.Platform.Api.Tests;
 
+[Collection(AdminSyncApiTestCollection.Name)]
 public sealed class AdminSyncApiTests
 {
     [Fact]
@@ -434,4 +435,10 @@ public sealed class AdminSyncApiTests
             return [];
         }
     }
+}
+
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class AdminSyncApiTestCollection
+{
+    public const string Name = "Admin sync API";
 }

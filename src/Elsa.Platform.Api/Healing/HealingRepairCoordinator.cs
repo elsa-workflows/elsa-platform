@@ -8,6 +8,7 @@ using Elsa.Platform.Healing.Core;
 using Elsa.Platform.Healing.Core.Configuration;
 using Elsa.Platform.Healing.Core.Providers;
 using Elsa.Platform.Healing.Core.Repairs;
+using Elsa.Platform.Healing.GitHub;
 using Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -38,6 +39,7 @@ public sealed class HealingRepairCoordinator(
 
     public async ValueTask<HealingRepairCoordinatorStatus> RunOnceAsync(CancellationToken cancellationToken = default)
     {
+        await PlatformManagedInferenceRecovery.RecoverExpiredAsync(dbContext, timeProvider, cancellationToken);
         if (_healingOptions.PlatformKillSwitch || !_healingOptions.RepairDispatchEnabled)
             return HealingRepairCoordinatorStatus.Idle;
 
@@ -53,7 +55,7 @@ public sealed class HealingRepairCoordinator(
         {
             if (await authorityService.CanMutateAsync(
                     pendingProjection.WorkspaceId, pendingProjection.ApplicationId, pendingProjection.EpisodeId,
-                    pendingProjection.ProviderConnectionId, pendingProjection.IncidentId, null, cancellationToken))
+                    pendingProjection.ProviderConnectionId, pendingProjection.IncidentId, cancellationToken))
                 return await QueueWorkItemAsync(pendingProjection, cancellationToken);
         }
 
@@ -91,7 +93,7 @@ public sealed class HealingRepairCoordinator(
             }
             if (await authorityService.CanMutateAsync(
                     currentProjection.WorkspaceId, currentProjection.ApplicationId, currentProjection.EpisodeId,
-                    currentProjection.ProviderConnectionId, currentProjection.IncidentId, null, cancellationToken))
+                    currentProjection.ProviderConnectionId, currentProjection.IncidentId, cancellationToken))
                 return await QueueRepairAsync(currentProjection, cancellationToken);
         }
 
@@ -106,9 +108,9 @@ public sealed class HealingRepairCoordinator(
         {
             var completedBinding = await dbContext.SourceOwnershipBindings.AsNoTracking()
                 .SingleOrDefaultAsync(x => x.Id == completedAttempt.BindingId, cancellationToken);
-            if (completedBinding is null || !await authorityService.CanMutateAsync(
+            if (completedBinding is null || !await authorityService.CanMutateAttemptAsync(
                     completedAttempt.WorkspaceId, completedAttempt.ApplicationId, completedAttempt.EpisodeId,
-                    completedBinding.ProviderConnectionId, completedAttempt.IncidentId, completedAttempt.Id, cancellationToken))
+                    completedBinding.ProviderConnectionId, completedAttempt.Id, RepairAttemptStatus.ResultReceived, cancellationToken))
             {
                 await StopAttemptAsync(completedAttempt, NeedsHumanReason.PolicyBlocked, "healing-authority-revoked", cancellationToken);
                 continue;
@@ -221,26 +223,23 @@ public sealed class HealingRepairCoordinator(
                  x.SourceRevision == producingRevision &&
                  x.TrustState == ComponentManifestTrustState.Verified,
             cancellationToken);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        if (!await HealingRepairAdmission.AcquireApplicationLockAsync(
+                dbContext, projection.WorkspaceId, projection.ApplicationId, cancellationToken))
+            return HealingRepairCoordinatorStatus.Idle;
         var applicationConfiguration = await dbContext.HealingConfigurations.AsNoTracking().SingleAsync(
             x => x.WorkspaceId == projection.WorkspaceId && x.ApplicationId == projection.ApplicationId,
             cancellationToken);
-        var activeApplicationAttempts = await dbContext.RepairAttempts.AsNoTracking().CountAsync(x =>
-            x.WorkspaceId == projection.WorkspaceId &&
-            x.ApplicationId == projection.ApplicationId &&
-            (x.Status == RepairAttemptStatus.Queued || x.Status == RepairAttemptStatus.Dispatched ||
-             x.Status == RepairAttemptStatus.Running || x.Status == RepairAttemptStatus.ProposalReady ||
-             x.Status == RepairAttemptStatus.ResultReceived ||
-             x.Status == RepairAttemptStatus.Publishing), cancellationToken);
         var concurrencyLimit = Math.Min(_healingOptions.Budgets.MaxConcurrentOperations, applicationConfiguration.ConcurrencyBudget);
-        if (concurrencyLimit < 1 || activeApplicationAttempts >= concurrencyLimit)
+        if (concurrencyLimit < 1)
             return HealingRepairCoordinatorStatus.Idle;
         var maximumAttempts = Math.Min(_healingOptions.Budgets.MaxRepairAttempts, applicationConfiguration.DefaultAttemptLimit);
         if (maximumAttempts < 1)
         {
             await MarkNeedsHumanAsync(projection.IncidentId, NeedsHumanReason.PolicyBlocked, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return HealingRepairCoordinatorStatus.Idle;
         }
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var created = await orchestrationService.CreateAttemptAsync(new CreateRepairAttemptRequest(
             projection.WorkspaceId,
             projection.ApplicationId,
@@ -260,7 +259,8 @@ public sealed class HealingRepairCoordinator(
                 maxSteps = Math.Min(_healingOptions.Budgets.MaxRepositoryRuns, applicationConfiguration.RepositoryRunBudget),
                 maxTokens = Math.Min(_healingOptions.Budgets.MaxInferenceUnits, applicationConfiguration.InferenceBudget)
             }),
-            maximumAttempts), cancellationToken);
+            maximumAttempts,
+            concurrencyLimit), cancellationToken);
         if (!created.Succeeded || created.Attempt is null || created.OneTimeNonce is null)
             return HealingRepairCoordinatorStatus.Idle;
 
@@ -332,10 +332,20 @@ public sealed class HealingRepairCoordinator(
             return HealingRepairCoordinatorStatus.Idle;
         }
 
-        var envelope = Rehydrate(result, attempt);
-        var evidenceGates = EvaluateEvidencePolicy(evidencePolicy, evidenceBundle, result);
-        var evidenceAllowed = evidenceGates.All(x => x.State == PolicyGateState.Pass);
         var now = timeProvider.GetUtcNow();
+        var envelope = Rehydrate(result, attempt);
+        var evidenceSnapshot = HealingEvidencePolicy.Evaluate(
+            evidencePolicy,
+            new EvidencePolicyEvaluationInput(
+                result.EnvelopeDigest,
+                result.Classification,
+                result.Confidence,
+                evidenceBundle.Tier,
+                ReleasedEvidenceFields(evidenceBundle.CanonicalJson),
+                envelope.Reproduction.WasAttempted,
+                envelope.Reproduction.WasReproduced),
+            now);
+        var evidenceAllowed = evidenceSnapshot.Decision == PolicyDecisions.AllowPublication;
         var evidenceEvaluation = await dbContext.PolicyEvaluations.SingleOrDefaultAsync(
             x => x.WorkspaceId == attempt.WorkspaceId &&
                  x.ApplicationId == attempt.ApplicationId &&
@@ -353,12 +363,19 @@ public sealed class HealingRepairCoordinator(
                 AttemptId = attempt.Id,
                 PolicyId = evidencePolicy.Id,
                 PolicyKind = PolicyKind.Evidence,
-                PolicyVersion = evidencePolicy.PolicyVersion,
-                PolicyHash = evidencePolicy.PolicyHash,
+                PolicyVersion = evidenceSnapshot.PolicyVersion,
+                PolicyHash = evidenceSnapshot.PolicyHash,
                 InputSnapshotHash = result.EnvelopeDigest,
-                GateResultsJson = JsonSerializer.Serialize(evidenceGates),
-                Decision = evidenceAllowed ? PolicyDecision.AllowPublication : PolicyDecision.HumanOnly,
-                ReasonCodesJson = JsonSerializer.Serialize(evidenceGates.Where(x => x.State != PolicyGateState.Pass).Select(x => x.ReasonCode)),
+                GateResultsJson = JsonSerializer.Serialize(evidenceSnapshot.Gates),
+                Decision = evidenceSnapshot.Decision switch
+                {
+                    PolicyDecisions.AllowPublication => PolicyDecision.AllowPublication,
+                    PolicyDecisions.HumanOnly => PolicyDecision.HumanOnly,
+                    _ => PolicyDecision.Deny
+                },
+                ReasonCodesJson = JsonSerializer.Serialize(evidenceSnapshot.Gates
+                    .Where(x => x.State != PolicyGateState.Pass)
+                    .Select(x => x.ReasonCode)),
                 EvaluatedAt = now
             };
             dbContext.PolicyEvaluations.Add(evidenceEvaluation);
@@ -373,12 +390,24 @@ public sealed class HealingRepairCoordinator(
             return HealingRepairCoordinatorStatus.Idle;
         }
 
-        var gates = new[]
+        ParsedUnifiedDiff parsedPatch;
+        try
         {
-            new Elsa.Platform.Healing.Abstractions.PolicyGateResult("persisted-result", PolicyGateState.Pass, "persisted-result-bound"),
-            new Elsa.Platform.Healing.Abstractions.PolicyGateResult("evidence-policy", PolicyGateState.Pass, "evidence-policy-allowed"),
-            new Elsa.Platform.Healing.Abstractions.PolicyGateResult("trusted-publisher", PolicyGateState.Pass, "publisher-revalidates-paths")
-        };
+            parsedPatch = UnifiedDiffParser.Parse(result.UnifiedDiff, pathPolicy.MaxPatchBytes);
+        }
+        catch (GitHubSecurityException)
+        {
+            await StopAttemptAsync(attempt, NeedsHumanReason.PolicyBlocked, "path-policy-invalid-patch", cancellationToken);
+            return HealingRepairCoordinatorStatus.Idle;
+        }
+        var pathSnapshot = HealingPathPolicy.Evaluate(
+            pathPolicy,
+            new PathPolicyEvaluationInput(
+                result.EnvelopeDigest,
+                parsedPatch.Files.Select(x => new RepairPathChange(x.EffectivePath, x.Hunks.Sum(h =>
+                    h.Lines.Count(line => line.Kind is '+' or '-')))).ToArray(),
+                parsedPatch.SizeBytes),
+            now);
         var evaluation = await dbContext.PolicyEvaluations.SingleOrDefaultAsync(
             x => x.WorkspaceId == attempt.WorkspaceId &&
                  x.ApplicationId == attempt.ApplicationId &&
@@ -396,16 +425,28 @@ public sealed class HealingRepairCoordinator(
                 AttemptId = attempt.Id,
                 PolicyId = pathPolicy.Id,
                 PolicyKind = PolicyKind.Path,
-                PolicyVersion = pathPolicy.PolicyVersion,
-                PolicyHash = pathPolicy.PolicyHash,
-                InputSnapshotHash = result.EnvelopeDigest,
-                GateResultsJson = JsonSerializer.Serialize(gates),
-                Decision = PolicyDecision.AllowPublication,
-                ReasonCodesJson = "[\"publication-allowed\"]",
+                PolicyVersion = pathSnapshot.PolicyVersion,
+                PolicyHash = pathSnapshot.PolicyHash,
+                InputSnapshotHash = pathSnapshot.InputDigest,
+                GateResultsJson = JsonSerializer.Serialize(pathSnapshot.Gates),
+                Decision = pathSnapshot.Decision == PolicyDecisions.AllowPublication
+                    ? PolicyDecision.AllowPublication
+                    : PolicyDecision.Deny,
+                ReasonCodesJson = JsonSerializer.Serialize(pathSnapshot.Gates
+                    .Where(x => x.State != PolicyGateState.Pass)
+                    .Select(x => x.ReasonCode)),
                 EvaluatedAt = now
             };
             dbContext.PolicyEvaluations.Add(evaluation);
             await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        if (evaluation.Decision != PolicyDecision.AllowPublication ||
+            evaluation.PolicyVersion != pathPolicy.PolicyVersion ||
+            evaluation.PolicyHash != pathPolicy.PolicyHash ||
+            evaluation.InputSnapshotHash != result.EnvelopeDigest)
+        {
+            await StopAttemptAsync(attempt, NeedsHumanReason.PolicyBlocked, "path-policy-blocked", cancellationToken);
+            return HealingRepairCoordinatorStatus.Idle;
         }
         var snapshot = new PolicyEvaluationSnapshot(
             HealingContractVersions.PolicyProtocol,
@@ -413,7 +454,7 @@ public sealed class HealingRepairCoordinator(
             evaluation.PolicyHash,
             evaluation.InputSnapshotHash,
             PolicyDecisions.AllowPublication,
-            gates,
+            JsonSerializer.Deserialize<Elsa.Platform.Healing.Abstractions.PolicyGateResult[]>(evaluation.GateResultsJson) ?? [],
             evaluation.EvaluatedAt);
         var publication = new RepairPublicationRequest(
             HealingContractVersions.ProviderProtocol,
@@ -443,40 +484,20 @@ public sealed class HealingRepairCoordinator(
         return enqueued.IsReplay ? HealingRepairCoordinatorStatus.Idle : HealingRepairCoordinatorStatus.PublicationQueued;
     }
 
-    private static IReadOnlyList<Elsa.Platform.Healing.Abstractions.PolicyGateResult> EvaluateEvidencePolicy(
-        EvidencePolicy policy,
-        EvidenceBundle bundle,
-        RepairResult result)
+    private static IReadOnlySet<string> ReleasedEvidenceFields(string canonicalJson)
     {
-        var reproductionPass = !policy.RequireReproduction || result.Classification == RepairClassification.Reproduced;
-        var inferencePass = result.Classification != RepairClassification.InferredHighConfidence ||
-                            policy.AllowHighConfidenceInference && result.Confidence >= policy.MinimumInferenceConfidence;
-        var tierPass = bundle.Tier <= policy.MaximumTier;
-        var permittedFields = ParseRevisions(policy.PermittedFieldsJson).ToHashSet(StringComparer.Ordinal);
-        IReadOnlySet<string> releasedFields;
         try
         {
-            using var document = JsonDocument.Parse(bundle.CanonicalJson);
-            releasedFields = document.RootElement.ValueKind == JsonValueKind.Object
+            using var document = JsonDocument.Parse(canonicalJson);
+            return document.RootElement.ValueKind == JsonValueKind.Object
                 ? document.RootElement.EnumerateObject().Select(x => x.Name).ToHashSet(StringComparer.Ordinal)
-                : new HashSet<string>(StringComparer.Ordinal);
+                : new HashSet<string>(StringComparer.Ordinal) { "$invalid-evidence-document" };
         }
         catch (JsonException)
         {
-            releasedFields = new HashSet<string>(StringComparer.Ordinal) { "invalid" };
+            return new HashSet<string>(StringComparer.Ordinal) { "$invalid-evidence-document" };
         }
-        var fieldsPass = permittedFields.Count == 0 || releasedFields.All(permittedFields.Contains);
-        return
-        [
-            Gate("reproduction", reproductionPass, reproductionPass ? "reproduction-policy-satisfied" : "reproduction-required"),
-            Gate("inference", inferencePass, inferencePass ? "inference-policy-satisfied" : "inference-not-allowed"),
-            Gate("evidence-tier", tierPass, tierPass ? "evidence-tier-allowed" : "evidence-tier-blocked"),
-            Gate("evidence-fields", fieldsPass, fieldsPass ? "evidence-fields-allowed" : "evidence-field-blocked")
-        ];
     }
-
-    private static Elsa.Platform.Healing.Abstractions.PolicyGateResult Gate(string gate, bool pass, string reason) =>
-        new(gate, pass ? PolicyGateState.Pass : PolicyGateState.Block, reason);
 
     private async ValueTask ReconcileFailedOperationsAsync(CancellationToken cancellationToken)
     {

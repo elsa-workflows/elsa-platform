@@ -107,9 +107,9 @@ npm --prefix src/Elsa.Platform.Console run build
 git diff --check
 ```
 
-## Real GitHub sandbox gate
+## Real GitHub sandbox enablement gate
 
-Before merge, run an opt-in test against a dedicated sandbox repository and GitHub App installation:
+Before enabling automatic merge against a real repository, run an opt-in test against a dedicated sandbox repository and GitHub App installation:
 
 1. Issue projection and idempotent update.
 2. Workflow dispatch at the approved immutable workflow revision.

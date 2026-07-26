@@ -11,8 +11,10 @@ using Elsa.Platform.Healing.Abstractions;
 using Elsa.Platform.Healing.ComponentManifest;
 using Elsa.Platform.Healing.Core;
 using Elsa.Platform.Healing.Core.Ownership;
+using Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -397,6 +399,56 @@ public sealed class WorkspaceHealingConfigurationApiTests
         var memberId = await app.Factory.AddWorkspaceMemberAsync(app.WorkspaceId, memberSubject, WorkspaceRole.Reader);
         await app.Factory.GrantWorkspaceDeploymentPermissionAsync(app.WorkspaceId, memberId, HealingPermissions.Configure);
         var member = app.Factory.CreateTrustedWorkspaceClient(memberSubject);
+
+        var actorLinkUri = ApplicationUri(app, $"/provider-connections/{providerId:D}/actor-links/12345");
+        var otherApplicationResponse = await app.Owner.PostPlatformJsonAsync(
+            $"/api/workspaces/{app.WorkspaceId:D}/deployments/applications",
+            new WorkspaceDeploymentApplicationRequest("Other API", null));
+        var otherApplication = await otherApplicationResponse.Content.ReadPlatformJsonAsync<WorkspaceDeploymentApplication>();
+        otherApplicationResponse.EnsureSuccessStatusCode();
+        var crossApplicationActorLinkUri =
+            $"/api/workspaces/{app.WorkspaceId:D}/healing/applications/{otherApplication!.Id:D}" +
+            $"/provider-connections/{providerId:D}/actor-links/12345";
+        (await app.Owner.PutPlatformJsonAsync(crossApplicationActorLinkUri, new
+        {
+            providerActorLogin = "cross-application-escalation",
+            platformAccountId = memberId
+        })).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await member.PutPlatformJsonAsync(actorLinkUri, new
+        {
+            providerActorLogin = "healing-maintainer",
+            platformAccountId = memberId
+        })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await app.Owner.PutPlatformJsonAsync(actorLinkUri, new
+        {
+            providerActorLogin = "healing-maintainer",
+            platformAccountId = memberId
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await member.PutPlatformJsonAsync(actorLinkUri, new
+        {
+            providerActorLogin = "identity-escalation",
+            platformAccountId = memberId
+        })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await member.DeleteAsync(actorLinkUri)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await app.Owner.PutPlatformJsonAsync(actorLinkUri, new
+        {
+            providerActorLogin = "healing-maintainer-updated",
+            platformAccountId = memberId
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await app.Owner.DeleteAsync(actorLinkUri)).StatusCode.Should().Be(HttpStatusCode.OK);
+        await using (var auditScope = app.Factory.Services.CreateAsyncScope())
+        {
+            var auditEvents = await auditScope.ServiceProvider.GetRequiredService<HealingDbContext>()
+                .Set<HealingAuditEvent>().AsNoTracking()
+                .Where(x => x.WorkspaceId == app.WorkspaceId && x.AggregateType == "provider-actor-link")
+                .OrderBy(x => x.Sequence)
+                .ToArrayAsync();
+            auditEvents.Select(x => x.EventType).Should().Equal(
+                "actor-link-created", "actor-link-updated", "actor-link-revoked");
+            auditEvents.Should().OnlyContain(x => x.CausationId == app.ApplicationId);
+            auditEvents.Select(x => x.CorrelationId).Should().OnlyHaveUniqueItems();
+        }
+
         (await member.PostPlatformJsonAsync(ApplicationUri(app, "/authority-profiles"), new
         {
             name = "Unauthorized", installationId = "99",
@@ -428,6 +480,11 @@ public sealed class WorkspaceHealingConfigurationApiTests
         draft.GetProperty("status").GetString().Should().Be("Draft");
         draft.GetProperty("version").GetString().Should().NotBeNullOrWhiteSpace();
         var bindingId = draft.GetProperty("id").GetGuid();
+        var applicationAudit = await app.Owner.GetFromJsonAsync<JsonElement>(
+            $"/api/workspaces/{app.WorkspaceId:D}/healing/audit?applicationId={app.ApplicationId:D}&take=100");
+        applicationAudit.GetProperty("items").EnumerateArray()
+            .Select(x => x.GetProperty("eventType").GetString())
+            .Should().Contain(["actor-link-created", "actor-link-updated", "actor-link-revoked"]);
 
         var updateUri = ApplicationUri(app, $"/source-ownership-bindings/{bindingId:D}");
         var missingVersion = await member.PutPlatformJsonAsync(updateUri, request);

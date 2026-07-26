@@ -1,10 +1,13 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Elsa.Platform.Healing.Core;
+using Elsa.Platform.Healing.Core.Configuration;
 using Elsa.Platform.Healing.Core.Operations;
 using Elsa.Platform.Healing.Core.Ownership;
 using Elsa.Platform.Healing.Core.Providers;
 using Elsa.Platform.Healing.Core.Repairs;
+using Elsa.Platform.Healing.Core.Security;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using ComponentManifestModel = Elsa.Platform.Healing.Core.ComponentManifest;
@@ -13,6 +16,58 @@ namespace Elsa.Platform.Healing.Persistence.EntityFrameworkCore.Tests;
 
 public sealed class HealingStoreTests
 {
+    [Fact]
+    public async Task Human_command_decision_and_domain_mutation_are_committed_with_an_audit_event()
+    {
+        await using var fixture = await HealingPersistenceFixture.CreateAsync();
+        var workspaceId = Guid.NewGuid();
+        var applicationId = Guid.NewGuid();
+        var actorId = Guid.NewGuid();
+        var incident = CreateIncident(workspaceId, applicationId);
+        incident.Status = HealingIncidentStatus.NeedsHuman;
+        var command = new HumanCommand
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            ApplicationId = applicationId,
+            IncidentId = incident.Id,
+            IdempotencyKey = $"retry:{incident.Id:D}",
+            Command = Elsa.Platform.Healing.Abstractions.HealingHumanCommands.Retry,
+            ProviderActorId = "12345",
+            ProviderActorLogin = "healing-maintainer",
+            Status = HumanCommandStatus.Pending,
+            RequestedAt = DateTimeOffset.UtcNow
+        };
+        fixture.Db.AddRange(CreateConfiguration(workspaceId, applicationId), incident, command);
+        await fixture.Db.SaveChangesAsync();
+
+        var now = DateTimeOffset.Parse("2026-07-16T12:00:00Z");
+        var timeProvider = new FixedTimeProvider(now);
+        var auditService = new HealingAuditService(new HealingStore(fixture.Db), timeProvider);
+        var service = new HumanProviderCommandService(
+            new HealingHumanProviderCommandStore(fixture.Db, auditService, timeProvider));
+        var decision = await service.ExecuteAsync(command.Id, new HumanProviderCommandAuthorization(
+            true,
+            "maintain",
+            actorId,
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                Elsa.Platform.Healing.Abstractions.HealingPermissions.RetryRepair
+            }));
+
+        decision.Executed.Should().BeTrue();
+        (await fixture.Db.HealingIncidents.AsNoTracking().SingleAsync(x => x.Id == incident.Id))
+            .Status.Should().Be(HealingIncidentStatus.ReadyForRepair);
+        var completedCommand = await fixture.Db.HumanCommands.AsNoTracking().SingleAsync(x => x.Id == command.Id);
+        completedCommand.CompletedAt.Should().Be(now);
+        using var permissionSnapshot = JsonDocument.Parse(completedCommand.ProviderPermissionSnapshotJson);
+        permissionSnapshot.RootElement.GetProperty("EvaluatedAt").GetDateTimeOffset().Should().Be(now);
+        var auditEvent = await fixture.Db.Set<HealingAuditEvent>().AsNoTracking()
+            .SingleAsync(x => x.AggregateType == "human-command" && x.AggregateId == command.Id);
+        auditEvent.EventType.Should().Be("human-command-executed");
+        auditEvent.ActorId.Should().Be(actorId.ToString("D"));
+    }
+
     [Fact]
     public async Task Revoked_provider_history_does_not_block_a_new_validated_authorization_generation()
     {
@@ -394,7 +449,7 @@ public sealed class HealingStoreTests
             Tier = EvidenceTier.DefaultRedacted, CanonicalJson = "{}", Digest = new string('a', 64),
             ProvenanceJson = "{}", OmissionsJson = "[]", CreatedAt = now, ExpiresAt = now.AddHours(1)
         };
-        fixture.Db.AddRange(incident, episode, provider, path, evidencePolicy, merge, binding, evidence);
+        fixture.Db.AddRange(CreateConfiguration(workspaceId, applicationId), incident, episode, provider, path, evidencePolicy, merge, binding, evidence);
         await fixture.Db.SaveChangesAsync();
         IRepairOrchestrationStore store = new HealingStore(fixture.Db);
         RepairAttempt NewAttempt() => new()
@@ -407,7 +462,7 @@ public sealed class HealingStoreTests
             BudgetJson = "{}", UsageJson = "{}"
         };
 
-        var first = await store.TryCreateAttemptAsync(NewAttempt(), 2);
+        var first = await store.TryCreateAttemptAsync(NewAttempt(), 2, HealingBudgetOptions.MaximumConcurrency);
         var tokenHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("lease-token")));
         var leased = await store.TryAcquireLeaseAsync(
             workspaceId, first.Attempt!.Id, "workflow-1", tokenHash, now, now.AddMinutes(5));
@@ -418,10 +473,10 @@ public sealed class HealingStoreTests
             "{\"reproduced\":true}", now.AddMinutes(1));
         await fixture.Db.RepairAttempts.Where(x => x.Id == first.Attempt.Id)
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, RepairAttemptStatus.Failed));
-        var second = await store.TryCreateAttemptAsync(NewAttempt(), 2);
+        var second = await store.TryCreateAttemptAsync(NewAttempt(), 2, HealingBudgetOptions.MaximumConcurrency);
         await fixture.Db.RepairAttempts.Where(x => x.Id == second.Attempt!.Id)
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, RepairAttemptStatus.Failed));
-        var capped = await store.TryCreateAttemptAsync(NewAttempt(), 2);
+        var capped = await store.TryCreateAttemptAsync(NewAttempt(), 2, HealingBudgetOptions.MaximumConcurrency);
 
         first.Outcome.Should().Be(RepairAttemptStoreOutcome.Created);
         first.Attempt.AttemptNumber.Should().Be(1);
@@ -792,4 +847,9 @@ public sealed class HealingStoreTests
         RepairedRevision = "abc123",
         Outcome = outcome
     };
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
 }

@@ -196,11 +196,15 @@ public sealed class HealingAuditService(IHealingAuditStore store, TimeProvider? 
             throw new ArgumentException($"{field} is required.", field);
         if (value.Length > 256)
             throw new ArgumentException($"{field} exceeds 256 characters.", field);
+        if (value.Any(char.IsControl) || LooksLikeCredential(value))
+            throw new ArgumentException($"{field} contains unsafe audit material.", field);
     }
 
     private static void ValidateOptional(string? value, string field)
     {
         if (value?.Length > 256)
             throw new ArgumentException($"{field} exceeds 256 characters.", field);
+        if (value is not null && (value.Any(char.IsControl) || LooksLikeCredential(value)))
+            throw new ArgumentException($"{field} contains unsafe audit material.", field);
     }
 }

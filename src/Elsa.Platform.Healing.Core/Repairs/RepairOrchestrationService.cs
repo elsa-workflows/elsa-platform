@@ -1,12 +1,13 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Elsa.Platform.Healing.Core.Configuration;
 
 namespace Elsa.Platform.Healing.Core.Repairs;
 
 public enum RepairTargetState { Unknown, Unresolved, AlreadyFixed }
-public enum RepairAttemptCreationOutcome { Created, AlreadyFixed, AttemptLimitReached, TargetStateUnknown, TargetRevisionChanged, EvidenceUnavailable, Conflict }
-public enum RepairAttemptStoreOutcome { Created, AttemptLimitReached, Conflict }
+public enum RepairAttemptCreationOutcome { Created, AlreadyFixed, AttemptLimitReached, ConcurrencyLimitReached, TargetStateUnknown, TargetRevisionChanged, EvidenceUnavailable, Conflict }
+public enum RepairAttemptStoreOutcome { Created, AttemptLimitReached, ConcurrencyLimitReached, Conflict }
 public enum ReproductionOutcome { Unknown, Reproduced, NotReproduced, NotAttempted }
 
 public sealed record RepairTargetInspectionRequest(
@@ -30,7 +31,8 @@ public sealed record CreateRepairAttemptRequest(
     string? ProducingRevision,
     bool ProducingRevisionVerified,
     string BudgetJson,
-    int MaximumAttempts = RepairOrchestrationService.MaximumAttempts);
+    int MaximumAttempts = RepairOrchestrationService.MaximumAttempts,
+    int MaximumConcurrentAttempts = HealingBudgetOptions.MaximumConcurrency);
 
 public sealed record RepairAttemptCreationResult(
     RepairAttemptCreationOutcome Outcome,
@@ -73,14 +75,15 @@ public interface IRepairTargetInspector
 }
 
 /// <summary>
-/// Atomic persistence boundary for repair execution. Implementations must enforce the attempt cap and every
-/// lease-token/expiry predicate in the same transaction as the mutation.
+/// Atomic persistence boundary for repair execution. Implementations must enforce the episode attempt cap,
+/// application concurrency cap, and every lease-token/expiry predicate in the same transaction as the mutation.
 /// </summary>
 public interface IRepairOrchestrationStore
 {
     ValueTask<RepairAttemptStoreCreateResult> TryCreateAttemptAsync(
         RepairAttempt attempt,
         int maximumAttempts,
+        int maximumConcurrentAttempts,
         CancellationToken cancellationToken = default);
 
     ValueTask<RepairAttempt?> FindAttemptAsync(
@@ -180,13 +183,19 @@ public sealed class RepairOrchestrationService(
                 UsageJson = "{}"
             };
 
-            var created = await store.TryCreateAttemptAsync(attempt, request.MaximumAttempts, cancellationToken);
+            var created = await store.TryCreateAttemptAsync(
+                attempt,
+                request.MaximumAttempts,
+                request.MaximumConcurrentAttempts,
+                cancellationToken);
             return created.Outcome switch
             {
                 RepairAttemptStoreOutcome.Created when created.Attempt is not null =>
                     new RepairAttemptCreationResult(RepairAttemptCreationOutcome.Created, created.Attempt, nonce, "created"),
                 RepairAttemptStoreOutcome.AttemptLimitReached =>
                     Rejected(RepairAttemptCreationOutcome.AttemptLimitReached, "attempt-limit-reached"),
+                RepairAttemptStoreOutcome.ConcurrencyLimitReached =>
+                    Rejected(RepairAttemptCreationOutcome.ConcurrencyLimitReached, "concurrency-limit-reached"),
                 _ => Rejected(RepairAttemptCreationOutcome.Conflict, "attempt-create-conflict")
             };
         }
@@ -320,6 +329,9 @@ public sealed class RepairOrchestrationService(
             throw new ArgumentException("BudgetJson is required and must not exceed 8192 bytes.", nameof(request));
         if (request.MaximumAttempts is < 1 or > MaximumAttempts)
             throw new ArgumentOutOfRangeException(nameof(request), $"MaximumAttempts must be between one and {MaximumAttempts}.");
+        if (request.MaximumConcurrentAttempts is < 1 or > HealingBudgetOptions.MaximumConcurrency)
+            throw new ArgumentOutOfRangeException(nameof(request),
+                $"MaximumConcurrentAttempts must be between one and {HealingBudgetOptions.MaximumConcurrency}.");
         ValidateBudget(request.BudgetJson, request);
     }
 

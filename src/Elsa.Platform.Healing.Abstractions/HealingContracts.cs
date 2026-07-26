@@ -85,6 +85,7 @@ public static class HealingSignalAttributes
     public const string ComponentKey = "elsa.healing.component.key";
     public const string WorkflowDefinitionId = "elsa.healing.workflow.definition.id";
     public const string WorkflowActivityType = "elsa.healing.workflow.activity.type";
+    public const string VerificationAffectedOperation = "elsa.healing.verification.affected_operation";
 }
 
 public static class HealingFailureClasses
@@ -102,6 +103,23 @@ public static class HealingFailureClasses
     public const string Handled = "handled";
     public const string TransientRetrying = "transient_retrying";
     public const string Unknown = "unknown";
+
+    public static IReadOnlySet<string> All { get; } = new[]
+    {
+        UnhandledRequest,
+        FatalStartup,
+        FatalBackground,
+        UnexpectedWorkflow,
+        UnexpectedActivity,
+        TransientExhausted,
+        ExplicitIncident,
+        Validation,
+        Authorization,
+        Cancellation,
+        Handled,
+        TransientRetrying,
+        Unknown
+    }.ToFrozenSet(StringComparer.Ordinal);
 }
 
 public static class HealingRetryStates
@@ -109,6 +127,13 @@ public static class HealingRetryStates
     public const string None = "none";
     public const string Retrying = "retrying";
     public const string Exhausted = "exhausted";
+
+    public static IReadOnlySet<string> All { get; } = new[]
+    {
+        None,
+        Retrying,
+        Exhausted
+    }.ToFrozenSet(StringComparer.Ordinal);
 }
 
 /// <summary>
@@ -157,6 +182,57 @@ public sealed record HealingEvidenceMetadata(
     bool IsRedacted,
     bool IsTruncated,
     IReadOnlyList<string> OmittedFields);
+
+/// <summary>
+/// Versioned request for an authorized explicit incident. Application and environment identity come from the
+/// authenticated route and are deliberately absent from the request body.
+/// </summary>
+public sealed record ExplicitHealingIncidentRequest(
+    string ProfileVersion,
+    Guid? RevisionId,
+    DateTimeOffset OccurredAt,
+    string OperationName,
+    string FailureClass,
+    string RetryState,
+    HealingExceptionEvidence Exception,
+    HealingEvidenceMetadata Evidence,
+    string? OccurrenceId = null,
+    string? SourceRevision = null,
+    string? ComponentManifestDigest = null,
+    bool IsExplicit = true,
+    string? ComponentKey = null,
+    string? WorkflowDefinitionId = null,
+    string? WorkflowActivityType = null,
+    HealingTraceContext? Trace = null,
+    string? ServiceName = null,
+    string? ResourceIdentity = null,
+    string? Severity = null)
+{
+    public HealingSignal ToSignal(Guid applicationId, Guid environmentId) => new(
+        ProfileVersion,
+        applicationId,
+        environmentId,
+        RevisionId,
+        OccurredAt,
+        OperationName.Trim(),
+        FailureClass.Trim(),
+        RetryState.Trim(),
+        Exception,
+        Evidence,
+        OccurrenceId,
+        SourceRevision,
+        ComponentManifestDigest,
+        IsExplicit,
+        ComponentKey,
+        WorkflowDefinitionId,
+        WorkflowActivityType,
+        Trace,
+        ServiceName?.Trim(),
+        ResourceIdentity,
+        Severity);
+}
+
+public sealed record ExplicitHealingIncidentAcceptedResponse(Guid InboxId, bool IsReplay);
 
 public static class ComponentManifestKinds
 {
@@ -299,7 +375,9 @@ public sealed record RepairReproductionEvidence(
 public sealed record RepairRegressionEvidence(
     bool WasAdded,
     string Summary,
-    IReadOnlyList<string> ChangedTests);
+    IReadOnlyList<string> ChangedTests,
+    bool FailedBeforePatch = false,
+    bool PassedAfterPatch = false);
 
 public sealed record RepairValidationResult(
     string Kind,
@@ -406,6 +484,8 @@ public sealed record RepairPublicationRequest(
 
 public sealed record ProviderMergeSnapshot(
     string PullRequestId,
+    bool IsOpen,
+    bool IsDraft,
     string HeadRevision,
     string BaseRevision,
     IReadOnlyList<ProviderCheckSnapshot> Checks,
@@ -413,7 +493,12 @@ public sealed record ProviderMergeSnapshot(
     bool IsBranchProtectionSatisfied,
     DateTimeOffset ObservedAt);
 
-public sealed record ProviderCheckSnapshot(string Name, string State, string? Revision, DateTimeOffset ObservedAt);
+public sealed record ProviderCheckSnapshot(
+    string Name,
+    string State,
+    string? Revision,
+    DateTimeOffset ObservedAt,
+    long? ProviderAppId = null);
 
 public sealed record ProviderMergeRequest(
     string ProtocolVersion,
@@ -647,6 +732,18 @@ public sealed record RepairVerificationFailedSignal(
     string ReasonCode,
     DateTimeOffset DetectedAt);
 
+public sealed record RepairVerificationFailedSignalAppendReceipt(
+    Guid DeliveryId,
+    bool IsReplay,
+    DateTimeOffset AcceptedAt);
+
+public sealed record RepairVerificationFailedSignalLease(
+    Guid DeliveryId,
+    string LeaseToken,
+    RepairVerificationFailedSignal Signal,
+    int AttemptCount,
+    DateTimeOffset LeaseExpiresAt);
+
 public interface IDeploymentObservationSink
 {
     ValueTask<DeploymentObservationReceipt> AppendAsync(
@@ -658,6 +755,37 @@ public interface IRepairVerificationSignalSink
 {
     ValueTask AppendAsync(
         RepairVerificationFailedSignal signal,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Durable handoff consumed by the deployment system. Leasing and acknowledgement convey only the trusted
+/// verification-failure signal; no deployment or rollback command is represented by this contract.
+/// </summary>
+public interface IRepairVerificationFailedSignalOutbox
+{
+    ValueTask<RepairVerificationFailedSignalAppendReceipt> AppendAsync(
+        RepairVerificationFailedSignal signal,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<RepairVerificationFailedSignalLease?> TryLeaseNextAsync(
+        string consumerId,
+        DateTimeOffset now,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<bool> MarkDeliveredAsync(
+        Guid deliveryId,
+        string leaseToken,
+        DateTimeOffset deliveredAt,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<bool> ReleaseAsync(
+        Guid deliveryId,
+        string leaseToken,
+        DateTimeOffset now,
+        DateTimeOffset nextAttemptAt,
+        string outcomeCode,
         CancellationToken cancellationToken = default);
 }
 

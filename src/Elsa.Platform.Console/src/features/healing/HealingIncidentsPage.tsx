@@ -182,7 +182,7 @@ function toApiFilters(filters: FilterDraft, cursor?: string): HealingIncidentFil
 }
 
 export function humanize(value: string) {
-  return value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+  return value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replaceAll("_", " ").replaceAll("-", " ").replace(/^./, (letter) => letter.toUpperCase());
 }
 
 function shortId(value: string) {

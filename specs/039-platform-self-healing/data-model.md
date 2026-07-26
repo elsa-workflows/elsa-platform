@@ -265,6 +265,12 @@ Policy edits create new versions. Active attempts keep their captured version; p
 
 Short-lived record binding a verified GitHub OIDC token to one repair attempt: issuer, audience, subject, repository IDs, workflow ref/revision, source ref/SHA, run ID/attempt, actor ID, JWT ID, nonce hash, issued/expiry/exchanged times, capability token hash, and revocation state. JWT IDs and nonces are one-use.
 
+### ManagedRepairInferenceReservation
+
+Durable, one-per-attempt admission written before Platform invokes managed inference. It binds the request idempotency key and source-context digest to reserved inference units, an internal lease token/deadline, terminal outcome, and concurrency version. Proposal, attempt, reservation-completion, and audit writes commit in one transaction.
+
+An expired `Leased` reservation is an indeterminate crash window: inference may have completed immediately before the process died. Because the managed provider contract does not offer a provider-side idempotency key, Platform never reacquires that reservation. It marks the reservation `Abandoned`, fails and releases the attempt, moves the active repairing incident to audited `NeedsHuman`, and preserves the inference budget against duplicate spend. A future provider adapter may opt into safe reacquisition only after supplying a proven durable idempotency contract.
+
 ## 17. ProviderWebhookDelivery and HumanCommand
 
 `ProviderWebhookDelivery` records delivery ID, verified installation/repository/event/action, body digest, received/processed times, and safe outcome. The raw body is retained only for the minimum configured diagnostic window when policy permits.

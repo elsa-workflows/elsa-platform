@@ -5,6 +5,8 @@ namespace Elsa.Platform.Healing.Core.Configuration;
 public sealed class HealingOptions
 {
     public const string SectionName = "Healing";
+    public const string IncidentReviewEnabledConfigurationKey = SectionName + ":" + nameof(IncidentReviewEnabled);
+    public const string VerificationEnabledConfigurationKey = SectionName + ":" + nameof(VerificationEnabled);
 
     public bool PlatformKillSwitch { get; set; }
     public bool DiscoveryEnabled { get; set; } = true;
@@ -147,6 +149,10 @@ public sealed class HealingKillSwitch
             environment?.RepairEnabled);
     }
 
+    public HealingGateResult CanReviewIncidents() => EvaluatePlatformStage(_getOptions().IncidentReviewEnabled);
+
+    public HealingGateResult CanVerify() => EvaluatePlatformStage(_getOptions().VerificationEnabled);
+
     public HealingGateResult CanAutomaticallyMerge(
         HealingWorkspaceConfiguration workspace,
         HealingConfiguration application,
@@ -182,6 +188,16 @@ public sealed class HealingKillSwitch
             return HealingGateResult.Block(HealingGateReasonCodes.EnvironmentDisabled);
 
         return HealingGateResult.Permit();
+    }
+
+    private HealingGateResult EvaluatePlatformStage(bool enabled)
+    {
+        var options = _getOptions();
+        if (options.PlatformKillSwitch)
+            return HealingGateResult.Block(HealingGateReasonCodes.PlatformKillSwitch);
+        return enabled
+            ? HealingGateResult.Permit()
+            : HealingGateResult.Block(HealingGateReasonCodes.StageDisabled);
     }
 
     private HealingGateResult EvaluateKillSwitches(

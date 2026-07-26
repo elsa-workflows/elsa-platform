@@ -38,7 +38,9 @@ public sealed class PlatformGitHubReplayStore(HealingDbContext dbContext, TimePr
                 binding.WorkflowRevision
             }).SingleOrDefaultAsync(cancellationToken);
         var expectedScopes = exchange.Phase == "initial"
-            ? new HashSet<string>([WorkloadCapabilityScopes.ReadEvidence, WorkloadCapabilityScopes.CreateProposal], StringComparer.Ordinal)
+            ? new HashSet<string>(
+                [WorkloadCapabilityScopes.ReadEvidence, WorkloadCapabilityScopes.CreateProposal, WorkloadCapabilityScopes.HeartbeatAttempt],
+                StringComparer.Ordinal)
             : new HashSet<string>([WorkloadCapabilityScopes.FinalizeProposal, WorkloadCapabilityScopes.UploadResult], StringComparer.Ordinal);
         var nonceAuthorized = authority is not null && (exchange.Phase switch
         {

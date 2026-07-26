@@ -59,6 +59,18 @@ public sealed class HealingAuditServiceTests
             .WithMessage("*providerOutcome*credential material*");
     }
 
+    [Fact]
+    public async Task AppendRejectsCredentialMaterialInAttributionFields()
+    {
+        var service = new HealingAuditService(new InMemoryAuditStore());
+        var write = ValidWrite() with { ActorId = "github_pat_Aa123456789012345678901234567890" };
+
+        var act = () => service.AppendAsync(write).AsTask();
+
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*ActorId*unsafe audit material*");
+    }
+
     [Theory]
     [InlineData("opaque-token-value with spaces")]
     [InlineData("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature")]

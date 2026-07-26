@@ -26,6 +26,18 @@ public sealed record GitHubInstallationTokenRequest(
     public static GitHubInstallationTokenRequest ContentAndPullRequestWrite(string repositoryName) =>
         new(repositoryName, PermissionSet(("contents", "write"), ("pull_requests", "write"), ("metadata", "read")));
 
+    public static GitHubInstallationTokenRequest PullRequestRead(string repositoryName) =>
+        new(repositoryName, PermissionSet(("pull_requests", "read"), ("metadata", "read")));
+
+    public static GitHubInstallationTokenRequest BranchProtectionRead(string repositoryName) =>
+        new(repositoryName, PermissionSet(("administration", "read"), ("metadata", "read")));
+
+    public static GitHubInstallationTokenRequest ChecksAndStatusesRead(string repositoryName) =>
+        new(repositoryName, PermissionSet(("checks", "read"), ("statuses", "read"), ("metadata", "read")));
+
+    public static GitHubInstallationTokenRequest MergeWrite(string repositoryName) =>
+        new(repositoryName, PermissionSet(("contents", "write"), ("metadata", "read")));
+
     private static IReadOnlyDictionary<string, string> PermissionSet(params (string Name, string Access)[] permissions) =>
         permissions.ToDictionary(x => x.Name, x => x.Access, StringComparer.Ordinal);
 }
@@ -104,7 +116,8 @@ public sealed class GitHubAppTokenProvider(HttpClient httpClient, TimeProvider? 
 
         foreach (var (permission, access) in permissions)
         {
-            if (permission is not ("metadata" or "issues" or "actions" or "contents" or "pull_requests") ||
+            if (permission is not ("metadata" or "issues" or "actions" or "contents" or "pull_requests" or
+                "administration" or "checks" or "statuses") ||
                 access is not ("read" or "write") ||
                 permission == "metadata" && access != "read")
                 return false;

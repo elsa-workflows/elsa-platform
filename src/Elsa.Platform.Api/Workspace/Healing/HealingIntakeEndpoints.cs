@@ -63,7 +63,7 @@ public sealed class HealingIntakeEndpointModule : IHealingEndpointModule
         group.AddEndpointFilter(RequireApplicationEnvironmentAsync);
 
         group.MapPost("/incidents", AppendExplicitIncidentAsync)
-            .RequireHealingPermission(HealingPermissions.Configure);
+            .RequireHealingPermission(HealingPermissions.ReportIncident);
 
         var telemetry = group.MapGroup("/opentelemetry");
         telemetry.MapGet("/collector-configuration", GetCollectorConfigurationAsync)
@@ -288,52 +288,3 @@ public sealed class HealingIntakeEndpointModule : IHealingEndpointModule
     private static string Sha256(string value) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 }
-
-public sealed record ExplicitHealingIncidentRequest(
-    string ProfileVersion,
-    Guid? ApplicationId,
-    Guid? EnvironmentId,
-    Guid? RevisionId,
-    DateTimeOffset OccurredAt,
-    string OperationName,
-    string FailureClass,
-    string RetryState,
-    HealingExceptionEvidence Exception,
-    HealingEvidenceMetadata Evidence,
-    string? OccurrenceId = null,
-    string? SourceRevision = null,
-    string? ComponentManifestDigest = null,
-    bool IsExplicit = true,
-    string? ComponentKey = null,
-    string? WorkflowDefinitionId = null,
-    string? WorkflowActivityType = null,
-    HealingTraceContext? Trace = null,
-    string? ServiceName = null,
-    string? ResourceIdentity = null,
-    string? Severity = null)
-{
-    public HealingSignal ToSignal(Guid applicationId, Guid environmentId) => new(
-        ProfileVersion,
-        applicationId,
-        environmentId,
-        RevisionId,
-        OccurredAt,
-        OperationName.Trim(),
-        FailureClass.Trim(),
-        RetryState.Trim(),
-        Exception,
-        Evidence,
-        OccurrenceId,
-        SourceRevision,
-        ComponentManifestDigest,
-        IsExplicit,
-        ComponentKey,
-        WorkflowDefinitionId,
-        WorkflowActivityType,
-        Trace,
-        ServiceName?.Trim(),
-        ResourceIdentity,
-        Severity);
-}
-
-public sealed record ExplicitHealingIncidentAcceptedResponse(Guid InboxId, bool IsReplay);

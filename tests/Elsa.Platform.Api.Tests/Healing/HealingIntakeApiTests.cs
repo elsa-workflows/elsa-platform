@@ -120,6 +120,10 @@ public sealed class HealingIntakeApiTests
             .StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
         await app.Factory.GrantWorkspaceDeploymentPermissionAsync(app.WorkspaceId, accountId, HealingPermissions.Configure);
+        (await reader.PostPlatformJsonAsync(incidentUri, Signal(app.ApplicationId, app.EnvironmentId, "configure-still-denied")))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        await app.Factory.GrantWorkspaceDeploymentPermissionAsync(app.WorkspaceId, accountId, HealingPermissions.ReportIncident);
         (await reader.PostPlatformJsonAsync(incidentUri, Signal(app.ApplicationId, app.EnvironmentId, "allowed")))
             .StatusCode.Should().Be(HttpStatusCode.Accepted);
     }

@@ -51,10 +51,16 @@ The workflow requests a GitHub OIDC token with the Platform audience and exchang
 The capability permits only:
 
 - read one evidence bundle
+- create one bounded, inert managed proposal
 - heartbeat one attempt lease
+- finalize that exact proposal after repository validation
 - upload one bounded result envelope
 
 It cannot create branches, commits, issues, pull requests, checks, labels, or merges.
+
+The capability is not an authority snapshot. Exchange, evidence, proposal, heartbeat, finalization exchange, and result upload each revalidate the current Platform/workspace/application/environment repair gates, active incident episode, provider connection, and source binding. Revocation immediately invalidates and durably revokes outstanding capability exchanges.
+
+Before managed inference, Platform commits an at-most-once leased reservation for the attempt and its full inference-unit allowance. Concurrent callers cannot invoke the provider twice. If Platform crashes after invocation but before the atomic proposal/audit commit, an expired reservation is treated as indeterminate and is not reacquired unless a future provider contract supplies durable provider-side idempotency; the attempt is released to an audited `NeedsHuman` outcome instead.
 
 ## Repair result
 
@@ -110,6 +116,20 @@ Unreproduced or revision-unverified fixes are always draft and human-merge-only.
 Platform observes PR/check/branch-protection changes through verified webhooks and provider refreshes. Auto-merge is requested only when a fresh complete policy evaluation passes. GitHub branch protection and repository policy remain final authority.
 
 Platform records the merged SHA but does not mark the incident healed until deployment verification succeeds.
+
+### Repository validation harness
+
+If `.elsa/healing/validate` exists and is executable, the isolated validation job sets
+`ELSA_HEALING_VALIDATION_OUTPUT` to a runner-owned file. The harness may replace that file with only this
+bounded boolean contract:
+
+```json
+{"protocolVersion":"1.0","reproduction":{"wasAttempted":true,"wasReproduced":true},"regression":{"wasAdded":true,"failedBeforePatch":true,"passedAfterPatch":true}}
+```
+
+Unknown properties, non-boolean evidence, symlinks, oversized output, and internally inconsistent reproduction
+claims fail validation. Repository text is never copied from this file into Platform or the pull request. Missing
+evidence remains false and therefore human-merge-only.
 
 ## Human commands
 

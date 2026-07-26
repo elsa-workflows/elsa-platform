@@ -46,9 +46,11 @@ public enum ProviderConnectionStatus { Active, Suspended, Revoked, PendingValida
 public enum ProviderOperationKind { UpsertWorkItem, DispatchWorkflow, PublishPullRequest, RefreshChecks, RequestMerge }
 public enum ProviderOperationStatus { Pending, Leased, Completed, Failed, DeadLettered }
 public enum WorkloadIdentityExchangeStatus { Pending, Exchanged, Expired, Revoked }
+public enum ManagedRepairInferenceReservationStatus { Leased, Completed, Rejected, Abandoned, Revoked }
 public enum ProviderWebhookDeliveryStatus { Pending, Processing, Completed, Rejected, Failed }
 public enum HumanCommandStatus { Pending, Authorized, Rejected, Executed, Failed }
 public enum DeploymentObservationSource { PlatformDeployment, ExternalDelivery }
+public enum RepairVerificationFailureDeliveryStatus { Pending, Leased, Delivered }
 
 public static class HealingTransitionReasonCodes
 {
@@ -163,6 +165,31 @@ public sealed class HealingSignalInboxItem
     public DateTimeOffset? NextAttemptAt { get; set; }
     public string? OutcomeCode { get; set; }
     public string? SafeOutcomeDetail { get; set; }
+    public byte[] Version { get; set; } = [];
+}
+
+public sealed class RepairVerificationFailureOutboxItem
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid ApplicationId { get; set; }
+    public Guid EnvironmentId { get; set; }
+    public Guid IncidentId { get; set; }
+    public Guid EpisodeId { get; set; }
+    public Guid SupportingOccurrenceId { get; set; }
+    public string IdempotencyKey { get; set; } = string.Empty;
+    public string PayloadJson { get; set; } = "{}";
+    public string PayloadHash { get; set; } = string.Empty;
+    public RepairVerificationFailureDeliveryStatus Status { get; set; }
+    public int AttemptCount { get; set; }
+    public string? LeaseOwner { get; set; }
+    public string? LeaseToken { get; set; }
+    public DateTimeOffset? LeaseExpiresAt { get; set; }
+    public DateTimeOffset? NextAttemptAt { get; set; }
+    public string? OutcomeCode { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? DeliveredAt { get; set; }
     public byte[] Version { get; set; } = [];
 }
 
@@ -323,7 +350,7 @@ public sealed class HealingIncident
             [HealingIncidentStatus.ThresholdPending] = States(HealingIncidentStatus.ReadyForRepair, HealingIncidentStatus.ObservationOnly, HealingIncidentStatus.Suppressed, HealingIncidentStatus.Superseded, HealingIncidentStatus.Waived),
             [HealingIncidentStatus.ReadyForRepair] = States(HealingIncidentStatus.Repairing, HealingIncidentStatus.ObservationOnly, HealingIncidentStatus.Suppressed, HealingIncidentStatus.Superseded, HealingIncidentStatus.Waived),
             [HealingIncidentStatus.Repairing] = States(HealingIncidentStatus.PullRequestOpen, HealingIncidentStatus.NeedsHuman, HealingIncidentStatus.Failed, HealingIncidentStatus.Superseded, HealingIncidentStatus.Waived),
-            [HealingIncidentStatus.PullRequestOpen] = States(HealingIncidentStatus.Merged, HealingIncidentStatus.Verifying, HealingIncidentStatus.Superseded, HealingIncidentStatus.Waived),
+            [HealingIncidentStatus.PullRequestOpen] = States(HealingIncidentStatus.Merged, HealingIncidentStatus.Verifying, HealingIncidentStatus.NeedsHuman, HealingIncidentStatus.Superseded, HealingIncidentStatus.Waived),
             [HealingIncidentStatus.Merged] = States(HealingIncidentStatus.Verifying, HealingIncidentStatus.Superseded, HealingIncidentStatus.Waived),
             [HealingIncidentStatus.Verifying] = States(HealingIncidentStatus.Healed, HealingIncidentStatus.FailedVerification, HealingIncidentStatus.Superseded, HealingIncidentStatus.Waived),
             [HealingIncidentStatus.FailedVerification] = States(HealingIncidentStatus.ReadyForRepair, HealingIncidentStatus.NeedsHuman, HealingIncidentStatus.Superseded, HealingIncidentStatus.Waived),
@@ -448,6 +475,11 @@ public sealed class RepairAttempt
     public DateTimeOffset? LeaseExpiresAt { get; set; }
     public string BudgetJson { get; set; } = "{}";
     public string UsageJson { get; set; } = "{}";
+    public long InputUnits { get; set; }
+    public long OutputUnits { get; set; }
+    public long AgentDurationTicks { get; set; }
+    public long RepositoryRunDurationTicks { get; set; }
+    public long RepositoryRuns { get; set; }
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
     public string? OutcomeCode { get; set; }
@@ -474,6 +506,29 @@ public sealed class ManagedRepairProposal
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? FinalizedAt { get; set; }
+    public byte[] Version { get; set; } = [];
+}
+
+/// <summary>
+/// Durable, at-most-once admission for Platform-managed inference. A lease may never be reacquired after its
+/// outcome becomes indeterminate: doing so could invoke a metered provider twice after a process crash.
+/// </summary>
+public sealed class ManagedRepairInferenceReservation
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid ApplicationId { get; set; }
+    public Guid AttemptId { get; set; }
+    public string IdempotencyKey { get; set; } = string.Empty;
+    public string SourceContextDigest { get; set; } = string.Empty;
+    public long ReservedInferenceUnits { get; set; }
+    public string LeaseTokenHash { get; set; } = string.Empty;
+    public DateTimeOffset LeaseExpiresAt { get; set; }
+    public ManagedRepairInferenceReservationStatus Status { get; set; }
+    public string? OutcomeCode { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
     public byte[] Version { get; set; } = [];
 }
 
@@ -755,8 +810,10 @@ public sealed class HumanCommand
     public Guid WorkspaceId { get; set; }
     public Guid ApplicationId { get; set; }
     public Guid IncidentId { get; set; }
+    public string IdempotencyKey { get; set; } = string.Empty;
     public string Command { get; set; } = string.Empty;
     public string ProviderActorId { get; set; } = string.Empty;
+    public string ProviderActorLogin { get; set; } = string.Empty;
     public string? PlatformActorId { get; set; }
     public string ProviderPermissionSnapshotJson { get; set; } = "{}";
     public bool WorkspacePermissionGranted { get; set; }
@@ -769,6 +826,20 @@ public sealed class HumanCommand
     public byte[] Version { get; set; } = [];
 }
 
+public sealed class ProviderActorIdentityLink
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid ProviderConnectionId { get; set; }
+    public string ProviderActorId { get; set; } = string.Empty;
+    public string ProviderActorLogin { get; set; } = string.Empty;
+    public Guid PlatformAccountId { get; set; }
+    public Guid VerifiedByAccountId { get; set; }
+    public DateTimeOffset VerifiedAt { get; set; }
+    public DateTimeOffset? RevokedAt { get; set; }
+    public byte[] Version { get; set; } = [];
+}
+
 public sealed class DeploymentObservation
 {
     public Guid Id { get; set; }
@@ -778,6 +849,7 @@ public sealed class DeploymentObservation
     public string Revision { get; set; } = string.Empty;
     public DateTimeOffset DeployedAt { get; set; }
     public DeploymentObservationSource Source { get; set; }
+    public string SourceObservationId { get; set; } = string.Empty;
     public string SourceIdempotencyKey { get; set; } = string.Empty;
     public string TrustIdentity { get; set; } = string.Empty;
     public string EvidenceDigest { get; set; } = string.Empty;
@@ -802,6 +874,8 @@ public sealed class VerificationResult
     public Guid? DeploymentObservationId { get; set; }
     public Guid? SupportingOccurrenceId { get; set; }
     public DateTimeOffset? DecidedAt { get; set; }
+    public string? SafeDecisionReason { get; set; }
+    public DateTimeOffset? WaiverExpiresAt { get; set; }
     public byte[] Version { get; set; } = [];
 }
 

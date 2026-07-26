@@ -26,29 +26,10 @@ public sealed class HealingIdempotencyConflictException(string message) : Invali
 /// </summary>
 public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStore, IHealingOwnershipStore, IHealingAdministrationStore, IHealingIncidentStore, IHealingSignalInboxStore, IHealingTelemetrySourceStore, IProviderOperationStore, IHealingEvidenceStore, IRepairOrchestrationStore
 {
-    public async ValueTask<T> ExecuteInTransactionAsync<T>(
+    public ValueTask<T> ExecuteInTransactionAsync<T>(
         Func<CancellationToken, ValueTask<T>> operation,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(operation);
-        var executionStrategy = dbContext.Database.CreateExecutionStrategy();
-        try
-        {
-            return await executionStrategy.ExecuteAsync(async () =>
-            {
-                await using var transaction = await dbContext.Database.BeginTransactionAsync(
-                    IsolationLevel.Serializable, cancellationToken);
-                var result = await operation(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-                return result;
-            });
-        }
-        catch
-        {
-            dbContext.ChangeTracker.Clear();
-            throw;
-        }
-    }
+        CancellationToken cancellationToken = default) =>
+        HealingPersistenceTransaction.ExecuteAsync(dbContext, operation, cancellationToken);
 
     public async ValueTask<HealingWorkspaceConfiguration> UpsertWorkspaceConfigurationAsync(
         HealingWorkspaceConfiguration configuration,
@@ -703,8 +684,9 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateProjectionRequest(request);
+        ConfigureSqliteWriterTimeout();
 
-        const int maximumAttempts = 12;
+        const int maximumAttempts = 20;
         for (var attempt = 1; ; attempt++)
         {
             try
@@ -728,8 +710,9 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
     {
         if (batchSize < 1)
             throw new ArgumentOutOfRangeException(nameof(batchSize));
+        ConfigureSqliteWriterTimeout();
 
-        const int maximumAttempts = 12;
+        const int maximumAttempts = 20;
         for (var attempt = 1; ; attempt++)
         {
             try
@@ -938,11 +921,17 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
             impact.ReadyAfter ??= thresholdReachedAt.Add(request.DebounceWindow);
             if (incident.ReadyAfter is null || impact.ReadyAfter < incident.ReadyAfter)
                 incident.ReadyAfter = impact.ReadyAfter;
-            if (incident.Status != HealingIncidentStatus.ReadyForRepair)
+            if (incident.Status == HealingIncidentStatus.ThresholdPending)
             {
-                incident.Status = incident.ReadyAfter <= request.AcceptedAt
+                var target = incident.ReadyAfter <= request.AcceptedAt
                     ? HealingIncidentStatus.ReadyForRepair
                     : HealingIncidentStatus.ThresholdPending;
+                if (target != incident.Status)
+                {
+                    var transition = incident.TryTransitionTo(target);
+                    if (!transition.Succeeded)
+                        throw new InvalidOperationException($"Incident transition {transition.From} -> {transition.To} was rejected.");
+                }
             }
         }
 
@@ -1085,14 +1074,31 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
     public async ValueTask<RepairAttemptStoreCreateResult> TryCreateAttemptAsync(
         RepairAttempt attempt,
         int maximumAttempts,
+        int maximumConcurrentAttempts,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(attempt);
         if (maximumAttempts is < 1 or > HealingBudgetOptions.MaximumRepairAttempts)
             throw new ArgumentOutOfRangeException(nameof(maximumAttempts));
+        if (maximumConcurrentAttempts is < 1 or > HealingBudgetOptions.MaximumConcurrency)
+            throw new ArgumentOutOfRangeException(nameof(maximumConcurrentAttempts));
 
         async Task<RepairAttemptStoreCreateResult> CreateAsync()
         {
+            if (!await HealingRepairAdmission.AcquireApplicationLockAsync(
+                    dbContext, attempt.WorkspaceId, attempt.ApplicationId, cancellationToken))
+                return new RepairAttemptStoreCreateResult(RepairAttemptStoreOutcome.Conflict, null);
+
+            var activeApplicationAttempts = await dbContext.RepairAttempts.CountAsync(x =>
+                x.WorkspaceId == attempt.WorkspaceId &&
+                x.ApplicationId == attempt.ApplicationId &&
+                (x.Status == RepairAttemptStatus.Queued || x.Status == RepairAttemptStatus.Dispatched ||
+                 x.Status == RepairAttemptStatus.Running || x.Status == RepairAttemptStatus.ProposalReady ||
+                 x.Status == RepairAttemptStatus.ResultReceived || x.Status == RepairAttemptStatus.Publishing),
+                cancellationToken);
+            if (activeApplicationAttempts >= maximumConcurrentAttempts)
+                return new RepairAttemptStoreCreateResult(RepairAttemptStoreOutcome.ConcurrencyLimitReached, null);
+
             var attemptCount = await dbContext.RepairAttempts.CountAsync(
                 x => x.WorkspaceId == attempt.WorkspaceId &&
                      x.ApplicationId == attempt.ApplicationId &&
@@ -1363,7 +1369,9 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
     {
         ArgumentNullException.ThrowIfNull(verification);
         var existing = await dbContext.VerificationResults.SingleOrDefaultAsync(
-            x => x.EpisodeId == verification.EpisodeId &&
+            x => x.WorkspaceId == verification.WorkspaceId &&
+                 x.ApplicationId == verification.ApplicationId &&
+                 x.EpisodeId == verification.EpisodeId &&
                  x.EnvironmentId == verification.EnvironmentId &&
                  x.RepairedRevision == verification.RepairedRevision, cancellationToken);
         if (existing is null)
@@ -1379,7 +1387,9 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
             {
                 dbContext.Entry(verification).State = EntityState.Detached;
                 existing = await dbContext.VerificationResults.AsNoTracking().SingleOrDefaultAsync(
-                    x => x.EpisodeId == verification.EpisodeId &&
+                    x => x.WorkspaceId == verification.WorkspaceId &&
+                         x.ApplicationId == verification.ApplicationId &&
+                         x.EpisodeId == verification.EpisodeId &&
                          x.EnvironmentId == verification.EnvironmentId &&
                          x.RepairedRevision == verification.RepairedRevision, cancellationToken);
                 if (existing is null)
@@ -1408,6 +1418,8 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
         existing.DeploymentObservationId = verification.DeploymentObservationId;
         existing.SupportingOccurrenceId = verification.SupportingOccurrenceId;
         existing.DecidedAt = verification.DecidedAt;
+        existing.SafeDecisionReason = verification.SafeDecisionReason;
+        existing.WaiverExpiresAt = verification.WaiverExpiresAt;
         await dbContext.SaveChangesAsync(cancellationToken);
         return existing;
     }
@@ -1421,11 +1433,12 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
             x => x.WorkspaceId == observation.WorkspaceId &&
                  x.ApplicationId == observation.ApplicationId &&
                  x.Source == observation.Source &&
-                 x.SourceIdempotencyKey == observation.SourceIdempotencyKey, cancellationToken);
+                 (x.SourceIdempotencyKey == observation.SourceIdempotencyKey ||
+                  x.SourceObservationId == observation.SourceObservationId), cancellationToken);
         if (existing is not null)
         {
-            var candidateHash = $"{observation.EnvironmentId:N}:{observation.Revision}:{observation.EvidenceDigest}";
-            var existingHash = $"{existing.EnvironmentId:N}:{existing.Revision}:{existing.EvidenceDigest}";
+            var candidateHash = $"{observation.EnvironmentId:N}:{observation.Revision}:{observation.DeployedAt:O}:{observation.SourceObservationId}:{observation.SourceIdempotencyKey}:{observation.TrustIdentity}:{observation.EvidenceDigest}";
+            var existingHash = $"{existing.EnvironmentId:N}:{existing.Revision}:{existing.DeployedAt:O}:{existing.SourceObservationId}:{existing.SourceIdempotencyKey}:{existing.TrustIdentity}:{existing.EvidenceDigest}";
             return MatchReplay(existing, candidateHash, existingHash, "Deployment observation");
         }
 
@@ -1442,11 +1455,12 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
                 x => x.WorkspaceId == observation.WorkspaceId &&
                      x.ApplicationId == observation.ApplicationId &&
                      x.Source == observation.Source &&
-                     x.SourceIdempotencyKey == observation.SourceIdempotencyKey, cancellationToken);
+                     (x.SourceIdempotencyKey == observation.SourceIdempotencyKey ||
+                      x.SourceObservationId == observation.SourceObservationId), cancellationToken);
             if (existing is null)
                 throw;
-            var candidateHash = $"{observation.EnvironmentId:N}:{observation.Revision}:{observation.EvidenceDigest}";
-            var existingHash = $"{existing.EnvironmentId:N}:{existing.Revision}:{existing.EvidenceDigest}";
+            var candidateHash = $"{observation.EnvironmentId:N}:{observation.Revision}:{observation.DeployedAt:O}:{observation.SourceObservationId}:{observation.SourceIdempotencyKey}:{observation.TrustIdentity}:{observation.EvidenceDigest}";
+            var existingHash = $"{existing.EnvironmentId:N}:{existing.Revision}:{existing.DeployedAt:O}:{existing.SourceObservationId}:{existing.SourceIdempotencyKey}:{existing.TrustIdentity}:{existing.EvidenceDigest}";
             return MatchReplay(existing, candidateHash, existingHash, "Deployment observation");
         }
     }
@@ -1987,7 +2001,9 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
         left.Outcome == right.Outcome &&
         left.DeploymentObservationId == right.DeploymentObservationId &&
         left.SupportingOccurrenceId == right.SupportingOccurrenceId &&
-        left.DecidedAt == right.DecidedAt;
+        left.DecidedAt == right.DecidedAt &&
+        left.SafeDecisionReason == right.SafeDecisionReason &&
+        left.WaiverExpiresAt == right.WaiverExpiresAt;
 
     private static void ValidateEnvironmentOverrides(HealingConfiguration configuration)
     {
@@ -2099,6 +2115,18 @@ public sealed class HealingStore(HealingDbContext dbContext) : IHealingAuditStor
                message.Contains("SQLITE_LOCKED", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("duplicate key", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ConfigureSqliteWriterTimeout()
+    {
+        const int minimumWriterTimeoutSeconds = 30;
+        if (dbContext.Database.GetDbConnection() is Microsoft.Data.Sqlite.SqliteConnection connection &&
+            connection.DefaultTimeout < minimumWriterTimeoutSeconds)
+        {
+            // SQLite permits only one writer. Give queued projection transactions enough time to acquire
+            // that writer lock before the bounded retry loop recreates their EF state.
+            connection.DefaultTimeout = minimumWriterTimeoutSeconds;
+        }
     }
 
     private static DateTimeOffset Earlier(DateTimeOffset left, DateTimeOffset right) => left <= right ? left : right;

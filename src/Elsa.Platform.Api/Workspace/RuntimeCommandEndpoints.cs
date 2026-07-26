@@ -1,4 +1,5 @@
 using Elsa.Platform.Api.Authentication;
+using Elsa.Platform.Api.Workspace.Healing;
 using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Microsoft.AspNetCore.DataProtection;
@@ -154,6 +155,7 @@ public static class RuntimeCommandEndpoints
             WorkspaceDeploymentService deployments,
             IDataProtectionProvider dataProtectionProvider,
             DeploymentCommandService commands,
+            PlatformDeploymentHealingObserver healingObserver,
             CancellationToken cancellationToken) =>
             await HandleCommandMutationAsync(
                 context,
@@ -174,7 +176,8 @@ public static class RuntimeCommandEndpoints
                         request.Diagnostics,
                         request.Artifacts),
                     cancellationToken),
-                cancellationToken));
+                cancellationToken,
+                command => healingObserver.ObserveCompletedCommandAsync(command, cancellationToken).AsTask()));
 
         group.MapPost("/commands/{commandId:guid}/fail", async (
             Guid workspaceId,
@@ -263,13 +266,16 @@ public static class RuntimeCommandEndpoints
         Guid workspaceId,
         Guid commandId,
         Func<DeploymentCommandService, Task<DeploymentCommand>> mutateAsync,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<DeploymentCommand, Task>? afterMutationAsync = null)
     {
         var permission = await RequireRuntimeCommandAccessAsync(context, accessResolver, permissions, deployments, dataProtectionProvider, workspaceId, null, commandId, commands, cancellationToken);
         if (permission is not null)
             return permission;
 
         var command = await mutateAsync(commands);
+        if (afterMutationAsync is not null)
+            await afterMutationAsync(command);
         return Results.Ok(RuntimeCommandDto.FromCommand(command));
     }
 

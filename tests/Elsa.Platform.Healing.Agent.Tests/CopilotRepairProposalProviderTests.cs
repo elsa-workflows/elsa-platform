@@ -80,6 +80,30 @@ public sealed class CopilotRepairProposalProviderTests
     }
 
     [Fact]
+    public async Task Omits_sensitive_source_files_before_constructing_the_provider_prompt()
+    {
+        const string secret = "github_pat_abcdefghijklmnopqrstuvwxyz123456";
+        var runtime = new RecordingRuntime(Response());
+        var provider = new CopilotRepairProposalProvider(runtime);
+        var request = Request() with
+        {
+            SourceContext = SourceContext(
+            [
+                SourceFile("src/Orders.cs", "public sealed class Orders { }"),
+                SourceFile("src/RemoteClient.cs", $"const string Value = \"{secret}\";")
+            ])
+        };
+
+        await provider.ProposeAsync(request);
+
+        runtime.Request.Should().NotBeNull();
+        runtime.Request!.Prompt.Should().Contain("src/Orders.cs");
+        runtime.Request.Prompt.Should().Contain("src/RemoteClient.cs");
+        runtime.Request.Prompt.Should().NotContain(secret);
+        runtime.Request.Prompt.Should().NotContain("const string Value");
+    }
+
+    [Fact]
     public async Task Gateway_marks_managed_proposals_as_not_reproduced_or_validated()
     {
         var request = AgentRequest();

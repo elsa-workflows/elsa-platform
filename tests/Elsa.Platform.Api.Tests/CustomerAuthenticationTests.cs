@@ -17,7 +17,8 @@ public sealed class CustomerAuthenticationTests
         await using var app = new PlatformApiTestApplication(new Dictionary<string, string?>
         {
             [$"{PlatformIdentityDefaults.ConfigurationSection}:Authority"] = "",
-            [$"{PlatformIdentityDefaults.ConfigurationSection}:ClientId"] = ""
+            [$"{PlatformIdentityDefaults.ConfigurationSection}:ClientId"] = "",
+            [TrustedHeaderWorkspaceIdentityReader.EnabledConfigurationKey] = "false"
         });
 
         var response = await app.CreateClient().GetPlatformJsonAsync<CustomerAuthSessionResponse>(CustomerAuthenticationDefaults.SessionPath);
@@ -34,7 +35,8 @@ public sealed class CustomerAuthenticationTests
         await using var app = new PlatformApiTestApplication(new Dictionary<string, string?>
         {
             [$"{PlatformIdentityDefaults.ConfigurationSection}:Authority"] = "",
-            [$"{PlatformIdentityDefaults.ConfigurationSection}:ClientId"] = ""
+            [$"{PlatformIdentityDefaults.ConfigurationSection}:ClientId"] = "",
+            [TrustedHeaderWorkspaceIdentityReader.EnabledConfigurationKey] = "false"
         });
 
         var response = await app.CreateClient(new() { AllowAutoRedirect = false })

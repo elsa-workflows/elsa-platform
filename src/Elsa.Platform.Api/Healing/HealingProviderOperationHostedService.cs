@@ -15,9 +15,9 @@ public sealed class HealingProviderOperationHostedService(
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
         Task.WhenAll(Enumerable.Range(0, _options.Budgets.MaxConcurrentOperations)
-            .Select(_ => RunWorkerAsync(stoppingToken)));
+            .Select(index => RunWorkerAsync(index == 0, stoppingToken)));
 
-    private async Task RunWorkerAsync(CancellationToken stoppingToken)
+    private async Task RunWorkerAsync(bool coordinatesMerges, CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -30,8 +30,15 @@ public sealed class HealingProviderOperationHostedService(
                 var result = await scope.ServiceProvider
                     .GetRequiredService<ProviderOperationService>()
                     .RunOnceAsync(stoppingToken);
+                var merged = coordinatesMerges && await scope.ServiceProvider
+                    .GetRequiredService<HealingAutoMergeCoordinator>()
+                    .RunOnceAsync(stoppingToken);
+                var commanded = coordinatesMerges && await scope.ServiceProvider
+                    .GetRequiredService<HealingHumanCommandCoordinator>()
+                    .RunOnceAsync(stoppingToken);
                 if (coordinated == HealingRepairCoordinatorStatus.Idle &&
-                    result.Status is HealingWorkerRunStatus.Idle or HealingWorkerRunStatus.Paused)
+                    result.Status is HealingWorkerRunStatus.Idle or HealingWorkerRunStatus.Paused &&
+                    !merged && !commanded)
                     await Task.Delay(_options.IdleDelay, timeProvider, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

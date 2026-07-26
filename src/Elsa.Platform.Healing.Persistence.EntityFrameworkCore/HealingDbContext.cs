@@ -25,6 +25,7 @@ public sealed class HealingDbContext(DbContextOptions<HealingDbContext> options)
     public DbSet<RepairWorkItemProjection> RepairWorkItemProjections => Set<RepairWorkItemProjection>();
     public DbSet<RepairAttempt> RepairAttempts => Set<RepairAttempt>();
     public DbSet<ManagedRepairProposal> ManagedRepairProposals => Set<ManagedRepairProposal>();
+    public DbSet<ManagedRepairInferenceReservation> ManagedRepairInferenceReservations => Set<ManagedRepairInferenceReservation>();
     public DbSet<EvidenceBundle> EvidenceBundles => Set<EvidenceBundle>();
     public DbSet<EvidenceAccessDecision> EvidenceAccessDecisions => Set<EvidenceAccessDecision>();
     public DbSet<RepairResult> RepairResults => Set<RepairResult>();
@@ -40,8 +41,10 @@ public sealed class HealingDbContext(DbContextOptions<HealingDbContext> options)
     public DbSet<WorkloadHeartbeat> WorkloadHeartbeats => Set<WorkloadHeartbeat>();
     public DbSet<ProviderWebhookDelivery> ProviderWebhookDeliveries => Set<ProviderWebhookDelivery>();
     public DbSet<HumanCommand> HumanCommands => Set<HumanCommand>();
+    public DbSet<ProviderActorIdentityLink> ProviderActorIdentityLinks => Set<ProviderActorIdentityLink>();
     public DbSet<DeploymentObservation> DeploymentObservations => Set<DeploymentObservation>();
     public DbSet<VerificationResult> VerificationResults => Set<VerificationResult>();
+    public DbSet<RepairVerificationFailureOutboxItem> RepairVerificationFailureOutbox => Set<RepairVerificationFailureOutboxItem>();
     internal DbSet<HealingAuditEvent> HealingAuditEvents => Set<HealingAuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>

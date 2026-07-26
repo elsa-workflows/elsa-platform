@@ -8,7 +8,9 @@ using Elsa.Platform.Healing.Core.Ownership;
 using Elsa.Platform.Healing.Core.OpenTelemetry;
 using Elsa.Platform.Healing.Core.Providers;
 using Elsa.Platform.Healing.Core.Repairs;
+using Elsa.Platform.Healing.Core.Reporting;
 using Elsa.Platform.Healing.Core.Security;
+using Elsa.Platform.Healing.Core.Verification;
 using Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
 using Elsa.Platform.Healing.GitHub;
 using Elsa.Platform.Healing.OpenTelemetry;
@@ -37,6 +39,7 @@ public static class HealingServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(environment);
 
+        services.TryAddSingleton(TimeProvider.System);
         services.AddOptions<HealingOptions>()
             .Bind(configuration.GetSection(HealingOptions.SectionName))
             .ValidateOnStart();
@@ -56,6 +59,11 @@ public static class HealingServiceCollectionExtensions
             .Validate(options => !string.IsNullOrWhiteSpace(options.Model) &&
                                  options.MaximumTurnSeconds is > 0 and <= 3_600,
                 "Managed repair inference configuration is invalid.")
+            .ValidateOnStart();
+        services.AddOptions<HealingVerificationFailureDeliveryOptions>()
+            .Bind(configuration.GetSection(HealingVerificationFailureDeliveryOptions.SectionName))
+            .Validate(options => options.IsValid(),
+                "Verification failure delivery requires bounded batch, lease, and retry settings; its HTTP consumer requires an HTTPS endpoint and a shared secret of at least 32 bytes.")
             .ValidateOnStart();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<HealingOptions>, HealingOptionsValidator>());
@@ -82,6 +90,14 @@ public static class HealingServiceCollectionExtensions
             serviceProvider.GetRequiredService<HealingStore>());
         services.TryAddScoped<IRepairOrchestrationStore>(serviceProvider =>
             serviceProvider.GetRequiredService<HealingStore>());
+        services.TryAddScoped<IHealingMergeEvaluationStore, HealingMergeEvaluationStore>();
+        services.TryAddScoped<IHumanProviderCommandStore, HealingHumanProviderCommandStore>();
+        services.TryAddScoped<HealingVerificationStore>();
+        services.TryAddScoped<IHealingVerificationStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<HealingVerificationStore>());
+        services.TryAddScoped<IRepairVerificationFailedSignalOutbox>(serviceProvider =>
+            serviceProvider.GetRequiredService<HealingVerificationStore>());
+        services.TryAddScoped<IHealingReportingStore, HealingReportingStore>();
         services.TryAddScoped<IHealingEvidenceSource, HealingEvidenceSource>();
         services.TryAddScoped<IHealingEvidenceElevationAuthorizer, DenyHealingEvidenceElevationAuthorizer>();
         services.TryAddScoped<HealingAuditService>();
@@ -95,7 +111,21 @@ public static class HealingServiceCollectionExtensions
         services.TryAddScoped<HealingEvidenceService>();
         services.TryAddScoped<RepairOrchestrationService>();
         services.TryAddScoped<HealingRepairCoordinator>();
+        services.TryAddScoped<HealingMergeService>();
+        services.TryAddScoped<ITrustedDeploymentSafetyCapabilitySource, TrustedDeploymentSafetyCapabilitySource>();
+        services.TryAddScoped<HealingAutoMergeCoordinator>();
+        services.TryAddScoped<HumanProviderCommandService>();
+        services.TryAddScoped<HealingHumanCommandCoordinator>();
+        services.TryAddScoped<HealingReportingService>();
         services.TryAddScoped<HealingRepairAuthorityService>();
+        services.TryAddScoped<DeploymentObservationService>();
+        services.TryAddScoped<HealingVerificationService>();
+        services.TryAddScoped<HealingVerificationWorker>();
+        services.TryAddScoped<HealingVerificationFailureDeliveryService>();
+        services.TryAddScoped<IDeploymentObservationSink>(serviceProvider =>
+            serviceProvider.GetRequiredService<DeploymentObservationService>());
+        services.TryAddScoped<IRepairVerificationSignalSink, HealingRepairVerificationSignalSink>();
+        services.TryAddScoped<PlatformDeploymentHealingObserver>();
         services.TryAddScoped(serviceProvider => new ProviderOperationService(
             serviceProvider.GetRequiredService<IProviderOperationStore>(),
             serviceProvider.GetServices<IProviderOperationHandler>(),
@@ -113,6 +143,7 @@ public static class HealingServiceCollectionExtensions
             configuration.GetSection("Healing:OpenTelemetry").Bind(options));
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOpenTelemetryIngestionContributor, HealingOpenTelemetryIngestionContributor>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHealingEndpointModule, WorkspaceHealingTelemetrySourceEndpointModule>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHealingEndpointModule, HealingReportingEndpointModule>());
         services.TryAddScoped<HealingAdministrationService>();
         services.TryAddScoped<IHealingProviderCredentialResolver, WorkspaceHealingProviderCredentialResolver>();
         services.AddHttpClient<GitHubAppTokenProvider>(client => client.BaseAddress = new Uri("https://api.github.com/"));
@@ -120,6 +151,16 @@ public static class HealingServiceCollectionExtensions
             client.BaseAddress = new Uri("https://api.github.com/"));
         services.AddHttpClient<ITrustedGitHubRepositoryPublisher, GitHubHttpTrustedRepositoryPublisher>(client =>
             client.BaseAddress = new Uri("https://api.github.com/"));
+        services.AddHttpClient<IRepairMergeProvider, GitHubMergeProvider>(client =>
+            client.BaseAddress = new Uri("https://api.github.com/"));
+        services.AddHttpClient<IGitHubRepositoryPermissionProvider, GitHubRepositoryPermissionProvider>(client =>
+            client.BaseAddress = new Uri("https://api.github.com/"));
+        services.AddHttpClient<HttpRepairVerificationFailureConsumer>();
+        if (!string.IsNullOrWhiteSpace(configuration[$"{HealingVerificationFailureDeliveryOptions.SectionName}:Endpoint"]))
+        {
+            services.TryAddScoped<IRepairVerificationFailureConsumer>(serviceProvider =>
+                serviceProvider.GetRequiredService<HttpRepairVerificationFailureConsumer>());
+        }
         services.AddHttpClient<GitHubOidcConfigurationSigningKeyProvider>();
         services.AddHttpClient<IProviderConnectionValidator, GitHubProviderConnectionValidator>(
             client => client.BaseAddress = new Uri("https://api.github.com/"));
@@ -145,14 +186,22 @@ public static class HealingServiceCollectionExtensions
         services.TryAddScoped<IRepairTargetInspector, PlatformGitHubRepairTargetInspector>();
         services.TryAddScoped<HealingGitHubOptions>(serviceProvider =>
             serviceProvider.GetRequiredService<IOptions<HealingGitHubOptions>>().Value);
+        services.TryAddScoped<PlatformHealingWorkloadAuthorityService>();
         services.TryAddScoped<IHealingWorkloadRequestAuthorizer, PlatformHealingWorkloadRequestAuthorizer>();
         services.TryAddScoped<IManagedRepairCopilotRuntime, CopilotRepairRuntime>();
         services.TryAddScoped<IRepairProposalProvider, CopilotRepairProposalProvider>();
         services.TryAddScoped<IHealingWorkloadApi, PlatformHealingWorkloadApi>();
+        services.TryAddSingleton<GitHubWebhookProcessor>();
+        services.TryAddScoped<PlatformHealingGitHubWebhookProcessor>();
+        services.TryAddScoped<IPlatformHealingGitHubWebhookProcessor>(serviceProvider =>
+            serviceProvider.GetRequiredService<PlatformHealingGitHubWebhookProcessor>());
+        services.TryAddSingleton<IPlatformHealingGitHubWebhookProcessorRunner,
+            ScopedPlatformHealingGitHubWebhookProcessorRunner>();
         services.TryAddScoped<IHealingVerifiedWebhookHandler, PlatformHealingVerifiedWebhookHandler>();
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IProviderOperationHandler, GitHubUpsertWorkItemOperationHandler>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IProviderOperationHandler, GitHubDispatchWorkflowOperationHandler>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IProviderOperationHandler, GitHubPublishPullRequestOperationHandler>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IProviderOperationHandler, GitHubRequestMergeOperationHandler>());
         services.TryAddSingleton(serviceProvider =>
             new HealingKillSwitch(serviceProvider.GetRequiredService<IOptionsMonitor<HealingOptions>>()));
 
@@ -196,9 +245,18 @@ public sealed class PlatformHealingBuilder
     public IServiceCollection Services { get; }
 
     public PlatformHealingBuilder AddHostedWorker<TWorker>() where TWorker : class, IHostedService
+        => AddHostedWorkerCore<TWorker>(stageEnabledConfigurationKey: null);
+
+    public PlatformHealingBuilder AddHostedWorker<TWorker>(string stageEnabledConfigurationKey)
+        where TWorker : class, IHostedService
+        => AddHostedWorkerCore<TWorker>(stageEnabledConfigurationKey);
+
+    private PlatformHealingBuilder AddHostedWorkerCore<TWorker>(string? stageEnabledConfigurationKey)
+        where TWorker : class, IHostedService
     {
         if (!_environment.IsEnvironment(HealingServiceCollectionExtensions.TestingEnvironmentName) &&
-            _configuration.GetValue(HealingServiceCollectionExtensions.WorkersEnabledConfigurationKey, false))
+            _configuration.GetValue(HealingServiceCollectionExtensions.WorkersEnabledConfigurationKey, false) &&
+            (stageEnabledConfigurationKey is null || _configuration.GetValue(stageEnabledConfigurationKey, true)))
         {
             Services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, TWorker>());
         }
@@ -207,8 +265,17 @@ public sealed class PlatformHealingBuilder
     }
 
     public PlatformHealingBuilder AddEndpointModule<TModule>() where TModule : class, IHealingEndpointModule
+        => AddEndpointModuleCore<TModule>(stageEnabledConfigurationKey: null);
+
+    public PlatformHealingBuilder AddEndpointModule<TModule>(string stageEnabledConfigurationKey)
+        where TModule : class, IHealingEndpointModule
+        => AddEndpointModuleCore<TModule>(stageEnabledConfigurationKey);
+
+    private PlatformHealingBuilder AddEndpointModuleCore<TModule>(string? stageEnabledConfigurationKey)
+        where TModule : class, IHealingEndpointModule
     {
-        Services.TryAddEnumerable(ServiceDescriptor.Singleton<IHealingEndpointModule, TModule>());
+        if (stageEnabledConfigurationKey is null || _configuration.GetValue(stageEnabledConfigurationKey, true))
+            Services.TryAddEnumerable(ServiceDescriptor.Singleton<IHealingEndpointModule, TModule>());
         return this;
     }
 }

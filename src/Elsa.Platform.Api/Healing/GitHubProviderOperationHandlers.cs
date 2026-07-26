@@ -4,10 +4,13 @@ using Elsa.Platform.Healing.Abstractions;
 using Elsa.Platform.Healing.Core;
 using Elsa.Platform.Healing.Core.Operations;
 using Elsa.Platform.Healing.Core.Providers;
+using Elsa.Platform.Healing.Core.Repairs;
 using Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
 using Elsa.Platform.Healing.GitHub;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Options;
+using Elsa.Platform.Healing.Core.Configuration;
 
 namespace Elsa.Platform.Api.Healing;
 
@@ -24,11 +27,16 @@ public sealed class GitHubUpsertWorkItemOperationHandler(
         CancellationToken cancellationToken = default)
     {
         var request = ProviderOperationPayload.Deserialize<RepairWorkItemUpsertRequest>(operation);
+        if (!await ProviderOperationPayload.RepositoryMatchesAsync(operation, request.Repository, dbContext, cancellationToken))
+            return HealingOperationOutcome.DeadLettered("repository-authority-mismatch");
         var projectionAuthority = await dbContext.RepairWorkItemProjections.AsNoTracking().SingleOrDefaultAsync(
-            x => x.IncidentId == request.IncidentId && x.EpisodeId == request.EpisodeId, cancellationToken);
+            x => x.WorkspaceId == operation.WorkspaceId &&
+                 x.ApplicationId == operation.ApplicationId &&
+                 x.ProviderConnectionId == operation.ProviderConnectionId &&
+                 x.IncidentId == request.IncidentId && x.EpisodeId == request.EpisodeId, cancellationToken);
         if (projectionAuthority is null || !await authorityService.CanMutateAsync(
                 operation.WorkspaceId, operation.ApplicationId, request.EpisodeId, operation.ProviderConnectionId,
-                request.IncidentId, null, cancellationToken))
+                request.IncidentId, cancellationToken))
             return HealingOperationOutcome.DeadLettered("healing-authority-revoked");
         ProviderWorkItemReference reference;
         try
@@ -76,9 +84,11 @@ public sealed class GitHubDispatchWorkflowOperationHandler(
         CancellationToken cancellationToken = default)
     {
         var protectedRequest = ProviderOperationPayload.Deserialize<RepairWorkflowDispatchRequest>(operation);
-        if (!await authorityService.CanMutateAsync(
+        if (!await ProviderOperationPayload.RepositoryMatchesAsync(operation, protectedRequest.Repository, dbContext, cancellationToken))
+            return HealingOperationOutcome.DeadLettered("repository-authority-mismatch");
+        if (!await authorityService.CanMutateAttemptAsync(
                 operation.WorkspaceId, operation.ApplicationId, protectedRequest.EpisodeId, operation.ProviderConnectionId,
-                protectedRequest.IncidentId, protectedRequest.AttemptId, cancellationToken))
+                protectedRequest.AttemptId, RepairAttemptStatus.Queued, cancellationToken))
             return HealingOperationOutcome.DeadLettered("healing-authority-revoked");
         if (!protectedRequest.OneTimeNonce.StartsWith("dp:", StringComparison.Ordinal))
             return HealingOperationOutcome.DeadLettered("dispatch-nonce-not-protected");
@@ -128,9 +138,11 @@ public sealed class GitHubPublishPullRequestOperationHandler(
         CancellationToken cancellationToken = default)
     {
         var request = ProviderOperationPayload.Deserialize<RepairPublicationRequest>(operation);
-        if (!await authorityService.CanMutateAsync(
+        if (!await ProviderOperationPayload.RepositoryMatchesAsync(operation, request.Repository, dbContext, cancellationToken))
+            return HealingOperationOutcome.DeadLettered("repository-authority-mismatch");
+        if (!await authorityService.CanMutateAttemptAsync(
                 operation.WorkspaceId, operation.ApplicationId, request.EpisodeId, operation.ProviderConnectionId,
-                request.IncidentId, request.AttemptId, cancellationToken))
+                request.AttemptId, RepairAttemptStatus.Publishing, cancellationToken))
             return HealingOperationOutcome.DeadLettered("healing-authority-revoked");
         ProviderPullRequestReference reference;
         try
@@ -142,6 +154,15 @@ public sealed class GitHubPublishPullRequestOperationHandler(
         {
             return HealingOperationOutcome.Retry("provider-operation-reservation-active");
         }
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var authorityStillCurrent = await authorityService.CanMutateAttemptAsync(
+            operation.WorkspaceId,
+            operation.ApplicationId,
+            request.EpisodeId,
+            operation.ProviderConnectionId,
+            request.AttemptId,
+            RepairAttemptStatus.Publishing,
+            cancellationToken);
         var attempt = await dbContext.RepairAttempts.SingleOrDefaultAsync(
             x => x.WorkspaceId == operation.WorkspaceId &&
                  x.ApplicationId == operation.ApplicationId &&
@@ -151,8 +172,13 @@ public sealed class GitHubPublishPullRequestOperationHandler(
             return HealingOperationOutcome.DeadLettered("repair-attempt-not-found");
 
         var pullRequest = await dbContext.RepairPullRequests.SingleOrDefaultAsync(
-            x => x.AttemptId == request.AttemptId,
+            x => x.WorkspaceId == operation.WorkspaceId &&
+                 x.ApplicationId == operation.ApplicationId &&
+                 x.ProviderConnectionId == operation.ProviderConnectionId &&
+                 x.AttemptId == request.AttemptId,
             cancellationToken);
+        if (pullRequest?.MergeState is PullRequestMergeState.Merged or PullRequestMergeState.Closed)
+            return HealingOperationOutcome.Completed("publication-operation-superseded");
         if (pullRequest is null)
         {
             pullRequest = new RepairPullRequest
@@ -176,14 +202,162 @@ public sealed class GitHubPublishPullRequestOperationHandler(
         pullRequest.PatchDigest = request.Result.PatchDigest;
         pullRequest.IsDraft = reference.IsDraft;
         pullRequest.Classification = attempt.RepairClassification;
-        pullRequest.MergeState = PullRequestMergeState.Open;
-        attempt.Status = RepairAttemptStatus.PullRequestOpen;
-        await dbContext.HealingIncidents.Where(x => x.Id == request.IncidentId)
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(x => x.Status, HealingIncidentStatus.PullRequestOpen)
-                .SetProperty(x => x.NeedsHumanReason, (NeedsHumanReason?)null), cancellationToken);
+        pullRequest.Version = Guid.NewGuid().ToByteArray();
+        if (authorityStillCurrent && attempt.Status == RepairAttemptStatus.Publishing)
+        {
+            pullRequest.MergeState = PullRequestMergeState.Open;
+            attempt.Status = RepairAttemptStatus.PullRequestOpen;
+            attempt.Version = Guid.NewGuid().ToByteArray();
+            await dbContext.HealingIncidents.Where(x =>
+                    x.WorkspaceId == operation.WorkspaceId &&
+                    x.ApplicationId == operation.ApplicationId &&
+                    x.Id == request.IncidentId &&
+                    x.ActiveEpisodeId == request.EpisodeId &&
+                    (x.Status == HealingIncidentStatus.Repairing || x.Status == HealingIncidentStatus.PullRequestOpen) &&
+                    dbContext.IncidentEpisodes.Any(episode =>
+                        episode.WorkspaceId == x.WorkspaceId &&
+                        episode.ApplicationId == x.ApplicationId &&
+                        episode.Id == request.EpisodeId &&
+                        episode.IncidentId == x.Id &&
+                        episode.Outcome == IncidentEpisodeOutcome.Active))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.Status, HealingIncidentStatus.PullRequestOpen)
+                    .SetProperty(x => x.NeedsHumanReason, (NeedsHumanReason?)null)
+                    .SetProperty(x => x.Version, Guid.NewGuid().ToByteArray()), cancellationToken);
+        }
         await dbContext.SaveChangesAsync(cancellationToken);
-        return HealingOperationOutcome.Completed("repair-pull-request-published");
+        await transaction.CommitAsync(cancellationToken);
+        return HealingOperationOutcome.Completed(
+            authorityStillCurrent ? "repair-pull-request-published" : "repair-pull-request-published-stale");
+    }
+}
+
+public sealed class GitHubRequestMergeOperationHandler(
+    IRepairMergeProvider provider,
+    HealingDbContext dbContext,
+    HealingRepairAuthorityService authorityService,
+    ITrustedDeploymentSafetyCapabilitySource deploymentSafetyCapabilities,
+    IOptions<HealingOptions> options) : IProviderOperationHandler
+{
+    public ProviderOperationKind Kind => ProviderOperationKind.RequestMerge;
+
+    public async ValueTask<HealingOperationOutcome> ExecuteAsync(
+        ProviderOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        var request = ProviderOperationPayload.Deserialize<ProviderMergeRequest>(operation);
+        if (!await ProviderOperationPayload.RepositoryMatchesAsync(operation, request.Repository, dbContext, cancellationToken))
+            return HealingOperationOutcome.DeadLettered("repository-authority-mismatch");
+        var attempt = operation.AttemptId.HasValue
+            ? await dbContext.RepairAttempts.AsNoTracking().SingleOrDefaultAsync(x =>
+                x.WorkspaceId == operation.WorkspaceId && x.ApplicationId == operation.ApplicationId &&
+                x.Id == operation.AttemptId.Value, cancellationToken)
+            : null;
+        if (attempt is null)
+            return HealingOperationOutcome.DeadLettered("repair-attempt-not-found");
+        var pullRequest = await dbContext.RepairPullRequests.SingleOrDefaultAsync(x =>
+            x.WorkspaceId == operation.WorkspaceId && x.ApplicationId == operation.ApplicationId &&
+            x.AttemptId == attempt.Id && x.ProviderConnectionId == operation.ProviderConnectionId,
+            cancellationToken);
+        if (pullRequest is null)
+            return HealingOperationOutcome.DeadLettered("repair-pull-request-not-found");
+        if (pullRequest.MergeState is PullRequestMergeState.Merged or PullRequestMergeState.Closed ||
+            attempt.Status is RepairAttemptStatus.Succeeded or RepairAttemptStatus.Stopped)
+            return HealingOperationOutcome.Completed("merge-operation-superseded");
+        if (pullRequest.MergePolicyEvaluationId is null ||
+            pullRequest.MergeState != PullRequestMergeState.MergeRequested)
+            return HealingOperationOutcome.Completed("merge-operation-superseded");
+        if (pullRequest.Number.ToString(System.Globalization.CultureInfo.InvariantCulture) != request.PullRequestId ||
+            pullRequest.HeadRevision != request.ExpectedHeadRevision)
+            return HealingOperationOutcome.Completed("merge-operation-superseded");
+        if (!await authorityService.CanMutateAttemptAsync(
+                operation.WorkspaceId, operation.ApplicationId, attempt.EpisodeId,
+                operation.ProviderConnectionId, attempt.Id, RepairAttemptStatus.PullRequestOpen, cancellationToken))
+            return await InvalidateAsync(pullRequest, "healing-authority-revoked", cancellationToken);
+        var evaluation = await dbContext.PolicyEvaluations.AsNoTracking().SingleOrDefaultAsync(x =>
+            x.Id == pullRequest.MergePolicyEvaluationId && x.WorkspaceId == operation.WorkspaceId &&
+            x.ApplicationId == operation.ApplicationId && x.AttemptId == attempt.Id,
+            cancellationToken);
+        var policy = evaluation is null ? null : await dbContext.MergePolicies.AsNoTracking().SingleOrDefaultAsync(x =>
+            x.Id == evaluation.PolicyId && x.WorkspaceId == operation.WorkspaceId &&
+            x.ApplicationId == operation.ApplicationId && x.PolicyHash == evaluation.PolicyHash,
+            cancellationToken);
+        var application = await dbContext.HealingConfigurations.AsNoTracking().SingleOrDefaultAsync(x =>
+            x.WorkspaceId == operation.WorkspaceId && x.ApplicationId == operation.ApplicationId, cancellationToken);
+        var workspace = await dbContext.HealingWorkspaceConfigurations.AsNoTracking().SingleOrDefaultAsync(x =>
+            x.WorkspaceId == operation.WorkspaceId, cancellationToken);
+        if (evaluation?.Decision != PolicyDecision.AllowAutomaticMerge || policy is null || application is null || workspace is null ||
+            !options.Value.AutomaticMergeEnabled || options.Value.PlatformKillSwitch ||
+            !application.AutomaticMergeEnabled || application.ApplicationKillSwitch || workspace.WorkspaceKillSwitch)
+            return await ResetAsync(pullRequest, "merge-policy-changed", cancellationToken);
+
+        var deploymentSafety = await deploymentSafetyCapabilities.GetAsync(
+            operation.WorkspaceId,
+            operation.ApplicationId,
+            attempt.EpisodeId,
+            cancellationToken);
+        if (deploymentSafety.State != RepairPolicyObservationState.Satisfied)
+            return await ResetAsync(pullRequest, "deployment-safety-changed", cancellationToken);
+
+        var snapshot = await provider.GetMergeSnapshotAsync(request.Repository, request.PullRequestId, cancellationToken);
+        if (!snapshot.IsOpen)
+        {
+            // A merge may have succeeded while the durable operation still held its lease. The signed pull-request
+            // webhook owns the canonical merged/closed transition, so never roll that state back from this stale command.
+            return HealingOperationOutcome.Completed("merge-provider-terminal-observed");
+        }
+        var configuredChecks = ParseStrings(policy.RequiredChecksJson);
+        var checksPass = configuredChecks.All(required => snapshot.RequiredChecks.Contains(required, StringComparer.Ordinal) && snapshot.Checks.Any(x =>
+            x.Name == required && x.State.Equals("success", StringComparison.OrdinalIgnoreCase) &&
+            x.Revision == request.ExpectedHeadRevision));
+        var verifierPass = !string.IsNullOrWhiteSpace(policy.IndependentVerifier) &&
+            snapshot.RequiredChecks.Contains(policy.IndependentVerifier, StringComparer.Ordinal) && snapshot.Checks.Any(x =>
+            x.Name == policy.IndependentVerifier && x.State.Equals("success", StringComparison.OrdinalIgnoreCase) &&
+            x.Revision == request.ExpectedHeadRevision);
+        if (snapshot.IsDraft || snapshot.HeadRevision != request.ExpectedHeadRevision ||
+            snapshot.BaseRevision != pullRequest.BaseRevision || !snapshot.IsBranchProtectionSatisfied ||
+            !checksPass || !verifierPass)
+            return await ResetAsync(pullRequest, "provider-merge-constraints-changed", cancellationToken);
+        try
+        {
+            await provider.RequestMergeAsync(request, cancellationToken);
+        }
+        catch (GitHubSecurityException exception) when (exception.ReasonCode == GitHubSecurityReasonCodes.OperationInProgress)
+        {
+            return HealingOperationOutcome.Retry("provider-operation-reservation-active");
+        }
+        return HealingOperationOutcome.Completed("repair-merge-requested");
+    }
+
+    private async ValueTask<HealingOperationOutcome> ResetAsync(
+        RepairPullRequest pullRequest,
+        string outcome,
+        CancellationToken cancellationToken)
+    {
+        pullRequest.MergeState = PullRequestMergeState.Open;
+        pullRequest.MergePolicyEvaluationId = null;
+        pullRequest.Version = Guid.NewGuid().ToByteArray();
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return HealingOperationOutcome.Completed(outcome);
+    }
+
+    private async ValueTask<HealingOperationOutcome> InvalidateAsync(
+        RepairPullRequest pullRequest,
+        string outcome,
+        CancellationToken cancellationToken)
+    {
+        pullRequest.MergeState = PullRequestMergeState.Open;
+        pullRequest.MergePolicyEvaluationId = null;
+        pullRequest.ClosureReason = outcome;
+        pullRequest.Version = Guid.NewGuid().ToByteArray();
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return HealingOperationOutcome.DeadLettered(outcome);
+    }
+
+    private static IReadOnlySet<string> ParseStrings(string json)
+    {
+        try { return (JsonSerializer.Deserialize<string[]>(json) ?? []).ToHashSet(StringComparer.Ordinal); }
+        catch (JsonException) { return new HashSet<string>(StringComparer.Ordinal); }
     }
 }
 
@@ -200,5 +374,23 @@ internal static class ProviderOperationPayload
         {
             throw new InvalidOperationException("The provider operation payload is invalid.", exception);
         }
+    }
+
+    public static async ValueTask<bool> RepositoryMatchesAsync(
+        ProviderOperation operation,
+        ProviderRepositoryReference repository,
+        HealingDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(repository);
+        if (repository.ProviderConnectionId != operation.ProviderConnectionId)
+            return false;
+        return await dbContext.ProviderConnections.AsNoTracking().AnyAsync(x =>
+            x.WorkspaceId == operation.WorkspaceId &&
+            x.Id == operation.ProviderConnectionId &&
+            x.RepositoryProviderId == repository.RepositoryProviderId &&
+            x.RepositoryOwner == repository.Owner &&
+            x.RepositoryName == repository.Name,
+            cancellationToken);
     }
 }

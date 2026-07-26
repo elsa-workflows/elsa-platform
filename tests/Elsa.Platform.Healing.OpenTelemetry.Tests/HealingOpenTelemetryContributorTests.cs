@@ -3,6 +3,7 @@ using Elsa.Diagnostics.OpenTelemetry.Core.Models;
 using Elsa.Platform.Healing.Abstractions;
 using Elsa.Platform.Healing.Core;
 using Elsa.Platform.Healing.OpenTelemetry;
+using Elsa.Platform.Healing.Core.Verification;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -151,6 +152,43 @@ public sealed class HealingOpenTelemetryContributorTests
     }
 
     [Fact]
+    public async Task Authenticated_positive_affected_operation_span_advances_the_matching_active_verification()
+    {
+        var appender = new RecordingInboxAppender();
+        var scope = VerificationScope();
+        var store = new RecordingVerificationStore(scope);
+        var verification = new HealingVerificationService(store, new FixedTimeProvider(AcceptedAt));
+        var contributor = CreateContributorWithResolver(
+            appender,
+            new StaticScopeResolver(new HealingTelemetryScope(WorkspaceId, ApplicationId, EnvironmentId)),
+            verification);
+        var resource = CreateResource(new Dictionary<string, string?>
+        {
+            [HealingSignalAttributes.ApplicationId] = ApplicationId.ToString(),
+            [HealingSignalAttributes.EnvironmentId] = EnvironmentId.ToString()
+        });
+        var span = new TelemetrySpan(
+            "positive-span-1", "trace-positive", "span-positive", null, resource.Id,
+            "GET /orders/{id}", "Server", AcceptedAt.AddMinutes(-2), AcceptedAt.AddMinutes(-1),
+            SpanStatus.Ok, null,
+            new Dictionary<string, string?>
+            {
+                [HealingSignalAttributes.ApplicationId] = ApplicationId.ToString(),
+                [HealingSignalAttributes.EnvironmentId] = EnvironmentId.ToString(),
+                [HealingSignalAttributes.ProfileVersion] = HealingContractVersions.SignalProfile,
+                [HealingSignalAttributes.OperationName] = "GET /orders/{id}",
+                [HealingSignalAttributes.SourceRevision] = scope.RepairedRevision,
+                [HealingSignalAttributes.VerificationAffectedOperation] = "true"
+            }, [], []);
+
+        await contributor.ContributeAsync(new([resource], [], [span], [], [], []), TrustedContext());
+
+        scope.Verification!.RelevantOperationSuccessCount.Should().Be(1);
+        scope.Verification.LastRelevantOperationSuccessAt.Should().Be(AcceptedAt.AddMinutes(-1));
+        appender.Items.Should().BeEmpty("a successful span is verification evidence, not a failure incident");
+    }
+
+    [Fact]
     public async Task Incomplete_non_error_untrusted_or_cross_application_evidence_is_not_appended()
     {
         var appender = new RecordingInboxAppender();
@@ -276,9 +314,10 @@ public sealed class HealingOpenTelemetryContributorTests
 
     private static HealingOpenTelemetryIngestionContributor CreateContributorWithResolver(
         IHealingSignalInboxAppender appender,
-        IHealingTelemetryScopeResolver resolver)
+        IHealingTelemetryScopeResolver resolver,
+        HealingVerificationService? verification = null)
     {
-        var serviceProvider = new TestServiceProvider(resolver, appender);
+        var serviceProvider = new TestServiceProvider(resolver, appender, verification);
         return new HealingOpenTelemetryIngestionContributor(
             new TestServiceScopeFactory(serviceProvider),
             new FixedTimeProvider(AcceptedAt));
@@ -377,12 +416,64 @@ public sealed class HealingOpenTelemetryContributorTests
 
     private sealed class TestServiceProvider(
         IHealingTelemetryScopeResolver resolver,
-        IHealingSignalInboxAppender appender) : IServiceProvider
+        IHealingSignalInboxAppender appender,
+        HealingVerificationService? verification = null) : IServiceProvider
     {
         public object? GetService(Type serviceType) =>
             serviceType == typeof(IHealingTelemetryScopeResolver) ? resolver :
             serviceType == typeof(IHealingSignalInboxAppender) ? appender :
+            serviceType == typeof(HealingVerificationService) ? verification :
             null;
+    }
+
+    private static HealingVerificationScope VerificationScope()
+    {
+        var incident = new HealingIncident
+        {
+            Id = Guid.NewGuid(), WorkspaceId = WorkspaceId, ApplicationId = ApplicationId,
+            Status = HealingIncidentStatus.Verifying
+        };
+        var episode = new IncidentEpisode
+        {
+            Id = Guid.NewGuid(), WorkspaceId = WorkspaceId, ApplicationId = ApplicationId,
+            IncidentId = incident.Id, Outcome = IncidentEpisodeOutcome.Active
+        };
+        incident.ActiveEpisodeId = episode.Id;
+        var impact = new EnvironmentImpact
+        {
+            Id = Guid.NewGuid(), WorkspaceId = WorkspaceId, ApplicationId = ApplicationId,
+            EpisodeId = episode.Id, EnvironmentId = EnvironmentId,
+            VerificationStatus = VerificationOutcome.DeployedUnverified
+        };
+        var result = new VerificationResult
+        {
+            Id = Guid.NewGuid(), WorkspaceId = WorkspaceId, ApplicationId = ApplicationId,
+            EpisodeId = episode.Id, EnvironmentId = EnvironmentId, RepairedRevision = "fixed-sha",
+            WindowStartedAt = AcceptedAt.AddMinutes(-10), WindowEndsAt = AcceptedAt.AddMinutes(10),
+            Outcome = VerificationOutcome.DeployedUnverified
+        };
+        return new HealingVerificationScope(incident, episode, impact,
+            new HealingConfiguration { WorkspaceId = WorkspaceId, ApplicationId = ApplicationId, VerificationWindow = TimeSpan.FromMinutes(20) },
+            result.RepairedRevision, result);
+    }
+
+    private sealed class RecordingVerificationStore(HealingVerificationScope scope) : IHealingVerificationStore
+    {
+        public ValueTask<HealingVerificationScope?> FindActiveScopeAsync(Guid workspaceId, Guid applicationId, Guid environmentId, string repairedRevision, string operationName, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<HealingVerificationScope?>(scope.RepairedRevision == repairedRevision ? scope : null);
+        public ValueTask SaveAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask<IReadOnlyList<EnvironmentImpact>> ListEpisodeImpactsAsync(Guid workspaceId, Guid applicationId, Guid episodeId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<EnvironmentImpact>>([scope.EnvironmentImpact]);
+        public ValueTask<IReadOnlyList<VerificationResult>> ListEpisodeVerificationsAsync(Guid workspaceId, Guid applicationId, Guid episodeId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<VerificationResult>>([scope.Verification!]);
+        public ValueTask<HealingVerificationScope?> GetEpisodeScopeAsync(Guid workspaceId, Guid applicationId, Guid episodeId, CancellationToken cancellationToken = default) => ValueTask.FromResult<HealingVerificationScope?>(scope);
+        public ValueTask<HealingVerificationAppendResult<DeploymentObservation>> AppendDeploymentObservationAsync(DeploymentObservation observation, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<VerificationResult> UpsertVerificationAsync(VerificationResult verification, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<HealingVerificationScope>> ListDeploymentScopesAsync(Guid workspaceId, Guid applicationId, Guid environmentId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<HealingVerificationScope?> GetScopeAsync(Guid workspaceId, Guid episodeId, Guid environmentId, string repairedRevision, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<HealingVerificationScope?> FindScopeForOccurrenceAsync(IncidentOccurrence occurrence, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<HealingVerificationScope>> ListDueScopesAsync(DateTimeOffset now, int take, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<HealingVerificationScope>> ListExpiredWaiverScopesAsync(DateTimeOffset now, int take, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

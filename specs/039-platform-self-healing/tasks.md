@@ -6,7 +6,7 @@
 
 **Tests**: Required. Each user story starts with failing contract/unit/integration tests and ends with its independent acceptance checkpoint.
 
-**Organization**: Tasks are grouped by user story. Foundation paths refer to the isolated worktree `/Users/sipke/.codex/worktrees/platform-self-healing-foundation`; all other paths are relative to `elsa-platform`.
+**Organization**: Tasks are grouped by user story. Paths prefixed with `elsa-foundation/` are relative to that coordinated repository; all other paths are relative to `elsa-platform`.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -38,13 +38,13 @@
 
 ### Foundation contribution seam (tests first)
 
-- [x] T011 [P] Add failing ordering/redaction/failure/cancellation tests to `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/tests/Elsa/Diagnostics/OpenTelemetry/Tests/OpenTelemetryIngestorTests.cs`
-- [x] T012 [P] Add failing additive DI resolution tests to `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/tests/Elsa/Diagnostics/OpenTelemetry/Tests/OpenTelemetryFeatureTests.cs`
-- [x] T013 Add `IOpenTelemetryIngestionContributor` to `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/Core/Contracts/IOpenTelemetryIngestionContributor.cs`
-- [x] T014 Invoke all contributors after redaction and before store/live publication in `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/Services/OpenTelemetryIngestor.cs`
-- [x] T015 Add additive contributor registration helpers in `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/Extensions/ServiceCollectionExtensions.cs`
-- [x] T016 [P] Document the contribution contract and durability semantics in `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/README.md` and `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/EXTENSION_POINTS.md`
-- [x] T017 Run Foundation OpenTelemetry tests and pack coordinated local packages from `/Users/sipke/.codex/worktrees/platform-self-healing-foundation/src/Elsa/Diagnostics/OpenTelemetry/Elsa.Diagnostics.OpenTelemetry.csproj`
+- [x] T011 [P] Add failing ordering/redaction/failure/cancellation tests to `elsa-foundation/tests/Elsa/Diagnostics/OpenTelemetry/Tests/OpenTelemetryIngestorTests.cs`
+- [x] T012 [P] Add failing additive DI resolution tests to `elsa-foundation/tests/Elsa/Diagnostics/OpenTelemetry/Tests/OpenTelemetryFeatureTests.cs`
+- [x] T013 Add `IOpenTelemetryIngestionContributor` to `elsa-foundation/src/Elsa/Diagnostics/OpenTelemetry/Core/Contracts/IOpenTelemetryIngestionContributor.cs`
+- [x] T014 Invoke all contributors after redaction and before store/live publication in `elsa-foundation/src/Elsa/Diagnostics/OpenTelemetry/Services/OpenTelemetryIngestor.cs`
+- [x] T015 Add additive contributor registration helpers in `elsa-foundation/src/Elsa/Diagnostics/OpenTelemetry/Extensions/ServiceCollectionExtensions.cs`
+- [x] T016 [P] Document the contribution contract and durability semantics in `elsa-foundation/src/Elsa/Diagnostics/OpenTelemetry/README.md` and `elsa-foundation/src/Elsa/Diagnostics/OpenTelemetry/EXTENSION_POINTS.md`
+- [x] T017 Run Foundation OpenTelemetry tests and pack coordinated local packages from `elsa-foundation/src/Elsa/Diagnostics/OpenTelemetry/Elsa.Diagnostics.OpenTelemetry.csproj`
 
 ### Platform shared contracts and persistence (tests first)
 
@@ -173,19 +173,19 @@
 
 ### Tests for User Story 4
 
-- [ ] T082 [P] [US4] Add failing complete publication/auto-merge gate matrix tests in `tests/Elsa.Platform.Healing.Core.Tests/Repairs/AutoMergeEligibilityPolicyTests.cs`
-- [ ] T083 [P] [US4] Add failing branch-protection/check refresh and idempotent merge-request tests in `tests/Elsa.Platform.Healing.GitHub.Tests/GitHubMergeProviderTests.cs`
-- [ ] T084 [P] [US4] Add failing dual-authorization retry/stop/evidence/waiver command tests in `tests/Elsa.Platform.Healing.Core.Tests/Providers/HumanProviderCommandPolicyTests.cs`
-- [ ] T085 [P] [US4] Add failing merge gate and command UI tests in `src/Elsa.Platform.Console/src/features/healing/HealingMergePolicyPanel.test.tsx`
+- [x] T082 [P] [US4] Add failing complete publication/auto-merge gate matrix tests in `tests/Elsa.Platform.Healing.Core.Tests/Repairs/AutoMergeEligibilityPolicyTests.cs`
+- [x] T083 [P] [US4] Add failing branch-protection/check refresh and idempotent merge-request tests in `tests/Elsa.Platform.Healing.GitHub.Tests/GitHubMergeProviderTests.cs`
+- [x] T084 [P] [US4] Add failing dual-authorization retry/stop/evidence/waiver command tests in `tests/Elsa.Platform.Healing.Core.Tests/Providers/HumanProviderCommandPolicyTests.cs`
+- [x] T085 [P] [US4] Add failing merge gate and command UI tests in `src/Elsa.Platform.Console/src/features/healing/HealingMergePolicyPanel.test.tsx`
 
 ### Implementation for User Story 4
 
-- [ ] T086 [P] [US4] Implement versioned path, evidence, publication, and auto-merge pure policies in `src/Elsa.Platform.Healing.Core/Repairs/HealingRepairPolicies.cs`
-- [ ] T087 [P] [US4] Implement provider check/branch-protection snapshots and merge requests in `src/Elsa.Platform.Healing.GitHub/GitHubMergeProvider.cs`
-- [ ] T088 [US4] Implement fresh deny-by-default merge evaluation and audit persistence in `src/Elsa.Platform.Healing.Core/Repairs/HealingMergeService.cs`
-- [ ] T089 [US4] Implement verified, identity-linked human provider commands and confirmations in `src/Elsa.Platform.Healing.Core/Providers/HumanProviderCommandService.cs`
-- [ ] T090 [US4] Extend verified webhook processing for PR/check/issue-command observations in `src/Elsa.Platform.Healing.GitHub/GitHubWebhookProcessor.cs`
-- [ ] T091 [US4] Implement merge policy gate matrix and human-command controls in `src/Elsa.Platform.Console/src/features/healing/HealingMergePolicyPanel.tsx`
+- [x] T086 [P] [US4] Implement versioned path, evidence, publication, and auto-merge pure policies in `src/Elsa.Platform.Healing.Core/Repairs/HealingRepairPolicies.cs`
+- [x] T087 [P] [US4] Implement provider check/branch-protection snapshots and merge requests in `src/Elsa.Platform.Healing.GitHub/GitHubMergeProvider.cs`
+- [x] T088 [US4] Implement fresh deny-by-default merge evaluation and audit persistence in `src/Elsa.Platform.Healing.Core/Repairs/HealingMergeService.cs`
+- [x] T089 [US4] Implement verified, identity-linked human provider commands and confirmations in `src/Elsa.Platform.Healing.Core/Providers/HumanProviderCommandService.cs`
+- [x] T090 [US4] Extend verified webhook processing for PR/check/issue-command observations in `src/Elsa.Platform.Healing.GitHub/GitHubWebhookProcessor.cs`
+- [x] T091 [US4] Implement merge policy gate matrix and human-command controls in `src/Elsa.Platform.Console/src/features/healing/HealingMergePolicyPanel.tsx`
 
 **Checkpoint**: User Story 4 proves human merge remains available and auto-merge fails closed under every non-eligible combination.
 
@@ -199,18 +199,18 @@
 
 ### Tests for User Story 5
 
-- [ ] T092 [P] [US5] Add failing per-environment deployment/positive-operation/recurrence/window tests in `tests/Elsa.Platform.Healing.Core.Tests/Verification/HealingVerificationServiceTests.cs`
-- [ ] T093 [P] [US5] Add failing Platform-managed and external idempotent deployment observation API tests in `tests/Elsa.Platform.Api.Tests/Healing/HealingDeploymentObservationApiTests.cs`
-- [ ] T094 [P] [US5] Add failing multi-environment verification UI tests in `src/Elsa.Platform.Console/src/features/healing/HealingVerificationPanel.test.tsx`
+- [x] T092 [P] [US5] Add failing per-environment deployment/positive-operation/recurrence/window tests in `tests/Elsa.Platform.Healing.Core.Tests/Verification/HealingVerificationServiceTests.cs`
+- [x] T093 [P] [US5] Add failing Platform-managed and external idempotent deployment observation API tests in `tests/Elsa.Platform.Api.Tests/Healing/HealingDeploymentObservationApiTests.cs`
+- [x] T094 [P] [US5] Add failing multi-environment verification UI tests in `src/Elsa.Platform.Console/src/features/healing/HealingVerificationPanel.test.tsx`
 
 ### Implementation for User Story 5
 
-- [ ] T095 [P] [US5] Implement trusted deployment observation append and Platform deployment bridge in `src/Elsa.Platform.Healing.Core/Verification/DeploymentObservationService.cs`
-- [ ] T096 [US5] Implement per-environment positive verification, recurrence failure, supersession, waiver, and incident closure in `src/Elsa.Platform.Healing.Core/Verification/HealingVerificationService.cs`
-- [ ] T097 [US5] Implement due-window polling and trusted verification-failed contribution in `src/Elsa.Platform.Healing.Core/Verification/HealingVerificationWorker.cs`
-- [ ] T098 [US5] Map external deployment observation and verification waiver routes in `src/Elsa.Platform.Api/Workspace/Healing/HealingVerificationEndpoints.cs`
-- [ ] T099 [US5] Bridge successful Platform deployment completion into Healing observations in `src/Elsa.Platform.Api/Workspace/Healing/PlatformDeploymentHealingObserver.cs`
-- [ ] T100 [US5] Implement per-environment deployment and verification timeline in `src/Elsa.Platform.Console/src/features/healing/HealingVerificationPanel.tsx`
+- [x] T095 [P] [US5] Implement trusted deployment observation append and Platform deployment bridge in `src/Elsa.Platform.Healing.Core/Verification/DeploymentObservationService.cs`
+- [x] T096 [US5] Implement per-environment positive verification, recurrence failure, supersession, waiver, and incident closure in `src/Elsa.Platform.Healing.Core/Verification/HealingVerificationService.cs`
+- [x] T097 [US5] Implement due-window polling and trusted verification-failed contribution in `src/Elsa.Platform.Healing.Core/Verification/HealingVerificationWorker.cs`
+- [x] T098 [US5] Map external deployment observation and verification waiver routes in `src/Elsa.Platform.Api/Workspace/Healing/HealingVerificationEndpoints.cs`
+- [x] T099 [US5] Bridge successful Platform deployment completion into Healing observations in `src/Elsa.Platform.Api/Workspace/Healing/PlatformDeploymentHealingObserver.cs`
+- [x] T100 [US5] Implement per-environment deployment and verification timeline in `src/Elsa.Platform.Console/src/features/healing/HealingVerificationPanel.tsx`
 
 **Checkpoint**: User Story 5 distinguishes merged, deployed, deployed-unverified, healed, failed-verification, superseded, and waived states across multiple environments.
 
@@ -224,15 +224,15 @@
 
 ### Tests for User Story 6
 
-- [ ] T101 [P] [US6] Add failing audit reconstruction, safe projection, pagination, usage, and isolation tests in `tests/Elsa.Platform.Api.Tests/Healing/HealingAuditApiTests.cs`
-- [ ] T102 [P] [US6] Add failing overview/filter/audit/permission UI tests in `src/Elsa.Platform.Console/src/features/healing/HealingOverviewPage.test.tsx`
+- [x] T101 [P] [US6] Add failing audit reconstruction, safe projection, pagination, usage, and isolation tests in `tests/Elsa.Platform.Api.Tests/Healing/HealingAuditApiTests.cs`
+- [x] T102 [P] [US6] Add failing overview/filter/audit/permission UI tests in `src/Elsa.Platform.Console/src/features/healing/HealingOverviewPage.test.tsx`
 
 ### Implementation for User Story 6
 
-- [ ] T103 [P] [US6] Implement safe overview, audit, and usage queries in `src/Elsa.Platform.Healing.Core/Reporting/HealingReportingService.cs`
-- [ ] T104 [US6] Map overview, audit, and usage endpoints with Healing permissions in `src/Elsa.Platform.Api/Workspace/Healing/HealingReportingEndpoints.cs`
-- [ ] T105 [US6] Implement Healing overview, filters, usage, and audit timeline in `src/Elsa.Platform.Console/src/features/healing/HealingOverviewPage.tsx`
-- [ ] T106 [US6] Add accessible loading/empty/error/stale states in `src/Elsa.Platform.Console/src/features/healing/HealingStateViews.tsx`
+- [x] T103 [P] [US6] Implement safe overview, audit, and usage queries in `src/Elsa.Platform.Healing.Core/Reporting/HealingReportingService.cs`
+- [x] T104 [US6] Map overview, audit, and usage endpoints with Healing permissions in `src/Elsa.Platform.Api/Workspace/Healing/HealingReportingEndpoints.cs`
+- [x] T105 [US6] Implement Healing overview, filters, usage, and audit timeline in `src/Elsa.Platform.Console/src/features/healing/HealingOverviewPage.tsx`
+- [x] T106 [US6] Add accessible loading/empty/error/stale states in `src/Elsa.Platform.Console/src/features/healing/HealingStateViews.tsx`
 
 **Checkpoint**: User Story 6 reconstructs every automated decision while authorization and redaction tests prevent cross-workspace/protected-evidence disclosure.
 
@@ -242,17 +242,17 @@
 
 **Purpose**: Prove the full specification, harden operational behavior, and prepare coordinated PRs.
 
-- [ ] T107 [P] Add the 10,000-occurrence/100-instance deduplication performance scenario in `tests/Elsa.Platform.Healing.Persistence.EntityFrameworkCore.Tests/HealingScaleTests.cs`
-- [ ] T108 [P] Add cross-workspace, PII/token leak, webhook replay, OIDC substitution, malicious evidence, and publisher credential-isolation matrix in `tests/Elsa.Platform.Api.Tests/Healing/HealingSecurityMatrixTests.cs`
-- [ ] T109 [P] Add SQLite and SQL Server migration round-trip/parity tests in `tests/Elsa.Platform.Healing.Persistence.EntityFrameworkCore.Tests/HealingMigrationTests.cs`
-- [ ] T110 Add end-to-end fake-provider lifecycle coverage from OTLP through healed deployment in `tests/Elsa.Platform.Api.Tests/Healing/HealingEndToEndTests.cs`
-- [ ] T111 Validate the local Foundation packages against Platform's combined OTLP-to-inbox integration in `tests/Elsa.Platform.Healing.OpenTelemetry.Tests/FoundationPackageIntegrationTests.cs`
-- [ ] T112 Update operator/customer setup and threat-model documentation in `docs/healing/getting-started.md` and `docs/healing/security.md`
+- [x] T107 [P] Add the 10,000-occurrence/100-instance deduplication performance scenario in `tests/Elsa.Platform.Healing.Persistence.EntityFrameworkCore.Tests/HealingScaleTests.cs`
+- [x] T108 [P] Add cross-workspace, PII/token leak, webhook replay, OIDC substitution, malicious evidence, and publisher credential-isolation matrix in `tests/Elsa.Platform.Api.Tests/Healing/HealingSecurityMatrixTests.cs`
+- [x] T109 [P] Add SQLite and SQL Server migration round-trip/parity tests in `tests/Elsa.Platform.Healing.Persistence.EntityFrameworkCore.Tests/HealingMigrationTests.cs`
+- [x] T110 Add end-to-end fake-provider lifecycle coverage from OTLP through healed deployment in `tests/Elsa.Platform.Api.Tests/Healing/HealingEndToEndTests.cs`
+- [x] T111 Validate the local Foundation packages against Platform's combined OTLP-to-inbox integration in `tests/Elsa.Platform.Healing.OpenTelemetry.Tests/FoundationPackageIntegrationTests.cs`
+- [x] T112 Update operator/customer setup and threat-model documentation in `docs/healing/getting-started.md` and `docs/healing/security.md`
 - [ ] T113 Run all Foundation and Platform .NET tests/builds, Console tests/typecheck/build, package pack tests, migration parity, and `git diff --check` from `specs/039-platform-self-healing/quickstart.md`
 - [ ] T114 Perform iterative architecture, correctness, security, API compatibility, test-quality, and UI self-review; record resolved findings in `specs/039-platform-self-healing/review.md`
 - [ ] T115 Run an independent diff review and repeat T113/T114 until no actionable findings remain, recording final evidence in `specs/039-platform-self-healing/review.md`
 - [ ] T116 Mark every completed task, reconcile `spec.md`/`plan.md`/contracts with implementation, and record requirement-by-requirement proof in `specs/039-platform-self-healing/completion-audit.md`
-- [ ] T117 Commit and push the Foundation branch, open its PR, satisfy CI/review, merge it, and record the published package version in `specs/039-platform-self-healing/completion-audit.md`
+- [x] T117 Commit and push the Foundation branch, open its PR, satisfy CI/review, merge it, and record the published package version in `specs/039-platform-self-healing/completion-audit.md`
 - [ ] T118 Update Platform to the merged Foundation package, rerun the full cross-repository gate, commit and push Platform, open its PR, satisfy CI/review, merge it, and record final state in `specs/039-platform-self-healing/completion-audit.md`
 
 ---

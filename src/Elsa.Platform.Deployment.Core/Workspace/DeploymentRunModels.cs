@@ -131,7 +131,9 @@ public enum ConfirmationActionType
     RuntimeControl,
     HealingEmergencyStop,
     HealingEmergencyResume,
-    HealingAutomaticMerge
+    HealingAutomaticMerge,
+    HealingRepairStop,
+    HealingVerificationWaive
 }
 
 public enum WorkspaceDeploymentRunStatus

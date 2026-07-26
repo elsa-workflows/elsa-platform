@@ -190,7 +190,7 @@ public sealed class HealingAdministrationService(
                 await auditService.AppendAsync(new HealingAuditWrite(
                     workspaceId, "provider-connection", providerConnectionId, "provider-connection-validated",
                     HealingOwnershipReasonCodes.Succeeded, "workspace-account", authorization.ActorId,
-                    Guid.NewGuid(), null, null, null, null,
+                    Guid.NewGuid(), applicationId, null, null, null,
                     new Dictionary<string, string?>
                     {
                         ["repositoryOwner"] = provider.RepositoryOwner,
@@ -239,7 +239,7 @@ public sealed class HealingAdministrationService(
             await auditService.AppendAsync(new HealingAuditWrite(
                 workspaceId, "provider-connection", providerConnectionId, "provider-connection-transitioned",
                 HealingOwnershipReasonCodes.Succeeded, "workspace-account", authorization.ActorId,
-                Guid.NewGuid(), null, null, null, null,
+                Guid.NewGuid(), applicationId, null, null, null,
                 new Dictionary<string, string?> { ["status"] = target.ToString().ToLowerInvariant() }),
                 transactionCancellationToken);
             return saved;
@@ -257,7 +257,7 @@ public sealed class HealingAdministrationService(
         CancellationToken cancellationToken) =>
         auditService.AppendAsync(new HealingAuditWrite(
             workspaceId, "healing-authority", aggregateId, eventType, HealingOwnershipReasonCodes.Succeeded,
-            "workspace-account", authorization.ActorId, Guid.NewGuid(), null, "1", null, null,
+            "workspace-account", authorization.ActorId, Guid.NewGuid(), applicationId, "1", null, null,
             new Dictionary<string, string?>
             {
                 ["repositoryOwner"] = request.RepositoryOwner,

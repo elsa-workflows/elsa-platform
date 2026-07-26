@@ -2,10 +2,12 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Data;
 using Elsa.Platform.Api.Workspace.Healing;
 using Elsa.Platform.Healing.Abstractions;
 using Elsa.Platform.Healing.Agent;
 using Elsa.Platform.Healing.Core;
+using Elsa.Platform.Healing.Core.Configuration;
 using Elsa.Platform.Healing.Core.Repairs;
 using Elsa.Platform.Healing.Core.Security;
 using Elsa.Platform.Healing.GitHub;
@@ -25,8 +27,200 @@ public sealed class HealingGitHubOptions
     public TimeSpan ProposalLifetime { get; set; } = TimeSpan.FromHours(2);
 }
 
+internal sealed record PlatformHealingWorkloadAuthority(
+    RepairAttempt Attempt,
+    SourceOwnershipBinding Binding,
+    Guid ProviderConnectionId);
+
+/// <summary>
+/// Resolves current authority for every workload operation. Capability tokens are deliberately not authority
+/// snapshots: all platform, tenant, environment, episode, provider, and binding controls remain live.
+/// </summary>
+public sealed class PlatformHealingWorkloadAuthorityService(
+    HealingDbContext dbContext,
+    HealingKillSwitch killSwitch)
+{
+    internal async ValueTask<PlatformHealingWorkloadAuthority?> ResolveAsync(
+        Guid workspaceId,
+        Guid attemptId,
+        CancellationToken cancellationToken = default)
+    {
+        var authority = await (
+            from attempt in dbContext.RepairAttempts.AsNoTracking()
+            join episode in dbContext.IncidentEpisodes.AsNoTracking()
+                on new { attempt.WorkspaceId, attempt.ApplicationId, Id = attempt.EpisodeId }
+                equals new { episode.WorkspaceId, episode.ApplicationId, episode.Id }
+            join incident in dbContext.HealingIncidents.AsNoTracking()
+                on new { attempt.WorkspaceId, attempt.ApplicationId, Id = attempt.IncidentId }
+                equals new { incident.WorkspaceId, incident.ApplicationId, incident.Id }
+            join binding in dbContext.SourceOwnershipBindings.AsNoTracking()
+                on new { attempt.WorkspaceId, attempt.ApplicationId, Id = attempt.BindingId }
+                equals new { binding.WorkspaceId, binding.ApplicationId, binding.Id }
+            join provider in dbContext.ProviderConnections.AsNoTracking()
+                on new { attempt.WorkspaceId, Id = binding.ProviderConnectionId }
+                equals new { provider.WorkspaceId, provider.Id }
+            where attempt.WorkspaceId == workspaceId && attempt.Id == attemptId &&
+                  episode.Outcome == IncidentEpisodeOutcome.Active &&
+                  incident.ActiveEpisodeId == attempt.EpisodeId &&
+                  incident.Status == HealingIncidentStatus.Repairing &&
+                  binding.Status == SourceOwnershipBindingStatus.Active &&
+                  provider.Status == ProviderConnectionStatus.Active
+            select new PlatformHealingWorkloadAuthority(attempt, binding, provider.Id))
+            .SingleOrDefaultAsync(cancellationToken);
+        if (authority is null)
+            return null;
+
+        var workspace = await dbContext.HealingWorkspaceConfigurations.AsNoTracking().SingleOrDefaultAsync(
+            x => x.WorkspaceId == authority.Attempt.WorkspaceId,
+            cancellationToken);
+        var application = await dbContext.HealingConfigurations.AsNoTracking().SingleOrDefaultAsync(
+            x => x.WorkspaceId == authority.Attempt.WorkspaceId &&
+                 x.ApplicationId == authority.Attempt.ApplicationId,
+            cancellationToken);
+        if (workspace is null || application is null)
+            return null;
+
+        var environmentIds = await dbContext.EnvironmentImpacts.AsNoTracking()
+            .Where(x => x.WorkspaceId == authority.Attempt.WorkspaceId &&
+                        x.ApplicationId == authority.Attempt.ApplicationId &&
+                        x.EpisodeId == authority.Attempt.EpisodeId)
+            .Select(x => x.EnvironmentId)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+        if (environmentIds.Length == 0)
+            return null;
+
+        var environments = await dbContext.HealingEnvironmentConfigurations.AsNoTracking()
+            .Where(x => x.WorkspaceId == authority.Attempt.WorkspaceId &&
+                        x.ApplicationId == authority.Attempt.ApplicationId &&
+                        environmentIds.Contains(x.EnvironmentId))
+            .ToArrayAsync(cancellationToken);
+        var byId = environments.ToDictionary(x => x.EnvironmentId);
+        if (!environmentIds.All(id => byId.TryGetValue(id, out var environment) &&
+                                      killSwitch.CanDispatchRepair(workspace, application, environment).Allowed))
+            return null;
+
+        return authority;
+    }
+
+    public async ValueTask RevokeCapabilitiesAsync(
+        Guid workspaceId,
+        Guid attemptId,
+        CancellationToken cancellationToken = default) =>
+        await dbContext.WorkloadIdentityExchanges
+            .Where(x => x.WorkspaceId == workspaceId && x.AttemptId == attemptId &&
+                        (x.Status == WorkloadIdentityExchangeStatus.Pending ||
+                         x.Status == WorkloadIdentityExchangeStatus.Exchanged))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, WorkloadIdentityExchangeStatus.Revoked)
+                .SetProperty(x => x.CapabilityTokenHash, (string?)null)
+                .SetProperty(x => x.Version, Guid.NewGuid().ToByteArray()), cancellationToken);
+}
+
+/// <summary>
+/// Closes managed-inference crash windows even when the original workload never retries. Recovery runs before
+/// normal repair coordination (including while the platform kill switch is set) and never reacquires inference.
+/// </summary>
+public static class PlatformManagedInferenceRecovery
+{
+    public static async ValueTask<int> RecoverExpiredAsync(
+        HealingDbContext dbContext,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken = default)
+    {
+        var now = timeProvider.GetUtcNow();
+        var candidates = await dbContext.ManagedRepairInferenceReservations.AsNoTracking()
+            .Where(x => x.Status == ManagedRepairInferenceReservationStatus.Leased && x.LeaseExpiresAt <= now)
+            .OrderBy(x => x.LeaseExpiresAt)
+            .ThenBy(x => x.Id)
+            .Select(x => new { x.Id, x.WorkspaceId, x.ApplicationId, x.AttemptId })
+            .Take(32)
+            .ToArrayAsync(cancellationToken);
+        var recovered = 0;
+        foreach (var candidate in candidates)
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+            await HealingRepairAdmission.AcquireApplicationLockAsync(
+                dbContext, candidate.WorkspaceId, candidate.ApplicationId, cancellationToken);
+            var reservation = await dbContext.ManagedRepairInferenceReservations.SingleOrDefaultAsync(
+                x => x.Id == candidate.Id &&
+                     x.Status == ManagedRepairInferenceReservationStatus.Leased &&
+                     x.LeaseExpiresAt <= now,
+                cancellationToken);
+            var attempt = reservation is null
+                ? null
+                : await dbContext.RepairAttempts.SingleOrDefaultAsync(
+                    x => x.Id == candidate.AttemptId &&
+                         x.WorkspaceId == candidate.WorkspaceId &&
+                         x.ApplicationId == candidate.ApplicationId,
+                    cancellationToken);
+            if (reservation is null || attempt is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                dbContext.ChangeTracker.Clear();
+                continue;
+            }
+
+            reservation.Status = ManagedRepairInferenceReservationStatus.Abandoned;
+            reservation.OutcomeCode = "managed-inference-outcome-indeterminate";
+            reservation.UpdatedAt = now;
+            reservation.CompletedAt = now;
+            reservation.Version = Guid.NewGuid().ToByteArray();
+            if (attempt.Status is RepairAttemptStatus.Running or RepairAttemptStatus.Dispatched ||
+                attempt.Status == RepairAttemptStatus.Failed && attempt.OutcomeCode == "repair-attempt-abandoned")
+            {
+                attempt.Status = RepairAttemptStatus.Failed;
+                attempt.OutcomeCode = "managed-inference-outcome-indeterminate";
+                attempt.SafeOutcomeDetail = "managed-inference-outcome-indeterminate";
+                attempt.CompletedAt = now;
+                attempt.LeaseOwner = null;
+                attempt.LeaseToken = null;
+                attempt.LeaseExpiresAt = null;
+                attempt.Version = Guid.NewGuid().ToByteArray();
+            }
+            var incident = await dbContext.HealingIncidents.SingleOrDefaultAsync(
+                x => x.WorkspaceId == attempt.WorkspaceId &&
+                     x.ApplicationId == attempt.ApplicationId &&
+                     x.Id == attempt.IncidentId &&
+                     x.ActiveEpisodeId == attempt.EpisodeId,
+                cancellationToken);
+            if (incident?.Status == HealingIncidentStatus.Repairing)
+            {
+                incident.TryTransitionTo(HealingIncidentStatus.NeedsHuman);
+                incident.NeedsHumanReason = NeedsHumanReason.PolicyBlocked;
+            }
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await new HealingAuditService(new HealingStore(dbContext), timeProvider).AppendAsync(new(
+                attempt.WorkspaceId,
+                "repair-attempt",
+                attempt.Id,
+                "repair-inference-abandoned",
+                "managed-inference-outcome-indeterminate",
+                "platform",
+                "healing-workload-api",
+                attempt.IncidentId,
+                attempt.EpisodeId,
+                null,
+                null,
+                null,
+                new Dictionary<string, string?>
+                {
+                    ["status"] = attempt.Status.ToString().ToLowerInvariant()
+                }), cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            recovered++;
+            dbContext.ChangeTracker.Clear();
+        }
+
+        return recovered;
+    }
+}
+
 public sealed class PlatformHealingWorkloadRequestAuthorizer(
     HealingDbContext dbContext,
+    PlatformHealingWorkloadAuthorityService authorityService,
     TimeProvider timeProvider) : IHealingWorkloadRequestAuthorizer
 {
     public async ValueTask<HealingWorkloadAuthorizationResult> AuthorizeExchangeAsync(
@@ -34,14 +228,14 @@ public sealed class PlatformHealingWorkloadRequestAuthorizer(
         Guid attemptId,
         CancellationToken cancellationToken = default)
     {
-        var authorized = await dbContext.RepairAttempts.AsNoTracking().AnyAsync(
-            x => x.WorkspaceId == workspaceId &&
-                 x.Id == attemptId &&
-                 x.Status != RepairAttemptStatus.Succeeded &&
-                 x.Status != RepairAttemptStatus.Failed &&
-                 x.Status != RepairAttemptStatus.Stopped &&
-                 x.Status != RepairAttemptStatus.Expired,
-            cancellationToken);
+        var authority = await authorityService.ResolveAsync(workspaceId, attemptId, cancellationToken);
+        var authorized = authority is not null &&
+                         authority.Attempt.Status != RepairAttemptStatus.Succeeded &&
+                         authority.Attempt.Status != RepairAttemptStatus.Failed &&
+                         authority.Attempt.Status != RepairAttemptStatus.Stopped &&
+                         authority.Attempt.Status != RepairAttemptStatus.Expired;
+        if (!authorized)
+            await authorityService.RevokeCapabilitiesAsync(workspaceId, attemptId, cancellationToken);
         return authorized
             ? HealingWorkloadAuthorizationResult.Allow()
             : HealingWorkloadAuthorizationResult.Deny(
@@ -67,7 +261,13 @@ public sealed class PlatformHealingWorkloadRequestAuthorizer(
             .ToArrayAsync(cancellationToken);
         var suppliedHash = Hash(request.CapabilityToken);
         var matches = exchanges.Where(x => FixedEquals(x.CapabilityTokenHash!, suppliedHash)).ToArray();
-        var authorized = matches.Length == 1 && ParseScopes(matches[0].ScopesJson).Contains(request.RequiredScope);
+        var liveAuthority = matches.Length == 1
+            ? await authorityService.ResolveAsync(request.WorkspaceId, request.AttemptId, cancellationToken)
+            : null;
+        var authorized = liveAuthority is not null &&
+                         ParseScopes(matches[0].ScopesJson).Contains(request.RequiredScope);
+        if (!authorized)
+            await authorityService.RevokeCapabilitiesAsync(request.WorkspaceId, request.AttemptId, cancellationToken);
         return authorized
             ? HealingWorkloadAuthorizationResult.Allow()
             : HealingWorkloadAuthorizationResult.Deny(
@@ -98,6 +298,7 @@ public sealed class PlatformHealingWorkloadRequestAuthorizer(
 
 public sealed class PlatformHealingWorkloadApi(
     HealingDbContext dbContext,
+    PlatformHealingWorkloadAuthorityService authorityService,
     GitHubWorkloadIdentityValidator identityValidator,
     IRepairOrchestrationStore orchestrationStore,
     RepairOrchestrationService orchestrationService,
@@ -109,7 +310,8 @@ public sealed class PlatformHealingWorkloadApi(
 {
     private const int MaximumResultEnvelopeBytes = 2_097_152;
     private static readonly IReadOnlySet<string> InitialScopes = new HashSet<string>(
-        [WorkloadCapabilityScopes.ReadEvidence, WorkloadCapabilityScopes.CreateProposal], StringComparer.Ordinal);
+        [WorkloadCapabilityScopes.ReadEvidence, WorkloadCapabilityScopes.CreateProposal, WorkloadCapabilityScopes.HeartbeatAttempt],
+        StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> FinalizationScopes = new HashSet<string>(
         [WorkloadCapabilityScopes.FinalizeProposal, WorkloadCapabilityScopes.UploadResult], StringComparer.Ordinal);
     private readonly IDataProtector _proposalNonceProtector = dataProtectionProvider.CreateProtector(
@@ -119,17 +321,31 @@ public sealed class PlatformHealingWorkloadApi(
         WorkloadIdentityExchangeRequest request,
         CancellationToken cancellationToken = default)
     {
-        var authority = await (
-            from attempt in dbContext.RepairAttempts.AsNoTracking()
-            join binding in dbContext.SourceOwnershipBindings.AsNoTracking()
-                on new { attempt.WorkspaceId, attempt.ApplicationId, Id = attempt.BindingId }
-                equals new { binding.WorkspaceId, binding.ApplicationId, binding.Id }
-            where attempt.Id == request.AttemptId && binding.Status == SourceOwnershipBindingStatus.Active
-            select new { Attempt = attempt, Binding = binding }).SingleOrDefaultAsync(cancellationToken);
-        if (authority is null)
+        var attemptScope = await dbContext.RepairAttempts.AsNoTracking()
+            .Where(x => x.Id == request.AttemptId)
+            .Select(x => new { x.WorkspaceId, x.Status })
+            .SingleOrDefaultAsync(cancellationToken);
+        var authority = attemptScope is null
+            ? null
+            : await authorityService.ResolveAsync(attemptScope.WorkspaceId, request.AttemptId, cancellationToken);
+        if (authority is null || IsTerminal(authority.Attempt.Status))
             throw Rejected(HttpStatusCode.Forbidden, "healing.workload.exchange.denied");
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+        if (!await HealingRepairAdmission.AcquireApplicationLockAsync(
+                dbContext,
+                authority.Attempt.WorkspaceId,
+                authority.Attempt.ApplicationId,
+                cancellationToken))
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.exchange.denied");
+        authority = await authorityService.ResolveAsync(
+            authority.Attempt.WorkspaceId,
+            authority.Attempt.Id,
+            cancellationToken);
+        if (authority is null || IsTerminal(authority.Attempt.Status))
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.exchange.denied");
         var repository = $"{authority.Binding.RepositoryOwner}/{authority.Binding.RepositoryName}";
         var expectation = new GitHubWorkloadIdentityExpectation(
             authority.Attempt.WorkspaceId,
@@ -164,6 +380,13 @@ public sealed class PlatformHealingWorkloadApi(
         if (!lease.Succeeded || lease.ExpiresAt is null)
             throw Rejected(HttpStatusCode.Conflict, "healing.workload.attempt-lease-unavailable");
 
+        authority = await authorityService.ResolveAsync(
+            authority.Attempt.WorkspaceId,
+            authority.Attempt.Id,
+            cancellationToken);
+        if (authority is null || authority.Attempt.Status != RepairAttemptStatus.Running)
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.exchange.denied");
+
         var grant = await IssueCapabilityAsync(
             authority.Attempt,
             validation.Identity,
@@ -177,6 +400,20 @@ public sealed class PlatformHealingWorkloadApi(
         WorkloadEvidenceRequest request,
         CancellationToken cancellationToken = default)
     {
+        var attemptScope = await dbContext.RepairAttempts.AsNoTracking()
+            .Where(x => x.Id == request.AttemptId)
+            .Select(x => new { x.WorkspaceId, x.ApplicationId })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (attemptScope is null)
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.evidence.authority-revoked");
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+        if (!await HealingRepairAdmission.AcquireApplicationLockAsync(
+                dbContext, attemptScope.WorkspaceId, attemptScope.ApplicationId, cancellationToken) ||
+            await authorityService.ResolveAsync(attemptScope.WorkspaceId, request.AttemptId, cancellationToken) is null)
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.evidence.authority-revoked");
+
         var evidence = await (
             from attempt in dbContext.RepairAttempts.AsNoTracking()
             join bundle in dbContext.EvidenceBundles.AsNoTracking()
@@ -187,7 +424,7 @@ public sealed class PlatformHealingWorkloadApi(
         if (evidence is null || evidence.Bundle.ExpiresAt <= timeProvider.GetUtcNow())
             throw Rejected(HttpStatusCode.Gone, "healing.workload.evidence.unavailable");
 
-        return new WorkloadEvidenceResponse(
+        var response = new WorkloadEvidenceResponse(
             HealingContractVersions.WorkloadProtocol,
             evidence.Id,
             new RepairEvidenceBundle(
@@ -199,6 +436,8 @@ public sealed class PlatformHealingWorkloadApi(
                 ParseStringArray(evidence.Bundle.OmissionsJson),
                 evidence.Bundle.ExpiresAt),
             ParseBudget(evidence.BudgetJson));
+        await transaction.CommitAsync(cancellationToken);
+        return response;
     }
 
     public async ValueTask<WorkloadProposalCreateResponse> CreateProposalAsync(
@@ -206,51 +445,75 @@ public sealed class PlatformHealingWorkloadApi(
         CancellationToken cancellationToken = default)
     {
         var now = timeProvider.GetUtcNow();
-        var authority = await (
+        var proposalInput = await (
             from attempt in dbContext.RepairAttempts.AsNoTracking()
             join bundle in dbContext.EvidenceBundles.AsNoTracking()
                 on new { attempt.WorkspaceId, attempt.ApplicationId, Id = attempt.EvidenceBundleId }
                 equals new { bundle.WorkspaceId, bundle.ApplicationId, bundle.Id }
             where attempt.Id == request.AttemptId
             select new { Attempt = attempt, Evidence = bundle }).SingleOrDefaultAsync(cancellationToken);
-        if (authority is null || authority.Attempt.Status != RepairAttemptStatus.Running ||
-            authority.Attempt.LeaseExpiresAt <= now || authority.Evidence.ExpiresAt <= now)
-            throw Rejected(HttpStatusCode.Conflict, "healing.workload.proposal.attempt-invalid");
-
-        var existing = await dbContext.ManagedRepairProposals.AsNoTracking().SingleOrDefaultAsync(
+        var liveAuthority = proposalInput is null
+            ? null
+            : await authorityService.ResolveAsync(
+                proposalInput.Attempt.WorkspaceId,
+                proposalInput.Attempt.Id,
+                cancellationToken);
+        if (proposalInput is null || liveAuthority is null)
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.proposal.authority-revoked");
+        var replayCandidate = await dbContext.ManagedRepairProposals.AsNoTracking().SingleOrDefaultAsync(
             x => x.AttemptId == request.AttemptId,
             cancellationToken);
-        if (existing is not null)
-            return ReplayProposal(existing, request);
+        if (replayCandidate is not null)
+            return await ReplayProposalWithAuditAsync(replayCandidate, request, cancellationToken);
+        if (proposalInput.Attempt.Status != RepairAttemptStatus.Running ||
+            proposalInput.Attempt.LeaseExpiresAt <= now || proposalInput.Evidence.ExpiresAt <= now)
+            throw Rejected(HttpStatusCode.Conflict, "healing.workload.proposal.attempt-invalid");
 
         var sourceContext = new RepairSourceContextBundle(
             request.SourceContext.TargetRevision,
             request.SourceContext.Digest,
             request.SourceContext.Files.Select(x => new RepairSourceFile(x.Path, x.Content, x.Digest, x.IsTruncated)).ToArray(),
             request.SourceContext.OmittedPaths.ToArray());
-        var budget = ParseBudget(authority.Attempt.BudgetJson);
+        var budget = ParseBudget(proposalInput.Attempt.BudgetJson);
         var proposalRequest = new RepairProposalRequest(
             HealingContractVersions.AgentProtocol,
-            authority.Attempt.Id,
-            BaseRevision(authority.Attempt),
-            authority.Attempt.TargetRevision,
-            authority.Attempt.ProducingRevision,
+            proposalInput.Attempt.Id,
+            BaseRevision(proposalInput.Attempt),
+            proposalInput.Attempt.TargetRevision,
+            proposalInput.Attempt.ProducingRevision,
             new(
-                authority.Evidence.Tier == EvidenceTier.Elevated ? "elevated" : "default-redacted",
-                authority.Evidence.CanonicalJson,
-                PrefixDigest(authority.Evidence.Digest),
-                ParseStringArray(authority.Evidence.OmissionsJson)),
+                proposalInput.Evidence.Tier == EvidenceTier.Elevated ? "elevated" : "default-redacted",
+                proposalInput.Evidence.CanonicalJson,
+                PrefixDigest(proposalInput.Evidence.Digest),
+                ParseStringArray(proposalInput.Evidence.OmissionsJson)),
             sourceContext,
             budget);
-        RepairProposal proposed;
         try
         {
             RepairProposalProtocol.ValidateRequest(proposalRequest);
+        }
+        catch (RepairAgentProtocolException exception)
+        {
+            throw Rejected(HttpStatusCode.UnprocessableEntity, exception.ReasonCode);
+        }
+
+        var admission = await AcquireInferenceReservationAsync(request, sourceContext, budget, cancellationToken);
+        if (admission.Replay is not null)
+            return admission.Replay;
+
+        RepairProposal proposed;
+        try
+        {
             proposed = await proposalProvider.ProposeAsync(proposalRequest, cancellationToken);
             RepairProposalProtocol.ValidateProposal(proposed, budget);
         }
         catch (RepairAgentProtocolException exception)
         {
+            await RejectInferenceReservationAsync(
+                request.AttemptId,
+                admission.Lease!.LeaseToken,
+                "managed-inference-response-rejected",
+                cancellationToken);
             throw Rejected(HttpStatusCode.UnprocessableEntity, exception.ReasonCode);
         }
 
@@ -258,8 +521,8 @@ public sealed class PlatformHealingWorkloadApi(
         var createdAt = timeProvider.GetUtcNow();
         var expiresAt = createdAt.Add(options.ProposalLifetime);
         var payload = new StoredManagedProposal(
-            BaseRevision(authority.Attempt),
-            authority.Attempt.TargetRevision,
+            BaseRevision(proposalInput.Attempt),
+            proposalInput.Attempt.TargetRevision,
             proposed.Classification,
             proposed.Confidence,
             proposed.CausalSummary,
@@ -280,19 +543,69 @@ public sealed class PlatformHealingWorkloadApi(
         try
         {
             var finalizationNonce = Base64UrlEncode(nonceBytes);
-            await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
             var attempt = await dbContext.RepairAttempts.SingleOrDefaultAsync(
                 x => x.Id == request.AttemptId,
                 cancellationToken);
-            if (attempt is null || attempt.Status != RepairAttemptStatus.Running || attempt.LeaseExpiresAt <= createdAt)
+            if (attempt is null)
                 throw Rejected(HttpStatusCode.Conflict, "healing.workload.proposal.attempt-invalid");
+            await HealingRepairAdmission.AcquireApplicationLockAsync(
+                dbContext, attempt.WorkspaceId, attempt.ApplicationId, cancellationToken);
+            var reservation = await dbContext.ManagedRepairInferenceReservations.SingleOrDefaultAsync(
+                x => x.AttemptId == request.AttemptId &&
+                     x.LeaseTokenHash == PlatformHealingWorkloadRequestAuthorizer.Hash(admission.Lease!.LeaseToken),
+                cancellationToken);
+            if (reservation is null || reservation.Status != ManagedRepairInferenceReservationStatus.Leased ||
+                reservation.LeaseExpiresAt <= createdAt)
+            {
+                if (reservation is not null && reservation.Status == ManagedRepairInferenceReservationStatus.Leased)
+                    await TerminateInferenceReservationAsync(
+                        reservation,
+                        attempt,
+                        ManagedRepairInferenceReservationStatus.Abandoned,
+                        RepairAttemptStatus.Failed,
+                        "managed-inference-outcome-indeterminate",
+                        "repair-inference-abandoned",
+                        cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                throw Rejected(HttpStatusCode.Gone, "healing.workload.inference-outcome-indeterminate");
+            }
+            if (await authorityService.ResolveAsync(attempt.WorkspaceId, attempt.Id, cancellationToken) is null)
+            {
+                await TerminateInferenceReservationAsync(
+                    reservation,
+                    attempt,
+                    ManagedRepairInferenceReservationStatus.Revoked,
+                    RepairAttemptStatus.Stopped,
+                    "managed-inference-authority-revoked",
+                    "repair-inference-revoked",
+                    cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                throw Rejected(HttpStatusCode.Forbidden, "healing.workload.proposal.authority-revoked");
+            }
+            if (attempt.Status != RepairAttemptStatus.Running || attempt.LeaseExpiresAt <= createdAt)
+            {
+                await TerminateInferenceReservationAsync(
+                    reservation,
+                    attempt,
+                    ManagedRepairInferenceReservationStatus.Abandoned,
+                    RepairAttemptStatus.Failed,
+                    "managed-inference-outcome-indeterminate",
+                    "repair-inference-abandoned",
+                    cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                throw Rejected(HttpStatusCode.Gone, "healing.workload.inference-outcome-indeterminate");
+            }
 
-            existing = await dbContext.ManagedRepairProposals.AsNoTracking().SingleOrDefaultAsync(
+            var existing = await dbContext.ManagedRepairProposals.AsNoTracking().SingleOrDefaultAsync(
                 x => x.AttemptId == request.AttemptId,
                 cancellationToken);
             if (existing is not null)
             {
-                await transaction.RollbackAsync(cancellationToken);
+                await AuditAsync(attempt, "repair-proposal-created", "proposal-created", existing.ProposalDigest, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
                 return ReplayProposal(existing, request);
             }
 
@@ -318,17 +631,21 @@ public sealed class PlatformHealingWorkloadApi(
             attempt.LeaseOwner = null;
             attempt.LeaseToken = null;
             attempt.LeaseExpiresAt = null;
-            attempt.UsageJson = BoundedJson(payload.Usage);
+            SetUsage(attempt, payload.Usage);
             attempt.Version = Guid.NewGuid().ToByteArray();
+            reservation.Status = ManagedRepairInferenceReservationStatus.Completed;
+            reservation.OutcomeCode = "proposal-created";
+            reservation.CompletedAt = createdAt;
+            reservation.UpdatedAt = createdAt;
+            reservation.Version = Guid.NewGuid().ToByteArray();
             await dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
             await AuditAsync(
                 attempt,
                 "repair-proposal-created",
                 "proposal-created",
                 proposalDigest,
                 cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return ProposalResponse(entity, payload, finalizationNonce, false);
         }
         catch (DbUpdateException)
@@ -339,12 +656,216 @@ public sealed class PlatformHealingWorkloadApi(
                 cancellationToken);
             if (winner is null)
                 throw;
-            return ReplayProposal(winner, request);
+            return await ReplayProposalWithAuditAsync(winner, request, cancellationToken);
         }
         finally
         {
             CryptographicOperations.ZeroMemory(nonceBytes);
         }
+    }
+
+    private sealed record InferenceReservationLease(string LeaseToken, DateTimeOffset ExpiresAt);
+
+    private sealed record InferenceReservationAdmission(
+        InferenceReservationLease? Lease,
+        WorkloadProposalCreateResponse? Replay);
+
+    private async ValueTask<WorkloadProposalCreateResponse> ReplayProposalWithAuditAsync(
+        ManagedRepairProposal proposal,
+        WorkloadProposalCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        var replay = ReplayProposal(proposal, request);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+        var attempt = await dbContext.RepairAttempts.SingleAsync(x => x.Id == proposal.AttemptId, cancellationToken);
+        if (!await HealingRepairAdmission.AcquireApplicationLockAsync(
+                dbContext, attempt.WorkspaceId, attempt.ApplicationId, cancellationToken) ||
+            await authorityService.ResolveAsync(attempt.WorkspaceId, attempt.Id, cancellationToken) is null)
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.proposal.authority-revoked");
+        await AuditAsync(
+            attempt,
+            "repair-proposal-created",
+            "proposal-created",
+            proposal.ProposalDigest,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return replay;
+    }
+
+    private async ValueTask<InferenceReservationAdmission> AcquireInferenceReservationAsync(
+        WorkloadProposalCreateRequest request,
+        RepairSourceContextBundle sourceContext,
+        RepairAgentBudget budget,
+        CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow();
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+        var attempt = await dbContext.RepairAttempts.SingleOrDefaultAsync(
+            x => x.Id == request.AttemptId,
+            cancellationToken);
+        if (attempt is null ||
+            !await HealingRepairAdmission.AcquireApplicationLockAsync(
+                dbContext, attempt.WorkspaceId, attempt.ApplicationId, cancellationToken) ||
+            await authorityService.ResolveAsync(attempt.WorkspaceId, attempt.Id, cancellationToken) is null)
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.proposal.authority-revoked");
+        if (attempt.Status != RepairAttemptStatus.Running || attempt.LeaseExpiresAt <= now)
+            throw Rejected(HttpStatusCode.Conflict, "healing.workload.proposal.attempt-invalid");
+
+        var existingProposal = await dbContext.ManagedRepairProposals.AsNoTracking().SingleOrDefaultAsync(
+            x => x.AttemptId == request.AttemptId,
+            cancellationToken);
+        if (existingProposal is not null)
+        {
+            var replay = ReplayProposal(existingProposal, request);
+            await AuditAsync(
+                attempt,
+                "repair-proposal-created",
+                "proposal-created",
+                existingProposal.ProposalDigest,
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new(null, replay);
+        }
+
+        var existing = await dbContext.ManagedRepairInferenceReservations.SingleOrDefaultAsync(
+            x => x.AttemptId == request.AttemptId,
+            cancellationToken);
+        if (existing is not null)
+        {
+            if (existing.IdempotencyKey != request.IdempotencyKey ||
+                !PlatformHealingWorkloadRequestAuthorizer.FixedEquals(
+                    existing.SourceContextDigest,
+                    sourceContext.Digest))
+                throw Rejected(HttpStatusCode.Conflict, "healing.workload.proposal.idempotency-conflict");
+            if (existing.Status == ManagedRepairInferenceReservationStatus.Leased && existing.LeaseExpiresAt > now)
+                throw Rejected(HttpStatusCode.Conflict, "healing.workload.inference-reservation-active");
+            if (existing.Status == ManagedRepairInferenceReservationStatus.Leased)
+            {
+                // A provider call may have completed immediately before the process died. Without a provider-side
+                // idempotency contract, reacquiring this lease could spend the budget twice, so recovery is fail-closed.
+                await TerminateInferenceReservationAsync(
+                    existing,
+                    attempt,
+                    ManagedRepairInferenceReservationStatus.Abandoned,
+                    RepairAttemptStatus.Failed,
+                    "managed-inference-outcome-indeterminate",
+                    "repair-inference-abandoned",
+                    cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                throw Rejected(HttpStatusCode.Gone, "healing.workload.inference-outcome-indeterminate");
+            }
+
+            throw Rejected(HttpStatusCode.Gone, existing.OutcomeCode ?? "healing.workload.inference-unavailable");
+        }
+
+        var leaseBytes = RandomNumberGenerator.GetBytes(32);
+        string leaseToken;
+        try
+        {
+            leaseToken = Base64UrlEncode(leaseBytes);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(leaseBytes);
+        }
+        var budgetDeadline = now.Add(budget.TimeLimit);
+        var leaseExpiresAt = attempt.LeaseExpiresAt!.Value < budgetDeadline
+            ? attempt.LeaseExpiresAt.Value
+            : budgetDeadline;
+        var reservation = new ManagedRepairInferenceReservation
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = attempt.WorkspaceId,
+            ApplicationId = attempt.ApplicationId,
+            AttemptId = attempt.Id,
+            IdempotencyKey = request.IdempotencyKey,
+            SourceContextDigest = sourceContext.Digest,
+            ReservedInferenceUnits = budget.InferenceUnitLimit,
+            LeaseTokenHash = PlatformHealingWorkloadRequestAuthorizer.Hash(leaseToken),
+            LeaseExpiresAt = leaseExpiresAt,
+            Status = ManagedRepairInferenceReservationStatus.Leased,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Version = Guid.NewGuid().ToByteArray()
+        };
+        dbContext.ManagedRepairInferenceReservations.Add(reservation);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new(new(leaseToken, leaseExpiresAt), null);
+    }
+
+    private async ValueTask RejectInferenceReservationAsync(
+        Guid attemptId,
+        string leaseToken,
+        string outcomeCode,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+        var attempt = await dbContext.RepairAttempts.SingleOrDefaultAsync(x => x.Id == attemptId, cancellationToken);
+        if (attempt is null)
+            return;
+        await HealingRepairAdmission.AcquireApplicationLockAsync(
+            dbContext, attempt.WorkspaceId, attempt.ApplicationId, cancellationToken);
+        var reservation = await dbContext.ManagedRepairInferenceReservations.SingleOrDefaultAsync(
+            x => x.AttemptId == attemptId &&
+                 x.LeaseTokenHash == PlatformHealingWorkloadRequestAuthorizer.Hash(leaseToken),
+            cancellationToken);
+        if (reservation?.Status == ManagedRepairInferenceReservationStatus.Leased)
+            await TerminateInferenceReservationAsync(
+                reservation,
+                attempt,
+                ManagedRepairInferenceReservationStatus.Rejected,
+                RepairAttemptStatus.Failed,
+                outcomeCode,
+                "repair-inference-rejected",
+                cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private async ValueTask TerminateInferenceReservationAsync(
+        ManagedRepairInferenceReservation reservation,
+        RepairAttempt attempt,
+        ManagedRepairInferenceReservationStatus reservationStatus,
+        RepairAttemptStatus attemptStatus,
+        string outcomeCode,
+        string auditEventType,
+        CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow();
+        reservation.Status = reservationStatus;
+        reservation.OutcomeCode = outcomeCode;
+        reservation.UpdatedAt = now;
+        reservation.CompletedAt = now;
+        reservation.Version = Guid.NewGuid().ToByteArray();
+        attempt.Status = attemptStatus;
+        attempt.OutcomeCode = outcomeCode;
+        attempt.SafeOutcomeDetail = outcomeCode;
+        attempt.CompletedAt = now;
+        attempt.LeaseOwner = null;
+        attempt.LeaseToken = null;
+        attempt.LeaseExpiresAt = null;
+        attempt.Version = Guid.NewGuid().ToByteArray();
+        var incident = await dbContext.HealingIncidents.SingleOrDefaultAsync(
+            x => x.WorkspaceId == attempt.WorkspaceId &&
+                 x.ApplicationId == attempt.ApplicationId &&
+                 x.Id == attempt.IncidentId &&
+                 x.ActiveEpisodeId == attempt.EpisodeId,
+            cancellationToken);
+        if (incident is not null)
+        {
+            if (incident.Status == HealingIncidentStatus.Repairing)
+                incident.TryTransitionTo(HealingIncidentStatus.NeedsHuman);
+            if (incident.Status == HealingIncidentStatus.NeedsHuman)
+                incident.NeedsHumanReason = NeedsHumanReason.PolicyBlocked;
+        }
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await AuditAsync(attempt, auditEventType, outcomeCode, null, cancellationToken);
     }
 
     public async ValueTask<WorkloadCapabilityGrant> ExchangeFinalizationAsync(
@@ -365,24 +886,41 @@ public sealed class PlatformHealingWorkloadApi(
                   attempt.Status == RepairAttemptStatus.ProposalReady &&
                   binding.Status == SourceOwnershipBindingStatus.Active
             select new { Proposal = proposal, Attempt = attempt, Binding = binding }).SingleOrDefaultAsync(cancellationToken);
-        if (authority is null)
+        var liveAuthority = authority is null
+            ? null
+            : await authorityService.ResolveAsync(authority.Attempt.WorkspaceId, authority.Attempt.Id, cancellationToken);
+        if (authority is null || liveAuthority is null)
             throw Rejected(HttpStatusCode.Forbidden, "healing.workload.finalization-exchange.denied");
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-        var repository = $"{authority.Binding.RepositoryOwner}/{authority.Binding.RepositoryName}";
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+        if (!await HealingRepairAdmission.AcquireApplicationLockAsync(
+                dbContext,
+                authority.Attempt.WorkspaceId,
+                authority.Attempt.ApplicationId,
+                cancellationToken))
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.finalization-exchange.denied");
+        liveAuthority = await authorityService.ResolveAsync(
+            authority.Attempt.WorkspaceId,
+            authority.Attempt.Id,
+            cancellationToken);
+        if (liveAuthority is null)
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.finalization-exchange.denied");
+        var repository = $"{liveAuthority.Binding.RepositoryOwner}/{liveAuthority.Binding.RepositoryName}";
         var expectation = new GitHubWorkloadIdentityExpectation(
             authority.Attempt.WorkspaceId,
             authority.Attempt.ApplicationId,
             authority.Attempt.Id,
             authority.Proposal.FinalizationNonceHash,
-            $"repo:{repository}:ref:{authority.Binding.WorkflowReference}",
-            authority.Binding.RepositoryProviderId,
-            authority.Binding.RepositoryOwner,
-            authority.Binding.RepositoryName,
-            $"{repository}/{authority.Binding.WorkflowIdentity}@{authority.Binding.WorkflowReference}",
-            authority.Binding.WorkflowRevision,
-            authority.Binding.WorkflowReference,
-            authority.Binding.WorkflowRevision,
+            $"repo:{repository}:ref:{liveAuthority.Binding.WorkflowReference}",
+            liveAuthority.Binding.RepositoryProviderId,
+            liveAuthority.Binding.RepositoryOwner,
+            liveAuthority.Binding.RepositoryName,
+            $"{repository}/{liveAuthority.Binding.WorkflowIdentity}@{liveAuthority.Binding.WorkflowReference}",
+            liveAuthority.Binding.WorkflowRevision,
+            liveAuthority.Binding.WorkflowReference,
+            liveAuthority.Binding.WorkflowRevision,
             "finalize",
             authority.Proposal.Id,
             FinalizationScopes);
@@ -403,8 +941,15 @@ public sealed class PlatformHealingWorkloadApi(
         if (!lease.Succeeded || lease.ExpiresAt is null)
             throw Rejected(HttpStatusCode.Conflict, "healing.workload.attempt-lease-unavailable");
 
+        liveAuthority = await authorityService.ResolveAsync(
+            authority.Attempt.WorkspaceId,
+            authority.Attempt.Id,
+            cancellationToken);
+        if (liveAuthority is null || liveAuthority.Attempt.Status != RepairAttemptStatus.Running)
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.finalization-exchange.denied");
+
         var grant = await IssueCapabilityAsync(
-            authority.Attempt,
+            liveAuthority.Attempt,
             validation.Identity,
             FinalizationScopes,
             cancellationToken);
@@ -419,7 +964,16 @@ public sealed class PlatformHealingWorkloadApi(
         var now = timeProvider.GetUtcNow();
         if (request.RequestedAt < now.AddMinutes(-5) || request.RequestedAt > now.AddMinutes(1))
             throw Rejected(HttpStatusCode.BadRequest, "healing.workload.heartbeat.timestamp-invalid");
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var attemptScope = await dbContext.RepairAttempts.AsNoTracking()
+            .Where(x => x.Id == request.AttemptId)
+            .Select(x => x.WorkspaceId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (attemptScope == Guid.Empty ||
+            await authorityService.ResolveAsync(attemptScope, request.AttemptId, cancellationToken) is null)
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.heartbeat.authority-revoked");
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
         var existing = await dbContext.WorkloadHeartbeats.AsNoTracking().SingleOrDefaultAsync(
             x => x.AttemptId == request.AttemptId && x.IdempotencyKey == request.IdempotencyKey,
             cancellationToken);
@@ -441,6 +995,10 @@ public sealed class PlatformHealingWorkloadApi(
             cancellationToken);
         if (attempt is null)
             throw Rejected(HttpStatusCode.Conflict, "healing.workload.attempt-lease-lost");
+        if (!await HealingRepairAdmission.AcquireApplicationLockAsync(
+                dbContext, attempt.WorkspaceId, attempt.ApplicationId, cancellationToken) ||
+            await authorityService.ResolveAsync(attempt.WorkspaceId, attempt.Id, cancellationToken) is null)
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.heartbeat.authority-revoked");
         var expiresAt = now.Add(options.AttemptLeaseLifetime);
         var renewed = await orchestrationStore.TryHeartbeatLeaseAsync(
             attempt.WorkspaceId,
@@ -469,6 +1027,7 @@ public sealed class PlatformHealingWorkloadApi(
         catch (DbUpdateException)
         {
             await transaction.RollbackAsync(cancellationToken);
+            await transaction.DisposeAsync();
             dbContext.ChangeTracker.Clear();
             var winner = await dbContext.WorkloadHeartbeats.AsNoTracking().SingleOrDefaultAsync(
                 x => x.AttemptId == request.AttemptId && x.IdempotencyKey == request.IdempotencyKey,
@@ -504,12 +1063,24 @@ public sealed class PlatformHealingWorkloadApi(
         var requestedClassification = ParseClassification(request.Result);
         var envelopeDigest = RepairAgentGateway.ComputeSha256Digest(canonicalEnvelope);
         var now = timeProvider.GetUtcNow();
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var attemptScope = await dbContext.RepairAttempts.AsNoTracking()
+            .Where(x => x.Id == request.AttemptId)
+            .Select(x => x.WorkspaceId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (attemptScope == Guid.Empty ||
+            await authorityService.ResolveAsync(attemptScope, request.AttemptId, cancellationToken) is null)
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.result.authority-revoked");
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var attempt = await dbContext.RepairAttempts.SingleOrDefaultAsync(
             x => x.Id == request.AttemptId,
             cancellationToken);
         if (attempt is null)
             throw Rejected(HttpStatusCode.Conflict, "healing.workload.result.attempt-invalid");
+        if (!await HealingRepairAdmission.AcquireApplicationLockAsync(
+                dbContext, attempt.WorkspaceId, attempt.ApplicationId, cancellationToken) ||
+            await authorityService.ResolveAsync(attempt.WorkspaceId, attempt.Id, cancellationToken) is null)
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.result.authority-revoked");
         if (request.Result.ProposalId is not { } proposalId ||
             string.IsNullOrWhiteSpace(request.Result.ProposalDigest))
             throw Rejected(HttpStatusCode.BadRequest, "healing.workload.result.proposal-required");
@@ -518,12 +1089,18 @@ public sealed class PlatformHealingWorkloadApi(
             cancellationToken);
         if (existing is not null)
         {
-            await transaction.RollbackAsync(cancellationToken);
             if (existing.IdempotencyKey != request.IdempotencyKey ||
                 existing.ProposalId != proposalId ||
                 !PlatformHealingWorkloadRequestAuthorizer.FixedEquals(existing.ProposalDigest!, request.Result.ProposalDigest) ||
                 !PlatformHealingWorkloadRequestAuthorizer.FixedEquals(existing.EnvelopeDigest, envelopeDigest))
                 throw Rejected(HttpStatusCode.Conflict, "healing.workload.result.idempotency-conflict");
+            await AuditAsync(
+                attempt,
+                "repair-result-accepted",
+                "result-accepted",
+                envelopeDigest,
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return new WorkloadResultUploadReceipt(
                 HealingContractVersions.WorkloadProtocol,
                 attempt.Id,
@@ -610,7 +1187,7 @@ public sealed class PlatformHealingWorkloadApi(
         dbContext.RepairResults.Add(result);
         attempt.Status = RepairAttemptStatus.ResultReceived;
         attempt.RepairClassification = classification;
-        attempt.UsageJson = usageJson;
+        SetUsage(attempt, request.Result.Usage, usageJson);
         attempt.CompletedAt = now;
         attempt.LeaseOwner = null;
         attempt.LeaseToken = null;
@@ -621,10 +1198,17 @@ public sealed class PlatformHealingWorkloadApi(
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
+            await AuditAsync(
+                attempt,
+                "repair-result-accepted",
+                "result-accepted",
+                envelopeDigest,
+                cancellationToken);
         }
         catch (DbUpdateException)
         {
             await transaction.RollbackAsync(cancellationToken);
+            await transaction.DisposeAsync();
             dbContext.ChangeTracker.Clear();
             var winner = await dbContext.RepairResults.AsNoTracking().SingleOrDefaultAsync(
                 x => x.AttemptId == attempt.Id,
@@ -632,28 +1216,64 @@ public sealed class PlatformHealingWorkloadApi(
             if (winner is null)
                 throw;
             if (winner.IdempotencyKey != request.IdempotencyKey ||
+                winner.ProposalId != proposalId ||
+                !PlatformHealingWorkloadRequestAuthorizer.FixedEquals(
+                    winner.ProposalDigest!,
+                    request.Result.ProposalDigest) ||
                 !PlatformHealingWorkloadRequestAuthorizer.FixedEquals(winner.EnvelopeDigest, envelopeDigest))
                 throw Rejected(HttpStatusCode.Conflict, "healing.workload.result.idempotency-conflict");
-            return new WorkloadResultUploadReceipt(
-                HealingContractVersions.WorkloadProtocol,
-                attempt.Id,
-                envelopeDigest,
-                true,
-                winner.SubmittedAt);
+            return await ReplayResultWithAuditAsync(winner, request, envelopeDigest, cancellationToken);
         }
         await transaction.CommitAsync(cancellationToken);
-        await AuditAsync(
-            attempt,
-            "repair-result-accepted",
-            "result-accepted",
-            envelopeDigest,
-            cancellationToken);
         return new WorkloadResultUploadReceipt(
             HealingContractVersions.WorkloadProtocol,
             attempt.Id,
             envelopeDigest,
             false,
             now);
+    }
+
+    private async ValueTask<WorkloadResultUploadReceipt> ReplayResultWithAuditAsync(
+        RepairResult result,
+        WorkloadResultUploadRequest request,
+        string envelopeDigest,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+        var attempt = await dbContext.RepairAttempts.SingleAsync(
+            x => x.Id == request.AttemptId,
+            cancellationToken);
+        if (!await HealingRepairAdmission.AcquireApplicationLockAsync(
+                dbContext, attempt.WorkspaceId, attempt.ApplicationId, cancellationToken) ||
+            await authorityService.ResolveAsync(attempt.WorkspaceId, attempt.Id, cancellationToken) is null)
+            throw Rejected(HttpStatusCode.Forbidden, "healing.workload.result.authority-revoked");
+
+        var current = await dbContext.RepairResults.AsNoTracking().SingleAsync(
+            x => x.Id == result.Id && x.AttemptId == request.AttemptId,
+            cancellationToken);
+        if (current.IdempotencyKey != request.IdempotencyKey ||
+            current.ProposalId != request.Result.ProposalId ||
+            !PlatformHealingWorkloadRequestAuthorizer.FixedEquals(
+                current.ProposalDigest!,
+                request.Result.ProposalDigest!) ||
+            !PlatformHealingWorkloadRequestAuthorizer.FixedEquals(current.EnvelopeDigest, envelopeDigest))
+            throw Rejected(HttpStatusCode.Conflict, "healing.workload.result.idempotency-conflict");
+
+        await AuditAsync(
+            attempt,
+            "repair-result-accepted",
+            "result-accepted",
+            envelopeDigest,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new WorkloadResultUploadReceipt(
+            HealingContractVersions.WorkloadProtocol,
+            attempt.Id,
+            envelopeDigest,
+            true,
+            current.SubmittedAt);
     }
 
     internal static bool MatchesProposal(RepairResultEnvelope result, StoredManagedProposal proposal)
@@ -883,6 +1503,22 @@ public sealed class PlatformHealingWorkloadApi(
             usage.InputUnits > budget.InferenceUnitLimit - usage.OutputUnits)
             throw Rejected(HttpStatusCode.UnprocessableEntity, "healing.workload.budget.exceeded");
     }
+
+    private static void SetUsage(RepairAttempt attempt, RepairUsageSummary usage, string? usageJson = null)
+    {
+        attempt.UsageJson = usageJson ?? BoundedJson(usage);
+        attempt.InputUnits = usage.InputUnits;
+        attempt.OutputUnits = usage.OutputUnits;
+        attempt.AgentDurationTicks = usage.AgentDuration.Ticks;
+        attempt.RepositoryRunDurationTicks = usage.RepositoryRunDuration.Ticks;
+        attempt.RepositoryRuns = usage.RepositoryRuns;
+    }
+
+    private static bool IsTerminal(RepairAttemptStatus status) => status is
+        RepairAttemptStatus.Succeeded or
+        RepairAttemptStatus.Failed or
+        RepairAttemptStatus.Stopped or
+        RepairAttemptStatus.Expired;
 
     private static IReadOnlyList<string> ParseStringArray(string json)
     {

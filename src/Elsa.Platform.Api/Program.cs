@@ -22,6 +22,7 @@ using Elsa.Platform.Api.Public.Sources;
 using Elsa.Platform.Api.Workspace;
 using Elsa.Platform.Api.Workspace.Healing;
 using Elsa.Platform.Api.Healing;
+using Elsa.Platform.Healing.Core.Configuration;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
 using Elsa.Platform.PackageCatalog.Core.Approvals;
 using Elsa.Platform.RuntimeBuilder.Abstractions;
@@ -168,10 +169,13 @@ builder.Services.AddPlatformHealing(builder.Configuration, builder.Environment)
     .AddEndpointModule<WorkspaceHealingAuthorityEndpointModule>()
     .AddEndpointModule<PlatformManagedManifestAttestationEndpointModule>()
     .AddEndpointModule<HealingIntakeEndpointModule>()
-    .AddEndpointModule<WorkspaceHealingIncidentEndpointModule>()
+    .AddEndpointModule<WorkspaceHealingIncidentEndpointModule>(HealingOptions.IncidentReviewEnabledConfigurationKey)
+    .AddEndpointModule<HealingVerificationEndpointModule>(HealingOptions.VerificationEnabledConfigurationKey)
     .AddEndpointModule<HealingRepairWorkflowEndpointModule>()
-    .AddHostedWorker<HealingSignalInboxHostedService>()
-    .AddHostedWorker<HealingProviderOperationHostedService>();
+    .AddHostedWorker<HealingSignalInboxHostedService>(HealingOptions.IncidentReviewEnabledConfigurationKey)
+    .AddHostedWorker<HealingProviderOperationHostedService>()
+    .AddHostedWorker<HealingVerificationHostedService>(HealingOptions.VerificationEnabledConfigurationKey)
+    .AddHostedWorker<HealingVerificationFailureDeliveryHostedService>(HealingOptions.VerificationEnabledConfigurationKey);
 builder.Services.AddCatalogDbContext(builder.Configuration);
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
 builder.Services.AddScoped<IPublicCatalogQueries, PublicCatalogQueries>();

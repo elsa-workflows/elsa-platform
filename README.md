@@ -246,5 +246,7 @@ Several of these pieces are already implemented as contracts and services; other
 - [Spec Kit feature history](specs/)
 - [Platform integration packaging and host configuration](docs/platform-integration-packaging.md)
 - [Runtime transport trust policy](docs/runtime-transport-trust-policy.md)
+- [Platform Healing setup and operations](docs/healing/getting-started.md)
+- [Platform Healing security and incident response](docs/healing/security.md)
 
 Implementation work is tracked through Spec Kit under `specs/`. Start with the current plan for active branch context before making architectural changes.

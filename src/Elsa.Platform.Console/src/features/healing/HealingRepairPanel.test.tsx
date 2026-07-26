@@ -75,7 +75,9 @@ const attemptFixture = {
     url: "https://github.com/acme/orders/pull/84",
     isDraft: true,
     mergeState: "Open",
-    checksState: "Pending"
+    checksState: "Pending",
+    autoMergeDecision: "HumanOnly",
+    mergeGates: []
   },
   providerCredential: "ghs_provider_write_token",
   unifiedDiff: "diff --git"

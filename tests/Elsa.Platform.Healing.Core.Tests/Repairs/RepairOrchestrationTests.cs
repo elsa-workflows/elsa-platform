@@ -370,10 +370,19 @@ public sealed class RepairOrchestrationTests
         public ValueTask<RepairAttemptStoreCreateResult> TryCreateAttemptAsync(
             RepairAttempt attempt,
             int maximumAttempts,
+            int maximumConcurrentAttempts,
             CancellationToken cancellationToken = default)
         {
             lock (_lock)
             {
+                var activeApplicationAttempts = Attempts.Count(x =>
+                    x.WorkspaceId == attempt.WorkspaceId &&
+                    x.ApplicationId == attempt.ApplicationId &&
+                    x.Status is RepairAttemptStatus.Queued or RepairAttemptStatus.Dispatched or
+                        RepairAttemptStatus.Running or RepairAttemptStatus.ProposalReady or
+                        RepairAttemptStatus.ResultReceived or RepairAttemptStatus.Publishing);
+                if (activeApplicationAttempts >= maximumConcurrentAttempts)
+                    return ValueTask.FromResult(new RepairAttemptStoreCreateResult(RepairAttemptStoreOutcome.ConcurrencyLimitReached, null));
                 var matching = Attempts.Where(x =>
                     x.WorkspaceId == attempt.WorkspaceId
                     && x.EpisodeId == attempt.EpisodeId

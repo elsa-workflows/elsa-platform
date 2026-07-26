@@ -1,12 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useWorkspaceContext } from "@/app/WorkspaceContextProvider";
 import { RequestStateView } from "@/components/states/RequestStateViews";
 import { Badge, EmptyState, Table } from "@/components/ui";
-import { getHealingIncident } from "@/features/healing/healingApi";
+import { getHealingIncident, retryHealingRepair, stopHealingRepair, waiveHealingEnvironment } from "@/features/healing/healingApi";
+import { HealingMergePolicyPanel } from "@/features/healing/HealingMergePolicyPanel";
 import { humanize } from "@/features/healing/HealingIncidentsPage";
 import { HealingRepairPanel } from "@/features/healing/HealingRepairPanel";
+import { HealingVerificationPanel } from "@/features/healing/HealingVerificationPanel";
 import type { HealingIncidentDetail } from "@/features/healing/healingModels";
 import { formatDateTime } from "@/lib/formatters";
 import { statusToneClass, type StatusTone } from "@/lib/status/statusBadges";
@@ -70,8 +72,8 @@ export function HealingIncidentPage() {
         {tab === "Overview" ? <OverviewTab incident={value} /> : null}
         {tab === "Occurrences" ? <OccurrencesTab incident={value} /> : null}
         {tab === "Attribution" ? <AttributionTab incident={value} /> : null}
-        {tab === "Repair" ? <RepairTab incident={value} /> : null}
-        {tab === "Environments" ? <EnvironmentsTab incident={value} /> : null}
+        {tab === "Repair" ? <RepairTab incident={value} workspaceId={workspace.selectedWorkspaceId} /> : null}
+        {tab === "Environments" ? <EnvironmentsTab incident={value} workspaceId={workspace.selectedWorkspaceId} /> : null}
         {tab === "Audit" ? <AuditTab incident={value} /> : null}
       </div>
     </section>
@@ -135,7 +137,11 @@ function AttributionTab({ incident }: { incident: HealingIncidentDetail }) {
   );
 }
 
-function RepairTab({ incident }: { incident: HealingIncidentDetail }) {
+function RepairTab({ incident, workspaceId }: { incident: HealingIncidentDetail; workspaceId: string }) {
+  const queryClient = useQueryClient();
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["healing", "incident", workspaceId, incident.id] });
+  const retry = useMutation({ mutationFn: () => retryHealingRepair(workspaceId, incident.id), onSuccess: refresh });
+  const stop = useMutation({ mutationFn: () => stopHealingRepair(workspaceId, incident.id), onSuccess: refresh });
   const item = incident.workItem;
   if (!item && incident.attempts.length === 0)
     return <EmptyState title="No repair work item" description={incident.repairable ? "The incident is eligible, but repair work has not been projected yet." : "Repair dispatch is blocked by the current attribution or policy state."} />;
@@ -151,34 +157,29 @@ function RepairTab({ incident }: { incident: HealingIncidentDetail }) {
         </dl>
         {providerUrl ? <a className="mt-4 inline-block text-sm text-primary" href={providerUrl} target="_blank" rel="noreferrer">Open provider work item</a> : null}
       </Panel> : null}
+      <HealingMergePolicyPanel attempts={incident.attempts} permissions={incident.permissions ?? []}
+        pending={retry.isPending || stop.isPending} onRetry={() => retry.mutate()} onStop={() => stop.mutate()} />
       <HealingRepairPanel attempts={incident.attempts} />
     </div>
   );
 }
 
-function EnvironmentsTab({ incident }: { incident: HealingIncidentDetail }) {
-  if (incident.environmentImpacts.length === 0)
-    return <EmptyState title="No environment impacts" description="No environment occurrence or verification timeline is recorded." />;
-  return (
-    <div className="space-y-3">
-      <p className="sr-only">Environment verification states distinguish deployed, deployed unverified, healed, failed verification, superseded, and waived outcomes.</p>
-      {incident.environmentImpacts.map((impact) => (
-        <article key={`${impact.episodeId}:${impact.environmentId}`} className="space-y-3 rounded-ui border border-border bg-surface p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-medium">Environment {impact.environmentId}</h2><StatusBadge value={verificationLabel(impact.verificationStatus)} /></div>
-          <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-            <Detail label="Threshold impact" value={`${impact.occurrenceCount} of ${impact.occurrenceThreshold} occurrences`} />
-            <Detail label="Debounce" value={impact.debounceWindow} />
-            <Detail label="Producing revisions" value={joinOrFallback(impact.producingRevisions)} />
-            <Detail label="Current deployed revision" value={impact.currentDeployedRevision ?? "Not observed"} />
-            <Detail label="First seen" value={formatDateTime(impact.firstSeenAt)} />
-            <Detail label="Last seen" value={formatDateTime(impact.lastSeenAt)} />
-            <Detail label="Threshold reached" value={impact.thresholdReachedAt ? formatDateTime(impact.thresholdReachedAt) : "Not reached"} />
-            <Detail label="Ready after" value={impact.readyAfter ? formatDateTime(impact.readyAfter) : "Not scheduled"} />
-          </dl>
-        </article>
-      ))}
-    </div>
-  );
+function EnvironmentsTab({ incident, workspaceId }: { incident: HealingIncidentDetail; workspaceId: string }) {
+  const queryClient = useQueryClient();
+  const waiver = useMutation({
+    mutationFn: ({ environmentId, reason }: { environmentId: string; reason: string }) =>
+      waiveHealingEnvironment(workspaceId, incident.id, environmentId, reason),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["healing", "incident", workspaceId, incident.id] })
+  });
+  return <HealingVerificationPanel
+    incidentStatus={incident.status}
+    impacts={incident.environmentImpacts}
+    observations={incident.deploymentObservations ?? []}
+    results={incident.verificationResults ?? []}
+    permissions={incident.permissions ?? []}
+    pending={waiver.isPending}
+    onWaive={(environmentId, reason) => waiver.mutate({ environmentId, reason })}
+  />;
 }
 
 function AuditTab({ incident }: { incident: HealingIncidentDetail }) {
@@ -189,7 +190,7 @@ function AuditTab({ incident }: { incident: HealingIncidentDetail }) {
   ].sort((left, right) => Date.parse(left.at) - Date.parse(right.at));
   return (
     <div className="space-y-3">
-      <p className="text-sm text-muted-foreground">This safe milestone summary is not the complete workspace audit log.</p>
+      <p className="text-sm text-muted-foreground">This safe milestone summary is not the complete workspace audit log. <Link className="text-primary" to={`/admin/healing/audit?incidentId=${encodeURIComponent(incident.id)}`}>Open the complete incident audit</Link>.</p>
       <ol className="space-y-3" aria-label="Incident milestone timeline">{milestones.map((milestone, index) => <li key={`${milestone.at}:${index}`} className="rounded-ui border border-border p-3 text-sm"><p className="font-medium">{milestone.label}</p><time className="text-muted-foreground" dateTime={milestone.at}>{formatDateTime(milestone.at)}</time></li>)}</ol>
     </div>
   );
@@ -214,10 +215,6 @@ function statusTone(value: string): StatusTone {
     case "needshuman": case "deployedunverified": case "warning": case "pendingdeployment": return "warning";
     default: return "neutral";
   }
-}
-
-function verificationLabel(value: string) {
-  return value === "DeployedUnverified" ? "Deployed—unverified" : humanize(value);
 }
 
 function uniqueEnvironmentCount(incident: HealingIncidentDetail) {

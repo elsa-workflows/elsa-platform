@@ -1,9 +1,13 @@
 using System.Text;
 using System.Text.Json;
+using Elsa.Platform.Api.Authentication;
 using Elsa.Platform.Api.Healing;
 using Elsa.Platform.Deployment.Core.Cockpit;
+using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.Healing.Abstractions;
 using Elsa.Platform.Healing.Core;
+using Elsa.Platform.Healing.Core.Providers;
+using Elsa.Platform.Healing.Core.Security;
 using Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
@@ -21,7 +25,252 @@ public sealed class WorkspaceHealingIncidentEndpointModule : IHealingEndpointMod
             .RequireHealingPermission(HealingPermissions.Read);
         group.MapGet("/{incidentId:guid}", GetAsync)
             .RequireHealingPermission(HealingPermissions.Read);
+        group.MapPost("/{incidentId:guid}/repair/retry", RetryAsync)
+            .RequireHealingPermission(HealingPermissions.RetryRepair);
+        group.MapPost("/{incidentId:guid}/repair/stop", StopAsync)
+            .RequireHealingPermission(HealingPermissions.StopRepair);
+        group.MapPost("/{incidentId:guid}/confirmations", CreateCommandConfirmationAsync)
+            .RequireHealingPermission(HealingPermissions.Read);
+        group.MapPost("/{incidentId:guid}/provider-commands/{commandId:guid}/confirmation", CreateProviderCommandConfirmationAsync)
+            .RequireHealingPermission(HealingPermissions.StopRepair);
+        group.MapPost("/{incidentId:guid}/provider-commands/{commandId:guid}/execute", ExecuteProviderCommandAsync)
+            .RequireHealingPermission(HealingPermissions.StopRepair);
     }
+
+    private static async Task<IResult> RetryAsync(
+        Guid workspaceId,
+        Guid incidentId,
+        HttpContext context,
+        HealingDbContext dbContext,
+        HumanProviderCommandService commands,
+        HealingAuditService auditService,
+        WorkspacePermissionService permissions,
+        CancellationToken cancellationToken)
+    {
+        var access = context.GetWorkspaceAccess();
+        var effective = await permissions.GetEffectivePermissionsAsync(workspaceId, access.AccountId, cancellationToken);
+        return await ExecuteDirectCommandAsync(workspaceId, incidentId, HealingHumanCommands.Retry, null,
+            access.AccountId, effective.Permissions, dbContext, commands, auditService, context, cancellationToken);
+    }
+
+    private static async Task<IResult> StopAsync(
+        Guid workspaceId,
+        Guid incidentId,
+        HealingIncidentCommandRequest request,
+        HttpContext context,
+        HealingDbContext dbContext,
+        HumanProviderCommandService commands,
+        HealingAuditService auditService,
+        WorkspacePermissionService permissions,
+        ConfirmationService confirmations,
+        CancellationToken cancellationToken)
+    {
+        var access = context.GetWorkspaceAccess();
+        if (!request.ConfirmationId.HasValue)
+            return Problem(context, StatusCodes.Status400BadRequest, "healing.confirmation.required", "A target-bound confirmation is required.");
+        var confirmation = await confirmations.ConsumeConfirmationAsync(
+            workspaceId, request.ConfirmationId.Value, access.AccountId,
+            ConfirmationActionType.HealingRepairStop, CommandTarget(incidentId, HealingHumanCommands.Stop), cancellationToken);
+        if (!confirmation.Succeeded)
+            return Problem(context, StatusCodes.Status409Conflict, confirmation.Validation.Id, confirmation.Validation.Message);
+        var effective = await permissions.GetEffectivePermissionsAsync(workspaceId, access.AccountId, cancellationToken);
+        return await ExecuteDirectCommandAsync(workspaceId, incidentId, HealingHumanCommands.Stop, request.ConfirmationId,
+            access.AccountId, effective.Permissions, dbContext, commands, auditService, context, cancellationToken);
+    }
+
+    private static async Task<IResult> CreateCommandConfirmationAsync(
+        Guid workspaceId,
+        Guid incidentId,
+        HealingIncidentConfirmationRequest request,
+        HttpContext context,
+        HealingDbContext dbContext,
+        WorkspacePermissionService permissions,
+        ConfirmationService confirmations,
+        HealingAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var incidentExists = await dbContext.HealingIncidents.AsNoTracking()
+            .AnyAsync(x => x.WorkspaceId == workspaceId && x.Id == incidentId, cancellationToken);
+        if (!incidentExists)
+            return Problem(context, StatusCodes.Status404NotFound, "healing.incident.not-found", "Incident was not found.");
+        var access = context.GetWorkspaceAccess();
+        var requiredPermission = request.ActionType switch
+        {
+            ConfirmationActionType.HealingRepairStop => HealingPermissions.StopRepair,
+            ConfirmationActionType.HealingVerificationWaive => HealingPermissions.WaiveVerification,
+            _ => null
+        };
+        if (requiredPermission is null)
+            return Problem(context, StatusCodes.Status400BadRequest, "healing.confirmation.action", "The confirmation action is not supported.");
+        var effective = await permissions.GetEffectivePermissionsAsync(workspaceId, access.AccountId, cancellationToken);
+        if (!effective.Has(requiredPermission))
+            return HealingPermissionEndpointFilters.HealingPermissionDenied(context, requiredPermission);
+        var command = request.ActionType == ConfirmationActionType.HealingRepairStop
+            ? HealingHumanCommands.Stop
+            : HealingHumanCommands.WaiveEnvironment;
+        var confirmation = await confirmations.CreateConfirmationAsync(workspaceId,
+            new CreateActionConfirmationRequest(request.ActionType, CommandTarget(incidentId, command), access.AccountId, TimeSpan.FromMinutes(5)),
+            cancellationToken);
+        await auditService.AppendAsync(new HealingAuditWrite(
+            workspaceId,
+            "incident",
+            incidentId,
+            "human-command-confirmation-created",
+            "target-bound-confirmation-created",
+            HealingActorTypes.Human,
+            access.AccountId.ToString("D"),
+            incidentId,
+            confirmation.Id,
+            null,
+            null,
+            null,
+            new Dictionary<string, string?>
+            {
+                ["operationType"] = command,
+                ["status"] = "pending"
+            }), cancellationToken);
+        return Results.Created($"/api/workspaces/{workspaceId:D}/healing/incidents/{incidentId:D}/confirmations/{confirmation.Id:D}", confirmation);
+    }
+
+    private static async Task<IResult> ExecuteDirectCommandAsync(
+        Guid workspaceId,
+        Guid incidentId,
+        string commandName,
+        Guid? confirmationId,
+        Guid accountId,
+        IReadOnlySet<string> workspacePermissions,
+        HealingDbContext dbContext,
+        HumanProviderCommandService commands,
+        HealingAuditService auditService,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var incident = await dbContext.HealingIncidents.SingleOrDefaultAsync(
+            x => x.WorkspaceId == workspaceId && x.Id == incidentId, cancellationToken);
+        if (incident is null)
+            return Problem(context, StatusCodes.Status404NotFound, "healing.incident.not-found", "Incident was not found.");
+        var humanCommand = new HumanCommand
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            ApplicationId = incident.ApplicationId,
+            IncidentId = incidentId,
+            IdempotencyKey = $"platform:{accountId:N}:{commandName}:{Guid.NewGuid():N}",
+            Command = commandName,
+            ProviderActorId = accountId.ToString("D"),
+            ProviderActorLogin = "platform",
+            ProviderPermissionSnapshotJson = "{\"source\":\"platform-api\"}",
+            RequestedAt = DateTimeOffset.UtcNow,
+            Status = HumanCommandStatus.Pending
+        };
+        dbContext.HumanCommands.Add(humanCommand);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await auditService.AppendAsync(new HealingAuditWrite(
+            workspaceId,
+            "human-command",
+            humanCommand.Id,
+            "human-command-received",
+            "platform-api-request",
+            HealingActorTypes.Human,
+            accountId.ToString("D"),
+            incidentId,
+            confirmationId,
+            null,
+            null,
+            null,
+            new Dictionary<string, string?>
+            {
+                ["operationType"] = commandName,
+                ["status"] = HumanCommandStatus.Pending.ToString()
+            }), cancellationToken);
+        var decision = await commands.ExecuteAsync(humanCommand.Id,
+            new(true, "admin", accountId, workspacePermissions, confirmationId, confirmationId.HasValue), cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return decision.Executed ? Results.Ok(decision) : Results.Conflict(decision);
+    }
+
+    private static async Task<IResult> CreateProviderCommandConfirmationAsync(
+        Guid workspaceId,
+        Guid incidentId,
+        Guid commandId,
+        HttpContext context,
+        HealingDbContext dbContext,
+        ConfirmationService confirmations,
+        HealingAuditService auditService,
+        CancellationToken cancellationToken)
+    {
+        var commandExists = await dbContext.HumanCommands.AsNoTracking().AnyAsync(x =>
+            x.Id == commandId && x.WorkspaceId == workspaceId && x.IncidentId == incidentId &&
+            x.Command == HealingHumanCommands.Stop &&
+            (x.Status == HumanCommandStatus.Pending || x.Status == HumanCommandStatus.Authorized), cancellationToken);
+        if (!commandExists)
+            return Problem(context, StatusCodes.Status404NotFound, "healing.provider-command.not-found", "An actionable provider stop command was not found.");
+        var confirmation = await confirmations.CreateConfirmationAsync(workspaceId,
+            new CreateActionConfirmationRequest(
+                ConfirmationActionType.HealingRepairStop,
+                ProviderCommandTarget(commandId),
+                context.GetWorkspaceAccess().AccountId,
+                TimeSpan.FromMinutes(5)), cancellationToken);
+        await auditService.AppendAsync(new HealingAuditWrite(
+            workspaceId,
+            "human-command",
+            commandId,
+            "human-command-confirmation-created",
+            "target-bound-confirmation-created",
+            HealingActorTypes.Human,
+            context.GetWorkspaceAccess().AccountId.ToString("D"),
+            incidentId,
+            confirmation.Id,
+            null,
+            null,
+            null,
+            new Dictionary<string, string?>
+            {
+                ["operationType"] = HealingHumanCommands.Stop,
+                ["status"] = "pending"
+            }), cancellationToken);
+        return Results.Created(
+            $"/api/workspaces/{workspaceId:D}/healing/incidents/{incidentId:D}/provider-commands/{commandId:D}/confirmation/{confirmation.Id:D}",
+            confirmation);
+    }
+
+    private static async Task<IResult> ExecuteProviderCommandAsync(
+        Guid workspaceId,
+        Guid incidentId,
+        Guid commandId,
+        HealingProviderCommandExecutionRequest request,
+        HttpContext context,
+        HealingDbContext dbContext,
+        ConfirmationService confirmations,
+        HealingHumanCommandCoordinator coordinator,
+        CancellationToken cancellationToken)
+    {
+        var commandExists = await dbContext.HumanCommands.AsNoTracking().AnyAsync(x =>
+            x.Id == commandId && x.WorkspaceId == workspaceId && x.IncidentId == incidentId &&
+            x.Command == HealingHumanCommands.Stop &&
+            (x.Status == HumanCommandStatus.Pending || x.Status == HumanCommandStatus.Authorized), cancellationToken);
+        if (!commandExists)
+            return Problem(context, StatusCodes.Status404NotFound, "healing.provider-command.not-found", "An actionable provider stop command was not found.");
+        var confirmation = await confirmations.ConsumeConfirmationAsync(
+            workspaceId,
+            request.ConfirmationId,
+            context.GetWorkspaceAccess().AccountId,
+            ConfirmationActionType.HealingRepairStop,
+            ProviderCommandTarget(commandId),
+            cancellationToken);
+        if (!confirmation.Succeeded)
+            return Problem(context, StatusCodes.Status409Conflict, confirmation.Validation.Id, confirmation.Validation.Message);
+        if (!await coordinator.ExecuteAsync(commandId, request.ConfirmationId, true, cancellationToken))
+            return Problem(context, StatusCodes.Status409Conflict, "healing.provider-command.changed", "The provider command is no longer actionable.");
+        var result = await dbContext.HumanCommands.AsNoTracking().SingleAsync(x => x.Id == commandId, cancellationToken);
+        var response = new HealingHumanCommandResponse(
+            result.Id, result.Command, result.Status, result.ResultCode, result.RequestedAt, result.CompletedAt);
+        return result.Status == HumanCommandStatus.Executed ? Results.Ok(response) : Results.Conflict(response);
+    }
+
+    private static string CommandTarget(Guid incidentId, string command) => $"healing:{command}:{incidentId:D}";
+    private static string ProviderCommandTarget(Guid commandId) => $"healing:provider-command:{commandId:D}";
 
     private static async Task<IResult> ListAsync(
         Guid workspaceId,
@@ -121,6 +370,21 @@ public sealed class WorkspaceHealingIncidentEndpointModule : IHealingEndpointMod
                             episodeIds.Contains(x.EpisodeId))
                 .OrderBy(x => x.EnvironmentId)
                 .ToArrayAsync(cancellationToken);
+        var environmentIds = impacts.Select(x => x.EnvironmentId).Distinct().ToArray();
+        var deploymentObservations = environmentIds.Length == 0
+            ? []
+            : await dbContext.DeploymentObservations.AsNoTracking()
+                .Where(x => x.WorkspaceId == workspaceId && x.ApplicationId == incident.ApplicationId &&
+                            environmentIds.Contains(x.EnvironmentId))
+                .OrderByDescending(x => x.DeployedAt).ThenBy(x => x.Id).Take(500)
+                .ToArrayAsync(cancellationToken);
+        var verificationResults = episodeIds.Length == 0
+            ? []
+            : await dbContext.VerificationResults.AsNoTracking()
+                .Where(x => x.WorkspaceId == workspaceId && x.ApplicationId == incident.ApplicationId &&
+                            episodeIds.Contains(x.EpisodeId))
+                .OrderBy(x => x.EnvironmentId).ThenByDescending(x => x.WindowStartedAt).ThenBy(x => x.Id)
+                .ToArrayAsync(cancellationToken);
         var occurrences = await dbContext.IncidentOccurrences.AsNoTracking()
             .Where(x => x.WorkspaceId == workspaceId &&
                         x.ApplicationId == incident.ApplicationId &&
@@ -167,6 +431,15 @@ public sealed class WorkspaceHealingIncidentEndpointModule : IHealingEndpointMod
         var pullRequests = await dbContext.RepairPullRequests.AsNoTracking()
             .Where(x => x.WorkspaceId == workspaceId && attemptIds.Contains(x.AttemptId))
             .ToDictionaryAsync(x => x.AttemptId, cancellationToken);
+        var evaluationIds = pullRequests.Values.Where(x => x.MergePolicyEvaluationId.HasValue)
+            .Select(x => x.MergePolicyEvaluationId!.Value).ToArray();
+        var evaluations = await dbContext.PolicyEvaluations.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && evaluationIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+        var humanCommands = await dbContext.HumanCommands.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.IncidentId == incidentId)
+            .OrderByDescending(x => x.RequestedAt).Take(50).ToArrayAsync(cancellationToken);
+        var effective = context.Items[HealingPermissionEndpointFilters.EffectivePermissionsItemKey] as EffectiveWorkspacePermissions;
 
         return Results.Ok(new HealingIncidentDetailResponse(
             incident.Id,
@@ -183,6 +456,12 @@ public sealed class WorkspaceHealingIncidentEndpointModule : IHealingEndpointMod
             incident.ReadyAfter,
             episodes.Select(ToEpisode).ToArray(),
             impacts.Select(ToEnvironmentImpact).ToArray(),
+            deploymentObservations.Select(x => new HealingDeploymentObservationResponse(
+                x.Id, x.EnvironmentId, x.Revision, x.DeployedAt, x.Source, x.SourceObservationId, x.AcceptedAt)).ToArray(),
+            verificationResults.Select(x => new HealingVerificationResultResponse(
+                x.Id, x.EpisodeId, x.EnvironmentId, x.RepairedRevision, x.WindowStartedAt, x.WindowEndsAt,
+                x.RelevantOperationSuccessCount, x.LastRelevantOperationSuccessAt, x.RecurrenceCount,
+                x.LastRecurrenceAt, x.Outcome, x.DecidedAt, x.SafeDecisionReason, x.WaiverExpiresAt)).ToArray(),
             occurrences.Select(ToOccurrence).ToArray(),
             attributions.Select(ToAttribution).ToArray(),
             workItem is null ? null : ToWorkItem(workItem),
@@ -190,7 +469,12 @@ public sealed class WorkspaceHealingIncidentEndpointModule : IHealingEndpointMod
                 attempt,
                 evidence.GetValueOrDefault(attempt.EvidenceBundleId),
                 results.GetValueOrDefault(attempt.Id),
-                pullRequests.GetValueOrDefault(attempt.Id))).ToArray()));
+                pullRequests.GetValueOrDefault(attempt.Id),
+                pullRequests.GetValueOrDefault(attempt.Id)?.MergePolicyEvaluationId is { } evaluationId
+                    ? evaluations.GetValueOrDefault(evaluationId)
+                    : null)).ToArray(),
+            humanCommands.Select(x => new HealingHumanCommandResponse(x.Id, x.Command, x.Status, x.ResultCode, x.RequestedAt, x.CompletedAt)).ToArray(),
+            effective?.Permissions.Order(StringComparer.Ordinal).ToArray() ?? []));
     }
 
     private static HealingIncidentSummaryResponse ToSummary(
@@ -271,7 +555,8 @@ public sealed class WorkspaceHealingIncidentEndpointModule : IHealingEndpointMod
         RepairAttempt attempt,
         EvidenceBundle? evidence,
         RepairResult? result,
-        RepairPullRequest? pullRequest)
+        RepairPullRequest? pullRequest,
+        PolicyEvaluation? mergeEvaluation)
     {
         var reproduction = ParseJson<RepairReproductionEvidence>(result?.ReproductionJson) ??
                            new RepairReproductionEvidence(false, false, "not-attempted", "No result has been received.", []);
@@ -301,8 +586,32 @@ public sealed class WorkspaceHealingIncidentEndpointModule : IHealingEndpointMod
                 pullRequest.Url,
                 pullRequest.IsDraft,
                 pullRequest.MergeState,
-                CheckState(pullRequest.CheckSnapshotJson)));
+                CheckState(pullRequest.CheckSnapshotJson),
+                mergeEvaluation?.Decision.ToString() ?? "NotEvaluated",
+                ParseMergeGates(mergeEvaluation?.GateResultsJson)));
     }
+
+    private static IReadOnlyList<HealingMergeGateResponse> ParseMergeGates(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.ValueKind != JsonValueKind.Array ? [] : document.RootElement.EnumerateArray()
+                .Select(x => new HealingMergeGateResponse(
+                    x.TryGetProperty("Gate", out var gate) ? gate.GetString() ?? "unknown" : "unknown",
+                    x.TryGetProperty("State", out var state) ? GateState(state) : "Unknown",
+                    x.TryGetProperty("ReasonCode", out var reason) ? reason.GetString() ?? "unknown" : "unknown"))
+                .ToArray();
+        }
+        catch (JsonException) { return []; }
+    }
+
+    private static string GateState(JsonElement state) =>
+        state.ValueKind == JsonValueKind.String ? state.GetString() ?? "Unknown" :
+        state.TryGetInt32(out var numeric) && Enum.IsDefined(typeof(Elsa.Platform.Healing.Abstractions.PolicyGateState), numeric)
+            ? ((Elsa.Platform.Healing.Abstractions.PolicyGateState)numeric).ToString()
+            : "Unknown";
 
     private static T? ParseJson<T>(string? json)
     {
@@ -376,6 +685,10 @@ public sealed record HealingIncidentListResponse(
     IReadOnlyList<HealingIncidentSummaryResponse> Items,
     string? NextCursor);
 
+public sealed record HealingIncidentCommandRequest(Guid? ConfirmationId);
+public sealed record HealingProviderCommandExecutionRequest(Guid ConfirmationId);
+public sealed record HealingIncidentConfirmationRequest(ConfirmationActionType ActionType);
+
 public sealed record HealingIncidentSummaryResponse(
     Guid Id,
     Guid ApplicationId,
@@ -406,10 +719,39 @@ public sealed record HealingIncidentDetailResponse(
     DateTimeOffset? ReadyAfter,
     IReadOnlyList<HealingIncidentEpisodeResponse> Episodes,
     IReadOnlyList<HealingEnvironmentImpactResponse> EnvironmentImpacts,
+    IReadOnlyList<HealingDeploymentObservationResponse> DeploymentObservations,
+    IReadOnlyList<HealingVerificationResultResponse> VerificationResults,
     IReadOnlyList<HealingIncidentOccurrenceResponse> Occurrences,
     IReadOnlyList<HealingComponentAttributionResponse> Attributions,
     HealingWorkItemSummaryResponse? WorkItem,
-    IReadOnlyList<HealingRepairAttemptResponse> Attempts);
+    IReadOnlyList<HealingRepairAttemptResponse> Attempts,
+    IReadOnlyList<HealingHumanCommandResponse> HumanCommands,
+    IReadOnlyList<string> Permissions);
+
+public sealed record HealingDeploymentObservationResponse(
+    Guid Id,
+    Guid EnvironmentId,
+    string Revision,
+    DateTimeOffset DeployedAt,
+    DeploymentObservationSource Source,
+    string SourceObservationId,
+    DateTimeOffset AcceptedAt);
+
+public sealed record HealingVerificationResultResponse(
+    Guid Id,
+    Guid EpisodeId,
+    Guid EnvironmentId,
+    string RepairedRevision,
+    DateTimeOffset? WindowStartedAt,
+    DateTimeOffset? WindowEndsAt,
+    long RelevantOperationSuccessCount,
+    DateTimeOffset? LastRelevantOperationSuccessAt,
+    long RecurrenceCount,
+    DateTimeOffset? LastRecurrenceAt,
+    VerificationOutcome Outcome,
+    DateTimeOffset? DecidedAt,
+    string? DecisionReason,
+    DateTimeOffset? WaiverExpiresAt);
 
 public sealed record HealingRepairAttemptResponse(
     Guid Id,
@@ -428,7 +770,16 @@ public sealed record HealingRepairAttemptResponse(
 public sealed record HealingRepairEvidenceResponse(string Tier, IReadOnlyList<string> OmittedFields, DateTimeOffset? ExpiresAt);
 public sealed record HealingRepairReproductionResponse(bool WasAttempted, bool WasReproduced, string Classification, string Summary);
 public sealed record HealingRepairValidationResponse(string Kind, string Outcome, string SafeSummary);
-public sealed record HealingRepairPullRequestResponse(long Number, string Url, bool IsDraft, PullRequestMergeState MergeState, string ChecksState);
+public sealed record HealingRepairPullRequestResponse(
+    long Number,
+    string Url,
+    bool IsDraft,
+    PullRequestMergeState MergeState,
+    string ChecksState,
+    string AutoMergeDecision,
+    IReadOnlyList<HealingMergeGateResponse> MergeGates);
+public sealed record HealingMergeGateResponse(string Gate, string State, string ReasonCode);
+public sealed record HealingHumanCommandResponse(Guid Id, string Command, HumanCommandStatus Status, string? ResultCode, DateTimeOffset RequestedAt, DateTimeOffset? CompletedAt);
 internal sealed record HealingRepairRiskProjection(string CausalSummary);
 
 public sealed record HealingIncidentEpisodeResponse(

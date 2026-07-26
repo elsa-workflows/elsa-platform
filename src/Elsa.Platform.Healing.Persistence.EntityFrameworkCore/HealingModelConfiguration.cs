@@ -36,6 +36,7 @@ public static class HealingModelConfiguration
         ConfigureWorkItemProjection(modelBuilder.Entity<RepairWorkItemProjection>());
         ConfigureAttempt(modelBuilder.Entity<RepairAttempt>());
         ConfigureManagedRepairProposal(modelBuilder.Entity<ManagedRepairProposal>());
+        ConfigureManagedRepairInferenceReservation(modelBuilder.Entity<ManagedRepairInferenceReservation>());
         ConfigureEvidence(modelBuilder.Entity<EvidenceBundle>());
         ConfigureEvidenceDecision(modelBuilder.Entity<EvidenceAccessDecision>());
         ConfigureRepairResult(modelBuilder.Entity<RepairResult>());
@@ -49,8 +50,10 @@ public static class HealingModelConfiguration
         ConfigureWorkloadHeartbeat(modelBuilder.Entity<WorkloadHeartbeat>());
         ConfigureWebhook(modelBuilder.Entity<ProviderWebhookDelivery>());
         ConfigureHumanCommand(modelBuilder.Entity<HumanCommand>());
+        ConfigureProviderActorIdentityLink(modelBuilder.Entity<ProviderActorIdentityLink>());
         ConfigureDeploymentObservation(modelBuilder.Entity<DeploymentObservation>());
         ConfigureVerification(modelBuilder.Entity<VerificationResult>());
+        ConfigureRepairVerificationFailureOutbox(modelBuilder.Entity<RepairVerificationFailureOutboxItem>());
         ConfigureAudit(modelBuilder.Entity<HealingAuditEvent>());
         ConfigureUtcTimestamps(modelBuilder);
     }
@@ -114,6 +117,33 @@ public static class HealingModelConfiguration
         entity.Property(x => x.LeaseToken).HasMaxLength(KeyLength);
         entity.Property(x => x.OutcomeCode).HasMaxLength(KeyLength);
         entity.Property(x => x.SafeOutcomeDetail).HasMaxLength(SafeDetailLength);
+        Concurrency(entity, x => x.Version);
+    }
+
+    private static void ConfigureRepairVerificationFailureOutbox(EntityTypeBuilder<RepairVerificationFailureOutboxItem> entity)
+    {
+        entity.ToTable("HealingRepairVerificationFailureOutbox");
+        entity.HasKey(x => x.Id);
+        entity.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.IdempotencyKey }).IsUnique();
+        entity.HasIndex(x => new { x.Status, x.NextAttemptAt, x.LeaseExpiresAt });
+        entity.HasOne<HealingIncident>().WithMany()
+            .HasForeignKey(x => new { x.WorkspaceId, x.ApplicationId, x.IncidentId })
+            .HasPrincipalKey(x => new { x.WorkspaceId, x.ApplicationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<IncidentEpisode>().WithMany()
+            .HasForeignKey(x => new { x.WorkspaceId, x.ApplicationId, x.EpisodeId })
+            .HasPrincipalKey(x => new { x.WorkspaceId, x.ApplicationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<IncidentOccurrence>().WithMany()
+            .HasForeignKey(x => new { x.WorkspaceId, x.ApplicationId, x.SupportingOccurrenceId })
+            .HasPrincipalKey(x => new { x.WorkspaceId, x.ApplicationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        Required(entity, x => x.IdempotencyKey, KeyLength);
+        Required(entity, x => x.PayloadJson, EnvelopeLength);
+        Required(entity, x => x.PayloadHash, HashLength);
+        entity.Property(x => x.LeaseOwner).HasMaxLength(KeyLength);
+        entity.Property(x => x.LeaseToken).HasMaxLength(KeyLength);
+        entity.Property(x => x.OutcomeCode).HasMaxLength(KeyLength);
         Concurrency(entity, x => x.Version);
     }
 
@@ -477,6 +507,23 @@ public static class HealingModelConfiguration
         Concurrency(entity, x => x.Version);
     }
 
+    private static void ConfigureManagedRepairInferenceReservation(EntityTypeBuilder<ManagedRepairInferenceReservation> entity)
+    {
+        entity.ToTable("HealingManagedRepairInferenceReservations");
+        entity.HasKey(x => x.Id);
+        entity.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.AttemptId }).IsUnique();
+        entity.HasIndex(x => x.LeaseTokenHash).IsUnique();
+        entity.HasOne<RepairAttempt>().WithOne()
+            .HasForeignKey<ManagedRepairInferenceReservation>(x => new { x.WorkspaceId, x.ApplicationId, x.AttemptId })
+            .HasPrincipalKey<RepairAttempt>(x => new { x.WorkspaceId, x.ApplicationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        Required(entity, x => x.IdempotencyKey, KeyLength);
+        Required(entity, x => x.SourceContextDigest, HashLength);
+        Required(entity, x => x.LeaseTokenHash, HashLength);
+        entity.Property(x => x.OutcomeCode).HasMaxLength(KeyLength);
+        Concurrency(entity, x => x.Version);
+    }
+
     private static void ConfigureEvidenceDecision(EntityTypeBuilder<EvidenceAccessDecision> entity)
     {
         entity.ToTable("HealingEvidenceAccessDecisions");
@@ -727,16 +774,34 @@ public static class HealingModelConfiguration
         entity.ToTable("HealingHumanCommands");
         entity.HasKey(x => x.Id);
         entity.HasIndex(x => new { x.WorkspaceId, x.IncidentId, x.RequestedAt });
+        entity.HasIndex(x => new { x.WorkspaceId, x.IncidentId, x.IdempotencyKey }).IsUnique();
         entity.HasOne<HealingIncident>().WithMany()
             .HasForeignKey(x => new { x.WorkspaceId, x.ApplicationId, x.IncidentId })
             .HasPrincipalKey(x => new { x.WorkspaceId, x.ApplicationId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         Required(entity, x => x.Command, KeyLength);
+        Required(entity, x => x.IdempotencyKey, KeyLength);
         Required(entity, x => x.ProviderActorId, KeyLength);
+        Required(entity, x => x.ProviderActorLogin, KeyLength);
         entity.Property(x => x.PlatformActorId).HasMaxLength(KeyLength);
         Required(entity, x => x.ProviderPermissionSnapshotJson, SafeDetailLength);
         entity.Property(x => x.ResultCode).HasMaxLength(KeyLength);
         entity.Property(x => x.SafeResultDetail).HasMaxLength(SafeDetailLength);
+        Concurrency(entity, x => x.Version);
+    }
+
+    private static void ConfigureProviderActorIdentityLink(EntityTypeBuilder<ProviderActorIdentityLink> entity)
+    {
+        entity.ToTable("HealingProviderActorIdentityLinks");
+        entity.HasKey(x => x.Id);
+        entity.HasIndex(x => new { x.WorkspaceId, x.ProviderConnectionId, x.ProviderActorId }).IsUnique();
+        entity.HasIndex(x => new { x.WorkspaceId, x.PlatformAccountId });
+        entity.HasOne<ProviderConnection>().WithMany()
+            .HasForeignKey(x => new { x.WorkspaceId, x.ProviderConnectionId })
+            .HasPrincipalKey(x => new { x.WorkspaceId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        Required(entity, x => x.ProviderActorId, KeyLength);
+        Required(entity, x => x.ProviderActorLogin, KeyLength);
         Concurrency(entity, x => x.Version);
     }
 
@@ -746,8 +811,10 @@ public static class HealingModelConfiguration
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.WorkspaceId, x.ApplicationId, x.Id });
         entity.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.Source, x.SourceIdempotencyKey }).IsUnique();
+        entity.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.Source, x.SourceObservationId }).IsUnique();
         entity.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.EnvironmentId, x.Revision });
         Required(entity, x => x.Revision, KeyLength);
+        Required(entity, x => x.SourceObservationId, KeyLength);
         Required(entity, x => x.SourceIdempotencyKey, KeyLength);
         Required(entity, x => x.TrustIdentity, 2_048);
         Required(entity, x => x.EvidenceDigest, HashLength);
@@ -771,6 +838,7 @@ public static class HealingModelConfiguration
             .HasPrincipalKey(x => new { x.WorkspaceId, x.ApplicationId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         Required(entity, x => x.RepairedRevision, KeyLength);
+        entity.Property(x => x.SafeDecisionReason).HasMaxLength(SafeDetailLength);
         Concurrency(entity, x => x.Version);
     }
 

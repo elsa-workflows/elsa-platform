@@ -5,6 +5,8 @@ using Elsa.Diagnostics.OpenTelemetry.Core.Contracts;
 using Elsa.Diagnostics.OpenTelemetry.Core.Models;
 using Elsa.Platform.Healing.Abstractions;
 using Elsa.Platform.Healing.Core;
+using Elsa.Platform.Healing.Core.Verification;
+using Elsa.Platform.Healing.Core.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Elsa.Platform.Healing.OpenTelemetry;
@@ -116,6 +118,8 @@ public sealed class HealingOpenTelemetryIngestionContributor(
         await using var scope = serviceScopeFactory.CreateAsyncScope();
         var resolver = scope.ServiceProvider.GetRequiredService<IHealingTelemetryScopeResolver>();
         var appender = scope.ServiceProvider.GetRequiredService<IHealingSignalInboxAppender>();
+        var verification = scope.ServiceProvider.GetService<HealingVerificationService>();
+        var verificationEnabled = scope.ServiceProvider.GetService<HealingKillSwitch>()?.CanVerify().Allowed != false;
         var resources = redactedBatch.Resources
             .GroupBy(x => x.Id, StringComparer.Ordinal)
             .ToDictionary(x => x.Key, x => x.Last(), StringComparer.Ordinal);
@@ -154,7 +158,45 @@ public sealed class HealingOpenTelemetryIngestionContributor(
                     await appender.AppendAsync(item, cancellationToken);
             }
         }
+
+        if (verification is not null && verificationEnabled)
+        {
+            foreach (var span in redactedBatch.Spans.Where(x => x.Status == SpanStatus.Ok))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!resources.TryGetValue(span.ResourceId, out var resource))
+                    continue;
+                var attributes = MergeAttributes(resource.Attributes, span.Attributes);
+                if (!IsTrue(attributes, HealingSignalAttributes.VerificationAffectedOperation) ||
+                    !TryGetRequired(attributes, HealingSignalAttributes.SourceRevision, out var repairedRevision) ||
+                    !TryGetRequired(attributes, HealingSignalAttributes.ProfileVersion, out var profileVersion) ||
+                    repairedRevision.Length > MaximumMetadataValueLength || repairedRevision.Any(char.IsControl) ||
+                    profileVersion.Length > MaximumProfileVersionLength || profileVersion.Any(char.IsControl) ||
+                    !HealingContractVersion.IsCompatible(HealingContractVersions.SignalProfile, profileVersion))
+                    continue;
+                var trustedScope = await resolver.ResolveAsync(ingestionContext, resource, cancellationToken);
+                if (trustedScope is null ||
+                    !ClaimMatches(attributes, HealingSignalAttributes.ApplicationId, trustedScope.ApplicationId) ||
+                    !ClaimMatches(attributes, HealingSignalAttributes.EnvironmentId, trustedScope.EnvironmentId))
+                    continue;
+                var operationName = GetValue(attributes, HealingSignalAttributes.OperationName) ?? span.Name;
+                if (string.IsNullOrWhiteSpace(operationName) || operationName.Length > MaximumOperationNameLength ||
+                    operationName.Any(char.IsControl))
+                    continue;
+                await verification.RecordPositiveOperationAsync(
+                    trustedScope.WorkspaceId,
+                    trustedScope.ApplicationId,
+                    trustedScope.EnvironmentId,
+                    repairedRevision,
+                    operationName,
+                    span.EndTime,
+                    cancellationToken);
+            }
+        }
     }
+
+    private static bool IsTrue(IReadOnlyDictionary<string, string?> attributes, string name) =>
+        attributes.TryGetValue(name, out var value) && bool.TryParse(value, out var parsed) && parsed;
 
     private async ValueTask<HealingSignalInboxItem?> TryMapLogAsync(
         OtlpLogRecord log,

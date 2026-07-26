@@ -2,6 +2,7 @@ using Elsa.Platform.Healing.Core;
 using Elsa.Platform.Healing.Core.Incidents;
 using Elsa.Platform.Healing.Core.Configuration;
 using Elsa.Platform.Healing.Core.Ownership;
+using Elsa.Platform.Healing.Core.Repairs;
 using Elsa.Platform.Healing.Core.Security;
 using Elsa.Platform.Healing.Abstractions;
 using FluentAssertions;
@@ -13,122 +14,101 @@ using ComponentManifestEntryModel = Elsa.Platform.Healing.Core.ComponentManifest
 
 namespace Elsa.Platform.Healing.Persistence.EntityFrameworkCore.Tests;
 
-public sealed class IncidentProjectionConcurrencyTests
+public sealed partial class IncidentProjectionConcurrencyTests
 {
     [Fact]
-    [Trait("Category", "Stress")]
-    public async Task Ten_thousand_occurrences_across_one_hundred_instances_produce_one_canonical_incident_and_work_item()
+    public async Task Concurrent_attempts_for_different_incidents_share_the_application_budget_atomically()
     {
-        const int instanceCount = 100;
-        const int occurrencesPerInstance = 100;
-        const int environmentCount = 4;
-        const int revisionCount = 10;
-        const int projectionConcurrency = 8;
-        var databasePath = Path.Combine(Path.GetTempPath(), $"elsa-healing-scale-{Guid.NewGuid():N}.db");
+        var databasePath = Path.Combine(Path.GetTempPath(), $"elsa-healing-admission-{Guid.NewGuid():N}.db");
         var options = new DbContextOptionsBuilder<HealingDbContext>()
-            .UseSqlite($"Data Source={databasePath};Default Timeout=30;Pooling=True")
+            .UseSqlite($"Data Source={databasePath};Default Timeout=30;Pooling=False")
             .Options;
         var workspaceId = Guid.NewGuid();
         var applicationId = Guid.NewGuid();
-        var environments = Enumerable.Range(0, environmentCount).Select(_ => Guid.NewGuid()).ToArray();
-        var revisions = Enumerable.Range(0, revisionCount).Select(_ => Guid.NewGuid()).ToArray();
-        var startedAt = new DateTimeOffset(2026, 7, 16, 12, 0, 0, TimeSpan.Zero);
-        var fingerprint = $"sha256:{new string('f', 64)}";
-
         try
         {
-            AuthorityIds authority;
+            RepairAttempt[] attempts;
             await using (var setup = new HealingDbContext(options))
             {
                 await setup.Database.EnsureCreatedAsync();
-                authority = await SeedAuthorityAsync(setup, workspaceId, applicationId);
+                var authority = await SeedAuthorityAsync(setup, workspaceId, applicationId);
+                setup.HealingConfigurations.Add(new HealingConfiguration
+                {
+                    Id = Guid.NewGuid(),
+                    WorkspaceId = workspaceId,
+                    ApplicationId = applicationId,
+                    DiscoveryEnabled = true,
+                    RepairEnabled = true,
+                    SignalProfileVersion = "1.0",
+                    DefaultAttemptLimit = 2,
+                    VerificationWindow = TimeSpan.FromMinutes(10),
+                    TimeBudget = TimeSpan.FromMinutes(10),
+                    ConcurrencyBudget = 1,
+                    InferenceBudget = 1_000,
+                    RepositoryRunBudget = 2,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow
+                });
+                attempts = Enumerable.Range(0, 2).Select(_ =>
+                {
+                    var incident = new HealingIncident
+                    {
+                        Id = Guid.NewGuid(), WorkspaceId = workspaceId, ApplicationId = applicationId,
+                        FingerprintVersion = "1", Fingerprint = Guid.NewGuid().ToString("N"),
+                        RepairRepositoryKey = "github:repository-1", Status = HealingIncidentStatus.ReadyForRepair,
+                        FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow, OccurrenceCount = 1,
+                        SelectedBindingId = authority.BindingId
+                    };
+                    var episode = new IncidentEpisode
+                    {
+                        Id = Guid.NewGuid(), WorkspaceId = workspaceId, ApplicationId = applicationId,
+                        IncidentId = incident.Id, OpenedAt = DateTimeOffset.UtcNow, ProducingRevisionsJson = "[]",
+                        Outcome = IncidentEpisodeOutcome.Active
+                    };
+                    var evidence = new EvidenceBundle
+                    {
+                        Id = Guid.NewGuid(), WorkspaceId = workspaceId, ApplicationId = applicationId,
+                        IncidentId = incident.Id, Tier = EvidenceTier.DefaultRedacted, CanonicalJson = "{}",
+                        Digest = new string('a', 64), ProvenanceJson = "{}", OmissionsJson = "[]",
+                        CreatedAt = DateTimeOffset.UtcNow, ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
+                    };
+                    setup.AddRange(incident, episode, evidence);
+                    return new RepairAttempt
+                    {
+                        Id = Guid.NewGuid(), WorkspaceId = workspaceId, ApplicationId = applicationId,
+                        IncidentId = incident.Id, EpisodeId = episode.Id, BindingId = authority.BindingId,
+                        TargetRevision = new string('b', 40), Status = RepairAttemptStatus.Queued,
+                        EvidenceBundleId = evidence.Id, RepairClassification = RepairClassification.InsufficientConfidence,
+                        NonceHash = Guid.NewGuid().ToString("N").PadRight(64, '0'), BudgetJson = "{}", UsageJson = "{}"
+                    };
+                }).ToArray();
+                await setup.SaveChangesAsync();
             }
 
-            var instanceStreams = Enumerable.Range(0, instanceCount)
-                .Select(instanceIndex => Enumerable.Range(0, occurrencesPerInstance)
-                    .Select(occurrenceIndex =>
-                    {
-                        var globalIndex = instanceIndex * occurrencesPerInstance + occurrenceIndex;
-                        return WithAuthority(
-                            Request(
-                                workspaceId,
-                                applicationId,
-                                environments[(instanceIndex + occurrenceIndex) % environmentCount],
-                                globalIndex) with
-                            {
-                                RevisionId = revisions[(instanceIndex * 2 + occurrenceIndex) % revisionCount],
-                                OccurrenceKey = $"instance:{instanceIndex:D3}:occurrence:{occurrenceIndex:D3}",
-                                OccurredAt = startedAt.AddMilliseconds(globalIndex),
-                                AcceptedAt = startedAt.AddMilliseconds(globalIndex + 1),
-                                TraceId = instanceIndex.ToString("x32"),
-                                SpanId = occurrenceIndex.ToString("x16"),
-                                Fingerprint = fingerprint,
-                                EvidenceDigest = $"sha256:{globalIndex:x64}",
-                                OccurrenceThreshold = 1,
-                                DebounceWindow = TimeSpan.Zero
-                            },
-                            authority);
-                    })
-                    .ToArray())
-                .ToArray();
+            var participantsReady = 0;
+            var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            async Task<RepairAttemptStoreCreateResult> AdmitAsync(RepairAttempt attempt)
+            {
+                if (Interlocked.Increment(ref participantsReady) == attempts.Length)
+                    start.SetResult();
+                await start.Task;
+                await using var db = new HealingDbContext(options);
+                return await new HealingStore(db).TryCreateAttemptAsync(attempt, maximumAttempts: 2, maximumConcurrentAttempts: 1);
+            }
 
-            await Parallel.ForEachAsync(
-                instanceStreams,
-                new ParallelOptions { MaxDegreeOfParallelism = projectionConcurrency },
-                async (requests, cancellationToken) =>
-                {
-                    await using var intakeDb = new HealingDbContext(options);
-                    intakeDb.HealingSignalInboxItems.AddRange(requests.Select(Inbox));
-                    await intakeDb.SaveChangesAsync(cancellationToken);
-                });
+            var results = await Task.WhenAll(attempts.Select(AdmitAsync));
 
-            await Parallel.ForEachAsync(
-                instanceStreams,
-                new ParallelOptions { MaxDegreeOfParallelism = projectionConcurrency },
-                async (requests, cancellationToken) =>
-                {
-                    await using var projectionDb = new HealingDbContext(options);
-                    var store = new HealingStore(projectionDb);
-                    foreach (var request in requests)
-                    {
-                        await store.ProjectOccurrenceAsync(request, cancellationToken);
-                        projectionDb.ChangeTracker.Clear();
-                    }
-                });
-
+            results.Select(x => x.Outcome).Should().BeEquivalentTo(new[]
+            {
+                RepairAttemptStoreOutcome.Created,
+                RepairAttemptStoreOutcome.ConcurrencyLimitReached
+            });
             await using var verify = new HealingDbContext(options);
-            var incident = await verify.HealingIncidents.AsNoTracking().SingleAsync();
-            var episode = await verify.IncidentEpisodes.AsNoTracking().SingleAsync();
-            var workItem = await verify.RepairWorkItemProjections.AsNoTracking().SingleAsync();
-            var occurrences = await verify.IncidentOccurrences.AsNoTracking()
-                .Select(x => new { x.IncidentId, x.EpisodeId, x.OccurrenceKey, x.TraceId })
-                .ToArrayAsync();
-            var impacts = await verify.EnvironmentImpacts.AsNoTracking().ToArrayAsync();
-            var producingRevisions = JsonSerializer.Deserialize<Guid[]>(episode.ProducingRevisionsJson)!;
-
-            occurrences.Should().HaveCount(instanceCount * occurrencesPerInstance);
-            occurrences.Should().OnlyContain(x => x.IncidentId == incident.Id && x.EpisodeId == episode.Id);
-            occurrences.Select(x => x.OccurrenceKey).Should().OnlyHaveUniqueItems();
-            occurrences.GroupBy(x => x.OccurrenceKey.Split(':')[1]).Should().HaveCount(instanceCount);
-            occurrences.GroupBy(x => x.OccurrenceKey.Split(':')[1]).Should().OnlyContain(x => x.Count() == occurrencesPerInstance);
-            occurrences.GroupBy(x => x.TraceId).Should().HaveCount(instanceCount);
-            occurrences.GroupBy(x => x.TraceId).Should().OnlyContain(x => x.Count() == occurrencesPerInstance);
-            incident.Fingerprint.Should().Be(fingerprint);
-            incident.RepairRepositoryKey.Should().Be("github:repository-1");
-            incident.OccurrenceCount.Should().Be(instanceCount * occurrencesPerInstance);
-            incident.Status.Should().Be(HealingIncidentStatus.ReadyForRepair);
-            incident.ActiveEpisodeId.Should().Be(episode.Id);
-            incident.WorkItemProjectionId.Should().Be(workItem.Id);
-            workItem.IncidentId.Should().Be(incident.Id);
-            workItem.EpisodeId.Should().Be(episode.Id);
-            impacts.Should().HaveCount(environmentCount);
-            impacts.Should().OnlyContain(x => x.OccurrenceCount == instanceCount * occurrencesPerInstance / environmentCount);
-            impacts.Should().AllSatisfy(x =>
-                JsonSerializer.Deserialize<Guid[]>(x.ProducingRevisionsJson).Should().BeEquivalentTo(revisions));
-            producingRevisions.Should().BeEquivalentTo(revisions);
+            (await verify.RepairAttempts.CountAsync()).Should().Be(1);
         }
         finally
         {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             File.Delete(databasePath);
         }
     }
@@ -206,6 +186,48 @@ public sealed class IncidentProjectionConcurrencyTests
         (await fixture.Db.HealingIncidents.AsNoTracking().SingleAsync()).Status
             .Should().Be(HealingIncidentStatus.ReadyForRepair);
         (await fixture.Db.RepairWorkItemProjections.CountAsync()).Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(HealingIncidentStatus.Repairing)]
+    [InlineData(HealingIncidentStatus.PullRequestOpen)]
+    [InlineData(HealingIncidentStatus.NeedsHuman)]
+    [InlineData(HealingIncidentStatus.Merged)]
+    [InlineData(HealingIncidentStatus.Verifying)]
+    [InlineData(HealingIncidentStatus.FailedVerification)]
+    [InlineData(HealingIncidentStatus.Suppressed)]
+    public async Task New_occurrences_do_not_regress_advanced_incident_states(
+        HealingIncidentStatus advancedStatus)
+    {
+        await using var fixture = await HealingPersistenceFixture.CreateAsync();
+        var firstRequest = Request(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 0) with
+        {
+            OccurrenceThreshold = 1,
+            DebounceWindow = TimeSpan.Zero
+        };
+        var authority = await SeedAuthorityAsync(fixture.Db, firstRequest.WorkspaceId, firstRequest.ApplicationId);
+        firstRequest = WithAuthority(firstRequest, authority);
+        var nextRequest = firstRequest with
+        {
+            InboxItemId = Guid.NewGuid(),
+            OccurrenceKey = "advanced-state-occurrence",
+            AcceptedAt = firstRequest.AcceptedAt.AddMinutes(1),
+            OccurredAt = firstRequest.OccurredAt.AddMinutes(1)
+        };
+        fixture.Db.HealingSignalInboxItems.AddRange(Inbox(firstRequest), Inbox(nextRequest));
+        await fixture.Db.SaveChangesAsync();
+        var store = new HealingStore(fixture.Db);
+
+        var first = await store.ProjectOccurrenceAsync(firstRequest);
+        first.Incident.Status = advancedStatus;
+        await fixture.Db.SaveChangesAsync();
+        fixture.Db.ChangeTracker.Clear();
+
+        var projected = await store.ProjectOccurrenceAsync(nextRequest);
+
+        projected.Incident.Status.Should().Be(advancedStatus);
+        (await fixture.Db.HealingIncidents.AsNoTracking().SingleAsync()).Status.Should().Be(advancedStatus);
+        (await fixture.Db.IncidentOccurrences.CountAsync()).Should().Be(2);
     }
 
     [Fact]
@@ -445,6 +467,38 @@ public sealed class IncidentProjectionConcurrencyTests
         (await fixture.Db.RepairWorkItemProjections.CountAsync()).Should().Be(1);
         (await store.QueryAsync(new Elsa.Platform.Healing.Core.Security.HealingAuditQuery(workspaceId))).Select(x => x.EventType)
             .Should().Contain(["occurrence-projected", "candidate-rejected"]);
+    }
+
+    [Fact]
+    public async Task Disabled_incident_review_leaves_discovered_inbox_items_pending()
+    {
+        await using var fixture = await HealingPersistenceFixture.CreateAsync();
+        var now = new DateTimeOffset(2026, 7, 16, 12, 0, 0, TimeSpan.Zero);
+        fixture.Db.HealingSignalInboxItems.Add(new HealingSignalInboxItem
+        {
+            Id = Guid.NewGuid(), WorkspaceId = Guid.NewGuid(), ApplicationId = Guid.NewGuid(), EnvironmentId = Guid.NewGuid(),
+            IdempotencyKey = "review-disabled", Source = HealingSignalSource.OpenTelemetry, ProfileVersion = "1.0",
+            OccurredAt = now, AcceptedAt = now, RedactedEnvelopeJson = "{}", EnvelopeHash = new string('a', 64),
+            Status = HealingInboxStatus.Pending
+        });
+        await fixture.Db.SaveChangesAsync();
+        var store = new HealingStore(fixture.Db);
+        var options = Microsoft.Extensions.Options.Options.Create(new HealingOptions { IncidentReviewEnabled = false });
+        var time = new FixedTimeProvider(now);
+        var audit = new HealingAuditService(store, time);
+        var worker = new HealingSignalInboxWorker(
+            store, store, new HealingSignalNormalizer(), new HealingSignalClassifier(),
+            new ComponentAttributionService(store, new SourceOwnershipService(store, audit, time)),
+            new HealingFingerprintService(), new HealingIncidentService(store), audit,
+            new HealingKillSwitch(options.Value), options, time);
+
+        var result = await worker.RunOnceAsync("review-disabled-worker");
+
+        result.Should().Be(new HealingInboxWorkerResult(
+            HealingInboxWorkerStatus.Idle, OutcomeCode: HealingGateReasonCodes.StageDisabled));
+        var pending = await fixture.Db.HealingSignalInboxItems.AsNoTracking().SingleAsync();
+        pending.Status.Should().Be(HealingInboxStatus.Pending);
+        pending.AttemptCount.Should().Be(0);
     }
 
     [Theory]

@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-16
 
-**Status**: Draft
+**Status**: In progress — independent review and release validation
 
 **Input**: User description: "Productize Elsa Platform Healing for .NET applications: receive eligible exceptions through the Platform OpenTelemetry capability, deduplicate incidents, attribute failures to explicitly approved source ownership bindings, dispatch governed repairs to GitHub-hosted repository workflows, open and optionally auto-merge safe pull requests, and verify healing after deployment."
 

@@ -85,12 +85,14 @@ public class HealingBoundaryTests
     }
 
     [Fact]
-    public void WorkloadCapabilityIsLimitedToTheThreeProtocolOperations()
+    public void WorkloadCapabilityIsLimitedToTheFiveProtocolOperations()
     {
         WorkloadCapabilityScopes.All.Should().BeEquivalentTo(
             new[]
             {
                 "evidence.read",
+                "proposal.create",
+                "proposal.finalize",
                 "attempt.heartbeat",
                 "result.upload"
             });

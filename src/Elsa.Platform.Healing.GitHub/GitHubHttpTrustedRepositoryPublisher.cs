@@ -251,7 +251,7 @@ public sealed class GitHubHttpTrustedRepositoryPublisher(HttpClient httpClient) 
         if (pullRequest.Id <= 0 || pullRequest.Number <= 0 || pullRequest.HtmlUrl is null)
             throw new GitHubSecurityException(GitHubSecurityReasonCodes.ProviderRejected);
         return new ProviderPullRequestReference(
-            pullRequest.Id.ToString(), pullRequest.Number, pullRequest.HtmlUrl, headRevision,
+            pullRequest.Number.ToString(System.Globalization.CultureInfo.InvariantCulture), pullRequest.Number, pullRequest.HtmlUrl, headRevision,
             plan.ExpectedBaseRevision, pullRequest.Draft, null);
     }
 

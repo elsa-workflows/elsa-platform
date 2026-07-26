@@ -17,7 +17,7 @@ The implementation is split across two coordinated repositories:
 
 **Language/Version**: C# 14 / .NET 10; TypeScript 5.7 with React 18
 
-**Primary Dependencies**: ASP.NET Core minimal APIs; Entity Framework Core 10; Foundation `Elsa.Diagnostics.OpenTelemetry` packages; `HttpClientFactory`; React Query; existing Platform deployment, workspace authorization, and Weaver inference infrastructure
+**Primary Dependencies**: ASP.NET Core minimal APIs; Entity Framework Core 10; Foundation `Elsa.Diagnostics.OpenTelemetry` packages; `HttpClientFactory`; GitHub Copilot SDK behind the no-tools managed inference seam; React Query; existing Platform deployment and workspace authorization infrastructure
 
 **Storage**: Healing-owned `HealingDbContext` and SQLite/SQL Server migrations, using the same configured physical database where desired but a separate migration history; Foundation telemetry storage remains an observability concern and is not the Healing queue
 

@@ -14,7 +14,8 @@ namespace Elsa.Platform.Api.Healing;
 public sealed class PlatformHealingVerifiedWebhookHandler(
     HealingDbContext dbContext,
     IHealingProviderCredentialResolver credentialResolver,
-    GitHubWebhookVerifier verifier) : IHealingVerifiedWebhookHandler
+    GitHubWebhookVerifier verifier,
+    IPlatformHealingGitHubWebhookProcessorRunner processorRunner) : IHealingVerifiedWebhookHandler
 {
     private static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> AllowedEvents =
         new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal)
@@ -36,44 +37,108 @@ public sealed class PlatformHealingVerifiedWebhookHandler(
             .Where(x => x.Provider == "GitHub" &&
                         x.Status == ProviderConnectionStatus.Active &&
                         x.InstallationId == installationId &&
-                        x.RepositoryProviderId == repositoryId &&
-                        x.WebhookSecretReference != null)
-            .Take(2)
+                        x.RepositoryProviderId == repositoryId)
+            .OrderBy(x => x.WorkspaceId)
+            .ThenBy(x => x.Id)
             .ToArrayAsync(cancellationToken);
-        if (candidates.Length != 1)
+        if (candidates.Length == 0)
             throw Rejected();
-        var connection = candidates[0];
-        var protectedSecret = await credentialResolver.ResolveAsync(
-            connection.WorkspaceId,
-            connection.WebhookSecretReference!,
-            cancellationToken);
-        if (!GitHubWebhookSecret.TryParse(protectedSecret, out var webhookCredential) || webhookCredential is null)
+
+        var authorities = new List<(ProviderConnection Connection, bool IsReplay)>(candidates.Length);
+        foreach (var workspaceCandidates in candidates.GroupBy(x => x.WorkspaceId))
+        {
+            if (workspaceCandidates.Take(2).Count() != 1)
+                continue;
+            var candidate = workspaceCandidates.Single();
+            if (string.IsNullOrWhiteSpace(candidate.WebhookSecretReference))
+                continue;
+            byte[]? secret = null;
+            try
+            {
+                var protectedSecret = await credentialResolver.ResolveAsync(
+                    candidate.WorkspaceId,
+                    candidate.WebhookSecretReference,
+                    cancellationToken);
+                if (!GitHubWebhookSecret.TryParse(protectedSecret, out var webhookCredential) || webhookCredential is null)
+                    continue;
+                secret = Encoding.UTF8.GetBytes(webhookCredential.Value);
+                var result = await verifier.VerifyAsync(new GitHubWebhookVerificationRequest(
+                    candidate.WorkspaceId,
+                    request.RawBody,
+                    request.Signature,
+                    request.DeliveryId,
+                    request.Event,
+                    secret,
+                    candidate.InstallationId,
+                    candidate.RepositoryProviderId,
+                    $"{candidate.RepositoryOwner}/{candidate.RepositoryName}",
+                    AllowedEvents), cancellationToken);
+                if (result.Succeeded && result.Webhook is not null)
+                    authorities.Add((candidate, result.IsReplay));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Workspace authorities are independent. A stale credential or tenant-scoped
+                // replay-store failure must not suppress another authority that verifies cleanly.
+            }
+            finally
+            {
+                if (secret is not null)
+                    CryptographicOperations.ZeroMemory(secret);
+            }
+        }
+
+        if (authorities.Count == 0)
             throw Rejected();
-        var secret = Encoding.UTF8.GetBytes(webhookCredential.Value);
-        try
+
+        var outcomes = new List<string>(authorities.Count);
+        Exception? processingFailure = null;
+        foreach (var authority in authorities)
         {
-            var result = await verifier.VerifyAsync(new GitHubWebhookVerificationRequest(
-                connection.WorkspaceId,
-                request.RawBody,
-                request.Signature,
-                request.DeliveryId,
-                request.Event,
-                secret,
-                connection.InstallationId,
-                connection.RepositoryProviderId,
-                $"{connection.RepositoryOwner}/{connection.RepositoryName}",
-                AllowedEvents), cancellationToken);
-            if (!result.Succeeded)
-                throw Rejected();
-            return new HealingVerifiedWebhookReceipt(
-                request.DeliveryId,
-                result.IsReplay,
-                result.IsReplay ? "verified-replay" : "verified-and-queued");
+            try
+            {
+                outcomes.Add(await processorRunner.ProcessAsync(
+                    authority.Connection,
+                    request.DeliveryId,
+                    request.Event,
+                    request.RawBody,
+                    cancellationToken));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                processingFailure ??= exception;
+                try
+                {
+                    await processorRunner.RecordFailureAsync(
+                        authority.Connection.WorkspaceId,
+                        request.DeliveryId,
+                        cancellationToken);
+                }
+                catch (Exception persistenceException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    processingFailure = new AggregateException(processingFailure, persistenceException);
+                }
+            }
         }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(secret);
-        }
+        if (processingFailure is not null)
+            throw new InvalidOperationException(
+                "One or more independently verified healing webhook deliveries failed during durable processing.",
+                processingFailure);
+        var outcome = outcomes.Distinct(StringComparer.Ordinal).Take(2).Count() == 1
+            ? outcomes[0]
+            : "processed";
+        return new HealingVerifiedWebhookReceipt(
+            request.DeliveryId,
+            authorities.All(x => x.IsReplay),
+            outcome);
     }
 
     private static bool TryReadUntrustedRouting(ReadOnlyMemory<byte> body, out string installationId, out string repositoryId)

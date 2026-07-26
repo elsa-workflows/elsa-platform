@@ -18,9 +18,65 @@ public sealed class HealingRepairAuthorityService(
         Guid applicationId,
         Guid episodeId,
         Guid providerConnectionId,
-        Guid? incidentId,
-        Guid? attemptId,
+        Guid incidentId,
         CancellationToken cancellationToken = default)
+    {
+        if (!await HasConfiguredAuthorityAsync(
+                workspaceId, applicationId, episodeId, providerConnectionId, cancellationToken))
+            return false;
+
+        return await (
+            from incident in dbContext.HealingIncidents.AsNoTracking()
+            join episode in dbContext.IncidentEpisodes.AsNoTracking()
+                on new { incident.WorkspaceId, incident.ApplicationId, IncidentId = incident.Id }
+                equals new { episode.WorkspaceId, episode.ApplicationId, episode.IncidentId }
+            join binding in dbContext.SourceOwnershipBindings.AsNoTracking()
+                on new { incident.WorkspaceId, incident.ApplicationId, Id = incident.SelectedBindingId }
+                equals new { binding.WorkspaceId, binding.ApplicationId, Id = (Guid?)binding.Id }
+            where incident.WorkspaceId == workspaceId && incident.ApplicationId == applicationId &&
+                  incident.Id == incidentId && incident.ActiveEpisodeId == episodeId &&
+                  episode.Id == episodeId && episode.Outcome == IncidentEpisodeOutcome.Active &&
+                  binding.ProviderConnectionId == providerConnectionId && binding.Status == SourceOwnershipBindingStatus.Active
+            select incident.Id).AnyAsync(cancellationToken);
+    }
+
+    public async ValueTask<bool> CanMutateAttemptAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        Guid episodeId,
+        Guid providerConnectionId,
+        Guid attemptId,
+        RepairAttemptStatus compatibleStatus,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await HasConfiguredAuthorityAsync(
+                workspaceId, applicationId, episodeId, providerConnectionId, cancellationToken))
+            return false;
+
+        return await (
+            from attempt in dbContext.RepairAttempts.AsNoTracking()
+            join incident in dbContext.HealingIncidents.AsNoTracking()
+                on new { attempt.WorkspaceId, attempt.ApplicationId, Id = attempt.IncidentId }
+                equals new { incident.WorkspaceId, incident.ApplicationId, incident.Id }
+            join episode in dbContext.IncidentEpisodes.AsNoTracking()
+                on new { attempt.WorkspaceId, attempt.ApplicationId, Id = attempt.EpisodeId }
+                equals new { episode.WorkspaceId, episode.ApplicationId, episode.Id }
+            join binding in dbContext.SourceOwnershipBindings.AsNoTracking()
+                on new { attempt.WorkspaceId, attempt.ApplicationId, Id = attempt.BindingId }
+                equals new { binding.WorkspaceId, binding.ApplicationId, binding.Id }
+            where attempt.WorkspaceId == workspaceId && attempt.ApplicationId == applicationId &&
+                  attempt.Id == attemptId && attempt.EpisodeId == episodeId && attempt.Status == compatibleStatus &&
+                  incident.ActiveEpisodeId == episodeId && episode.Outcome == IncidentEpisodeOutcome.Active &&
+                  binding.ProviderConnectionId == providerConnectionId && binding.Status == SourceOwnershipBindingStatus.Active
+            select attempt.Id).AnyAsync(cancellationToken);
+    }
+
+    private async ValueTask<bool> HasConfiguredAuthorityAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        Guid episodeId,
+        Guid providerConnectionId,
+        CancellationToken cancellationToken)
     {
         if (_options.PlatformKillSwitch || !_options.RepairDispatchEnabled)
             return false;
@@ -42,31 +98,10 @@ public sealed class HealingRepairAuthorityService(
         var environments = await dbContext.HealingEnvironmentConfigurations.AsNoTracking()
             .Where(x => x.WorkspaceId == workspaceId && x.ApplicationId == applicationId && environmentIds.Contains(x.EnvironmentId))
             .ToArrayAsync(cancellationToken);
-        if (!environmentIds.Any(environmentId => environments.SingleOrDefault(x => x.EnvironmentId == environmentId) is
-                { EnvironmentKillSwitch: false } environment && environment.RepairEnabled != false))
-            return false;
-
-        if (attemptId is not null)
-        {
-            return await (
-                from attempt in dbContext.RepairAttempts.AsNoTracking()
-                join binding in dbContext.SourceOwnershipBindings.AsNoTracking()
-                    on new { attempt.WorkspaceId, attempt.ApplicationId, Id = attempt.BindingId }
-                    equals new { binding.WorkspaceId, binding.ApplicationId, binding.Id }
-                where attempt.WorkspaceId == workspaceId && attempt.ApplicationId == applicationId &&
-                      attempt.Id == attemptId && attempt.EpisodeId == episodeId &&
-                      binding.ProviderConnectionId == providerConnectionId && binding.Status == SourceOwnershipBindingStatus.Active
-                select attempt.Id).AnyAsync(cancellationToken);
-        }
-
-        return incidentId is not null && await (
-            from incident in dbContext.HealingIncidents.AsNoTracking()
-            join binding in dbContext.SourceOwnershipBindings.AsNoTracking()
-                on new { incident.WorkspaceId, incident.ApplicationId, Id = incident.SelectedBindingId }
-                equals new { binding.WorkspaceId, binding.ApplicationId, Id = (Guid?)binding.Id }
-            where incident.WorkspaceId == workspaceId && incident.ApplicationId == applicationId &&
-                  incident.Id == incidentId && incident.ActiveEpisodeId == episodeId &&
-                  binding.ProviderConnectionId == providerConnectionId && binding.Status == SourceOwnershipBindingStatus.Active
-            select incident.Id).AnyAsync(cancellationToken);
+        var environmentPolicies = environments.ToDictionary(x => x.EnvironmentId);
+        return environmentIds.Length > 0 && environmentIds.All(environmentId =>
+            environmentPolicies.TryGetValue(environmentId, out var environment) &&
+            !environment.EnvironmentKillSwitch &&
+            (environment.RepairEnabled ?? application.RepairEnabled));
     }
 }

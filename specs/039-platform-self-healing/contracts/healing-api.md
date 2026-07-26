@@ -8,6 +8,8 @@ Interactive routes require workspace membership plus the stated Healing permissi
 
 - `healing.read`
 - `healing.configure`
+- `healing.incident.report`
+- `healing.deployment.report`
 - `healing.evidence.elevate`
 - `healing.repair.retry`
 - `healing.repair.stop`
@@ -67,6 +69,8 @@ Active attempts are prevented from new publication/merge after suspension or rev
 
 `POST /applications/{applicationId}/environments/{environmentId}/incidents`
 
+Requires `healing.incident.report`; configuration authority alone does not grant machine-intake authority.
+
 Request includes profile version, revision, occurred time, occurrence ID, operation, curated class, exception evidence, retry state, component hint, and trace correlation. It cannot include repository/workflow/branch/merge routing.
 
 Responses:
@@ -114,7 +118,7 @@ Requires `healing.verification.waive`, reason, expiry/terminal intent, and confi
 
 `POST /applications/{applicationId}/environments/{environmentId}/deployment-observations`
 
-Authenticated delivery identities submit revision, deployed time, source, source observation ID, and evidence digest. Requests require an idempotency key. Platform-managed deployment completion invokes the same application contract internally.
+Requires `healing.deployment.report`; configuration authority alone does not grant delivery-reporting authority. Authenticated delivery identities submit revision, deployed time, source, source observation ID, and evidence digest. Requests require an idempotency key. Platform-managed deployment completion invokes the same application contract internally without impersonating an external caller.
 
 ## Audit and usage
 
@@ -129,10 +133,12 @@ These routes use short-lived incident-scoped capability tokens obtained through 
 
 - `POST /workload/exchange`: validate GitHub OIDC token and attempt nonce; issue capability token.
 - `GET /workload/attempts/{attemptId}/evidence`: return the authorized bounded bundle.
+- `POST /workload/attempts/{attemptId}/proposal`: submit bounded inert source context and create one managed proposal without repository tools.
+- `POST /workload/attempts/{attemptId}/proposals/{proposalId}/finalize-exchange`: exchange the proposal nonce and fresh OIDC identity for a finalization capability after repository validation.
 - `POST /workload/attempts/{attemptId}/heartbeat`: extend the current valid lease within limits.
 - `POST /workload/attempts/{attemptId}/result`: upload one bounded repair result envelope idempotently.
 
-The token audience, attempt ID, repository/workflow/run claims, expiry, nonce, and allowed operations must all match.
+The complete capability vocabulary is `evidence.read`, `proposal.create`, `proposal.finalize`, `attempt.heartbeat`, and `result.upload`; no provider mutation capability exists. Initial identity exchange grants only evidence read, proposal creation, and heartbeat. Finalization exchange grants only exact-proposal finalization and result upload. The token audience, phase, attempt/proposal IDs, immutable repository/workflow/run claims, expiry, nonce, and allowed operations must all match.
 
 ## GitHub webhook API
 

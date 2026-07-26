@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Collections.Immutable;
+using System.Text.RegularExpressions;
 using Elsa.Platform.Healing.Abstractions;
 using GitHub.Copilot;
 using GitHub.Copilot.Rpc;
@@ -152,6 +153,7 @@ public sealed class CopilotRepairProposalProvider(
 
     private static string BuildPrompt(RepairProposalRequest request)
     {
+        var sourceContext = RepairPromptSourceSanitizer.Sanitize(request.SourceContext);
         var payload = JsonSerializer.Serialize(new
         {
             request.ProtocolVersion,
@@ -168,10 +170,10 @@ public sealed class CopilotRepairProposalProvider(
             },
             SourceContext = new
             {
-                request.SourceContext.TargetRevision,
-                request.SourceContext.Digest,
-                request.SourceContext.Files,
-                request.SourceContext.OmittedPaths
+                sourceContext.TargetRevision,
+                sourceContext.OriginalDigest,
+                sourceContext.Files,
+                sourceContext.OmittedPaths
             }
         }, SerializerOptions);
 
@@ -218,6 +220,83 @@ public sealed class CopilotRepairProposalProvider(
         public string? RiskCategory { get; init; }
     }
 }
+
+internal static partial class RepairPromptSourceSanitizer
+{
+    private const string PrivateKeyMarker = "-----BEGIN ";
+    private static readonly string[] CredentialMarkers =
+    [
+        "Bearer ", "AccountKey=", "SharedAccessKey=", "SharedAccessSignature=", "Password=", "Pwd=",
+        "AKIA", "ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_", "sk-"
+    ];
+    private static readonly string[] SensitivePathFragments =
+    [
+        ".env", "credential", "secret", "token", "password", "passwd", "private-key", "private_key",
+        "keystore", "keyvault"
+    ];
+
+    public static RepairPromptSourceContext Sanitize(RepairSourceContextBundle sourceContext)
+    {
+        var files = new List<RepairSourceFile>(sourceContext.Files.Count);
+        var omitted = new HashSet<string>(sourceContext.OmittedPaths, StringComparer.Ordinal);
+        foreach (var file in sourceContext.Files)
+        {
+            if (IsSensitivePath(file.Path) || ContainsSensitiveMaterial(file.Content))
+            {
+                omitted.Add(file.Path);
+                continue;
+            }
+
+            files.Add(file);
+        }
+
+        return new(
+            sourceContext.TargetRevision,
+            sourceContext.Digest,
+            files,
+            omitted.Order(StringComparer.Ordinal).Take(RepairProposalLimits.MaximumOmittedPaths).ToArray());
+    }
+
+    private static bool IsSensitivePath(string path)
+    {
+        var normalized = path.ToLowerInvariant();
+        return SensitivePathFragments.Any(normalized.Contains) ||
+               normalized.EndsWith(".pem", StringComparison.Ordinal) ||
+               normalized.EndsWith(".pfx", StringComparison.Ordinal) ||
+               normalized.EndsWith(".p12", StringComparison.Ordinal) ||
+               normalized.EndsWith(".key", StringComparison.Ordinal);
+    }
+
+    private static bool ContainsSensitiveMaterial(string content)
+    {
+        if (content.Any(character => char.IsControl(character) && character is not ('\r' or '\n' or '\t')))
+            return true;
+        if (CredentialMarkers.Any(marker => content.Contains(marker, StringComparison.OrdinalIgnoreCase)))
+            return true;
+        if (content.Contains(PrivateKeyMarker, StringComparison.OrdinalIgnoreCase) &&
+            content.Contains("PRIVATE KEY-----", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return CredentialAssignmentRegex().IsMatch(content) ||
+               JsonWebTokenRegex().IsMatch(content) ||
+               CredentialInUrlRegex().IsMatch(content);
+    }
+
+    [GeneratedRegex("(?im)(?:password|passwd|pwd|secret|token|api[_-]?key|client[_-]?secret|connection[_-]?string)\\s*[\\\"']?\\s*[:=]\\s*[\\\"'][^\\\"'\\r\\n]{8,}[\\\"']", RegexOptions.CultureInvariant)]
+    private static partial Regex CredentialAssignmentRegex();
+
+    [GeneratedRegex(@"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}(?![A-Za-z0-9_-])", RegexOptions.CultureInvariant)]
+    private static partial Regex JsonWebTokenRegex();
+
+    [GeneratedRegex(@"[a-z][a-z0-9+.-]*://[^/\\s:@]{1,128}:[^/\\s@]{8,}@", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex CredentialInUrlRegex();
+}
+
+internal sealed record RepairPromptSourceContext(
+    string TargetRevision,
+    string OriginalDigest,
+    IReadOnlyList<RepairSourceFile> Files,
+    IReadOnlyList<string> OmittedPaths);
 
 public sealed class CopilotRepairRuntime(
     IOptions<CopilotRepairProposalOptions> options,

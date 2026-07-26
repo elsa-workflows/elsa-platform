@@ -5,7 +5,12 @@ using Elsa.Platform.Deployment.Core.Workspace;
 using Elsa.Platform.Healing.Abstractions;
 using Elsa.Platform.Healing.Core;
 using Elsa.Platform.Healing.Core.Ownership;
+using Elsa.Platform.Healing.Core.Repairs;
+using Elsa.Platform.Healing.Core.Security;
 using Elsa.Platform.PackageCatalog.Core.Accounts;
+using Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
+using Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 
 namespace Elsa.Platform.Api.Workspace.Healing;
 
@@ -23,6 +28,12 @@ public sealed class WorkspaceHealingAuthorityEndpointModule : IHealingEndpointMo
             .RequireHealingPermission(HealingPermissions.Configure);
         group.MapPost("/provider-connections/{providerConnectionId:guid}/validate", ValidateProviderAsync)
             .RequireHealingPermission(HealingPermissions.Configure);
+        group.MapPut("/provider-connections/{providerConnectionId:guid}/actor-links/{providerActorId}", PutActorLinkAsync)
+            .RequireHealingPermission(HealingPermissions.Configure)
+            .RequireWorkspaceOwner();
+        group.MapDelete("/provider-connections/{providerConnectionId:guid}/actor-links/{providerActorId}", RevokeActorLinkAsync)
+            .RequireHealingPermission(HealingPermissions.Configure)
+            .RequireWorkspaceOwner();
     }
 
     private static async ValueTask<object?> RequireApplicationAsync(
@@ -110,7 +121,7 @@ public sealed class WorkspaceHealingAuthorityEndpointModule : IHealingEndpointMo
                 request.AutomaticMergeEnabled ?? false,
                 request.RequiredChecks ?? [],
                 request.IndependentVerifier,
-                request.ForbiddenChangeCategories ?? ["workflow", "build-infrastructure", "credentials"],
+                request.ForbiddenChangeCategories ?? AutoMergeEligibilityPolicy.RequiredForbiddenChangeCategories.Order(StringComparer.Ordinal).ToArray(),
                 request.RequireRollbackOrStopCapability ?? true,
                 request.WebhookSecretCredentialReferenceId),
             authorization,
@@ -186,6 +197,143 @@ public sealed class WorkspaceHealingAuthorityEndpointModule : IHealingEndpointMo
         }
     }
 
+    private static async Task<IResult> PutActorLinkAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        Guid providerConnectionId,
+        string providerActorId,
+        ProviderActorIdentityLinkRequest request,
+        HttpContext context,
+        HealingDbContext healingDbContext,
+        CatalogDbContext catalogDbContext,
+        HealingAuditService auditService,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
+        if (!long.TryParse(providerActorId, out var actorId) || actorId <= 0 ||
+            string.IsNullOrWhiteSpace(request.ProviderActorLogin) || request.ProviderActorLogin.Length > 100 ||
+            request.ProviderActorLogin.Any(x => !(char.IsLetterOrDigit(x) || x == '-')))
+            return WorkspaceHealingConfigurationEndpointModule.HealingProblem(context, 400, "healing.actor-link.invalid", "The provider actor identity is invalid.");
+        var providerExists = await healingDbContext.ProviderConnections.AsNoTracking().AnyAsync(
+            x => x.WorkspaceId == workspaceId && x.Id == providerConnectionId &&
+                 x.Status != ProviderConnectionStatus.Revoked &&
+                 healingDbContext.Set<HealingAuditEvent>().Any(audit =>
+                     audit.WorkspaceId == workspaceId && audit.AggregateType == "healing-authority" &&
+                     audit.AggregateId == providerConnectionId && audit.EventType == "provider-connection-authorized" &&
+                     audit.CausationId == applicationId),
+            cancellationToken);
+        var memberExists = await catalogDbContext.WorkspaceMemberships.AsNoTracking().AnyAsync(
+            x => x.WorkspaceId == workspaceId && x.AccountId == request.PlatformAccountId,
+            cancellationToken);
+        if (!providerExists || !memberExists)
+            return WorkspaceHealingConfigurationEndpointModule.HealingProblem(context, 404, "healing.actor-link.authority-not-found", "The provider connection or workspace member was not found.");
+        await using var transaction = await healingDbContext.Database.BeginTransactionAsync(cancellationToken);
+        var existing = await healingDbContext.ProviderActorIdentityLinks.SingleOrDefaultAsync(x =>
+            x.WorkspaceId == workspaceId && x.ProviderConnectionId == providerConnectionId &&
+            x.ProviderActorId == providerActorId, cancellationToken);
+        var access = context.GetWorkspaceAccess();
+        var created = existing is null;
+        if (existing is null)
+        {
+            existing = new ProviderActorIdentityLink
+            {
+                Id = Guid.NewGuid(),
+                WorkspaceId = workspaceId,
+                ProviderConnectionId = providerConnectionId,
+                ProviderActorId = providerActorId,
+                ProviderActorLogin = request.ProviderActorLogin,
+                PlatformAccountId = request.PlatformAccountId,
+                VerifiedByAccountId = access.AccountId,
+                VerifiedAt = timeProvider.GetUtcNow()
+            };
+            healingDbContext.ProviderActorIdentityLinks.Add(existing);
+        }
+        else
+        {
+            existing.ProviderActorLogin = request.ProviderActorLogin;
+            existing.PlatformAccountId = request.PlatformAccountId;
+            existing.VerifiedByAccountId = access.AccountId;
+            existing.VerifiedAt = timeProvider.GetUtcNow();
+            existing.RevokedAt = null;
+        }
+        await healingDbContext.SaveChangesAsync(cancellationToken);
+        await auditService.AppendAsync(new HealingAuditWrite(
+            workspaceId,
+            "provider-actor-link",
+            existing.Id,
+            created ? "actor-link-created" : "actor-link-updated",
+            "workspace-owner-verified",
+            HealingActorTypes.Human,
+            access.AccountId.ToString("D"),
+            Guid.NewGuid(),
+            applicationId,
+            null,
+            null,
+            null,
+            new Dictionary<string, string?> { ["status"] = "active" }), cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return Results.Ok(ToActorLinkResponse(existing));
+    }
+
+    private static async Task<IResult> RevokeActorLinkAsync(
+        Guid workspaceId,
+        Guid applicationId,
+        Guid providerConnectionId,
+        string providerActorId,
+        HttpContext context,
+        HealingDbContext dbContext,
+        HealingAuditService auditService,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var link = await (from actorLink in dbContext.ProviderActorIdentityLinks
+                          join connection in dbContext.ProviderConnections
+                              on new { actorLink.WorkspaceId, Id = actorLink.ProviderConnectionId }
+                              equals new { connection.WorkspaceId, connection.Id }
+                          where actorLink.WorkspaceId == workspaceId &&
+                                actorLink.ProviderConnectionId == providerConnectionId &&
+                                actorLink.ProviderActorId == providerActorId &&
+                                dbContext.Set<HealingAuditEvent>().Any(audit =>
+                                    audit.WorkspaceId == workspaceId && audit.AggregateType == "healing-authority" &&
+                                    audit.AggregateId == providerConnectionId && audit.EventType == "provider-connection-authorized" &&
+                                    audit.CausationId == applicationId)
+                          select actorLink).SingleOrDefaultAsync(cancellationToken);
+        if (link is null)
+            return WorkspaceHealingConfigurationEndpointModule.HealingProblem(context, 404, "healing.actor-link.not-found", "The actor identity link was not found.");
+        link.RevokedAt ??= timeProvider.GetUtcNow();
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await auditService.AppendAsync(new HealingAuditWrite(
+            workspaceId,
+            "provider-actor-link",
+            link.Id,
+            "actor-link-revoked",
+            "workspace-owner-revoked",
+            HealingActorTypes.Human,
+            context.GetWorkspaceAccess().AccountId.ToString("D"),
+            Guid.NewGuid(),
+            applicationId,
+            null,
+            null,
+            null,
+            new Dictionary<string, string?> { ["status"] = "revoked" }), cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return Results.Ok(ToActorLinkResponse(link));
+    }
+
+    private static object ToActorLinkResponse(ProviderActorIdentityLink link) => new
+    {
+        link.Id,
+        link.ProviderConnectionId,
+        link.ProviderActorId,
+        link.ProviderActorLogin,
+        link.PlatformAccountId,
+        link.VerifiedByAccountId,
+        link.VerifiedAt,
+        link.RevokedAt,
+        Version = Convert.ToBase64String(link.Version)
+    };
+
     private static bool TryDecodeVersion(string? value, out byte[] version)
     {
         version = [];
@@ -250,23 +398,39 @@ public sealed class WorkspaceHealingAuthorityEndpointModule : IHealingEndpointMo
 
     private static object ToPathPolicyResponse(PathPolicy policy) => new
     {
-        policy.Id, policy.Name, policy.PolicyVersion, policy.PolicyHash,
-        policy.AllowedRootsJson, policy.ForbiddenRootsJson,
-        policy.MaxFiles, policy.MaxChangedLines, policy.MaxPatchBytes
+        policy.Id,
+        policy.Name,
+        policy.PolicyVersion,
+        policy.PolicyHash,
+        policy.AllowedRootsJson,
+        policy.ForbiddenRootsJson,
+        policy.MaxFiles,
+        policy.MaxChangedLines,
+        policy.MaxPatchBytes
     };
 
     private static object ToEvidencePolicyResponse(EvidencePolicy policy) => new
     {
-        policy.Id, policy.Name, policy.PolicyVersion, policy.PolicyHash,
-        policy.RequireReproduction, policy.AllowHighConfidenceInference,
-        policy.MinimumInferenceConfidence, policy.MaximumTier
+        policy.Id,
+        policy.Name,
+        policy.PolicyVersion,
+        policy.PolicyHash,
+        policy.RequireReproduction,
+        policy.AllowHighConfidenceInference,
+        policy.MinimumInferenceConfidence,
+        policy.MaximumTier
     };
 
     private static object ToMergePolicyResponse(MergePolicy policy) => new
     {
-        policy.Id, policy.Name, policy.PolicyVersion, policy.PolicyHash,
-        policy.AutomaticMergeEnabled, policy.RequiredChecksJson,
-        policy.IndependentVerifier, policy.ForbiddenChangeCategoriesJson,
+        policy.Id,
+        policy.Name,
+        policy.PolicyVersion,
+        policy.PolicyHash,
+        policy.AutomaticMergeEnabled,
+        policy.RequiredChecksJson,
+        policy.IndependentVerifier,
+        policy.ForbiddenChangeCategoriesJson,
         policy.RequireRollbackOrStopCapability
     };
 
@@ -313,3 +477,4 @@ public sealed record CreateHealingAuthorityProfileRequest(
     Guid? ConfirmationId = null);
 
 public sealed record ProviderConnectionTransitionRequest(string? Version);
+public sealed record ProviderActorIdentityLinkRequest(string ProviderActorLogin, Guid PlatformAccountId);

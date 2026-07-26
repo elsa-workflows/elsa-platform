@@ -3,6 +3,7 @@ using Elsa.Platform.Healing.Abstractions;
 using Elsa.Platform.Healing.Core.Configuration;
 using Elsa.Platform.Healing.Core.Ownership;
 using Elsa.Platform.Healing.Core.Security;
+using Elsa.Platform.Healing.Core.Verification;
 using Microsoft.Extensions.Options;
 
 namespace Elsa.Platform.Healing.Core.Incidents;
@@ -26,7 +27,8 @@ public sealed class HealingSignalInboxWorker(
     HealingAuditService auditService,
     HealingKillSwitch killSwitch,
     IOptions<HealingOptions> options,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    HealingVerificationWorker? verificationWorker = null)
 {
     public const int MaximumAttempts = 3;
     private readonly HealingOptions _options = options.Value;
@@ -35,13 +37,22 @@ public sealed class HealingSignalInboxWorker(
         DateTimeOffset now,
         int batchSize,
         CancellationToken cancellationToken = default) =>
-        incidentService.PromoteDueAsync(now, batchSize, cancellationToken);
+        killSwitch.CanReviewIncidents().Allowed
+            ? incidentService.PromoteDueAsync(now, batchSize, cancellationToken)
+            : ValueTask.FromResult(0);
 
     public async ValueTask<HealingInboxWorkerResult> RunOnceAsync(
         string workerId,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workerId);
+        var reviewGate = killSwitch.CanReviewIncidents();
+        if (!reviewGate.Allowed)
+        {
+            return new HealingInboxWorkerResult(
+                HealingInboxWorkerStatus.Idle,
+                OutcomeCode: reviewGate.ReasonCode);
+        }
         var now = timeProvider.GetUtcNow();
         var lease = await inboxStore.TryLeaseNextAsync(workerId, now, _options.LeaseDuration, cancellationToken);
         if (lease is null)
@@ -167,6 +178,10 @@ public sealed class HealingSignalInboxWorker(
                 policyJson)), cancellationToken);
 
         var completedAt = timeProvider.GetUtcNow();
+        // Re-drive the idempotent verification signal on inbox replay so a failure after incident projection
+        // cannot strand the deployment-system notification.
+        if (verificationWorker is not null)
+            await verificationWorker.ReportRecurrenceAsync(projection.Occurrence, cancellationToken);
         await AuditAsync(
             item.WorkspaceId,
             projection.Incident.Id,

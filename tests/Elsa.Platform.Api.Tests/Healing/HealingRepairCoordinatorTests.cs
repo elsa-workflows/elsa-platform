@@ -100,6 +100,23 @@ public sealed class HealingRepairCoordinatorTests
     }
 
     [Fact]
+    public async Task Application_concurrency_budget_blocks_a_different_episode_while_an_attempt_is_active()
+    {
+        await using var database = await CoordinatorDatabase.CreateAsync(WorkItemProjectionStatus.Current);
+        await database.SetApplicationConcurrencyLimitAsync(1);
+        await database.SeedActiveAttemptForOtherIncidentAsync();
+
+        var result = await database.RunCoordinatorAsync();
+
+        await using var verify = database.CreateContext();
+        result.Should().Be(HealingRepairCoordinatorStatus.Idle);
+        (await verify.RepairAttempts.CountAsync()).Should().Be(1);
+        (await verify.ProviderOperations.AnyAsync(x => x.Kind == ProviderOperationKind.DispatchWorkflow)).Should().BeFalse();
+        (await verify.HealingIncidents.SingleAsync(x => x.Id == database.Ids.IncidentId)).Status
+            .Should().Be(HealingIncidentStatus.ReadyForRepair);
+    }
+
+    [Fact]
     public async Task Result_received_with_satisfied_evidence_policy_queues_publication_once()
     {
         await using var database = await CoordinatorDatabase.CreateAsync(WorkItemProjectionStatus.Current);
@@ -134,6 +151,28 @@ public sealed class HealingRepairCoordinatorTests
         attempt.OutcomeCode.Should().Be("evidence-policy-blocked");
         incident.Status.Should().Be(HealingIncidentStatus.NeedsHuman);
         incident.NeedsHumanReason.Should().Be(NeedsHumanReason.PolicyBlocked);
+        (await verify.ProviderOperations.AnyAsync(x => x.Kind == ProviderOperationKind.PublishPullRequest)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Result_received_with_malformed_evidence_policy_stops_without_queueing_publication()
+    {
+        await using var database = await CoordinatorDatabase.CreateAsync(WorkItemProjectionStatus.Current);
+        await database.SeedCompletedResultAsync(requireReproduction: false, RepairClassification.Reproduced);
+        await database.SetEvidencePermittedFieldsJsonAsync("not-json");
+
+        var result = await database.RunCoordinatorAsync();
+
+        await using var verify = database.CreateContext();
+        var attempt = await verify.RepairAttempts.SingleAsync();
+        var incident = await verify.HealingIncidents.SingleAsync();
+        var evaluation = await verify.PolicyEvaluations.SingleAsync(x => x.PolicyKind == PolicyKind.Evidence);
+        result.Should().Be(HealingRepairCoordinatorStatus.Idle);
+        attempt.Status.Should().Be(RepairAttemptStatus.Stopped);
+        attempt.OutcomeCode.Should().Be("evidence-policy-blocked");
+        incident.Status.Should().Be(HealingIncidentStatus.NeedsHuman);
+        evaluation.Decision.Should().Be(PolicyDecision.Deny);
+        evaluation.GateResultsJson.Should().Contain("evidence-fields-invalid");
         (await verify.ProviderOperations.AnyAsync(x => x.Kind == ProviderOperationKind.PublishPullRequest)).Should().BeFalse();
     }
 
@@ -303,6 +342,61 @@ public sealed class HealingRepairCoordinatorTests
                 setters => setters.SetProperty(x => x.DefaultAttemptLimit, attemptLimit));
         }
 
+        public async Task SetApplicationConcurrencyLimitAsync(int concurrencyLimit)
+        {
+            await using var dbContext = CreateContext();
+            await dbContext.HealingConfigurations.ExecuteUpdateAsync(
+                setters => setters.SetProperty(x => x.ConcurrencyBudget, concurrencyLimit));
+        }
+
+        public async Task SetEvidencePermittedFieldsJsonAsync(string permittedFieldsJson)
+        {
+            await using var dbContext = CreateContext();
+            await dbContext.EvidencePolicies.ExecuteUpdateAsync(
+                setters => setters.SetProperty(x => x.PermittedFieldsJson, permittedFieldsJson));
+        }
+
+        public async Task SeedActiveAttemptForOtherIncidentAsync()
+        {
+            await using var dbContext = CreateContext();
+            var incident = new HealingIncident
+            {
+                Id = Guid.NewGuid(), WorkspaceId = Ids.WorkspaceId, ApplicationId = Ids.ApplicationId,
+                FingerprintVersion = "1", Fingerprint = Guid.NewGuid().ToString("N"),
+                RepairRepositoryKey = "github:repository-1", Status = HealingIncidentStatus.Repairing,
+                Severity = IncidentSeverity.Error, Classification = IncidentClassification.UnhandledRequest,
+                SelectedBindingId = Ids.BindingId, FirstSeenAt = Now.AddHours(-1), LastSeenAt = Now, OccurrenceCount = 1
+            };
+            var episode = new IncidentEpisode
+            {
+                Id = Guid.NewGuid(), WorkspaceId = Ids.WorkspaceId, ApplicationId = Ids.ApplicationId,
+                IncidentId = incident.Id, OpenedAt = Now.AddHours(-1), ProducingRevisionsJson = "[]",
+                TargetRevision = TargetRevision, Outcome = IncidentEpisodeOutcome.Active
+            };
+            var evidence = new EvidenceBundle
+            {
+                Id = Guid.NewGuid(), WorkspaceId = Ids.WorkspaceId, ApplicationId = Ids.ApplicationId,
+                IncidentId = incident.Id, Tier = EvidenceTier.DefaultRedacted, CanonicalJson = "{}",
+                Digest = new string('a', 64), ProvenanceJson = "{}", OmissionsJson = "[]", SizeBytes = 2,
+                CreatedAt = Now.AddMinutes(-1), ExpiresAt = Now.AddMinutes(30)
+            };
+            dbContext.Add(incident);
+            await dbContext.SaveChangesAsync();
+            dbContext.AddRange(episode, evidence);
+            await dbContext.SaveChangesAsync();
+            incident.ActiveEpisodeId = episode.Id;
+            dbContext.Add(new RepairAttempt
+            {
+                Id = Guid.NewGuid(), WorkspaceId = Ids.WorkspaceId, ApplicationId = Ids.ApplicationId,
+                IncidentId = incident.Id, EpisodeId = episode.Id, BindingId = Ids.BindingId,
+                AttemptNumber = 1, TargetRevision = TargetRevision, Status = RepairAttemptStatus.Running,
+                EvidenceBundleId = evidence.Id, RepairClassification = RepairClassification.InsufficientConfidence,
+                NonceHash = new string('0', 64), LeaseOwner = "active-worker", LeaseToken = new string('1', 64),
+                LeaseExpiresAt = Now.AddMinutes(5), BudgetJson = "{}", UsageJson = "{}"
+            });
+            await dbContext.SaveChangesAsync();
+        }
+
         public async Task AbandonLatestAttemptAsync()
         {
             await using var dbContext = CreateContext();
@@ -358,10 +452,10 @@ public sealed class HealingRepairCoordinatorTests
                 TargetRevision = TargetRevision,
                 Classification = classification,
                 Confidence = classification == RepairClassification.Reproduced ? 1m : 0.95m,
-                UnifiedDiff = "diff --git a/a.cs b/a.cs\n--- a/a.cs\n+++ b/a.cs\n@@ -1 +1 @@\n-old\n+new\n",
+                UnifiedDiff = "diff --git a/src/a.cs b/src/a.cs\n--- a/src/a.cs\n+++ b/src/a.cs\n@@ -1 +1 @@\n-old\n+new\n",
                 PatchDigest = patchDigest,
                 EnvelopeDigest = new string('2', 64),
-                ChangedPathsJson = JsonSerializer.Serialize(new[] { new RepairChangedPathSuggestion("a.cs", "modified", null) }),
+                ChangedPathsJson = JsonSerializer.Serialize(new[] { new RepairChangedPathSuggestion("src/a.cs", "modified", "low") }),
                 ReproductionJson = JsonSerializer.Serialize(new RepairReproductionEvidence(
                     classification == RepairClassification.Reproduced,
                     classification == RepairClassification.Reproduced,
@@ -448,7 +542,7 @@ public sealed class HealingRepairCoordinatorTests
                 Name = "path",
                 PolicyVersion = "1",
                 PolicyHash = new string('3', 64),
-                AllowedRootsJson = "[]",
+                AllowedRootsJson = "[\"src\"]",
                 ForbiddenRootsJson = "[]",
                 MaxFiles = 10,
                 MaxChangedLines = 500,

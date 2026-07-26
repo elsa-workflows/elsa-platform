@@ -91,6 +91,8 @@ internal sealed class PlatformApiTestApplication : WebApplicationFactory<Program
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         await db.Database.EnsureDeletedAsync();
         await db.Database.EnsureCreatedAsync();
+        var healingDb = scope.ServiceProvider.GetRequiredService<HealingDbContext>();
+        await healingDb.Database.EnsureCreatedAsync();
         await seed(db);
         await db.SaveChangesAsync();
     }

@@ -7,6 +7,9 @@ using Elsa.Platform.Healing.Core.Security;
 using Elsa.Platform.Healing.Persistence.EntityFrameworkCore;
 using Elsa.Platform.Healing.GitHub;
 using Elsa.Platform.Healing.Core.Ownership;
+using Elsa.Platform.Healing.Core.Providers;
+using Elsa.Platform.Healing.Core.Repairs;
+using Elsa.Platform.Api.Workspace.Healing;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
@@ -44,6 +47,10 @@ public sealed class HealingCompositionTests
         scope.ServiceProvider.GetRequiredService<HealingDbContext>().Should().NotBeNull();
         var store = scope.ServiceProvider.GetRequiredService<HealingStore>();
         scope.ServiceProvider.GetRequiredService<IHealingAuditStore>().Should().BeSameAs(store);
+        scope.ServiceProvider.GetRequiredService<IHealingMergeEvaluationStore>()
+            .Should().BeOfType<HealingMergeEvaluationStore>();
+        scope.ServiceProvider.GetRequiredService<IHumanProviderCommandStore>()
+            .Should().BeOfType<HealingHumanProviderCommandStore>();
         scope.ServiceProvider.GetRequiredService<HealingAuditService>().Should().NotBeNull();
         scope.ServiceProvider.GetRequiredService<IProviderConnectionValidator>()
             .Should().BeOfType<GitHubProviderConnectionValidator>();
@@ -114,6 +121,114 @@ public sealed class HealingCompositionTests
         provider.GetServices<IHostedService>().OfType<TestHealingWorker>().Any().Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData("Healing:IncidentReviewEnabled", false)]
+    [InlineData("Healing:IncidentReviewEnabled", true)]
+    [InlineData("Healing:VerificationEnabled", false)]
+    [InlineData("Healing:VerificationEnabled", true)]
+    public void StageControlledRegistration_TracksItsOwnFlag(string configurationKey, bool enabled)
+    {
+        var configuration = Configuration(new Dictionary<string, string?>
+        {
+            ["Healing:Workers:Enabled"] = "true",
+            [configurationKey] = enabled.ToString(),
+            ["ConnectionStrings:Healing"] = "Data Source=:memory:"
+        });
+        var services = new ServiceCollection();
+        services.AddSingleton(TimeProvider.System);
+        services.AddLogging();
+        var builder = services.AddPlatformHealing(configuration, Environment("Production"));
+
+        if (configurationKey.EndsWith(nameof(HealingOptions.IncidentReviewEnabled), StringComparison.Ordinal))
+        {
+            builder.AddHostedWorker<HealingSignalInboxHostedService>(HealingOptions.IncidentReviewEnabledConfigurationKey)
+                .AddEndpointModule<WorkspaceHealingIncidentEndpointModule>(HealingOptions.IncidentReviewEnabledConfigurationKey);
+        }
+        else
+        {
+            builder.AddHostedWorker<HealingVerificationHostedService>(HealingOptions.VerificationEnabledConfigurationKey)
+                .AddEndpointModule<HealingVerificationEndpointModule>(HealingOptions.VerificationEnabledConfigurationKey);
+        }
+
+        using var provider = services.BuildServiceProvider();
+        if (configurationKey.EndsWith(nameof(HealingOptions.IncidentReviewEnabled), StringComparison.Ordinal))
+        {
+            provider.GetServices<IHostedService>().OfType<HealingSignalInboxHostedService>().Any().Should().Be(enabled);
+            provider.GetServices<IHealingEndpointModule>().OfType<WorkspaceHealingIncidentEndpointModule>().Any().Should().Be(enabled);
+        }
+        else
+        {
+            provider.GetServices<IHostedService>().OfType<HealingVerificationHostedService>().Any().Should().Be(enabled);
+            provider.GetServices<IHealingEndpointModule>().OfType<HealingVerificationEndpointModule>().Any().Should().Be(enabled);
+        }
+    }
+
+    [Fact]
+    public void Verification_failure_delivery_registers_the_production_worker_and_preserves_a_custom_consumer()
+    {
+        var configuration = Configuration(new Dictionary<string, string?>
+        {
+            ["Healing:Workers:Enabled"] = "true",
+            ["Healing:VerificationEnabled"] = "true",
+            ["Healing:VerificationFailureDelivery:Enabled"] = "true",
+            ["Healing:VerificationFailureDelivery:Endpoint"] = "https://deployment.example.test/healing/verification-failures",
+            ["Healing:VerificationFailureDelivery:SharedSecret"] = new string('s', 32),
+            ["ConnectionStrings:Healing"] = "Data Source=:memory:"
+        });
+        var services = new ServiceCollection();
+        services.AddSingleton(TimeProvider.System);
+        services.AddLogging();
+        services.AddScoped<IRepairVerificationFailureConsumer, TestVerificationFailureConsumer>();
+
+        services.AddPlatformHealing(configuration, Environment("Production"))
+            .AddHostedWorker<HealingVerificationFailureDeliveryHostedService>(
+                HealingOptions.VerificationEnabledConfigurationKey);
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetServices<IHostedService>()
+            .Should().ContainSingle(x => x is HealingVerificationFailureDeliveryHostedService);
+        using var scope = provider.CreateScope();
+        scope.ServiceProvider.GetServices<IRepairVerificationFailureConsumer>()
+            .Should().ContainSingle(x => x is TestVerificationFailureConsumer);
+    }
+
+    [Fact]
+    public void Verification_failure_delivery_registers_the_http_consumer_when_configured()
+    {
+        var configuration = Configuration(new Dictionary<string, string?>
+        {
+            ["Healing:VerificationFailureDelivery:Enabled"] = "true",
+            ["Healing:VerificationFailureDelivery:Endpoint"] = "https://deployment.example.test/healing/verification-failures",
+            ["Healing:VerificationFailureDelivery:SharedSecret"] = new string('s', 32),
+            ["ConnectionStrings:Healing"] = "Data Source=:memory:"
+        });
+        var services = new ServiceCollection();
+
+        services.AddPlatformHealing(configuration, Environment("Production"));
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        scope.ServiceProvider.GetServices<IRepairVerificationFailureConsumer>()
+            .Should().ContainSingle(x => x is HttpRepairVerificationFailureConsumer);
+    }
+
+    [Fact]
+    public void Enabled_verification_failure_delivery_rejects_configuration_without_an_https_endpoint_and_strong_secret()
+    {
+        var configuration = Configuration(new Dictionary<string, string?>
+        {
+            ["Healing:VerificationFailureDelivery:Enabled"] = "true",
+            ["ConnectionStrings:Healing"] = "Data Source=:memory:"
+        });
+        var services = new ServiceCollection();
+
+        services.AddPlatformHealing(configuration, Environment("Production"));
+
+        using var provider = services.BuildServiceProvider();
+        var resolveOptions = () => provider.GetRequiredService<IOptions<HealingVerificationFailureDeliveryOptions>>().Value;
+        resolveOptions.Should().Throw<OptionsValidationException>();
+    }
+
     [Fact]
     public async Task MigratePlatformHealingDatabaseAsync_AppliesTheDedicatedSqliteMigrations()
     {
@@ -165,6 +280,14 @@ public sealed class HealingCompositionTests
     {
         public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class TestVerificationFailureConsumer : IRepairVerificationFailureConsumer
+    {
+        public ValueTask<bool> ConsumeAsync(
+            RepairVerificationFailedSignalLease delivery,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(true);
     }
 
     private sealed class UnusedCredentialResolver : IHealingProviderCredentialResolver

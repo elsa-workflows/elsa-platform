@@ -69,6 +69,44 @@ public sealed class HealingOptionsTests
     }
 
     [Fact]
+    public void IncidentReviewCanRemainDisabledWhileDiscoveryAndVerificationAreEnabled()
+    {
+        var options = new HealingOptions
+        {
+            DiscoveryEnabled = true,
+            IncidentReviewEnabled = false,
+            VerificationEnabled = true
+        };
+        var guard = new HealingKillSwitch(options);
+
+        guard.CanDiscover(new HealingWorkspaceConfiguration(), new HealingConfiguration { DiscoveryEnabled = true })
+            .Allowed.Should().BeTrue();
+        guard.CanReviewIncidents().Should().Be(
+            HealingGateResult.Block(HealingGateReasonCodes.StageDisabled));
+        guard.CanVerify().Allowed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void VerificationCanRemainDisabledWhileIncidentReviewAndRepairDispatchAreEnabled()
+    {
+        var options = new HealingOptions
+        {
+            IncidentReviewEnabled = true,
+            RepairDispatchEnabled = true,
+            VerificationEnabled = false
+        };
+        var guard = new HealingKillSwitch(options);
+
+        guard.CanReviewIncidents().Allowed.Should().BeTrue();
+        guard.CanDispatchRepair(
+                new HealingWorkspaceConfiguration(),
+                new HealingConfiguration { RepairEnabled = true })
+            .Allowed.Should().BeTrue();
+        guard.CanVerify().Should().Be(
+            HealingGateResult.Block(HealingGateReasonCodes.StageDisabled));
+    }
+
+    [Fact]
     public void ValidationRejectsAnIdleDelayThatCouldCreateAHotLoop()
     {
         var options = new HealingOptions { IdleDelay = TimeSpan.Zero };

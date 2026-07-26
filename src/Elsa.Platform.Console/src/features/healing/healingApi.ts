@@ -11,7 +11,12 @@ import type {
   UpdateHealingConfigurationRequest,
   HealingIncidentDetail,
   HealingIncidentFilters,
-  HealingIncidentListResponse
+  HealingIncidentListResponse,
+  HealingAuditFilters,
+  HealingAuditPage,
+  HealingOverview,
+  HealingOverviewFilters,
+  HealingUsageReport
 } from "@/features/healing/healingModels";
 
 function applicationBase(workspaceId: string, applicationId: string) {
@@ -178,4 +183,69 @@ export function listHealingIncidents(workspaceId: string, filters: HealingIncide
 
 export function getHealingIncident(workspaceId: string, incidentId: string) {
   return apiRequest<HealingIncidentDetail>(`${incidentBase(workspaceId)}/${encodeURIComponent(incidentId)}`);
+}
+
+export function retryHealingRepair(workspaceId: string, incidentId: string) {
+  return apiRequest(`${incidentBase(workspaceId)}/${encodeURIComponent(incidentId)}/repair/retry`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
+export async function stopHealingRepair(workspaceId: string, incidentId: string) {
+  const confirmation = await apiRequest<HealingConfirmation>(
+    `${incidentBase(workspaceId)}/${encodeURIComponent(incidentId)}/confirmations`, {
+      method: "POST",
+      body: JSON.stringify({ actionType: "HealingRepairStop" })
+    });
+  return apiRequest(`${incidentBase(workspaceId)}/${encodeURIComponent(incidentId)}/repair/stop`, {
+    method: "POST",
+    body: JSON.stringify({ confirmationId: confirmation.id })
+  });
+}
+
+export async function waiveHealingEnvironment(
+  workspaceId: string,
+  incidentId: string,
+  environmentId: string,
+  reason: string,
+  terminal = true,
+  expiresAt?: string
+) {
+  const target = `${incidentBase(workspaceId)}/${encodeURIComponent(incidentId)}/environments/${encodeURIComponent(environmentId)}`;
+  const confirmation = await apiRequest<HealingConfirmation>(`${target}/waiver-confirmations`, {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+  return apiRequest(`${target}/waive`, {
+    method: "POST",
+    body: JSON.stringify({ confirmationId: confirmation.id, reason, terminal, expiresAt: expiresAt ?? null })
+  });
+}
+
+function reportingBase(workspaceId: string) {
+  return `/api/workspaces/${encodeURIComponent(workspaceId)}/healing`;
+}
+
+function reportingQuery(values: Record<string, string | number | boolean | undefined>) {
+  const params = new URLSearchParams();
+  Object.entries(values).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  });
+  return params.size === 0 ? "" : `?${params.toString()}`;
+}
+
+export function getHealingOverview(workspaceId: string, filters: HealingOverviewFilters = {}) {
+  return apiRequest<HealingOverview>(`${reportingBase(workspaceId)}/overview${reportingQuery(filters)}`);
+}
+
+export function getHealingAudit(workspaceId: string, filters: HealingAuditFilters = {}) {
+  return apiRequest<HealingAuditPage>(`${reportingBase(workspaceId)}/audit${reportingQuery(filters)}`);
+}
+
+export function getHealingUsage(
+  workspaceId: string,
+  filters: Pick<HealingOverviewFilters, "applicationId" | "from" | "to"> = {}
+) {
+  return apiRequest<HealingUsageReport>(`${reportingBase(workspaceId)}/usage${reportingQuery(filters)}`);
 }

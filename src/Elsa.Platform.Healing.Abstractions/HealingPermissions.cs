@@ -9,6 +9,8 @@ public static class HealingPermissions
 {
     public const string Read = "healing.read";
     public const string Configure = "healing.configure";
+    public const string ReportIncident = "healing.incident.report";
+    public const string ReportDeployment = "healing.deployment.report";
     public const string ElevateEvidence = "healing.evidence.elevate";
     public const string RetryRepair = "healing.repair.retry";
     public const string StopRepair = "healing.repair.stop";
@@ -19,6 +21,8 @@ public static class HealingPermissions
     {
         Read,
         Configure,
+        ReportIncident,
+        ReportDeployment,
         ElevateEvidence,
         RetryRepair,
         StopRepair,

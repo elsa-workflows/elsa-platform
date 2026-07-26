@@ -282,10 +282,50 @@ export type HealingWorkItemSummary = {
 
 export type HealingIncidentDetail = HealingIncidentSummary & {
   episodes: HealingIncidentEpisode[];
+  deploymentObservations: HealingDeploymentObservation[];
+  verificationResults: HealingVerificationResult[];
   occurrences: HealingIncidentOccurrence[];
   attributions: HealingComponentAttribution[];
   workItem?: HealingWorkItemSummary | null;
   attempts: HealingRepairAttemptView[];
+  humanCommands: HealingHumanCommandView[];
+  permissions: HealingPermission[];
+};
+
+export type HealingDeploymentObservation = {
+  id: string;
+  environmentId: string;
+  revision: string;
+  deployedAt: string;
+  source: string;
+  sourceObservationId: string;
+  acceptedAt: string;
+};
+
+export type HealingVerificationResult = {
+  id: string;
+  episodeId: string;
+  environmentId: string;
+  repairedRevision: string;
+  windowStartedAt?: string | null;
+  windowEndsAt?: string | null;
+  relevantOperationSuccessCount: number;
+  lastRelevantOperationSuccessAt?: string | null;
+  recurrenceCount: number;
+  lastRecurrenceAt?: string | null;
+  outcome: string;
+  decidedAt?: string | null;
+  decisionReason?: string | null;
+  waiverExpiresAt?: string | null;
+};
+
+export type HealingHumanCommandView = {
+  id: string;
+  command: string;
+  status: string;
+  resultCode?: string | null;
+  requestedAt: string;
+  completedAt?: string | null;
 };
 
 export type HealingIncidentFilters = {
@@ -297,6 +337,85 @@ export type HealingIncidentFilters = {
   cursor?: string;
   take?: number;
 };
+
+export type HealingNamedCount = { name: string; count: number };
+export type HealingEnabledState = { total: number; enabled: number; disabled: number; stopped: number };
+
+export type HealingUsageReport = {
+  from?: string | null;
+  to?: string | null;
+  attempts: number;
+  completedAttempts: number;
+  failedAttempts: number;
+  inputUnits: number;
+  outputUnits: number;
+  agentDurationSeconds: number;
+  repositoryRunDurationSeconds: number;
+  repositoryRuns: number;
+  providerOperations: number;
+  failedProviderOperations: number;
+  inferenceBudget: number;
+  repositoryRunBudget: number;
+  timeBudgetSeconds: number;
+  concurrencyBudget: number;
+};
+
+export type HealingOverviewIncident = {
+  id: string;
+  applicationId: string;
+  status: string;
+  severity: string;
+  classification: string;
+  occurrenceCount: number;
+  repairable: boolean;
+  lastSeenAt: string;
+};
+
+export type HealingOverview = {
+  updatedAt: string;
+  applications: HealingEnabledState;
+  environments: HealingEnabledState;
+  openIncidents: number;
+  incidentStates: HealingNamedCount[];
+  severities: HealingNamedCount[];
+  repairability: { repairable: number; observationOnly: number };
+  repairActivity: { activeAttempts: number; blockedAttempts: number; openPullRequests: number; blockedPullRequests: number };
+  verificationOutcomes: HealingNamedCount[];
+  usage: HealingUsageReport;
+  recentIncidents: HealingOverviewIncident[];
+  permissions: HealingPermission[];
+};
+
+export type HealingOverviewFilters = {
+  applicationId?: string;
+  environmentId?: string;
+  status?: string;
+  severity?: string;
+  repairable?: boolean;
+  from?: string;
+  to?: string;
+};
+
+export type HealingAuditItem = {
+  id: string;
+  sequence: number;
+  aggregateType: string;
+  aggregateId: string;
+  eventType: string;
+  reasonCode: string;
+  actorType: string;
+  actorId: string;
+  correlationId: string;
+  causationId?: string | null;
+  policyVersion?: string | null;
+  inputHash?: string | null;
+  outputHash?: string | null;
+  details: Record<string, string | null>;
+  occurredAt: string;
+};
+
+export type HealingAuditPage = { items: HealingAuditItem[]; nextCursor?: string | null };
+export type HealingAuditFilters = { applicationId?: string; incidentId?: string; cursor?: string; take?: number };
 
 export type HealingRepairEvidenceView = {
   tier: string;
@@ -323,7 +442,11 @@ export type HealingRepairPullRequestView = {
   isDraft: boolean;
   mergeState: string;
   checksState: string;
+  autoMergeDecision: string;
+  mergeGates: HealingMergeGateView[];
 };
+
+export type HealingMergeGateView = { gate: string; state: string; reasonCode: string };
 
 /** Safe UI projection. Raw diffs and provider credentials are deliberately absent. */
 export type HealingRepairAttemptView = {
