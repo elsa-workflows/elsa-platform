@@ -1,15 +1,13 @@
 # Legal documents
 
-This directory is reserved for legally reviewed documents that may be published as part of a future licensing transition. It is not active licensing and does not change the current `LICENSE` file.
+The repository's active licence is the
+[Valence Control Commercial License](../LICENSE). [NOTICE.md](../NOTICE.md)
+records the product boundary and third-party licensing principle.
 
-Possible future documents include:
+The legal licensor has not been verified, so `LICENSE` contains the explicit
+`[LEGAL ENTITY NAME]` placeholder. Qualified legal counsel must review and
+approve the licence before commercial distribution.
 
-- The source-available software licence.
-- Commercial licence terms.
-- Evaluation terms.
-- Production-use terms.
-- Third-party notices.
-- Contributor terms.
-- Trademark guidance.
-
-No document in this directory should be treated as legal advice or as a licence until it has been approved and published by the project owner following qualified legal review.
+Future legally reviewed documents may include evaluation terms, production-use
+terms, contributor terms, trademark guidance, and a complete third-party notice
+inventory. Nothing in this directory is legal advice.

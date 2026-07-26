@@ -1,13 +1,17 @@
 # Contributing
 
-## Temporary licensing-transition notice
+## Proprietary project
 
-The licensing model for future Elsa Platform versions is under review. Please do not submit external pull requests until contributor terms have been finalized and published.
+Valence Control is proprietary commercial software. Do not submit external pull
+requests unless Valence Works has explicitly invited the contribution under
+written contributor terms.
 
-Issues and design discussions may still be opened where they match the repository's current policy. This notice does not reinterpret or change the terms of existing contributions.
-
-The current `LICENSE` file remains authoritative. No contributor agreement, copyright assignment, or DCO is introduced by this notice.
+Issues and design discussions may still be opened where they match the
+repository's current policy. The [commercial licence](LICENSE) remains
+authoritative for this revision.
 
 ## Technical contributions
 
-Technical contribution guidance will be expanded after the transition review is complete. Before contributing, check the active issue and specification context and keep changes focused, tested, and documented.
+Before contributing, check the active issue and specification context and keep
+changes focused, tested, and documented. Contributor terms require separate
+legal review and are not created by this file.

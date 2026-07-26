@@ -1,10 +1,18 @@
-# Commercial transition audit
+# Historical commercial-transition audit
+
+> Historical record: this audit describes the repository before the 26 July
+> 2026 migration to Valence Control. It does not describe the repository's
+> current name, owner, visibility, or licence. See
+> [migration-to-valence-control.md](migration-to-valence-control.md).
 
 Audit date: 2026-07-21
 
-This is a factual repository audit prepared for a possible future transition from the current MIT licence to a source-available commercial model. It is not a legal opinion and does not determine copyright ownership, licence compatibility, or whether relicensing is legally available.
+This factual audit was prepared before the repository transitioned from its
+then-current MIT licence to a proprietary commercial model. It is not a legal
+opinion and does not determine copyright ownership, licence compatibility, or
+whether relicensing was legally available.
 
-The audit was performed against the local repository before this transition work was committed, at checkout commit `af6c054fc932fb0c3d5b4682b2f39f7e981c1e70`. The working tree already contained substantial uncommitted Platform Self-Healing changes before this audit. Those changes are intentionally not treated as a clean release revision.
+The audit was performed against the local repository before this transition work was committed, at checkout commit `af6c054fc932fb0c3d5b4682b2f39f7e981c1e70`. The working tree already contained substantial uncommitted Elsa Platform Self-Healing changes before this audit. Those changes are intentionally not treated as a clean release revision. Paths and identifiers in later revisions have since been renamed; references below describe the repository at audit time unless explicitly marked as resolved.
 
 ## Repository identity
 
@@ -18,7 +26,7 @@ The audit was performed against the local repository before this transition work
 | Default branch revision at audit time | `210d8fa84cb85654ddd29c392bd1f685d3d564f6` (`origin/main`) |
 | Audit checkout revision before transition commits | `af6c054fc932fb0c3d5b4682b2f39f7e981c1e70` |
 | Transition branch tip after documentation commits | `67708b43fa6e757288b4b1bdfc7084d4b0887505` |
-| Current licence | MIT License, from `LICENSE` |
+| Licence at audit time | MIT License, from `LICENSE` |
 | Repository visibility | Public |
 | Local tags | None |
 | Remote tags observed | None from `git ls-remote --tags origin` |
@@ -31,18 +39,18 @@ The GitHub repository metadata identifies `main` as the default branch and the r
 | Path or source | Relevant text or metadata | Required future action |
 | --- | --- | --- |
 | `LICENSE` | Full MIT License text; copyright line is `Copyright (c) 2021 Elsa Workflows` | Keep authoritative until a legally reviewed transition is approved. Preserve for historical MIT revisions. |
-| `README.md` | Now states that the repository is currently MIT-licensed and that a future source-available commercial model is being prepared | Keep wording factual; update only after the final model and effective revision are approved. |
+| `README.md` | At audit time, stated that the repository was MIT-licensed and that a future commercial model was being prepared | Historical observation; the README has since been replaced. |
 | `LICENSING.md` | States that current and previously published revisions remain under MIT and that future terms are not published | Replace or extend only after legal review; it does not modify `LICENSE`. |
 | `legal/COMMERCIAL-LICENSE-PLACEHOLDER.md` | Explicitly says that no commercial licence text is approved and that the file is not a licence | Replace only with an approved document. Do not publish clauses in the placeholder. |
-| `legal/README.md` | Lists possible future legal documents, including licence, commercial, evaluation, production, contributor, and trademark documents | Populate only with reviewed documents. |
-| `src/Elsa.Platform.PackageManifests/Licensing/LicenseManifest.cs` | Defines package-manifest fields named `Expression`, `Url`, and `RequiresAcceptance` | Confirm the contract’s intended meaning and package metadata policy before publishing packages under new terms. This is a data contract, not the repository licence. |
-| `src/Elsa.Platform.PackageManifest.Generator.MSBuild/GenerateElsaPackageManifestTask.cs`, `src/Elsa.Platform.PackageManifest.Generator.Core/Generation/*`, and `src/Elsa.Platform.PackageManifest.Generator.Core/Overrides/*` | Reads or overrides `PackageLicenseExpression` and package-manifest licence metadata | Review generated package metadata and update its source/repository URL and licence behavior when the future model is approved. |
-| `tests/Elsa.Platform.PackageManifest.Generator.MSBuild.Tests/MsBuildGeneratorOptionsMapperTests.cs` and `tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/ProjectPackageMetadataTests.cs` | Test fixtures use the string `MIT` as package metadata | Keep as historical/contract test data until package metadata policy changes; do not interpret this as a repository-wide licence declaration. |
-| `src/Elsa.Platform.Console/package-lock.json` | Dependency metadata contains 284 `MIT`, 14 `ISC`, 7 `Apache-2.0`, 3 `BSD-2-Clause`, 3 `BSD-3-Clause`, 1 `CC-BY-4.0`, 1 `MIT-0`, and 1 `Unlicense` label | Preserve required third-party notices and perform a complete dependency licence review before commercial distribution. |
-| `tests/Elsa.Platform.Console.E2E/package-lock.json` | Dependency metadata contains 3 `Apache-2.0` and 1 `MIT` labels | Include in the dependency review if test or release artifacts redistribute these dependencies. |
+| `legal/README.md` | At audit time, listed possible future legal documents | Historical observation; the directory now points to the active licence and legal-review blocker. |
+| `src/ValenceControl.PackageManifests/Licensing/LicenseManifest.cs` | Defines package-manifest fields named `Expression`, `Url`, and `RequiresAcceptance` | Confirm the contract’s intended meaning and package metadata policy before publishing packages under new terms. This is a data contract, not the repository licence. |
+| `src/ValenceControl.PackageManifest.Generator.MSBuild/GenerateElsaPackageManifestTask.cs`, `src/ValenceControl.PackageManifest.Generator.Core/Generation/*`, and `src/ValenceControl.PackageManifest.Generator.Core/Overrides/*` | Reads or overrides `PackageLicenseExpression` and package-manifest licence metadata | Review generated package metadata and update its source/repository URL and licence behavior when the future model is approved. |
+| `tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests/MsBuildGeneratorOptionsMapperTests.cs` and `tests/ValenceControl.PackageManifest.Generator.Core.Tests/ProjectPackageMetadataTests.cs` | Test fixtures use the string `MIT` as package metadata | Keep as historical/contract test data until package metadata policy changes; do not interpret this as a repository-wide licence declaration. |
+| `src/ValenceControl.Console/package-lock.json` | Dependency metadata contains 284 `MIT`, 14 `ISC`, 7 `Apache-2.0`, 3 `BSD-2-Clause`, 3 `BSD-3-Clause`, 1 `CC-BY-4.0`, 1 `MIT-0`, and 1 `Unlicense` label | Preserve required third-party notices and perform a complete dependency licence review before commercial distribution. |
+| `tests/ValenceControl.Console.E2E/package-lock.json` | Dependency metadata contains 3 `Apache-2.0` and 1 `MIT` labels | Include in the dependency review if test or release artifacts redistribute these dependencies. |
 | NuGet project metadata | No `PackageLicenseExpression`, `PackageLicenseUrl`, SPDX header, or package-level copyright metadata was found in the checked-in project files | Decide and implement package metadata only after the future licence is approved. |
 
-The terms “licence” and “licensing” also occur as package-manifest metadata or runtime entitlement concepts in the files under `specs/001-package-catalog/`, `specs/001-platform-package-catalog-consolidation/`, `specs/002-package-manifest-generator/`, and `specs/010-runtime-image-metadata-api/`, as well as the corresponding API, generator, manifest, and console model files. These references describe product data or planned validation behavior; they should not be confused with a statement that the repository licence has changed.
+The terms “licence” and “licensing” also occur as package-manifest metadata or runtime entitlement concepts in the files under `specs/001-package-catalog/`, `specs/001-valence-control-package-catalog-consolidation/`, `specs/002-package-manifest-generator/`, and `specs/010-runtime-image-metadata-api/`, as well as the corresponding API, generator, manifest, and console model files. These references describe product data or planned validation behavior; they should not be confused with a statement that the repository licence has changed.
 
 ## Copyright and contribution inventory
 
@@ -86,10 +94,10 @@ Human review is required for:
 
 The checked-in publication workflow (`.github/workflows/packages.yml`) explicitly packs:
 
-- `Elsa.Platform.PackageManifests` (the project has no explicit `PackageId` in its project file); and
-- `Elsa.Platform.PackageManifest.Generator`.
+- `ValenceControl.PackageManifests` (the project has no explicit `PackageId` in its project file); and
+- `ValenceControl.PackageManifest.Generator`.
 
-The current source tree also contains four explicitly packable projects: `Elsa.Platform.PackageManifest.Generator`, `Elsa.Platform.Healing.Client`, `Elsa.Platform.Healing.ComponentManifest`, and `Elsa.Platform.Healing.ComponentManifest.Generator.MSBuild`. The Healing projects are not included in the current publication workflow’s explicit pack list. `Elsa.Platform.PackageManifests` is packed by the workflow despite having no explicit package ID or package licence metadata. The workflow publishes preview packages to Feedz.io and release packages to NuGet.org, using `FEEDZ_API_KEY` and `NUGET_API_KEY` secrets.
+The current source tree also contains four explicitly packable projects: `ValenceControl.PackageManifest.Generator`, `ValenceControl.Healing.Client`, `ValenceControl.Healing.ComponentManifest`, and `ValenceControl.Healing.ComponentManifest.Generator.MSBuild`. The Healing projects are not included in the current publication workflow’s explicit pack list. `ValenceControl.PackageManifests` is packed by the workflow despite having no explicit package ID or package licence metadata. The workflow publishes preview packages to Feedz.io and release packages to NuGet.org, using `FEEDZ_API_KEY` and `NUGET_API_KEY` secrets.
 
 The workflow has no licence validation gate, SBOM generation, third-party notice generation, package signing, or provenance attestation step. The root `LICENSE` is not declared as package content in the checked-in packable project files, so package inclusion of the repository notice requires verification.
 
@@ -97,18 +105,22 @@ No GitHub Packages publication configuration was found. `NuGet.config` reference
 
 ### npm
 
-`src/Elsa.Platform.Console/package.json` and `tests/Elsa.Platform.Console.E2E/package.json` are both marked `private: true` or otherwise configured as private development packages. The checked-in lockfiles point to the public npm registry. No npm publication workflow was found.
+`src/ValenceControl.Console/package.json` and `tests/ValenceControl.Console.E2E/package.json` are both marked `private: true` or otherwise configured as private development packages. The checked-in lockfiles point to the public npm registry. No npm publication workflow was found.
 
 ### Containers
 
-- `src/Elsa.Platform.Api/Dockerfile` builds the React console and the .NET API.
+- `src/ValenceControl.Api/Dockerfile` builds the React console and the .NET API.
 - Base images are `node:22-alpine`, `mcr.microsoft.com/dotnet/sdk:10.0.300`, and `mcr.microsoft.com/dotnet/aspnet:10.0`.
 - The base-image references use mutable tags rather than digests.
 - The Dockerfile has no OCI licence/source/revision labels and does not explicitly copy `LICENSE` or third-party notices into the final image.
-- Azure deployment pushes `${AZURE_CONTAINER_REGISTRY_ENDPOINT}/elsa-platform/api:<commit>` to an Azure Container Registry.
-- The infrastructure script uses `src/Elsa.Platform.Api/Dockerfile`.
-- The app-only path in `.github/workflows/azure-api-deploy.yml` currently names `src/Elsa.Platform.PackageCatalog.Api/Dockerfile`, which does not match the checked-in Dockerfile path and should be corrected or confirmed before a release transition.
-- The same workflow tests `tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj`, which is also absent from the checked-in tree.
+- Azure deployment pushes `${AZURE_CONTAINER_REGISTRY_ENDPOINT}/valence-control/api:<commit>` to an Azure Container Registry.
+- The infrastructure script uses `src/ValenceControl.Api/Dockerfile`.
+- At audit time, the app-only path in `.github/workflows/azure-api-deploy.yml`
+  named a Dockerfile that did not exist. The migration corrected the workflow
+  to `src/ValenceControl.Api/Dockerfile`.
+- At audit time, the same workflow named an absent API test project. The
+  migration corrected it to
+  `tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj`.
 - No Docker image licence labels were found.
 
 ### Other artifacts
@@ -117,16 +129,18 @@ No Helm chart or Kubernetes manifest was found. No GitHub Packages reference, re
 
 ## Repository-transfer impact
 
-The current repository is `elsa-workflows/elsa-platform`. A future destination organization and repository name are not yet confirmed and must remain placeholders until approved.
+At audit time, the repository was `elsa-workflows/elsa-platform`. The later
+migration selected and created the canonical destination
+`valence-works/valence-control`.
 
 ### References requiring review
 
-- `docs/platform-integration-packaging.md`, `docs/runtime-transport-trust-policy.md`, `docs/platform-artifact-workflow-e2e-smoke.md`, `src/Elsa.Platform.Healing.Client/README.md`, and multiple specification documents contain `github.com/elsa-workflows/...` links.
-- `docs/deployment-platform-phased-strategy.md` and related ADRs link to other Elsa repositories and should be reviewed separately from the Platform transfer.
+- `docs/valence-control-integration-packaging.md`, `docs/runtime-transport-trust-policy.md`, `docs/valence-control-artifact-workflow-e2e-smoke.md`, `src/ValenceControl.Healing.Client/README.md`, and multiple specification documents contain `github.com/elsa-workflows/...` links.
+- `docs/valence-control-deployment-phased-strategy.md` and related ADRs link to other Elsa repositories and should be reviewed separately from the Platform transfer.
 - `NuGet.config` and `.github/workflows/packages.yml` refer to Feedz organizations and feeds; package ownership, tokens, and publication destinations must be confirmed.
 - The workflow publishes to the Feedz `elsa-3` feed while `NuGet.config` also references an `elsa-4` preview feed; the intended feed and transition ownership need confirmation.
 - Azure deployment uses GitHub Actions environments, repository variables, OIDC identity, Azure resource names, registry permissions, and secrets. These are external configuration and cannot be transferred by editing this repository.
-- The container image path includes the stable `elsa-platform/api` name inside a destination registry and needs an ownership decision.
+- The container image path includes the stable `valence-control/api` name inside a destination registry and needs an ownership decision.
 
 ### GitHub settings and integrations requiring manual verification
 
@@ -187,8 +201,9 @@ The two npm lockfiles expose licence labels locally. The labels observed are MIT
 
 ### Clear as a repository fact
 
-- `LICENSE` remains the MIT License.
-- The repository is public and remains under `elsa-workflows/elsa-platform`.
+- At audit time, `LICENSE` contained the MIT License.
+- The repository was public and remained under
+  `elsa-workflows/elsa-platform` at audit time.
 - No remote transfer, push, force-push, history rewrite, tag push, or organization-setting change was performed.
 - The new documents expressly say that the future model is planned and not yet effective.
 
@@ -198,7 +213,8 @@ The two npm lockfiles expose licence labels locally. The labels observed are MIT
 - The final company-controlled organization and repository name.
 - Current GitHub releases, settings, secrets, environments, branch protection, webhooks, Apps, deploy keys, Pages, and package permissions.
 - Ownership and permitted use of the package-catalog baseline, external Elsa packages, bot-authored commits, and any unrecorded contributions.
-- The incorrect Dockerfile path in the app-only Azure workflow.
+- The incorrect Dockerfile path in the app-only Azure workflow (resolved by the
+  migration).
 
 ### Needs legal review
 

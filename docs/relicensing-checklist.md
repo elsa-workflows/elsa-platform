@@ -1,54 +1,46 @@
-# Relicensing checklist
+# Commercial-licence legal review
 
-All legal decisions in this checklist require qualified legal review. This checklist does not select, draft, or publish a licence.
+The repository now contains the Valence Control Commercial License, but it is
+not ready for commercial distribution. Every item below requires qualified
+legal review.
 
-## Ownership and authority
+## Release blockers
 
-- [ ] Confirm copyright ownership for the repository and each substantial contribution.
-- [ ] Review customer contracts and any source-delivery or licence commitments.
-- [ ] Review employment, contractor, and company IP-assignment records.
-- [ ] Review all external contributions, including bot-authored changes and pull requests.
-- [ ] Review copied, imported, vendored, generated, and shared code.
-- [ ] Review upstream Elsa repositories and third-party source provenance.
-- [ ] Confirm authority for the legal licensor, including whether the intended entity is `Skywalker Digital B.V., trading as Valence Works`.
+- [ ] Verify the legal licensor and replace `[LEGAL ENTITY NAME]` in `LICENSE`
+  and project metadata.
+- [ ] Confirm copyright ownership and relicensing authority for every
+  substantial contribution, imported/shared source, generated source, and
+  bot-assisted change.
+- [ ] Review employment, contractor, customer, and other IP-assignment records.
+- [ ] Confirm that prior MIT-licensed revisions and notices are described
+  accurately.
+- [ ] Approve the licence's proprietary-use restriction, warranty disclaimer,
+  and limitation of liability.
+- [ ] Decide whether additional evaluation, development, production, hosted
+  service, affiliate, contractor, termination, or commercial agreement terms
+  are required in separate documents.
 
-## Dependency and artifact review
+## Third-party review
 
-- [ ] Inventory direct and transitive dependencies.
-- [ ] Review third-party dependency licences and required notices.
-- [ ] Review source-available dependencies and any commercial restrictions.
-- [ ] Review copyleft, attribution, patent, trademark, and notice obligations.
-- [ ] Review Docker base images, operating-system packages, build tools, and generated artifacts.
-- [ ] Review NuGet, npm, Feedz.io, NuGet.org, container, and any other distribution terms.
-- [ ] Decide how third-party notices will be shipped with source, packages, and containers.
+- [ ] Inventory direct and transitive NuGet and npm dependencies.
+- [ ] Obtain the required commercial licence for Fluent Assertions or replace
+  it before commercial use. The test runner currently emits its commercial-use
+  licence warning.
+- [ ] Review and remediate the console dependency audit findings recorded
+  during migration (`1` low, `5` moderate, `4` high, and `1` critical) before
+  release; do not apply breaking dependency upgrades without review.
+- [ ] Review open-source, source-available, proprietary, copyleft, attribution,
+  patent, trademark, and notice obligations.
+- [ ] Review Docker base images, operating-system packages, build tools, and
+  generated artefacts.
+- [ ] Produce and ship the required third-party notice inventory with every
+  applicable package, container, source archive, and distribution.
 
-## Future licence policy
+## Controlled release
 
-- [ ] Choose the source-available model.
-- [ ] Define evaluation use.
-- [ ] Define development use.
-- [ ] Define production use.
-- [ ] Define redistribution rights.
-- [ ] Define modification and fork rights.
-- [ ] Define internal business use.
-- [ ] Define hosted-service use.
-- [ ] Define affiliates and contractors.
-- [ ] Define commercial subscription requirements.
-- [ ] Define termination.
-- [ ] Define warranty and liability terms.
-- [ ] Define governing law.
-- [ ] Define the legal licensor.
-- [ ] Define the effective date and effective commit.
-- [ ] Obtain qualified legal review and written approval.
-
-## Controlled publication transition
-
-- [ ] Confirm the final MIT revision and preserve it with the approved annotated tag.
-- [ ] Replace the MIT licence only after approval; do not remove or rewrite historical notices.
-- [ ] Publish the approved source-available and commercial documents.
-- [ ] Update package and artifact metadata.
-- [ ] Update the README, `LICENSING.md`, documentation, and transition notice.
-- [ ] Publish a clear notice describing the effective revision without claiming that prior MIT releases changed terms.
-- [ ] Create a new release under the approved future licence.
-- [ ] Review and publish future contributor terms before accepting external pull requests.
-- [ ] Verify source archives, packages, containers, documentation, and release notes all identify the same approved effective revision.
+- [ ] Approve the effective commercial revision and any final historical MIT
+  revision marker.
+- [ ] Review package, container, release, and contributor metadata.
+- [ ] Configure company-controlled registries and credentials.
+- [ ] Verify that no CI workflow can publish or deploy without explicit approval.
+- [ ] Obtain written legal approval before publishing any commercial release.

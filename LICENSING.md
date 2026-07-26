@@ -1,11 +1,19 @@
-# Licensing status
+# Licensing
 
-This repository is currently licensed under the MIT License as specified in the `LICENSE` file.
+Valence Control is proprietary software governed by the
+[Valence Control Commercial License](LICENSE). Use requires a separate written
+commercial agreement or other explicit written authorisation from the licensor.
 
-The project owner intends to transition future versions of Elsa Platform to a source-available commercial licensing model. The final licence terms and effective revision have not yet been published.
+The legal licensor could not be verified from authoritative repository,
+organisation, or company documentation. The `[LEGAL ENTITY NAME]` placeholder
+is therefore intentional and must be replaced before release.
 
-Versions and revisions already published under the MIT License remain available under those terms.
+The current licence text is not legal advice and requires review and written
+approval by qualified legal counsel before commercial distribution.
 
-The intended commercial licensing entity is Skywalker Digital B.V., trading as Valence Works.
+Previously published revisions that were made available under the MIT License
+remain available under those historical terms. The current licence does not
+revoke rights already granted for those revisions.
 
-This document is informational and does not replace or modify the current `LICENSE` file.
+Elsa Workflows and all other open-source or third-party components remain
+governed by their respective licences. See [NOTICE.md](NOTICE.md).

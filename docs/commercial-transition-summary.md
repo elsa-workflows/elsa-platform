@@ -1,53 +1,45 @@
-# Commercial transition summary
+# Commercial transition completion summary
 
-## What was inspected
+## Completed changes
 
-- Repository identity, remotes, default branch, current revision, visibility, local and remote tags, and releases.
-- The current `LICENSE`, licensing references, copyright notices, package-manifest licensing metadata, README, contribution controls, and Git history.
-- NuGet project and central package metadata, npm manifests and lockfile licence labels, package publication workflows, container build and deployment paths, Feedz/NuGet references, and external GitHub URLs.
-- GitHub Actions workflows and checked-in repository governance files.
-- Git history authors, package-catalog consolidation evidence, external Elsa repository references, and dependency review gaps.
+- Transferred the existing GitHub repository object from
+  `elsa-workflows/elsa-platform` to `valence-works/valence-control`, preserving
+  Git history and GitHub metadata supported by repository transfer.
+- Renamed the product to Valence Control and product-owned .NET identifiers to
+  the `ValenceControl` root.
+- Replaced the repository's MIT licence with the Valence Control Commercial
+  License.
+- Added `NOTICE.md` and updated `LICENSING.md`, `legal/README.md`,
+  `CONTRIBUTING.md`, and the README product boundary.
+- Preserved upstream Elsa Workflows identities and third-party licence notices.
 
-## What changed on this branch
+## Deliberate clean break
 
-- Added `LICENSING.md` with non-final transition information.
-- Added `legal/README.md` and the exact non-licence `legal/COMMERCIAL-LICENSE-PLACEHOLDER.md`.
-- Added `CONTRIBUTING.md` with a temporary licensing-transition notice and no CLA, copyright assignment, or DCO.
-- Added `docs/commercial-transition-audit.md`.
-- Added `docs/repository-transfer-checklist.md`.
-- Added `docs/relicensing-checklist.md`.
-- Added this summary.
-- Added a small `Licensing status` section to `README.md`; existing README changes in the working tree were preserved.
-- Created the local branch `chore/commercial-license-transition`.
+The codebase was unreleased, so product-owned package IDs, persisted
+identifiers, wire contracts, routes, configuration keys, infrastructure names,
+and deployment identifiers changed without compatibility aliases. Existing
+development environments must be recreated or reconfigured.
 
-## What was intentionally not changed
+Previously published revisions remain governed by the terms under which they
+were made available. No history was rewritten and no release, package,
+container, or deployment artefact was published during the migration.
 
-- `LICENSE` remains the MIT License.
-- No commercial or source-available licence text was drafted.
-- No pricing, production-use restriction, commercial-use restriction, or commercial badge was added.
-- No historical copyright or licence notice was removed.
-- No Git history, tags, branches, releases, packages, GitHub settings, organization settings, repository transfer, push, or pull request was changed.
-- No CLA, copyright assignment, or DCO was introduced.
+## Legal blocker
 
-## Current licence and final-MIT tag status
+The legal licensor could not be verified from authoritative repository,
+organisation, or company documentation. The commercial licence therefore uses
+`[LEGAL ENTITY NAME]`.
 
-The current repository remains MIT-licensed under `LICENSE`. The default branch revision observed at audit time is `210d8fa84cb85654ddd29c392bd1f685d3d564f6` (`origin/main`), authored by Sipke Schoorstra with subject `Updated AGENTS.md (#78)`. The audit checkout was the separate self-healing revision `af6c054fc932fb0c3d5b4682b2f39f7e981c1e70`. The working tree was dirty before this task, so no revision is marked as the final MIT revision. The local and remote `last-mit-licensed-revision` tag did not exist and was not created.
+Qualified legal counsel must verify the licensor, replace the placeholder,
+approve the licence, confirm relicensing authority for all contributions and
+imported code, and review the dependency and third-party notice inventory before
+commercial distribution.
 
-## Contributor findings
+## GitHub follow-up
 
-The local history contains 563 commits by Sipke Schoorstra and two commits by `copilot-swe-agent[bot]`. No explicit CLA, DCO, copyright assignment, `.mailmap`, CODEOWNERS, issue template, or pull-request template was found. Commit authorship is not treated as proof of ownership. The package-catalog import baseline and external Elsa packages require provenance review.
-
-## Potential blockers and legal-review items
-
-- Final licence selection, legal review, licensor identity, permitted-use policy, and effective revision are unresolved.
-- Copyright and contribution authority for all code, imported/shared code, and bot-assisted changes is not documented.
-- NuGet, transitive dependency, npm attribution, and container base-image review is incomplete.
-- The destination GitHub organization and repository name are not confirmed.
-- Current GitHub settings, secrets, Apps, webhooks, deploy keys, environments, branch protections, Pages, package permissions, and releases require manual inventory.
-- The app-only Azure workflow references `src/Elsa.Platform.PackageCatalog.Api/Dockerfile`, while the checked-in Dockerfile is `src/Elsa.Platform.Api/Dockerfile`; this should be resolved before release automation is relied on.
-- The Azure workflow also references the absent `tests/Elsa.Platform.PackageCatalog.Api.Tests/Elsa.Platform.PackageCatalog.Api.Tests.csproj`.
-- The package workflow has no licence validation, SBOM, third-party notice, signing, or provenance step, and the container has no explicit licence/source/revision labels or copied licence notices.
-
-## Recommended next action
-
-Have the repository owner confirm a clean, intended final MIT revision and contributor/ownership records. Then obtain qualified legal review of the relicensing model and dependency inventory. Keep this branch local until those decisions are complete; do not push the transition tag or transfer the repository as part of this preparation.
+Changing the repository from public to private detached the public fork network
+and removed public star/watcher relationships where GitHub requires it. The
+source repository's Copilot code-review ruleset became unavailable for the
+private destination under the organisation's current GitHub plan. Environment
+names transferred, but their reviewers, credentials, OIDC trust, and deployment
+permissions require manual verification before use.
