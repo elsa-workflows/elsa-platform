@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\ValenceControl.PackageCatalog.Abstractions\ValenceControl.PackageCatalog.Abstractions.csproj" />
+    <ProjectReference Include="..\ValenceControl.PackageManifests\ValenceControl.PackageManifests.csproj" />
+    <ProjectReference Include="..\ValenceControl.PackageCatalog.Core\ValenceControl.PackageCatalog.Core.csproj" />
+    <ProjectReference Include="..\ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore\ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\ValenceControl.PackageCatalog.Persistence.SqliteMigrations\ValenceControl.PackageCatalog.Persistence.SqliteMigrations.csproj" />
+    <ProjectReference Include="..\ValenceControl.PackageCatalog.Persistence.SqlServerMigrations\ValenceControl.PackageCatalog.Persistence.SqlServerMigrations.csproj" />
+    <ProjectReference Include="..\ValenceControl.PackageCatalog.Sources.NuGet\ValenceControl.PackageCatalog.Sources.NuGet.csproj" />
+    <ProjectReference Include="..\ValenceControl.ServiceDefaults\ValenceControl.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\ValenceControl.Deployment.Core\ValenceControl.Deployment.Core.csproj" />
+    <ProjectReference Include="..\ValenceControl.Deployment.Artifacts\ValenceControl.Deployment.Artifacts.csproj" />
+    <ProjectReference Include="..\ValenceControl.Healing.Abstractions\ValenceControl.Healing.Abstractions.csproj" />
+    <ProjectReference Include="..\ValenceControl.Healing.Agent\ValenceControl.Healing.Agent.csproj" />
+    <ProjectReference Include="..\ValenceControl.Healing.ComponentManifest\ValenceControl.Healing.ComponentManifest.csproj" />
+    <ProjectReference Include="..\ValenceControl.Healing.Core\ValenceControl.Healing.Core.csproj" />
+    <ProjectReference Include="..\ValenceControl.Healing.GitHub\ValenceControl.Healing.GitHub.csproj" />
+    <ProjectReference Include="..\ValenceControl.Healing.OpenTelemetry\ValenceControl.Healing.OpenTelemetry.csproj" />
+    <ProjectReference Include="..\ValenceControl.Healing.Persistence.EntityFrameworkCore\ValenceControl.Healing.Persistence.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\ValenceControl.Healing.Persistence.SqliteMigrations\ValenceControl.Healing.Persistence.SqliteMigrations.csproj" />
+    <ProjectReference Include="..\ValenceControl.Healing.Persistence.SqlServerMigrations\ValenceControl.Healing.Persistence.SqlServerMigrations.csproj" />
+    <ProjectReference Include="..\ValenceControl.RuntimeBuilder.Abstractions\ValenceControl.RuntimeBuilder.Abstractions.csproj" />
+    <ProjectReference Include="..\ValenceControl.RuntimeBuilder.Core\ValenceControl.RuntimeBuilder.Core.csproj" />
+    <ProjectReference Include="..\ValenceControl.RuntimeBuilder.DeploymentTemplates\ValenceControl.RuntimeBuilder.DeploymentTemplates.csproj" />
+    <ProjectReference Include="..\ValenceControl.Weaver.Core\ValenceControl.Weaver.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ConsoleLogStreaming.AspNetCore" />
+    <PackageReference Include="JetBrains.Annotations" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.OpenApi" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
+  </ItemGroup>
+</Project>

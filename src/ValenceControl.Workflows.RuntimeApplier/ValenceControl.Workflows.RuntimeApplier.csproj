@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\ValenceControl.Deployment.Artifacts\ValenceControl.Deployment.Artifacts.csproj" />
+    <ProjectReference Include="..\ValenceControl.Deployment.Abstractions\ValenceControl.Deployment.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NuGet.Versioning" />
+  </ItemGroup>
+</Project>

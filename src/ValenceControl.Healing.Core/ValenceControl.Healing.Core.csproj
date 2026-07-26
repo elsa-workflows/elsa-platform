@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\ValenceControl.Healing.Abstractions\ValenceControl.Healing.Abstractions.csproj" />
+    <ProjectReference Include="..\ValenceControl.Healing.ComponentManifest\ValenceControl.Healing.ComponentManifest.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+</Project>

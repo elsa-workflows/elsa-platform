@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <PackageId>ValenceControl.Healing.ComponentManifest.Generator.MSBuild</PackageId>
+    <Description>MSBuild task package for generating Valence Control healing component manifests.</Description>
+    <PackageTags>elsa;valence-control;healing;manifest;msbuild</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;NU5100;NU5128</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ValenceControl.Healing.ComponentManifest\ValenceControl.Healing.ComponentManifest.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Build.Framework" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="build/**/*.*" Pack="true" PackagePath="build/" />
+    <None Include="buildTransitive/**/*.*" Pack="true" PackagePath="buildTransitive/" />
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <Content Include="bin/$(Configuration)/$(TargetFramework)/*.dll"
+             Pack="true"
+             PackagePath="tasks/"
+             Condition="Exists('bin/$(Configuration)/$(TargetFramework)/ValenceControl.Healing.ComponentManifest.Generator.MSBuild.dll')" />
+    <Content Include="bin/$(Configuration)/$(TargetFramework)/ValenceControl.Healing.ComponentManifest.Generator.MSBuild.deps.json"
+             Pack="true"
+             PackagePath="tasks/"
+             Condition="Exists('bin/$(Configuration)/$(TargetFramework)/ValenceControl.Healing.ComponentManifest.Generator.MSBuild.deps.json')" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,114 @@
+using System.Security.Cryptography;
+using System.Text.Json;
+using ValenceControl.Deployment.Abstractions.Artifacts;
+using ValenceControl.Deployment.Artifacts;
+
+namespace ValenceControl.Workflows.RuntimeApplier;
+
+public sealed class WorkflowArtifactRuntimeContractValidator(WorkflowArtifactRuntimeOptions options) : IWorkflowArtifactSchemaValidator
+{
+    private readonly WorkflowArtifactRuntimeCapability _capability = WorkflowArtifactRuntimeCapability.FromOptions(options);
+
+    public WorkflowArtifactValidationResult Validate(ArtifactEnvelope envelope, WorkflowArtifactPayload payload) =>
+        Validate(envelope, payload, _capability);
+
+    public Task<WorkflowArtifactValidationResult> ValidateAsync(
+        ArtifactEnvelope envelope,
+        WorkflowArtifactPayload payload,
+        WorkflowArtifactRuntimeCapability capability,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(Validate(envelope, payload, capability));
+
+    private WorkflowArtifactValidationResult Validate(
+        ArtifactEnvelope envelope,
+        WorkflowArtifactPayload payload,
+        WorkflowArtifactRuntimeCapability capability)
+    {
+        if (!capability.SupportsArtifactType(envelope.ArtifactTypeId))
+        {
+            return WorkflowArtifactValidationResult.Invalid(
+                WorkflowArtifactValidationStatus.UnsupportedArtifactType,
+                Error("workflow-artifact.unsupported-type", "Workflow artifact type is not supported by this runtime."));
+        }
+
+        if (!capability.SupportedSchemaVersions.Contains(envelope.ArtifactSchemaVersion, StringComparer.OrdinalIgnoreCase))
+        {
+            return WorkflowArtifactValidationResult.Invalid(
+                WorkflowArtifactValidationStatus.UnsupportedSchema,
+                Error("workflow-artifact.unsupported-schema", "Workflow artifact schema version is not supported by this runtime."));
+        }
+
+        if (!capability.Supports(envelope))
+        {
+            return WorkflowArtifactValidationResult.Invalid(
+                WorkflowArtifactValidationStatus.MissingCapability,
+                Error("workflow-artifact.missing-capability", "Workflow artifact requires capabilities not advertised by this runtime."));
+        }
+
+        if (payload.SizeBytes > options.MaxPayloadBytes)
+        {
+            return WorkflowArtifactValidationResult.Invalid(
+                WorkflowArtifactValidationStatus.PayloadTooLarge,
+                Error("workflow-artifact.payload-too-large", "Workflow artifact payload exceeds the configured runtime size limit."));
+        }
+
+        var observedDigest = ComputeDigest(payload.Content);
+        if (!DigestEquals(observedDigest, envelope.ContentDigest))
+        {
+            return WorkflowArtifactValidationResult.Invalid(
+                WorkflowArtifactValidationStatus.DigestMismatch,
+                Error("workflow-artifact.digest-mismatch", "Workflow artifact payload digest does not match the submitted artifact digest."),
+                observedDigest);
+        }
+
+        if (envelope.PayloadReference.ReferenceDigest is { } referenceDigest && !DigestEquals(observedDigest, referenceDigest))
+        {
+            return WorkflowArtifactValidationResult.Invalid(
+                WorkflowArtifactValidationStatus.DigestMismatch,
+                Error("workflow-artifact.reference-digest-mismatch", "Workflow artifact payload digest does not match the payload reference digest."),
+                observedDigest);
+        }
+
+        if (!IsJsonObject(payload.Content))
+        {
+            return WorkflowArtifactValidationResult.Invalid(
+                WorkflowArtifactValidationStatus.InvalidPayload,
+                Error("workflow-artifact.invalid-payload", "Workflow artifact payload is not a valid JSON object."),
+                observedDigest);
+        }
+
+        return WorkflowArtifactValidationResult.Valid(observedDigest);
+    }
+
+    public static WorkflowArtifactDiagnostic SafeDiagnostic(
+        string code,
+        WorkflowArtifactDiagnosticSeverity severity,
+        string message) =>
+        new(code, severity, WorkflowArtifactRuntimeDiagnosticSanitizer.SafeMessage(message));
+
+    public static ArtifactDigest ComputeDigest(byte[] payload)
+    {
+        var hash = SHA256.HashData(payload);
+        return new ArtifactDigest("sha256", Convert.ToHexString(hash).ToLowerInvariant());
+    }
+
+    private static bool DigestEquals(ArtifactDigest left, ArtifactDigest right) =>
+        left.Algorithm.Equals(right.Algorithm, StringComparison.OrdinalIgnoreCase)
+        && left.Value.Equals(right.Value, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsJsonObject(byte[] payload)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            return document.RootElement.ValueKind == JsonValueKind.Object;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static WorkflowArtifactDiagnostic Error(string code, string message) =>
+        SafeDiagnostic(code, WorkflowArtifactDiagnosticSeverity.Error, message);
+}

@@ -1,0 +1,234 @@
+using System.Net;
+using ValenceControl.Api.Workspace;
+using ValenceControl.Deployment.Core.Cockpit;
+using ValenceControl.Deployment.Core.Workspace;
+using ValenceControl.PackageCatalog.Core.Accounts;
+using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
+namespace ValenceControl.Api.Tests;
+
+public sealed class WorkspaceDeploymentEngineHealthTests
+{
+    [Fact]
+    public async Task Register_engine_verifies_health_immediately()
+    {
+        await using var app = new ControlApiTestApplication(configureServices: services =>
+        {
+            services.RemoveAll<IEngineHealthProbe>();
+            services.AddSingleton<IEngineHealthProbe>(new StubProbe(new EngineHealthProbeResult(
+                true,
+                "Elsa 4.2.0",
+                CertificateStatus.Trusted,
+                CredentialVerificationStatus.Verified,
+                "Endpoint responded successfully.")));
+        });
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("register-health-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var environment = await SeedEnvironmentAsync(app, workspaceId);
+
+        var response = await owner.PostControlJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/environments/{environment.Id}/engines",
+            EngineRequest("claims-prod"));
+        var created = await response.Content.ReadControlJsonAsync<WorkspaceWorkflowEngine>();
+        var cockpit = await owner.GetControlJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        created!.Health.Should().Be(DeploymentHealth.Healthy);
+        created.LastVerificationAt.Should().NotBeNull();
+        cockpit!.Engines.Should().ContainSingle(x =>
+            x.Name == "claims-prod"
+            && x.Health == DeploymentHealth.Healthy
+            && x.Endpoint.Version == "Elsa 4.2.0"
+            && x.LastVerificationAt != null
+            && x.VerificationMessage == "Endpoint responded successfully.");
+    }
+
+    [Fact]
+    public async Task Update_engine_verifies_health_immediately()
+    {
+        await using var app = new ControlApiTestApplication(configureServices: services =>
+        {
+            services.RemoveAll<IEngineHealthProbe>();
+            services.AddSingleton<IEngineHealthProbe>(new StubProbe(new EngineHealthProbeResult(
+                true,
+                "Elsa 4.3.0",
+                CertificateStatus.Trusted,
+                CredentialVerificationStatus.Verified,
+                "Endpoint responded successfully.")));
+        });
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("update-health-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var engine = await SeedEngineAsync(app, workspaceId);
+
+        var response = await owner.PutControlJsonAsync(
+            $"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}",
+            EngineRequest("claims-prod-updated"));
+        var updated = await response.Content.ReadControlJsonAsync<WorkspaceWorkflowEngine>();
+        var cockpit = await owner.GetControlJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        updated!.Health.Should().Be(DeploymentHealth.Healthy);
+        updated.LastVerificationAt.Should().NotBeNull();
+        cockpit!.Engines.Should().ContainSingle(x =>
+            x.Id == engine.Id.ToString("D")
+            && x.Name == "claims-prod-updated"
+            && x.Health == DeploymentHealth.Healthy
+            && x.Endpoint.Version == "Elsa 4.3.0"
+            && x.LastVerificationAt != null
+            && x.VerificationMessage == "Endpoint responded successfully.");
+    }
+
+    [Fact]
+    public async Task Owner_can_verify_engine_health_and_reload_cockpit_metadata()
+    {
+        await using var app = new ControlApiTestApplication(configureServices: services =>
+        {
+            services.RemoveAll<IEngineHealthProbe>();
+            services.AddSingleton<IEngineHealthProbe>(new StubProbe(new EngineHealthProbeResult(
+                true,
+                "Elsa 4.1.0",
+                CertificateStatus.Trusted,
+                CredentialVerificationStatus.Verified,
+                "Endpoint responded successfully.")));
+        });
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("health-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var engine = await SeedEngineAsync(app, workspaceId);
+
+        var response = await owner.PostAsync($"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}/verify", null);
+        var result = await response.Content.ReadControlJsonAsync<EngineHealthResult>();
+        var cockpit = await owner.GetControlJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        result!.Health.Should().Be(DeploymentHealth.Healthy);
+        result.Version.Should().Be("Elsa 4.1.0");
+        cockpit!.Engines.Should().ContainSingle(x =>
+            x.Id == engine.Id.ToString("D")
+            && x.Health == DeploymentHealth.Healthy
+            && x.VerificationMessage == "Endpoint responded successfully.");
+    }
+
+    [Fact]
+    public async Task Manual_verification_requires_setup_permission_for_readers()
+    {
+        await using var app = new ControlApiTestApplication(configureServices: services =>
+        {
+            services.RemoveAll<IEngineHealthProbe>();
+            services.AddSingleton<IEngineHealthProbe>(new StubProbe(new EngineHealthProbeResult(
+                true,
+                null,
+                CertificateStatus.Trusted,
+                CredentialVerificationStatus.Verified,
+                "Endpoint responded successfully.")));
+        });
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("health-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var engine = await SeedEngineAsync(app, workspaceId);
+        await app.AddWorkspaceMemberAsync(workspaceId, "health-reader", WorkspaceRole.Reader);
+
+        var response = await app.CreateTrustedWorkspaceClient("health-reader")
+            .PostAsync($"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}/verify", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Heartbeat_rejects_stale_updates()
+    {
+        await using var app = new ControlApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("heartbeat-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var engine = await SeedEngineAsync(app, workspaceId);
+        var heartbeatAt = DateTimeOffset.Parse("2026-05-26T10:00:00Z");
+        var request = new WorkspaceEngineHeartbeatRequest(
+            engine.EnvironmentId,
+            "Elsa 4.1.0",
+            CertificateStatus.Trusted,
+            CredentialVerificationStatus.Verified,
+            heartbeatAt,
+            null,
+            "Heartbeat accepted.");
+
+        var accepted = await owner.PostControlJsonAsync($"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}/heartbeat", request);
+        var stale = await owner.PostControlJsonAsync($"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}/heartbeat", request);
+
+        accepted.StatusCode.Should().Be(HttpStatusCode.OK);
+        stale.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task Heartbeat_rejects_cross_workspace_engine_ids()
+    {
+        await using var app = new ControlApiTestApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("heartbeat-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        var engine = await SeedEngineAsync(app, workspaceId);
+        var otherOwner = app.CreateTrustedWorkspaceClient("other-heartbeat-owner");
+        var otherWorkspaceId = await otherOwner.GetDefaultWorkspaceIdAsync();
+
+        var response = await otherOwner.PostControlJsonAsync(
+            $"/api/workspaces/{otherWorkspaceId}/deployments/engines/{engine.Id}/heartbeat",
+            new WorkspaceEngineHeartbeatRequest(
+                engine.EnvironmentId,
+                "Elsa 4.1.0",
+                CertificateStatus.Trusted,
+                CredentialVerificationStatus.Verified,
+                DateTimeOffset.Parse("2026-05-26T10:00:00Z"),
+                null,
+                "Heartbeat accepted."));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    private static async Task<WorkspaceWorkflowEngine> SeedEngineAsync(ControlApiTestApplication app, Guid workspaceId)
+    {
+        var environment = await SeedEnvironmentAsync(app, workspaceId);
+        await using var scope = app.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IWorkspaceDeploymentStore>();
+        return await store.RegisterEngineAsync(
+            workspaceId,
+            new RegisterWorkflowEngineRequest(
+                environment.Id,
+                "claims-prod",
+                "https://workflows.example.test/elsa",
+                "westeurope",
+                "Azure Key Vault",
+                "kv://claims/prod/elsa-api",
+                [new EngineCapability("engine.reload-configuration", "Reload engine configuration", CapabilityBoundary.EngineApi)],
+                [new RuntimeControl("reload-configuration", "Reload Configuration", CapabilityBoundary.EngineApi, "engine.reload-configuration", "Reloads engine API configuration.")],
+                null));
+    }
+
+    private static async Task<WorkspaceDeploymentEnvironment> SeedEnvironmentAsync(ControlApiTestApplication app, Guid workspaceId)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IWorkspaceDeploymentStore>();
+        var application = await store.CreateApplicationAsync(workspaceId, new CreateWorkflowApplicationRequest("Claims Operations", null, null));
+        return await store.CreateEnvironmentAsync(workspaceId, new CreateDeploymentEnvironmentRequest(application.Id, "Prod", EnvironmentTier.Production));
+    }
+
+    private static WorkspaceWorkflowEngineRequest EngineRequest(string name) =>
+        new(
+            name,
+            "https://workflows.example.test/elsa",
+            "westeurope",
+            "Azure Key Vault",
+            "kv://claims/prod/elsa-api",
+            [new EngineCapability("engine.reload-configuration", "Reload engine configuration", CapabilityBoundary.EngineApi)],
+            [new RuntimeControl("reload-configuration", "Reload Configuration", CapabilityBoundary.EngineApi, "engine.reload-configuration", "Reloads engine API configuration.")],
+            null);
+
+    private sealed class StubProbe(EngineHealthProbeResult result) : IEngineHealthProbe
+    {
+        public Task<EngineHealthProbeResult> ProbeAsync(WorkspaceWorkflowEngine engine, CancellationToken cancellationToken = default) =>
+            Task.FromResult(result);
+    }
+}

@@ -1,6 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <ProjectReference Include="..\Elsa.Platform.Deployment.Artifacts\Elsa.Platform.Deployment.Artifacts.csproj" />
-    <ProjectReference Include="..\Elsa.Platform.Deployment.Abstractions\Elsa.Platform.Deployment.Abstractions.csproj" />
-  </ItemGroup>
-</Project>
