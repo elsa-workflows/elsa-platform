@@ -1,6 +1,6 @@
-# Platform Healing: Security and Operations
+# Valence Control Healing: Security and Operations
 
-This document defines the production trust model for Platform Healing and the operator response when a boundary fails. Read [Getting Started](getting-started.md) for configuration and staged enablement.
+This document defines the production trust model for Valence Control Healing and the operator response when a boundary fails. Read [Getting Started](getting-started.md) for configuration and staged enablement.
 
 ## Security Invariants
 
@@ -9,8 +9,8 @@ The following rules are non-negotiable:
 - Only post-redaction telemetry or an authorized explicit incident report can enter Healing.
 - Monitored applications cannot choose repair repositories, workflows, branches, policies, or merge behavior.
 - Repair agents never receive GitHub App credentials, installation tokens, deployment credentials, or unrestricted workspace access.
-- Repository, telemetry, workflow, provider, and model content is untrusted data, never Platform instructions.
-- Platform independently parses and validates every patch before repository mutation.
+- Repository, telemetry, workflow, provider, and model content is untrusted data, never Valence Control instructions.
+- Valence Control independently parses and validates every patch before repository mutation.
 - Missing, failed, stale, ambiguous, or unknown automatic-merge evidence denies automatic merge.
 - Merge is not healing; per-environment deployment and positive verification are required.
 - Every security-sensitive decision is workspace-scoped, idempotent where applicable, and append-only audited.
@@ -19,13 +19,13 @@ The following rules are non-negotiable:
 
 | Boundary | Accepted authority | Rejected authority |
 | --- | --- | --- |
-| Telemetry intake | Authenticated telemetry source scoped to workspace/application/environment; Platform redaction and signal profile. | Repository routing, commands, credentials, or unbounded payloads embedded in logs. |
+| Telemetry intake | Authenticated telemetry source scoped to workspace/application/environment; Valence Control redaction and signal profile. | Repository routing, commands, credentials, or unbounded payloads embedded in logs. |
 | Component attribution | Verified revision manifest plus deterministic stack/package/assembly evidence. | Repository suggestions in a manifest as authorization. |
 | Repair authority | Active, owner-approved source ownership binding and trusted provider/path/evidence/merge policies. | GitHub issue text, labels, source files, agent output, or conflicting bindings. |
-| Repair workflow | Signed GitHub OIDC claims bound to repository, workflow, immutable revision, run, attempt, audience, and nonce. | Long-lived workflow secret or bearer token with general Platform access. |
+| Repair workflow | Signed GitHub OIDC claims bound to repository, workflow, immutable revision, run, attempt, audience, and nonce. | Long-lived workflow secret or bearer token with general Valence Control access. |
 | Proposal | Bounded inert result envelope associated with one leased attempt. | Tool calls, natural-language commands, direct Git mutation, or claims not supported by structured evidence. |
-| Publication | Trusted Platform publisher using a just-in-time repository-scoped GitHub App token. | Agent- or runner-held write token, unsafe diff, stale target, or self-modifying guardrail change. |
-| Human command | Verified webhook, repository permission snapshot, linked Platform identity, workspace permission, and confirmation when required. | Comment or label text by itself. |
+| Publication | Trusted Valence Control publisher using a just-in-time repository-scoped GitHub App token. | Agent- or runner-held write token, unsafe diff, stale target, or self-modifying guardrail change. |
+| Human command | Verified webhook, repository permission snapshot, linked Valence Control identity, workspace permission, and confirmation when required. | Comment or label text by itself. |
 | Deployment | Authenticated deployment identity and idempotent observation. | Agent claim that a revision was deployed or healed. |
 
 ## Privacy and Redaction
@@ -41,7 +41,7 @@ Ordinary incident, agent, GitHub, audit, and usage projections must exclude:
 
 Evidence bundles are immutable, bounded, redacted, tiered, expiring, and tied to one attempt. They carry provenance, digest, and explicit omitted/truncated markers. Evidence elevation requires `healing.evidence.elevate`, a stated purpose, requested fields/tier, target-bound confirmation, and an explicit host authorization policy. The default authorization policy denies elevation.
 
-Managed proposal source context is a separate untrusted boundary. The repository workflow reads only bounded .NET source and project files from immutable Git blobs, excludes configuration and credential-shaped paths, and never executes collector-time repository code. Platform validates the original bundle digest, then omits any file containing credential markers, private-key material, token-shaped values, credential assignments, credential-bearing URLs, or unsafe control characters before constructing an inference prompt. Omission reduces analysis quality but never relaxes the no-secret rule.
+Managed proposal source context is a separate untrusted boundary. The repository workflow reads only bounded .NET source and project files from immutable Git blobs, excludes configuration and credential-shaped paths, and never executes collector-time repository code. Valence Control validates the original bundle digest, then omits any file containing credential markers, private-key material, token-shaped values, credential assignments, credential-bearing URLs, or unsafe control characters before constructing an inference prompt. Omission reduces analysis quality but never relaxes the no-secret rule.
 
 If sensitive text appears in an incident, agent input, issue, PR, or ordinary audit view:
 
@@ -55,9 +55,9 @@ Do not copy the sensitive value into a ticket, chat, audit reason, or test fixtu
 
 ## Credentials and GitHub App Configuration
 
-Platform stores stable credential references. Secret values remain in a host-owned provider such as Azure Key Vault, Kubernetes Secrets, a managed identity service, or an equivalent protected store. Follow the broader [runtime transport trust policy](../runtime-transport-trust-policy.md) for rotation and safe diagnostics.
+Valence Control stores stable credential references. Secret values remain in a host-owned provider such as Azure Key Vault, Kubernetes Secrets, a managed identity service, or an equivalent protected store. Follow the broader [runtime transport trust policy](../runtime-transport-trust-policy.md) for rotation and safe diagnostics.
 
-Install the GitHub App only on explicitly repairable repositories. Request only the permissions required by enabled capabilities. Platform narrows installation tokens to one repository and provider operation, holds them only in memory for that operation, and discards them afterward.
+Install the GitHub App only on explicitly repairable repositories. Request only the permissions required by enabled capabilities. Valence Control narrows installation tokens to one repository and provider operation, holds them only in memory for that operation, and discards them afterward.
 
 Operational requirements:
 
@@ -65,14 +65,14 @@ Operational requirements:
 - Rotate secrets without changing incident, binding, or provider identity records.
 - Validate the immutable GitHub repository identity after installation and after any ownership transfer.
 - Verify webhook HMAC before parsing JSON and reject duplicate delivery IDs.
-- Keep OIDC audience unique to the Platform Healing workload exchange.
+- Keep OIDC audience unique to the Valence Control Healing workload exchange.
 - Bind workflow identity, workflow reference, and workflow revision; do not authorize a mutable default branch alone.
 - Never put evidence, prompts, GitHub tokens, or secrets in the workflow-dispatch payload.
-- Link GitHub actor IDs to Platform accounts explicitly before accepting provider-originated human commands; revoke the link when membership or provider access changes.
+- Link GitHub actor IDs to Valence Control accounts explicitly before accepting provider-originated human commands; revoke the link when membership or provider access changes.
 
 ## Package, Path, and Policy Isolation
 
-Source ownership bindings determine which components Platform may repair. Prefer exact component/package identifiers or narrow globs. A binding is active only when its provider connection is authorized, immutable repository identity matches, referenced policies are trusted, owner approval is present, and no conflicting authority overlaps it.
+Source ownership bindings determine which components Valence Control may repair. Prefer exact component/package identifiers or narrow globs. A binding is active only when its provider connection is authorized, immutable repository identity matches, referenced policies are trusted, owner approval is present, and no conflicting authority overlaps it.
 
 Path policy is an allow-list plus independent deny rules and limits. Even an allowed root cannot override hard safety checks. The publisher rejects:
 
@@ -80,7 +80,7 @@ Path policy is an allow-list plus independent deny rules and limits. Even an all
 - binary patches, symlinks, submodules, and unsafe file modes;
 - forbidden renames and excessive files, lines, or bytes;
 - changes outside allowed roots or within forbidden roots;
-- Platform-supplied Healing workflows;
+- Valence Control-supplied Healing workflows;
 - publisher, permission, evidence, validation, CODEOWNERS, and branch-protection guardrails;
 - stale base/target revisions or a revoked/suspended authority.
 
@@ -112,7 +112,7 @@ Unreproduced and revision-unverified repairs remain draft and human-merge-only e
 
 Stops are hierarchical:
 
-1. `Healing:PlatformKillSwitch` stops Healing mutation across the Platform host.
+1. `Healing:ControlKillSwitch` stops Healing mutation across the Valence Control host.
 2. Workspace emergency stop applies to all Healing applications in that workspace.
 3. Application emergency stop applies to one application.
 4. Environment kill switch applies to the selected application environment.
@@ -182,7 +182,7 @@ Authorization failures deliberately do not reveal whether a cross-workspace reso
 
 ### Worker or provider outage
 
-Durable inbox leases and provider-operation idempotency allow safe restart. Restore the dependency, confirm expired leases can be reclaimed, inspect retry/dead-letter state and budgets, then restart workers. Avoid manually inserting/deleting Healing rows or recreating GitHub resources. The last durable Platform state is authoritative; UI projections may show a stale timestamp until refreshed.
+Durable inbox leases and provider-operation idempotency allow safe restart. Restore the dependency, confirm expired leases can be reclaimed, inspect retry/dead-letter state and budgets, then restart workers. Avoid manually inserting/deleting Healing rows or recreating GitHub resources. The last durable Valence Control state is authoritative; UI projections may show a stale timestamp until refreshed.
 
 ## Rollout and Release Gate
 
@@ -199,15 +199,15 @@ Use progressive exposure with explicit rollback criteria:
 
 At each stage, measure acceptance-to-projection latency, deduplication, exclusions, redaction failures, attribution ambiguity, provider retries, budgets, stale projections, verification recurrence, and operator response time. Stop progression on any secret leak, cross-workspace disclosure, duplicate mutation, ambiguous authority, unsafe publisher acceptance, auto-merge fail-open result, or unverifiable environment closure.
 
-Before each production release, run the [security negative matrix and real GitHub sandbox gate](../../specs/039-platform-self-healing/quickstart.md#scenario-5-security-negative-matrix). Preserve evidence that kill switches, credential rotation, provider suspension, idempotent retry, and confirmed resume were exercised.
+Before each production release, run the [security negative matrix and real GitHub sandbox gate](../../specs/039-valence-control-self-healing/quickstart.md#scenario-5-security-negative-matrix). Preserve evidence that kill switches, credential rotation, provider suspension, idempotent retry, and confirmed resume were exercised.
 
 ## Known Limitations
 
 - GitHub is the only v1 provider; provider-neutral core contracts do not imply another adapter is production-ready.
-- Platform does not ingest from arbitrary third-party log stores in v1.
+- Valence Control does not ingest from arbitrary third-party log stores in v1.
 - Exact producing revision and deterministic reproduction are not always available. Those cases cannot auto-merge.
 - Agent analysis is evidence, not authority. The trusted publisher and merge policy recompute safety decisions.
-- Platform does not deploy, stop rollouts, or roll back.
+- Valence Control does not deploy, stop rollouts, or roll back.
 - Default evidence elevation denies all requests until the host supplies an explicit authorizer.
-- An external provider outage can delay projection even though Platform has durably accepted the operation.
+- An external provider outage can delay projection even though Valence Control has durably accepted the operation.
 - Safe audit views are intentionally insufficient for raw-forensics use; protected telemetry/provider systems retain that responsibility.

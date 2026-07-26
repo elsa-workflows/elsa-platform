@@ -12,13 +12,13 @@ Promote the existing deployment secret-store metadata into a focused engine cred
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `Elsa.Platform.Deployment.Core` workspace services, React Router, TanStack Query, Vitest, xUnit, and FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `ValenceControl.Deployment.Core` workspace services, React Router, TanStack Query, Vitest, xUnit, and FluentAssertions.
 
-**Storage**: Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Existing deployment secret-store and credential-reference tables are extended in place. Local encrypted credential values are stored only as protected ciphertext metadata, while external providers store only safe locators.
+**Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Existing deployment secret-store and credential-reference tables are extended in place. Local encrypted credential values are stored only as protected ciphertext metadata, while external providers store only safe locators.
 
 **Testing**: Focused xUnit/FluentAssertions tests for deployment API and persistence; Vitest tests for console deployment setup and secret-store flows; `npm run typecheck`; `git diff --check`; browser verification where console flow behavior cannot be proven by component tests alone.
 
-**Target Platform**: Elsa Platform API and hosted admin console.
+**Target platform**: Valence Control API and hosted admin console.
 
 **Project Type**: Modular monolith web/control-plane service with hosted React console.
 
@@ -63,24 +63,24 @@ specs/035-engine-secret-stores/
 
 ```text
 src/
-├── Elsa.Platform.Deployment.Core/
+├── ValenceControl.Deployment.Core/
 │   └── Workspace/
-├── Elsa.Platform.Api/
+├── ValenceControl.Api/
 │   └── Workspace/
-├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
+├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
 │   ├── Models/
 │   └── DeploymentWorkspaceStore.cs
-├── Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/
+├── ValenceControl.PackageCatalog.Persistence.SqliteMigrations/
 │   └── Migrations/
-├── Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/
+├── ValenceControl.PackageCatalog.Persistence.SqlServerMigrations/
 │   └── Migrations/
-└── Elsa.Platform.Console/
+└── ValenceControl.Console/
     └── src/features/deployments/
 
 tests/
-├── Elsa.Platform.Api.Tests/
-├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
-└── Elsa.Platform.Console/
+├── ValenceControl.Api.Tests/
+├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+└── ValenceControl.Console/
 ```
 
 **Structure Decision**: Extend the existing deployment workspace model, EF store, API route group, and console deployment feature in place. Avoid a standalone secret manager subsystem because this feature is explicitly scoped to engine credentials for deployment setup.

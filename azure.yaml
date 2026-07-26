@@ -1,7 +1,7 @@
-name: elsa-platform
+name: valence-control
 services:
   api:
-    project: src/Elsa.Platform.AppHost/Elsa.Platform.AppHost.csproj
+    project: src/ValenceControl.AppHost/ValenceControl.AppHost.csproj
     # For Aspire AppHost deployments, azd discovers the real Azure target from
     # AppHost.cs. AddAzureAppServiceEnvironment keeps this deployment on App Service.
     host: containerapp

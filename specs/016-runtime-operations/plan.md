@@ -12,7 +12,7 @@ Add operational visibility and lifecycle safety for managed runtimes after manag
 **Primary Dependencies**: ASP.NET Core minimal APIs, managed hosting records, log/metric adapter ports, backup adapter ports, EF Core, xUnit, FluentAssertions.
 **Storage**: Operational event, backup, and upgrade records in existing relational database.
 **Testing**: Core service tests, API tests, adapter fakes.
-**Target Platform**: Existing ASP.NET Core modular monolith.
+**Target platform**: Existing ASP.NET Core modular monolith.
 **Constraints**: Requires managed hosting; first slice is operational control, not full SLA automation.
 
 ## Constitution Check
@@ -33,11 +33,11 @@ Add operational visibility and lifecycle safety for managed runtimes after manag
 ## Project Structure
 
 ```text
-src/Elsa.Platform.PackageCatalog.Core/RuntimeOperations/
-src/Elsa.Platform.Api/Workspace/WorkspaceRuntimeOperationsEndpoints.cs
-src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
-tests/Elsa.Platform.PackageCatalog.Core.Tests/
-tests/Elsa.Platform.Api.Tests/
+src/ValenceControl.PackageCatalog.Core/RuntimeOperations/
+src/ValenceControl.Api/Workspace/WorkspaceRuntimeOperationsEndpoints.cs
+src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
+tests/ValenceControl.PackageCatalog.Core.Tests/
+tests/ValenceControl.Api.Tests/
 ```
 
 ## Complexity Tracking

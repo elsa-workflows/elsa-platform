@@ -3,7 +3,7 @@
 ## Scenario 1: Create Local Engine Credential Store
 
 1. Open the deployment setup credential surface for a workspace.
-2. Create a store named `Platform engine credentials` with type `Local encrypted database`.
+2. Create a store named `Valence Control engine credentials` with type `Local encrypted database`.
 3. Add a credential reference named `Dev engine API` with a submitted credential value.
 4. Verify the reference list shows safe metadata and does not reveal the submitted value.
 
@@ -14,7 +14,7 @@ Expected result: The store and reference are active workspace options for engine
 1. Create stores for Azure Key Vault, Kubernetes Secrets, environment variable name, and generic external reference.
 2. Add one reference to each store using a safe locator.
 3. Verify no form asks for raw secret values for these external store types.
-4. Verify generic external reference help text says Elsa Platform cannot browse or verify it.
+4. Verify generic external reference help text says Valence Control cannot browse or verify it.
 
 Expected result: All external references can be selected during engine setup as safe locators.
 

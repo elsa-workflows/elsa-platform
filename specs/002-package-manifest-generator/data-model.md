@@ -5,7 +5,7 @@
 The generator does not introduce durable application storage. Its model is a
 build-time data flow from project metadata, assembly metadata, XML documentation,
 CShells metadata, optional manifest hints, and optional override JSON into a validated
-`Elsa.Platform.PackageManifests` manifest object and a generated `elsa-package.json`
+`ValenceControl.PackageManifests` manifest object and a generated `elsa-package.json`
 artifact.
 
 All model objects are deterministic value inputs, intermediate projections, or
@@ -334,7 +334,7 @@ Validation:
 3. Features and settings are discovered.
 4. XML documentation, CShells metadata, and manifest hints enrich discovered metadata.
 5. Override file is validated and merged.
-6. `Elsa.Platform.PackageManifests` object is built.
+6. `ValenceControl.PackageManifests` object is built.
 7. Manifest is schema validated.
 8. `elsa-package.json` is written to the intermediate path.
 9. Pack includes the manifest at the package root.

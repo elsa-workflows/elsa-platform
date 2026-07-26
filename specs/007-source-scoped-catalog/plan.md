@@ -20,7 +20,7 @@ Make source/feed selection a first-class catalog concern. Public browsing and Ru
 
 **Testing**: xUnit, FluentAssertions, ASP.NET Core WebApplicationFactory integration tests, EF Core persistence tests, and UI/integration tests where source selection behavior is implemented.
 
-**Target Platform**: ASP.NET Core API container deployed to Azure App Service, with static console assets served by the API host and a separate Lovable-built public UX consuming public APIs.
+**Target platform**: ASP.NET Core API container deployed to Azure App Service, with static console assets served by the API host and a separate Lovable-built public UX consuming public APIs.
 
 **Project Type**: Modular monolith web service with public/catalog APIs, admin APIs, persistence adapters, and static console assets.
 
@@ -38,7 +38,7 @@ The plan MUST answer these gates:
 
 - **Manifest-first**: Pass. Package metadata remains manifest-derived; filtering and identity changes do not execute package code.
 - **No arbitrary code execution**: Pass. Source filtering and account ownership do not change package inspection safety boundaries.
-- **Stable contracts**: Pass. No `Elsa.Platform.PackageManifests` wire contract changes are required.
+- **Stable contracts**: Pass. No `ValenceControl.PackageManifests` wire contract changes are required.
 - **Schema evolution**: Pass. Public API contracts and persistence schema changes are documented separately from manifest schema evolution.
 - **Immutable versions**: Pass. Source-qualified identity preserves existing version immutability and suspicious-change behavior.
 - **Approval separation**: Pass. Public filtering still returns only approved/listed/valid versions and keeps approval independent from validity.
@@ -70,32 +70,32 @@ specs/007-source-scoped-catalog/
 
 ```text
 src/
-├── Elsa.Platform.PackageCatalog.Core/
+├── ValenceControl.PackageCatalog.Core/
 │   ├── Packages/
 │   │   ├── PublicCatalogQueryService.cs
 │   │   └── PackageModels.cs
 │   ├── Sources/
 │   │   └── PublicSourceQueryService.cs
 │   └── Accounts/                  # later account/workspace slice
-├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
+├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
 │   ├── PublicCatalogQueries.cs
 │   ├── PublicSourceQueries.cs
 │   └── Models/CatalogModelConfiguration.cs
-├── Elsa.Platform.Api/
+├── ValenceControl.Api/
 │   └── Public/
 │       ├── Sources/
 │       ├── Packages/
 │       └── Builder/
-└── Elsa.Platform.Console/
+└── ValenceControl.Console/
     └── src/features/sources/       # admin/operator source flags if needed
 
 tests/
-├── Elsa.Platform.PackageCatalog.Core.Tests/
-├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
-└── Elsa.Platform.Api.Tests/
+├── ValenceControl.PackageCatalog.Core.Tests/
+├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+└── ValenceControl.Api.Tests/
 ```
 
-**Structure Decision**: Keep public source filtering and source-qualified package queries in `Elsa.Platform.PackageCatalog.Core` and EF Core query adapters because visibility is domain/query behavior. Expose public browseable sources and source-qualified package routes under `Elsa.Platform.Api/Public`. Defer account/workspace source management to a later `Accounts` or `Workspaces` area once paid custom feeds are actively implemented.
+**Structure Decision**: Keep public source filtering and source-qualified package queries in `ValenceControl.PackageCatalog.Core` and EF Core query adapters because visibility is domain/query behavior. Expose public browseable sources and source-qualified package routes under `ValenceControl.Api/Public`. Defer account/workspace source management to a later `Accounts` or `Workspaces` area once paid custom feeds are actively implemented.
 
 ## Complexity Tracking
 

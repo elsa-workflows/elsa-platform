@@ -5,7 +5,7 @@
 Phase 1 artifacts use:
 
 ```text
-platform.elsa.io/deployment-artifact/v1alpha1
+valence-control/deployment-artifact/v1alpha1
 ```
 
 Readers must reject unsupported layout versions with `artifact.layout.unsupported`.
@@ -38,7 +38,7 @@ Required fields:
 
 ```json
 {
-  "layoutVersion": "platform.elsa.io/deployment-artifact/v1alpha1",
+  "layoutVersion": "valence-control/deployment-artifact/v1alpha1",
   "artifactId": "sha256:<content-digest>",
   "createdAt": "2026-05-20T00:00:00Z",
   "manifest": {

@@ -12,11 +12,11 @@
 
 **Purpose**: Create the artifact package and test project.
 
-- [x] T001 Create `src/Elsa.Platform.Deployment.Artifacts/Elsa.Platform.Deployment.Artifacts.csproj` referencing `src/Elsa.Platform.Deployment.Abstractions/Elsa.Platform.Deployment.Abstractions.csproj` and `src/Elsa.Platform.Deployment.Manifest/Elsa.Platform.Deployment.Manifest.csproj`
-- [x] T002 Create `tests/Elsa.Platform.Deployment.Artifacts.Tests/Elsa.Platform.Deployment.Artifacts.Tests.csproj` with references to the artifact, manifest, abstractions, xUnit, and FluentAssertions packages
-- [x] T003 Add artifact source and test projects to `Elsa.Platform.sln`
-- [x] T004 [P] Create initial namespace placeholder files in `src/Elsa.Platform.Deployment.Artifacts/ArtifactLayoutConstants.cs` and `src/Elsa.Platform.Deployment.Artifacts/ArtifactDiagnosticCodes.cs`
-- [x] T005 [P] Create initial test fixture file `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactTestFixtures.cs`
+- [x] T001 Create `src/ValenceControl.Deployment.Artifacts/ValenceControl.Deployment.Artifacts.csproj` referencing `src/ValenceControl.Deployment.Abstractions/ValenceControl.Deployment.Abstractions.csproj` and `src/ValenceControl.Deployment.Manifest/ValenceControl.Deployment.Manifest.csproj`
+- [x] T002 Create `tests/ValenceControl.Deployment.Artifacts.Tests/ValenceControl.Deployment.Artifacts.Tests.csproj` with references to the artifact, manifest, abstractions, xUnit, and FluentAssertions packages
+- [x] T003 Add artifact source and test projects to `ValenceControl.sln`
+- [x] T004 [P] Create initial namespace placeholder files in `src/ValenceControl.Deployment.Artifacts/ArtifactLayoutConstants.cs` and `src/ValenceControl.Deployment.Artifacts/ArtifactDiagnosticCodes.cs`
+- [x] T005 [P] Create initial test fixture file `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactTestFixtures.cs`
 
 ---
 
@@ -26,15 +26,15 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [x] T006 Create artifact format, entry kind, and checksum status models in `src/Elsa.Platform.Deployment.Artifacts/ArtifactTypes.cs`
-- [x] T007 Create artifact metadata and checksum records in `src/Elsa.Platform.Deployment.Artifacts/ArtifactMetadata.cs`
-- [x] T008 Create build and inspection result records in `src/Elsa.Platform.Deployment.Artifacts/ArtifactResults.cs`
-- [x] T009 Create build option records in `src/Elsa.Platform.Deployment.Artifacts/ArtifactBuildOptions.cs`
-- [x] T010 Create public builder and reader interfaces in `src/Elsa.Platform.Deployment.Artifacts/IDeploymentArtifactBuilder.cs` and `src/Elsa.Platform.Deployment.Artifacts/IDeploymentArtifactReader.cs`
-- [x] T011 Implement path normalization and traversal rejection in `src/Elsa.Platform.Deployment.Artifacts/DeploymentArtifactPathValidator.cs`
-- [x] T012 Implement SHA-256 checksum helpers in `src/Elsa.Platform.Deployment.Artifacts/DeploymentArtifactChecksumService.cs`
-- [x] T013 [P] Add path validation tests in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactPathValidationTests.cs`
-- [x] T014 [P] Add checksum helper tests in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactChecksumTests.cs`
+- [x] T006 Create artifact format, entry kind, and checksum status models in `src/ValenceControl.Deployment.Artifacts/ArtifactTypes.cs`
+- [x] T007 Create artifact metadata and checksum records in `src/ValenceControl.Deployment.Artifacts/ArtifactMetadata.cs`
+- [x] T008 Create build and inspection result records in `src/ValenceControl.Deployment.Artifacts/ArtifactResults.cs`
+- [x] T009 Create build option records in `src/ValenceControl.Deployment.Artifacts/ArtifactBuildOptions.cs`
+- [x] T010 Create public builder and reader interfaces in `src/ValenceControl.Deployment.Artifacts/IDeploymentArtifactBuilder.cs` and `src/ValenceControl.Deployment.Artifacts/IDeploymentArtifactReader.cs`
+- [x] T011 Implement path normalization and traversal rejection in `src/ValenceControl.Deployment.Artifacts/DeploymentArtifactPathValidator.cs`
+- [x] T012 Implement SHA-256 checksum helpers in `src/ValenceControl.Deployment.Artifacts/DeploymentArtifactChecksumService.cs`
+- [x] T013 [P] Add path validation tests in `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactPathValidationTests.cs`
+- [x] T014 [P] Add checksum helper tests in `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactChecksumTests.cs`
 
 **Checkpoint**: Foundation ready; user story implementation can start.
 
@@ -48,19 +48,19 @@
 
 ### Tests for User Story 1
 
-- [x] T015 [P] [US1] Add successful folder build test in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs`
-- [x] T016 [P] [US1] Add deterministic folder artifact identity test in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs`
-- [x] T017 [P] [US1] Add missing payload, duplicate path, and traversal diagnostics tests in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs`
-- [x] T018 [P] [US1] Add atomic failed-build cleanup test in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs`
+- [x] T015 [P] [US1] Add successful folder build test in `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs`
+- [x] T016 [P] [US1] Add deterministic folder artifact identity test in `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs`
+- [x] T017 [P] [US1] Add missing payload, duplicate path, and traversal diagnostics tests in `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs`
+- [x] T018 [P] [US1] Add atomic failed-build cleanup test in `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs`
 
 ### Implementation for User Story 1
 
-- [x] T019 [US1] Implement folder artifact builder skeleton in `src/Elsa.Platform.Deployment.Artifacts/DeploymentArtifactBuilder.cs`
-- [x] T020 [US1] Implement manifest snapshot writing in `src/Elsa.Platform.Deployment.Artifacts/DeploymentArtifactBuilder.cs`
-- [x] T021 [US1] Implement payload collection from normalized manifest resource metadata in `src/Elsa.Platform.Deployment.Artifacts/DeploymentArtifactBuilder.cs`
-- [x] T022 [US1] Implement artifact metadata creation in `src/Elsa.Platform.Deployment.Artifacts/DeploymentArtifactBuilder.cs`
-- [x] T023 [US1] Implement checksum inventory writing in `src/Elsa.Platform.Deployment.Artifacts/DeploymentArtifactBuilder.cs`
-- [x] T024 [US1] Implement staged folder output and atomic publish behavior in `src/Elsa.Platform.Deployment.Artifacts/DeploymentArtifactBuilder.cs`
+- [x] T019 [US1] Implement folder artifact builder skeleton in `src/ValenceControl.Deployment.Artifacts/DeploymentArtifactBuilder.cs`
+- [x] T020 [US1] Implement manifest snapshot writing in `src/ValenceControl.Deployment.Artifacts/DeploymentArtifactBuilder.cs`
+- [x] T021 [US1] Implement payload collection from normalized manifest resource metadata in `src/ValenceControl.Deployment.Artifacts/DeploymentArtifactBuilder.cs`
+- [x] T022 [US1] Implement artifact metadata creation in `src/ValenceControl.Deployment.Artifacts/DeploymentArtifactBuilder.cs`
+- [x] T023 [US1] Implement checksum inventory writing in `src/ValenceControl.Deployment.Artifacts/DeploymentArtifactBuilder.cs`
+- [x] T024 [US1] Implement staged folder output and atomic publish behavior in `src/ValenceControl.Deployment.Artifacts/DeploymentArtifactBuilder.cs`
 
 **Checkpoint**: Folder artifact build is fully functional and testable independently.
 
@@ -74,19 +74,19 @@
 
 ### Tests for User Story 2
 
-- [x] T025 [P] [US2] Add successful folder inspection test in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactReaderTests.cs`
-- [x] T026 [P] [US2] Add checksum mismatch, missing file, and unexpected file inspection tests in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactReaderTests.cs`
-- [x] T027 [P] [US2] Add missing metadata, missing manifest, and unsupported layout tests in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactReaderTests.cs`
-- [x] T028 [P] [US2] Add ZIP/folder logical parity test in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactReaderTests.cs`
-- [x] T029 [P] [US2] Add archive traversal rejection test in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactReaderTests.cs`
+- [x] T025 [P] [US2] Add successful folder inspection test in `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactReaderTests.cs`
+- [x] T026 [P] [US2] Add checksum mismatch, missing file, and unexpected file inspection tests in `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactReaderTests.cs`
+- [x] T027 [P] [US2] Add missing metadata, missing manifest, and unsupported layout tests in `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactReaderTests.cs`
+- [x] T028 [P] [US2] Add ZIP/folder logical parity test in `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactReaderTests.cs`
+- [x] T029 [P] [US2] Add archive traversal rejection test in `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactReaderTests.cs`
 
 ### Implementation for User Story 2
 
-- [x] T030 [US2] Implement folder artifact reader skeleton in `src/Elsa.Platform.Deployment.Artifacts/DeploymentArtifactReader.cs`
-- [x] T031 [US2] Implement metadata, manifest, entry, and checksum inventory parsing in `src/Elsa.Platform.Deployment.Artifacts/DeploymentArtifactReader.cs`
-- [x] T032 [US2] Implement checksum verification and diagnostic mapping in `src/Elsa.Platform.Deployment.Artifacts/DeploymentArtifactReader.cs`
-- [x] T033 [US2] Implement ZIP artifact writing in `src/Elsa.Platform.Deployment.Artifacts/DeploymentArtifactBuilder.cs`
-- [x] T034 [US2] Implement ZIP artifact reading with archive path validation in `src/Elsa.Platform.Deployment.Artifacts/DeploymentArtifactReader.cs`
+- [x] T030 [US2] Implement folder artifact reader skeleton in `src/ValenceControl.Deployment.Artifacts/DeploymentArtifactReader.cs`
+- [x] T031 [US2] Implement metadata, manifest, entry, and checksum inventory parsing in `src/ValenceControl.Deployment.Artifacts/DeploymentArtifactReader.cs`
+- [x] T032 [US2] Implement checksum verification and diagnostic mapping in `src/ValenceControl.Deployment.Artifacts/DeploymentArtifactReader.cs`
+- [x] T033 [US2] Implement ZIP artifact writing in `src/ValenceControl.Deployment.Artifacts/DeploymentArtifactBuilder.cs`
+- [x] T034 [US2] Implement ZIP artifact reading with archive path validation in `src/ValenceControl.Deployment.Artifacts/DeploymentArtifactReader.cs`
 
 **Checkpoint**: Folder and ZIP artifacts can be inspected and checksum-verified.
 
@@ -100,14 +100,14 @@
 
 ### Tests for User Story 3
 
-- [x] T035 [P] [US3] Add project reference boundary tests in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactBoundaryTests.cs`
-- [x] T036 [P] [US3] Add source namespace boundary tests in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactBoundaryTests.cs`
-- [x] T037 [P] [US3] Add public contract shape tests in `tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactBoundaryTests.cs`
+- [x] T035 [P] [US3] Add project reference boundary tests in `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactBoundaryTests.cs`
+- [x] T036 [P] [US3] Add source namespace boundary tests in `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactBoundaryTests.cs`
+- [x] T037 [P] [US3] Add public contract shape tests in `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactBoundaryTests.cs`
 
 ### Implementation for User Story 3
 
-- [x] T038 [US3] Adjust artifact public contracts to avoid engine, CLI, API, hosting, persistence, OCI, signing, policy, and runtime-state types in `src/Elsa.Platform.Deployment.Artifacts/`
-- [x] T039 [US3] Ensure artifact diagnostics use deployment abstraction diagnostics in `src/Elsa.Platform.Deployment.Artifacts/ArtifactDiagnosticCodes.cs`
+- [x] T038 [US3] Adjust artifact public contracts to avoid engine, CLI, API, hosting, persistence, OCI, signing, policy, and runtime-state types in `src/ValenceControl.Deployment.Artifacts/`
+- [x] T039 [US3] Ensure artifact diagnostics use deployment abstraction diagnostics in `src/ValenceControl.Deployment.Artifacts/ArtifactDiagnosticCodes.cs`
 
 **Checkpoint**: Artifact package boundary is enforced and documented.
 
@@ -119,7 +119,7 @@
 
 - [x] T040 [P] Update `specs/019-deployment-artifacts/quickstart.md` if implementation paths or method names changed
 - [x] T041 [P] Update `specs/019-deployment-artifacts/contracts/artifact-layout.md` to match final JSON field names
-- [x] T042 Run `dotnet test tests/Elsa.Platform.Deployment.Artifacts.Tests/Elsa.Platform.Deployment.Artifacts.Tests.csproj`
+- [x] T042 Run `dotnet test tests/ValenceControl.Deployment.Artifacts.Tests/ValenceControl.Deployment.Artifacts.Tests.csproj`
 - [x] T043 Run full solution `dotnet test`
 - [x] T044 Run `git diff --check`
 - [x] T045 Update task checkboxes in `specs/019-deployment-artifacts/tasks.md` as completed
@@ -149,10 +149,10 @@
 ## Parallel Example: User Story 1
 
 ```text
-Task: "Add successful folder build test in tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs"
-Task: "Add deterministic folder artifact identity test in tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs"
-Task: "Add missing payload, duplicate path, and traversal diagnostics tests in tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs"
-Task: "Add atomic failed-build cleanup test in tests/Elsa.Platform.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs"
+Task: "Add successful folder build test in tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs"
+Task: "Add deterministic folder artifact identity test in tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs"
+Task: "Add missing payload, duplicate path, and traversal diagnostics tests in tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs"
+Task: "Add atomic failed-build cleanup test in tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactBuilderTests.cs"
 ```
 
 ## Implementation Strategy

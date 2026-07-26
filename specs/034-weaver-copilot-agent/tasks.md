@@ -12,11 +12,11 @@
 
 **Purpose**: Establish the Weaver subsystem, configuration model, and documentation skeleton.
 
-- [x] T001 Add `src/Elsa.Platform.Weaver.Core/Elsa.Platform.Weaver.Core.csproj` and reference it from `Elsa.Platform.Api`.
-- [x] T002 Add `tests/Elsa.Platform.Weaver.Core.Tests/Elsa.Platform.Weaver.Core.Tests.csproj` and include it in the solution/test conventions.
-- [x] T003 [P] Create `src/Elsa.Platform.Weaver.Core/Configuration/WeaverOptions.cs` with provider, runtime, telemetry, limits, and feature enablement options.
+- [x] T001 Add `src/ValenceControl.Weaver.Core/ValenceControl.Weaver.Core.csproj` and reference it from `ValenceControl.Api`.
+- [x] T002 Add `tests/ValenceControl.Weaver.Core.Tests/ValenceControl.Weaver.Core.Tests.csproj` and include it in the solution/test conventions.
+- [x] T003 [P] Create `src/ValenceControl.Weaver.Core/Configuration/WeaverOptions.cs` with provider, runtime, telemetry, limits, and feature enablement options.
 - [x] T004 [P] Create `docs/weaver-configuration.md` documenting GitHub Copilot-backed mode, BYOK mode, API key environment variables, model settings, limits, telemetry, and disabling Weaver.
-- [x] T005 Register Weaver configuration and core services in `src/Elsa.Platform.Api/Program.cs`.
+- [x] T005 Register Weaver configuration and core services in `src/ValenceControl.Api/Program.cs`.
 
 ---
 
@@ -24,16 +24,16 @@
 
 **Purpose**: Core models, storage, redaction, runtime abstraction, and API contracts required by all stories.
 
-- [x] T006 [P] Create Weaver domain models in `src/Elsa.Platform.Weaver.Core/Sessions/WeaverSessionModels.cs`.
-- [x] T007 [P] Create Weaver store abstractions in `src/Elsa.Platform.Weaver.Core/Sessions/IWeaverSessionStore.cs`.
-- [x] T008 [P] Create Weaver runtime abstraction in `src/Elsa.Platform.Weaver.Core/Runtime/IWeaverRuntime.cs`.
-- [x] T009 [P] Create safe fake runtime in `src/Elsa.Platform.Weaver.Core/Runtime/FakeWeaverRuntime.cs` for development/tests and disabled-provider behavior.
-- [x] T010 [P] Create redaction service in `src/Elsa.Platform.Weaver.Core/Safety/WeaverRedactionService.cs`.
-- [x] T011 Add EF Core Weaver entities and configuration in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/WeaverEntities.cs`.
-- [x] T012 Add `CatalogDbContext` DbSets and model configuration for Weaver entities in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/CatalogDbContext.cs` and `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`.
-- [x] T013 Implement EF Core Weaver store in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/WeaverSessionStore.cs`.
-- [x] T014 [P] Add unit tests for `WeaverRedactionService` in `tests/Elsa.Platform.Weaver.Core.Tests/WeaverRedactionServiceTests.cs`.
-- [x] T015 Add persistence tests for session/message/tool/plan records in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/WeaverSessionStoreTests.cs`.
+- [x] T006 [P] Create Weaver domain models in `src/ValenceControl.Weaver.Core/Sessions/WeaverSessionModels.cs`.
+- [x] T007 [P] Create Weaver store abstractions in `src/ValenceControl.Weaver.Core/Sessions/IWeaverSessionStore.cs`.
+- [x] T008 [P] Create Weaver runtime abstraction in `src/ValenceControl.Weaver.Core/Runtime/IWeaverRuntime.cs`.
+- [x] T009 [P] Create safe fake runtime in `src/ValenceControl.Weaver.Core/Runtime/FakeWeaverRuntime.cs` for development/tests and disabled-provider behavior.
+- [x] T010 [P] Create redaction service in `src/ValenceControl.Weaver.Core/Safety/WeaverRedactionService.cs`.
+- [x] T011 Add EF Core Weaver entities and configuration in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/WeaverEntities.cs`.
+- [x] T012 Add `CatalogDbContext` DbSets and model configuration for Weaver entities in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/CatalogDbContext.cs` and `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`.
+- [x] T013 Implement EF Core Weaver store in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/WeaverSessionStore.cs`.
+- [x] T014 [P] Add unit tests for `WeaverRedactionService` in `tests/ValenceControl.Weaver.Core.Tests/WeaverRedactionServiceTests.cs`.
+- [x] T015 Add persistence tests for session/message/tool/plan records in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/WeaverSessionStoreTests.cs`.
 
 **Checkpoint**: Weaver has safe configuration, domain models, persistence, redaction, and a runtime abstraction.
 
@@ -47,18 +47,18 @@
 
 ### Tests for User Story 1
 
-- [x] T016 [P] [US1] Add API tests for configuration/session/message endpoints in `tests/Elsa.Platform.Api.Tests/WorkspaceWeaverApiTests.cs`.
-- [x] T017 [P] [US1] Add console tests for unavailable and connected Weaver drawer states in `src/Elsa.Platform.Console/src/app/AppShell.test.tsx`.
+- [x] T016 [P] [US1] Add API tests for configuration/session/message endpoints in `tests/ValenceControl.Api.Tests/WorkspaceWeaverApiTests.cs`.
+- [x] T017 [P] [US1] Add console tests for unavailable and connected Weaver drawer states in `src/ValenceControl.Console/src/app/AppShell.test.tsx`.
 
 ### Implementation for User Story 1
 
-- [x] T018 [US1] Implement `WeaverSessionService` in `src/Elsa.Platform.Weaver.Core/Sessions/WeaverSessionService.cs`.
-- [x] T019 [US1] Implement workspace context/read tools in `src/Elsa.Platform.Weaver.Core/Tools/WeaverWorkspaceTools.cs`.
-- [x] T020 [US1] Add `src/Elsa.Platform.Api/Workspace/WorkspaceWeaverContracts.cs` and `src/Elsa.Platform.Api/Workspace/WorkspaceWeaverEndpoints.cs`.
-- [x] T021 [US1] Map Weaver endpoints from `src/Elsa.Platform.Api/Program.cs`.
-- [x] T022 [US1] Add console Weaver models/API hooks in `src/Elsa.Platform.Console/src/features/weaver/weaverModels.ts` and `src/Elsa.Platform.Console/src/features/weaver/weaverApi.ts`.
-- [x] T023 [US1] Replace placeholder drawer with backend-backed component in `src/Elsa.Platform.Console/src/features/weaver/WeaverAssistantPanel.tsx` and `src/Elsa.Platform.Console/src/app/AppShell.tsx`.
-- [x] T024 [US1] Add query keys for Weaver in `src/Elsa.Platform.Console/src/lib/query/queryClient.tsx`.
+- [x] T018 [US1] Implement `WeaverSessionService` in `src/ValenceControl.Weaver.Core/Sessions/WeaverSessionService.cs`.
+- [x] T019 [US1] Implement workspace context/read tools in `src/ValenceControl.Weaver.Core/Tools/WeaverWorkspaceTools.cs`.
+- [x] T020 [US1] Add `src/ValenceControl.Api/Workspace/WorkspaceWeaverContracts.cs` and `src/ValenceControl.Api/Workspace/WorkspaceWeaverEndpoints.cs`.
+- [x] T021 [US1] Map Weaver endpoints from `src/ValenceControl.Api/Program.cs`.
+- [x] T022 [US1] Add console Weaver models/API hooks in `src/ValenceControl.Console/src/features/weaver/weaverModels.ts` and `src/ValenceControl.Console/src/features/weaver/weaverApi.ts`.
+- [x] T023 [US1] Replace placeholder drawer with backend-backed component in `src/ValenceControl.Console/src/features/weaver/WeaverAssistantPanel.tsx` and `src/ValenceControl.Console/src/app/AppShell.tsx`.
+- [x] T024 [US1] Add query keys for Weaver in `src/ValenceControl.Console/src/lib/query/queryClient.tsx`.
 
 **Checkpoint**: User Story 1 works independently with fake provider/runtime and safe read-only behavior.
 
@@ -72,15 +72,15 @@
 
 ### Tests for User Story 2
 
-- [x] T025 [P] [US2] Add core tests for deployment tool summaries in `tests/Elsa.Platform.Weaver.Core.Tests/WeaverDeploymentToolTests.cs`.
-- [x] T026 [P] [US2] Add API tests for plan creation/readback in `tests/Elsa.Platform.Api.Tests/WorkspaceWeaverApiTests.cs`.
+- [x] T025 [P] [US2] Add core tests for deployment tool summaries in `tests/ValenceControl.Weaver.Core.Tests/WeaverDeploymentToolTests.cs`.
+- [x] T026 [P] [US2] Add API tests for plan creation/readback in `tests/ValenceControl.Api.Tests/WorkspaceWeaverApiTests.cs`.
 
 ### Implementation for User Story 2
 
-- [x] T027 [US2] Implement deployment investigation tools in `src/Elsa.Platform.Weaver.Core/Tools/WeaverDeploymentTools.cs`.
-- [x] T028 [US2] Implement plan drafting service in `src/Elsa.Platform.Weaver.Core/Plans/WeaverPlanService.cs`.
-- [x] T029 [US2] Add plan endpoints to `src/Elsa.Platform.Api/Workspace/WorkspaceWeaverEndpoints.cs`.
-- [x] T030 [US2] Render plan cards in `src/Elsa.Platform.Console/src/features/weaver/WeaverPlanCard.tsx`.
+- [x] T027 [US2] Implement deployment investigation tools in `src/ValenceControl.Weaver.Core/Tools/WeaverDeploymentTools.cs`.
+- [x] T028 [US2] Implement plan drafting service in `src/ValenceControl.Weaver.Core/Plans/WeaverPlanService.cs`.
+- [x] T029 [US2] Add plan endpoints to `src/ValenceControl.Api/Workspace/WorkspaceWeaverEndpoints.cs`.
+- [x] T030 [US2] Render plan cards in `src/ValenceControl.Console/src/features/weaver/WeaverPlanCard.tsx`.
 
 **Checkpoint**: User Story 2 works independently without executing any mutation.
 
@@ -92,11 +92,11 @@
 
 **Independent Test**: Approve a fake or deployment-backed plan and verify permission checks, idempotent execution, and linked resource summaries.
 
-- [x] T031 [P] [US3] Add core tests for approval and idempotent execution in `tests/Elsa.Platform.Weaver.Core.Tests/WeaverPlanExecutionTests.cs`.
-- [x] T032 [US3] Implement approval/execution models and store methods in `src/Elsa.Platform.Weaver.Core/Plans` and `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/WeaverSessionStore.cs`.
-- [x] T033 [US3] Implement approved fake/deployment execution path in `src/Elsa.Platform.Weaver.Core/Plans/WeaverPlanExecutionService.cs`.
-- [x] T034 [US3] Add approval/execute endpoints in `src/Elsa.Platform.Api/Workspace/WorkspaceWeaverEndpoints.cs`.
-- [x] T035 [US3] Wire approve/reject/execute actions in `src/Elsa.Platform.Console/src/features/weaver/WeaverPlanCard.tsx`.
+- [x] T031 [P] [US3] Add core tests for approval and idempotent execution in `tests/ValenceControl.Weaver.Core.Tests/WeaverPlanExecutionTests.cs`.
+- [x] T032 [US3] Implement approval/execution models and store methods in `src/ValenceControl.Weaver.Core/Plans` and `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/WeaverSessionStore.cs`.
+- [x] T033 [US3] Implement approved fake/deployment execution path in `src/ValenceControl.Weaver.Core/Plans/WeaverPlanExecutionService.cs`.
+- [x] T034 [US3] Add approval/execute endpoints in `src/ValenceControl.Api/Workspace/WorkspaceWeaverEndpoints.cs`.
+- [x] T035 [US3] Wire approve/reject/execute actions in `src/ValenceControl.Console/src/features/weaver/WeaverPlanCard.tsx`.
 
 ---
 
@@ -106,10 +106,10 @@
 
 **Independent Test**: Toggle enabled/provider options and verify configuration endpoint, drawer states, and documentation.
 
-- [x] T036 [P] [US4] Add option validation tests in `tests/Elsa.Platform.Weaver.Core.Tests/WeaverOptionsTests.cs`.
-- [x] T037 [US4] Add configuration validation hosted service in `src/Elsa.Platform.Api/Workspace/WeaverConfigurationHostedService.cs`.
+- [x] T036 [P] [US4] Add option validation tests in `tests/ValenceControl.Weaver.Core.Tests/WeaverOptionsTests.cs`.
+- [x] T037 [US4] Add configuration validation hosted service in `src/ValenceControl.Api/Workspace/WeaverConfigurationHostedService.cs`.
 - [x] T038 [US4] Complete `docs/weaver-configuration.md` with production, local, and troubleshooting sections.
-- [x] T039 [US4] Add unavailable/misconfigured UI state in `src/Elsa.Platform.Console/src/features/weaver/WeaverAssistantPanel.tsx`.
+- [x] T039 [US4] Add unavailable/misconfigured UI state in `src/ValenceControl.Console/src/features/weaver/WeaverAssistantPanel.tsx`.
 
 ---
 
@@ -119,18 +119,18 @@
 
 **Independent Test**: Run read-only and plan sessions, then verify safe session details are visible without secrets.
 
-- [x] T040 [P] [US5] Add API tests for safe session detail redaction in `tests/Elsa.Platform.Api.Tests/WorkspaceWeaverApiTests.cs`.
-- [x] T041 [US5] Add session detail endpoint in `src/Elsa.Platform.Api/Workspace/WorkspaceWeaverEndpoints.cs`.
-- [x] T042 [US5] Add session detail UI route/page in `src/Elsa.Platform.Console/src/features/weaver/WeaverSessionPage.tsx` and `src/Elsa.Platform.Console/src/app/routes.tsx`.
+- [x] T040 [P] [US5] Add API tests for safe session detail redaction in `tests/ValenceControl.Api.Tests/WorkspaceWeaverApiTests.cs`.
+- [x] T041 [US5] Add session detail endpoint in `src/ValenceControl.Api/Workspace/WorkspaceWeaverEndpoints.cs`.
+- [x] T042 [US5] Add session detail UI route/page in `src/ValenceControl.Console/src/features/weaver/WeaverSessionPage.tsx` and `src/ValenceControl.Console/src/app/routes.tsx`.
 
 ---
 
 ## Final Phase: Polish & Cross-Cutting Concerns
 
-- [x] T043 Run `dotnet test tests/Elsa.Platform.Weaver.Core.Tests/Elsa.Platform.Weaver.Core.Tests.csproj --no-restore`.
-- [x] T044 Run `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --no-restore`.
-- [x] T045 Run `npm run typecheck --prefix src/Elsa.Platform.Console`.
-- [x] T046 Run `npm test --prefix src/Elsa.Platform.Console -- Weaver`.
+- [x] T043 Run `dotnet test tests/ValenceControl.Weaver.Core.Tests/ValenceControl.Weaver.Core.Tests.csproj --no-restore`.
+- [x] T044 Run `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --no-restore`.
+- [x] T045 Run `npm run typecheck --prefix src/ValenceControl.Console`.
+- [x] T046 Run `npm test --prefix src/ValenceControl.Console -- Weaver`.
 - [x] T047 Run `git diff --check`.
 - [x] T048 Self-review all Weaver files for high-priority security, authorization, redaction, and UX issues.
 - [ ] T049 Open a PR for Weaver implementation.

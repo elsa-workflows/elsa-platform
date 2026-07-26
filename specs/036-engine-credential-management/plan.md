@@ -18,7 +18,7 @@ Add a dedicated workspace-level Console surface for engine credential stores and
 
 **Testing**: Focused Vitest coverage for route/navigation, standalone credential management list/create/edit/rotate/archive/usage flows, permission states, and links from engine setup. Existing API tests are sufficient unless endpoint behavior changes; run `npm run test -- src/features/deployments/DeploymentsPage.test.tsx`, `npm run typecheck`, relevant .NET tests if API changes occur, and `git diff --check`.
 
-**Target Platform**: Elsa Platform hosted admin console backed by existing workspace deployment API.
+**Target platform**: Valence Control hosted admin console backed by existing workspace deployment API.
 
 **Project Type**: Modular monolith web/control-plane service with hosted React console.
 
@@ -63,7 +63,7 @@ specs/036-engine-credential-management/
 
 ```text
 src/
-└── Elsa.Platform.Console/
+└── ValenceControl.Console/
     └── src/
         ├── app/
         │   ├── AppShell.tsx
@@ -77,11 +77,11 @@ src/
             └── queryClient.tsx
 
 tests/
-├── Elsa.Platform.Api.Tests/
-└── Elsa.Platform.Console/
+├── ValenceControl.Api.Tests/
+└── ValenceControl.Console/
 ```
 
-**Structure Decision**: Keep the management UI inside the existing deployments console feature because the records are deployment setup metadata and share permissions, query keys, API clients, and engine assignment workflows. Avoid adding a separate secrets subsystem because runtime secrets remain outside Elsa Platform.
+**Structure Decision**: Keep the management UI inside the existing deployments console feature because the records are deployment setup metadata and share permissions, query keys, API clients, and engine assignment workflows. Avoid adding a separate secrets subsystem because runtime secrets remain outside Valence Control.
 
 ## Complexity Tracking
 

@@ -12,13 +12,13 @@ Add runtime-kind compatibility metadata to package manifests and catalog project
 
 **Language/Version**: C# on .NET 10 for manifest/catalog/API/runtime-builder code; TypeScript/React for console consumers where filtering or display surfaces are affected.
 
-**Primary Dependencies**: `Elsa.Platform.PackageManifests`, `Elsa.Platform.PackageCatalog.Core`, EF Core catalog persistence, ASP.NET Core minimal APIs, existing Runtime Builder catalog services, React Router/TanStack Query console code, xUnit, FluentAssertions, Vitest where console model behavior changes.
+**Primary Dependencies**: `ValenceControl.PackageManifests`, `ValenceControl.PackageCatalog.Core`, EF Core catalog persistence, ASP.NET Core minimal APIs, existing Runtime Builder catalog services, React Router/TanStack Query console code, xUnit, FluentAssertions, Vitest where console model behavior changes.
 
-**Storage**: Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`. Runtime kind declarations are safe metadata stored with package-version and feature compatibility records or equivalent serialized projections; no secrets or executable runtime data are stored.
+**Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`. Runtime kind declarations are safe metadata stored with package-version and feature compatibility records or equivalent serialized projections; no secrets or executable runtime data are stored.
 
 **Testing**: Focused `dotnet test` for PackageManifests, PackageCatalog.Core, PackageCatalog.Persistence.EntityFrameworkCore, Api, and RuntimeBuilder tests impacted by catalog projections; focused `npm test`/Vitest for console model filtering if TypeScript surfaces change; `git diff --check`.
 
-**Target Platform**: Cross-platform Elsa Platform API/catalog host and React console package/runtime builder experiences.
+**Target platform**: Cross-platform Valence Control API/catalog host and React console package/runtime builder experiences.
 
 **Project Type**: Modular monolith web service plus shared manifest contract package and hosted console.
 
@@ -62,34 +62,34 @@ specs/032-runtime-kind-compatibility/
 
 ```text
 src/
-├── Elsa.Platform.PackageManifests/
+├── ValenceControl.PackageManifests/
 │   ├── Compatibility/
 │   ├── FeatureManifest.cs
 │   ├── Schemas/
 │   └── Validation/
-├── Elsa.Platform.PackageManifest.Generator.Core/
+├── ValenceControl.PackageManifest.Generator.Core/
 │   ├── Generation/
 │   └── Overrides/
-├── Elsa.Platform.PackageCatalog.Core/
+├── ValenceControl.PackageCatalog.Core/
 │   ├── Compatibility/
 │   ├── Manifests/
 │   └── Packages/
-├── Elsa.Platform.PackageCatalog.Abstractions/
+├── ValenceControl.PackageCatalog.Abstractions/
 │   └── Catalog/
-├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
+├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
 │   └── Models/
-├── Elsa.Platform.Api/
+├── ValenceControl.Api/
 │   └── Public/
-└── Elsa.Platform.Console/
+└── ValenceControl.Console/
     └── src/features/
 
 tests/
-├── Elsa.Platform.PackageManifests.Tests/
-├── Elsa.Platform.PackageManifest.Generator.Core.Tests/
-├── Elsa.Platform.PackageCatalog.Core.Tests/
-├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
-├── Elsa.Platform.Api.Tests/
-└── Elsa.Platform.Console/
+├── ValenceControl.PackageManifests.Tests/
+├── ValenceControl.PackageManifest.Generator.Core.Tests/
+├── ValenceControl.PackageCatalog.Core.Tests/
+├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+├── ValenceControl.Api.Tests/
+└── ValenceControl.Console/
 ```
 
 **Structure Decision**: Extend the existing manifest compatibility contract and catalog ingestion/projection paths in place. Avoid a new subsystem because runtime-kind compatibility is part of package metadata, not deployment or runtime execution.

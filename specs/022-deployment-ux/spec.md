@@ -17,7 +17,7 @@
 - Q: What is the first desired-state storage model? -> A: Structured platform records first.
 - Q: What observability and drift behavior is included in this slice? -> A: Persisted metadata and manual status only.
 - Q: What approval or confirmation is required for risky actions? -> A: Explicit single-user confirmation.
-- Q: How should future runtime integrations receive deployment work? -> A: Platform-owned durable deployment commands with transport-independent delivery; runtime pull/sync is the preferred default, with webhook-triggered fetch and direct push as optional transports.
+- Q: How should future runtime integrations receive deployment work? -> A: Valence Control-owned durable deployment commands with transport-independent delivery; runtime pull/sync is the preferred default, with webhook-triggered fetch and direct push as optional transports.
 
 ## User Scenarios & Testing *(mandatory)*
 

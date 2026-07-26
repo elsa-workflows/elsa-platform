@@ -4,7 +4,7 @@ The Artifacts route becomes a real workspace feature instead of a disabled place
 
 ## Navigation
 
-- The Platform navigation shows Artifacts as enabled.
+- The Valence Control navigation shows Artifacts as enabled.
 - Authenticated workspace users can open `/admin/artifacts`.
 - Users without a workspace see the shared no-workspace state.
 

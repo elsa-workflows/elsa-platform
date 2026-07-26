@@ -6,7 +6,7 @@
 
 ## Summary
 
-Add a workspace-scoped deployment artifact registry that stores immutable artifact metadata, safe diagnostics, and payload references without storing artifact payloads in the catalog database. The slice wires authorized API routes and a real Artifacts console view to list, register, inspect, and refresh artifact metadata, reusing existing `Elsa.Platform.Deployment.Artifacts` contracts for layout, digest, metadata, and checksum concepts. It deliberately stops before upload storage, OCI, signing, GitOps, validation, dry-run, apply, and provider-specific artifact transport.
+Add a workspace-scoped deployment artifact registry that stores immutable artifact metadata, safe diagnostics, and payload references without storing artifact payloads in the catalog database. The slice wires authorized API routes and a real Artifacts console view to list, register, inspect, and refresh artifact metadata, reusing existing `ValenceControl.Deployment.Artifacts` contracts for layout, digest, metadata, and checksum concepts. It deliberately stops before upload storage, OCI, signing, GitOps, validation, dry-run, apply, and provider-specific artifact transport.
 
 > **Forward compatibility note**: `specs/031-organization-tenancy` keeps artifact records workspace-owned but resolves workspace ownership through a root Organization tenant.
 
@@ -16,13 +16,13 @@ Add a workspace-scoped deployment artifact registry that stores immutable artifa
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `Elsa.Platform.Deployment.Artifacts`, React Router, TanStack Query, Vitest, xUnit, and FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `ValenceControl.Deployment.Artifacts`, React Router, TanStack Query, Vitest, xUnit, and FluentAssertions.
 
-**Storage**: Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Artifact records store metadata, digests, resource summaries, diagnostics, and references only. Raw payload files, manifest JSON, workflow definitions, tokens, and secrets are not stored.
+**Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Artifact records store metadata, digests, resource summaries, diagnostics, and references only. Raw payload files, manifest JSON, workflow definitions, tokens, and secrets are not stored.
 
 **Testing**: Focused `dotnet test` for Deployment.Core, PackageCatalog persistence, and API tests; console `vitest` and typecheck for Artifacts page and navigation; `git diff --check`.
 
-**Target Platform**: ASP.NET Core Platform API and React console served from the platform host.
+**Target platform**: ASP.NET Core Valence Control API and React console served from the platform host.
 
 **Project Type**: Modular monolith web service with React console and EF-backed workspace persistence.
 
@@ -63,30 +63,30 @@ specs/024-artifact-registry/
 
 ```text
 src/
-  Elsa.Platform.Deployment.Core/
+  ValenceControl.Deployment.Core/
     Workspace/
       WorkspaceArtifactModels.cs
       WorkspaceArtifactService.cs
       IWorkspaceArtifactStore.cs
 
-  Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
+  ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
     DeploymentWorkspaceStore.cs
     Models/DeploymentWorkspaceEntities.cs
     Models/CatalogModelConfiguration.cs
 
-  Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/
+  ValenceControl.PackageCatalog.Persistence.SqliteMigrations/
     Migrations/
 
-  Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/
+  ValenceControl.PackageCatalog.Persistence.SqlServerMigrations/
     Migrations/
 
-  Elsa.Platform.Api/
+  ValenceControl.Api/
     Workspace/
       WorkspaceArtifactContracts.cs
       WorkspaceArtifactEndpoints.cs
     Program.cs
 
-  Elsa.Platform.Console/
+  ValenceControl.Console/
     src/
       app/
         AppShell.tsx
@@ -100,20 +100,20 @@ src/
 
 ```text
 tests/
-  Elsa.Platform.Deployment.Core.Tests/
+  ValenceControl.Deployment.Core.Tests/
     WorkspaceArtifactServiceTests.cs
 
-  Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+  ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
     DeploymentWorkspaceArtifactPersistenceTests.cs
 
-  Elsa.Platform.Api.Tests/
+  ValenceControl.Api.Tests/
     WorkspaceArtifactApiTests.cs
 
-  Elsa.Platform.Console.E2E/
+  ValenceControl.Console.E2E/
     deployments.spec.ts
 ```
 
-**Structure Decision**: Keep workspace registry orchestration in `Elsa.Platform.Deployment.Core`, use the existing catalog EF database as the workspace persistence adapter, expose API routes under workspace deployment/artifact ownership, and implement the console view in a new `features/artifacts` area.
+**Structure Decision**: Keep workspace registry orchestration in `ValenceControl.Deployment.Core`, use the existing catalog EF database as the workspace persistence adapter, expose API routes under workspace deployment/artifact ownership, and implement the console view in a new `features/artifacts` area.
 
 ## Phase Plan
 

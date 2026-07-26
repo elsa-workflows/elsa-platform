@@ -9,7 +9,7 @@ Fields:
 - `Id`: artifact record identifier.
 - `WorkspaceId`: owning workspace.
 - `ArtifactId`: immutable content-derived artifact identity.
-- `LayoutVersion`: artifact layout version, expected to be `platform.elsa.io/deployment-artifact/v1alpha1`.
+- `LayoutVersion`: artifact layout version, expected to be `valence-control/deployment-artifact/v1alpha1`.
 - `ContentDigestAlgorithm`: digest algorithm, expected to be SHA-256 for Phase 1.
 - `ContentDigest`: content digest value.
 - `Format`: folder, zip, or unknown reference format.

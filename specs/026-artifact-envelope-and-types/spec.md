@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Create the shared artifact envelope and artifact type model that lets Elsa Platform accept deployable artifacts from Studio, CLI, CI, and future producers while remaining agnostic about artifact internals. The envelope must carry immutable identity, type identifiers such as `elsa.workflow-definition`, producer metadata, payload references, digest rules, safe display metadata, and compatibility hints without storing raw payload content or secrets in catalog tables."
+**Input**: User description: "Create the shared artifact envelope and artifact type model that lets Valence Control accept deployable artifacts from Studio, CLI, CI, and future producers while remaining agnostic about artifact internals. The envelope must carry immutable identity, type identifiers such as `elsa.workflow-definition`, producer metadata, payload references, digest rules, safe display metadata, and compatibility hints without storing raw payload content or secrets in catalog tables."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -28,9 +28,9 @@ A producer integration submits a typed artifact envelope to the platform so the 
 
 ### User Story 2 - Manage Artifact Type Semantics (Priority: P1)
 
-Platform operators and integration authors rely on a stable artifact type catalog so producers and runtime appliers can agree on artifact meaning without the platform needing to understand every payload.
+Valence Control operators and integration authors rely on a stable artifact type catalog so producers and runtime appliers can agree on artifact meaning without the platform needing to understand every payload.
 
-**Why this priority**: Artifact type IDs are the contract between producers, Platform, and runtime integrations. They must be stable, discoverable, and constrained before runtime command sync is introduced.
+**Why this priority**: Artifact type IDs are the contract between producers, Valence Control, and runtime integrations. They must be stable, discoverable, and constrained before runtime command sync is introduced.
 
 **Independent Test**: Register or load the built-in `elsa.workflow-definition` artifact type and verify envelopes that reference unknown, disabled, or incompatible artifact types fail closed.
 

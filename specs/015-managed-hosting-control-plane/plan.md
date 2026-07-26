@@ -12,7 +12,7 @@ Introduce a narrow managed hosting control plane for provisioning, lifecycle, UR
 **Primary Dependencies**: ASP.NET Core minimal APIs, EF Core, deployment adapter ports, health polling, background jobs, xUnit, FluentAssertions.
 **Storage**: Managed environment, instance, resource, and event records in existing relational database.
 **Testing**: Core service tests, API tests, adapter fakes.
-**Target Platform**: Existing ASP.NET Core modular monolith.
+**Target platform**: Existing ASP.NET Core modular monolith.
 **Constraints**: One region/provider/shape first; no billing/custom domains/SLA.
 
 ## Constitution Check
@@ -33,11 +33,11 @@ Introduce a narrow managed hosting control plane for provisioning, lifecycle, UR
 ## Project Structure
 
 ```text
-src/Elsa.Platform.PackageCatalog.Core/ManagedHosting/
-src/Elsa.Platform.Api/Workspace/WorkspaceManagedHostingEndpoints.cs
-src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
-tests/Elsa.Platform.PackageCatalog.Core.Tests/
-tests/Elsa.Platform.Api.Tests/
+src/ValenceControl.PackageCatalog.Core/ManagedHosting/
+src/ValenceControl.Api/Workspace/WorkspaceManagedHostingEndpoints.cs
+src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
+tests/ValenceControl.PackageCatalog.Core.Tests/
+tests/ValenceControl.Api.Tests/
 ```
 
 ## Complexity Tracking

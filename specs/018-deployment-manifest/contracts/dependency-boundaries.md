@@ -2,16 +2,16 @@
 
 ## Allowed Dependencies
 
-`Elsa.Platform.Deployment.Manifest` may reference:
+`ValenceControl.Deployment.Manifest` may reference:
 
-- `Elsa.Platform.Deployment.Abstractions`.
+- `ValenceControl.Deployment.Abstractions`.
 - `System.Text.Json`.
 - YAML parser package.
 
 The test project may reference:
 
-- `Elsa.Platform.Deployment.Manifest`.
-- `Elsa.Platform.Deployment.Abstractions`.
+- `ValenceControl.Deployment.Manifest`.
+- `ValenceControl.Deployment.Abstractions`.
 - xUnit.
 - FluentAssertions.
 
@@ -19,16 +19,16 @@ The test project may reference:
 
 The manifest package must not reference:
 
-- `Elsa.Platform.Deployment.Engine`
-- `Elsa.Platform.Deployment.Cli`
-- `Elsa.Platform.Deployment.Api`
-- `Elsa.Platform.Deployment.Artifacts`
-- `Elsa.Platform.Api`
-- `Elsa.Platform.PackageCatalog.Core`
-- `Elsa.Platform.PackageCatalog.Persistence.*`
-- `Elsa.Platform.Console`
-- `Elsa.Platform.RuntimeBuilder.Core`
-- `Elsa.Platform.RuntimeBuilder.DeploymentTemplates`
+- `ValenceControl.Deployment.Engine`
+- `ValenceControl.Deployment.Cli`
+- `ValenceControl.Deployment.Api`
+- `ValenceControl.Deployment.Artifacts`
+- `ValenceControl.Api`
+- `ValenceControl.PackageCatalog.Core`
+- `ValenceControl.PackageCatalog.Persistence.*`
+- `ValenceControl.Console`
+- `ValenceControl.RuntimeBuilder.Core`
+- `ValenceControl.RuntimeBuilder.DeploymentTemplates`
 - ASP.NET hosting packages
 - Entity Framework packages
 - UI packages

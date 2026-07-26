@@ -6,19 +6,19 @@
 
 ## Summary
 
-Add `Elsa.Platform.Deployment.Artifacts` as the next Phase 1 deployment package. The package builds immutable folder artifacts from manifest-normalized resources and workspace payload files, writes the same logical artifact as ZIP, reads folder/ZIP artifacts, verifies SHA-256 checksums, and returns structured diagnostics for invalid layout, missing files, path traversal, unsupported versions, and checksum drift. This slice stops before deployment planning, validation orchestration, dry-run, apply, history, CLI, API, OCI, NuGet, signing, policy, and operator/GitOps integration.
+Add `ValenceControl.Deployment.Artifacts` as the next Phase 1 deployment package. The package builds immutable folder artifacts from manifest-normalized resources and workspace payload files, writes the same logical artifact as ZIP, reads folder/ZIP artifacts, verifies SHA-256 checksums, and returns structured diagnostics for invalid layout, missing files, path traversal, unsupported versions, and checksum drift. This slice stops before deployment planning, validation orchestration, dry-run, apply, history, CLI, API, OCI, NuGet, signing, policy, and operator/GitOps integration.
 
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 using repository-wide `Directory.Build.props`.
 
-**Primary Dependencies**: `Elsa.Platform.Deployment.Abstractions`, `Elsa.Platform.Deployment.Manifest`, `System.Text.Json`, `System.IO.Compression`.
+**Primary Dependencies**: `ValenceControl.Deployment.Abstractions`, `ValenceControl.Deployment.Manifest`, `System.Text.Json`, `System.IO.Compression`.
 
 **Storage**: Local folder and ZIP artifact IO only. No database, object storage, registry, or remote transport.
 
-**Testing**: xUnit and FluentAssertions in `tests/Elsa.Platform.Deployment.Artifacts.Tests`, plus full solution `dotnet test`.
+**Testing**: xUnit and FluentAssertions in `tests/ValenceControl.Deployment.Artifacts.Tests`, plus full solution `dotnet test`.
 
-**Target Platform**: Cross-platform .NET library consumed by future engine, CLI, API, GitOps, and operator slices.
+**Target platform**: Cross-platform .NET library consumed by future engine, CLI, API, GitOps, and operator slices.
 
 **Project Type**: Multi-project .NET repository; this slice adds one source library and one test project.
 
@@ -32,7 +32,7 @@ Add `Elsa.Platform.Deployment.Artifacts` as the next Phase 1 deployment package.
 
 - **Control Plane First**: Pass. Artifacts package control-plane desired state only and exclude runtime execution state.
 - **Bounded Subsystems**: Pass. Artifacts depend only on deployment abstractions, manifest contracts, and serialization/archive primitives.
-- **Contract Stability**: Pass. Layout version is explicit: `platform.elsa.io/deployment-artifact/v1alpha1`.
+- **Contract Stability**: Pass. Layout version is explicit: `valence-control/deployment-artifact/v1alpha1`.
 - **Safety By Design**: Pass. Path traversal is rejected and raw secrets are out of scope.
 - **Incremental Verifiability**: Pass. Build, read, inspect, verify, and boundary tests are independently executable before engine work begins.
 
@@ -59,7 +59,7 @@ specs/019-deployment-artifacts/
 
 ```text
 src/
-  Elsa.Platform.Deployment.Artifacts/
+  ValenceControl.Deployment.Artifacts/
     ArtifactDiagnosticCodes.cs
     ArtifactLayoutConstants.cs
     ArtifactBuildOptions.cs
@@ -76,7 +76,7 @@ src/
     DeploymentArtifactChecksumService.cs
 
 tests/
-  Elsa.Platform.Deployment.Artifacts.Tests/
+  ValenceControl.Deployment.Artifacts.Tests/
     ArtifactBuilderTests.cs
     ArtifactReaderTests.cs
     ArtifactChecksumTests.cs
@@ -84,7 +84,7 @@ tests/
     ArtifactBoundaryTests.cs
 ```
 
-**Structure Decision**: Keep artifact IO in `Elsa.Platform.Deployment.Artifacts`. Manifest parsing/normalization remains in `Elsa.Platform.Deployment.Manifest`; reconciliation remains in `Elsa.Platform.Deployment.Engine`.
+**Structure Decision**: Keep artifact IO in `ValenceControl.Deployment.Artifacts`. Manifest parsing/normalization remains in `ValenceControl.Deployment.Manifest`; reconciliation remains in `ValenceControl.Deployment.Engine`.
 
 ## Phase Plan
 
@@ -102,7 +102,7 @@ Exit gate:
 
 Outcome:
 
-- Source/test projects exist, are added to `Elsa.Platform.sln`, and reference only allowed packages.
+- Source/test projects exist, are added to `ValenceControl.sln`, and reference only allowed packages.
 
 Exit gate:
 

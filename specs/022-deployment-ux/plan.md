@@ -16,13 +16,13 @@ The API exposes authorized workspace routes for setup, cockpit, promotion previe
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence/worker; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, ASP.NET Core hosted services for the first in-process queue worker, existing workspace identity, new workspace permission grants, EF Core catalog persistence, `Elsa.Platform.Deployment.Abstractions`, `Elsa.Platform.Deployment.Engine`, React Router, TanStack Query, Vitest, Playwright where needed, xUnit, and FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, ASP.NET Core hosted services for the first in-process queue worker, existing workspace identity, new workspace permission grants, EF Core catalog persistence, `ValenceControl.Deployment.Abstractions`, `ValenceControl.Deployment.Engine`, React Router, TanStack Query, Vitest, Playwright where needed, xUnit, and FluentAssertions.
 
-**Storage**: Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Deployment tables store provider-backed secret references only, structured desired-state records, permission grants, confirmation metadata, queued run state, and append-only history.
+**Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Deployment tables store provider-backed secret references only, structured desired-state records, permission grants, confirmation metadata, queued run state, and append-only history.
 
 **Testing**: Focused `dotnet test` for API, Deployment.Core, and persistence projects; `npm test` and `npm run typecheck` for console; E2E smoke coverage after the first full console flow is available.
 
-**Target Platform**: ASP.NET Core Platform API and React console served from the platform host.
+**Target platform**: ASP.NET Core Valence Control API and React console served from the platform host.
 
 **Project Type**: Modular monolith web service with React admin/customer console, EF-backed persistence, and an in-process deployment queue worker for the first slice.
 
@@ -35,7 +35,7 @@ The API exposes authorized workspace routes for setup, cockpit, promotion previe
 ## Constitution Check
 
 - **Control Plane First**: Pass. The feature stores and reconciles desired control-plane state, deployment runs, validation, drift metadata, observability metadata, and capability-gated controls; it does not reconcile workflow instances, bookmarks, execution state, queues, locks, or other runtime data-plane state.
-- **Bounded Subsystems**: Pass. `Elsa.Platform.Deployment.Core` owns deployment workspace services, permission abstractions, queue coordination, and domain models. API, EF persistence, worker hosting, and console are adapters. Existing deployment engine/manifest/artifact packages remain dependency-light siblings.
+- **Bounded Subsystems**: Pass. `ValenceControl.Deployment.Core` owns deployment workspace services, permission abstractions, queue coordination, and domain models. API, EF persistence, worker hosting, and console are adapters. Existing deployment engine/manifest/artifact packages remain dependency-light siblings.
 - **Contract Stability**: Pass. New workspace API and console contracts are documented under `contracts/` before implementation. Names are still pre-public but are treated as stable within this feature.
 - **Safety By Design**: Pass. Raw credentials are excluded from records and responses; deployment, rollback, and runtime control mutations fail closed when validation, permission, confirmation, or capability checks fail.
 - **Incremental Verifiability**: Pass. Permissions, cockpit persistence, engine registration, promotion preview, queued runs, confirmation, runtime controls, and console flows are independently testable and represented as separate task phases.
@@ -63,7 +63,7 @@ specs/022-deployment-ux/
 
 ```text
 src/
-  Elsa.Platform.Deployment.Core/
+  ValenceControl.Deployment.Core/
     Cockpit/
       DeploymentCockpitModels.cs
       DeploymentCockpitService.cs
@@ -81,23 +81,23 @@ src/
       ConfirmationService.cs
       ObservabilityDriftService.cs
 
-  Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
+  ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
     DeploymentWorkspaceStore.cs
     Models/CatalogModelConfiguration.cs
 
-  Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/
+  ValenceControl.PackageCatalog.Persistence.SqliteMigrations/
     Migrations/
 
-  Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/
+  ValenceControl.PackageCatalog.Persistence.SqlServerMigrations/
     Migrations/
 
-  Elsa.Platform.Api/
+  ValenceControl.Api/
     Workspace/
       WorkspaceDeploymentEndpoints.cs
       WorkspaceDeploymentContracts.cs
     Program.cs
 
-  Elsa.Platform.Console/
+  ValenceControl.Console/
     src/
       features/deployments/
         deploymentApi.ts
@@ -112,7 +112,7 @@ src/
 
 ```text
 tests/
-  Elsa.Platform.Deployment.Core.Tests/
+  ValenceControl.Deployment.Core.Tests/
     WorkspacePermissionServiceTests.cs
     WorkspaceDeploymentServiceTests.cs
     DeploymentValidationServiceTests.cs
@@ -121,23 +121,23 @@ tests/
     ConfirmationServiceTests.cs
     RuntimeControlServiceTests.cs
 
-  Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+  ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
     DeploymentWorkspacePersistenceTests.cs
 
-  Elsa.Platform.Api.Tests/
+  ValenceControl.Api.Tests/
     WorkspaceDeploymentApiTests.cs
     WorkspaceDeploymentIsolationTests.cs
     WorkspaceDeploymentPermissionTests.cs
     WorkspaceDeploymentMutationAuthorizationTests.cs
 
-  Elsa.Platform.Console/
+  ValenceControl.Console/
     src/features/deployments/*.test.tsx
 
-  Elsa.Platform.Console.E2E/
+  ValenceControl.Console.E2E/
     deployments.spec.ts
 ```
 
-**Structure Decision**: Put deployment workspace orchestration in `Elsa.Platform.Deployment.Core` because it is product deployment domain logic, not catalog logic. Use the existing catalog EF database as the persistence adapter because account/workspace ownership and current persisted workspace resources already live there. Keep permission decisions in deployment core but back them with server-authoritative persistence. Keep API endpoints as authorization/contract adapters and keep console state in the existing deployments feature directory.
+**Structure Decision**: Put deployment workspace orchestration in `ValenceControl.Deployment.Core` because it is product deployment domain logic, not catalog logic. Use the existing catalog EF database as the persistence adapter because account/workspace ownership and current persisted workspace resources already live there. Keep permission decisions in deployment core but back them with server-authoritative persistence. Keep API endpoints as authorization/contract adapters and keep console state in the existing deployments feature directory.
 
 ## Phase Plan
 

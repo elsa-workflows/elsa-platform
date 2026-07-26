@@ -41,12 +41,12 @@ Rules:
 
 Generator-owned hints are compile-time inputs only. They must not replace
 `CShells.Features.ShellFeatureAttribute` and must not create a separate manifest
-contract from `Elsa.Platform.PackageManifests`.
+contract from `ValenceControl.PackageManifests`.
 
 If included in the MVP, source-only hint attributes are emitted into:
 
 ```csharp
-namespace Elsa.Platform.PackageManifest.Generator.Hints;
+namespace ValenceControl.PackageManifest.Generator.Hints;
 ```
 
 ## ManifestSettingAttribute

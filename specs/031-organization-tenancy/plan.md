@@ -12,13 +12,13 @@ Introduce a first-class `Organization` aggregate above workspaces and move the c
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: ASP.NET Core authentication/authorization, ASP.NET Core cookies, JWT bearer validation, EF Core, existing `Elsa.Platform.PackageCatalog.Core.Accounts` account/workspace services, existing workspace authorization helpers, React Router, TanStack Query, Vitest, Playwright where needed, xUnit, and FluentAssertions.
+**Primary Dependencies**: ASP.NET Core authentication/authorization, ASP.NET Core cookies, JWT bearer validation, EF Core, existing `ValenceControl.PackageCatalog.Core.Accounts` account/workspace services, existing workspace authorization helpers, React Router, TanStack Query, Vitest, Playwright where needed, xUnit, and FluentAssertions.
 
-**Storage**: Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Organization tables store customer tenant records, memberships, entitlements, workspace ownership references, and safe audit metadata.
+**Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Organization tables store customer tenant records, memberships, entitlements, workspace ownership references, and safe audit metadata.
 
-**Testing**: Focused `dotnet test` for PackageCatalog core/persistence and Platform API authorization tests; console `vitest` for organization/workspace context and selector behavior; `git diff --check`.
+**Testing**: Focused `dotnet test` for PackageCatalog core/persistence and Valence Control API authorization tests; console `vitest` for organization/workspace context and selector behavior; `git diff --check`.
 
-**Target Platform**: ASP.NET Core Platform API and React console served from the platform host.
+**Target platform**: ASP.NET Core Valence Control API and React console served from the platform host.
 
 **Project Type**: Modular monolith web service with React console and EF-backed workspace persistence.
 
@@ -31,7 +31,7 @@ Introduce a first-class `Organization` aggregate above workspaces and move the c
 ## Constitution Check
 
 - **Control Plane First**: Pass. This feature changes platform control-plane tenancy and does not reconcile workflow runtime data-plane state.
-- **Bounded Subsystems**: Pass. Account, organization, and workspace tenancy live in PackageCatalog core/persistence and Platform API adapters. Deployment, Runtime Builder, and Artifact features consume organization-aware workspace authorization through contracts.
+- **Bounded Subsystems**: Pass. Account, organization, and workspace tenancy live in PackageCatalog core/persistence and Valence Control API adapters. Deployment, Runtime Builder, and Artifact features consume organization-aware workspace authorization through contracts.
 - **Contract Stability**: Pass with care. Existing workspace-scoped routes require compatibility behavior while organization-aware context and management routes are introduced.
 - **Safety By Design**: Pass. Organization records store customer and audit metadata only; secrets, provider tokens, and deployment credentials remain outside organization records.
 - **Incremental Verifiability**: Pass. Migration, context resolution, organization membership, workspace management, authorization isolation, and console selection can be tested independently.
@@ -59,24 +59,24 @@ specs/031-organization-tenancy/
 
 ```text
 src/
-  Elsa.Platform.PackageCatalog.Core/
+  ValenceControl.PackageCatalog.Core/
     Accounts/
       AccountModels.cs
       AccountWorkspaceService.cs
       OrganizationWorkspaceService.cs
       WorkspaceAuthorizationModels.cs
 
-  Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
+  ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
     AccountWorkspaceStore.cs
     Models/CatalogModelConfiguration.cs
 
-  Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/
+  ValenceControl.PackageCatalog.Persistence.SqliteMigrations/
     Migrations/
 
-  Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/
+  ValenceControl.PackageCatalog.Persistence.SqlServerMigrations/
     Migrations/
 
-  Elsa.Platform.Api/
+  ValenceControl.Api/
     Authentication/
       WorkspaceAccessResolver.cs
       WorkspaceAuthorization.cs
@@ -84,7 +84,7 @@ src/
       WorkspaceMeEndpoints.cs
       OrganizationWorkspaceEndpoints.cs
 
-  Elsa.Platform.Console/
+  ValenceControl.Console/
     src/
       lib/
         auth/
@@ -98,18 +98,18 @@ src/
 
 ```text
 tests/
-  Elsa.Platform.PackageCatalog.Core.Tests/
+  ValenceControl.PackageCatalog.Core.Tests/
     OrganizationWorkspaceServiceTests.cs
 
-  Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+  ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
     OrganizationWorkspacePersistenceTests.cs
 
-  Elsa.Platform.Api.Tests/
+  ValenceControl.Api.Tests/
     OrganizationContextApiTests.cs
     OrganizationWorkspaceApiTests.cs
     OrganizationWorkspaceIsolationTests.cs
 
-  Elsa.Platform.Console/
+  ValenceControl.Console/
     src/features/organizations/OrganizationWorkspaceSwitcher.test.tsx
 ```
 

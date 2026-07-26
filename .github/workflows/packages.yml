@@ -1,12 +1,11 @@
 name: Packages
 
 on:
+  pull_request:
   push:
     branches:
       - main
-  release:
-    types:
-      - published
+  workflow_dispatch:
 
 jobs:
   build:
@@ -48,37 +47,20 @@ jobs:
             echo "No Version or VersionPrefix found in Directory.Build.props. Falling back to $BASE_VERSION."
           fi
 
-          if [ "${{ github.event_name }}" = "release" ]; then
-            TAG_NAME="${{ github.event.release.tag_name }}"
-            VERSION="${TAG_NAME#v}"
-
-            if [ -z "$VERSION" ]; then
-              echo "Release tag name is empty; cannot determine version."
-              exit 1
-            fi
-
-            if [ "$VERSION" != "$BASE_VERSION" ]; then
-              echo "Warning: tag version ($VERSION) does not match base version ($BASE_VERSION). Using tag version."
-            fi
-
-            PACKAGE_VERSION="$VERSION"
-            echo "Using release package version: $PACKAGE_VERSION"
-          else
-            PACKAGE_VERSION="${BASE_VERSION}-preview.${GITHUB_RUN_NUMBER}"
-            echo "Using preview package version: $PACKAGE_VERSION"
-          fi
+          PACKAGE_VERSION="${BASE_VERSION}-preview.${GITHUB_RUN_NUMBER}"
+          echo "Using validation package version: $PACKAGE_VERSION"
 
           echo "package-version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
           echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> "$GITHUB_ENV"
 
       - name: Restore
-        run: dotnet restore Elsa.Platform.sln
+        run: dotnet restore ValenceControl.sln
 
       - name: Build
-        run: dotnet build Elsa.Platform.sln --configuration Release --no-restore
+        run: dotnet build ValenceControl.sln --configuration Release --no-restore
 
       - name: Test
-        run: dotnet test Elsa.Platform.sln --configuration Release --no-build --verbosity normal
+        run: dotnet test ValenceControl.sln --configuration Release --no-build --verbosity normal
 
       - name: Pack packages
         shell: bash
@@ -87,8 +69,8 @@ jobs:
           mkdir -p ./artifacts
 
           projects=(
-            "src/Elsa.Platform.PackageManifests/Elsa.Platform.PackageManifests.csproj"
-            "src/Elsa.Platform.PackageManifest.Generator/Elsa.Platform.PackageManifest.Generator.csproj"
+            "src/ValenceControl.PackageManifests/ValenceControl.PackageManifests.csproj"
+            "src/ValenceControl.PackageManifest.Generator/ValenceControl.PackageManifest.Generator.csproj"
           )
 
           for proj in "${projects[@]}"; do
@@ -103,106 +85,6 @@ jobs:
       - name: Upload packages as artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nuget-packages
+          name: valence-control-nuget-packages
           path: ./artifacts/*.nupkg
           retention-days: 7
-
-  deploy-feedz:
-    name: Deploy to Feedz.io
-    runs-on: ubuntu-latest
-    needs: build
-    if: needs.build.result == 'success'
-    permissions:
-      contents: read
-    env:
-      FEEDZ_SOURCE: "https://f.feedz.io/elsa-workflows/elsa-3/nuget/index.json"
-    steps:
-      - name: Download packages
-        uses: actions/download-artifact@v4
-        with:
-          name: nuget-packages
-          path: ./artifacts
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "10.0.x"
-
-      - name: Push packages to Feedz.io
-        env:
-          FEEDZ_API_KEY: ${{ secrets.FEEDZ_API_KEY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ -z "${FEEDZ_API_KEY:-}" ]; then
-            echo "FEEDZ_API_KEY secret is not set."
-            exit 1
-          fi
-
-          dotnet nuget add source "$FEEDZ_SOURCE" \
-            --name Feedz \
-            --username "token" \
-            --password "$FEEDZ_API_KEY" \
-            --store-password-in-clear-text
-
-          shopt -s nullglob
-          nupkgs=(./artifacts/*.nupkg)
-          if [ ${#nupkgs[@]} -eq 0 ]; then
-            echo "No .nupkg files found in ./artifacts/"
-            exit 1
-          fi
-
-          for nupkg in "${nupkgs[@]}"; do
-            echo "Pushing $nupkg to Feedz.io..."
-            dotnet nuget push "$nupkg" \
-              --source Feedz \
-              --api-key "$FEEDZ_API_KEY" \
-              --skip-duplicate
-          done
-
-  deploy-nuget:
-    name: Deploy to NuGet.org
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name == 'release' && github.event.action == 'published' && needs.build.result == 'success'
-    permissions:
-      contents: read
-    steps:
-      - name: Download packages
-        uses: actions/download-artifact@v4
-        with:
-          name: nuget-packages
-          path: ./artifacts
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "10.0.x"
-
-      - name: Push packages to NuGet.org
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ -z "${NUGET_API_KEY:-}" ]; then
-            echo "NUGET_API_KEY secret is not set."
-            exit 1
-          fi
-
-          shopt -s nullglob
-          nupkgs=(./artifacts/*.nupkg)
-          if [ ${#nupkgs[@]} -eq 0 ]; then
-            echo "No .nupkg files found in ./artifacts/"
-            exit 1
-          fi
-
-          for nupkg in "${nupkgs[@]}"; do
-            echo "Pushing $nupkg to NuGet.org..."
-            dotnet nuget push "$nupkg" \
-              --source "https://api.nuget.org/v3/index.json" \
-              --api-key "$NUGET_API_KEY" \
-              --skip-duplicate
-          done

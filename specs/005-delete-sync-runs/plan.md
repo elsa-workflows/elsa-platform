@@ -8,7 +8,7 @@
 
 ## Summary
 
-Add an administrator-only sync run cleanup capability that can delete a single terminal sync run or all terminal sync runs completed before an explicit UTC cutoff. The implementation stays in the existing ASP.NET Core admin API, `Elsa.Platform.PackageCatalog.Core` sync domain, EF Core persistence adapter, and console sync-runs feature. Cleanup preserves package sources, packages, package versions, manifests, validation results, approvals, and public catalog state while removing only sync run history and dependent item diagnostics.
+Add an administrator-only sync run cleanup capability that can delete a single terminal sync run or all terminal sync runs completed before an explicit UTC cutoff. The implementation stays in the existing ASP.NET Core admin API, `ValenceControl.PackageCatalog.Core` sync domain, EF Core persistence adapter, and console sync-runs feature. Cleanup preserves package sources, packages, package versions, manifests, validation results, approvals, and public catalog state while removing only sync run history and dependent item diagnostics.
 
 ## Technical Context
 
@@ -20,7 +20,7 @@ Add an administrator-only sync run cleanup capability that can delete a single t
 
 **Testing**: xUnit, FluentAssertions, ASP.NET Core WebApplicationFactory integration tests, EF Core persistence tests, Vitest/Testing Library for console behavior where UI controls are added.
 
-**Target Platform**: ASP.NET Core API container deployed to Azure App Service with the built React console served by the API host.
+**Target platform**: ASP.NET Core API container deployed to Azure App Service with the built React console served by the API host.
 
 **Project Type**: Modular monolith web service with static console assets.
 
@@ -40,7 +40,7 @@ The plan MUST answer these gates:
   - Not impacted. This feature only deletes sync history records.
 - **No arbitrary code execution**: Does every package-processing path inspect only package files, nuspec metadata, and manifest JSON?
   - Not impacted. No package-processing path changes.
-- **Stable contracts**: Are `Elsa.Platform.PackageManifests` changes dependency-light, versioned, and separate from persistence/runtime internals?
+- **Stable contracts**: Are `ValenceControl.PackageManifests` changes dependency-light, versioned, and separate from persistence/runtime internals?
   - Not impacted. No manifest contract changes.
 - **Schema evolution**: Are schema versioning, extension metadata, compatibility behavior, and breaking-change rules documented?
   - Not impacted.
@@ -80,38 +80,38 @@ specs/005-delete-sync-runs/
 
 ```text
 src/
-├── Elsa.Platform.PackageCatalog.Core/
+├── ValenceControl.PackageCatalog.Core/
 │   └── Sync/
 │       ├── PackageSyncService.cs
 │       ├── SyncModels.cs
 │       └── SyncRunCleanupService.cs
-├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
+├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
 │   └── SyncRunStore.cs
-├── Elsa.Platform.Api/
+├── ValenceControl.Api/
 │   └── Admin/
 │       └── Sync/
 │           ├── AdminSyncContracts.cs
 │           └── AdminSyncEndpoints.cs
-└── Elsa.Platform.Console/
+└── ValenceControl.Console/
     └── src/
         └── features/
             └── sync-runs/
 
 tests/
-├── Elsa.Platform.PackageCatalog.Core.Tests/
+├── ValenceControl.PackageCatalog.Core.Tests/
 │   └── SyncRunCleanupServiceTests.cs
-├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
 │   └── SyncPersistenceTests.cs
-├── Elsa.Platform.Api.Tests/
+├── ValenceControl.Api.Tests/
 │   └── AdminSyncApiTests.cs
-└── Elsa.Platform.Console/
+└── ValenceControl.Console/
     └── src/
         └── features/
             └── sync-runs/
                 └── SyncRunsPage.test.tsx
 ```
 
-**Structure Decision**: Keep cleanup rules in `Elsa.Platform.PackageCatalog.Core` because terminal-state protection and result counting are domain behavior. Implement deletion in the EF Core sync run store because it owns `SyncRuns` and `SyncRunItems`. Expose the capability through the existing admin sync endpoint group and add focused UI controls to the existing Sync Runs screen rather than creating a new admin destination.
+**Structure Decision**: Keep cleanup rules in `ValenceControl.PackageCatalog.Core` because terminal-state protection and result counting are domain behavior. Implement deletion in the EF Core sync run store because it owns `SyncRuns` and `SyncRunItems`. Expose the capability through the existing admin sync endpoint group and add focused UI controls to the existing Sync Runs screen rather than creating a new admin destination.
 
 ## Complexity Tracking
 

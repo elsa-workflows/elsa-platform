@@ -1,6 +1,6 @@
 # Weaver Configuration
 
-Weaver is the Elsa Platform workspace assistant. It runs from the API backend and uses a configured agent runtime to inspect authorized workspace state, draft operational plans, and execute only approved platform actions.
+Weaver is the Valence Control workspace assistant. It runs from the API backend and uses a configured agent runtime to inspect authorized workspace state, draft operational plans, and execute only approved platform actions.
 
 Weaver is disabled by default.
 
@@ -69,7 +69,7 @@ Provider API keys must never be committed, logged, stored in Weaver session reco
 ## GitHub Copilot Runtime
 
 Use GitHub Copilot-backed mode when the API host has a valid GitHub token or authenticated Copilot runtime.
-The API uses the GitHub Copilot SDK in empty-mode hosting, which means only explicitly registered Elsa Platform tools are available to the agent; built-in shell, filesystem, git, and edit tools are not exposed.
+The API uses the GitHub Copilot SDK in empty-mode hosting, which means only explicitly registered Valence Control tools are available to the agent; built-in shell, filesystem, git, and edit tools are not exposed.
 
 ```json
 {

@@ -1,4 +1,4 @@
-# Feature Specification: Elsa Package Catalog
+# Feature Specification: Valence Control Package Catalog
 
 **Feature Branch**: `001-package-catalog`
 
@@ -6,13 +6,13 @@
 
 **Status**: Draft
 
-**Input**: User description: "Create a specification for an ASP.NET Core application called Elsa Package Catalog together with a shared manifest contract package called Elsa.Platform.PackageManifests."
+**Input**: User description: "Create a specification for an ASP.NET Core application called Valence Control Package Catalog together with a shared manifest contract package called ValenceControl.PackageManifests."
 
 ## Overview
 
-Elsa Package Catalog provides a discoverable catalog of approved NuGet packages for professional Elsa Docker images and the future Elsa Runtime Builder UI. It indexes configured package sources, extracts generated `elsa-package.json` manifests from NuGet packages, validates those manifests, persists package metadata, and exposes read APIs for package, version, feature, settings, compatibility, validation, and approval information.
+Valence Control Package Catalog provides a discoverable catalog of approved NuGet packages for professional Elsa Docker images and the future Valence Control Runtime Builder UI. It indexes configured package sources, extracts generated `elsa-package.json` manifests from NuGet packages, validates those manifests, persists package metadata, and exposes read APIs for package, version, feature, settings, compatibility, validation, and approval information.
 
-The feature also defines `Elsa.Platform.PackageManifests`, a shared wire contract package used by the future manifest generator, catalog service, runtime validation, and Runtime Builder tooling. The contract package defines versioned manifest DTOs, schema constants, JSON serialization behavior, validation abstractions, compatibility models, extension data support, and embedded schema resources where appropriate. It must remain independent from catalog persistence and runtime infrastructure.
+The feature also defines `ValenceControl.PackageManifests`, a shared wire contract package used by the future manifest generator, catalog service, runtime validation, and Runtime Builder tooling. The contract package defines versioned manifest DTOs, schema constants, JSON serialization behavior, validation abstractions, compatibility models, extension data support, and embedded schema resources where appropriate. It must remain independent from catalog persistence and runtime infrastructure.
 
 The first catalog implementation is a modular monolith with separate public and admin APIs, durable local storage, periodic source synchronization, admin-triggered syncs, approval workflow support, and immutable package-version handling. The system must never execute package code or load arbitrary package assemblies; it only inspects package files and manifests.
 
@@ -185,7 +185,7 @@ Manifest tooling, catalog ingestion, and future runtime validation can all use o
 
 ### Functional Requirements
 
-- **FR-001**: The system MUST define a shared manifest contract package named `Elsa.Platform.PackageManifests` that represents the manifest wire contract only.
+- **FR-001**: The system MUST define a shared manifest contract package named `ValenceControl.PackageManifests` that represents the manifest wire contract only.
 - **FR-002**: The shared manifest contract MUST NOT depend on catalog persistence concerns, runtime installation internals, Nuplane execution, or arbitrary package assembly loading.
 - **FR-003**: The shared manifest contract MUST define strongly typed DTOs for `ElsaPackageManifest`, `FeatureManifest`, `FeatureSettingManifest`, `CompatibilityManifest`, `DependencyManifest`, `ConflictManifest`, `LicenseManifest`, `DocumentationManifest`, and validation result types.
 - **FR-004**: The shared manifest contract MUST expose manifest schema version constants and identify the currently supported schema version.
@@ -290,7 +290,7 @@ Admin endpoints:
 
 ### Shared Manifest Contract Design
 
-The `Elsa.Platform.PackageManifests` contract is the canonical JSON model shared by manifest generation, catalog ingestion, future runtime validation, and future Runtime Builder tooling.
+The `ValenceControl.PackageManifests` contract is the canonical JSON model shared by manifest generation, catalog ingestion, future runtime validation, and future Runtime Builder tooling.
 
 Contract principles:
 
@@ -363,15 +363,15 @@ Recommended setting shape:
 
 ### Architecture and Solution Structure
 
-The catalog is an ASP.NET Core modular monolith using an onion-style layering model. `Elsa.Platform.PackageCatalog.Core` is the inner catalog model and workflow layer. API, persistence, and NuGet packaging concerns sit outside the core so the first version remains simple while preserving clear boundaries for future growth.
+The catalog is an ASP.NET Core modular monolith using an onion-style layering model. `ValenceControl.PackageCatalog.Core` is the inner catalog model and workflow layer. API, persistence, and NuGet packaging concerns sit outside the core so the first version remains simple while preserving clear boundaries for future growth.
 
 Suggested solution projects:
 
-- **Elsa.Platform.PackageManifests**: Shared manifest DTOs, schema version constants, JSON serialization settings, validation abstractions and helpers, compatibility models, extension data support, validation result contracts, and embedded JSON Schema resources.
-- **Elsa.Platform.Api**: Public and admin REST endpoints, API key authentication, request and response contracts, error responses, and API documentation.
-- **Elsa.Platform.PackageCatalog.Core**: Catalog entities, value objects, enums, manifest projections, approval rules, immutable package-version behavior, sync status concepts, and small use-case services when they earn their place outside the API layer.
-- **Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore**: SQLite-backed persistence, relational mappings, migrations, query projections, and database-provider-neutral model design for later PostgreSQL support.
-- **Elsa.Platform.PackageCatalog.Sources.NuGet**: NuGet feed querying, package version discovery, package download, manifest archive inspection, NuGet metadata extraction, and NuGet-specific error translation.
+- **ValenceControl.PackageManifests**: Shared manifest DTOs, schema version constants, JSON serialization settings, validation abstractions and helpers, compatibility models, extension data support, validation result contracts, and embedded JSON Schema resources.
+- **ValenceControl.Api**: Public and admin REST endpoints, API key authentication, request and response contracts, error responses, and API documentation.
+- **ValenceControl.PackageCatalog.Core**: Catalog entities, value objects, enums, manifest projections, approval rules, immutable package-version behavior, sync status concepts, and small use-case services when they earn their place outside the API layer.
+- **ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore**: SQLite-backed persistence, relational mappings, migrations, query projections, and database-provider-neutral model design for later PostgreSQL support.
+- **ValenceControl.PackageCatalog.Sources.NuGet**: NuGet feed querying, package version discovery, package download, manifest archive inspection, NuGet metadata extraction, and NuGet-specific error translation.
 
 Initial technical constraints:
 
@@ -615,8 +615,8 @@ Required tables or equivalent persisted collections:
 
 ## Assumptions
 
-- The initial application is implemented as a modular monolith named Elsa Package Catalog.
-- The initial shared contract package is named `Elsa.Platform.PackageManifests`.
+- The initial application is implemented as a modular monolith named Valence Control Package Catalog.
+- The initial shared contract package is named `ValenceControl.PackageManifests`.
 - The initial service uses REST APIs and separates public APIs from admin APIs.
 - The initial durable store is SQLite with a relational model designed so PostgreSQL can be introduced later.
 - Persistence uses an abstraction that keeps the domain model independent from the database provider.

@@ -12,21 +12,21 @@
 
 ## Settled Product Direction
 
-For platform-integrated installations, Elsa Studio remains the workflow authoring and single-engine runtime inspection surface, while Elsa Platform is the source of truth for immutable deployable workflow artifacts and cross-environment desired-state revisions.
+For Valence Control-integrated installations, Elsa Studio remains the workflow authoring and single-engine runtime inspection surface, while Valence Control is the source of truth for immutable deployable workflow artifacts and cross-environment desired-state revisions.
 
-The Studio integration uses the command **Submit to Platform** when a user is ready to hand off a workflow snapshot. This creates a platform-owned artifact; it does not release, promote, deploy, or make the workflow immediately executable. Elsa Platform then owns release readiness, promotion, deployment, rollback, audit, and environment governance. Elsa runtimes remain responsible for executing deployed artifacts and owning runtime state such as instances, bookmarks, queues, and logs.
+The Studio integration uses the command **Submit to Valence Control** when a user is ready to hand off a workflow snapshot. This creates a platform-owned artifact; it does not release, promote, deploy, or make the workflow immediately executable. Valence Control then owns release readiness, promotion, deployment, rollback, audit, and environment governance. Elsa runtimes remain responsible for executing deployed artifacts and owning runtime state such as instances, bookmarks, queues, and logs.
 
-Direct runtime **Publish** behavior may still exist in non-integrated Studio installations, but platform-integrated UX must not use Publish language for the platform handoff unless it explicitly distinguishes direct runtime publishing from submitting an artifact to Platform.
+Direct runtime **Publish** behavior may still exist in non-integrated Studio installations, but Valence Control-integrated UX must not use Publish language for the platform handoff unless it explicitly distinguishes direct runtime publishing from submitting an artifact to Valence Control.
 
 Runtime deployment communication is modeled as durable platform-owned deployment runs and deployment commands. A runtime integration package may consume those commands by outbound pull/sync, webhook-triggered fetch, or direct platform push, but the deployment run remains the authoritative state and the command/result contract remains transport-independent. Runtime pull is the preferred default for customer-hosted environments because it avoids requiring inbound network access to the runtime.
 
-Git-backed desired-state versioning is the preferred long-term source-control model for deployment governance. Elsa Platform should be able to attach a workspace or organization to a Git repository and write declarative desired-state files for applications, environments, runtime configurations, artifact references, secret references, observability bindings, infrastructure requirements, promotions, and rollbacks. Git versions the intended state that operators review, promote, deploy, and roll back. Deployment runs, runtime commands, engine health, verification results, drift observations, approval events, logs, and audit history remain platform operational records rather than Git-authored desired-state files.
+Git-backed desired-state versioning is the preferred long-term source-control model for deployment governance. Valence Control should be able to attach a workspace or organization to a Git repository and write declarative desired-state files for applications, environments, runtime configurations, artifact references, secret references, observability bindings, infrastructure requirements, promotions, and rollbacks. Git versions the intended state that operators review, promote, deploy, and roll back. Deployment runs, runtime commands, engine health, verification results, drift observations, approval events, logs, and audit history remain platform operational records rather than Git-authored desired-state files.
 
-Git integration must be optional at first. Workspaces without Git continue using platform-owned versioned desired-state records. Workspaces with Git enabled treat Git commits as the durable revision source and Platform database records as indexed projections, validation state, runtime coordination state, and audit history. The existing desired-state revision `commit` concept should become platform-managed when Git is enabled instead of remaining caller-supplied metadata.
+Git integration must be optional at first. Workspaces without Git continue using platform-owned versioned desired-state records. Workspaces with Git enabled treat Git commits as the durable revision source and Valence Control database records as indexed projections, validation state, runtime coordination state, and audit history. The existing desired-state revision `commit` concept should become platform-managed when Git is enabled instead of remaining caller-supplied metadata.
 
 ### Future GitOps Spec Seed
 
-The future GitOps feature should define how Platform maps workspace deployment state to a repository, how it writes and reads deterministic files, and how it reconciles database projections with Git commits.
+The future GitOps feature should define how Valence Control maps workspace deployment state to a repository, how it writes and reads deterministic files, and how it reconciles database projections with Git commits.
 
 Candidate Git-owned files:
 
@@ -47,7 +47,7 @@ Non-Git operational records:
 
 ### User Story 1 - Sign In With Trusted Identity (Priority: P1)
 
-A customer user signs in through a configured platform identity provider adapter, such as generic OIDC/JWT, Microsoft Entra, Auth0, Keycloak, or a trusted frontend/backend integration, and is recognized by the platform without supplying account or workspace identifiers directly.
+A customer user signs in through a configured Valence Control identity provider adapter, such as generic OIDC/JWT, Microsoft Entra, Auth0, Keycloak, or a trusted frontend/backend integration, and is recognized by the platform without supplying account or workspace identifiers directly.
 
 **Why this priority**: Every customer-owned feature depends on a trustworthy user identity before account provisioning, workspace membership, private catalog visibility, saved configurations, deployment targets, or managed runtime ownership can be safe.
 
@@ -114,7 +114,7 @@ Workspace owners and administrators can perform privileged workspace operations,
 
 ### User Story 5 - Preserve Operator Access Separately (Priority: P2)
 
-Platform operators retain a separate admin access path for operational and emergency use without making the admin API key a customer login mechanism.
+Valence Control operators retain a separate admin access path for operational and emergency use without making the admin API key a customer login mechanism.
 
 **Why this priority**: The current admin dashboard key flow is useful as an operator fallback, but customer-facing login and workspace tenancy must not depend on a shared admin secret.
 
@@ -146,27 +146,27 @@ A workspace member registers one or more workflow engines as concrete Elsa appli
 
 ### User Story 7 - Submit Workflow Artifacts And Promote Desired State Across Environments (Priority: P3)
 
-A workspace member authors workflows in Elsa Studio, submits published workflow snapshots to Elsa Platform as immutable deployable artifacts, combines those artifacts with feature flags, shell configuration, runtime configuration, secret references, observability bindings, and engine target bindings as versioned desired state, then promotes reviewed revisions from dev to test, stage, and production.
+A workspace member authors workflows in Elsa Studio, submits published workflow snapshots to Valence Control as immutable deployable artifacts, combines those artifacts with feature flags, shell configuration, runtime configuration, secret references, observability bindings, and engine target bindings as versioned desired state, then promotes reviewed revisions from dev to test, stage, and production.
 
-**Why this priority**: Users need a safe deployment flow where the source of truth is not whichever workflow engine was edited most recently. Elsa Studio remains the authoring surface and Elsa runtimes remain the execution surface, while Elsa Platform owns the immutable artifacts that can be diffed, validated, approved, deployed, promoted, and rolled back.
+**Why this priority**: Users need a safe deployment flow where the source of truth is not whichever workflow engine was edited most recently. Elsa Studio remains the authoring surface and Elsa runtimes remain the execution surface, while Valence Control owns the immutable artifacts that can be diffed, validated, approved, deployed, promoted, and rolled back.
 
 **Independent Test**: Can be tested by submitting a workflow artifact from an Elsa Studio integration, creating two environment revisions that reference artifact versions, comparing them, promoting selected changes into a target environment, validating required secrets and engine compatibility, creating a durable deployment command, having a runtime integration claim/report the command, and recording the deployed revision.
 
 **Acceptance Scenarios**:
 
-1. **Given** a workflow is authored in Elsa Studio, **When** the user chooses "Submit to Platform" from a platform-integrated Studio installation, **Then** Elsa Platform stores an immutable deployable workflow artifact with safe metadata and a content hash without requiring Elsa Studio or the Elsa runtime to change their existing authoring or execution storage behavior.
-2. **Given** a workflow artifact is available in Elsa Platform desired state, **When** the user promotes it to test, **Then** the platform shows the workflow artifact, configuration, feature, shell, secret-reference, and observability differences before deployment.
+1. **Given** a workflow is authored in Elsa Studio, **When** the user chooses "Submit to Valence Control" from a Valence Control-integrated Studio installation, **Then** Valence Control stores an immutable deployable workflow artifact with safe metadata and a content hash without requiring Elsa Studio or the Elsa runtime to change their existing authoring or execution storage behavior.
+2. **Given** a workflow artifact is available in Valence Control desired state, **When** the user promotes it to test, **Then** the platform shows the workflow artifact, configuration, feature, shell, secret-reference, and observability differences before deployment.
 3. **Given** a target environment is missing a required secret reference or the registered engine lacks a required capability, **When** the user attempts deployment, **Then** validation fails before any target engine state is changed.
-4. **Given** deployment validation succeeds, **When** the user starts deployment, **Then** Elsa Platform records a deployment run and command that the target runtime integration can claim by pull/sync, fetch after webhook notification, or receive by direct push according to the environment's configured transport.
+4. **Given** deployment validation succeeds, **When** the user starts deployment, **Then** Valence Control records a deployment run and command that the target runtime integration can claim by pull/sync, fetch after webhook notification, or receive by direct push according to the environment's configured transport.
 5. **Given** production is running revision 12 and revision 14 causes a regression, **When** an authorized user chooses rollback, **Then** the platform can redeploy a previously known-good revision and records the rollback as a deployment event.
 
 ---
 
 ### User Story 8 - Observe And Govern Runtime Environments (Priority: P3)
 
-A workspace member uses Elsa Platform as a central cockpit for environment health, structured logs, console streams, traces, metrics, deployment history, secret-reference status, and drift between desired and observed engine state.
+A workspace member uses Valence Control as a central cockpit for environment health, structured logs, console streams, traces, metrics, deployment history, secret-reference status, and drift between desired and observed engine state.
 
-**Why this priority**: Cross-environment governance is the main reason to centralize this in Elsa Platform rather than leaving every runtime concern inside one Elsa Studio connection.
+**Why this priority**: Cross-environment governance is the main reason to centralize this in Valence Control rather than leaving every runtime concern inside one Elsa Studio connection.
 
 **Independent Test**: Can be tested by configuring observability bindings for an environment, pulling logs and traces from the configured backends, correlating them with a deployment revision, and detecting when live engine state differs from desired state.
 
@@ -174,13 +174,13 @@ A workspace member uses Elsa Platform as a central cockpit for environment healt
 
 1. **Given** an environment has log, trace, metric, and console bindings, **When** the user opens the environment cockpit, **Then** the platform retrieves runtime telemetry from the configured providers and scopes results to the workspace and environment.
 2. **Given** a workflow engine has live configuration that differs from the last deployed desired-state revision, **When** the platform checks drift, **Then** it reports the difference without silently overwriting either side.
-3. **Given** Elsa Studio and Elsa Platform both expose access to secrets or configuration, **When** a user changes a value through either surface, **Then** the change is governed by the same workspace authorization, provider-backed secret rules, audit metadata, and desired-state policy.
+3. **Given** Elsa Studio and Valence Control both expose access to secrets or configuration, **When** a user changes a value through either surface, **Then** the change is governed by the same workspace authorization, provider-backed secret rules, audit metadata, and desired-state policy.
 
 ---
 
-### User Story 9 - Use An Agentic Platform Copilot (Priority: P3)
+### User Story 9 - Use An Agentic Valence Control Copilot (Priority: P3)
 
-A workspace member uses an AI assistant inside Elsa Platform to investigate workspace state, explain differences, draft deployment plans, propose fixes, and prepare operational actions across environments while the platform keeps identity, workspace authorization, approval, and audit controls authoritative.
+A workspace member uses an AI assistant inside Valence Control to investigate workspace state, explain differences, draft deployment plans, propose fixes, and prepare operational actions across environments while the platform keeps identity, workspace authorization, approval, and audit controls authoritative.
 
 **Why this priority**: Cross-environment deployment and operations become too complex for users to inspect manually at scale. A copilot experience can reduce operational effort only if it is grounded in the user's actual workspace access, cannot bypass roles or entitlements, and never performs risky changes without explicit approval.
 
@@ -200,7 +200,7 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - OIDC configuration is incomplete, disabled, or references an unavailable provider metadata endpoint; customer login is unavailable with an operator-visible configuration error rather than silently accepting an unverified identity.
 - A trusted identity token is expired, has the wrong audience, has an untrusted issuer, or lacks a stable subject; the request is rejected before account or workspace data is read or created.
 - The identity provider callback fails because of invalid state, replay, mismatched redirect URI, authorization denial, or code exchange failure; no customer account, workspace, or session is created.
-- A browser refreshes or opens a second tab while the customer session is valid; workspace context loads from the established platform identity without requiring caller-supplied account or workspace IDs.
+- A browser refreshes or opens a second tab while the customer session is valid; workspace context loads from the established Valence Control identity without requiring caller-supplied account or workspace IDs.
 - A browser still holds an expired, revoked, or invalid access token/session; the console clears unusable auth state, returns to sign-in, and does not retry workspace APIs with forged headers.
 - A deployment uses a backend-for-frontend session instead of direct browser bearer tokens; API authorization still resolves the same trusted issuer and subject and never trusts frontend-provided membership data.
 - The same email address appears under different issuer and subject pairs; account linkage remains based on trusted issuer and subject, not email alone.
@@ -212,13 +212,13 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - A workflow engine is unreachable, presents invalid credentials, or has an untrusted certificate; deployment and control operations fail closed while preserving existing desired state.
 - A requested runtime control is not advertised by the workflow engine or a configured hosting adapter; the platform rejects the operation instead of guessing how to perform it.
 - A hosting provider can restart infrastructure but the workflow engine can only reload shells or configuration; the UI and audit trail distinguish host operations from engine API operations.
-- A runtime is behind a firewall or private network; runtime pull/sync remains available without requiring inbound access from Elsa Platform.
+- A runtime is behind a firewall or private network; runtime pull/sync remains available without requiring inbound access from Valence Control.
 - A webhook notification is delayed, duplicated, or lost; the runtime can still discover pending deployment commands from the platform-owned command queue.
-- A runtime claims a command but stops reporting progress; Elsa Platform marks the run stale or recovery-required without automatically issuing a duplicate apply.
+- A runtime claims a command but stops reporting progress; Valence Control marks the run stale or recovery-required without automatically issuing a duplicate apply.
 - Required secret values are missing, inaccessible, or stored in a provider unavailable to the target environment; deployment validation fails before applying changes.
 - Observability storage is unavailable or returns partial results; the environment cockpit reports telemetry degradation without changing engine state.
 - Live workflow engine state drifts from the platform-owned desired state; the platform reports drift and requires an explicit reconcile, import, or redeploy action.
-- A platform-integrated Elsa Studio installation still exposes the old direct runtime Publish command; the UI must clearly distinguish direct runtime publishing from "Submit to Platform" and must not imply that submission makes the workflow immediately executable.
+- A Valence Control-integrated Elsa Studio installation still exposes the old direct runtime Publish command; the UI must clearly distinguish direct runtime publishing from "Submit to Valence Control" and must not imply that submission makes the workflow immediately executable.
 - Runtime tenant manifests and tenant-specific deployment reconciliation are not implemented by the identity foundation; they remain later deployment-platform scope but must fit under the workspace/environment model.
 - The assistant cannot retrieve required context because a provider is unavailable or the user lacks access; it reports the missing context and does not invent state, secrets, approvals, or validation results.
 - An assistant prompt asks for cross-workspace data, operator-only data, raw secrets, hidden credentials, or a role bypass; the platform denies the tool access even if the assistant attempts to request it.
@@ -230,7 +230,7 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 ### Functional Requirements
 
 - **FR-001**: System MUST authenticate customer users from a trusted identity context that provides a verifiable issuer and stable subject.
-- **FR-001a**: System MUST expose a pluggable platform identity adapter boundary so deployments can configure Generic OIDC/JWT, Microsoft Entra, Auth0, Keycloak, trusted backend, or custom integrations without changing account/workspace tenancy behavior.
+- **FR-001a**: System MUST expose a pluggable Valence Control identity adapter boundary so deployments can configure Generic OIDC/JWT, Microsoft Entra, Auth0, Keycloak, trusted backend, or custom integrations without changing account/workspace tenancy behavior.
 - **FR-001b**: System MUST support configurable claim mapping for subject, display name, and email metadata.
 - **FR-001c**: System MUST provide a customer login flow for the console that supports a standards-based OIDC authorization-code flow with PKCE or an equivalent backend-mediated flow that verifies the provider response before creating a platform-authenticated context.
 - **FR-001d**: System MUST provide customer logout behavior that clears platform session or token state and, when configured, redirects to or invokes the upstream identity provider logout endpoint.
@@ -248,7 +248,7 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **FR-009**: System MUST enforce workspace entitlement snapshots for entitlement-gated operations.
 - **FR-010**: System MUST ensure public catalog endpoints expose only public catalog-owned data and never workspace-owned private data to anonymous callers.
 - **FR-011**: System MUST ensure authenticated workspace package, source, builder, saved configuration, deployment target, deployment run, and managed runtime operations expose only records visible to the selected workspace.
-- **FR-012**: System MUST keep platform identity separate from operator authentication.
+- **FR-012**: System MUST keep Valence Control identity separate from operator authentication.
 - **FR-013**: System MUST preserve an operator-authorized path for platform administration and entitlement management.
 - **FR-014**: System MUST prevent customer identities from invoking operator-only operations unless separately granted operator authorization.
 - **FR-015**: System MUST update profile metadata from trusted identity context without changing stable account identity.
@@ -271,16 +271,16 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **FR-032**: System MUST support rollback by redeploying a previously recorded desired-state revision when the target environment and engine capabilities remain compatible.
 - **FR-033**: System MUST represent runtime deployment work as durable platform-owned deployment commands linked to deployment runs, with command identity, target runtime, artifact identity, action, idempotency key, expiration, status, and safe diagnostics.
 - **FR-034**: System MUST allow runtime integrations to consume deployment commands through transport-independent mechanisms including runtime pull/sync, webhook-triggered fetch, and direct platform push where explicitly configured.
-- **FR-035**: System MUST prefer runtime pull/sync as the default transport for customer-hosted runtimes that cannot or should not expose inbound endpoints to Elsa Platform.
+- **FR-035**: System MUST prefer runtime pull/sync as the default transport for customer-hosted runtimes that cannot or should not expose inbound endpoints to Valence Control.
 - **FR-036**: System MUST require runtime integrations to report command acceptance, progress, validation result, apply result, final status, observed artifact digest, and safe diagnostics back to the platform deployment run.
 - **FR-037**: System MUST make deployment commands idempotent and MUST NOT automatically issue duplicate apply commands when a claimed command becomes stale without explicit recovery handling.
 - **FR-038**: System MUST model secrets as provider-backed references with environment scope, provider identity, external key/path, optional version policy, and verification status; secret values MUST remain outside workflow artifacts and desired-state revisions unless a future provider explicitly supports encrypted sealed-secret semantics.
-- **FR-039**: System MUST allow environment observability bindings for structured logs, console streams, OpenTelemetry-compatible traces, and metrics without requiring Elsa Platform to own the underlying telemetry stores.
+- **FR-039**: System MUST allow environment observability bindings for structured logs, console streams, OpenTelemetry-compatible traces, and metrics without requiring Valence Control to own the underlying telemetry stores.
 - **FR-040**: System MUST scope environment observability results to the requesting workspace, environment, workflow engine, shell, workflow artifact, workflow instance, or deployment revision where the provider supports those dimensions.
 - **FR-041**: System MUST detect and report drift between platform-owned desired state and observed workflow engine state without silently overwriting either side.
-- **FR-042**: System MUST support an opt-in Elsa Studio integration that handles the Studio publish lifecycle by offering a "Submit to Platform" command that creates a platform-owned deployable workflow artifact.
-- **FR-043**: System MUST keep Elsa Studio and Elsa Platform aligned on shared authorization, secret-provider, and audit rules when both surfaces expose workflow, configuration, or secret management.
-- **FR-044**: System MUST position Elsa Studio as the single-engine authoring and runtime inspection surface, while Elsa Platform owns deployable workflow artifacts, release readiness, cross-environment promotion, deployment, governance, fleet visibility, and workspace-level controls.
+- **FR-042**: System MUST support an opt-in Elsa Studio integration that handles the Studio publish lifecycle by offering a "Submit to Valence Control" command that creates a platform-owned deployable workflow artifact.
+- **FR-043**: System MUST keep Elsa Studio and Valence Control aligned on shared authorization, secret-provider, and audit rules when both surfaces expose workflow, configuration, or secret management.
+- **FR-044**: System MUST position Elsa Studio as the single-engine authoring and runtime inspection surface, while Valence Control owns deployable workflow artifacts, release readiness, cross-environment promotion, deployment, governance, fleet visibility, and workspace-level controls.
 - **FR-045**: System MUST leave room for future runtime tenant and deployment tenant concepts as nested or environment-specific concerns under workspace ownership, without preventing Organization from becoming the root customer tenant boundary in `specs/031-organization-tenancy`.
 - **FR-046**: System MUST expose an AI assistant boundary that can read, reason over, and summarize workspace-authorized platform context including workspaces, environments, engines, workflow artifacts, desired-state revisions, deployment history, drift, validation results, and observability metadata.
 - **FR-047**: System MUST enforce the same current account, workspace membership, role, entitlement, and operator/customer separation rules for every assistant tool call as for direct API calls.
@@ -298,14 +298,14 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **FR-059**: System MUST keep artifact payloads in artifact storage and reference them from Git only by immutable identity, type, digest, safe metadata, compatibility hints, and payload reference metadata.
 - **FR-060**: System MUST make promotion create or select a target desired-state revision by changing target environment desired-state references through a platform-mediated Git commit when Git-backed mode is enabled.
 - **FR-061**: System MUST make rollback create a new desired-state revision that points back to a previously known-good artifact and configuration set rather than mutating history in place.
-- **FR-062**: System MUST treat Platform database revision records as indexed projections of Git commits, validation state, runtime coordination state, and audit metadata when Git-backed mode is enabled.
+- **FR-062**: System MUST treat Valence Control database revision records as indexed projections of Git commits, validation state, runtime coordination state, and audit metadata when Git-backed mode is enabled.
 - **FR-063**: System MUST preserve non-Git operation for workspaces that have not enabled Git-backed desired-state storage.
 - **FR-064**: System MUST make the desired-state revision commit identifier platform-managed in Git-backed mode and prevent clients from supplying arbitrary commit metadata as authority.
 
 ### Key Entities *(include if feature involves data)*
 
 - **Trusted Identity Context**: Verified sign-in context for a customer user, containing issuer, subject, and optional profile metadata.
-- **Platform Identity Provider**: Configured adapter that verifies and normalizes customer identity from Generic OIDC/JWT, Microsoft Entra, Auth0, Keycloak, trusted backend, or custom integration.
+- **Valence Control Identity Provider**: Configured adapter that verifies and normalizes customer identity from Generic OIDC/JWT, Microsoft Entra, Auth0, Keycloak, trusted backend, or custom integration.
 - **Customer Login Session**: Browser-facing authenticated state created only after a provider response or token is verified, used by the console to call customer APIs without exposing provider secrets.
 - **OIDC Client Configuration**: Deployment-owned settings for provider authority, client identifier, redirect URIs, logout behavior, scopes, expected audience, issuer, and claim mappings.
 - **Account**: Catalog-local user record linked to trusted external identities and workspace memberships.
@@ -321,16 +321,16 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **Workflow Engine**: Registered Elsa workflows application instance running in any hosting environment, reachable through an endpoint and credential reference and described by health and capability metadata.
 - **Engine Capability**: Advertised operation or feature supported by a workflow engine or hosting adapter, such as pause processing, reload configuration, restart shell, drain workers, or host restart.
 - **Shell**: Runtime isolation unit inside a workflow engine that can have its own service configuration, feature set, and operational lifecycle when supported by the engine.
-- **Workflow Artifact**: Platform-owned immutable deployable snapshot produced by a platform-integrated Elsa Studio "Submit to Platform" command or equivalent future ingestion path, containing opaque workflow definition content, safe metadata, source identifiers, schema/version information, and a content hash.
-- **Artifact Submission**: Audited handoff from Elsa Studio or another producer into Elsa Platform that creates a workflow artifact without making that artifact immediately executable in a runtime.
+- **Workflow Artifact**: Valence Control-owned immutable deployable snapshot produced by a Valence Control-integrated Elsa Studio "Submit to Valence Control" command or equivalent future ingestion path, containing opaque workflow definition content, safe metadata, source identifiers, schema/version information, and a content hash.
+- **Artifact Submission**: Audited handoff from Elsa Studio or another producer into Valence Control that creates a workflow artifact without making that artifact immediately executable in a runtime.
 - **Desired-State Revision**: Versioned source of truth for an environment, including workflow artifact references, feature settings, shell configuration, runtime configuration, secret references, observability bindings, and target bindings.
-- **Git-Backed Desired-State Store**: Optional workspace or organization repository binding where Platform writes and reads deterministic desired-state files and records the resulting commit as the revision source.
+- **Git-Backed Desired-State Store**: Optional workspace or organization repository binding where Valence Control writes and reads deterministic desired-state files and records the resulting commit as the revision source.
 - **Desired-State File**: Declarative file stored in Git that represents application topology, environment desired state, artifact descriptors, runtime configuration, infrastructure requirements, secret references, observability bindings, promotion results, or rollback targets without operational event history or secret values.
-- **Desired-State Projection**: Platform database record derived from a Git commit, used for fast reads, validation status, deployment coordination, cockpit summaries, and audit correlation.
+- **Desired-State Projection**: Valence Control database record derived from a Git commit, used for fast reads, validation status, deployment coordination, cockpit summaries, and audit correlation.
 - **Deployment**: Attempt to apply a desired-state revision to one environment and one or more workflow engines, with validation results, actor metadata, status, and rollback relationship.
 - **Deployment Command**: Durable platform-owned instruction linked to a deployment run that asks a specific runtime integration to validate, dry-run, apply, or roll back one artifact or desired-state revision with idempotency and expiration metadata.
-- **Runtime Sync Worker**: Optional runtime-side integration component that authenticates outbound to Elsa Platform, discovers pending deployment commands, claims work, fetches artifacts, applies supported artifact types, and reports progress/results.
-- **Deployment Webhook Notification**: Optional non-authoritative notification that tells a runtime integration a command may be available; the runtime still fetches the authoritative command from Elsa Platform before acting.
+- **Runtime Sync Worker**: Optional runtime-side integration component that authenticates outbound to Valence Control, discovers pending deployment commands, claims work, fetches artifacts, applies supported artifact types, and reports progress/results.
+- **Deployment Webhook Notification**: Optional non-authoritative notification that tells a runtime integration a command may be available; the runtime still fetches the authoritative command from Valence Control before acting.
 - **Secret Reference**: Environment-scoped pointer to a secret stored in a provider such as engine storage, Azure Key Vault, or another configured provider, including verification and version policy metadata but not the raw secret value.
 - **Observability Binding**: Environment-scoped connection to structured logs, console streams, OpenTelemetry-compatible traces, or metrics providers used by the platform cockpit.
 - **AI Assistant Session**: Workspace-scoped copilot interaction that can inspect authorized platform context, produce explanations and action plans, invoke approved platform tools, and emit audit records for proposed and executed actions.
@@ -364,7 +364,7 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - **SC-023**: In Git-backed mode, creating or promoting a desired-state revision produces a deterministic Git commit whose files reference artifact identity, digest, runtime configuration, feature settings, infrastructure requirements, secret references, observability bindings, and target bindings without raw payloads or secrets.
 - **SC-024**: In Git-backed mode, rollback creates a new commit that restores a previous desired-state artifact and configuration reference set while preserving prior commits and deployment history.
 - **SC-025**: Workspaces without Git-backed mode can still create, compare, promote, deploy, and roll back platform-owned desired-state revisions through existing versioned records.
-- **SC-026**: Git projection tests prove the Platform database can rebuild or validate environment desired-state summaries from a Git commit and still keep deployment runs, runtime commands, health, drift, approval, and audit records outside Git-authored desired-state files.
+- **SC-026**: Git projection tests prove the Valence Control database can rebuild or validate environment desired-state summaries from a Git commit and still keep deployment runs, runtime commands, health, drift, approval, and audit records outside Git-authored desired-state files.
 
 ## Assumptions
 
@@ -375,24 +375,24 @@ A workspace member uses an AI assistant inside Elsa Platform to investigate work
 - Existing API-key dashboard access remains an operator fallback while customer login moves to trusted identity.
 - Customer-facing login should prefer a backend-for-frontend session built on a standards-based OIDC authorization-code flow, with direct SPA bearer-token ownership reserved for deployments that explicitly require it; both patterns must produce the same trusted identity contract for workspace tenancy.
 - The console is allowed to improve UX by hiding unavailable workspace actions, but backend membership, role, entitlement, and identity checks remain authoritative.
-- Provider-specific app registration, client secret storage, and redirect URI ownership are deployment responsibilities; Elsa Platform stores only configuration required to validate provider responses and establish customer-authenticated API access.
-- Elsa Platform owns immutable deployable workflow artifacts, desired-state revisions, deployment orchestration, environment governance, and fleet visibility; workflow engines own runtime execution and expose runtime controls through explicit capabilities.
+- Provider-specific app registration, client secret storage, and redirect URI ownership are deployment responsibilities; Valence Control stores only configuration required to validate provider responses and establish customer-authenticated API access.
+- Valence Control owns immutable deployable workflow artifacts, desired-state revisions, deployment orchestration, environment governance, and fleet visibility; workflow engines own runtime execution and expose runtime controls through explicit capabilities.
 - The live workflow engine is observed or applied state, not the canonical source of truth for cross-environment deployment.
-- Workflow artifacts are created by an opt-in Elsa Studio integration that replaces direct-runtime publishing in platform-integrated installations with the command "Submit to Platform"; future producers such as CLI import, CI automation, or package upload should create the same artifact type.
-- "Submit to Platform" means creating an immutable deployable artifact in Elsa Platform; it does not mean release approval, promotion, deployment, or immediate runtime execution.
+- Workflow artifacts are created by an opt-in Elsa Studio integration that replaces direct-runtime publishing in Valence Control-integrated installations with the command "Submit to Valence Control"; future producers such as CLI import, CI automation, or package upload should create the same artifact type.
+- "Submit to Valence Control" means creating an immutable deployable artifact in Valence Control; it does not mean release approval, promotion, deployment, or immediate runtime execution.
 - Desired state is expected to be stored as platform-owned versioned records or an equivalent workspace-controlled versioned store so environment state can be diffed, promoted, audited, and rolled back.
 - Git-backed desired-state storage is the preferred long-term workspace-controlled versioned store, but it is optional at first so local, development, and simpler installations can keep using platform-owned versioned records.
-- Git-backed desired-state files represent declarative intent only. Platform operational history remains in Platform-controlled persistence even when the desired state came from Git.
+- Git-backed desired-state files represent declarative intent only. Valence Control operational history remains in Valence Control-controlled persistence even when the desired state came from Git.
 - A Git-backed desired-state repository may be workspace-scoped initially and organization-scoped later after `specs/031-organization-tenancy` is fully adopted.
-- Git commits authored by Platform should be deterministic, reviewable, and attributable to the account or automation that caused the desired-state change.
-- External Git edits are a future reconciliation concern; the initial GitOps spec can start with Platform-mediated writes before adding bidirectional import, pull request workflows, branch policies, or conflict resolution.
+- Git commits authored by Valence Control should be deterministic, reviewable, and attributable to the account or automation that caused the desired-state change.
+- External Git edits are a future reconciliation concern; the initial GitOps spec can start with Valence Control-mediated writes before adding bidirectional import, pull request workflows, branch policies, or conflict resolution.
 - Deployment runs and commands are the authoritative coordination records. Webhooks, direct runtime endpoints, polling, and long-polling are interchangeable transports around that command contract, not independent sources of deployment truth.
 - Runtime pull/sync is the preferred default for customer-hosted environments; direct platform push is reserved for environments with explicit inbound connectivity and trust configuration.
-- Webhook notifications are advisory triggers only and should carry enough information to fetch a command, not enough information to apply an artifact without consulting Elsa Platform.
+- Webhook notifications are advisory triggers only and should carry enough information to fetch a command, not enough information to apply an artifact without consulting Valence Control.
 - Environment names such as dev, test, stage, and production are conventions, not hard-coded tenant semantics.
 - There is no canonical workflow engine environment; canonical state is the versioned desired state that can be deployed to any compatible environment.
 - Secret values are managed by configured providers; workflow artifacts and desired-state revisions store references, requirements, and policies rather than plaintext values.
-- Elsa Studio remains the preferred single-engine workflow authoring and runtime inspection experience, while Elsa Platform provides the central cockpit for artifact management, release readiness, environment promotion, governance, deployment, observability, and fleet operations.
+- Elsa Studio remains the preferred single-engine workflow authoring and runtime inspection experience, while Valence Control provides the central cockpit for artifact management, release readiness, environment promotion, governance, deployment, observability, and fleet operations.
 - Elsa runtime tenant concepts and deployment tenant overlays are separate nested concerns and are intentionally deferred from the identity foundation, but future deployment features must preserve workspace ownership as the outer platform boundary.
 - The AI assistant is a copilot for platform operations, not an independent authority; it acts through the same workspace-scoped APIs, validation, approval, and audit controls as a user-driven workflow.
 - Assistant memory, retrieval, and tool execution are scoped by workspace and current user authorization, and any future cross-workspace or operator assistant mode requires separate operator authorization.

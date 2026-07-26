@@ -6,19 +6,19 @@
 
 ## Summary
 
-Implement the Phase 1 deployment engine package that proves the core deployment loop after manifest and artifact work: validate desired resources, produce deterministic dry-run plans, apply applyable changes through resource handlers, and record append-only history through an abstraction. The implementation stays in-process and host-agnostic, uses existing `Elsa.Platform.Deployment.Abstractions` concepts, closes only the proven contract gaps for artifact resource access and per-run execution context, consumes manifest/artifact outputs indirectly through artifact/resource abstractions, and defers CLI, API, persistence, approvals, signatures, GitOps, operators, and policy engines.
+Implement the Phase 1 deployment engine package that proves the core deployment loop after manifest and artifact work: validate desired resources, produce deterministic dry-run plans, apply applyable changes through resource handlers, and record append-only history through an abstraction. The implementation stays in-process and host-agnostic, uses existing `ValenceControl.Deployment.Abstractions` concepts, closes only the proven contract gaps for artifact resource access and per-run execution context, consumes manifest/artifact outputs indirectly through artifact/resource abstractions, and defers CLI, API, persistence, approvals, signatures, GitOps, operators, and policy engines.
 
 ## Technical Context
 
 **Language/Version**: C# on .NET 10.
 
-**Primary Dependencies**: `Elsa.Platform.Deployment.Abstractions`, .NET base class libraries, xUnit and FluentAssertions for tests.
+**Primary Dependencies**: `ValenceControl.Deployment.Abstractions`, .NET base class libraries, xUnit and FluentAssertions for tests.
 
 **Storage**: In-memory deployment history store only for Phase 1; durable persistence is deferred.
 
-**Testing**: `dotnet test`, with focused tests under `tests/Elsa.Platform.Deployment.Engine.Tests`.
+**Testing**: `dotnet test`, with focused tests under `tests/ValenceControl.Deployment.Engine.Tests`.
 
-**Target Platform**: Cross-platform .NET library package.
+**Target platform**: Cross-platform .NET library package.
 
 **Project Type**: Library package with companion unit/contract tests.
 
@@ -31,7 +31,7 @@ Implement the Phase 1 deployment engine package that proves the core deployment 
 ## Constitution Check
 
 - **Control Plane First**: Pass. The engine operates only on deployable control-plane resources and explicitly excludes workflow runtime state.
-- **Bounded Subsystems**: Pass. `Elsa.Platform.Deployment.Engine` depends on deployment abstractions and not on catalog, API, CLI, hosting, or persistence internals.
+- **Bounded Subsystems**: Pass. `ValenceControl.Deployment.Engine` depends on deployment abstractions and not on catalog, API, CLI, hosting, or persistence internals.
 - **Contract Stability**: Pass. The slice uses existing abstraction concepts first and changes public APIs only where analysis found implementation-blocking gaps: artifact resource enumeration and execution context.
 - **Safety By Design**: Pass. The engine consumes validated desired state and does not package or resolve raw secrets.
 - **Incremental Verifiability**: Pass. Validation, dry-run, apply, history, and boundary behavior are independently testable.
@@ -59,7 +59,7 @@ specs/020-deployment-engine/
 
 ```text
 src/
-  Elsa.Platform.Deployment.Engine/
+  ValenceControl.Deployment.Engine/
     DeploymentEngine.cs
     DeploymentEngineOptions.cs
     DeploymentEngineDiagnosticCodes.cs
@@ -67,7 +67,7 @@ src/
     ResourceHandlerRegistry.cs
 
 tests/
-  Elsa.Platform.Deployment.Engine.Tests/
+  ValenceControl.Deployment.Engine.Tests/
     DeploymentEngineValidationTests.cs
     DeploymentEnginePlanningTests.cs
     DeploymentEngineApplyTests.cs
@@ -76,9 +76,9 @@ tests/
     DeploymentEngineTestFixtures.cs
 ```
 
-**Structure Decision**: Add a new `Elsa.Platform.Deployment.Engine` package as a sibling to `Abstractions`, `Manifest`, and `Artifacts`. The engine consumes abstraction contracts only; CLI/API/persistence adapters are separate future packages.
+**Structure Decision**: Add a new `ValenceControl.Deployment.Engine` package as a sibling to `Abstractions`, `Manifest`, and `Artifacts`. The engine consumes abstraction contracts only; CLI/API/persistence adapters are separate future packages.
 
-**Contract Gap Decision**: Update `Elsa.Platform.Deployment.Abstractions` before engine implementation to add `IArtifactReader.ReadResourcesAsync(...)` and `DeploymentExecutionContext`. The engine must not reference `Elsa.Platform.Deployment.Manifest` or `Elsa.Platform.Deployment.Artifacts` concrete packages to compensate for missing abstraction shape.
+**Contract Gap Decision**: Update `ValenceControl.Deployment.Abstractions` before engine implementation to add `IArtifactReader.ReadResourcesAsync(...)` and `DeploymentExecutionContext`. The engine must not reference `ValenceControl.Deployment.Manifest` or `ValenceControl.Deployment.Artifacts` concrete packages to compensate for missing abstraction shape.
 
 ## Phase 0 Research
 

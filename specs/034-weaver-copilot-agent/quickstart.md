@@ -63,9 +63,9 @@ Example GitHub Copilot-backed configuration:
 ## Test Commands
 
 ```bash
-dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --no-restore
-dotnet test tests/Elsa.Platform.Weaver.Core.Tests/Elsa.Platform.Weaver.Core.Tests.csproj --no-restore
-npm run typecheck --prefix src/Elsa.Platform.Console
-npm test --prefix src/Elsa.Platform.Console -- Weaver
+dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --no-restore
+dotnet test tests/ValenceControl.Weaver.Core.Tests/ValenceControl.Weaver.Core.Tests.csproj --no-restore
+npm run typecheck --prefix src/ValenceControl.Console
+npm test --prefix src/ValenceControl.Console -- Weaver
 git diff --check
 ```

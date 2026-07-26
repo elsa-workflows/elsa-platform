@@ -12,7 +12,7 @@ Extend the bundle generation service with target-specific renderers while keepin
 **Primary Dependencies**: Existing bundle generation service, planner, runtime image metadata, System.Text.Json/YAML text rendering, xUnit, FluentAssertions.
 **Storage**: No new durable storage.
 **Testing**: Renderer snapshot tests and API integration tests.
-**Target Platform**: Existing ASP.NET Core modular monolith.
+**Target platform**: Existing ASP.NET Core modular monolith.
 **Project Type**: Web service with pluggable target renderers.
 **Performance Goals**: Target rendering remains local and deterministic.
 **Constraints**: No live deployment, no cloud credentials, no stored generated artifacts.
@@ -35,10 +35,10 @@ Extend the bundle generation service with target-specific renderers while keepin
 ## Project Structure
 
 ```text
-src/Elsa.Platform.PackageCatalog.Core/Builder/Renderers/
-src/Elsa.Platform.PackageCatalog.Core/DeploymentTemplates/
-tests/Elsa.Platform.PackageCatalog.Core.Tests/
-tests/Elsa.Platform.Api.Tests/
+src/ValenceControl.PackageCatalog.Core/Builder/Renderers/
+src/ValenceControl.PackageCatalog.Core/DeploymentTemplates/
+tests/ValenceControl.PackageCatalog.Core.Tests/
+tests/ValenceControl.Api.Tests/
 ```
 
 ## Complexity Tracking

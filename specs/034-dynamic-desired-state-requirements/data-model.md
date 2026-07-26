@@ -2,7 +2,7 @@
 
 ## DesiredStateRequirement
 
-Platform-defined metadata describing a desired-state record expected by an environment tier or contextual validation action.
+Valence Control-defined metadata describing a desired-state record expected by an environment tier or contextual validation action.
 
 Fields:
 

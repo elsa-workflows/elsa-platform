@@ -18,9 +18,9 @@
 
 **Purpose**: Confirm the existing sync history structure and register the shared cleanup service surface before story work begins.
 
-- [X] T001 Add `SyncRunCleanupService` registration beside existing sync services in `src/Elsa.Platform.Api/Program.cs`
-- [X] T002 Create the cleanup service shell and terminal status helper in `src/Elsa.Platform.PackageCatalog.Core/Sync/SyncRunCleanupService.cs`
-- [X] T003 Add cleanup preview/result records and sync run cleanup store method signatures in `src/Elsa.Platform.PackageCatalog.Core/Sync/PackageSyncService.cs`
+- [X] T001 Add `SyncRunCleanupService` registration beside existing sync services in `src/ValenceControl.Api/Program.cs`
+- [X] T002 Create the cleanup service shell and terminal status helper in `src/ValenceControl.PackageCatalog.Core/Sync/SyncRunCleanupService.cs`
+- [X] T003 Add cleanup preview/result records and sync run cleanup store method signatures in `src/ValenceControl.PackageCatalog.Core/Sync/PackageSyncService.cs`
 
 ---
 
@@ -30,11 +30,11 @@
 
 **CRITICAL**: No user story work should begin until this phase is complete.
 
-- [X] T004 [P] Add admin cleanup response contracts for preview and result payloads in `src/Elsa.Platform.Api/Admin/Sync/AdminSyncContracts.cs`
-- [X] T005 [P] Add reusable sync run cleanup test fixture builders for terminal, running, old, recent, and package-linked runs in `tests/Elsa.Platform.Api.Tests/AdminSyncApiTests.cs`
-- [X] T006 [P] Add reusable EF Core cleanup seed helpers for sync runs and linked package catalog records in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs`
-- [X] T007 Implement EF Core cleanup preview query, single-run delete, bulk delete, and item counting methods in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/SyncRunStore.cs`
-- [X] T008 Add structured cleanup logging helpers or logger calls for cleanup scope and counts in `src/Elsa.Platform.PackageCatalog.Core/Sync/SyncRunCleanupService.cs`
+- [X] T004 [P] Add admin cleanup response contracts for preview and result payloads in `src/ValenceControl.Api/Admin/Sync/AdminSyncContracts.cs`
+- [X] T005 [P] Add reusable sync run cleanup test fixture builders for terminal, running, old, recent, and package-linked runs in `tests/ValenceControl.Api.Tests/AdminSyncApiTests.cs`
+- [X] T006 [P] Add reusable EF Core cleanup seed helpers for sync runs and linked package catalog records in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs`
+- [X] T007 Implement EF Core cleanup preview query, single-run delete, bulk delete, and item counting methods in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/SyncRunStore.cs`
+- [X] T008 Add structured cleanup logging helpers or logger calls for cleanup scope and counts in `src/ValenceControl.PackageCatalog.Core/Sync/SyncRunCleanupService.cs`
 
 **Checkpoint**: Foundation ready. User story implementation can now begin in priority order or in parallel by story.
 
@@ -48,18 +48,18 @@
 
 ### Tests for User Story 1
 
-- [X] T009 [P] [US1] Add core tests for single terminal-run deletion, item count reporting, missing-run idempotency, and package-state preservation in `tests/Elsa.Platform.PackageCatalog.Core.Tests/SyncRunCleanupServiceTests.cs`
-- [X] T010 [P] [US1] Add EF Core persistence tests that deleting one sync run cascades sync items and preserves package versions, validation results, approvals, and sources in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs`
-- [X] T011 [P] [US1] Add admin API tests for `DELETE /api/admin/sync-runs/{id}` success, no-match response, and authentication in `tests/Elsa.Platform.Api.Tests/AdminSyncApiTests.cs`
-- [X] T012 [P] [US1] Add console component tests for terminal-row delete confirmation, success refresh, and missing-run no-match feedback in `src/Elsa.Platform.Console/src/features/sync-runs/SyncRunsPage.test.tsx`
+- [X] T009 [P] [US1] Add core tests for single terminal-run deletion, item count reporting, missing-run idempotency, and package-state preservation in `tests/ValenceControl.PackageCatalog.Core.Tests/SyncRunCleanupServiceTests.cs`
+- [X] T010 [P] [US1] Add EF Core persistence tests that deleting one sync run cascades sync items and preserves package versions, validation results, approvals, and sources in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs`
+- [X] T011 [P] [US1] Add admin API tests for `DELETE /api/admin/sync-runs/{id}` success, no-match response, and authentication in `tests/ValenceControl.Api.Tests/AdminSyncApiTests.cs`
+- [X] T012 [P] [US1] Add console component tests for terminal-row delete confirmation, success refresh, and missing-run no-match feedback in `src/ValenceControl.Console/src/features/sync-runs/SyncRunsPage.test.tsx`
 
 ### Implementation for User Story 1
 
-- [X] T013 [US1] Implement single-run cleanup orchestration and idempotent no-match results in `src/Elsa.Platform.PackageCatalog.Core/Sync/SyncRunCleanupService.cs`
-- [X] T014 [US1] Map `DELETE /api/admin/sync-runs/{id}` to the cleanup service and response contract in `src/Elsa.Platform.Api/Admin/Sync/AdminSyncEndpoints.cs`
-- [X] T015 [US1] Add single-run delete adapter and cache invalidation support in `src/Elsa.Platform.Console/src/features/sync-runs/syncRunApi.ts`
-- [X] T016 [US1] Add cleanup result view models and terminal-run action helpers in `src/Elsa.Platform.Console/src/features/sync-runs/syncRunModels.ts`
-- [X] T017 [US1] Add per-row delete action, confirmation dialog, pending state, and success/error feedback in `src/Elsa.Platform.Console/src/features/sync-runs/SyncRunsPage.tsx`
+- [X] T013 [US1] Implement single-run cleanup orchestration and idempotent no-match results in `src/ValenceControl.PackageCatalog.Core/Sync/SyncRunCleanupService.cs`
+- [X] T014 [US1] Map `DELETE /api/admin/sync-runs/{id}` to the cleanup service and response contract in `src/ValenceControl.Api/Admin/Sync/AdminSyncEndpoints.cs`
+- [X] T015 [US1] Add single-run delete adapter and cache invalidation support in `src/ValenceControl.Console/src/features/sync-runs/syncRunApi.ts`
+- [X] T016 [US1] Add cleanup result view models and terminal-run action helpers in `src/ValenceControl.Console/src/features/sync-runs/syncRunModels.ts`
+- [X] T017 [US1] Add per-row delete action, confirmation dialog, pending state, and success/error feedback in `src/ValenceControl.Console/src/features/sync-runs/SyncRunsPage.tsx`
 
 **Checkpoint**: User Story 1 is independently functional and demoable as the MVP cleanup slice.
 
@@ -73,18 +73,18 @@
 
 ### Tests for User Story 2
 
-- [X] T018 [P] [US2] Add core tests for bulk preview counts, bulk deletion counts, zero-match cleanup, UTC cutoff comparison, future-cutoff rejection, and recent-run preservation in `tests/Elsa.Platform.PackageCatalog.Core.Tests/SyncRunCleanupServiceTests.cs`
-- [X] T019 [P] [US2] Add EF Core persistence tests for deleting at least 1,000 eligible historical sync runs while preserving catalog state in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs`
-- [X] T020 [P] [US2] Add admin API tests for `GET /api/admin/sync-runs/deletion-preview` and `DELETE /api/admin/sync-runs?completedBefore=...` success, malformed cutoff, and future-cutoff validation responses in `tests/Elsa.Platform.Api.Tests/AdminSyncApiTests.cs`
-- [X] T021 [P] [US2] Add console component tests for cutoff entry, preview dialog counts, bulk cleanup confirmation, zero-match state, and list refresh in `src/Elsa.Platform.Console/src/features/sync-runs/SyncRunsPage.test.tsx`
+- [X] T018 [P] [US2] Add core tests for bulk preview counts, bulk deletion counts, zero-match cleanup, UTC cutoff comparison, future-cutoff rejection, and recent-run preservation in `tests/ValenceControl.PackageCatalog.Core.Tests/SyncRunCleanupServiceTests.cs`
+- [X] T019 [P] [US2] Add EF Core persistence tests for deleting at least 1,000 eligible historical sync runs while preserving catalog state in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs`
+- [X] T020 [P] [US2] Add admin API tests for `GET /api/admin/sync-runs/deletion-preview` and `DELETE /api/admin/sync-runs?completedBefore=...` success, malformed cutoff, and future-cutoff validation responses in `tests/ValenceControl.Api.Tests/AdminSyncApiTests.cs`
+- [X] T021 [P] [US2] Add console component tests for cutoff entry, preview dialog counts, bulk cleanup confirmation, zero-match state, and list refresh in `src/ValenceControl.Console/src/features/sync-runs/SyncRunsPage.test.tsx`
 
 ### Implementation for User Story 2
 
-- [X] T022 [US2] Implement bulk cleanup preview and bulk delete orchestration with explicit UTC cutoff handling in `src/Elsa.Platform.PackageCatalog.Core/Sync/SyncRunCleanupService.cs`
-- [X] T023 [US2] Map `GET /api/admin/sync-runs/deletion-preview` and `DELETE /api/admin/sync-runs` endpoints with cutoff validation in `src/Elsa.Platform.Api/Admin/Sync/AdminSyncEndpoints.cs`
-- [X] T024 [US2] Add bulk cleanup preview and delete adapter functions in `src/Elsa.Platform.Console/src/features/sync-runs/syncRunApi.ts`
-- [X] T025 [US2] Add cleanup preview normalization, cutoff formatting, and count helpers in `src/Elsa.Platform.Console/src/features/sync-runs/syncRunModels.ts`
-- [X] T026 [US2] Add bulk cleanup cutoff control, server preview confirmation, zero-match handling, pending state, and query invalidation in `src/Elsa.Platform.Console/src/features/sync-runs/SyncRunsPage.tsx`
+- [X] T022 [US2] Implement bulk cleanup preview and bulk delete orchestration with explicit UTC cutoff handling in `src/ValenceControl.PackageCatalog.Core/Sync/SyncRunCleanupService.cs`
+- [X] T023 [US2] Map `GET /api/admin/sync-runs/deletion-preview` and `DELETE /api/admin/sync-runs` endpoints with cutoff validation in `src/ValenceControl.Api/Admin/Sync/AdminSyncEndpoints.cs`
+- [X] T024 [US2] Add bulk cleanup preview and delete adapter functions in `src/ValenceControl.Console/src/features/sync-runs/syncRunApi.ts`
+- [X] T025 [US2] Add cleanup preview normalization, cutoff formatting, and count helpers in `src/ValenceControl.Console/src/features/sync-runs/syncRunModels.ts`
+- [X] T026 [US2] Add bulk cleanup cutoff control, server preview confirmation, zero-match handling, pending state, and query invalidation in `src/ValenceControl.Console/src/features/sync-runs/SyncRunsPage.tsx`
 
 **Checkpoint**: User Story 2 is independently functional for storage cleanup across accumulated history.
 
@@ -98,16 +98,16 @@
 
 ### Tests for User Story 3
 
-- [X] T027 [P] [US3] Add core tests that running sync runs are refused for direct deletion and excluded from bulk cleanup results in `tests/Elsa.Platform.PackageCatalog.Core.Tests/SyncRunCleanupServiceTests.cs`
-- [X] T028 [P] [US3] Add admin API tests for `409 Conflict` on running-run direct deletion and excluded count reporting for bulk cleanup in `tests/Elsa.Platform.Api.Tests/AdminSyncApiTests.cs`
-- [X] T029 [P] [US3] Add console component tests that running rows hide destructive actions and bulk preview displays excluded-run counts in `src/Elsa.Platform.Console/src/features/sync-runs/SyncRunsPage.test.tsx`
+- [X] T027 [P] [US3] Add core tests that running sync runs are refused for direct deletion and excluded from bulk cleanup results in `tests/ValenceControl.PackageCatalog.Core.Tests/SyncRunCleanupServiceTests.cs`
+- [X] T028 [P] [US3] Add admin API tests for `409 Conflict` on running-run direct deletion and excluded count reporting for bulk cleanup in `tests/ValenceControl.Api.Tests/AdminSyncApiTests.cs`
+- [X] T029 [P] [US3] Add console component tests that running rows hide destructive actions and bulk preview displays excluded-run counts in `src/ValenceControl.Console/src/features/sync-runs/SyncRunsPage.test.tsx`
 
 ### Implementation for User Story 3
 
-- [X] T030 [US3] Enforce terminal-state eligibility and conflict results for non-terminal direct deletion in `src/Elsa.Platform.PackageCatalog.Core/Sync/SyncRunCleanupService.cs`
-- [X] T031 [US3] Convert non-terminal direct cleanup failures into `409 Conflict` responses in `src/Elsa.Platform.Api/Admin/Sync/AdminSyncEndpoints.cs`
-- [X] T032 [US3] Hide row delete actions for active runs and show excluded-run counts in cleanup confirmations in `src/Elsa.Platform.Console/src/features/sync-runs/SyncRunsPage.tsx`
-- [X] T033 [US3] Update sync run active-state and cleanup eligibility helpers for future status additions in `src/Elsa.Platform.Console/src/features/sync-runs/syncRunModels.ts`
+- [X] T030 [US3] Enforce terminal-state eligibility and conflict results for non-terminal direct deletion in `src/ValenceControl.PackageCatalog.Core/Sync/SyncRunCleanupService.cs`
+- [X] T031 [US3] Convert non-terminal direct cleanup failures into `409 Conflict` responses in `src/ValenceControl.Api/Admin/Sync/AdminSyncEndpoints.cs`
+- [X] T032 [US3] Hide row delete actions for active runs and show excluded-run counts in cleanup confirmations in `src/ValenceControl.Console/src/features/sync-runs/SyncRunsPage.tsx`
+- [X] T033 [US3] Update sync run active-state and cleanup eligibility helpers for future status additions in `src/ValenceControl.Console/src/features/sync-runs/syncRunModels.ts`
 
 **Checkpoint**: User Story 3 is independently functional for active-run protection and operator-safe feedback.
 
@@ -117,9 +117,9 @@
 
 **Purpose**: Final verification, documentation alignment, and cleanup across the feature.
 
-- [X] T034 [P] Update admin API HTTP examples for cleanup preview, single deletion, and bulk deletion in `src/Elsa.Platform.Api/Elsa.Platform.Api.http`
+- [X] T034 [P] Update admin API HTTP examples for cleanup preview, single deletion, and bulk deletion in `src/ValenceControl.Api/ValenceControl.Api.http`
 - [X] T035 [P] Update quickstart verification notes if endpoint names or frontend commands changed in `specs/005-delete-sync-runs/quickstart.md`
-- [X] T036 Review cleanup abstractions against simplicity and deletion-safety constraints in `src/Elsa.Platform.PackageCatalog.Core/Sync/SyncRunCleanupService.cs`
+- [X] T036 Review cleanup abstractions against simplicity and deletion-safety constraints in `src/ValenceControl.PackageCatalog.Core/Sync/SyncRunCleanupService.cs`
 - [X] T037 Run core, persistence, API, and console cleanup tests from `specs/005-delete-sync-runs/quickstart.md`
 
 ---
@@ -160,10 +160,10 @@
 ## Parallel Example: User Story 1
 
 ```bash
-Task: "T009 [P] [US1] Add core tests for single terminal-run deletion, item count reporting, missing-run idempotency, and package-state preservation in tests/Elsa.Platform.PackageCatalog.Core.Tests/SyncRunCleanupServiceTests.cs"
-Task: "T010 [P] [US1] Add EF Core persistence tests that deleting one sync run cascades sync items and preserves package versions, validation results, approvals, and sources in tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs"
-Task: "T011 [P] [US1] Add admin API tests for DELETE /api/admin/sync-runs/{id} success, no-match response, and authentication in tests/Elsa.Platform.Api.Tests/AdminSyncApiTests.cs"
-Task: "T012 [P] [US1] Add console component tests for terminal-row delete confirmation, success refresh, and missing-run no-match feedback in src/Elsa.Platform.Console/src/features/sync-runs/SyncRunsPage.test.tsx"
+Task: "T009 [P] [US1] Add core tests for single terminal-run deletion, item count reporting, missing-run idempotency, and package-state preservation in tests/ValenceControl.PackageCatalog.Core.Tests/SyncRunCleanupServiceTests.cs"
+Task: "T010 [P] [US1] Add EF Core persistence tests that deleting one sync run cascades sync items and preserves package versions, validation results, approvals, and sources in tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs"
+Task: "T011 [P] [US1] Add admin API tests for DELETE /api/admin/sync-runs/{id} success, no-match response, and authentication in tests/ValenceControl.Api.Tests/AdminSyncApiTests.cs"
+Task: "T012 [P] [US1] Add console component tests for terminal-row delete confirmation, success refresh, and missing-run no-match feedback in src/ValenceControl.Console/src/features/sync-runs/SyncRunsPage.test.tsx"
 ```
 
 ---
@@ -171,10 +171,10 @@ Task: "T012 [P] [US1] Add console component tests for terminal-row delete confir
 ## Parallel Example: User Story 2
 
 ```bash
-Task: "T018 [P] [US2] Add core tests for bulk preview counts, bulk deletion counts, zero-match cleanup, UTC cutoff comparison, and recent-run preservation in tests/Elsa.Platform.PackageCatalog.Core.Tests/SyncRunCleanupServiceTests.cs"
-Task: "T019 [P] [US2] Add EF Core persistence tests for deleting at least 1,000 eligible historical sync runs while preserving catalog state in tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs"
-Task: "T020 [P] [US2] Add admin API tests for GET /api/admin/sync-runs/deletion-preview and DELETE /api/admin/sync-runs?completedBefore=... success and invalid cutoff responses in tests/Elsa.Platform.Api.Tests/AdminSyncApiTests.cs"
-Task: "T021 [P] [US2] Add console component tests for cutoff entry, preview dialog counts, bulk cleanup confirmation, zero-match state, and list refresh in src/Elsa.Platform.Console/src/features/sync-runs/SyncRunsPage.test.tsx"
+Task: "T018 [P] [US2] Add core tests for bulk preview counts, bulk deletion counts, zero-match cleanup, UTC cutoff comparison, and recent-run preservation in tests/ValenceControl.PackageCatalog.Core.Tests/SyncRunCleanupServiceTests.cs"
+Task: "T019 [P] [US2] Add EF Core persistence tests for deleting at least 1,000 eligible historical sync runs while preserving catalog state in tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs"
+Task: "T020 [P] [US2] Add admin API tests for GET /api/admin/sync-runs/deletion-preview and DELETE /api/admin/sync-runs?completedBefore=... success and invalid cutoff responses in tests/ValenceControl.Api.Tests/AdminSyncApiTests.cs"
+Task: "T021 [P] [US2] Add console component tests for cutoff entry, preview dialog counts, bulk cleanup confirmation, zero-match state, and list refresh in src/ValenceControl.Console/src/features/sync-runs/SyncRunsPage.test.tsx"
 ```
 
 ---

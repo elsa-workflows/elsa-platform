@@ -4,7 +4,7 @@
 
 ## Phase 1: Public Source Filtering
 
-- [X] T001 Add public browseable-source query contract in `src/Elsa.Platform.PackageCatalog.Core/Sources/`
+- [X] T001 Add public browseable-source query contract in `src/ValenceControl.PackageCatalog.Core/Sources/`
 - [X] T002 Add EF Core public source query adapter returning enabled, non-deleted, browseable public sources
 - [X] T003 Add public `/api/sources` endpoint and response contract
 - [X] T004 Add URL sanitization tests for public source responses

@@ -6,13 +6,13 @@
 
 **Status**: Draft
 
-**Input**: User description: "Secret stores in this Elsa Platform are only for engine credentials. Runtime secrets are managed separately from within the runtimes themselves; deployment artifacts may include secret references, but those are unrelated to platform engine credentials. Engine credentials are used purely so Elsa Platform can interact with a registered engine, such as notifying it that a new manifest has been provisioned. Supported store types should include local encrypted database storage, Azure Key Vault, Kubernetes Secrets, environment variable name, and generic external reference. Secret stores are workspace-scoped. Engine credentials may be deferred."
+**Input**: User description: "Secret stores in this Valence Control are only for engine credentials. Runtime secrets are managed separately from within the runtimes themselves; deployment artifacts may include secret references, but those are unrelated to platform engine credentials. Engine credentials are used purely so Valence Control can interact with a registered engine, such as notifying it that a new manifest has been provisioned. Supported store types should include local encrypted database storage, Azure Key Vault, Kubernetes Secrets, environment variable name, and generic external reference. Secret stores are workspace-scoped. Engine credentials may be deferred."
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Create Engine Credential Store (Priority: P1)
 
-A deployment administrator registers a workspace-scoped credential store that can hold or identify credentials used by Elsa Platform to interact with workflow engines.
+A deployment administrator registers a workspace-scoped credential store that can hold or identify credentials used by Valence Control to interact with workflow engines.
 
 **Why this priority**: Engine registration currently depends on credential choices, but users can reach that point with no clear way to prepare credentials. A workspace-level store registry gives administrators a governed setup path without mixing engine credentials with runtime secrets.
 
@@ -82,9 +82,9 @@ A deployment administrator manages credential stores and references across their
 - A credential reference is archived while an engine still uses it.
 - A local encrypted credential is rotated by a user who lacks permission to view or change credential material.
 - An external provider locator is malformed, unreachable, or not verifiable.
-- An environment variable name exists only in engine host infrastructure and cannot be verified from Elsa Platform.
+- An environment variable name exists only in engine host infrastructure and cannot be verified from Valence Control.
 - A Kubernetes secret name exists in multiple namespaces or contexts.
-- A generic external reference is meaningful to the customer but cannot be validated by Elsa Platform.
+- A generic external reference is meaningful to the customer but cannot be validated by Valence Control.
 - A user confuses engine credentials with runtime secrets or artifact secret references.
 - A workspace has multiple applications and environments sharing the same credential reference.
 
@@ -92,12 +92,12 @@ A deployment administrator manages credential stores and references across their
 
 ### Functional Requirements
 
-- **FR-001**: System MUST treat secret stores in this feature as engine-credential stores only, used for Elsa Platform interactions with registered engines.
+- **FR-001**: System MUST treat secret stores in this feature as engine-credential stores only, used for Valence Control interactions with registered engines.
 - **FR-002**: System MUST keep runtime secrets and artifact secret references outside the scope of engine credential stores.
 - **FR-003**: System MUST scope engine credential stores and credential references to a workspace.
 - **FR-004**: System MUST allow authorized administrators to create, view, update, and archive workspace engine credential stores.
 - **FR-005**: System MUST support these engine credential store types: local encrypted database, Azure Key Vault, Kubernetes Secrets, environment variable name, and generic external reference.
-- **FR-006**: System MUST define generic external reference as a metadata-only pointer to a customer-governed credential location that Elsa Platform does not natively resolve, browse, or verify, such as an internal secret catalog entry, vault URI, ticket-controlled secret record, or provider type not yet first-class.
+- **FR-006**: System MUST define generic external reference as a metadata-only pointer to a customer-governed credential location that Valence Control does not natively resolve, browse, or verify, such as an internal secret catalog entry, vault URI, ticket-controlled secret record, or provider type not yet first-class.
 - **FR-007**: System MUST allow authorized administrators to create, view, update, archive, and rotate credential references under active credential stores.
 - **FR-008**: System MUST allow local encrypted database references to accept credential secret material during creation and rotation while preventing that material from being displayed after submission.
 - **FR-009**: System MUST require externally managed store references to capture only safe locator metadata and MUST NOT collect raw secret values for those store types.
@@ -138,7 +138,7 @@ A deployment administrator manages credential stores and references across their
 - Workspace deployment setup permission remains the governing permission for credential store, credential reference, and engine credential assignment changes.
 - Local encrypted database storage is intended for engine credentials only and does not become a general-purpose runtime secret store.
 - Externally managed providers are responsible for protecting and rotating their own secret material.
-- Elsa Platform may verify some providers directly, but generic external references and environment variable names may remain not verifiable by design.
+- Valence Control may verify some providers directly, but generic external references and environment variable names may remain not verifiable by design.
 - Deferred credentials mean engine metadata can exist, but credentialed platform-to-engine actions are blocked or marked unavailable until a credential reference is assigned.
 - Engine credentials are used for platform commands such as notifying an engine that a manifest has been provisioned.
 - Runtime secret management remains inside the runtimes, and deployment artifacts may continue to carry secret references that are unrelated to this feature.

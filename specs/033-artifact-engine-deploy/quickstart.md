@@ -2,7 +2,7 @@
 
 ## End-To-End Smoke Scenario
 
-1. Start the Platform API and hosted console with workspace identity enabled.
+1. Start the Valence Control API and hosted console with workspace identity enabled.
 2. Register or upload a `elsa.workflow-definition` artifact and refresh inspection until it is valid and downloadable.
 3. Create a desired-state revision that references the artifact record.
 4. Register a workflow engine in the same environment and advertise `artifact.elsa.workflow-definition.apply`.
@@ -41,13 +41,13 @@
 ## Verification Commands
 
 ```sh
-dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter Deployability
-dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter DeploymentCommand
-dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand
-dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter RuntimeCommand
-dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter Deployability
-cd src/Elsa.Platform.Console && npm test -- --run deployments
-cd src/Elsa.Platform.Console && npm run typecheck
+dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj --filter Deployability
+dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj --filter DeploymentCommand
+dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand
+dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter RuntimeCommand
+dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter Deployability
+cd src/ValenceControl.Console && npm test -- --run deployments
+cd src/ValenceControl.Console && npm run typecheck
 git diff --check
 ```
 

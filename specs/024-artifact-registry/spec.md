@@ -10,7 +10,7 @@
 
 ## Product Positioning
 
-Elsa Platform is the source of truth for deployable workflow artifacts, while Elsa Studio remains the authoring surface and Elsa runtimes remain the execution surface. In platform-integrated Studio installations, the user-facing handoff command is **Submit to Platform**. That command creates an immutable platform artifact and does not mean release, promotion, deployment, or immediate runtime execution.
+Valence Control is the source of truth for deployable workflow artifacts, while Elsa Studio remains the authoring surface and Elsa runtimes remain the execution surface. In Valence Control-integrated Studio installations, the user-facing handoff command is **Submit to Valence Control**. That command creates an immutable platform artifact and does not mean release, promotion, deployment, or immediate runtime execution.
 
 This registry slice stores the workspace-owned artifact record, metadata, digest, inspection state, and payload reference needed for that model. It does not store raw workflow definition content in catalog tables. Studio submission, CLI import, CI automation, package upload, and manual metadata registration should converge on the same artifact registry concepts as their ingestion paths mature.
 
@@ -83,12 +83,12 @@ A workspace member with deployment setup permission uploads a deployment artifac
 
 ### Edge Cases
 
-- Artifact metadata references a layout version other than `platform.elsa.io/deployment-artifact/v1alpha1`.
+- Artifact metadata references a layout version other than `valence-control/deployment-artifact/v1alpha1`.
 - Artifact identity or digest does not match the referenced artifact during refresh.
 - Artifact reference is malformed, inaccessible, or points outside the allowed local/test reference root.
 - Artifact diagnostics contain file paths or provider errors; responses must keep them safe and avoid raw secret values.
 - Artifact registration attempts to include raw payload, manifest JSON, workflow content, token, password, or secret value fields.
-- A platform-integrated Studio submission uses Publish terminology instead of "Submit to Platform"; the UX must distinguish direct runtime publishing from platform artifact submission.
+- A Valence Control-integrated Studio submission uses Publish terminology instead of "Submit to Valence Control"; the UX must distinguish direct runtime publishing from platform artifact submission.
 - Concurrent users register the same artifact identity in the same workspace.
 - A direct API caller submits a cross-workspace artifact ID.
 - The Artifacts console is opened for a workspace with no registered artifacts.
@@ -117,7 +117,7 @@ A workspace member with deployment setup permission uploads a deployment artifac
 - **FR-012**: Console users with setup permission MUST be able to register artifact metadata and refresh inspection status through live workspace APIs.
 - **FR-013**: Artifact records MUST be usable as future inputs to validation, dry-run, apply, and history slices without implementing those actions in this slice.
 - **FR-014**: System MUST stay within metadata registry and inspection scope for this completed slice; OCI, signing, GitOps, provider apply, live runtime drift, and external approval workflows remain out of scope.
-- **FR-015**: System MUST treat future Elsa Studio "Submit to Platform" submissions as artifact ingestion events that produce immutable platform artifact records without implying release approval, promotion, deployment, or immediate runtime execution.
+- **FR-015**: System MUST treat future Elsa Studio "Submit to Valence Control" submissions as artifact ingestion events that produce immutable platform artifact records without implying release approval, promotion, deployment, or immediate runtime execution.
 - **FR-016**: Follow-up upload ingestion MUST allow authorized users to upload ZIP artifact payloads through a workspace-scoped API and console flow.
 - **FR-017**: Upload ingestion MUST compute artifact identity, content digest, manifest metadata, resource summaries, checksum status, and inspection diagnostics server-side from the uploaded payload.
 - **FR-018**: Upload ingestion MUST store payload bytes only in a configured artifact blob storage provider; catalog database records MUST store metadata, storage references, upload state, and safe diagnostics only.
@@ -153,8 +153,8 @@ A workspace member with deployment setup permission uploads a deployment artifac
 ## Assumptions
 
 - Existing workspace identity, deployment permissions, and deployment cockpit authorization remain the foundation.
-- Existing `Elsa.Platform.Deployment.Artifacts` contracts are the source of truth for artifact layout, metadata, checksum, and inspection concepts where they fit.
-- The first Studio integration should use "Submit to Platform" for the artifact handoff; "Publish" remains direct-runtime terminology unless a non-integrated Studio installation uses the existing behavior.
+- Existing `ValenceControl.Deployment.Artifacts` contracts are the source of truth for artifact layout, metadata, checksum, and inspection concepts where they fit.
+- The first Studio integration should use "Submit to Valence Control" for the artifact handoff; "Publish" remains direct-runtime terminology unless a non-integrated Studio installation uses the existing behavior.
 - The first refresh implementation may support local/test filesystem references only; cloud/object storage and OCI references are future provider-specific slices.
 - Artifact upload and payload storage are out of the completed metadata registry slice, but this PRD defines upload ingestion as the next artifact-management slice.
 - Uploaded payload bytes belong in configured artifact blob storage, not catalog persistence tables. Local filesystem storage is acceptable for development/test; production must use a durable provider with workspace scoping, cleanup, and least-privilege access.

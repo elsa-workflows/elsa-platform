@@ -53,22 +53,22 @@
 Run:
 
 ```sh
-dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter AdminPackages
-dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter AdminValidation
-dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter AdminApproval
-cd src/Elsa.Platform.Console && npm test -- src/features/packages/PackageDetailsPage.test.tsx src/features/packages/packageModels.test.ts
-cd tests/Elsa.Platform.Console.E2E && npm run e2e -- package-details.spec.ts
+dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter AdminPackages
+dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter AdminValidation
+dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter AdminApproval
+cd src/ValenceControl.Console && npm test -- src/features/packages/PackageDetailsPage.test.tsx src/features/packages/packageModels.test.ts
+cd tests/ValenceControl.Console.E2E && npm run e2e -- package-details.spec.ts
 ```
 
 ## Implementation Verification Notes
 
 Verified on 2026-05-17:
 
-- `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj`
-- `cd src/Elsa.Platform.Console && npm test`
-- `cd src/Elsa.Platform.Console && npm run typecheck`
-- `cd src/Elsa.Platform.Console && npm run build`
-- `cd tests/Elsa.Platform.Console.E2E && npm run e2e -- package-details.spec.ts`
+- `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj`
+- `cd src/ValenceControl.Console && npm test`
+- `cd src/ValenceControl.Console && npm run typecheck`
+- `cd src/ValenceControl.Console && npm run build`
+- `cd tests/ValenceControl.Console.E2E && npm run e2e -- package-details.spec.ts`
 
 The implementation uses the existing catalog database only. It adds no public
 catalog API behavior, does not change the manifest schema, reads stored manifest

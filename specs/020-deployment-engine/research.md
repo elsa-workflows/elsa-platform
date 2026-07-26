@@ -2,7 +2,7 @@
 
 ## Decision: Build The Engine Around Existing Abstractions First
 
-**Rationale**: `Elsa.Platform.Deployment.Abstractions` already defines `IDeploymentEngine`, resource handlers, resource state, plans, results, targets, artifacts, diagnostics, and history. Using these contracts validates whether the abstractions are sufficient before changing public APIs.
+**Rationale**: `ValenceControl.Deployment.Abstractions` already defines `IDeploymentEngine`, resource handlers, resource state, plans, results, targets, artifacts, diagnostics, and history. Using these contracts validates whether the abstractions are sufficient before changing public APIs.
 
 **Alternatives considered**:
 

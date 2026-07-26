@@ -18,9 +18,9 @@
 
 **Purpose**: Prepare references, contracts, and test scaffolding for durable deployment UX work.
 
-- [X] T001 Add deployment core project reference to `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.csproj`
-- [X] T002 [P] Add shared deployment API test helpers in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTestFixtures.cs`
-- [X] T003 [P] Add deployment core test fixture helpers in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceDeploymentTestFixtures.cs`
+- [X] T001 Add deployment core project reference to `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.csproj`
+- [X] T002 [P] Add shared deployment API test helpers in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentTestFixtures.cs`
+- [X] T003 [P] Add deployment core test fixture helpers in `tests/ValenceControl.Deployment.Core.Tests/WorkspaceDeploymentTestFixtures.cs`
 - [X] T004 [P] Add deployment permissions contract examples in `specs/022-deployment-ux/contracts/workspace-deployment-api.md`
 - [X] T005 [P] Add confirmation and queued-run UX notes in `specs/022-deployment-ux/contracts/console-deployments-ux.md`
 
@@ -32,23 +32,23 @@
 
 **Checkpoint**: Workspace deployment records, permission grants, confirmations, and queued runs can be persisted and checked by service code.
 
-- [X] T006 Define workspace deployment domain models in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`
-- [X] T007 Define workspace permission models and permission IDs in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspacePermissionModels.cs`
-- [X] T008 Define confirmation and queue/run models in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunModels.cs`
-- [X] T009 Define structured desired-state models in `src/Elsa.Platform.Deployment.Core/Workspace/DesiredStateModels.cs`
-- [X] T010 Define observability binding and drift report metadata models in `src/Elsa.Platform.Deployment.Core/Workspace/ObservabilityDriftModels.cs`
-- [X] T011 Define workspace deployment store contract in `src/Elsa.Platform.Deployment.Core/Workspace/IWorkspaceDeploymentStore.cs`
-- [X] T012 Define permission store contract in `src/Elsa.Platform.Deployment.Core/Workspace/IWorkspacePermissionStore.cs`
-- [X] T013 Add workspace permission service skeleton in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspacePermissionService.cs`
-- [X] T014 Add workspace deployment service skeleton in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
-- [X] T015 Add validation/run/queue/control/confirmation/observability service skeletons in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentValidationService.cs`, `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`, `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentQueueWorker.cs`, `src/Elsa.Platform.Deployment.Core/Workspace/RuntimeControlService.cs`, `src/Elsa.Platform.Deployment.Core/Workspace/ConfirmationService.cs`, and `src/Elsa.Platform.Deployment.Core/Workspace/ObservabilityDriftService.cs`
-- [X] T016 Update cockpit service to use workspace deployment store projections in `src/Elsa.Platform.Deployment.Core/Cockpit/DeploymentCockpitService.cs`
-- [X] T017 Add EF deployment workspace, observability binding, and drift report entities in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`
-- [X] T018 Add EF deployment, observability, and drift entity mappings in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
-- [X] T019 Add EF workspace deployment, permission, observability, and drift store in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [X] T020 Add deployment `DbSet` properties in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/CatalogDbContext.cs`
-- [X] T021 Register deployment workspace services, permission services, confirmation services, queue worker, and stores in `src/Elsa.Platform.Api/Program.cs`
-- [X] T022 Add SQLite and SQL Server deployment, observability, drift, permission, confirmation, and queued-run migrations in `src/Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/Migrations/` and `src/Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
+- [X] T006 Define workspace deployment domain models in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`
+- [X] T007 Define workspace permission models and permission IDs in `src/ValenceControl.Deployment.Core/Workspace/WorkspacePermissionModels.cs`
+- [X] T008 Define confirmation and queue/run models in `src/ValenceControl.Deployment.Core/Workspace/DeploymentRunModels.cs`
+- [X] T009 Define structured desired-state models in `src/ValenceControl.Deployment.Core/Workspace/DesiredStateModels.cs`
+- [X] T010 Define observability binding and drift report metadata models in `src/ValenceControl.Deployment.Core/Workspace/ObservabilityDriftModels.cs`
+- [X] T011 Define workspace deployment store contract in `src/ValenceControl.Deployment.Core/Workspace/IWorkspaceDeploymentStore.cs`
+- [X] T012 Define permission store contract in `src/ValenceControl.Deployment.Core/Workspace/IWorkspacePermissionStore.cs`
+- [X] T013 Add workspace permission service skeleton in `src/ValenceControl.Deployment.Core/Workspace/WorkspacePermissionService.cs`
+- [X] T014 Add workspace deployment service skeleton in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
+- [X] T015 Add validation/run/queue/control/confirmation/observability service skeletons in `src/ValenceControl.Deployment.Core/Workspace/DeploymentValidationService.cs`, `src/ValenceControl.Deployment.Core/Workspace/DeploymentRunService.cs`, `src/ValenceControl.Deployment.Core/Workspace/DeploymentQueueWorker.cs`, `src/ValenceControl.Deployment.Core/Workspace/RuntimeControlService.cs`, `src/ValenceControl.Deployment.Core/Workspace/ConfirmationService.cs`, and `src/ValenceControl.Deployment.Core/Workspace/ObservabilityDriftService.cs`
+- [X] T016 Update cockpit service to use workspace deployment store projections in `src/ValenceControl.Deployment.Core/Cockpit/DeploymentCockpitService.cs`
+- [X] T017 Add EF deployment workspace, observability binding, and drift report entities in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`
+- [X] T018 Add EF deployment, observability, and drift entity mappings in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
+- [X] T019 Add EF workspace deployment, permission, observability, and drift store in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T020 Add deployment `DbSet` properties in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/CatalogDbContext.cs`
+- [X] T021 Register deployment workspace services, permission services, confirmation services, queue worker, and stores in `src/ValenceControl.Api/Program.cs`
+- [X] T022 Add SQLite and SQL Server deployment, observability, drift, permission, confirmation, and queued-run migrations in `src/ValenceControl.PackageCatalog.Persistence.SqliteMigrations/Migrations/` and `src/ValenceControl.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
 
 ---
 
@@ -60,23 +60,23 @@
 
 ### Tests for User Story 1
 
-- [X] T023 [P] [US1] Add core cockpit projection tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceDeploymentServiceTests.cs`
-- [X] T024 [P] [US1] Add EF persistence round-trip tests in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
-- [X] T025 [P] [US1] Add workspace cockpit isolation API tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentIsolationTests.cs`
-- [X] T026 [P] [US1] Add persisted observability and drift metadata API/persistence tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentApiTests.cs` and `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
-- [X] T027 [P] [US1] Add normal-dataset cockpit load bounded-query and under-3-second test in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentApiTests.cs`
-- [X] T028 [P] [US1] Add console cockpit live-data tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T023 [P] [US1] Add core cockpit projection tests in `tests/ValenceControl.Deployment.Core.Tests/WorkspaceDeploymentServiceTests.cs`
+- [X] T024 [P] [US1] Add EF persistence round-trip tests in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
+- [X] T025 [P] [US1] Add workspace cockpit isolation API tests in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentIsolationTests.cs`
+- [X] T026 [P] [US1] Add persisted observability and drift metadata API/persistence tests in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentApiTests.cs` and `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
+- [X] T027 [P] [US1] Add normal-dataset cockpit load bounded-query and under-3-second test in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
+- [X] T028 [P] [US1] Add console cockpit live-data tests in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 1
 
-- [X] T029 [US1] Implement cockpit projection from persisted workspace deployment records in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
-- [X] T030 [US1] Implement cockpit read methods in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [X] T031 [US1] Replace in-memory cockpit registration in `src/Elsa.Platform.Api/Program.cs`
-- [X] T032 [US1] Add cockpit response contracts in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentContracts.cs`
-- [X] T033 [US1] Update cockpit endpoint to use durable service and read permission checks in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [X] T034 [US1] Implement persisted observability binding and drift report metadata projection in `src/Elsa.Platform.Deployment.Core/Workspace/ObservabilityDriftService.cs`, `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [X] T035 [US1] Update console deployment API models for durable cockpit and permission fields in `src/Elsa.Platform.Console/src/features/deployments/deploymentModels.ts`
-- [X] T036 [US1] Update Deployments page empty/loading/error states for live cockpit data in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T029 [US1] Implement cockpit projection from persisted workspace deployment records in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
+- [X] T030 [US1] Implement cockpit read methods in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T031 [US1] Replace in-memory cockpit registration in `src/ValenceControl.Api/Program.cs`
+- [X] T032 [US1] Add cockpit response contracts in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentContracts.cs`
+- [X] T033 [US1] Update cockpit endpoint to use durable service and read permission checks in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T034 [US1] Implement persisted observability binding and drift report metadata projection in `src/ValenceControl.Deployment.Core/Workspace/ObservabilityDriftService.cs`, `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T035 [US1] Update console deployment API models for durable cockpit and permission fields in `src/ValenceControl.Console/src/features/deployments/deploymentModels.ts`
+- [X] T036 [US1] Update Deployments page empty/loading/error states for live cockpit data in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
 - [X] T037 [US1] Run focused US1 checks documented in `specs/022-deployment-ux/quickstart.md`
 
 **Checkpoint**: User Story 1 is independently functional and the cockpit no longer depends on seeded demo data.
@@ -91,22 +91,22 @@
 
 ### Tests for User Story 2
 
-- [X] T038 [P] [US2] Add setup permission service tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspacePermissionServiceTests.cs`
-- [X] T039 [P] [US2] Add application/environment/engine service tests in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceDeploymentServiceTests.cs`
-- [X] T040 [P] [US2] Add registration API permission and entitlement tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentPermissionTests.cs`
-- [X] T041 [P] [US2] Add console setup form tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T038 [P] [US2] Add setup permission service tests in `tests/ValenceControl.Deployment.Core.Tests/WorkspacePermissionServiceTests.cs`
+- [X] T039 [P] [US2] Add application/environment/engine service tests in `tests/ValenceControl.Deployment.Core.Tests/WorkspaceDeploymentServiceTests.cs`
+- [X] T040 [P] [US2] Add registration API permission and entitlement tests in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentPermissionTests.cs`
+- [X] T041 [P] [US2] Add console setup form tests in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 2
 
-- [X] T042 [US2] Implement bootstrap workspace-owner permission grants and effective permission reads in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspacePermissionService.cs`
-- [X] T043 [US2] Implement permission grant persistence in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [X] T044 [US2] Implement application and environment create/update methods in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
-- [X] T045 [US2] Implement engine registration methods with credential redaction and capability validation in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
-- [X] T046 [US2] Implement application/environment/engine write methods in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [X] T047 [US2] Add permissions, application, environment, and engine registration endpoints in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [X] T048 [US2] Add setup and permissions API client calls in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
-- [X] T049 [US2] Add setup and engine registration UI in `src/Elsa.Platform.Console/src/features/deployments/DeploymentSetupPanel.tsx`
-- [X] T050 [US2] Wire setup and engine registration UI into `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T042 [US2] Implement bootstrap workspace-owner permission grants and effective permission reads in `src/ValenceControl.Deployment.Core/Workspace/WorkspacePermissionService.cs`
+- [X] T043 [US2] Implement permission grant persistence in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T044 [US2] Implement application and environment create/update methods in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
+- [X] T045 [US2] Implement engine registration methods with credential redaction and capability validation in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
+- [X] T046 [US2] Implement application/environment/engine write methods in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T047 [US2] Add permissions, application, environment, and engine registration endpoints in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T048 [US2] Add setup and permissions API client calls in `src/ValenceControl.Console/src/features/deployments/deploymentApi.ts`
+- [X] T049 [US2] Add setup and engine registration UI in `src/ValenceControl.Console/src/features/deployments/DeploymentSetupPanel.tsx`
+- [X] T050 [US2] Wire setup and engine registration UI into `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
 - [X] T051 [US2] Run focused US2 checks documented in `specs/022-deployment-ux/quickstart.md`
 
 **Checkpoint**: User Story 2 is independently functional from API and console.
@@ -121,21 +121,21 @@
 
 ### Tests for User Story 3
 
-- [X] T052 [P] [US3] Add structured desired-state service tests in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentValidationServiceTests.cs`
-- [X] T053 [P] [US3] Add desired-state persistence tests in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
-- [X] T054 [P] [US3] Add promotion preview API permission tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentApiTests.cs`
-- [X] T055 [P] [US3] Add promotion preview console tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T052 [P] [US3] Add structured desired-state service tests in `tests/ValenceControl.Deployment.Core.Tests/DeploymentValidationServiceTests.cs`
+- [X] T053 [P] [US3] Add desired-state persistence tests in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
+- [X] T054 [P] [US3] Add promotion preview API permission tests in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
+- [X] T055 [P] [US3] Add promotion preview console tests in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 3
 
-- [X] T056 [US3] Implement desired-state record validation and deterministic hashing in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentValidationService.cs`
-- [X] T057 [US3] Implement desired-state revision creation and immutable storage in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
-- [X] T058 [US3] Implement structured desired-state persistence in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [X] T059 [US3] Implement structured desired-state diff and target validation in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentValidationService.cs`
-- [X] T060 [US3] Add revision and promotion preview endpoints with permission checks in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [X] T061 [US3] Add desired-state and promotion preview API client calls in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
-- [X] T062 [US3] Add promotion preview UI in `src/Elsa.Platform.Console/src/features/deployments/PromotionPreviewPanel.tsx`
-- [X] T063 [US3] Wire promotion preview UI into `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T056 [US3] Implement desired-state record validation and deterministic hashing in `src/ValenceControl.Deployment.Core/Workspace/DeploymentValidationService.cs`
+- [X] T057 [US3] Implement desired-state revision creation and immutable storage in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
+- [X] T058 [US3] Implement structured desired-state persistence in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T059 [US3] Implement structured desired-state diff and target validation in `src/ValenceControl.Deployment.Core/Workspace/DeploymentValidationService.cs`
+- [X] T060 [US3] Add revision and promotion preview endpoints with permission checks in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T061 [US3] Add desired-state and promotion preview API client calls in `src/ValenceControl.Console/src/features/deployments/deploymentApi.ts`
+- [X] T062 [US3] Add promotion preview UI in `src/ValenceControl.Console/src/features/deployments/PromotionPreviewPanel.tsx`
+- [X] T063 [US3] Wire promotion preview UI into `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
 - [X] T064 [US3] Run focused US3 checks documented in `specs/022-deployment-ux/quickstart.md`
 
 **Checkpoint**: User Story 3 is independently functional, preview is read-only, and desired state is structured platform data.
@@ -150,26 +150,26 @@
 
 ### Tests for User Story 4
 
-- [X] T065 [P] [US4] Add confirmation service tests for same-user consumption, single-use behavior, expiration, and replay prevention in `tests/Elsa.Platform.Deployment.Core.Tests/ConfirmationServiceTests.cs`
-- [X] T066 [P] [US4] Add deployment run service tests in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentRunServiceTests.cs`
-- [X] T067 [P] [US4] Add deployment queue worker tests for queued processing, stale claimed run recovery, and no automatic duplicate apply in `tests/Elsa.Platform.Deployment.Core.Tests/DeploymentQueueWorkerTests.cs`
-- [X] T068 [P] [US4] Add deployment run and rollback API tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentApiTests.cs`
-- [X] T069 [P] [US4] Add deployment and rollback API confirmation tests for same-user, single-use, expiration, and replay rejection in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentMutationAuthorizationTests.cs`
-- [X] T070 [P] [US4] Add deployment run console tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T065 [P] [US4] Add confirmation service tests for same-user consumption, single-use behavior, expiration, and replay prevention in `tests/ValenceControl.Deployment.Core.Tests/ConfirmationServiceTests.cs`
+- [X] T066 [P] [US4] Add deployment run service tests in `tests/ValenceControl.Deployment.Core.Tests/DeploymentRunServiceTests.cs`
+- [X] T067 [P] [US4] Add deployment queue worker tests for queued processing, stale claimed run recovery, and no automatic duplicate apply in `tests/ValenceControl.Deployment.Core.Tests/DeploymentQueueWorkerTests.cs`
+- [X] T068 [P] [US4] Add deployment run and rollback API tests in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
+- [X] T069 [P] [US4] Add deployment and rollback API confirmation tests for same-user, single-use, expiration, and replay rejection in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentMutationAuthorizationTests.cs`
+- [X] T070 [P] [US4] Add deployment run console tests in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 4
 
-- [X] T071 [US4] Implement action confirmation creation and consumption with same-user, single-use, expiration, and replay protection in `src/Elsa.Platform.Deployment.Core/Workspace/ConfirmationService.cs`
-- [X] T072 [US4] Implement confirmation persistence in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [X] T073 [US4] Implement queued deployment run creation, active-run conflict checks, status updates, and history in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`
-- [X] T074 [US4] Implement rollback validation and queued rollback run creation in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentRunService.cs`
-- [X] T075 [US4] Implement deployment run persistence and append-only history in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [X] T076 [US4] Implement in-process queue worker claim/process/recovery flow where queued runs process normally and stale claimed runs move to `RecoveryRequired` without automatic replay in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentQueueWorker.cs`
-- [X] T077 [US4] Register hosted queue worker in `src/Elsa.Platform.Api/Program.cs`
-- [X] T078 [US4] Add confirmation, run, rollback, and run-detail endpoints in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [X] T079 [US4] Add confirmation, run, rollback, and run-detail API client calls in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
-- [X] T080 [US4] Add run history, confirmation, and rollback UI in `src/Elsa.Platform.Console/src/features/deployments/DeploymentRunsPanel.tsx`
-- [X] T081 [US4] Wire run history and rollback UI into `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T071 [US4] Implement action confirmation creation and consumption with same-user, single-use, expiration, and replay protection in `src/ValenceControl.Deployment.Core/Workspace/ConfirmationService.cs`
+- [X] T072 [US4] Implement confirmation persistence in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T073 [US4] Implement queued deployment run creation, active-run conflict checks, status updates, and history in `src/ValenceControl.Deployment.Core/Workspace/DeploymentRunService.cs`
+- [X] T074 [US4] Implement rollback validation and queued rollback run creation in `src/ValenceControl.Deployment.Core/Workspace/DeploymentRunService.cs`
+- [X] T075 [US4] Implement deployment run persistence and append-only history in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T076 [US4] Implement in-process queue worker claim/process/recovery flow where queued runs process normally and stale claimed runs move to `RecoveryRequired` without automatic replay in `src/ValenceControl.Deployment.Core/Workspace/DeploymentQueueWorker.cs`
+- [X] T077 [US4] Register hosted queue worker in `src/ValenceControl.Api/Program.cs`
+- [X] T078 [US4] Add confirmation, run, rollback, and run-detail endpoints in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T079 [US4] Add confirmation, run, rollback, and run-detail API client calls in `src/ValenceControl.Console/src/features/deployments/deploymentApi.ts`
+- [X] T080 [US4] Add run history, confirmation, and rollback UI in `src/ValenceControl.Console/src/features/deployments/DeploymentRunsPanel.tsx`
+- [X] T081 [US4] Wire run history and rollback UI into `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
 - [X] T082 [US4] Run focused US4 checks documented in `specs/022-deployment-ux/quickstart.md`
 
 **Checkpoint**: User Story 4 is independently functional and run history persists after refresh/restart.
@@ -184,18 +184,18 @@
 
 ### Tests for User Story 5
 
-- [X] T083 [P] [US5] Add runtime control service tests in `tests/Elsa.Platform.Deployment.Core.Tests/RuntimeControlServiceTests.cs`
-- [X] T084 [P] [US5] Add runtime control API tests for unsupported capability, missing confirmation, same-user confirmation, single-use confirmation, and unauthorized permission rejection in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentMutationAuthorizationTests.cs`
-- [X] T085 [P] [US5] Add runtime control console tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T083 [P] [US5] Add runtime control service tests in `tests/ValenceControl.Deployment.Core.Tests/RuntimeControlServiceTests.cs`
+- [X] T084 [P] [US5] Add runtime control API tests for unsupported capability, missing confirmation, same-user confirmation, single-use confirmation, and unauthorized permission rejection in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentMutationAuthorizationTests.cs`
+- [X] T085 [P] [US5] Add runtime control console tests in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 5
 
-- [X] T086 [US5] Implement capability-gated and confirmation-gated runtime control execution in `src/Elsa.Platform.Deployment.Core/Workspace/RuntimeControlService.cs`
-- [X] T087 [US5] Implement runtime control audit persistence in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [X] T088 [US5] Add runtime control endpoint with permission and confirmation checks in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [X] T089 [US5] Add runtime control API client calls in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
-- [X] T090 [US5] Add runtime controls UI in `src/Elsa.Platform.Console/src/features/deployments/RuntimeControlsPanel.tsx`
-- [X] T091 [US5] Wire runtime controls UI into `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T086 [US5] Implement capability-gated and confirmation-gated runtime control execution in `src/ValenceControl.Deployment.Core/Workspace/RuntimeControlService.cs`
+- [X] T087 [US5] Implement runtime control audit persistence in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T088 [US5] Add runtime control endpoint with permission and confirmation checks in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T089 [US5] Add runtime control API client calls in `src/ValenceControl.Console/src/features/deployments/deploymentApi.ts`
+- [X] T090 [US5] Add runtime controls UI in `src/ValenceControl.Console/src/features/deployments/RuntimeControlsPanel.tsx`
+- [X] T091 [US5] Wire runtime controls UI into `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
 - [X] T092 [US5] Run focused US5 checks documented in `specs/022-deployment-ux/quickstart.md`
 
 **Checkpoint**: User Story 5 is independently functional and unsupported or unconfirmed controls fail closed.
@@ -210,15 +210,15 @@
 
 ### Tests for User Story 6
 
-- [X] T093 [P] [US6] Add console integration coverage for complete deployment flow in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
-- [X] T094 [P] [US6] Add E2E deployment smoke test in `tests/Elsa.Platform.Console.E2E/deployments.spec.ts`
+- [X] T093 [P] [US6] Add console integration coverage for complete deployment flow in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T094 [P] [US6] Add E2E deployment smoke test in `tests/ValenceControl.Console.E2E/deployments.spec.ts`
 
 ### Implementation for User Story 6
 
-- [X] T095 [US6] Remove remaining demo-only notices and seeded assumptions from `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [X] T096 [US6] Add query invalidation and mutation refresh paths in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
-- [X] T097 [US6] Add permission-blocked, confirmation-required, queued, running, succeeded, failed, and recovery states in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [X] T098 [US6] Add metadata-only observability and drift rendering in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T095 [US6] Remove remaining demo-only notices and seeded assumptions from `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T096 [US6] Add query invalidation and mutation refresh paths in `src/ValenceControl.Console/src/features/deployments/deploymentApi.ts`
+- [X] T097 [US6] Add permission-blocked, confirmation-required, queued, running, succeeded, failed, and recovery states in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T098 [US6] Add metadata-only observability and drift rendering in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
 - [X] T099 [US6] Run console and E2E checks documented in `specs/022-deployment-ux/quickstart.md`
 
 **Checkpoint**: User Story 6 completes the live deployment UX.
@@ -232,13 +232,13 @@
 - [X] T100 [P] Update quickstart results and known limitations in `specs/022-deployment-ux/quickstart.md`
 - [X] T101 [P] Update deployment contracts for final response shapes in `specs/022-deployment-ux/contracts/workspace-deployment-api.md`
 - [X] T102 [P] Update console UX contract for final states in `specs/022-deployment-ux/contracts/console-deployments-ux.md`
-- [X] T103 Review secret redaction, permission checks, observability/drift metadata safety, confirmation checks, and audit metadata across `src/Elsa.Platform.Deployment.Core/Workspace/`, `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [X] T104 Run `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj` and record result in `specs/022-deployment-ux/quickstart.md`
-- [X] T105 Run `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj` and record result in `specs/022-deployment-ux/quickstart.md`
-- [X] T106 Run `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceDeployment` and record result in `specs/022-deployment-ux/quickstart.md`
-- [X] T107 Run `cd src/Elsa.Platform.Console && npm test -- --run deployments` and record result in `specs/022-deployment-ux/quickstart.md`
-- [X] T108 Run `cd src/Elsa.Platform.Console && npm run typecheck` and record result in `specs/022-deployment-ux/quickstart.md`
-- [X] T109 Run `dotnet test Elsa.Platform.sln` and record result in `specs/022-deployment-ux/quickstart.md`
+- [X] T103 Review secret redaction, permission checks, observability/drift metadata safety, confirmation checks, and audit metadata across `src/ValenceControl.Deployment.Core/Workspace/`, `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T104 Run `dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj` and record result in `specs/022-deployment-ux/quickstart.md`
+- [X] T105 Run `dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj` and record result in `specs/022-deployment-ux/quickstart.md`
+- [X] T106 Run `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter WorkspaceDeployment` and record result in `specs/022-deployment-ux/quickstart.md`
+- [X] T107 Run `cd src/ValenceControl.Console && npm test -- --run deployments` and record result in `specs/022-deployment-ux/quickstart.md`
+- [X] T108 Run `cd src/ValenceControl.Console && npm run typecheck` and record result in `specs/022-deployment-ux/quickstart.md`
+- [X] T109 Run `dotnet test ValenceControl.sln` and record result in `specs/022-deployment-ux/quickstart.md`
 - [X] T110 Run `git diff --check` and record result in `specs/022-deployment-ux/quickstart.md`
 
 ---
@@ -279,19 +279,19 @@
 ### User Story 1
 
 ```text
-Task: "Add core cockpit projection tests in tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceDeploymentServiceTests.cs"
-Task: "Add EF persistence round-trip tests in tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs"
-Task: "Add workspace cockpit isolation API tests in tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentIsolationTests.cs"
-Task: "Add console cockpit live-data tests in src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx"
+Task: "Add core cockpit projection tests in tests/ValenceControl.Deployment.Core.Tests/WorkspaceDeploymentServiceTests.cs"
+Task: "Add EF persistence round-trip tests in tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs"
+Task: "Add workspace cockpit isolation API tests in tests/ValenceControl.Api.Tests/WorkspaceDeploymentIsolationTests.cs"
+Task: "Add console cockpit live-data tests in src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx"
 ```
 
 ### User Story 4
 
 ```text
-Task: "Add confirmation service tests in tests/Elsa.Platform.Deployment.Core.Tests/ConfirmationServiceTests.cs"
-Task: "Add deployment run service tests in tests/Elsa.Platform.Deployment.Core.Tests/DeploymentRunServiceTests.cs"
-Task: "Add deployment queue worker tests in tests/Elsa.Platform.Deployment.Core.Tests/DeploymentQueueWorkerTests.cs"
-Task: "Add deployment run and rollback API tests in tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentApiTests.cs"
+Task: "Add confirmation service tests in tests/ValenceControl.Deployment.Core.Tests/ConfirmationServiceTests.cs"
+Task: "Add deployment run service tests in tests/ValenceControl.Deployment.Core.Tests/DeploymentRunServiceTests.cs"
+Task: "Add deployment queue worker tests in tests/ValenceControl.Deployment.Core.Tests/DeploymentQueueWorkerTests.cs"
+Task: "Add deployment run and rollback API tests in tests/ValenceControl.Api.Tests/WorkspaceDeploymentApiTests.cs"
 ```
 
 ## Implementation Strategy

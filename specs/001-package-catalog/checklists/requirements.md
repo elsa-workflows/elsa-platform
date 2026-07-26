@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Elsa Package Catalog
+# Specification Quality Checklist: Valence Control Package Catalog
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-05-14

@@ -2,13 +2,13 @@
 
 ## Decision 1: Runtime pull/sync is the default transport
 
-**Decision**: External runtimes poll and claim commands from Platform. Webhooks can trigger a faster fetch but are not authoritative.
+**Decision**: External runtimes poll and claim commands from Valence Control. Webhooks can trigger a faster fetch but are not authoritative.
 
-**Rationale**: Many runtimes are behind private networks or customer firewalls. Pull/sync avoids inbound runtime access and keeps Platform deployment state authoritative.
+**Rationale**: Many runtimes are behind private networks or customer firewalls. Pull/sync avoids inbound runtime access and keeps Valence Control deployment state authoritative.
 
 **Alternatives Considered**:
 
-- Platform direct push as the default. Rejected because it requires inbound runtime reachability and increases network/security coupling.
+- Valence Control direct push as the default. Rejected because it requires inbound runtime reachability and increases network/security coupling.
 - Webhook payloads as authoritative commands. Rejected because duplicate/lost webhook delivery would make deployment state less deterministic.
 
 ## Decision 2: Commands are linked to deployment runs
@@ -47,7 +47,7 @@
 
 **Decision**: Commands carry IDs, references, digests, compatibility metadata, and safe diagnostics only.
 
-**Rationale**: Platform must remain a control plane and avoid storing raw secrets, workflow payloads, or runtime credentials in command records.
+**Rationale**: Valence Control must remain a control plane and avoid storing raw secrets, workflow payloads, or runtime credentials in command records.
 
 **Alternatives Considered**:
 

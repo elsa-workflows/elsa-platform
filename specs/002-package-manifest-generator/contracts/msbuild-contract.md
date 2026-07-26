@@ -5,7 +5,7 @@
 Consuming projects use one private package reference:
 
 ```xml
-<PackageReference Include="Elsa.Platform.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
+<PackageReference Include="ValenceControl.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
 ```
 
 No additional targets, props, content items, or package item configuration is

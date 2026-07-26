@@ -31,4 +31,4 @@
 
 ## Notes
 
-- Validation completed against the initial draft. The spec intentionally scopes secret stores to platform-to-engine credentials only, excludes runtime secrets and artifact secret references, and defines generic external reference as a metadata-only customer-governed locator that Elsa Platform does not natively resolve.
+- Validation completed against the initial draft. The spec intentionally scopes secret stores to platform-to-engine credentials only, excludes runtime secrets and artifact secret references, and defines generic external reference as a metadata-only customer-governed locator that Valence Control does not natively resolve.

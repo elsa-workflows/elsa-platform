@@ -9,19 +9,19 @@ Verify that the first Phase 1 deployment slice adds dependency-light foundation 
 Run focused tests:
 
 ```bash
-dotnet test tests/Elsa.Platform.Deployment.Abstractions.Tests/Elsa.Platform.Deployment.Abstractions.Tests.csproj
+dotnet test tests/ValenceControl.Deployment.Abstractions.Tests/ValenceControl.Deployment.Abstractions.Tests.csproj
 ```
 
 Run the full solution:
 
 ```bash
-dotnet test Elsa.Platform.sln
+dotnet test ValenceControl.sln
 ```
 
 Check dependencies:
 
 ```bash
-dotnet list src/Elsa.Platform.Deployment.Abstractions/Elsa.Platform.Deployment.Abstractions.csproj reference
+dotnet list src/ValenceControl.Deployment.Abstractions/ValenceControl.Deployment.Abstractions.csproj reference
 ```
 
 Expected result:
@@ -36,17 +36,17 @@ Expected result:
 Last verified on 2026-05-20:
 
 ```text
-dotnet test tests/Elsa.Platform.Deployment.Abstractions.Tests/Elsa.Platform.Deployment.Abstractions.Tests.csproj
+dotnet test tests/ValenceControl.Deployment.Abstractions.Tests/ValenceControl.Deployment.Abstractions.Tests.csproj
 Passed: 28
 ```
 
 ```text
-dotnet test Elsa.Platform.sln
+dotnet test ValenceControl.sln
 Passed all .NET test projects
 ```
 
 ```text
-dotnet list src/Elsa.Platform.Deployment.Abstractions/Elsa.Platform.Deployment.Abstractions.csproj reference
+dotnet list src/ValenceControl.Deployment.Abstractions/ValenceControl.Deployment.Abstractions.csproj reference
 There are no Project to Project references.
 ```
 
@@ -61,10 +61,10 @@ Known pre-existing warning:
 
 ## Manual Review Checklist
 
-- `src/Elsa.Platform.Deployment.Abstractions/` contains only contracts and value types.
-- `tests/Elsa.Platform.Deployment.Abstractions.Tests/` covers identity, artifacts, diagnostics, plans, results, history, extension points, and boundaries.
-- `Elsa.Platform.sln` includes the new source and test projects.
-- `docs/deployment-platform-phased-strategy.md` still marks manifest parsing, artifact IO, engine, CLI, and API implementation as later Phase 1 work.
+- `src/ValenceControl.Deployment.Abstractions/` contains only contracts and value types.
+- `tests/ValenceControl.Deployment.Abstractions.Tests/` covers identity, artifacts, diagnostics, plans, results, history, extension points, and boundaries.
+- `ValenceControl.sln` includes the new source and test projects.
+- `docs/valence-control-deployment-phased-strategy.md` still marks manifest parsing, artifact IO, engine, CLI, and API implementation as later Phase 1 work.
 
 ## Deferred Follow-Up Slices
 

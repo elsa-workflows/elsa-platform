@@ -6,32 +6,32 @@
 
 ## Summary
 
-Upgrade the artifact registry from metadata-only records toward a shared typed artifact envelope. The envelope gives Studio, CLI, CI, manual registration, and future producers a single submission contract while keeping Elsa Platform a control plane that stores only safe metadata, digests, diagnostics, compatibility hints, and payload references. The first built-in artifact type is `elsa.workflow-definition`; type-specific payload interpretation remains in producer/runtime integration packages, not in platform core.
+Upgrade the artifact registry from metadata-only records toward a shared typed artifact envelope. The envelope gives Studio, CLI, CI, manual registration, and future producers a single submission contract while keeping Valence Control a control plane that stores only safe metadata, digests, diagnostics, compatibility hints, and payload references. The first built-in artifact type is `elsa.workflow-definition`; type-specific payload interpretation remains in producer/runtime integration packages, not in platform core.
 
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `Elsa.Platform.Deployment.Artifacts`, `Elsa.Platform.Deployment.Core` workspace artifact services, React Router, TanStack Query, Vitest, xUnit, and FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `ValenceControl.Deployment.Artifacts`, `ValenceControl.Deployment.Core` workspace artifact services, React Router, TanStack Query, Vitest, xUnit, and FluentAssertions.
 
-**Storage**: Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Catalog records store envelope metadata, type IDs, producer metadata, safe metadata, compatibility hints, digests, diagnostics, and payload references only.
+**Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Catalog records store envelope metadata, type IDs, producer metadata, safe metadata, compatibility hints, digests, diagnostics, and payload references only.
 
 **Testing**: Focused `dotnet test` for Deployment.Core artifact envelope validation, PackageCatalog persistence, and API tests; console `vitest` and typecheck for artifact list/detail envelope fields; `git diff --check`.
 
-**Target Platform**: ASP.NET Core Platform API and React console served from the platform host.
+**Target platform**: ASP.NET Core Valence Control API and React console served from the platform host.
 
 **Project Type**: Modular monolith web service with React console and EF-backed workspace persistence.
 
 **Performance Goals**: Artifact list/detail APIs continue to load a normal workspace with 250 artifacts in under 3 seconds in the integration test environment.
 
-**Constraints**: Workspace remains the artifact resource isolation boundary, and `specs/031-organization-tenancy` makes Organization the customer tenant boundary above it. Platform core validates envelope shape, registered type IDs, digests, safe metadata, and references but does not interpret workflow payload internals. Catalog persistence never stores raw payloads, workflow definitions, manifest JSON, credentials, tokens, connection strings, or secret values.
+**Constraints**: Workspace remains the artifact resource isolation boundary, and `specs/031-organization-tenancy` makes Organization the customer tenant boundary above it. Valence Control core validates envelope shape, registered type IDs, digests, safe metadata, and references but does not interpret workflow payload internals. Catalog persistence never stores raw payloads, workflow definitions, manifest JSON, credentials, tokens, connection strings, or secret values.
 
 **Scale/Scope**: Envelope upgrade for the existing hosted artifact registry. Studio submit UX, runtime command sync, workflow runtime application, OCI storage, signing, and object storage upload are later slices.
 
 ## Constitution Check
 
 - **Control Plane First**: Pass. The feature models deployable artifacts and metadata for orchestration, not runtime execution.
-- **Bounded Subsystems**: Pass. `Elsa.Platform.Deployment.Artifacts` owns dependency-light envelope and type contracts; Deployment.Core orchestrates workspace registry behavior; EF persists metadata; API and console expose workspace-safe views.
+- **Bounded Subsystems**: Pass. `ValenceControl.Deployment.Artifacts` owns dependency-light envelope and type contracts; Deployment.Core orchestrates workspace registry behavior; EF persists metadata; API and console expose workspace-safe views.
 - **Contract Stability**: Pass. Envelope, artifact type, API, and console contracts are documented before implementation.
 - **Safety By Design**: Pass. The envelope explicitly excludes raw payloads and secrets from catalog storage and API responses.
 - **Incremental Verifiability**: Pass. Type validation, duplicate behavior, safe metadata filtering, persistence, API, and console display are independently testable.
@@ -59,29 +59,29 @@ specs/026-artifact-envelope-and-types/
 
 ```text
 src/
-  Elsa.Platform.Deployment.Artifacts/
+  ValenceControl.Deployment.Artifacts/
       ArtifactEnvelopeModels.cs
       ArtifactTypeModels.cs
       ArtifactEnvelopeValidator.cs
       ArtifactTypeRegistry.cs
 
-  Elsa.Platform.Deployment.Core/
+  ValenceControl.Deployment.Core/
     Workspace/
       WorkspaceArtifactModels.cs
       WorkspaceArtifactService.cs
       IWorkspaceArtifactStore.cs
 
-  Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
+  ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
     DeploymentWorkspaceStore.cs
     Models/DeploymentWorkspaceEntities.cs
     Models/CatalogModelConfiguration.cs
 
-  Elsa.Platform.Api/
+  ValenceControl.Api/
     Workspace/
       WorkspaceArtifactContracts.cs
       WorkspaceArtifactEndpoints.cs
 
-  Elsa.Platform.Console/
+  ValenceControl.Console/
     src/features/artifacts/
       artifactModels.ts
       artifactApi.ts
@@ -91,20 +91,20 @@ src/
 
 ```text
 tests/
-  Elsa.Platform.Deployment.Artifacts.Tests/
+  ValenceControl.Deployment.Artifacts.Tests/
     ArtifactEnvelopeValidationTests.cs
 
-  Elsa.Platform.Deployment.Core.Tests/
+  ValenceControl.Deployment.Core.Tests/
     WorkspaceArtifactServiceTests.cs
 
-  Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+  ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
     DeploymentWorkspaceArtifactPersistenceTests.cs
 
-  Elsa.Platform.Api.Tests/
+  ValenceControl.Api.Tests/
     WorkspaceArtifactApiTests.cs
 ```
 
-**Structure Decision**: Add dependency-light envelope/type contracts in `Elsa.Platform.Deployment.Artifacts` so registry, Studio producers, future deployment commands, and runtime integration packages can share a stable model without depending on workspace orchestration. Reuse the existing workspace artifact store and API instead of introducing a parallel registry.
+**Structure Decision**: Add dependency-light envelope/type contracts in `ValenceControl.Deployment.Artifacts` so registry, Studio producers, future deployment commands, and runtime integration packages can share a stable model without depending on workspace orchestration. Reuse the existing workspace artifact store and API instead of introducing a parallel registry.
 
 ## Phase Plan
 

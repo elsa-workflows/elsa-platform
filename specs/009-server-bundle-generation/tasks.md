@@ -18,11 +18,11 @@
 
 **Purpose**: Prepare the existing API/Core test surface for bundle generation.
 
-- [X] T001 Inspect existing builder endpoint, workspace builder endpoint, compatibility, and public catalog query patterns in `src/Elsa.Platform.Api/Public/Builder/BuilderEndpoints.cs`, `src/Elsa.Platform.Api/Workspace/WorkspaceBuilderEndpoints.cs`, and `src/Elsa.Platform.PackageCatalog.Core/Compatibility/CompatibilityCheckService.cs`
-- [X] T002 [P] Create empty bundle API test file `tests/Elsa.Platform.Api.Tests/PublicBuilderBundleApiTests.cs`
-- [X] T003 [P] Create empty workspace bundle API test file `tests/Elsa.Platform.Api.Tests/WorkspaceBuilderBundleApiTests.cs`
-- [X] T004 [P] Create empty core bundle generation test file `tests/Elsa.Platform.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
-- [X] T005 [P] Create bundle renderer test fixture helpers in `tests/Elsa.Platform.PackageCatalog.Testing/BuilderBundleFixtureBuilder.cs`
+- [X] T001 Inspect existing builder endpoint, workspace builder endpoint, compatibility, and public catalog query patterns in `src/ValenceControl.Api/Public/Builder/BuilderEndpoints.cs`, `src/ValenceControl.Api/Workspace/WorkspaceBuilderEndpoints.cs`, and `src/ValenceControl.PackageCatalog.Core/Compatibility/CompatibilityCheckService.cs`
+- [X] T002 [P] Create empty bundle API test file `tests/ValenceControl.Api.Tests/PublicBuilderBundleApiTests.cs`
+- [X] T003 [P] Create empty workspace bundle API test file `tests/ValenceControl.Api.Tests/WorkspaceBuilderBundleApiTests.cs`
+- [X] T004 [P] Create empty core bundle generation test file `tests/ValenceControl.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
+- [X] T005 [P] Create bundle renderer test fixture helpers in `tests/ValenceControl.PackageCatalog.Testing/BuilderBundleFixtureBuilder.cs`
 
 ---
 
@@ -32,14 +32,14 @@
 
 **Critical**: No user story implementation should begin until these shared contracts and services exist.
 
-- [X] T006 Define bundle request/result/domain records in `src/Elsa.Platform.PackageCatalog.Core/Builder/BundleGenerationModels.cs`
-- [X] T007 Define runtime image metadata records and seeded initial image catalog abstraction in `src/Elsa.Platform.PackageCatalog.Core/Builder/RuntimeImageCatalog.cs`
-- [X] T008 Define bundle finding helpers and blocking/error policy in `src/Elsa.Platform.PackageCatalog.Core/Builder/BundleFindingPolicy.cs`
-- [X] T009 Define bundle file safety validation for relative paths and required/optional file metadata in `src/Elsa.Platform.PackageCatalog.Core/Builder/BundleFilePolicy.cs`
-- [X] T010 Create renderer interface and ordered renderer registration model in `src/Elsa.Platform.PackageCatalog.Core/Builder/Renderers/BundleFileRenderer.cs`
-- [X] T011 Add builder bundle API request/response records to `src/Elsa.Platform.Api/Public/Builder/BuilderContracts.cs`
-- [X] T012 Add a dedicated builder-client API-key authentication and authorization policy that does not grant admin access in `src/Elsa.Platform.Api/Authentication/BuilderClientAuthorization.cs`
-- [X] T013 Register runtime image catalog, bundle generation service, renderers, and related policies in `src/Elsa.Platform.Api/Program.cs`
+- [X] T006 Define bundle request/result/domain records in `src/ValenceControl.PackageCatalog.Core/Builder/BundleGenerationModels.cs`
+- [X] T007 Define runtime image metadata records and seeded initial image catalog abstraction in `src/ValenceControl.PackageCatalog.Core/Builder/RuntimeImageCatalog.cs`
+- [X] T008 Define bundle finding helpers and blocking/error policy in `src/ValenceControl.PackageCatalog.Core/Builder/BundleFindingPolicy.cs`
+- [X] T009 Define bundle file safety validation for relative paths and required/optional file metadata in `src/ValenceControl.PackageCatalog.Core/Builder/BundleFilePolicy.cs`
+- [X] T010 Create renderer interface and ordered renderer registration model in `src/ValenceControl.PackageCatalog.Core/Builder/Renderers/BundleFileRenderer.cs`
+- [X] T011 Add builder bundle API request/response records to `src/ValenceControl.Api/Public/Builder/BuilderContracts.cs`
+- [X] T012 Add a dedicated builder-client API-key authentication and authorization policy that does not grant admin access in `src/ValenceControl.Api/Authentication/BuilderClientAuthorization.cs`
+- [X] T013 Register runtime image catalog, bundle generation service, renderers, and related policies in `src/ValenceControl.Api/Program.cs`
 
 **Checkpoint**: Foundation ready; story work can proceed.
 
@@ -53,24 +53,24 @@
 
 ### Tests for User Story 1
 
-- [X] T014 [P] [US1] Add core test for minimal valid bundle returning required files in `tests/Elsa.Platform.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
-- [X] T015 [US1] Add core test for deterministic file ordering and byte-equivalent output for the same intent in `tests/Elsa.Platform.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
-- [X] T016 [P] [US1] Add API integration test for trusted `POST /api/builder/bundle` success in `tests/Elsa.Platform.Api.Tests/PublicBuilderBundleApiTests.cs`
-- [X] T017 [US1] Add API integration test rejecting direct untrusted `POST /api/builder/bundle` calls in `tests/Elsa.Platform.Api.Tests/PublicBuilderBundleApiTests.cs`
-- [X] T018 [US1] Add API integration test proving admin credentials are not required and dedicated builder-client credentials do not authorize admin APIs in `tests/Elsa.Platform.Api.Tests/PublicBuilderBundleApiTests.cs`
+- [X] T014 [P] [US1] Add core test for minimal valid bundle returning required files in `tests/ValenceControl.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
+- [X] T015 [US1] Add core test for deterministic file ordering and byte-equivalent output for the same intent in `tests/ValenceControl.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
+- [X] T016 [P] [US1] Add API integration test for trusted `POST /api/builder/bundle` success in `tests/ValenceControl.Api.Tests/PublicBuilderBundleApiTests.cs`
+- [X] T017 [US1] Add API integration test rejecting direct untrusted `POST /api/builder/bundle` calls in `tests/ValenceControl.Api.Tests/PublicBuilderBundleApiTests.cs`
+- [X] T018 [US1] Add API integration test proving admin credentials are not required and dedicated builder-client credentials do not authorize admin APIs in `tests/ValenceControl.Api.Tests/PublicBuilderBundleApiTests.cs`
 
 ### Implementation for User Story 1
 
-- [X] T019 [US1] Implement `BundleGenerationService` orchestration for valid public builder intent in `src/Elsa.Platform.PackageCatalog.Core/Builder/BundleGenerationService.cs`
-- [X] T020 [P] [US1] Implement `config.json` renderer in `src/Elsa.Platform.PackageCatalog.Core/Builder/Renderers/AppSettingsBundleRenderer.cs`
-- [X] T021 [P] [US1] Implement `packages.lock.json` renderer in `src/Elsa.Platform.PackageCatalog.Core/Builder/Renderers/PackageLockBundleRenderer.cs`
-- [X] T022 [P] [US1] Implement `docker-compose.yml` renderer in `src/Elsa.Platform.PackageCatalog.Core/Builder/Renderers/DockerComposeBundleRenderer.cs`
-- [X] T023 [P] [US1] Implement `.env.example` renderer in `src/Elsa.Platform.PackageCatalog.Core/Builder/Renderers/EnvExampleBundleRenderer.cs`
-- [X] T024 [P] [US1] Implement `README.md` renderer in `src/Elsa.Platform.PackageCatalog.Core/Builder/Renderers/ReadmeBundleRenderer.cs`
-- [X] T025 [P] [US1] Implement optional `Program.Generated.cs` reference renderer in `src/Elsa.Platform.PackageCatalog.Core/Builder/Renderers/ProgramReferenceBundleRenderer.cs`
-- [X] T026 [US1] Implement public package/source normalization using existing public catalog visibility in `src/Elsa.Platform.PackageCatalog.Core/Builder/BundleGenerationService.cs`
-- [X] T027 [US1] Map core bundle results to API response DTOs in `src/Elsa.Platform.Api/Public/Builder/BuilderEndpoints.cs`
-- [X] T028 [US1] Add protected `POST /api/builder/bundle` route in `src/Elsa.Platform.Api/Public/Builder/BuilderEndpoints.cs`
+- [X] T019 [US1] Implement `BundleGenerationService` orchestration for valid public builder intent in `src/ValenceControl.PackageCatalog.Core/Builder/BundleGenerationService.cs`
+- [X] T020 [P] [US1] Implement `config.json` renderer in `src/ValenceControl.PackageCatalog.Core/Builder/Renderers/AppSettingsBundleRenderer.cs`
+- [X] T021 [P] [US1] Implement `packages.lock.json` renderer in `src/ValenceControl.PackageCatalog.Core/Builder/Renderers/PackageLockBundleRenderer.cs`
+- [X] T022 [P] [US1] Implement `docker-compose.yml` renderer in `src/ValenceControl.PackageCatalog.Core/Builder/Renderers/DockerComposeBundleRenderer.cs`
+- [X] T023 [P] [US1] Implement `.env.example` renderer in `src/ValenceControl.PackageCatalog.Core/Builder/Renderers/EnvExampleBundleRenderer.cs`
+- [X] T024 [P] [US1] Implement `README.md` renderer in `src/ValenceControl.PackageCatalog.Core/Builder/Renderers/ReadmeBundleRenderer.cs`
+- [X] T025 [P] [US1] Implement optional `Program.Generated.cs` reference renderer in `src/ValenceControl.PackageCatalog.Core/Builder/Renderers/ProgramReferenceBundleRenderer.cs`
+- [X] T026 [US1] Implement public package/source normalization using existing public catalog visibility in `src/ValenceControl.PackageCatalog.Core/Builder/BundleGenerationService.cs`
+- [X] T027 [US1] Map core bundle results to API response DTOs in `src/ValenceControl.Api/Public/Builder/BuilderEndpoints.cs`
+- [X] T028 [US1] Add protected `POST /api/builder/bundle` route in `src/ValenceControl.Api/Public/Builder/BuilderEndpoints.cs`
 
 **Checkpoint**: User Story 1 is independently functional for successful trusted public bundle generation.
 
@@ -84,21 +84,21 @@
 
 ### Tests for User Story 2
 
-- [X] T029 [P] [US2] Add core test for unknown runtime image returning error findings and no files in `tests/Elsa.Platform.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
-- [X] T030 [US2] Add core test for missing package or invisible package returning error findings and no files in `tests/Elsa.Platform.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
-- [X] T031 [US2] Add core test for placeholder warnings returning files with warning findings in `tests/Elsa.Platform.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
-- [X] T032 [US2] Add core test proving secret values do not appear in files, findings, or diagnostics in `tests/Elsa.Platform.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
-- [X] T033 [P] [US2] Add API integration test for blocked response shape with empty `files` in `tests/Elsa.Platform.Api.Tests/PublicBuilderBundleApiTests.cs`
-- [X] T034 [US2] Add core test proving generation uses local catalog data only and does not call external package registries in `tests/Elsa.Platform.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
+- [X] T029 [P] [US2] Add core test for unknown runtime image returning error findings and no files in `tests/ValenceControl.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
+- [X] T030 [US2] Add core test for missing package or invisible package returning error findings and no files in `tests/ValenceControl.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
+- [X] T031 [US2] Add core test for placeholder warnings returning files with warning findings in `tests/ValenceControl.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
+- [X] T032 [US2] Add core test proving secret values do not appear in files, findings, or diagnostics in `tests/ValenceControl.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
+- [X] T033 [P] [US2] Add API integration test for blocked response shape with empty `files` in `tests/ValenceControl.Api.Tests/PublicBuilderBundleApiTests.cs`
+- [X] T034 [US2] Add core test proving generation uses local catalog data only and does not call external package registries in `tests/ValenceControl.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
 
 ### Implementation for User Story 2
 
-- [X] T035 [US2] Add validation for runtime image, package selection, package visibility, selected features, infrastructure providers, local package paths, and required settings in `src/Elsa.Platform.PackageCatalog.Core/Builder/BundleGenerationService.cs`
-- [X] T036 [US2] Integrate existing `CompatibilityCheckService` findings into bundle finding output in `src/Elsa.Platform.PackageCatalog.Core/Builder/BundleGenerationService.cs`
-- [X] T037 [US2] Enforce blocking-error behavior that skips rendering and returns no files in `src/Elsa.Platform.PackageCatalog.Core/Builder/BundleGenerationService.cs`
-- [X] T038 [US2] Add secret redaction and placeholder materialization rules in `src/Elsa.Platform.PackageCatalog.Core/Builder/BundleFindingPolicy.cs`
-- [X] T039 [US2] Add non-secret generation diagnostic logging around bundle generation in `src/Elsa.Platform.PackageCatalog.Core/Builder/BundleGenerationService.cs`
-- [X] T040 [US2] Map finding `level`, `code`, `message`, and `scope` fields consistently in `src/Elsa.Platform.Api/Public/Builder/BuilderContracts.cs`
+- [X] T035 [US2] Add validation for runtime image, package selection, package visibility, selected features, infrastructure providers, local package paths, and required settings in `src/ValenceControl.PackageCatalog.Core/Builder/BundleGenerationService.cs`
+- [X] T036 [US2] Integrate existing `CompatibilityCheckService` findings into bundle finding output in `src/ValenceControl.PackageCatalog.Core/Builder/BundleGenerationService.cs`
+- [X] T037 [US2] Enforce blocking-error behavior that skips rendering and returns no files in `src/ValenceControl.PackageCatalog.Core/Builder/BundleGenerationService.cs`
+- [X] T038 [US2] Add secret redaction and placeholder materialization rules in `src/ValenceControl.PackageCatalog.Core/Builder/BundleFindingPolicy.cs`
+- [X] T039 [US2] Add non-secret generation diagnostic logging around bundle generation in `src/ValenceControl.PackageCatalog.Core/Builder/BundleGenerationService.cs`
+- [X] T040 [US2] Map finding `level`, `code`, `message`, and `scope` fields consistently in `src/ValenceControl.Api/Public/Builder/BuilderContracts.cs`
 
 **Checkpoint**: User Story 2 is independently functional for safe warning/error behavior.
 
@@ -112,16 +112,16 @@
 
 ### Tests for User Story 3
 
-- [X] T041 [P] [US3] Add migration fixture JSON for minimal combined runtime in `tests/Elsa.Platform.PackageCatalog.Testing/Fixtures/BuilderBundles/minimal-combined.json`
-- [X] T042 [P] [US3] Add migration fixture JSON for PostgreSQL and RabbitMQ sidecars in `tests/Elsa.Platform.PackageCatalog.Testing/Fixtures/BuilderBundles/postgres-rabbitmq.json`
-- [X] T043 [P] [US3] Add migration fixture JSON for local packages and custom source selections in `tests/Elsa.Platform.PackageCatalog.Testing/Fixtures/BuilderBundles/local-packages-custom-source.json`
-- [X] T044 [P] [US3] Add migration fixture JSON for secret setting placeholders in `tests/Elsa.Platform.PackageCatalog.Testing/Fixtures/BuilderBundles/secret-placeholders.json`
-- [X] T045 [US3] Add migration fixture contract tests that validate required backend files and surface notable differences in `tests/Elsa.Platform.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
+- [X] T041 [P] [US3] Add migration fixture JSON for minimal combined runtime in `tests/ValenceControl.PackageCatalog.Testing/Fixtures/BuilderBundles/minimal-combined.json`
+- [X] T042 [P] [US3] Add migration fixture JSON for PostgreSQL and RabbitMQ sidecars in `tests/ValenceControl.PackageCatalog.Testing/Fixtures/BuilderBundles/postgres-rabbitmq.json`
+- [X] T043 [P] [US3] Add migration fixture JSON for local packages and custom source selections in `tests/ValenceControl.PackageCatalog.Testing/Fixtures/BuilderBundles/local-packages-custom-source.json`
+- [X] T044 [P] [US3] Add migration fixture JSON for secret setting placeholders in `tests/ValenceControl.PackageCatalog.Testing/Fixtures/BuilderBundles/secret-placeholders.json`
+- [X] T045 [US3] Add migration fixture contract tests that validate required backend files and surface notable differences in `tests/ValenceControl.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
 
 ### Implementation for User Story 3
 
-- [X] T046 [US3] Implement fixture loader for builder bundle migration states in `tests/Elsa.Platform.PackageCatalog.Testing/BuilderBundleFixtureBuilder.cs`
-- [X] T047 [US3] Add normalized output summary helper for migration comparison in `tests/Elsa.Platform.PackageCatalog.Testing/BuilderBundleFixtureBuilder.cs`
+- [X] T046 [US3] Implement fixture loader for builder bundle migration states in `tests/ValenceControl.PackageCatalog.Testing/BuilderBundleFixtureBuilder.cs`
+- [X] T047 [US3] Add normalized output summary helper for migration comparison in `tests/ValenceControl.PackageCatalog.Testing/BuilderBundleFixtureBuilder.cs`
 - [X] T048 [US3] Document accepted browser-vs-backend migration difference categories in `specs/009-server-bundle-generation/quickstart.md`
 
 **Checkpoint**: User Story 3 is independently functional for migration fixture review.
@@ -136,17 +136,17 @@
 
 ### Tests for User Story 4
 
-- [X] T049 [P] [US4] Add workspace member success test for `POST /api/workspaces/{workspaceId}/builder/bundle` in `tests/Elsa.Platform.Api.Tests/WorkspaceBuilderBundleApiTests.cs`
-- [X] T050 [US4] Add workspace anonymous and non-member rejection tests for `POST /api/workspaces/{workspaceId}/builder/bundle` in `tests/Elsa.Platform.Api.Tests/WorkspaceBuilderBundleApiTests.cs`
-- [X] T051 [US4] Add workspace private source non-leakage test for known foreign source IDs in `tests/Elsa.Platform.Api.Tests/WorkspaceBuilderBundleApiTests.cs`
-- [X] T052 [P] [US4] Add core test proving equivalent normalized intent returns equivalent files across public and workspace visibility contexts in `tests/Elsa.Platform.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
+- [X] T049 [P] [US4] Add workspace member success test for `POST /api/workspaces/{workspaceId}/builder/bundle` in `tests/ValenceControl.Api.Tests/WorkspaceBuilderBundleApiTests.cs`
+- [X] T050 [US4] Add workspace anonymous and non-member rejection tests for `POST /api/workspaces/{workspaceId}/builder/bundle` in `tests/ValenceControl.Api.Tests/WorkspaceBuilderBundleApiTests.cs`
+- [X] T051 [US4] Add workspace private source non-leakage test for known foreign source IDs in `tests/ValenceControl.Api.Tests/WorkspaceBuilderBundleApiTests.cs`
+- [X] T052 [P] [US4] Add core test proving equivalent normalized intent returns equivalent files across public and workspace visibility contexts in `tests/ValenceControl.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
 
 ### Implementation for User Story 4
 
-- [X] T053 [US4] Extend `BundleGenerationService` to accept optional workspace visibility context in `src/Elsa.Platform.PackageCatalog.Core/Builder/BundleGenerationService.cs`
-- [X] T054 [US4] Add workspace-visible package/source normalization using existing workspace catalog queries in `src/Elsa.Platform.PackageCatalog.Core/Builder/BundleGenerationService.cs`
-- [X] T055 [US4] Add `POST /api/workspaces/{workspaceId}/builder/bundle` route using existing workspace access checks in `src/Elsa.Platform.Api/Workspace/WorkspaceBuilderEndpoints.cs`
-- [X] T056 [US4] Reuse public builder bundle DTO response mapping for workspace route in `src/Elsa.Platform.Api/Workspace/WorkspaceBuilderEndpoints.cs`
+- [X] T053 [US4] Extend `BundleGenerationService` to accept optional workspace visibility context in `src/ValenceControl.PackageCatalog.Core/Builder/BundleGenerationService.cs`
+- [X] T054 [US4] Add workspace-visible package/source normalization using existing workspace catalog queries in `src/ValenceControl.PackageCatalog.Core/Builder/BundleGenerationService.cs`
+- [X] T055 [US4] Add `POST /api/workspaces/{workspaceId}/builder/bundle` route using existing workspace access checks in `src/ValenceControl.Api/Workspace/WorkspaceBuilderEndpoints.cs`
+- [X] T056 [US4] Reuse public builder bundle DTO response mapping for workspace route in `src/ValenceControl.Api/Workspace/WorkspaceBuilderEndpoints.cs`
 
 **Checkpoint**: User Story 4 is independently functional for shared multi-client bundle contract behavior.
 
@@ -156,13 +156,13 @@
 
 **Purpose**: Validate safety, docs, and repo quality after desired stories are complete.
 
-- [X] T057 [P] Update API examples for bundle generation in `src/Elsa.Platform.Api/Elsa.Platform.Api.http`
+- [X] T057 [P] Update API examples for bundle generation in `src/ValenceControl.Api/ValenceControl.Api.http`
 - [X] T058 [P] Update quickstart validation notes after implementation in `specs/009-server-bundle-generation/quickstart.md`
-- [X] T059 Review bundle renderer abstractions for unnecessary indirection and simplify files under `src/Elsa.Platform.PackageCatalog.Core/Builder/Renderers/`
-- [X] T060 Run `dotnet build Elsa.Platform.sln --no-restore` against `Elsa.Platform.sln`
-- [X] T061 Run `dotnet test Elsa.Platform.sln --no-build` against `Elsa.Platform.sln`
-- [X] T062 Confirm no generated file contents, secret values, or unsanitized private source URLs are persisted by reviewing `src/Elsa.Platform.PackageCatalog.Core/Builder/BundleGenerationService.cs`
-- [X] T063 Add performance test or timed integration assertion for representative bundle generation under 1 second in `tests/Elsa.Platform.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
+- [X] T059 Review bundle renderer abstractions for unnecessary indirection and simplify files under `src/ValenceControl.PackageCatalog.Core/Builder/Renderers/`
+- [X] T060 Run `dotnet build ValenceControl.sln --no-restore` against `ValenceControl.sln`
+- [X] T061 Run `dotnet test ValenceControl.sln --no-build` against `ValenceControl.sln`
+- [X] T062 Confirm no generated file contents, secret values, or unsanitized private source URLs are persisted by reviewing `src/ValenceControl.PackageCatalog.Core/Builder/BundleGenerationService.cs`
+- [X] T063 Add performance test or timed integration assertion for representative bundle generation under 1 second in `tests/ValenceControl.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs`
 
 ---
 
@@ -198,34 +198,34 @@
 ## Parallel Example: User Story 1
 
 ```text
-Task: "T014 [P] [US1] Add core test for minimal valid bundle returning required files in tests/Elsa.Platform.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs"
-Task: "T016 [P] [US1] Add API integration test for trusted POST /api/builder/bundle success in tests/Elsa.Platform.Api.Tests/PublicBuilderBundleApiTests.cs"
-Task: "T020 [P] [US1] Implement config.json renderer in src/Elsa.Platform.PackageCatalog.Core/Builder/Renderers/AppSettingsBundleRenderer.cs"
-Task: "T021 [P] [US1] Implement packages.lock.json renderer in src/Elsa.Platform.PackageCatalog.Core/Builder/Renderers/PackageLockBundleRenderer.cs"
-Task: "T022 [P] [US1] Implement docker-compose.yml renderer in src/Elsa.Platform.PackageCatalog.Core/Builder/Renderers/DockerComposeBundleRenderer.cs"
+Task: "T014 [P] [US1] Add core test for minimal valid bundle returning required files in tests/ValenceControl.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs"
+Task: "T016 [P] [US1] Add API integration test for trusted POST /api/builder/bundle success in tests/ValenceControl.Api.Tests/PublicBuilderBundleApiTests.cs"
+Task: "T020 [P] [US1] Implement config.json renderer in src/ValenceControl.PackageCatalog.Core/Builder/Renderers/AppSettingsBundleRenderer.cs"
+Task: "T021 [P] [US1] Implement packages.lock.json renderer in src/ValenceControl.PackageCatalog.Core/Builder/Renderers/PackageLockBundleRenderer.cs"
+Task: "T022 [P] [US1] Implement docker-compose.yml renderer in src/ValenceControl.PackageCatalog.Core/Builder/Renderers/DockerComposeBundleRenderer.cs"
 ```
 
 ## Parallel Example: User Story 2
 
 ```text
-Task: "T029 [P] [US2] Add core test for unknown runtime image returning error findings and no files in tests/Elsa.Platform.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs"
-Task: "T033 [P] [US2] Add API integration test for blocked response shape with empty files in tests/Elsa.Platform.Api.Tests/PublicBuilderBundleApiTests.cs"
+Task: "T029 [P] [US2] Add core test for unknown runtime image returning error findings and no files in tests/ValenceControl.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs"
+Task: "T033 [P] [US2] Add API integration test for blocked response shape with empty files in tests/ValenceControl.Api.Tests/PublicBuilderBundleApiTests.cs"
 ```
 
 ## Parallel Example: User Story 3
 
 ```text
-Task: "T041 [P] [US3] Add migration fixture JSON for minimal combined runtime in tests/Elsa.Platform.PackageCatalog.Testing/Fixtures/BuilderBundles/minimal-combined.json"
-Task: "T042 [P] [US3] Add migration fixture JSON for PostgreSQL and RabbitMQ sidecars in tests/Elsa.Platform.PackageCatalog.Testing/Fixtures/BuilderBundles/postgres-rabbitmq.json"
-Task: "T043 [P] [US3] Add migration fixture JSON for local packages and custom source selections in tests/Elsa.Platform.PackageCatalog.Testing/Fixtures/BuilderBundles/local-packages-custom-source.json"
-Task: "T044 [P] [US3] Add migration fixture JSON for secret setting placeholders in tests/Elsa.Platform.PackageCatalog.Testing/Fixtures/BuilderBundles/secret-placeholders.json"
+Task: "T041 [P] [US3] Add migration fixture JSON for minimal combined runtime in tests/ValenceControl.PackageCatalog.Testing/Fixtures/BuilderBundles/minimal-combined.json"
+Task: "T042 [P] [US3] Add migration fixture JSON for PostgreSQL and RabbitMQ sidecars in tests/ValenceControl.PackageCatalog.Testing/Fixtures/BuilderBundles/postgres-rabbitmq.json"
+Task: "T043 [P] [US3] Add migration fixture JSON for local packages and custom source selections in tests/ValenceControl.PackageCatalog.Testing/Fixtures/BuilderBundles/local-packages-custom-source.json"
+Task: "T044 [P] [US3] Add migration fixture JSON for secret setting placeholders in tests/ValenceControl.PackageCatalog.Testing/Fixtures/BuilderBundles/secret-placeholders.json"
 ```
 
 ## Parallel Example: User Story 4
 
 ```text
-Task: "T049 [P] [US4] Add workspace member success test for POST /api/workspaces/{workspaceId}/builder/bundle in tests/Elsa.Platform.Api.Tests/WorkspaceBuilderBundleApiTests.cs"
-Task: "T052 [P] [US4] Add core test proving equivalent normalized intent returns equivalent files across public and workspace visibility contexts in tests/Elsa.Platform.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs"
+Task: "T049 [P] [US4] Add workspace member success test for POST /api/workspaces/{workspaceId}/builder/bundle in tests/ValenceControl.Api.Tests/WorkspaceBuilderBundleApiTests.cs"
+Task: "T052 [P] [US4] Add core test proving equivalent normalized intent returns equivalent files across public and workspace visibility contexts in tests/ValenceControl.PackageCatalog.Core.Tests/BuilderBundleGenerationTests.cs"
 ```
 
 ---

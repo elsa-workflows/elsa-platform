@@ -27,10 +27,10 @@
 ## Suggested checks
 
 ```bash
-dotnet test tests/Elsa.Platform.PackageManifests.Tests/Elsa.Platform.PackageManifests.Tests.csproj
-dotnet test tests/Elsa.Platform.PackageCatalog.Core.Tests/Elsa.Platform.PackageCatalog.Core.Tests.csproj
-dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj
-dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj
-dotnet test tests/Elsa.Platform.RuntimeBuilder.Core.Tests/Elsa.Platform.RuntimeBuilder.Core.Tests.csproj
+dotnet test tests/ValenceControl.PackageManifests.Tests/ValenceControl.PackageManifests.Tests.csproj
+dotnet test tests/ValenceControl.PackageCatalog.Core.Tests/ValenceControl.PackageCatalog.Core.Tests.csproj
+dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj
+dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj
+dotnet test tests/ValenceControl.RuntimeBuilder.Core.Tests/ValenceControl.RuntimeBuilder.Core.Tests.csproj
 git diff --check
 ```

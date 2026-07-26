@@ -1,16 +1,16 @@
-# Platform Healing: Getting Started
+# Valence Control Healing: Getting Started
 
-Platform Healing turns redacted exception telemetry into governed remediation work. It durably accepts eligible signals, deduplicates them into incidents, attributes an incident to an approved component and source repository, asks an isolated repair workflow for a bounded proposal, and lets Platform publish and verify the result under workspace-owned policy.
+Valence Control Healing turns redacted exception telemetry into governed remediation work. It durably accepts eligible signals, deduplicates them into incidents, attributes an incident to an approved component and source repository, asks an isolated repair workflow for a bounded proposal, and lets Valence Control publish and verify the result under workspace-owned policy.
 
 Healing is not an unattended production deployment system. GitHub and branch protection remain the source-control authority, the deployment system remains the rollout and rollback authority, and an incident is healed only after the repaired revision is deployed and positively verified in every affected environment.
 
-For the threat model and incident-response procedures, see [Healing Security and Operations](security.md). The feature acceptance scenarios are in the [self-healing quickstart](../../specs/039-platform-self-healing/quickstart.md).
+For the threat model and incident-response procedures, see [Healing Security and Operations](security.md). The feature acceptance scenarios are in the [self-healing quickstart](../../specs/039-valence-control-self-healing/quickstart.md).
 
 ## How the Pieces Fit
 
 ```mermaid
 flowchart LR
-    A["Application OTLP signals"] --> B["Platform OpenTelemetry module"]
+    A["Application OTLP signals"] --> B["Valence Control OpenTelemetry module"]
     B --> C["Redaction and durable Healing inbox"]
     C --> D["Classification, deduplication, and attribution"]
     D --> E["GitHub issue and approved repair workflow"]
@@ -20,18 +20,18 @@ flowchart LR
     H --> I["Per-environment verification"]
 ```
 
-The application sends telemetry; it does not choose a repository, workflow, branch, path policy, evidence policy, or merge policy. Those authorities live in Elsa Platform and are scoped to a workspace and application.
+The application sends telemetry; it does not choose a repository, workflow, branch, path policy, evidence policy, or merge policy. Those authorities live in Valence Control and are scoped to a workspace and application.
 
 ## Prerequisites
 
 Before enabling discovery:
 
-- Run Elsa Platform with the Healing module and the Foundation OpenTelemetry integration included by the API host.
+- Run Valence Control with the Healing module and the Foundation OpenTelemetry integration included by the API host.
 - Configure a production relational database for the Healing context. SQLite is suitable for local development and single-process tests; use SQL Server for production scale-out.
 - Give operators only the Healing permissions they need. Workspace owners receive all Healing permissions by default.
 - Configure authenticated OTLP delivery for each monitored application/environment. Do not enable unauthenticated loopback outside isolated local development.
 - Generate and register a component manifest for every application revision that may be repaired.
-- Install the Platform GitHub App only on repositories that may be inspected or repaired.
+- Install the Valence Control GitHub App only on repositories that may be inspected or repaired.
 - Add and approve the repository repair workflow at an immutable workflow revision.
 - Ensure the deployment system can submit idempotent deployment observations.
 
@@ -49,7 +49,7 @@ The interactive API uses these permissions:
 | `healing.verification.waive` | Waive one environment's verification with reason and confirmation. |
 | `healing.automerge.configure` | Change automatic-merge policy with target-bound confirmation. |
 
-## 1. Configure the Platform Host
+## 1. Configure the Valence Control Host
 
 Start with discovery and review enabled while workers, repair dispatch, and automatic merge remain disabled:
 
@@ -59,7 +59,7 @@ Start with discovery and review enabled while workers, repair dispatch, and auto
     "Healing": "<provider-managed-connection-string>"
   },
   "Healing": {
-    "PlatformKillSwitch": false,
+    "ControlKillSwitch": false,
     "DiscoveryEnabled": true,
     "IncidentReviewEnabled": true,
     "RepairDispatchEnabled": false,
@@ -72,7 +72,7 @@ Start with discovery and review enabled while workers, repair dispatch, and auto
       "Provider": "SqlServer"
     },
     "OpenTelemetry": {
-      "HttpEndpointPath": "/elsa/otlp/v1",
+      "HttpEndpointPath": "/valence-control/otlp/v1",
       "MaxHttpRequestBodySize": 10485760,
       "AllowUnauthenticatedLoopback": false
     },
@@ -84,8 +84,8 @@ Start with discovery and review enabled while workers, repair dispatch, and auto
       "MaxRepairAttempts": 2
     },
     "GitHub": {
-      "WorkloadAudience": "elsa-platform-healing",
-      "PlatformBaseUrl": "https://platform.example.com",
+      "WorkloadAudience": "valence-control-healing",
+      "ControlBaseUrl": "https://control.example.com",
       "CapabilityLifetime": "00:35:00",
       "AttemptLeaseLifetime": "00:10:00",
       "ProposalLifetime": "02:00:00"
@@ -94,7 +94,7 @@ Start with discovery and review enabled while workers, repair dispatch, and auto
 }
 ```
 
-Keep connection strings, GitHub App private keys, webhook secrets, and model-provider credentials in the deployment secret store. Platform configuration and Healing records contain credential references, not secret values. The Healing context uses its own migration history table even when it shares the physical database with other Platform contexts.
+Keep connection strings, GitHub App private keys, webhook secrets, and model-provider credentials in the deployment secret store. Valence Control configuration and Healing records contain credential references, not secret values. The Healing context uses its own migration history table even when it shares the physical database with other Valence Control contexts.
 
 The built-in budget ceilings are four hours, 32 concurrent operations, 2,000,000 inference units, 10 repository runs, and two repair attempts. Application policy may lower these values but cannot exceed the platform ceilings.
 
@@ -110,11 +110,11 @@ Create a telemetry source for each trusted application/environment producer in t
 
 Use the returned credential only in the emitting host's secret configuration. Rotation creates a replacement credential; revoke the previous credential after all emitters have switched. Verify the collector configuration endpoint before sending a test exception.
 
-Healing accepts only the normalized exception profile after Platform redaction. Validation, authorization, cancellation, handled, and still-retrying failures are observation-only and do not automatically dispatch repairs. The durable inbox acknowledgement means the signal was accepted, not that it was classified as repairable.
+Healing accepts only the normalized exception profile after Valence Control redaction. Validation, authorization, cancellation, handled, and still-retrying failures are observation-only and do not automatically dispatch repairs. The durable inbox acknowledgement means the signal was accepted, not that it was classified as repairable.
 
 ### Optional application client
 
-Most applications need only standard OpenTelemetry export. The `Elsa.Platform.Healing.Client` package is an optional convenience for applications that need to add the normalized Healing profile to an activity or explicitly report an already-redacted incident. It does not contain repository, workflow, branch, path, evidence, or merge authority.
+Most applications need only standard OpenTelemetry export. The `ValenceControl.Healing.Client` package is an optional convenience for applications that need to add the normalized Healing profile to an activity or explicitly report an already-redacted incident. It does not contain repository, workflow, branch, path, evidence, or merge authority.
 
 Add profile attributes before recording the exception on the activity:
 
@@ -131,22 +131,22 @@ activity.EnrichForHealing(new HealingTelemetryContext(
 For explicit reporting, register the typed client with the same server-owned scope used by the telemetry source:
 
 ```csharp
-services.AddElsaPlatformHealingClient(options =>
+services.AddValenceControlHealingClient(options =>
 {
-    options.PlatformBaseAddress = new Uri("https://platform.example.com/");
+    options.ControlBaseAddress = new Uri("https://control.example.com/");
     options.WorkspaceId = workspaceId;
     options.ApplicationId = applicationId;
     options.EnvironmentId = environmentId;
 });
 ```
 
-Configure authentication on the underlying `HttpClient` through a deployment-managed handler. Call `IHealingClient.ReportIncidentAsync` only with `HealingEvidenceMetadata.IsRedacted=true`; the client rejects unredacted requests before transport. Supply a stable, non-secret idempotency key when retries may repeat the same report. Platform still derives tenant and application identity from the authenticated route and resolves all repair authority from its own configuration.
+Configure authentication on the underlying `HttpClient` through a deployment-managed handler. Call `IHealingClient.ReportIncidentAsync` only with `HealingEvidenceMetadata.IsRedacted=true`; the client rejects unredacted requests before transport. Supply a stable, non-secret idempotency key when retries may repeat the same report. Valence Control still derives tenant and application identity from the authenticated route and resolves all repair authority from its own configuration.
 
 ## 3. Register Revision Manifests
 
 Generate a component manifest as part of the application build and register it for the exact application revision. A manifest may describe the application, packages, assemblies, hashes, dependency edges, and source metadata suggestions. It must not contain local source paths, credentials, or private package-feed secrets.
 
-In Platform:
+In Valence Control:
 
 1. Upload the manifest for the revision.
 2. Verify its attestation and content hashes.
@@ -174,13 +174,13 @@ Configure the App webhook to send to:
 POST /api/integrations/github/webhooks
 ```
 
-Use a repository-specific webhook secret reference. Platform verifies `X-Hub-Signature-256`, installation and repository identity, allowed event/action pairs, and unique `X-GitHub-Delivery` before processing.
+Use a repository-specific webhook secret reference. Valence Control verifies `X-Hub-Signature-256`, installation and repository identity, allowed event/action pairs, and unique `X-GitHub-Delivery` before processing.
 
 The repair workflow must:
 
 - be selected by immutable identity and revision in the ownership binding;
 - request a GitHub OIDC token with the configured `Healing:GitHub:WorkloadAudience`;
-- exchange the signed token and one-time attempt nonce with Platform;
+- exchange the signed token and one-time attempt nonce with Valence Control;
 - use the resulting capability only to read one evidence bundle, heartbeat one lease, and submit one bounded proposal/result;
 - never receive a GitHub installation token or direct repository mutation authority.
 
@@ -199,7 +199,7 @@ For every binding, configure:
 - the minimum inference confidence and maximum evidence tier;
 - required checks, forbidden change categories, an independent verifier, and rollout-stop/rollback requirements.
 
-Use narrow package selectors and narrow allowed roots. The default authority profile allows `src` and `tests`, forbids `.github`, `.azure`, `eng`, and `scripts`, and caps a proposal at 20 files, 1,000 changed lines, and 1,000,000 patch bytes. Platform always rejects absolute/traversal paths, binary patches, symlinks, submodules, forbidden renames, and self-protection paths such as the Healing workflow, publisher/permission/validation policy, CODEOWNERS, or branch-protection automation.
+Use narrow package selectors and narrow allowed roots. The default authority profile allows `src` and `tests`, forbids `.github`, `.azure`, `eng`, and `scripts`, and caps a proposal at 20 files, 1,000 changed lines, and 1,000,000 patch bytes. Valence Control always rejects absolute/traversal paths, binary patches, symlinks, submodules, forbidden renames, and self-protection paths such as the Healing workflow, publisher/permission/validation policy, CODEOWNERS, or branch-protection automation.
 
 Overlapping bindings are permitted only when they resolve to the same repair authority. Conflicting matches block automation until an owner resolves the ambiguity. Suspending or revoking a provider or binding prevents new publication and merge work for active attempts.
 
@@ -245,7 +245,7 @@ Keep the incident open until every active affected environment is healed, supers
 - Retry only after correcting the recorded blocker; the platform maximum remains two repair attempts.
 - Stop is idempotent and prevents further incident repair orchestration without deleting evidence or audit history.
 - Waive only one episode/environment at a time, with reason, expiry or terminal intent, and target-bound confirmation. A waiver is a governed closure decision, not positive verification.
-- GitHub comments and labels are requests, not commands. Platform executes only normalized requests from a verified webhook actor linked to a Platform account with the required workspace permission and confirmation.
+- GitHub comments and labels are requests, not commands. Valence Control executes only normalized requests from a verified webhook actor linked to a Valence Control account with the required workspace permission and confirmation.
 
 ### Audit and usage
 
@@ -259,7 +259,7 @@ The platform, workspace, application, and environment kill switches take precede
 
 When stopping Healing:
 
-1. Activate the narrowest switch that contains the risk; use `Healing:PlatformKillSwitch=true` for a platform-wide emergency.
+1. Activate the narrowest switch that contains the risk; use `Healing:ControlKillSwitch=true` for a control-plane-wide emergency.
 2. Stop or suspend affected repair attempts, bindings, or provider connections.
 3. Rotate or revoke compromised telemetry, webhook, App, or model credentials in the owning secret store.
 4. Inspect the safe audit trail and external GitHub/deployment audit logs.
@@ -272,17 +272,17 @@ Do not delete incidents or migration history as a recovery mechanism. See [Heali
 ## Current Limitations
 
 - GitHub is the only v1 source-control provider.
-- Healing consumes Platform's native post-redaction OTLP path; it does not poll arbitrary external log backends.
+- Healing consumes Valence Control's native post-redaction OTLP path; it does not poll arbitrary external log backends.
 - Automatic repair requires a trusted revision manifest and one unambiguous active ownership binding. Unbound packages remain observation-only.
-- Platform can publish a high-confidence inferred draft when policy permits, but lack of reproduction or a verified producing revision always prevents automatic merge.
-- The repair agent receives bounded evidence and source context and has no arbitrary Platform, shell, deployment, or Git write authority.
-- Platform observes deployment and verification state; it never deploys, stops a rollout, or rolls back.
+- Valence Control can publish a high-confidence inferred draft when policy permits, but lack of reproduction or a verified producing revision always prevents automatic merge.
+- The repair agent receives bounded evidence and source context and has no arbitrary Valence Control, shell, deployment, or Git write authority.
+- Valence Control observes deployment and verification state; it never deploys, stops a rollout, or rolls back.
 - Evidence elevation is deny-by-default until an explicit host authorization policy is configured.
-- Provider outages and worker delays may make projections stale. The last durable Platform state remains authoritative and retries are idempotent.
+- Provider outages and worker delays may make projections stale. The last durable Valence Control state remains authoritative and retries are idempotent.
 
 ## Validation Checklist
 
-Before production enablement, complete the deterministic scenarios in the [self-healing quickstart](../../specs/039-platform-self-healing/quickstart.md), including the security negative matrix and real GitHub sandbox gate. Also verify:
+Before production enablement, complete the deterministic scenarios in the [self-healing quickstart](../../specs/039-valence-control-self-healing/quickstart.md), including the security negative matrix and real GitHub sandbox gate. Also verify:
 
 - secrets are absent from agent input, work items, PRs, ordinary audit, and logs;
 - duplicate telemetry, webhook delivery, and provider retries do not create duplicate incidents, issues, branches, or PRs;

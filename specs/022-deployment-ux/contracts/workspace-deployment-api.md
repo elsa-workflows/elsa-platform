@@ -53,7 +53,7 @@ Response:
     {
       "id": "app-claims",
       "name": "Claims Operations",
-      "workspaceName": "Acme Platform",
+      "workspaceName": "Acme Valence Control",
       "environments": [
         {
           "id": "env-prod",
@@ -88,7 +88,7 @@ Response:
       },
       "credentialReference": {
         "provider": "Azure Key Vault",
-        "reference": "kv://acme-platform/prod/elsa-api",
+        "reference": "kv://acme-valence-control/prod/elsa-api",
         "verificationStatus": "Verified",
         "lastVerifiedAt": "2026-05-22T08:16:30Z"
       },
@@ -195,7 +195,7 @@ Request:
   "baseUrl": "https://workflows.example.test/elsa",
   "region": "westeurope",
   "credentialProvider": "Azure Key Vault",
-  "credentialReference": "kv://acme-platform/prod/elsa-api",
+  "credentialReference": "kv://acme-valence-control/prod/elsa-api",
   "capabilities": [
     {
       "id": "engine.reload-configuration",
@@ -239,7 +239,7 @@ Request:
       "name": "Payment API",
       "payload": {
         "provider": "Azure Key Vault",
-        "reference": "kv://acme-platform/prod/payment-api"
+        "reference": "kv://acme-valence-control/prod/payment-api"
       }
     }
   ]

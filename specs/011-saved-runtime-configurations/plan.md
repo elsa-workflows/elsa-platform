@@ -16,7 +16,7 @@ Add workspace-owned saved runtime configurations and explicit version snapshots 
 
 **Testing**: API integration tests, EF Core mapping tests, core service tests.
 
-**Target Platform**: Existing ASP.NET Core modular monolith.
+**Target platform**: Existing ASP.NET Core modular monolith.
 
 **Project Type**: Web service with workspace APIs and EF Core persistence.
 
@@ -55,14 +55,14 @@ specs/011-saved-runtime-configurations/
 
 ```text
 src/
-├── Elsa.Platform.PackageCatalog.Core/RuntimeConfigurations/
-├── Elsa.Platform.Api/Workspace/WorkspaceRuntimeConfigurationEndpoints.cs
-└── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
+├── ValenceControl.PackageCatalog.Core/RuntimeConfigurations/
+├── ValenceControl.Api/Workspace/WorkspaceRuntimeConfigurationEndpoints.cs
+└── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
 
 tests/
-├── Elsa.Platform.PackageCatalog.Core.Tests/
-├── Elsa.Platform.Api.Tests/
-└── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+├── ValenceControl.PackageCatalog.Core.Tests/
+├── ValenceControl.Api.Tests/
+└── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
 ```
 
 ## Complexity Tracking
