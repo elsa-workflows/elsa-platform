@@ -2,7 +2,7 @@
 
 **Feature**: 039 Valence Control Self-Healing
 **Implementation status**: In progress; independent review findings and final Valence Control release gates pending
-**Specification**: `spec.md`  
+**Specification**: `spec.md`
 **Acceptance path**: `quickstart.md`
 
 This audit maps every functional requirement and success criterion to its primary implementation and executable proof. Paths are repository-relative unless the Foundation repository is named explicitly.

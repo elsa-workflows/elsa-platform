@@ -1,6 +1,6 @@
 # Self-Healing Implementation Review
 
-**Review status**: Final review in progress  
+**Review status**: Final review in progress
 **Scope**: Valence Control implementation plus the merged Elsa Foundation OpenTelemetry ingestion seam
 **Review standard**: architecture, correctness, durability, security, API compatibility, test quality, UI behavior, and specification consistency
 
