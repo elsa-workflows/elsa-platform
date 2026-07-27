@@ -21,12 +21,15 @@ control plane; they are not presented as an existing capability.
 ## Licensing
 
 Valence Control is proprietary software governed by the
-[Valence Control Commercial License](LICENSE). The legal licensor has not yet
-been verified, so `[LEGAL ENTITY NAME]` is a release-blocking placeholder.
-Qualified legal counsel must review and approve the licence before commercial
-distribution. Third-party components, including Elsa Workflows, retain their
-respective licences. See [LICENSING.md](LICENSING.md) and
+[Valence Control Commercial License](LICENSE), licensed by Skywalker Digital
+B.V., trading as Valence Works. Qualified legal counsel must review and approve
+the licence before commercial distribution. Third-party components, including
+Elsa Workflows, retain their respective licences. See [LICENSING.md](LICENSING.md) and
 [NOTICE.md](NOTICE.md).
+
+The generated [third-party dependency and attribution inventory](THIRD-PARTY-INVENTORY.md)
+records the resolved NuGet, npm, container-base, and GitHub Actions supply-chain
+inputs used for release review.
 
 The repository is organized as bounded subsystems rather than one large
 application. Package Catalog owns package governance and workspace-owned catalog
@@ -93,7 +96,7 @@ The active identity and tenancy work is documented in [specs/021-identity-tenanc
 - Entity Framework Core persistence with SQLite for local development and SQL Server for production-oriented publish
 - .NET Aspire AppHost for local orchestration and Azure infrastructure defaults
 - React 18, TypeScript, Vite, React Query, React Router, Vitest, and Playwright for the console
-- xUnit and FluentAssertions across the .NET test suite
+- xUnit and its built-in assertions across the .NET test suite
 
 The SDK is pinned by [global.json](global.json) to .NET SDK `10.0.300` with latest-feature roll-forward.
 

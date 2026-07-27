@@ -6,8 +6,8 @@ legal review.
 
 ## Release blockers
 
-- [ ] Verify the legal licensor and replace `[LEGAL ENTITY NAME]` in `LICENSE`
-  and project metadata.
+- [x] Confirm the legal licensor as Skywalker Digital B.V., trading as Valence
+  Works, and record it in `LICENSE` and project metadata.
 - [ ] Confirm copyright ownership and relicensing authority for every
   substantial contribution, imported/shared source, generated source, and
   bot-assisted change.
@@ -22,18 +22,21 @@ legal review.
 
 ## Third-party review
 
-- [ ] Inventory direct and transitive NuGet and npm dependencies.
-- [ ] Obtain the required commercial licence for Fluent Assertions or replace
-  it before commercial use. The test runner currently emits its commercial-use
-  licence warning.
-- [ ] Review and remediate the console dependency audit findings recorded
-  during migration (`1` low, `5` moderate, `4` high, and `1` critical) before
-  release; do not apply breaking dependency upgrades without review.
+- [x] Inventory direct and transitive NuGet and npm dependencies, Docker base
+  images, and GitHub Actions in `THIRD-PARTY-INVENTORY.md`.
+- [x] Removed Fluent Assertions and migrated the test suite to xUnit's built-in
+  assertions; no Fluent Assertions commercial licence is required.
+- [x] Review and remediate the console dependency audit findings recorded
+  during migration. The remaining React Router RSC advisory is documented as
+  unreachable in `docs/dependency-security-review.md`, with an owner and review
+  date.
 - [ ] Review open-source, source-available, proprietary, copyleft, attribution,
-  patent, trademark, and notice obligations.
+  patent, trademark, and notice obligations, including the json-everything
+  binary-release follow-up in `docs/third-party-licence-review.md`.
 - [ ] Review Docker base images, operating-system packages, build tools, and
   generated artefacts.
-- [ ] Produce and ship the required third-party notice inventory with every
+- [x] Produce the third-party dependency and attribution inventory.
+- [ ] Verify that the required licence and notice texts ship with every
   applicable package, container, source archive, and distribution.
 
 ## Controlled release

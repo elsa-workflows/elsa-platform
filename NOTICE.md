@@ -11,9 +11,10 @@ Workflows or other third-party components.
 
 Third-party and open-source components remain governed by their respective
 licences. Their copyright and licence notices must be preserved and distributed
-as required by those licences.
+as required by those licences. The generated
+[third-party dependency and attribution inventory](THIRD-PARTY-INVENTORY.md)
+records the currently resolved package, container-base, and build-action inputs.
 
-The legal licensor for Valence Control has not been verified. The
-`[LEGAL ENTITY NAME]` placeholder in `LICENSE` must be replaced, and the licence
-and this notice must be reviewed by qualified legal counsel before commercial
-distribution.
+Skywalker Digital B.V., trading as Valence Works, is the legal licensor for
+Valence Control. The licence and this notice must be reviewed by qualified legal
+counsel before commercial distribution.

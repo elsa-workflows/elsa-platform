@@ -24,16 +24,13 @@ Previously published revisions remain governed by the terms under which they
 were made available. No history was rewritten and no release, package,
 container, or deployment artefact was published during the migration.
 
-## Legal blocker
+## Legal review
 
-The legal licensor could not be verified from authoritative repository,
-organisation, or company documentation. The commercial licence therefore uses
-`[LEGAL ENTITY NAME]`.
+The legal licensor is Skywalker Digital B.V., trading as Valence Works.
 
-Qualified legal counsel must verify the licensor, replace the placeholder,
-approve the licence, confirm relicensing authority for all contributions and
-imported code, and review the dependency and third-party notice inventory before
-commercial distribution.
+Qualified legal counsel must approve the licence, confirm relicensing authority
+for all contributions and imported code, and review the dependency and
+third-party notice inventory before commercial distribution.
 
 ## GitHub follow-up
 
