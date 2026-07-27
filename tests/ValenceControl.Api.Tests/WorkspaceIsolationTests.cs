@@ -9,7 +9,6 @@ using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using ValenceControl.PackageCatalog.Testing;
 using ValenceControl.RuntimeBuilder.Abstractions;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ValenceControl.Api.Tests;
@@ -27,8 +26,8 @@ public sealed class WorkspaceIsolationTests
         var ownerSources = await context.Owner.GetControlJsonAsync<IReadOnlyList<WorkspaceSourceResponse>>($"/api/workspaces/{context.WorkspaceId}/sources");
         var nonMemberSources = await nonMember.GetAsync($"/api/workspaces/{context.WorkspaceId}/sources");
 
-        ownerSources.Should().ContainSingle(x => x.Id == context.SourceId);
-        nonMemberSources.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Single(ownerSources!, x => x.Id == context.SourceId);
+        Assert.Equal(HttpStatusCode.Forbidden, nonMemberSources.StatusCode);
     }
 
     [Fact]
@@ -43,9 +42,9 @@ public sealed class WorkspaceIsolationTests
         var anonymousPackages = await app.CreateClient().GetControlJsonAsync<IReadOnlyList<PublicPackageResponse>>($"/api/packages?sourceIds={context.SourceId}");
         var nonMemberPackages = await nonMember.GetAsync($"/api/workspaces/{context.WorkspaceId}/packages?sourceIds={context.SourceId}");
 
-        ownerPackages.Should().ContainSingle(x => x.PackageId == "Elsa.Private");
-        anonymousPackages.Should().BeEmpty();
-        nonMemberPackages.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Single(ownerPackages!, x => x.PackageId == "Elsa.Private");
+        Assert.Empty(anonymousPackages!);
+        Assert.Equal(HttpStatusCode.Forbidden, nonMemberPackages.StatusCode);
     }
 
     [Fact]
@@ -59,8 +58,8 @@ public sealed class WorkspaceIsolationTests
         var ownerCatalog = await context.Owner.GetControlJsonAsync<BuilderCatalogResponse>($"/api/workspaces/{context.WorkspaceId}/builder/catalog?sourceIds={context.SourceId}");
         var nonMemberCatalog = await nonMember.GetAsync($"/api/workspaces/{context.WorkspaceId}/builder/catalog?sourceIds={context.SourceId}");
 
-        ownerCatalog!.Packages.Should().ContainSingle(x => x.PackageId == "Elsa.Private");
-        nonMemberCatalog.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Single(ownerCatalog!.Packages, x => x.PackageId == "Elsa.Private");
+        Assert.Equal(HttpStatusCode.Forbidden, nonMemberCatalog.StatusCode);
     }
 
     [Fact]
@@ -78,8 +77,8 @@ public sealed class WorkspaceIsolationTests
         var crossWorkspaceRead = await nonMember.GetAsync($"/api/workspaces/{ownerWorkspaceId}/runtime-configurations/{createdConfiguration!.Id}");
         var ownWorkspaceList = await nonMember.GetControlJsonAsync<IReadOnlyList<WorkspaceRuntimeConfigurationResponse>>($"/api/workspaces/{nonMemberWorkspaceId}/runtime-configurations");
 
-        crossWorkspaceRead.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        ownWorkspaceList.Should().BeEmpty();
+        Assert.Equal(HttpStatusCode.Forbidden, crossWorkspaceRead.StatusCode);
+        Assert.Empty(ownWorkspaceList!);
     }
 
     [Fact]
@@ -97,8 +96,8 @@ public sealed class WorkspaceIsolationTests
 
         var publicSources = await app.CreateClient().GetControlJsonAsync<IReadOnlyList<PublicSourceResponse>>("/api/sources");
 
-        publicSources.Should().ContainSingle(x => x.Name == "Test NuGet");
-        publicSources.Should().NotContain(x => x.Id == context.SourceId);
+        Assert.Single(publicSources!, x => x.Name == "Test NuGet");
+        Assert.DoesNotContain(publicSources!, x => x.Id == context.SourceId);
     }
 
     private static async Task<WorkspacePackageContext> CreateWorkspaceSourceWithPackageAsync(ControlApiTestApplication app)

@@ -12,7 +12,7 @@ Add a dedicated workspace-level Console surface for engine credential stores and
 
 **Language/Version**: TypeScript/React for the hosted console; existing C# on .NET 10 APIs remain the backing contract.
 
-**Primary Dependencies**: React Router, TanStack Query, existing deployment console components, existing deployment credential API client, ASP.NET Core minimal API contracts where endpoint behavior must be verified, Vitest and Testing Library for console tests, xUnit and FluentAssertions only if backend contract behavior needs adjustment.
+**Primary Dependencies**: React Router, TanStack Query, existing deployment console components, existing deployment credential API client, ASP.NET Core minimal API contracts where endpoint behavior must be verified, Vitest and Testing Library for console tests, xUnit and its built-in assertions only if backend contract behavior needs adjustment.
 
 **Storage**: Existing catalog deployment secret-store and credential-reference tables. No schema changes are expected; the feature manages existing workspace-scoped metadata and local protected credential ciphertext through existing APIs.
 

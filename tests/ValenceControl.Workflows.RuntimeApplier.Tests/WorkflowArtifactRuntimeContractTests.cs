@@ -2,7 +2,6 @@ using System.Text;
 using ValenceControl.Deployment.Abstractions.Artifacts;
 using ValenceControl.Deployment.Artifacts;
 using ValenceControl.Workflows.RuntimeApplier;
-using FluentAssertions;
 
 namespace ValenceControl.Workflows.RuntimeApplier.Tests;
 
@@ -22,12 +21,12 @@ public sealed class WorkflowArtifactRuntimeContractTests
     {
         var capability = WorkflowArtifactRuntimeCapability.FromOptions(_options);
 
-        capability.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
-        capability.RuntimeFamily.Should().Be("elsa-workflows");
-        capability.RuntimeVersion.Should().Be("4.0.0");
-        capability.SupportedSchemaVersions.Should().Contain(ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion);
-        capability.Capabilities.Should().Contain("workflow-definition.apply");
-        capability.Supports(Envelope(Payload())).Should().BeTrue();
+        Assert.Equal(ArtifactTypeIds.ElsaWorkflowDefinition, capability.ArtifactTypeId);
+        Assert.Equal("elsa-workflows", capability.RuntimeFamily);
+        Assert.Equal("4.0.0", capability.RuntimeVersion);
+        Assert.Contains(ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion, capability.SupportedSchemaVersions);
+        Assert.Contains("workflow-definition.apply", capability.Capabilities);
+        Assert.True(capability.Supports(Envelope(Payload())));
     }
 
     [Fact]
@@ -35,8 +34,9 @@ public sealed class WorkflowArtifactRuntimeContractTests
     {
         var act = () => WorkflowArtifactRuntimeCapability.FromOptions(_options with { RuntimeVersion = null });
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Runtime version is required before advertising artifact capabilities.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+
+        Assert.Equal("Runtime version is required before advertising artifact capabilities.", exception.Message);
     }
 
     [Fact]
@@ -44,8 +44,9 @@ public sealed class WorkflowArtifactRuntimeContractTests
     {
         var act = () => (_options with { ControlEndpoint = null }).Validate();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Control endpoint is required before runtime command sync can start.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+
+        Assert.Equal("Control endpoint is required before runtime command sync can start.", exception.Message);
     }
 
     [Fact]
@@ -53,8 +54,9 @@ public sealed class WorkflowArtifactRuntimeContractTests
     {
         var act = () => (_options with { Capabilities = [" "] }).Validate();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("At least one runtime capability must be advertised.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+
+        Assert.Equal("At least one runtime capability must be advertised.", exception.Message);
     }
 
     [Fact]
@@ -62,8 +64,9 @@ public sealed class WorkflowArtifactRuntimeContractTests
     {
         var act = () => (_options with { Capabilities = null! }).Validate();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("At least one runtime capability must be advertised.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+
+        Assert.Equal("At least one runtime capability must be advertised.", exception.Message);
     }
 
     [Fact]
@@ -71,8 +74,9 @@ public sealed class WorkflowArtifactRuntimeContractTests
     {
         var act = () => (_options with { ClaimLeaseDuration = TimeSpan.FromMilliseconds(500) }).Validate();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Runtime command lease duration must be between 1 second and the maximum supported Control lease.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+
+        Assert.Equal("Runtime command lease duration must be between 1 second and the maximum supported Control lease.", exception.Message);
     }
 
     [Fact]
@@ -80,8 +84,9 @@ public sealed class WorkflowArtifactRuntimeContractTests
     {
         var act = () => (_options with { ClaimLeaseDuration = TimeSpan.FromSeconds(10), HeartbeatInterval = TimeSpan.FromSeconds(10) }).Validate();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Runtime command heartbeat interval must be positive and shorter than the command lease duration.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+
+        Assert.Equal("Runtime command heartbeat interval must be positive and shorter than the command lease duration.", exception.Message);
     }
 
     [Fact]
@@ -89,8 +94,9 @@ public sealed class WorkflowArtifactRuntimeContractTests
     {
         var act = () => (_options with { PayloadRequestTimeout = TimeSpan.Zero }).Validate();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload request timeout must be positive.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload request timeout must be positive.", exception.Message);
     }
 
     [Fact]
@@ -98,8 +104,9 @@ public sealed class WorkflowArtifactRuntimeContractTests
     {
         var act = () => (_options with { MaxPayloadBytes = (long)Array.MaxLength + 1 }).Validate();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Maximum workflow artifact payload size must be between 1 byte and the maximum supported runtime buffer.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+
+        Assert.Equal("Maximum workflow artifact payload size must be between 1 byte and the maximum supported runtime buffer.", exception.Message);
     }
 
     [Fact]
@@ -111,9 +118,9 @@ public sealed class WorkflowArtifactRuntimeContractTests
 
         var result = validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference));
 
-        result.Status.Should().Be(WorkflowArtifactValidationStatus.Valid);
-        result.ObservedDigest.Should().Be(envelope.ContentDigest);
-        result.Succeeded.Should().BeTrue();
+        Assert.Equal(WorkflowArtifactValidationStatus.Valid, result.Status);
+        Assert.Equal(envelope.ContentDigest, result.ObservedDigest);
+        Assert.True(result.Succeeded);
     }
 
     [Fact]
@@ -133,8 +140,8 @@ public sealed class WorkflowArtifactRuntimeContractTests
 
         var result = validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference));
 
-        result.Status.Should().Be(WorkflowArtifactValidationStatus.Valid);
-        result.ObservedDigest.Should().Be(WorkflowArtifactRuntimeContractValidator.ComputeDigest(payload));
+        Assert.Equal(WorkflowArtifactValidationStatus.Valid, result.Status);
+        Assert.Equal(WorkflowArtifactRuntimeContractValidator.ComputeDigest(payload), result.ObservedDigest);
     }
 
     [Fact]
@@ -146,11 +153,11 @@ public sealed class WorkflowArtifactRuntimeContractTests
 
         var result = validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference));
 
-        result.Status.Should().Be(WorkflowArtifactValidationStatus.DigestMismatch);
-        result.Succeeded.Should().BeFalse();
-        result.Diagnostics.Should().ContainSingle(x => x.Code == "workflow-artifact.digest-mismatch");
-        result.Diagnostics.Single().Message.Should().NotContain("payment-retry");
-        result.ObservedDigest.Should().NotBe(envelope.ContentDigest);
+        Assert.Equal(WorkflowArtifactValidationStatus.DigestMismatch, result.Status);
+        Assert.False(result.Succeeded);
+        Assert.Single(result.Diagnostics, x => x.Code == "workflow-artifact.digest-mismatch");
+        Assert.DoesNotContain("payment-retry", result.Diagnostics.Single().Message);
+        Assert.NotEqual(envelope.ContentDigest, result.ObservedDigest);
     }
 
     [Fact]
@@ -169,11 +176,11 @@ public sealed class WorkflowArtifactRuntimeContractTests
 
         var result = validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference));
 
-        result.Status.Should().Be(WorkflowArtifactValidationStatus.DigestMismatch);
-        result.Succeeded.Should().BeFalse();
-        result.Diagnostics.Should().ContainSingle(x => x.Code == "workflow-artifact.reference-digest-mismatch");
-        result.Diagnostics.Single().Message.Should().NotContain("payment-retry");
-        result.ObservedDigest.Should().Be(WorkflowArtifactRuntimeContractValidator.ComputeDigest(payload));
+        Assert.Equal(WorkflowArtifactValidationStatus.DigestMismatch, result.Status);
+        Assert.False(result.Succeeded);
+        Assert.Single(result.Diagnostics, x => x.Code == "workflow-artifact.reference-digest-mismatch");
+        Assert.DoesNotContain("payment-retry", result.Diagnostics.Single().Message);
+        Assert.Equal(WorkflowArtifactRuntimeContractValidator.ComputeDigest(payload), result.ObservedDigest);
     }
 
     [Fact]
@@ -195,10 +202,12 @@ public sealed class WorkflowArtifactRuntimeContractTests
         };
         var validator = new WorkflowArtifactRuntimeContractValidator(_options);
 
-        validator.Validate(unsupportedSchema, PayloadResult(payload, unsupportedSchema.PayloadReference))
-            .Status.Should().Be(WorkflowArtifactValidationStatus.UnsupportedSchema);
-        validator.Validate(missingCapability, PayloadResult(payload, missingCapability.PayloadReference))
-            .Status.Should().Be(WorkflowArtifactValidationStatus.MissingCapability);
+        Assert.Equal(
+            WorkflowArtifactValidationStatus.UnsupportedSchema,
+            validator.Validate(unsupportedSchema, PayloadResult(payload, unsupportedSchema.PayloadReference)).Status);
+        Assert.Equal(
+            WorkflowArtifactValidationStatus.MissingCapability,
+            validator.Validate(missingCapability, PayloadResult(payload, missingCapability.PayloadReference)).Status);
     }
 
     [Theory]
@@ -226,8 +235,7 @@ public sealed class WorkflowArtifactRuntimeContractTests
         };
         var validator = new WorkflowArtifactRuntimeContractValidator(_options);
 
-        validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference))
-            .Status.Should().Be(expectedStatus);
+        Assert.Equal(expectedStatus, validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference)).Status);
     }
 
     [Fact]
@@ -237,8 +245,7 @@ public sealed class WorkflowArtifactRuntimeContractTests
         var envelope = Envelope(payload);
         var validator = new WorkflowArtifactRuntimeContractValidator(_options with { RuntimeVersion = "4.0.0+build.1" });
 
-        validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference))
-            .Status.Should().Be(WorkflowArtifactValidationStatus.Valid);
+        Assert.Equal(WorkflowArtifactValidationStatus.Valid, validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference)).Status);
     }
 
     [Theory]
@@ -262,8 +269,7 @@ public sealed class WorkflowArtifactRuntimeContractTests
         };
         var validator = new WorkflowArtifactRuntimeContractValidator(_options with { RuntimeVersion = runtimeVersion });
 
-        validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference))
-            .Status.Should().Be(WorkflowArtifactValidationStatus.MissingCapability);
+        Assert.Equal(WorkflowArtifactValidationStatus.MissingCapability, validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference)).Status);
     }
 
     [Fact]
@@ -275,8 +281,8 @@ public sealed class WorkflowArtifactRuntimeContractTests
 
         var result = validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference));
 
-        result.Status.Should().Be(WorkflowArtifactValidationStatus.InvalidPayload);
-        result.ObservedDigest.Should().Be(envelope.ContentDigest);
+        Assert.Equal(WorkflowArtifactValidationStatus.InvalidPayload, result.Status);
+        Assert.Equal(envelope.ContentDigest, result.ObservedDigest);
     }
 
     [Fact]
@@ -288,8 +294,8 @@ public sealed class WorkflowArtifactRuntimeContractTests
 
         var result = validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference));
 
-        result.Status.Should().Be(WorkflowArtifactValidationStatus.InvalidPayload);
-        result.ObservedDigest.Should().Be(envelope.ContentDigest);
+        Assert.Equal(WorkflowArtifactValidationStatus.InvalidPayload, result.Status);
+        Assert.Equal(envelope.ContentDigest, result.ObservedDigest);
     }
 
     [Fact]
@@ -300,9 +306,9 @@ public sealed class WorkflowArtifactRuntimeContractTests
             WorkflowArtifactDiagnosticSeverity.Error,
             "Bearer token and password appeared in runtime exception");
 
-        diagnostic.Message.Should().NotContain("Bearer");
-        diagnostic.Message.Should().NotContain("password");
-        diagnostic.Message.Should().Contain("[redacted]");
+        Assert.DoesNotContain("Bearer", diagnostic.Message);
+        Assert.DoesNotContain("password", diagnostic.Message);
+        Assert.Contains("[redacted]", diagnostic.Message);
     }
 
     [Fact]
@@ -317,9 +323,9 @@ public sealed class WorkflowArtifactRuntimeContractTests
         var alreadyApplied = applied with { Status = WorkflowArtifactApplyStatus.AlreadyApplied };
         var rejected = applied with { Status = WorkflowArtifactApplyStatus.Rejected };
 
-        applied.Succeeded.Should().BeTrue();
-        alreadyApplied.Succeeded.Should().BeTrue();
-        rejected.Succeeded.Should().BeFalse();
+        Assert.True(applied.Succeeded);
+        Assert.True(alreadyApplied.Succeeded);
+        Assert.False(rejected.Succeeded);
     }
 
     [Fact]
@@ -331,7 +337,7 @@ public sealed class WorkflowArtifactRuntimeContractTests
 
         var result = validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference));
 
-        result.Status.Should().Be(WorkflowArtifactValidationStatus.Valid);
+        Assert.Equal(WorkflowArtifactValidationStatus.Valid, result.Status);
     }
 
     [Fact]
@@ -343,7 +349,7 @@ public sealed class WorkflowArtifactRuntimeContractTests
 
         var result = validator.Validate(envelope, PayloadResult(payload, envelope.PayloadReference));
 
-        result.Status.Should().Be(WorkflowArtifactValidationStatus.UnsupportedArtifactType);
+        Assert.Equal(WorkflowArtifactValidationStatus.UnsupportedArtifactType, result.Status);
     }
 
     private static byte[] Payload(string json = """{"id":"payment-retry","version":42}""") =>

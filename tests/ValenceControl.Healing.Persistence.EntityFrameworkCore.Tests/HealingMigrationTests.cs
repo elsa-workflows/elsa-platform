@@ -1,5 +1,4 @@
 using ValenceControl.Healing.Core;
-using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -36,31 +35,28 @@ public sealed class HealingMigrationTests
 
         await migrator.MigrateAsync(latestMigration);
 
-        MigrationNames(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(ExpectedMigrationNames);
-        (await TableNamesAsync(connection)).Should().Contain([
-            "HealingIncidents",
-            "HealingRepairWorkItemProjections",
-            "HealingProviderActorIdentityLinks",
-            "HealingRepairVerificationFailureOutbox",
-            "HealingManagedRepairInferenceReservations"
-        ]);
-        (await ColumnNamesAsync(connection, "HealingHumanCommands")).Should().Contain([
-            "IdempotencyKey",
-            "ProviderActorLogin"
-        ]);
+        Assert.Equal(ExpectedMigrationNames, MigrationNames(await db.Database.GetAppliedMigrationsAsync()));
+        var tableNames = await TableNamesAsync(connection);
+        Assert.Contains("HealingIncidents", tableNames);
+        Assert.Contains("HealingRepairWorkItemProjections", tableNames);
+        Assert.Contains("HealingProviderActorIdentityLinks", tableNames);
+        Assert.Contains("HealingRepairVerificationFailureOutbox", tableNames);
+        Assert.Contains("HealingManagedRepairInferenceReservations", tableNames);
+        Assert.Contains("IdempotencyKey", await ColumnNamesAsync(connection, "HealingHumanCommands"));
+        Assert.Contains("ProviderActorLogin", await ColumnNamesAsync(connection, "HealingHumanCommands"));
 
         var auditEvent = CreateAuditEvent();
         await new HealingStore(db).AppendAsync(auditEvent);
         var update = () => db.Set<HealingAuditEvent>().Where(x => x.Id == auditEvent.Id)
             .ExecuteUpdateAsync(x => x.SetProperty(y => y.ReasonCode, "tampered"));
         var delete = () => db.Set<HealingAuditEvent>().Where(x => x.Id == auditEvent.Id).ExecuteDeleteAsync();
-        await update.Should().ThrowAsync<Exception>().WithMessage("*append-only*");
-        await delete.Should().ThrowAsync<Exception>().WithMessage("*append-only*");
+        Assert.Contains("append-only", (await Assert.ThrowsAnyAsync<Exception>(update)).Message);
+        Assert.Contains("append-only", (await Assert.ThrowsAnyAsync<Exception>(delete)).Message);
 
         await using var reopened = new HealingDbContext(options);
         await reopened.GetService<IMigrator>().MigrateAsync(latestMigration);
-        MigrationNames(await reopened.Database.GetAppliedMigrationsAsync()).Should().Equal(ExpectedMigrationNames);
-        (await reopened.HealingIncidents.CountAsync()).Should().Be(0);
+        Assert.Equal(ExpectedMigrationNames, MigrationNames(await reopened.Database.GetAppliedMigrationsAsync()));
+        Assert.Equal(0, (await reopened.HealingIncidents.CountAsync()));
     }
 
     [Fact]
@@ -83,16 +79,16 @@ public sealed class HealingMigrationTests
         await InsertPreMigrationRowsAsync(connection);
 
         await migrator.MigrateAsync(latestMigration);
-        (await CountAsync(connection, "HealingHumanCommands", "IdempotencyKey")).Should().Be(2);
-        (await CountAsync(connection, "HealingDeploymentObservations", "SourceObservationId")).Should().Be(2);
+        Assert.Equal(2, (await CountAsync(connection, "HealingHumanCommands", "IdempotencyKey")));
+        Assert.Equal(2, (await CountAsync(connection, "HealingDeploymentObservations", "SourceObservationId")));
 
         await migrator.MigrateAsync(previousMigration);
-        (await ColumnNamesAsync(connection, "HealingHumanCommands")).Should().NotContain("IdempotencyKey");
-        (await ColumnNamesAsync(connection, "HealingDeploymentObservations")).Should().NotContain("SourceObservationId");
+        Assert.DoesNotContain("IdempotencyKey", (await ColumnNamesAsync(connection, "HealingHumanCommands")));
+        Assert.DoesNotContain("SourceObservationId", (await ColumnNamesAsync(connection, "HealingDeploymentObservations")));
 
         await migrator.MigrateAsync(latestMigration);
-        (await CountAsync(connection, "HealingHumanCommands", "IdempotencyKey")).Should().Be(2);
-        (await CountAsync(connection, "HealingDeploymentObservations", "SourceObservationId")).Should().Be(2);
+        Assert.Equal(2, (await CountAsync(connection, "HealingHumanCommands", "IdempotencyKey")));
+        Assert.Equal(2, (await CountAsync(connection, "HealingDeploymentObservations", "SourceObservationId")));
     }
 
     [Fact]
@@ -112,15 +108,18 @@ public sealed class HealingMigrationTests
         var migrator = db.GetService<IMigrator>();
 
         await migrator.MigrateAsync(previousMigration);
-        (await ColumnNamesAsync(connection, "HealingRepairAttempts")).Should().NotContain("InputUnits");
+        Assert.DoesNotContain("InputUnits", (await ColumnNamesAsync(connection, "HealingRepairAttempts")));
 
         await migrator.MigrateAsync(latestMigration);
-        (await ColumnNamesAsync(connection, "HealingRepairAttempts")).Should().Contain([
-            "InputUnits", "OutputUnits", "AgentDurationTicks", "RepositoryRunDurationTicks", "RepositoryRuns"
-        ]);
+        var repairAttemptColumns = await ColumnNamesAsync(connection, "HealingRepairAttempts");
+        Assert.Contains("InputUnits", repairAttemptColumns);
+        Assert.Contains("OutputUnits", repairAttemptColumns);
+        Assert.Contains("AgentDurationTicks", repairAttemptColumns);
+        Assert.Contains("RepositoryRunDurationTicks", repairAttemptColumns);
+        Assert.Contains("RepositoryRuns", repairAttemptColumns);
 
         await migrator.MigrateAsync(previousMigration);
-        (await ColumnNamesAsync(connection, "HealingRepairAttempts")).Should().NotContain("InputUnits");
+        Assert.DoesNotContain("InputUnits", (await ColumnNamesAsync(connection, "HealingRepairAttempts")));
     }
 
     [Fact]
@@ -131,8 +130,8 @@ public sealed class HealingMigrationTests
         var sqliteMigrations = sqlite.GetService<IMigrationsAssembly>();
         var sqlServerMigrations = sqlServer.GetService<IMigrationsAssembly>();
 
-        MigrationNames(sqliteMigrations.Migrations.Keys).Should().Equal(ExpectedMigrationNames);
-        MigrationNames(sqlServerMigrations.Migrations.Keys).Should().Equal(ExpectedMigrationNames);
+        Assert.Equal(ExpectedMigrationNames, MigrationNames(sqliteMigrations.Migrations.Keys));
+        Assert.Equal(ExpectedMigrationNames, MigrationNames(sqlServerMigrations.Migrations.Keys));
 
         var sqliteByName = ByLogicalName(sqliteMigrations);
         var sqlServerByName = ByLogicalName(sqlServerMigrations);
@@ -147,8 +146,8 @@ public sealed class HealingMigrationTests
 
             AssertEquivalentOperations(migrationName, "up", sqliteMigration.UpOperations, sqlServerMigration.UpOperations);
             AssertEquivalentOperations(migrationName, "down", sqliteMigration.DownOperations, sqlServerMigration.DownOperations);
-            sqliteMigration.DownOperations.Should().NotBeEmpty($"{migrationName} must be reversible on SQLite");
-            sqlServerMigration.DownOperations.Should().NotBeEmpty($"{migrationName} must be reversible on SQL Server");
+            Assert.NotEmpty(sqliteMigration.DownOperations);
+            Assert.NotEmpty(sqlServerMigration.DownOperations);
         }
 
         AssertAuditGuard(sqlite, sqliteByName["InitialHealing"].Key, "TR_HealingAuditEvents_BlockUpdate");
@@ -164,18 +163,17 @@ public sealed class HealingMigrationTests
         var latestMigration = db.GetService<IMigrationsAssembly>().Migrations.Keys.Last();
         var upScript = migrator.GenerateScript(Migration.InitialDatabase, latestMigration);
 
-        upScript.Should().Contain("HealingProviderActorIdentityLinks");
-        upScript.Should().Contain("HealingRepairVerificationFailureOutbox");
-        upScript.Should().Contain("HealingManagedRepairInferenceReservations");
-        upScript.Should().Contain("IdempotencyKey");
+        Assert.Contains("HealingProviderActorIdentityLinks", upScript);
+        Assert.Contains("HealingRepairVerificationFailureOutbox", upScript);
+        Assert.Contains("HealingManagedRepairInferenceReservations", upScript);
+        Assert.Contains("IdempotencyKey", upScript);
     }
 
     private static void AssertAuditGuard(HealingDbContext db, string migrationId, string triggerName)
     {
         var migrations = db.GetService<IMigrationsAssembly>();
         var migration = migrations.CreateMigration(migrations.Migrations[migrationId], db.Database.ProviderName!);
-        migration.UpOperations.OfType<SqlOperation>().Should()
-            .Contain(x => x.Sql.Contains(triggerName, StringComparison.Ordinal));
+        Assert.Contains(migration.UpOperations.OfType<SqlOperation>(), x => x.Sql.Contains(triggerName, StringComparison.Ordinal));
     }
 
     private static IReadOnlyDictionary<string, KeyValuePair<string, TypeInfo>> ByLogicalName(IMigrationsAssembly migrations) =>
@@ -208,11 +206,9 @@ public sealed class HealingMigrationTests
         var onlySqlite = sqlite.Except(sqlServer, StringComparer.Ordinal).ToArray();
         var onlySqlServer = sqlServer.Except(sqlite, StringComparer.Ordinal).ToArray();
 
-        onlySqlite.Should().BeEmpty(
-            $"{migrationName} {direction} should have no SQLite-only logical operations; found {string.Join(" | ", onlySqlite)}");
-        onlySqlServer.Should().BeEmpty(
-            $"{migrationName} {direction} should have no SQL Server-only logical operations; found {string.Join(" | ", onlySqlServer)}");
-        sqlite.Should().HaveSameCount(sqlServer);
+        Assert.Empty(onlySqlite);
+        Assert.Empty(onlySqlServer);
+        Assert.Equal(sqlServer.Length, sqlite.Length);
     }
 
     private static string OperationSignature(MigrationOperation operation) => operation switch

@@ -9,7 +9,7 @@ Add workspace-owned deployment targets, preview runs, and deployment run trackin
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 LTS for API/Core/Persistence.
-**Primary Dependencies**: ASP.NET Core minimal APIs, workspace identity, EF Core, secure secret storage abstraction, Azure SDK or CLI adapter behind a port, xUnit, FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, workspace identity, EF Core, secure secret storage abstraction, Azure SDK or CLI adapter behind a port, xUnit and its built-in assertions.
 **Storage**: Existing relational catalog database extended with deployment target/run tables; encrypted secret reference storage required.
 **Testing**: Core service tests, API tests, persistence tests, adapter fakes.
 **Target platform**: Existing ASP.NET Core modular monolith.

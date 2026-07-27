@@ -1,6 +1,5 @@
 using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
-using FluentAssertions;
 using Xunit;
 
 namespace ValenceControl.Deployment.Core.Tests;
@@ -37,13 +36,13 @@ public sealed class DeploymentValidationServiceTests
             _workspaceId,
             new WorkspacePromotionPreviewRequest(_sourceEnvironmentId, _targetEnvironmentId, _sourceRevisionId, _targetEngineId));
 
-        comparison.SourceRevision.Should().Be(12);
-        comparison.TargetRevision.Should().Be(9);
-        comparison.Diff.Should().Contain(x => x.Name == "Payment Retry" && x.Impact == DiffImpact.Changed);
-        comparison.Diff.Should().Contain(x => x.Name == "Payment API" && x.Impact == DiffImpact.Added);
-        comparison.Diff.Should().Contain(x => x.Name == "Legacy Toggle" && x.Impact == DiffImpact.Removed);
-        comparison.Validations.Should().ContainSingle(x => x.Severity == ValidationSeverity.Pass && x.Scope == "Secret references");
-        _store.LatestByEnvironment[_targetEnvironmentId]!.Id.Should().Be(_targetRevisionId);
+        Assert.Equal(12, comparison.SourceRevision);
+        Assert.Equal(9, comparison.TargetRevision);
+        Assert.Contains(comparison.Diff, x => x.Name == "Payment Retry" && x.Impact == DiffImpact.Changed);
+        Assert.Contains(comparison.Diff, x => x.Name == "Payment API" && x.Impact == DiffImpact.Added);
+        Assert.Contains(comparison.Diff, x => x.Name == "Legacy Toggle" && x.Impact == DiffImpact.Removed);
+        Assert.Single(comparison.Validations, x => x.Severity == ValidationSeverity.Pass && x.Scope == "Secret references");
+        Assert.Equal(_targetRevisionId, _store.LatestByEnvironment[_targetEnvironmentId]!.Id);
     }
 
     [Fact]
@@ -59,7 +58,7 @@ public sealed class DeploymentValidationServiceTests
             _workspaceId,
             new WorkspacePromotionPreviewRequest(_sourceEnvironmentId, _targetEnvironmentId, _sourceRevisionId, _targetEngineId));
 
-        comparison.Validations.Should().ContainSingle(x =>
+        Assert.Single(comparison.Validations, x =>
             x.Severity == ValidationSeverity.Blocker
             && x.Scope == "Secret references"
             && x.Message == "Payment API secret reference is missing.");
@@ -78,11 +77,11 @@ public sealed class DeploymentValidationServiceTests
             _workspaceId,
             new WorkspacePromotionPreviewRequest(_sourceEnvironmentId, _targetEnvironmentId, _sourceRevisionId, _targetEngineId));
 
-        comparison.Validations.Should().Contain(x =>
+        Assert.Contains(comparison.Validations, x =>
             x.Id == "deployment.tier.source.unsupported"
             && x.Severity == ValidationSeverity.Blocker
             && x.Message == "Sandbox cannot be used as a promotion source.");
-        comparison.Validations.Should().Contain(x =>
+        Assert.Contains(comparison.Validations, x =>
             x.Id == "deployment.tier.target.unsupported"
             && x.Severity == ValidationSeverity.Blocker
             && x.Message == "Review cannot be used as a promotion target.");
@@ -103,7 +102,7 @@ public sealed class DeploymentValidationServiceTests
             _workspaceId,
             new WorkspacePromotionPreviewRequest(_sourceEnvironmentId, _targetEnvironmentId, _sourceRevisionId, _targetEngineId));
 
-        comparison.Validations.Should().ContainSingle(x =>
+        Assert.Single(comparison.Validations, x =>
             x.Id == "deployment.engine.environment-mismatch"
             && x.Severity == ValidationSeverity.Blocker);
     }
@@ -132,11 +131,11 @@ public sealed class DeploymentValidationServiceTests
             _workspaceId,
             new WorkspacePromotionPreviewRequest(_sourceEnvironmentId, _targetEnvironmentId, _sourceRevisionId, _targetEngineId));
 
-        comparison.Validations.Should().Contain(x => x.Id == "deployment.tier.production-like" && x.Severity == ValidationSeverity.Warning);
-        comparison.Validations.Should().Contain(x => x.Id == "deployment.tier.confirmation-required" && x.Severity == ValidationSeverity.Warning);
-        comparison.Validations.Should().Contain(x => x.Id == "deployment.tier.rollback-enabled" && x.Severity == ValidationSeverity.Pass);
-        comparison.Validations.Should().Contain(x => x.Id == "deployment.tier.observability-required" && x.Severity == ValidationSeverity.Blocker);
-        comparison.Validations.Should().Contain(x => x.Scope == "Secret references" && x.Severity == ValidationSeverity.Pass);
+        Assert.Contains(comparison.Validations, x => x.Id == "deployment.tier.production-like" && x.Severity == ValidationSeverity.Warning);
+        Assert.Contains(comparison.Validations, x => x.Id == "deployment.tier.confirmation-required" && x.Severity == ValidationSeverity.Warning);
+        Assert.Contains(comparison.Validations, x => x.Id == "deployment.tier.rollback-enabled" && x.Severity == ValidationSeverity.Pass);
+        Assert.Contains(comparison.Validations, x => x.Id == "deployment.tier.observability-required" && x.Severity == ValidationSeverity.Blocker);
+        Assert.Contains(comparison.Validations, x => x.Scope == "Secret references" && x.Severity == ValidationSeverity.Pass);
     }
 
     [Fact]
@@ -154,8 +153,8 @@ public sealed class DeploymentValidationServiceTests
             _workspaceId,
             new WorkspacePromotionPreviewRequest(_sourceEnvironmentId, _targetEnvironmentId, _sourceRevisionId, _targetEngineId));
 
-        comparison.Validations.Should().NotContain(x => x.Scope == "Secret references");
-        comparison.Validations.Should().NotContain(x => x.Severity == ValidationSeverity.Blocker);
+        Assert.DoesNotContain(comparison.Validations, x => x.Scope == "Secret references");
+        Assert.DoesNotContain(comparison.Validations, x => x.Severity == ValidationSeverity.Blocker);
     }
 
     [Fact]
@@ -196,17 +195,17 @@ public sealed class DeploymentValidationServiceTests
             _workspaceId,
             new WorkspacePromotionPreviewRequest(_sourceEnvironmentId, _targetEnvironmentId, _sourceRevisionId, _targetEngineId));
 
-        var artifact = comparison.Artifacts.Should().ContainSingle().Subject;
-        artifact.Name.Should().Be("Payment Retry");
-        artifact.Impact.Should().Be(PromotionArtifactImpact.Changed);
-        artifact.Source!.ArtifactRecordId.Should().Be(artifactRecordId.ToString("D"));
-        artifact.Source.ArtifactId.Should().Be("workflow:payment-retry:v2");
-        artifact.Source.ArtifactTypeId.Should().Be("elsa.workflow-definition");
-        artifact.Source.ContentDigest.Should().Be(new PromotionArtifactDigest("sha256", "v2"));
-        artifact.Source.Metadata.Should().Contain("displayName", "Payment Retry");
-        artifact.Source.Configuration.Should().Contain("environment", "stage");
-        artifact.Target!.Configuration.Should().Contain("environment", "prod");
-        artifact.RuntimeCompatibility.Should().ContainSingle(x => x.Severity == ValidationSeverity.Pass);
+        var artifact = Assert.Single(comparison.Artifacts);
+        Assert.Equal("Payment Retry", artifact.Name);
+        Assert.Equal(PromotionArtifactImpact.Changed, artifact.Impact);
+        Assert.Equal(artifactRecordId.ToString("D"), artifact.Source!.ArtifactRecordId);
+        Assert.Equal("workflow:payment-retry:v2", artifact.Source.ArtifactId);
+        Assert.Equal("elsa.workflow-definition", artifact.Source.ArtifactTypeId);
+        Assert.Equal(new PromotionArtifactDigest("sha256", "v2"), artifact.Source.ContentDigest);
+        Assert.Equal("Payment Retry", artifact.Source.Metadata["displayName"]);
+        Assert.Equal("stage", artifact.Source.Configuration["environment"]);
+        Assert.Equal("prod", artifact.Target!.Configuration["environment"]);
+        Assert.Single(artifact.RuntimeCompatibility, x => x.Severity == ValidationSeverity.Pass);
     }
 
     private WorkspaceDesiredStateRevision Revision(Guid revisionId, Guid environmentId, int revisionNumber, string desiredStateJson) =>

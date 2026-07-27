@@ -3,7 +3,6 @@ using System.Net.Http.Json;
 using ValenceControl.Api.Workspace;
 using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -24,13 +23,14 @@ public sealed class OrganizationWorkspaceApiTests
             OrganizationWorkspacesPath(context.Organizations.Single().Id),
             new OrganizationWorkspaceCreateRequest("Automation"));
 
-        create.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var workspace = await create.Content.ReadControlJsonAsync<WorkspaceContextResponse>();
-        workspace!.Kind.Should().Be(WorkspaceKind.Shared);
-        workspace.Role.Should().Be(WorkspaceRole.Owner);
+        Assert.Equal(WorkspaceKind.Shared, workspace!.Kind);
+        Assert.Equal(WorkspaceRole.Owner, workspace.Role);
 
         var list = await owner.GetControlJsonAsync<OrganizationWorkspacesResponse>(OrganizationWorkspacesPath(context.Organizations.Single().Id));
-        list!.Workspaces.Select(x => x.Name).Should().Contain(["Ada Lovelace", "Automation"]);
+        var names = list!.Workspaces.Select(x => x.Name);
+        Assert.All(["Ada Lovelace", "Automation"], name => Assert.Contains(name, names));
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public sealed class OrganizationWorkspaceApiTests
 
         var duplicate = await owner.PostControlJsonAsync(OrganizationWorkspacesPath(organizationId), new OrganizationWorkspaceCreateRequest("Automation"));
 
-        duplicate.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
     }
 
     [Fact]
@@ -62,12 +62,12 @@ public sealed class OrganizationWorkspaceApiTests
                 OrganizationWorkspacesPath(organizationId),
                 new OrganizationWorkspaceCreateRequest($"Automation {index}"))));
 
-        responses.Count(x => x.StatusCode == HttpStatusCode.Created).Should().Be(1);
-        responses.Count(x => x.StatusCode == HttpStatusCode.Forbidden).Should().Be(3);
+        Assert.Equal(1, responses.Count(x => x.StatusCode == HttpStatusCode.Created));
+        Assert.Equal(3, responses.Count(x => x.StatusCode == HttpStatusCode.Forbidden));
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         var activeWorkspaces = await db.Workspaces.CountAsync(x => x.OrganizationId == organizationId && x.SoftDeletedAt == null);
-        activeWorkspaces.Should().Be(2);
+        Assert.Equal(2, activeWorkspaces);
     }
 
     [Fact]
@@ -84,15 +84,15 @@ public sealed class OrganizationWorkspaceApiTests
                 OrganizationWorkspacesPath(organizationId),
                 new OrganizationWorkspaceCreateRequest("Automation"))));
 
-        responses.Count(x => x.StatusCode == HttpStatusCode.Created).Should().Be(1);
-        responses.Count(x => x.StatusCode == HttpStatusCode.Conflict).Should().Be(3);
+        Assert.Equal(1, responses.Count(x => x.StatusCode == HttpStatusCode.Created));
+        Assert.Equal(3, responses.Count(x => x.StatusCode == HttpStatusCode.Conflict));
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         var matchingWorkspaces = await db.Workspaces.CountAsync(x =>
             x.OrganizationId == organizationId &&
             x.SoftDeletedAt == null &&
             x.Name == "Automation");
-        matchingWorkspaces.Should().Be(1);
+        Assert.Equal(1, matchingWorkspaces);
     }
 
     [Fact]
@@ -115,9 +115,9 @@ public sealed class OrganizationWorkspaceApiTests
             new OrganizationWorkspaceUpdateRequest("Operations", WorkspaceLifecycleStatus.Archived));
         var list = await owner.GetControlJsonAsync<OrganizationWorkspacesResponse>(OrganizationWorkspacesPath(organizationId));
 
-        rename.StatusCode.Should().Be(HttpStatusCode.OK);
-        archive.StatusCode.Should().Be(HttpStatusCode.OK);
-        list!.Workspaces.Select(x => x.Name).Should().NotContain("Operations");
+        Assert.Equal(HttpStatusCode.OK, rename.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, archive.StatusCode);
+        Assert.DoesNotContain("Operations", list!.Workspaces.Select(x => x.Name));
     }
 
     [Fact]
@@ -141,7 +141,7 @@ public sealed class OrganizationWorkspaceApiTests
         var member = app.CreateControlIdentityClient(subject: "member");
         var list = await member.GetControlJsonAsync<OrganizationWorkspacesResponse>(OrganizationWorkspacesPath(organizationId));
 
-        list!.Workspaces.Select(x => x.Name).Should().ContainSingle().Which.Should().Be("Visible");
+        Assert.Equal("Visible", Assert.Single(list!.Workspaces).Name);
     }
 
     [Fact]
@@ -156,7 +156,7 @@ public sealed class OrganizationWorkspaceApiTests
 
         var response = await other.GetAsync(OrganizationWorkspacesPath(organizationId));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -171,7 +171,7 @@ public sealed class OrganizationWorkspaceApiTests
         var member = app.CreateControlIdentityClient(subject: "member");
         var response = await member.GetAsync($"/api/workspaces/{ownerContext.Workspaces.Single().Id}/sources");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -189,7 +189,7 @@ public sealed class OrganizationWorkspaceApiTests
             $"{OrganizationWorkspacesPath(organizationId)}/{workspace.Id}/members/{outsideAccountId}",
             new OrganizationWorkspaceMembershipRequest(WorkspaceRole.Reader));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -209,7 +209,7 @@ public sealed class OrganizationWorkspaceApiTests
 
         var response = await owner.DeleteAsync($"{OrganizationWorkspacesPath(organizationId)}/{workspace.Id}/members/{ownerContext.Account.Id}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
     [Fact]
@@ -225,7 +225,7 @@ public sealed class OrganizationWorkspaceApiTests
 
         var response = await owner.DeleteAsync($"{OrganizationWorkspacesPath(organizationId)}/{workspace.Id}/members/{ownerContext.Account.Id}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     private static string OrganizationWorkspacesPath(Guid organizationId) =>
@@ -234,7 +234,7 @@ public sealed class OrganizationWorkspaceApiTests
     private static async Task<WorkspaceContextResponse> CreateWorkspaceAsync(HttpClient owner, Guid organizationId, string name)
     {
         var response = await owner.PostControlJsonAsync(OrganizationWorkspacesPath(organizationId), new OrganizationWorkspaceCreateRequest(name));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadControlJsonAsync<WorkspaceContextResponse>())!;
     }
 

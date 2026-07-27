@@ -1,7 +1,6 @@
 using System.Net.Http.Json;
 using ValenceControl.Api.Public.Packages;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -24,6 +23,6 @@ public sealed class PublicPackageDetailsApiTests
 
         var versions = await app.CreateClient().GetFromJsonAsync<List<PublicPackageVersionResponse>>($"/api/sources/{sourceId}/packages/Elsa.Email/versions");
 
-        versions.Should().ContainSingle(x => x.Version == "1.0.0");
+        Assert.Single(versions!, x => x.Version == "1.0.0");
     }
 }

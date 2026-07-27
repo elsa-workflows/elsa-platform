@@ -22,9 +22,9 @@
 - [X] T002 Create `src/ValenceControl.PackageManifest.Generator/ValenceControl.PackageManifest.Generator.csproj` configured as the package facade for build assets and optional source-only manifest hints
 - [X] T003 Create `src/ValenceControl.PackageManifest.Generator.Core/ValenceControl.PackageManifest.Generator.Core.csproj` with references to `ValenceControl.PackageManifests`, `JsonSchema.Net`, and `NuGet.Versioning`
 - [X] T004 Create `src/ValenceControl.PackageManifest.Generator.MSBuild/ValenceControl.PackageManifest.Generator.MSBuild.csproj` with MSBuild task dependencies and a project reference to `ValenceControl.PackageManifest.Generator.Core`
-- [X] T005 [P] Create `tests/ValenceControl.PackageManifest.Generator.Core.Tests/ValenceControl.PackageManifest.Generator.Core.Tests.csproj` with xUnit and FluentAssertions references
-- [X] T006 [P] Create `tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests.csproj` with xUnit and FluentAssertions references
-- [X] T007 [P] Create `tests/ValenceControl.PackageManifest.Generator.IntegrationTests/ValenceControl.PackageManifest.Generator.IntegrationTests.csproj` with xUnit, FluentAssertions, and fixture support references
+- [X] T005 [P] Create `tests/ValenceControl.PackageManifest.Generator.Core.Tests/ValenceControl.PackageManifest.Generator.Core.Tests.csproj` with xUnit references; use xUnit's built-in assertions.
+- [X] T006 [P] Create `tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests.csproj` with xUnit references; use xUnit's built-in assertions.
+- [X] T007 [P] Create `tests/ValenceControl.PackageManifest.Generator.IntegrationTests/ValenceControl.PackageManifest.Generator.IntegrationTests.csproj` with xUnit and fixture-support references; use xUnit's built-in assertions.
 - [X] T008 [P] Create `tests/ValenceControl.PackageManifest.Generator.Testing/ValenceControl.PackageManifest.Generator.Testing.csproj` for shared sample-project and package-inspection helpers
 - [X] T009 Add central package versions for required generator test/build dependencies in `Directory.Packages.props`
 

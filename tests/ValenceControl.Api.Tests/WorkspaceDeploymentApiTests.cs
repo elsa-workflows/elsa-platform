@@ -7,7 +7,6 @@ using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -30,7 +29,7 @@ public sealed class WorkspaceDeploymentApiTests
             $"/api/workspaces/{workspaceId}/deployments/applications",
             new WorkspaceDeploymentApplicationRequest("   ", null));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -45,7 +44,7 @@ public sealed class WorkspaceDeploymentApiTests
             $"/api/workspaces/{workspaceId}/deployments/applications/{Guid.NewGuid()}/environments/{Guid.NewGuid()}/revisions",
             new WorkspaceDesiredStateRevisionRequest("rev-1", null, []));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     [Fact]
@@ -60,13 +59,13 @@ public sealed class WorkspaceDeploymentApiTests
         var response = await client.GetAsync($"/api/workspaces/{workspaceId}/deployments/cockpit");
         var cockpit = await response.Content.ReadControlJsonAsync<DeploymentCockpit>();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        cockpit!.Applications.Should().ContainSingle(x => x.Name == "Claims Operations");
-        cockpit.Engines.Should().ContainSingle(x =>
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Single(cockpit!.Applications, x => x.Name == "Claims Operations");
+        Assert.Single(cockpit.Engines, x =>
             x.Name == "claims-prod"
             && x.CredentialReference.Reference == "kv://claims/prod/elsa-api");
-        cockpit.ObservabilityBindings.Should().ContainSingle(x => x.Provider == "Azure Monitor");
-        cockpit.DriftReport.Should().ContainSingle(x => x.Area == "RuntimeConfiguration");
+        Assert.Single(cockpit.ObservabilityBindings, x => x.Provider == "Azure Monitor");
+        Assert.Single(cockpit.DriftReport, x => x.Area == "RuntimeConfiguration");
     }
 
     [Fact]
@@ -81,8 +80,8 @@ public sealed class WorkspaceDeploymentApiTests
         var anonymous = await app.CreateClient().GetAsync($"/api/workspaces/{workspaceId}/deployments/cockpit");
         var nonMember = await app.CreateTrustedWorkspaceClient("other").GetAsync($"/api/workspaces/{workspaceId}/deployments/cockpit");
 
-        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        nonMember.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, nonMember.StatusCode);
     }
 
     [Fact]
@@ -99,10 +98,10 @@ public sealed class WorkspaceDeploymentApiTests
         stopwatch.Stop();
         var cockpit = await response.Content.ReadControlJsonAsync<DeploymentCockpit>();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
-        cockpit!.Applications.Should().HaveCount(25);
-        cockpit.Engines.Should().HaveCount(200);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(3));
+        Assert.Equal(25, cockpit!.Applications.Count());
+        Assert.Equal(200, cockpit.Engines.Count());
     }
 
     [Fact]
@@ -128,9 +127,9 @@ public sealed class WorkspaceDeploymentApiTests
             new WorkspaceDeploymentEnvironmentRequest("UAT", EnvironmentTier.Stage, uat.Id));
         var cockpit = await owner.GetControlJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
 
-        environmentResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        cockpit!.Applications.Single().Environments.Should().ContainSingle(x =>
+        Assert.Equal(HttpStatusCode.Created, environmentResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+        Assert.Single(cockpit!.Applications.Single().Environments, x =>
             x.Id == environment.Id.ToString("D")
             && x.TierName == "UAT"
             && x.TierCapabilities != null
@@ -158,10 +157,10 @@ public sealed class WorkspaceDeploymentApiTests
         var response = await owner.GetAsync($"/api/workspaces/{workspaceId}/deployments/environments/{environment!.Id}/desired-state-requirements");
         var requirements = await response.Content.ReadControlJsonAsync<WorkspaceDesiredStateRequirementsResponse>();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        requirements!.TierName.Should().Be("Dev");
-        requirements.TierCapabilities.Should().Contain(DeploymentTierCapabilities.DevelopmentLike);
-        requirements.Requirements.Should().BeEmpty();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Dev", requirements!.TierName);
+        Assert.Contains(DeploymentTierCapabilities.DevelopmentLike, requirements.TierCapabilities);
+        Assert.Empty(requirements.Requirements);
     }
 
     [Fact]
@@ -185,10 +184,10 @@ public sealed class WorkspaceDeploymentApiTests
         var response = await owner.GetAsync($"/api/workspaces/{workspaceId}/deployments/environments/{environment!.Id}/desired-state-requirements");
         var requirements = await response.Content.ReadControlJsonAsync<WorkspaceDesiredStateRequirementsResponse>();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        requirements!.TierName.Should().Be("Production");
-        requirements.TierCapabilities.Should().Contain(DeploymentTierCapabilities.ObservabilityRequired);
-        requirements.Requirements.Should().ContainSingle(x =>
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Production", requirements!.TierName);
+        Assert.Contains(DeploymentTierCapabilities.ObservabilityRequired, requirements.TierCapabilities);
+        Assert.Single(requirements.Requirements, x =>
             x.Id == DeploymentTierService.ObservabilityBindingRequirementId
             && x.RecordKind == DeploymentTierService.ObservabilityBindingRecordKind
             && x.ValidationId == DeploymentTierService.ObservabilityRequiredValidationId
@@ -214,8 +213,8 @@ public sealed class WorkspaceDeploymentApiTests
             $"/api/workspaces/{workspaceId}/deployments/applications/{application!.Id}/environments",
             new WorkspaceDeploymentEnvironmentRequest("UAT", EnvironmentTier.Stage, uat.Id));
 
-        archiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        environmentResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.OK, archiveResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, environmentResponse.StatusCode);
     }
 
     [Fact]
@@ -238,10 +237,10 @@ public sealed class WorkspaceDeploymentApiTests
         var environment = await environmentResponse.Content.ReadControlJsonAsync<WorkspaceDeploymentEnvironment>();
         var cockpit = await owner.GetControlJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
 
-        environmentResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        environment!.Name.Should().Be("Test");
-        cockpit!.Applications.Single().Environments.Should().ContainSingle(x => x.Id == environment.Id.ToString("D") && x.EngineIds.Count == 0);
-        cockpit.Engines.Should().BeEmpty();
+        Assert.Equal(HttpStatusCode.Created, environmentResponse.StatusCode);
+        Assert.Equal("Test", environment!.Name);
+        Assert.Single(cockpit!.Applications.Single().Environments, x => x.Id == environment.Id.ToString("D") && x.EngineIds.Count == 0);
+        Assert.Empty(cockpit.Engines);
     }
 
     [Fact]
@@ -285,13 +284,13 @@ public sealed class WorkspaceDeploymentApiTests
         var engine = await engineResponse.Content.ReadControlJsonAsync<WorkspaceWorkflowEngine>();
         var cockpit = await owner.GetControlJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
 
-        storeResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        referenceResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        engineResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        engine!.CredentialProvider.Should().Be("Azure Key Vault");
-        engine.CredentialReference.Should().Be("kv://acme/test/engine-api");
-        engine.CredentialReferenceId.Should().Be(reference.Id);
-        cockpit!.Engines.Should().ContainSingle(x =>
+        Assert.Equal(HttpStatusCode.Created, storeResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, referenceResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, engineResponse.StatusCode);
+        Assert.Equal("Azure Key Vault", engine!.CredentialProvider);
+        Assert.Equal("kv://acme/test/engine-api", engine.CredentialReference);
+        Assert.Equal(reference.Id, engine.CredentialReferenceId);
+        Assert.Single(cockpit!.Engines, x =>
             x.Name == "test-weu-01"
             && x.CredentialReference.Provider == "Azure Key Vault"
             && x.CredentialReference.Reference == "kv://acme/test/engine-api");
@@ -327,16 +326,16 @@ public sealed class WorkspaceDeploymentApiTests
             new WorkspaceDeploymentCredentialReferenceRotateRequest("rotated-secret-token"));
         var rotated = await rotateResponse.Content.ReadControlJsonAsync<WorkspaceDeploymentCredentialReference>();
 
-        storeResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        store!.Type.Should().Be(DeploymentSecretStoreType.LocalEncryptedDatabase);
-        store.Provider.Should().Be("Local encrypted database");
-        referenceResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        reference!.SecretStoreType.Should().Be(DeploymentSecretStoreType.LocalEncryptedDatabase);
-        reference.HasProtectedSecret.Should().BeTrue();
-        rotateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        rotated!.HasProtectedSecret.Should().BeTrue();
-        body.Should().NotContain("super-secret-token");
-        (await rotateResponse.Content.ReadAsStringAsync()).Should().NotContain("rotated-secret-token");
+        Assert.Equal(HttpStatusCode.Created, storeResponse.StatusCode);
+        Assert.Equal(DeploymentSecretStoreType.LocalEncryptedDatabase, store!.Type);
+        Assert.Equal("Local encrypted database", store.Provider);
+        Assert.Equal(HttpStatusCode.Created, referenceResponse.StatusCode);
+        Assert.Equal(DeploymentSecretStoreType.LocalEncryptedDatabase, reference!.SecretStoreType);
+        Assert.True(reference.HasProtectedSecret);
+        Assert.Equal(HttpStatusCode.OK, rotateResponse.StatusCode);
+        Assert.True(rotated!.HasProtectedSecret);
+        Assert.DoesNotContain("super-secret-token", body);
+        Assert.DoesNotContain("rotated-secret-token", (await rotateResponse.Content.ReadAsStringAsync()));
     }
 
     [Fact]
@@ -363,7 +362,7 @@ public sealed class WorkspaceDeploymentApiTests
                 null,
                 "do-not-store-here"));
 
-        referenceResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.Conflict, referenceResponse.StatusCode);
     }
 
     [Fact]
@@ -436,21 +435,21 @@ public sealed class WorkspaceDeploymentApiTests
         var usage = await owner.GetControlJsonAsync<WorkspaceDeploymentCredentialReferenceUsageResponse>(
             $"/api/workspaces/{workspaceId}/deployments/credential-references/{reference.Id}/usage");
 
-        deferredResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        assignedResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        reassignedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        assigned!.CredentialAssignmentStatus.Should().Be(EngineCredentialAssignmentStatus.Assigned);
-        deferred.CredentialAssignmentStatus.Should().Be(EngineCredentialAssignmentStatus.Deferred);
-        deferred.CredentialReferenceId.Should().BeNull();
-        deferred.CredentialProvider.Should().BeEmpty();
-        deferred.CredentialReference.Should().BeEmpty();
-        reassigned!.CredentialAssignmentStatus.Should().Be(EngineCredentialAssignmentStatus.Assigned);
-        reassigned.CredentialReferenceId.Should().Be(reference.Id);
-        usage!.Items.Should().Contain(x =>
+        Assert.Equal(HttpStatusCode.Created, deferredResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, assignedResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, reassignedResponse.StatusCode);
+        Assert.Equal(EngineCredentialAssignmentStatus.Assigned, assigned!.CredentialAssignmentStatus);
+        Assert.Equal(EngineCredentialAssignmentStatus.Deferred, deferred.CredentialAssignmentStatus);
+        Assert.Null(deferred.CredentialReferenceId);
+        Assert.Empty(deferred.CredentialProvider);
+        Assert.Empty(deferred.CredentialReference);
+        Assert.Equal(EngineCredentialAssignmentStatus.Assigned, reassigned!.CredentialAssignmentStatus);
+        Assert.Equal(reference.Id, reassigned.CredentialReferenceId);
+        Assert.Contains(usage!.Items, x =>
             x.EngineName == "test-weu-assigned"
             && x.ApplicationName == "Acme"
             && x.EnvironmentName == "Test");
-        usage.Items.Should().Contain(x =>
+        Assert.Contains(usage.Items, x =>
             x.EngineName == "test-weu-deferred"
             && x.ApplicationName == "Acme"
             && x.EnvironmentName == "Test");
@@ -479,10 +478,10 @@ public sealed class WorkspaceDeploymentApiTests
         var allowedStores = await reader.GetAsync($"/api/workspaces/{workspaceId}/deployments/secret-stores");
         var allowedReferences = await reader.GetAsync($"/api/workspaces/{workspaceId}/deployments/credential-references");
 
-        deniedStores.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        deniedReferences.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        allowedStores.StatusCode.Should().Be(HttpStatusCode.OK);
-        allowedReferences.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.Forbidden, deniedStores.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, deniedReferences.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, allowedStores.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, allowedReferences.StatusCode);
     }
 
     [Fact]
@@ -511,13 +510,13 @@ public sealed class WorkspaceDeploymentApiTests
             new WorkspacePromotionPreviewRequestDto(sourceEnvironment.Id, targetEnvironment.Id, sourceRevision!.Id, targetEngine.Id));
         var preview = await previewResponse.Content.ReadControlJsonAsync<PromotionComparison>();
 
-        sourceRevisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        previewResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        preview!.SourceRevision.Should().Be(sourceRevision.RevisionNumber);
-        preview.TargetRevision.Should().Be(targetRevision.RevisionNumber);
-        preview.Diff.Should().Contain(x => x.Name == "Payment Retry" && x.Impact == DiffImpact.Changed);
-        preview.Diff.Should().Contain(x => x.Name == "Payment API" && x.Impact == DiffImpact.Added);
-        preview.Validations.Should().Contain(x => x.Severity == ValidationSeverity.Pass);
+        Assert.Equal(HttpStatusCode.Created, sourceRevisionResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+        Assert.Equal(sourceRevision.RevisionNumber, preview!.SourceRevision);
+        Assert.Equal(targetRevision.RevisionNumber, preview.TargetRevision);
+        Assert.Contains(preview.Diff, x => x.Name == "Payment Retry" && x.Impact == DiffImpact.Changed);
+        Assert.Contains(preview.Diff, x => x.Name == "Payment API" && x.Impact == DiffImpact.Added);
+        Assert.Contains(preview.Validations, x => x.Severity == ValidationSeverity.Pass);
     }
 
     [Fact]
@@ -545,13 +544,13 @@ public sealed class WorkspaceDeploymentApiTests
         var detail = await owner.GetControlJsonAsync<WorkspaceDesiredStateRevisionDetail>(
             $"/api/workspaces/{workspaceId}/deployments/revisions/{sourceRevision!.Id}");
 
-        sourceRevisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        list!.Items.Should().HaveCount(2);
-        list.Items.Should().Contain(x => x.Revision.Id == sourceRevision.Id && x.EnvironmentName == sourceEnvironment.Name && x.IsCurrentDesired);
-        list.Items.Should().Contain(x => x.Revision.Id == targetRevision.Id && x.EnvironmentName == targetEnvironment.Name && x.IsCurrentDesired);
-        detail!.Summary.Revision.Id.Should().Be(sourceRevision.Id);
-        detail.Records.Should().Contain(x => x.Kind == DesiredStateRecordKind.Workflow && x.Name == "Payment Retry");
-        detail.Records.Should().Contain(x => x.Kind == DesiredStateRecordKind.SecretReference && x.Name == "Payment API");
+        Assert.Equal(HttpStatusCode.Created, sourceRevisionResponse.StatusCode);
+        Assert.Equal(2, list!.Items.Count());
+        Assert.Contains(list.Items, x => x.Revision.Id == sourceRevision.Id && x.EnvironmentName == sourceEnvironment.Name && x.IsCurrentDesired);
+        Assert.Contains(list.Items, x => x.Revision.Id == targetRevision.Id && x.EnvironmentName == targetEnvironment.Name && x.IsCurrentDesired);
+        Assert.Equal(sourceRevision.Id, detail!.Summary.Revision.Id);
+        Assert.Contains(detail.Records, x => x.Kind == DesiredStateRecordKind.Workflow && x.Name == "Payment Retry");
+        Assert.Contains(detail.Records, x => x.Kind == DesiredStateRecordKind.SecretReference && x.Name == "Payment API");
     }
 
     [Fact]
@@ -572,10 +571,10 @@ public sealed class WorkspaceDeploymentApiTests
         var allowedList = await reader.GetAsync($"/api/workspaces/{workspaceId}/deployments/applications/{application.Id}/revisions");
         var allowedDetail = await reader.GetAsync($"/api/workspaces/{workspaceId}/deployments/revisions/{revision.Id}");
 
-        deniedList.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        deniedDetail.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        allowedList.StatusCode.Should().Be(HttpStatusCode.OK);
-        allowedDetail.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.Forbidden, deniedList.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, deniedDetail.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, allowedList.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, allowedDetail.StatusCode);
     }
 
     [Fact]
@@ -595,8 +594,8 @@ public sealed class WorkspaceDeploymentApiTests
         await app.GrantWorkspaceDeploymentPermissionAsync(workspaceId, readerAccountId, WorkspaceDeploymentPermissions.PreviewPromotion);
         var allowed = await reader.PostControlJsonAsync($"/api/workspaces/{workspaceId}/deployments/promotions/preview", request);
 
-        denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        allowed.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, allowed.StatusCode);
     }
 
     [Fact]
@@ -611,7 +610,7 @@ public sealed class WorkspaceDeploymentApiTests
             $"/api/workspaces/{workspaceId}/deployments/promotions",
             new WorkspacePromotionRequestDto(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), " ", null));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -626,7 +625,7 @@ public sealed class WorkspaceDeploymentApiTests
             $"/api/workspaces/{workspaceId}/artifacts",
             WorkspaceDeploymentTestFixtures.WorkflowEnvelopeRegistration("sha256:payment-retry"));
         var artifact = await artifactResponse.Content.ReadControlJsonAsync<WorkspaceArtifact>();
-        artifact.Should().NotBeNull();
+        Assert.NotNull(artifact);
         var registeredArtifact = artifact!;
         var sourceRevisionResponse = await owner.PostControlJsonAsync(
             $"/api/workspaces/{workspaceId}/deployments/applications/{application.Id}/environments/{sourceEnvironment.Id}/revisions",
@@ -642,7 +641,7 @@ public sealed class WorkspaceDeploymentApiTests
         var promotionResponse = await owner.PostControlJsonAsync(
             $"/api/workspaces/{workspaceId}/deployments/promotions",
             new WorkspacePromotionRequestDto(sourceEnvironment.Id, targetEnvironment.Id, sourceRevision!.Id, targetEngine.Id, "Promoted artifact", "prod-artifact"));
-        promotionResponse.StatusCode.Should().Be(HttpStatusCode.Created, await promotionResponse.Content.ReadAsStringAsync());
+        Assert.True(promotionResponse.StatusCode == HttpStatusCode.Created, await promotionResponse.Content.ReadAsStringAsync());
         var promotion = await promotionResponse.Content.ReadControlJsonAsync<WorkspacePromotionResult>();
         var confirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Deploy, promotion!.TargetRevision.Id);
         var runResponse = await owner.PostControlJsonAsync(
@@ -650,16 +649,16 @@ public sealed class WorkspaceDeploymentApiTests
             new WorkspaceDeploymentRunRequestDto(promotion.TargetRevision.Id, targetEnvironment.Id, targetEngine.Id, confirmation.Id, DeploymentRunMode.Apply));
         var command = await ReadQueuedCommandAsync(app, workspaceId, targetEngine.Id);
 
-        artifactResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        sourceRevisionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        promotion.TargetRevision.EnvironmentId.Should().Be(targetEnvironment.Id);
-        promotion.TargetRevision.DesiredStateJson.Should().Contain(registeredArtifact.ArtifactId);
-        promotion.TargetRevision.DesiredStateJson.Should().NotContain("workflow definition payload");
-        runResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        command.Artifact.Should().NotBeNull();
-        command.Artifact!.ArtifactRecordId.Should().Be(registeredArtifact.Id);
-        command.Artifact.ContentDigest.Should().Be(registeredArtifact.ContentDigest);
-        command.Revision!.RevisionId.Should().Be(promotion.TargetRevision.Id);
+        Assert.Equal(HttpStatusCode.Created, artifactResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, sourceRevisionResponse.StatusCode);
+        Assert.Equal(targetEnvironment.Id, promotion.TargetRevision.EnvironmentId);
+        Assert.Contains(registeredArtifact.ArtifactId, promotion.TargetRevision.DesiredStateJson);
+        Assert.DoesNotContain("workflow definition payload", promotion.TargetRevision.DesiredStateJson);
+        Assert.Equal(HttpStatusCode.Created, runResponse.StatusCode);
+        Assert.NotNull(command.Artifact);
+        Assert.Equal(registeredArtifact.Id, command.Artifact!.ArtifactRecordId);
+        Assert.Equal(registeredArtifact.ContentDigest, command.Artifact.ContentDigest);
+        Assert.Equal(promotion.TargetRevision.Id, command.Revision!.RevisionId);
     }
 
     [Fact]
@@ -688,8 +687,8 @@ public sealed class WorkspaceDeploymentApiTests
             new WorkspaceDeploymentRunRequestDto(revision.Id, targetEnvironment.Id, targetEngine.Id, confirmation.Id, DeploymentRunMode.Apply));
         var storedConfirmation = await ReadConfirmationAsync(app, workspaceId, confirmation.Id);
 
-        runResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        storedConfirmation!.UsedAt.Should().BeNull();
+        Assert.Equal(HttpStatusCode.Conflict, runResponse.StatusCode);
+        Assert.Null(storedConfirmation!.UsedAt);
     }
 
     [Fact]
@@ -718,8 +717,8 @@ public sealed class WorkspaceDeploymentApiTests
             new WorkspaceDeploymentRunRequestDto(revision.Id, targetEnvironment.Id, targetEngine.Id, confirmation.Id, DeploymentRunMode.Apply));
         var storedConfirmation = await ReadConfirmationAsync(app, workspaceId, confirmation.Id);
 
-        runResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        storedConfirmation!.UsedAt.Should().BeNull();
+        Assert.Equal(HttpStatusCode.Conflict, runResponse.StatusCode);
+        Assert.Null(storedConfirmation!.UsedAt);
     }
 
     [Fact]
@@ -765,17 +764,17 @@ public sealed class WorkspaceDeploymentApiTests
             new WorkspaceRollbackRunRequestDto(revisionA.Id, targetEnvironment.Id, targetEngine.Id, rollbackConfirmation.Id, deployB.Id, DeploymentRunMode.Apply));
         var rollback = await rollbackResponse.Content.ReadControlJsonAsync<WorkspaceDeploymentRun>();
         var detail = await owner.GetControlJsonAsync<WorkspaceDeploymentRunDetailResponse>($"/api/workspaces/{workspaceId}/deployments/runs/{rollback!.Id}");
-        var command = detail!.Commands.Should().ContainSingle().Subject;
+        var command = Assert.Single(detail!.Commands);
 
-        deployAResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        deployBResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        rollbackResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        rollback.RollbackSourceRunId.Should().Be(deployB.Id);
-        command.Action.Should().Be(DeploymentCommandAction.Rollback);
-        command.Artifact.Should().NotBeNull();
-        command.Artifact!.ArtifactRecordId.Should().Be(artifactA.Id);
-        command.Artifact.ArtifactId.Should().Be(artifactA.ArtifactId);
-        command.Artifact.ContentDigest.Should().Be(artifactA.ContentDigest);
+        Assert.Equal(HttpStatusCode.Created, deployAResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, deployBResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, rollbackResponse.StatusCode);
+        Assert.Equal(deployB.Id, rollback.RollbackSourceRunId);
+        Assert.Equal(DeploymentCommandAction.Rollback, command.Action);
+        Assert.NotNull(command.Artifact);
+        Assert.Equal(artifactA.Id, command.Artifact!.ArtifactRecordId);
+        Assert.Equal(artifactA.ArtifactId, command.Artifact.ArtifactId);
+        Assert.Equal(artifactA.ContentDigest, command.Artifact.ContentDigest);
     }
 
     [Fact]
@@ -800,8 +799,8 @@ public sealed class WorkspaceDeploymentApiTests
             new WorkspaceRollbackRunRequestDto(revision.Id, targetEnvironment.Id, targetEngine.Id, confirmation.Id, Guid.NewGuid(), DeploymentRunMode.Apply));
         var storedConfirmation = await ReadConfirmationAsync(app, workspaceId, confirmation.Id);
 
-        rollbackResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        storedConfirmation!.UsedAt.Should().BeNull();
+        Assert.Equal(HttpStatusCode.Conflict, rollbackResponse.StatusCode);
+        Assert.Null(storedConfirmation!.UsedAt);
     }
 
     [Fact]
@@ -828,11 +827,11 @@ public sealed class WorkspaceDeploymentApiTests
             new WorkspaceRollbackRunRequestDto(revision.Id, targetEnvironment.Id, targetEngine.Id, rollbackConfirmation.Id, run.Id, DeploymentRunMode.Apply));
         var rollback = await rollbackResponse.Content.ReadControlJsonAsync<WorkspaceDeploymentRun>();
 
-        runResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        detail!.Run.Id.Should().Be(run.Id);
-        detail.History.Should().ContainSingle(x => x.Status == WorkspaceDeploymentRunStatus.Queued);
-        rollbackResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        rollback!.RollbackSourceRunId.Should().Be(run.Id);
+        Assert.Equal(HttpStatusCode.Created, runResponse.StatusCode);
+        Assert.Equal(run.Id, detail!.Run.Id);
+        Assert.Single(detail.History, x => x.Status == WorkspaceDeploymentRunStatus.Queued);
+        Assert.Equal(HttpStatusCode.Created, rollbackResponse.StatusCode);
+        Assert.Equal(run.Id, rollback!.RollbackSourceRunId);
     }
 
     [Fact]
@@ -868,10 +867,10 @@ public sealed class WorkspaceDeploymentApiTests
             $"/api/workspaces/{workspaceId}/deployments/runs",
             new WorkspaceDeploymentRunRequestDto(revision.Id, targetEnvironment.Id, targetEngine.Id, expiredConfirmation!.Id, DeploymentRunMode.Apply));
 
-        wrongUser.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        runResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        replay.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        expired.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.Conflict, wrongUser.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, runResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, replay.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, expired.StatusCode);
     }
 
     private static async Task SeedDeploymentAsync(ControlApiTestApplication app, Guid workspaceId)
@@ -961,7 +960,7 @@ public sealed class WorkspaceDeploymentApiTests
         var response = await client.PostControlJsonAsync(
             $"/api/workspaces/{workspaceId}/deployments/confirmations",
             new WorkspaceActionConfirmationRequest(actionType, targetId.ToString("D"), null));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadControlJsonAsync<ActionConfirmation>())!;
     }
 
@@ -970,7 +969,7 @@ public sealed class WorkspaceDeploymentApiTests
         var response = await client.PostControlJsonAsync(
             $"/api/workspaces/{workspaceId}/artifacts",
             WorkspaceDeploymentTestFixtures.WorkflowEnvelopeRegistration(artifactId));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadControlJsonAsync<WorkspaceArtifact>())!;
     }
 
@@ -979,7 +978,7 @@ public sealed class WorkspaceDeploymentApiTests
         var response = await client.PostControlJsonAsync(
             $"/api/workspaces/{workspaceId}/deployments/tiers",
             new WorkspaceDeploymentTierRequest(name, null, 90, capabilities));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadControlJsonAsync<WorkspaceDeploymentTier>())!;
     }
 

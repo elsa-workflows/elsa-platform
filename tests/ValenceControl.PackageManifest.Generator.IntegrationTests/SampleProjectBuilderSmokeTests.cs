@@ -1,5 +1,4 @@
 using ValenceControl.PackageManifest.Generator.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifest.Generator.IntegrationTests;
 
@@ -23,7 +22,7 @@ public sealed class SmokeFeature : IShellFeature
 
         var result = await project.BuildAsync();
 
-        result.ExitCode.Should().Be(0, result.CombinedOutput);
-        File.Exists(project.AssemblyPath).Should().BeTrue();
+        Assert.Equal(0, result.ExitCode);
+        Assert.True(File.Exists(project.AssemblyPath));
     }
 }

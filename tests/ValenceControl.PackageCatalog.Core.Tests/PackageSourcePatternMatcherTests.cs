@@ -1,5 +1,4 @@
 using ValenceControl.PackageCatalog.Core.Sources;
-using FluentAssertions;
 
 namespace ValenceControl.PackageCatalog.Core.Tests;
 
@@ -10,18 +9,18 @@ public sealed class PackageSourcePatternMatcherTests
     [Fact]
     public void Matches_include_patterns_case_insensitively()
     {
-        _matcher.IsMatch("elsa.email", ["Elsa.*"], []).Should().BeTrue();
+        Assert.True(_matcher.IsMatch("elsa.email", ["Elsa.*"], []));
     }
 
     [Fact]
     public void Matches_dotted_prefix_patterns_case_insensitively()
     {
-        _matcher.IsMatch("elsa.email", ["Elsa."], []).Should().BeTrue();
+        Assert.True(_matcher.IsMatch("elsa.email", ["Elsa."], []));
     }
 
     [Fact]
     public void Exclude_patterns_win_over_includes()
     {
-        _matcher.IsMatch("Elsa.Experimental.Email", ["Elsa."], ["Elsa.Experimental.*"]).Should().BeFalse();
+        Assert.False(_matcher.IsMatch("Elsa.Experimental.Email", ["Elsa."], ["Elsa.Experimental.*"]));
     }
 }

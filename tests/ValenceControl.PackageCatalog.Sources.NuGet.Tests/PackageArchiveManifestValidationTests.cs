@@ -1,6 +1,5 @@
 using ValenceControl.PackageCatalog.Sources.NuGet;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.PackageCatalog.Sources.NuGet.Tests;
 
@@ -15,6 +14,6 @@ public sealed class PackageArchiveManifestValidationTests
 
         var result = await new PackageArchiveManifestReader().ReadAsync(package);
 
-        result.Exists.Should().BeFalse();
+        Assert.False(result.Exists);
     }
 }

@@ -1,6 +1,5 @@
 using ValenceControl.PackageCatalog.Sources.NuGet;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.PackageCatalog.Sources.NuGet.Tests;
 
@@ -16,10 +15,10 @@ public sealed class PackageArchiveManifestReaderTests
 
         var result = await new PackageArchiveManifestReader().ReadAsync(package);
 
-        result.Exists.Should().BeTrue();
-        result.Path.Should().Be("elsa-package.json");
-        result.ManifestJson.Should().Be("""{"source":"root"}""");
-        result.Warnings.Should().ContainSingle();
+        Assert.True(result.Exists);
+        Assert.Equal("elsa-package.json", result.Path);
+        Assert.Equal("""{"source":"root"}""", result.ManifestJson);
+        Assert.Single(result.Warnings);
     }
 
     [Fact]
@@ -31,7 +30,7 @@ public sealed class PackageArchiveManifestReaderTests
 
         var result = await new PackageArchiveManifestReader().ReadAsync(package);
 
-        result.Exists.Should().BeTrue();
-        result.Path.Should().Be("build/elsa-package.json");
+        Assert.True(result.Exists);
+        Assert.Equal("build/elsa-package.json", result.Path);
     }
 }

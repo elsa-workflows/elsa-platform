@@ -1,4 +1,3 @@
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Artifacts.Tests;
 
@@ -14,7 +13,8 @@ public class ArtifactChecksumTests
         };
         var second = first.Reverse();
 
-        DeploymentArtifactChecksumService.ComputeContentDigest(first)
-            .Should().Be(DeploymentArtifactChecksumService.ComputeContentDigest(second));
+        Assert.Equal(
+            DeploymentArtifactChecksumService.ComputeContentDigest(second),
+            DeploymentArtifactChecksumService.ComputeContentDigest(first));
     }
 }

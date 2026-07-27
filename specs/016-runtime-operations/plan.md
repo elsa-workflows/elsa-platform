@@ -9,7 +9,7 @@ Add operational visibility and lifecycle safety for managed runtimes after manag
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 LTS for API/Core/Persistence.
-**Primary Dependencies**: ASP.NET Core minimal APIs, managed hosting records, log/metric adapter ports, backup adapter ports, EF Core, xUnit, FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, managed hosting records, log/metric adapter ports, backup adapter ports, EF Core, xUnit and its built-in assertions.
 **Storage**: Operational event, backup, and upgrade records in existing relational database.
 **Testing**: Core service tests, API tests, adapter fakes.
 **Target platform**: Existing ASP.NET Core modular monolith.

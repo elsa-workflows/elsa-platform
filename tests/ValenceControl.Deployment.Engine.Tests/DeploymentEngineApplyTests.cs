@@ -4,7 +4,6 @@ using ValenceControl.Deployment.Abstractions.History;
 using ValenceControl.Deployment.Abstractions.Plans;
 using ValenceControl.Deployment.Abstractions.Resources;
 using ValenceControl.Deployment.Abstractions.Targets;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Engine.Tests;
 
@@ -26,10 +25,10 @@ public class DeploymentEngineApplyTests
         var result = await engine.ApplyAsync(plan, _target);
         var history = await _history.FindAsync(result.DeploymentId);
 
-        result.Status.Should().Be(DeploymentStatus.Applied);
-        _handler.ApplyChanges.Select(x => x.Action).Should().Equal(DeploymentChangeAction.Create, DeploymentChangeAction.Update);
-        history.Should().NotBeNull();
-        history!.ResourceResults.Should().HaveCount(2);
+        Assert.Equal(DeploymentStatus.Applied, result.Status);
+        Assert.Equal([DeploymentChangeAction.Create, DeploymentChangeAction.Update], _handler.ApplyChanges.Select(x => x.Action));
+        Assert.NotNull(history);
+        Assert.Equal(2, history!.ResourceResults.Count());
     }
 
     [Fact]
@@ -42,9 +41,9 @@ public class DeploymentEngineApplyTests
 
         var result = await engine.ApplyAsync(plan, _target);
 
-        result.Status.Should().Be(DeploymentStatus.NoOp);
-        _handler.ApplyChanges.Should().BeEmpty();
-        result.ResourceResults.Should().ContainSingle(x => x.Status == DeploymentChangeStatus.Skipped);
+        Assert.Equal(DeploymentStatus.NoOp, result.Status);
+        Assert.Empty(_handler.ApplyChanges);
+        Assert.Single(result.ResourceResults, x => x.Status == DeploymentChangeStatus.Skipped);
     }
 
     [Fact]
@@ -57,9 +56,9 @@ public class DeploymentEngineApplyTests
 
         var result = await engine.ApplyAsync(plan, _target);
 
-        result.Status.Should().Be(DeploymentStatus.NoOp);
-        result.ResourceResults.Should().ContainSingle().Which.Status.Should().Be(DeploymentChangeStatus.Skipped);
-        _handler.ApplyChanges.Should().BeEmpty();
+        Assert.Equal(DeploymentStatus.NoOp, result.Status);
+        Assert.Equal(DeploymentChangeStatus.Skipped, Assert.Single(result.ResourceResults).Status);
+        Assert.Empty(_handler.ApplyChanges);
     }
 
     [Fact]
@@ -77,9 +76,9 @@ public class DeploymentEngineApplyTests
         var result = await engine.ApplyAsync(plan, _target);
         var history = await _history.FindAsync(result.DeploymentId);
 
-        result.Status.Should().Be(DeploymentStatus.PartiallyApplied);
-        result.ResourceResults.Should().Contain(x => x.ResourceId == failure.Id && x.Retryable);
-        history!.Diagnostics.Should().Contain(diagnostic);
+        Assert.Equal(DeploymentStatus.PartiallyApplied, result.Status);
+        Assert.Contains(result.ResourceResults, x => x.ResourceId == failure.Id && x.Retryable);
+        Assert.Contains(diagnostic, history!.Diagnostics);
     }
 
     [Fact]
@@ -94,10 +93,10 @@ public class DeploymentEngineApplyTests
         var result = await engine.ApplyAsync(plan, _target);
         var history = await _history.FindAsync(result.DeploymentId);
 
-        result.Status.Should().Be(DeploymentStatus.Failed);
-        result.ResourceResults.Should().ContainSingle().Which.Status.Should().Be(DeploymentChangeStatus.Skipped);
-        _handler.ApplyChanges.Should().BeEmpty();
-        history!.Diagnostics.Should().Contain(diagnostic);
+        Assert.Equal(DeploymentStatus.Failed, result.Status);
+        Assert.Equal(DeploymentChangeStatus.Skipped, Assert.Single(result.ResourceResults).Status);
+        Assert.Empty(_handler.ApplyChanges);
+        Assert.Contains(diagnostic, history!.Diagnostics);
     }
 
     [Fact]
@@ -110,8 +109,8 @@ public class DeploymentEngineApplyTests
 
         var result = await engine.ApplyAsync(plan, _target);
 
-        result.Status.Should().Be(DeploymentStatus.Failed);
-        result.Diagnostics.Should().ContainSingle(x =>
+        Assert.Equal(DeploymentStatus.Failed, result.Status);
+        Assert.Single(result.Diagnostics, x =>
             x.Code == DeploymentEngineDiagnosticCodes.ApplyFailed &&
             x.ResourceId == resource.Id);
     }
@@ -126,9 +125,9 @@ public class DeploymentEngineApplyTests
 
         var result = await engine.ApplyAsync(plan, _target);
 
-        result.Status.Should().Be(DeploymentStatus.Applied);
-        result.ResourceResults.Should().ContainSingle().Which.Status.Should().Be(DeploymentChangeStatus.Completed);
-        result.Diagnostics.Should().ContainSingle(x =>
+        Assert.Equal(DeploymentStatus.Applied, result.Status);
+        Assert.Equal(DeploymentChangeStatus.Completed, Assert.Single(result.ResourceResults).Status);
+        Assert.Single(result.Diagnostics, x =>
             x.Code == DeploymentEngineDiagnosticCodes.HistoryFailed &&
             x.Severity == DeploymentDiagnosticSeverity.Warning);
     }

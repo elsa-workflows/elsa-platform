@@ -12,11 +12,11 @@ Connect registered deployment artifacts, desired-state revisions, engine capabil
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence/runtime command services; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity and deployment permissions, EF Core catalog persistence, `ValenceControl.Deployment.Core`, `ValenceControl.Deployment.Artifacts`, runtime command APIs, React Router, TanStack Query, Vitest, Playwright where browser verification is needed, xUnit, and FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity and deployment permissions, EF Core catalog persistence, `ValenceControl.Deployment.Core`, `ValenceControl.Deployment.Artifacts`, runtime command APIs, React Router, TanStack Query, Vitest, Playwright where browser verification is needed, xUnit and its built-in assertions.
 
 **Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore` with SQLite and SQL Server migrations when schema changes are required. Deployment command storage must continue to store safe metadata only: artifact identities, type/schema metadata, digests, per-artifact outcomes, lease metadata, and diagnostics. Raw payloads, workflow definitions, local paths, credentials, provider tokens, and secrets stay out of command/history records.
 
-**Testing**: Focused xUnit/FluentAssertions coverage for deployability, command creation, lease-scoped download authorization, partial apply outcomes, and EF persistence; ASP.NET Core endpoint tests for console/runtime contracts; Vitest for console preflight and blocker rendering; Playwright only for browser-level deployment UX if component tests cannot cover the workflow; `git diff --check`.
+**Testing**: Focused coverage using xUnit's built-in assertions for deployability, command creation, lease-scoped download authorization, partial apply outcomes, and EF persistence; ASP.NET Core endpoint tests for console/runtime contracts; Vitest for console preflight and blocker rendering; Playwright only for browser-level deployment UX if component tests cannot cover the workflow; `git diff --check`.
 
 **Target platform**: Valence Control API plus hosted admin console, with runtime-facing command/download contracts consumed by Elsa workflow engine integrations.
 

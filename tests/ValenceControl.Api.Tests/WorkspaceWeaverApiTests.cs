@@ -2,7 +2,6 @@ using System.Net;
 using ValenceControl.Api.Workspace;
 using ValenceControl.Weaver.Core.Configuration;
 using ValenceControl.Weaver.Core.Sessions;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -19,10 +18,10 @@ public sealed class WorkspaceWeaverApiTests
         var response = await client.GetAsync($"/api/workspaces/{workspaceId}/weaver/configuration");
         var configuration = await response.Content.ReadControlJsonAsync<WorkspaceWeaverConfigurationResponse>();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        configuration!.Enabled.Should().BeFalse();
-        configuration.ProviderMode.Should().Be(WeaverProviderMode.Disabled);
-        configuration.DisabledReason.Should().NotBeNullOrWhiteSpace();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(configuration!.Enabled);
+        Assert.Equal(WeaverProviderMode.Disabled, configuration.ProviderMode);
+        Assert.False(string.IsNullOrWhiteSpace(configuration.DisabledReason));
     }
 
     [Fact]
@@ -47,14 +46,15 @@ public sealed class WorkspaceWeaverApiTests
         var detail = await client.GetControlJsonAsync<WorkspaceWeaverSessionDetailResponse>(
             $"/api/workspaces/{workspaceId}/weaver/sessions/{session.Id}");
 
-        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        messageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        message!.AssistantMessageId.Should().NotBeNull();
-        detail!.Messages.Should().HaveCount(2);
-        detail.Messages.Single(x => x.Role == WeaverMessageRole.User).Content.Should().Contain("[REDACTED]");
-        detail.Messages.Single(x => x.Role == WeaverMessageRole.User).Content.Should().NotContain("ghp_secret");
-        detail.Messages.Single(x => x.Role == WeaverMessageRole.Assistant).Content.Should().Contain("Mode: Inspect");
-        detail.ToolCalls.Should().ContainSingle(x => x.ToolName == "get_current_context" && x.Status == WeaverToolCallStatus.Succeeded);
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, messageResponse.StatusCode);
+        Assert.NotNull(message!.AssistantMessageId);
+        Assert.Equal(2, detail!.Messages.Count);
+        var userMessage = detail.Messages.Single(x => x.Role == WeaverMessageRole.User);
+        Assert.Contains("[REDACTED]", userMessage.Content);
+        Assert.DoesNotContain("ghp_secret", userMessage.Content);
+        Assert.Contains("Mode: Inspect", detail.Messages.Single(x => x.Role == WeaverMessageRole.Assistant).Content);
+        Assert.Single(detail.ToolCalls, x => x.ToolName == "get_current_context" && x.Status == WeaverToolCallStatus.Succeeded);
     }
 
     [Fact]
@@ -68,8 +68,8 @@ public sealed class WorkspaceWeaverApiTests
         var anonymous = await app.CreateClient().GetAsync($"/api/workspaces/{workspaceId}/weaver/configuration");
         var nonMember = await app.CreateTrustedWorkspaceClient("weaver-other").GetAsync($"/api/workspaces/{workspaceId}/weaver/configuration");
 
-        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        nonMember.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, nonMember.StatusCode);
     }
 
     [Fact]
@@ -93,13 +93,13 @@ public sealed class WorkspaceWeaverApiTests
         var planDetail = await client.GetControlJsonAsync<WorkspaceWeaverPlanResponse>(
             $"/api/workspaces/{workspaceId}/weaver/plans/{plan.Id}");
 
-        messageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        detail.Plans.Should().ContainSingle(x =>
+        Assert.Equal(HttpStatusCode.OK, messageResponse.StatusCode);
+        Assert.Single(detail.Plans, x =>
             x.PlanType == WeaverPlanType.Promotion &&
             x.Status == WeaverPlanStatus.ReadyForApproval &&
             x.Title == "Draft promotion plan");
-        planDetail!.Id.Should().Be(plan.Id);
-        planDetail.Title.Should().Be("Draft promotion plan");
+        Assert.Equal(plan.Id, planDetail!.Id);
+        Assert.Equal("Draft promotion plan", planDetail.Title);
     }
 
     [Fact]
@@ -133,12 +133,12 @@ public sealed class WorkspaceWeaverApiTests
             new WorkspaceWeaverPlanExecuteRequest(plan.Version));
         var secondExecution = await secondExecuteResponse.Content.ReadControlJsonAsync<WorkspaceWeaverPlanExecuteResponse>();
 
-        approvalResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        approval!.Status.Should().Be(WeaverPlanStatus.Approved);
-        firstExecuteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        secondExecuteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        firstExecution!.Status.Should().Be(WeaverPlanExecutionStatus.Succeeded);
-        secondExecution!.ExecutionId.Should().Be(firstExecution.ExecutionId);
+        Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
+        Assert.Equal(WeaverPlanStatus.Approved, approval!.Status);
+        Assert.Equal(HttpStatusCode.OK, firstExecuteResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, secondExecuteResponse.StatusCode);
+        Assert.Equal(WeaverPlanExecutionStatus.Succeeded, firstExecution!.Status);
+        Assert.Equal(firstExecution.ExecutionId, secondExecution!.ExecutionId);
     }
 
     private static IReadOnlyDictionary<string, string?> FakeWeaverConfiguration() => new Dictionary<string, string?>

@@ -5,7 +5,6 @@ using ValenceControl.Api.Workspace;
 using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.Healing.Abstractions;
 using ValenceControl.PackageCatalog.Core.Accounts;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -24,28 +23,29 @@ public sealed class WorkspacePermissionManagementApiTests
         var grantsUri = $"/api/workspaces/{workspaceId:D}/permissions/grants";
         var revocationsUri = $"/api/workspaces/{workspaceId:D}/permissions/revocations";
 
-        (await reader.GetAsync(grantsUri)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, (await reader.GetAsync(grantsUri)).StatusCode);
 
         var grantRequest = new WorkspacePermissionGrantRequest(readerId, HealingPermissions.Read);
         var granted = await owner.PostControlJsonAsync(grantsUri, grantRequest);
         var replayedGrant = await owner.PostControlJsonAsync(grantsUri, grantRequest);
 
-        granted.StatusCode.Should().Be(HttpStatusCode.OK);
-        replayedGrant.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, granted.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, replayedGrant.StatusCode);
         var grants = await owner.GetFromJsonAsync<JsonElement>($"{grantsUri}?accountId={readerId:D}");
-        grants.GetProperty("items").EnumerateArray()
-            .Should().ContainSingle(x => x.GetProperty("permission").GetString() == HealingPermissions.Read && x.GetProperty("revokedAt").ValueKind == JsonValueKind.Null);
+        Assert.Single(grants.GetProperty("items").EnumerateArray(),
+            x => x.GetProperty("permission").GetString() == HealingPermissions.Read && x.GetProperty("revokedAt").ValueKind == JsonValueKind.Null);
 
         var revokeRequest = new WorkspacePermissionRevokeRequest(readerId, HealingPermissions.Read);
         var revoked = await owner.PostControlJsonAsync(revocationsUri, revokeRequest);
         var replayedRevoke = await owner.PostControlJsonAsync(revocationsUri, revokeRequest);
 
-        (await revoked.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("changed").GetBoolean().Should().BeTrue();
-        (await replayedRevoke.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("changed").GetBoolean().Should().BeFalse();
+        Assert.True((await revoked.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("changed").GetBoolean());
+        Assert.False((await replayedRevoke.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("changed").GetBoolean());
         var audit = await owner.GetFromJsonAsync<JsonElement>($"/api/workspaces/{workspaceId:D}/permissions/audit?accountId={readerId:D}");
-        audit.GetProperty("items").EnumerateArray().Should().HaveCount(2);
-        audit.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("action").GetString())
-            .Should().BeEquivalentTo("Granted", "Revoked");
+        Assert.Equal(2, audit.GetProperty("items").EnumerateArray().Count());
+        Assert.Equivalent(
+            new string?[] { "Granted", "Revoked" },
+            audit.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("action").GetString()));
 
         var outsider = app.CreateTrustedWorkspaceClient("permission-outsider");
         var outsiderContext = await outsider.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
@@ -53,8 +53,8 @@ public sealed class WorkspacePermissionManagementApiTests
             grantsUri,
             new WorkspacePermissionGrantRequest(outsiderContext!.Account.Id, HealingPermissions.Read));
 
-        outsiderGrant.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await outsider.GetAsync(grantsUri)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.BadRequest, outsiderGrant.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await outsider.GetAsync(grantsUri)).StatusCode);
     }
 
     [Fact]
@@ -78,10 +78,9 @@ public sealed class WorkspacePermissionManagementApiTests
         var secondRead = await owner.GetFromJsonAsync<JsonElement>($"/api/workspaces/{workspaceId:D}/deployments/permissions");
         var audit = await owner.GetFromJsonAsync<JsonElement>($"/api/workspaces/{workspaceId:D}/permissions/audit?accountId={context.Account.Id:D}");
 
-        firstRead.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()).Should().NotContain(permission);
-        secondRead.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()).Should().NotContain(permission);
-        audit.GetProperty("items").EnumerateArray()
-            .Count(x => x.GetProperty("permission").GetString() == permission)
-            .Should().Be(2);
+        Assert.DoesNotContain(permission, firstRead.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()));
+        Assert.DoesNotContain(permission, secondRead.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal(2, audit.GetProperty("items").EnumerateArray()
+            .Count(x => x.GetProperty("permission").GetString() == permission));
     }
 }

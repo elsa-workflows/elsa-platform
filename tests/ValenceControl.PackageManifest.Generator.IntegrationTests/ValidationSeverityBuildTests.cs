@@ -1,7 +1,6 @@
 using ValenceControl.PackageManifest.Generator.Core.Generation;
 using ValenceControl.PackageManifest.Generator.Core.Validation;
 using ValenceControl.PackageManifest.Generator.Testing;
-using FluentAssertions;
 using System.Text.Json;
 
 namespace ValenceControl.PackageManifest.Generator.IntegrationTests;
@@ -31,7 +30,7 @@ public sealed class ComplexOptions
 }
 """);
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
 
         var diagnostics = new GenerationDiagnostics();
         var artifact = new ManifestGenerator().Generate(
@@ -40,11 +39,11 @@ public sealed class ComplexOptions
             new AssemblyInspectionInput(project.AssemblyPath, project.XmlDocumentationPath, "net10.0", [], true),
             diagnostics);
 
-        diagnostics.Items.Should().Contain(x => x.Code == "EPMGEN_SETTING_TYPE_UNSUPPORTED" && x.Severity == GenerationDiagnosticSeverity.Info);
-        new ValidationSeverityPolicy("Error", false).ShouldFail(diagnostics).Should().BeFalse();
+        Assert.Contains(diagnostics.Items, x => x.Code == "EPMGEN_SETTING_TYPE_UNSUPPORTED" && x.Severity == GenerationDiagnosticSeverity.Info);
+        Assert.False(new ValidationSeverityPolicy("Error", false).ShouldFail(diagnostics));
 
         using var document = JsonDocument.Parse(artifact.ManifestJson);
         var settings = document.RootElement.GetProperty("features")[0].GetProperty("settings").EnumerateArray();
-        settings.Select(x => x.GetProperty("name").GetString()).Should().Equal("Name");
+        Assert.Equal("Name", Assert.Single(settings.Select(x => x.GetProperty("name").GetString())));
     }
 }

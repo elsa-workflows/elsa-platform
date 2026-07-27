@@ -1,5 +1,4 @@
 using ValenceControl.Healing.Core;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.Core.Tests;
 
@@ -12,11 +11,11 @@ public sealed class HealingModelTests
 
         var result = incident.TryTransitionTo(HealingIncidentStatus.PullRequestOpen);
 
-        result.Succeeded.Should().BeFalse();
-        result.From.Should().Be(HealingIncidentStatus.Observed);
-        result.To.Should().Be(HealingIncidentStatus.PullRequestOpen);
-        result.ReasonCode.Should().Be(HealingTransitionReasonCodes.InvalidIncidentTransition);
-        incident.Status.Should().Be(HealingIncidentStatus.Observed);
+        Assert.False(result.Succeeded);
+        Assert.Equal(HealingIncidentStatus.Observed, result.From);
+        Assert.Equal(HealingIncidentStatus.PullRequestOpen, result.To);
+        Assert.Equal(HealingTransitionReasonCodes.InvalidIncidentTransition, result.ReasonCode);
+        Assert.Equal(HealingIncidentStatus.Observed, incident.Status);
     }
 
     [Theory]
@@ -28,7 +27,7 @@ public sealed class HealingModelTests
 
         var result = incident.TryTransitionTo(target);
 
-        result.Succeeded.Should().BeTrue();
-        incident.Status.Should().Be(target);
+        Assert.True(result.Succeeded);
+        Assert.Equal(target, incident.Status);
     }
 }

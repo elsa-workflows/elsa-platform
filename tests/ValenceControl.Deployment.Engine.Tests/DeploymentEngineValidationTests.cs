@@ -1,7 +1,6 @@
 using ValenceControl.Deployment.Abstractions;
 using ValenceControl.Deployment.Abstractions.Diagnostics;
 using ValenceControl.Deployment.Abstractions.Resources;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Engine.Tests;
 
@@ -18,9 +17,9 @@ public class DeploymentEngineValidationTests
 
         var result = await engine.ValidateAsync(new TestArtifactReader(resource), _target);
 
-        result.Status.Should().Be(DeploymentStatus.Validated);
-        result.Diagnostics.Should().BeEmpty();
-        _handler.ValidatedResources.Should().ContainSingle().Which.Should().Be(resource);
+        Assert.Equal(DeploymentStatus.Validated, result.Status);
+        Assert.Empty(result.Diagnostics);
+        Assert.Equal(resource, Assert.Single(_handler.ValidatedResources));
     }
 
     [Fact]
@@ -31,8 +30,8 @@ public class DeploymentEngineValidationTests
 
         var result = await engine.ValidateAsync(new TestArtifactReader(resource), _target);
 
-        result.Status.Should().Be(DeploymentStatus.ValidationFailed);
-        result.Diagnostics.Should().ContainSingle(x =>
+        Assert.Equal(DeploymentStatus.ValidationFailed, result.Status);
+        Assert.Single(result.Diagnostics, x =>
             x.Code == DeploymentEngineDiagnosticCodes.HandlerMissing &&
             x.ResourceId == resource.Id);
     }
@@ -46,8 +45,8 @@ public class DeploymentEngineValidationTests
 
         var result = await engine.ValidateAsync(new TestArtifactReader(resource, duplicate), _target);
 
-        result.Status.Should().Be(DeploymentStatus.ValidationFailed);
-        result.Diagnostics.Should().ContainSingle(x =>
+        Assert.Equal(DeploymentStatus.ValidationFailed, result.Status);
+        Assert.Single(result.Diagnostics, x =>
             x.Code == DeploymentEngineDiagnosticCodes.ResourceDuplicate &&
             x.ResourceId == resource.Id);
     }
@@ -62,9 +61,9 @@ public class DeploymentEngineValidationTests
 
         var result = await engine.ValidateAsync(new TestArtifactReader(resource), _target);
 
-        result.Status.Should().Be(DeploymentStatus.ValidationFailed);
-        result.Diagnostics.Should().Contain(diagnostic);
-        _handler.ApplyChanges.Should().BeEmpty();
+        Assert.Equal(DeploymentStatus.ValidationFailed, result.Status);
+        Assert.Contains(diagnostic, result.Diagnostics);
+        Assert.Empty(_handler.ApplyChanges);
     }
 
     [Fact]
@@ -76,8 +75,8 @@ public class DeploymentEngineValidationTests
 
         var result = await engine.ValidateAsync(new TestArtifactReader(resource), _target);
 
-        result.Status.Should().Be(DeploymentStatus.ValidationFailed);
-        result.Diagnostics.Should().ContainSingle(x =>
+        Assert.Equal(DeploymentStatus.ValidationFailed, result.Status);
+        Assert.Single(result.Diagnostics, x =>
             x.Code == DeploymentEngineDiagnosticCodes.ValidateFailed &&
             x.ResourceId == resource.Id);
     }

@@ -3,7 +3,6 @@ using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.Deployment.Artifacts;
 using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 
 namespace ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
@@ -38,7 +37,7 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
         var run = await QueueRunAsync(topology);
         var commands = await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow);
 
-        commands.Should().ContainSingle(x =>
+        Assert.Single(commands, x =>
             x.RunId == run.Id
             && x.Action == DeploymentCommandAction.Deploy
             && x.Revision!.RevisionId == topology.Revision.Id);
@@ -77,11 +76,11 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
         await QueueRunAsync(topology with { Revision = revision });
         var command = (await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow)).Single();
 
-        command.Artifact.Should().NotBeNull();
-        command.Artifact!.ArtifactRecordId.Should().Be(artifact.Id);
-        command.Artifact.ArtifactId.Should().Be(artifact.ArtifactId);
-        command.Artifact.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
-        command.Artifact.ContentDigest.Should().Be(artifact.ContentDigest);
+        Assert.NotNull(command.Artifact);
+        Assert.Equal(artifact.Id, command.Artifact!.ArtifactRecordId);
+        Assert.Equal(artifact.ArtifactId, command.Artifact.ArtifactId);
+        Assert.Equal(ArtifactTypeIds.ElsaWorkflowDefinition, command.Artifact.ArtifactTypeId);
+        Assert.Equal(artifact.ContentDigest, command.Artifact.ContentDigest);
     }
 
     [Fact]
@@ -100,12 +99,13 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
         var command = (await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow)).Single();
         var rawArtifactJson = await ReadCommandArtifactJsonAsync(command.Id);
 
-        command.Artifact!.ArtifactRecordId.Should().Be(first.Id);
-        command.Artifacts.Should().HaveCount(2);
-        command.Artifacts!.Select(x => x.ArtifactRecordId).Should().Equal(first.Id, second.Id);
-        command.Artifacts.Should().OnlyContain(x => x.DownloadUrl == null);
-        rawArtifactJson.Should().NotContain("/tmp/payment-retry");
-        rawArtifactJson.Should().NotContain("/tmp/invoice-sync");
+        var commandArtifacts = command.Artifacts!;
+        Assert.Equal(first.Id, command.Artifact!.ArtifactRecordId);
+        Assert.Equal(2, commandArtifacts.Count());
+        Assert.Equal(new[] { first.Id, second.Id }, commandArtifacts.Select(x => x.ArtifactRecordId));
+        Assert.All(commandArtifacts, x => Assert.Null(x.DownloadUrl));
+        Assert.DoesNotContain("/tmp/payment-retry", rawArtifactJson);
+        Assert.DoesNotContain("/tmp/invoice-sync", rawArtifactJson);
     }
 
     [Fact]
@@ -131,8 +131,8 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
 
         var act = () => QueueRunAsync(topology with { Revision = revision });
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Artifact-backed revision references an artifact that is not visible in the workspace.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+        Assert.Equal("Artifact-backed revision references an artifact that is not visible in the workspace.", exception.Message);
     }
 
     [Fact]
@@ -158,8 +158,8 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
             new CompleteDeploymentCommandRequest("lease-1", new WorkspaceArtifactDigest("sha256", "wrong"), "elsa://workflow/payment-retry", []),
             DateTimeOffset.UtcNow);
 
-        await complete.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Observed artifact digest does not match command artifact digest.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(complete);
+        Assert.Equal("Observed artifact digest does not match command artifact digest.", exception.Message);
     }
 
     [Fact]
@@ -195,13 +195,14 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
             DateTimeOffset.UtcNow);
         var failedRun = await _store.GetRunAsync(_workspaceId, run.Id);
 
-        failed.Status.Should().Be(DeploymentCommandStatus.Failed);
-        failed.Artifacts.Should().HaveCount(2);
-        failed.Artifacts!.Single(x => x.ArtifactRecordId == first.Id).Status.Should().Be(DeploymentCommandArtifactStatus.Applied);
-        failed.Artifacts!.Single(x => x.ArtifactRecordId == first.Id).RuntimeReference.Should().Be("elsa://workflow/payment-retry");
-        failed.Artifacts!.Single(x => x.ArtifactRecordId == second.Id).Status.Should().Be(DeploymentCommandArtifactStatus.Failed);
-        failed.Artifacts!.Single(x => x.ArtifactRecordId == second.Id).Diagnostics!.Single().Message.Should().Be("runtime rejected");
-        failedRun!.Status.Should().Be(WorkspaceDeploymentRunStatus.Failed);
+        var failedArtifacts = failed.Artifacts!;
+        Assert.Equal(DeploymentCommandStatus.Failed, failed.Status);
+        Assert.Equal(2, failedArtifacts.Count());
+        Assert.Equal(DeploymentCommandArtifactStatus.Applied, failedArtifacts.Single(x => x.ArtifactRecordId == first.Id).Status);
+        Assert.Equal("elsa://workflow/payment-retry", failedArtifacts.Single(x => x.ArtifactRecordId == first.Id).RuntimeReference);
+        Assert.Equal(DeploymentCommandArtifactStatus.Failed, failedArtifacts.Single(x => x.ArtifactRecordId == second.Id).Status);
+        Assert.Equal("runtime rejected", failedArtifacts.Single(x => x.ArtifactRecordId == second.Id).Diagnostics!.Single().Message);
+        Assert.Equal(WorkspaceDeploymentRunStatus.Failed, failedRun!.Status);
     }
 
     [Fact]
@@ -224,8 +225,8 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
             "lease-2",
             DateTimeOffset.UtcNow);
 
-        claimed.Status.Should().Be(DeploymentCommandStatus.Claimed);
-        await duplicate.Should().ThrowAsync<InvalidOperationException>();
+        Assert.Equal(DeploymentCommandStatus.Claimed, claimed.Status);
+        await Assert.ThrowsAsync<InvalidOperationException>(duplicate);
     }
 
     [Fact]
@@ -262,7 +263,7 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
                 startGate.SetResult();
                 var claims = await Task.WhenAll(firstClaim, secondClaim);
 
-                claims.Count(x => x is not null).Should().Be(1);
+                Assert.Equal(1, claims.Count(x => x is not null));
 
                 Task<DeploymentCommand?> StartClaimContender(
                     DeploymentWorkspaceStore store,
@@ -314,8 +315,8 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
             "lease-1",
             now);
 
-        await claim.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Command is not available.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(claim);
+        Assert.Equal("Command is not available.", exception.Message);
     }
 
     [Fact]
@@ -340,8 +341,8 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
             heartbeatAt);
         var refreshed = await _store.GetRunAsync(_workspaceId, run.Id);
 
-        refreshed!.WorkerHeartbeatAt.Should().Be(heartbeatAt);
-        refreshed.WorkerId.Should().Be("worker-1");
+        Assert.Equal(heartbeatAt, refreshed!.WorkerHeartbeatAt);
+        Assert.Equal("worker-1", refreshed.WorkerId);
     }
 
     [Fact]
@@ -353,8 +354,8 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
         await QueueRunAsync(topology);
         var commands = await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow);
 
-        commands.Should().HaveCount(2);
-        commands.Select(x => x.IdempotencyKey).Should().OnlyHaveUniqueItems();
+        Assert.Equal(2, commands.Count());
+        Assert.Equal(commands.Select(x => x.IdempotencyKey).Count(), commands.Select(x => x.IdempotencyKey).Distinct().Count());
     }
 
     [Fact]
@@ -380,15 +381,15 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
         _db.ChangeTracker.Clear();
         var cockpit = await _store.GetCockpitAsync(_workspaceId);
 
-        completed.Status.Should().Be(DeploymentCommandStatus.Completed);
-        completedRun!.Status.Should().Be(WorkspaceDeploymentRunStatus.Succeeded);
-        history.Should().Contain(x => x.Message == "Runtime command completed.");
-        cockpit.Applications.Single().Environments.Single().DeployedRevision.Should().Be(topology.Revision.RevisionNumber);
+        Assert.Equal(DeploymentCommandStatus.Completed, completed.Status);
+        Assert.Equal(WorkspaceDeploymentRunStatus.Succeeded, completedRun!.Status);
+        Assert.Contains(history, x => x.Message == "Runtime command completed.");
+        Assert.Equal(topology.Revision.RevisionNumber, cockpit.Applications.Single().Environments.Single().DeployedRevision);
         var commandSummary = cockpit.History.Single().Commands.Single();
-        commandSummary.Id.Should().Be(command.Id);
-        commandSummary.Status.Should().Be(DeploymentCommandStatus.Completed);
-        commandSummary.ProgressMessage.Should().BeNull();
-        commandSummary.RuntimeReference.Should().Be("elsa://workflow/payment-retry");
+        Assert.Equal(command.Id, commandSummary.Id);
+        Assert.Equal(DeploymentCommandStatus.Completed, commandSummary.Status);
+        Assert.Null(commandSummary.ProgressMessage);
+        Assert.Equal("elsa://workflow/payment-retry", commandSummary.RuntimeReference);
     }
 
     [Fact]
@@ -420,9 +421,9 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
             new CompleteDeploymentCommandRequest("lease-2", null, "elsa://workflow/payment-retry", []),
             DateTimeOffset.UtcNow);
 
-        replay.Status.Should().Be(DeploymentCommandStatus.Completed);
-        await wrongLease.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Command lease token is invalid.");
+        Assert.Equal(DeploymentCommandStatus.Completed, replay.Status);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(wrongLease);
+        Assert.Equal("Command lease token is invalid.", exception.Message);
     }
 
     [Fact]
@@ -442,8 +443,8 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
         var recovered = await _store.MarkStaleCommandsRecoveryRequiredAsync(claimedAt.AddMinutes(20), TimeSpan.FromMinutes(10));
         var recoveredRun = await _store.GetRunAsync(_workspaceId, run.Id);
 
-        recovered.Should().Be(1);
-        recoveredRun!.Status.Should().Be(WorkspaceDeploymentRunStatus.RecoveryRequired);
+        Assert.Equal(1, recovered);
+        Assert.Equal(WorkspaceDeploymentRunStatus.RecoveryRequired, recoveredRun!.Status);
     }
 
     [Fact]
@@ -467,8 +468,8 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
         commandReader.Parameters.Add(parameter);
         var rawPayload = (string)(await commandReader.ExecuteScalarAsync())!;
 
-        notification.Status.Should().Be(WebhookNotificationStatus.Pending);
-        rawPayload.Should().Be("{\"reason\":\"command-available\"}");
+        Assert.Equal(WebhookNotificationStatus.Pending, notification.Status);
+        Assert.Equal("{\"reason\":\"command-available\"}", rawPayload);
     }
 
     [Fact]
@@ -486,7 +487,7 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
 
         var targets = await _store.ListPendingWebhookNotificationTargetsAsync(10, DateTimeOffset.UtcNow);
 
-        targets.Should().ContainSingle(x =>
+        Assert.Single(targets, x =>
             x.Id == notification.Id
             && x.WorkspaceId == _workspaceId
             && x.EngineId == topology.Engine.Id
@@ -526,11 +527,11 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
         var skippedResult = await _store.MarkWebhookNotificationSkippedAsync(_workspaceId, skipped.Id, sentAt);
         var pendingTargets = await _store.ListPendingWebhookNotificationTargetsAsync(10, DateTimeOffset.UtcNow);
 
-        sentResult.Status.Should().Be(WebhookNotificationStatus.Sent);
-        sentResult.SentAt.Should().Be(sentAt);
-        failedResult.Status.Should().Be(WebhookNotificationStatus.Failed);
-        skippedResult.Status.Should().Be(WebhookNotificationStatus.Skipped);
-        pendingTargets.Should().NotContain(x => x.Id == sent.Id || x.Id == failed.Id || x.Id == skipped.Id);
+        Assert.Equal(WebhookNotificationStatus.Sent, sentResult.Status);
+        Assert.Equal(sentAt, sentResult.SentAt);
+        Assert.Equal(WebhookNotificationStatus.Failed, failedResult.Status);
+        Assert.Equal(WebhookNotificationStatus.Skipped, skippedResult.Status);
+        Assert.DoesNotContain(pendingTargets, x => x.Id == sent.Id || x.Id == failed.Id || x.Id == skipped.Id);
     }
 
     [Fact]
@@ -547,8 +548,8 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
             "{\"reason\":\"command-available\"}",
             DateTimeOffset.UtcNow);
 
-        await create.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Command does not target the requested runtime engine.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(create);
+        Assert.Equal("Command does not target the requested runtime engine.", exception.Message);
     }
 
     [Fact]
@@ -571,8 +572,8 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
             "{\"reason\":\"command-available\"}",
             DateTimeOffset.UtcNow);
 
-        await create.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Command is not pending.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(create);
+        Assert.Equal("Command is not pending.", exception.Message);
     }
 
     public void Dispose() => _db.Dispose();

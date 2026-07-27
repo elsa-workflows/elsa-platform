@@ -2,7 +2,6 @@ using ValenceControl.PackageCatalog.Abstractions.Compatibility;
 using ValenceControl.PackageCatalog.Core.Compatibility;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.PackageCatalog.Core.Tests;
 
@@ -18,11 +17,11 @@ public sealed class CompatibilityCheckServiceTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest("1.0.0", null, [Selection(source, "Elsa.Email"), Selection(source, "Missing")], []));
 
-        result.Compatible.Should().BeFalse();
-        result.Findings.Should().Contain(x => x.Code == "package.missing");
-        result.Findings.Should().Contain(x => x.Code == "package.invalid");
-        result.Findings.Should().Contain(x => x.Code == "package.suspicious");
-        result.Findings.Should().Contain(x => x.Code == "package.notApproved");
+        Assert.False(result.Compatible);
+        Assert.Contains(result.Findings, x => x.Code == "package.missing");
+        Assert.Contains(result.Findings, x => x.Code == "package.invalid");
+        Assert.Contains(result.Findings, x => x.Code == "package.suspicious");
+        Assert.Contains(result.Findings, x => x.Code == "package.notApproved");
     }
 
     [Fact]
@@ -36,9 +35,9 @@ public sealed class CompatibilityCheckServiceTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest("1.0.0", null, [Selection(source, "Elsa.Email")], []));
 
-        result.Compatible.Should().BeFalse();
-        result.Findings.Should().ContainSingle(x => x.Code == "package.invalid");
-        result.Findings.Should().NotContain(x => x.Code == "manifest.invalidJson");
+        Assert.False(result.Compatible);
+        Assert.Single(result.Findings, x => x.Code == "package.invalid");
+        Assert.DoesNotContain(result.Findings, x => x.Code == "manifest.invalidJson");
     }
 
     [Fact]
@@ -52,8 +51,8 @@ public sealed class CompatibilityCheckServiceTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest("1.0.0", null, [Selection(source, "Elsa.Email")], []));
 
-        result.Compatible.Should().BeFalse();
-        result.Findings.Should().ContainSingle(x => x.Code == "manifest.invalidJson");
+        Assert.False(result.Compatible);
+        Assert.Single(result.Findings, x => x.Code == "manifest.invalidJson");
     }
 
     [Fact]
@@ -64,10 +63,10 @@ public sealed class CompatibilityCheckServiceTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest("1.0.0", null, [new(Guid.Empty, null!, "1.0.0"), new(Guid.NewGuid(), "Elsa.Email", "")], []));
 
-        result.Compatible.Should().BeFalse();
-        queries.CallCount.Should().Be(0);
-        result.Findings.Should().HaveCount(2);
-        result.Findings.Should().OnlyContain(x => x.Code == "package.invalidSelection");
+        Assert.False(result.Compatible);
+        Assert.Equal(0, queries.CallCount);
+        Assert.Equal(2, result.Findings.Count());
+        Assert.All(result.Findings, x => Assert.Equal("package.invalidSelection", x.Code));
     }
 
     [Fact]
@@ -95,7 +94,7 @@ public sealed class CompatibilityCheckServiceTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Email")], ["email"]));
 
-        result.Findings.Should().ContainSingle(x => x.Code == "feature.packageDependency");
+        Assert.Single(result.Findings, x => x.Code == "feature.packageDependency");
     }
 
     [Fact]
@@ -125,7 +124,7 @@ public sealed class CompatibilityCheckServiceTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Email"), Selection(source, "Elsa.Smtp")], ["email"]));
 
-        result.Findings.Should().ContainSingle(x => x.Code == "feature.packageDependency");
+        Assert.Single(result.Findings, x => x.Code == "feature.packageDependency");
     }
 
     [Fact]
@@ -156,7 +155,7 @@ public sealed class CompatibilityCheckServiceTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(sourceA, "Elsa.Email"), Selection(sourceB, "Elsa.Smtp", "2.0.0")], ["email"]));
 
-        result.Findings.Should().NotContain(x => x.Code == "feature.packageDependency");
+        Assert.DoesNotContain(result.Findings, x => x.Code == "feature.packageDependency");
     }
 
     [Fact]
@@ -205,7 +204,7 @@ public sealed class CompatibilityCheckServiceTests
             [Selection(source, "Elsa"), Selection(source, "Elsa.Workflows.Management")],
             ["Elsa.Elsa", "Elsa.Workflows.Management.WorkflowManagement"]));
 
-        result.Findings.Should().NotContain(x => x.Code == "feature.missing" || x.Code == "feature.dependency");
+        Assert.DoesNotContain(result.Findings, x => x.Code == "feature.missing" || x.Code == "feature.dependency");
     }
 
     [Fact]
@@ -229,7 +228,7 @@ public sealed class CompatibilityCheckServiceTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Mixed")], ["server", "legacy"], RuntimeKinds: ["elsa.server"]));
 
-        result.Findings.Should().ContainSingle(x => x.Code == "feature.runtimeKindUnsupported" && x.Message.Contains("legacy"));
+        Assert.Single(result.Findings, x => x.Code == "feature.runtimeKindUnsupported" && x.Message.Contains("legacy"));
     }
 
     [Fact]
@@ -252,7 +251,7 @@ public sealed class CompatibilityCheckServiceTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Legacy")], ["legacy"]));
 
-        result.Findings.Should().NotContain(x => x.Code == "feature.runtimeKindUnsupported");
+        Assert.DoesNotContain(result.Findings, x => x.Code == "feature.runtimeKindUnsupported");
     }
 
     [Fact]
@@ -275,7 +274,7 @@ public sealed class CompatibilityCheckServiceTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Studio")], ["studio"], RuntimeKinds: ["elsa.server"]));
 
-        result.Findings.Should().ContainSingle(x => x.Code == "feature.runtimeKindUnsupported");
+        Assert.Single(result.Findings, x => x.Code == "feature.runtimeKindUnsupported");
     }
 
     [Fact]
@@ -298,7 +297,7 @@ public sealed class CompatibilityCheckServiceTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Server")], ["server"], RuntimeKinds: ["elsa.server", "elsa.studio"]));
 
-        result.Findings.Should().NotContain(x => x.Code == "feature.runtimeKindUnsupported");
+        Assert.DoesNotContain(result.Findings, x => x.Code == "feature.runtimeKindUnsupported");
     }
 
     [Fact]
@@ -324,8 +323,8 @@ public sealed class CompatibilityCheckServiceTests
         var serverResult = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Specialized")], ["inherits-package", "narrows-to-studio"], RuntimeKinds: ["elsa.server"]));
         var studioResult = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Specialized")], ["inherits-package", "narrows-to-studio"], RuntimeKinds: ["elsa.studio"]));
 
-        serverResult.Findings.Should().ContainSingle(x => x.Code == "feature.runtimeKindUnsupported" && x.Message.Contains("narrows-to-studio"));
-        studioResult.Findings.Should().ContainSingle(x => x.Code == "feature.runtimeKindUnsupported" && x.Message.Contains("inherits-package"));
+        Assert.Single(serverResult.Findings, x => x.Code == "feature.runtimeKindUnsupported" && x.Message.Contains("narrows-to-studio"));
+        Assert.Single(studioResult.Findings, x => x.Code == "feature.runtimeKindUnsupported" && x.Message.Contains("inherits-package"));
     }
 
     private static SelectedPackageVersion Selection(PackageSource source, string packageId, string version = "1.0.0") =>

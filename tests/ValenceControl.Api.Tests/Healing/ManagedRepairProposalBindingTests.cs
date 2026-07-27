@@ -1,7 +1,6 @@
 using ValenceControl.Api.Healing;
 using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.Agent;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests.Healing;
 
@@ -20,7 +19,7 @@ public sealed class ManagedRepairProposalBindingTests
             Usage = proposal.Usage with { RepositoryRunDuration = TimeSpan.FromSeconds(4), RepositoryRuns = 1 }
         };
 
-        ControlHealingWorkloadApi.MatchesProposal(result, proposal).Should().BeTrue();
+        Assert.True(ControlHealingWorkloadApi.MatchesProposal(result, proposal));
     }
 
     [Theory]
@@ -47,7 +46,7 @@ public sealed class ManagedRepairProposalBindingTests
             _ => throw new ArgumentOutOfRangeException(nameof(mutation))
         };
 
-        ControlHealingWorkloadApi.MatchesProposal(result, proposal).Should().BeFalse();
+        Assert.False(ControlHealingWorkloadApi.MatchesProposal(result, proposal));
     }
 
     private static ControlHealingWorkloadApi.StoredManagedProposal Proposal()

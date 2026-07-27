@@ -1,6 +1,5 @@
 using ValenceControl.RuntimeBuilder.Abstractions;
 using ValenceControl.RuntimeBuilder.Core.Builder;
-using FluentAssertions;
 
 namespace ValenceControl.RuntimeBuilder.Core.Tests;
 
@@ -11,12 +10,12 @@ public sealed class RuntimeImageCatalogTests
     {
         var images = new RuntimeImageCatalog().ListImages();
 
-        images.Select(x => x.Slug).Should().BeEquivalentTo("elsa-pro-server", "elsa-pro-studio", "elsa-pro-combined");
-        images.Should().OnlyContain(x => !string.IsNullOrWhiteSpace(x.Image));
-        images.Should().OnlyContain(x => x.DeploymentHints.SupportsDockerCompose);
-        images.Single(x => x.Slug == "elsa-pro-server").RuntimeKinds.Should().BeEquivalentTo("elsa.server");
-        images.Single(x => x.Slug == "elsa-pro-studio").RuntimeKinds.Should().BeEquivalentTo("elsa.studio");
-        images.Single(x => x.Slug == "elsa-pro-combined").RuntimeKinds.Should().BeEquivalentTo("elsa.server", "elsa.studio");
+        Assert.Equivalent(new[] { "elsa-pro-server", "elsa-pro-studio", "elsa-pro-combined" }, images.Select(x => x.Slug));
+        Assert.All(images, x => Assert.False(string.IsNullOrWhiteSpace(x.Image)));
+        Assert.All(images, x => Assert.True(x.DeploymentHints.SupportsDockerCompose));
+        Assert.Equivalent(new[] { "elsa.server" }, images.Single(x => x.Slug == "elsa-pro-server").RuntimeKinds);
+        Assert.Equivalent(new[] { "elsa.studio" }, images.Single(x => x.Slug == "elsa-pro-studio").RuntimeKinds);
+        Assert.Equivalent(new[] { "elsa.server", "elsa.studio" }, images.Single(x => x.Slug == "elsa-pro-combined").RuntimeKinds);
     }
 
     [Fact]
@@ -24,11 +23,11 @@ public sealed class RuntimeImageCatalogTests
     {
         var image = new RuntimeImageCatalog().Find("elsa-pro-combined");
 
-        image.Should().NotBeNull();
-        image!.Image.Should().Be("elsaworkflows/elsa-pro-combined");
-        image.DefaultPort.Should().Be(8080);
-        image.EnvVars.Should().NotBeEmpty();
-        image.Docs.DockerHubUrl.Should().NotBeNullOrWhiteSpace();
+        Assert.NotNull(image);
+        Assert.Equal("elsaworkflows/elsa-pro-combined", image!.Image);
+        Assert.Equal(8080, image.DefaultPort);
+        Assert.NotEmpty(image.EnvVars);
+        Assert.False(string.IsNullOrWhiteSpace(image.Docs.DockerHubUrl));
     }
 
     [Fact]
@@ -36,7 +35,7 @@ public sealed class RuntimeImageCatalogTests
     {
         var findings = new RuntimeImageValidator().Validate(new RuntimeImageCatalog().ListImages());
 
-        findings.Should().BeEmpty();
+        Assert.Empty(findings);
     }
 
     [Fact]
@@ -47,8 +46,8 @@ public sealed class RuntimeImageCatalogTests
 
         var findings = new RuntimeImageValidator().Validate([valid, invalid]);
 
-        findings.Should().Contain(x => x.Code == "runtimeImage.duplicateSlug");
-        findings.Should().Contain(x => x.Code == "runtimeImage.missingImage");
+        Assert.Contains(findings, x => x.Code == "runtimeImage.duplicateSlug");
+        Assert.Contains(findings, x => x.Code == "runtimeImage.missingImage");
     }
 
     [Fact]
@@ -70,9 +69,9 @@ public sealed class RuntimeImageCatalogTests
 
         var findings = new RuntimeImageValidator().Validate([valid, invalid]);
 
-        findings.Should().Contain(x => x.Code == "runtimeImage.invalidDefaultTag");
-        findings.Should().Contain(x => x.Code == "runtimeImage.duplicateEnvVar");
-        findings.Should().Contain(x => x.Code == "runtimeImage.brokenCompanion");
+        Assert.Contains(findings, x => x.Code == "runtimeImage.invalidDefaultTag");
+        Assert.Contains(findings, x => x.Code == "runtimeImage.duplicateEnvVar");
+        Assert.Contains(findings, x => x.Code == "runtimeImage.brokenCompanion");
     }
 
     [Fact]
@@ -87,7 +86,7 @@ public sealed class RuntimeImageCatalogTests
 
         var findings = new RuntimeImageValidator().Validate([valid, invalid]);
 
-        findings.Should().Contain(x => x.Code == "runtimeImage.blankRuntimeKind");
-        findings.Should().Contain(x => x.Code == "runtimeImage.duplicateRuntimeKind");
+        Assert.Contains(findings, x => x.Code == "runtimeImage.blankRuntimeKind");
+        Assert.Contains(findings, x => x.Code == "runtimeImage.duplicateRuntimeKind");
     }
 }

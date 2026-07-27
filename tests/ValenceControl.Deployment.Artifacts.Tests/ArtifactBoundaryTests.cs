@@ -1,6 +1,5 @@
 using System.Reflection;
 using System.Xml.Linq;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Artifacts.Tests;
 
@@ -112,9 +111,9 @@ public class ArtifactBoundaryTests
             .Single(file => file.FullName.Contains(Path.Combine("src", "ValenceControl.Deployment.Artifacts"), StringComparison.Ordinal));
         var references = ReferencesFrom(projectFile);
 
-        references.Should().Contain(reference => reference.Contains("ValenceControl.Deployment.Abstractions", StringComparison.Ordinal));
-        references.Should().Contain(reference => reference.Contains("ValenceControl.Deployment.Manifest", StringComparison.Ordinal));
-        references.Should().NotContain(reference =>
+        Assert.Contains(references, reference => reference.Contains("ValenceControl.Deployment.Abstractions", StringComparison.Ordinal));
+        Assert.Contains(references, reference => reference.Contains("ValenceControl.Deployment.Manifest", StringComparison.Ordinal));
+        Assert.DoesNotContain(references, reference =>
             _forbiddenReferenceFragments.Any(fragment => reference.Contains(fragment, StringComparison.OrdinalIgnoreCase)));
     }
 
@@ -128,14 +127,13 @@ public class ArtifactBoundaryTests
         var packageReferences = references.Where(reference => !reference.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)).ToArray();
         var allowedPackageReferences = new[]
         {
-            "FluentAssertions",
             "Microsoft.NET.Test.Sdk",
             "xunit",
             "xunit.runner.visualstudio"
         };
 
-        packageReferences.Should().OnlyContain(reference => allowedPackageReferences.Contains(reference));
-        references.Should().NotContain(reference =>
+        Assert.All(packageReferences, reference => Assert.True(allowedPackageReferences.Contains(reference)));
+        Assert.DoesNotContain(references, reference =>
             _forbiddenReferenceFragments.Any(fragment => reference.Contains(fragment, StringComparison.OrdinalIgnoreCase)));
     }
 
@@ -152,7 +150,7 @@ public class ArtifactBoundaryTests
                 .Select(file => File.ReadAllText(file.FullName)));
 
         foreach (var phrase in _forbiddenSourcePhrases)
-            sourceText.Contains(phrase, StringComparison.OrdinalIgnoreCase).Should().BeFalse($"deployment artifacts must not depend on {phrase}");
+            Assert.False(sourceText.Contains(phrase, StringComparison.OrdinalIgnoreCase), $"deployment artifacts must not depend on {phrase}");
     }
 
     [Fact]
@@ -168,7 +166,7 @@ public class ArtifactBoundaryTests
             .Order(StringComparer.Ordinal)
             .ToArray();
 
-        exposedContractFragments.Should().BeEmpty("artifact APIs should expose diagnostics/result contracts rather than engine, CLI, API, hosting, or persistence contracts");
+        Assert.Empty(exposedContractFragments);
     }
 
     private static IReadOnlyCollection<string> ReferencesFrom(FileInfo projectFile)

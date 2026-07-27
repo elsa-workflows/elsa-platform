@@ -1,6 +1,5 @@
 using ValenceControl.PackageManifest.Generator.Core.Generation;
 using ValenceControl.PackageManifest.Generator.Core.Validation;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifest.Generator.IntegrationTests;
 
@@ -18,8 +17,8 @@ public sealed class MultiTargetingManifestTests
 
         var selected = new MultiTargetManifestCoordinator().SelectCanonical(manifests, false, diagnostics);
 
-        selected.Should().Be(manifests["net10.0"]);
-        diagnostics.Items.Should().NotContain(x => x.Code == "EPMGEN_MULTITARGET_SURFACE_DIFFERS");
+        Assert.Equal(manifests["net10.0"], selected);
+        Assert.DoesNotContain(diagnostics.Items, x => x.Code == "EPMGEN_MULTITARGET_SURFACE_DIFFERS");
     }
 
     [Fact]
@@ -34,7 +33,7 @@ public sealed class MultiTargetingManifestTests
 
         new MultiTargetManifestCoordinator().SelectCanonical(manifests, false, diagnostics);
 
-        diagnostics.Items.Should().Contain(x => x.Code == "EPMGEN_MULTITARGET_SURFACE_DIFFERS" && x.Severity == GenerationDiagnosticSeverity.Error);
+        Assert.Contains(diagnostics.Items, x => x.Code == "EPMGEN_MULTITARGET_SURFACE_DIFFERS" && x.Severity == GenerationDiagnosticSeverity.Error);
     }
 
     private static string ManifestWithSetting(string settingName) =>

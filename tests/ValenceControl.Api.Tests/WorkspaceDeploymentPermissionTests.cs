@@ -3,7 +3,6 @@ using ValenceControl.Api.Workspace;
 using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.PackageCatalog.Core.Accounts;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -22,9 +21,9 @@ public sealed class WorkspaceDeploymentPermissionTests
         var engine = await owner.PostControlJsonAsync($"/api/workspaces/{workspaceId}/deployments/environments/{environment.Id}/engines", EngineRequest());
         var cockpit = await owner.GetControlJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
 
-        engine.StatusCode.Should().Be(HttpStatusCode.Created);
-        cockpit!.Applications.Should().ContainSingle(x => x.Name == "Claims Operations");
-        cockpit.Engines.Should().ContainSingle(x => x.Name == "claims-prod" && x.CredentialReference.Reference == "kv://claims/prod/elsa-api");
+        Assert.Equal(HttpStatusCode.Created, engine.StatusCode);
+        Assert.Single(cockpit!.Applications, x => x.Name == "Claims Operations");
+        Assert.Single(cockpit.Engines, x => x.Name == "claims-prod" && x.CredentialReference.Reference == "kv://claims/prod/elsa-api");
     }
 
     [Fact]
@@ -55,12 +54,12 @@ public sealed class WorkspaceDeploymentPermissionTests
             });
         var cockpit = await owner.GetControlJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
 
-        applicationUpdate.StatusCode.Should().Be(HttpStatusCode.OK);
-        environmentUpdate.StatusCode.Should().Be(HttpStatusCode.OK);
-        engineUpdate.StatusCode.Should().Be(HttpStatusCode.OK);
-        cockpit!.Applications.Should().ContainSingle(x => x.Name == "Claims Control");
-        cockpit.Applications.Single().Environments.Should().ContainSingle(x => x.Name == "Production");
-        cockpit.Engines.Should().ContainSingle(x =>
+        Assert.Equal(HttpStatusCode.OK, applicationUpdate.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, environmentUpdate.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, engineUpdate.StatusCode);
+        Assert.Single(cockpit!.Applications, x => x.Name == "Claims Control");
+        Assert.Single(cockpit.Applications.Single().Environments, x => x.Name == "Production");
+        Assert.Single(cockpit.Engines, x =>
             x.Name == "claims-prod-02"
             && x.Endpoint.BaseUrl == "https://workflows-02.example.test/elsa"
             && x.CredentialReference.Reference == "kv://claims/prod/elsa-api-v2");
@@ -78,7 +77,7 @@ public sealed class WorkspaceDeploymentPermissionTests
         var response = await app.CreateTrustedWorkspaceClient("reader")
             .PostControlJsonAsync($"/api/workspaces/{workspaceId}/deployments/applications", new WorkspaceDeploymentApplicationRequest("Denied", null));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -94,7 +93,7 @@ public sealed class WorkspaceDeploymentPermissionTests
         var response = await app.CreateTrustedWorkspaceClient("reader")
             .PutControlJsonAsync($"/api/workspaces/{workspaceId}/deployments/applications/{application.Id}", new WorkspaceDeploymentApplicationRequest("Denied", null));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -110,20 +109,20 @@ public sealed class WorkspaceDeploymentPermissionTests
         var response = await app.CreateTrustedWorkspaceClient("setup-member")
             .PostControlJsonAsync($"/api/workspaces/{workspaceId}/deployments/applications", new WorkspaceDeploymentApplicationRequest("Allowed", null));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
     private static async Task<WorkspaceDeploymentApplication> CreateApplicationAsync(HttpClient client, Guid workspaceId)
     {
         var response = await client.PostControlJsonAsync($"/api/workspaces/{workspaceId}/deployments/applications", new WorkspaceDeploymentApplicationRequest("Claims Operations", null));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadControlJsonAsync<WorkspaceDeploymentApplication>())!;
     }
 
     private static async Task<WorkspaceDeploymentEnvironment> CreateEnvironmentAsync(HttpClient client, Guid workspaceId, Guid applicationId)
     {
         var response = await client.PostControlJsonAsync($"/api/workspaces/{workspaceId}/deployments/applications/{applicationId}/environments", new WorkspaceDeploymentEnvironmentRequest("Prod", EnvironmentTier.Production));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadControlJsonAsync<WorkspaceDeploymentEnvironment>())!;
     }
 

@@ -1,5 +1,4 @@
 using ValenceControl.PackageCatalog.Core.Packages;
-using FluentAssertions;
 
 namespace ValenceControl.PackageCatalog.Core.Tests;
 
@@ -18,9 +17,9 @@ public sealed class PublicCatalogVisibilityTests
             ValidationStatus = ValidationStatus.Valid
         };
 
-        _policy.IsVisible(package, version).Should().BeTrue();
+        Assert.True(_policy.IsVisible(package, version));
 
         version.SuspiciousChangeDetected = true;
-        _policy.IsVisible(package, version).Should().BeFalse();
+        Assert.False(_policy.IsVisible(package, version));
     }
 }

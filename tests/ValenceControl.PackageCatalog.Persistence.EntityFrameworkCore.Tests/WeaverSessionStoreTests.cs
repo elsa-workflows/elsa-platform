@@ -1,7 +1,6 @@
 using System.Text.Json;
 using ValenceControl.Weaver.Core.Configuration;
 using ValenceControl.Weaver.Core.Sessions;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 
 namespace ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
@@ -67,12 +66,12 @@ public sealed class WeaverSessionStoreTests : IAsyncDisposable
         var messages = await _store.ListMessagesAsync(_workspaceId, session.Id);
         var plans = await _store.ListPlansAsync(_workspaceId, session.Id);
 
-        reloaded.Should().NotBeNull();
-        reloaded!.Context!.RootElement.GetProperty("route").GetString().Should().Be("deployment");
-        messages.Should().ContainSingle().Which.Content.Should().Be("What is wrong here?");
-        plans.Should().ContainSingle().Which.Title.Should().Be("Promote Test to Production");
+        Assert.NotNull(reloaded);
+        Assert.Equal("deployment", reloaded!.Context!.RootElement.GetProperty("route").GetString());
+        Assert.Equal("What is wrong here?", Assert.Single(messages).Content);
+        Assert.Equal("Promote Test to Production", Assert.Single(plans).Title);
         var toolCallCount = await CountRowsAsync("WeaverToolCalls");
-        toolCallCount.Should().Be(1);
+        Assert.Equal(1, toolCallCount);
     }
 
     [Fact]
@@ -91,9 +90,9 @@ public sealed class WeaverSessionStoreTests : IAsyncDisposable
 
         var act = () => _store.AddMessageAsync(otherWorkspaceId, message);
 
-        await act.Should().ThrowAsync<KeyNotFoundException>();
+        await Assert.ThrowsAsync<KeyNotFoundException>(act);
         var messageCount = await CountRowsAsync("WeaverMessages");
-        messageCount.Should().Be(0);
+        Assert.Equal(0, messageCount);
     }
 
     private WeaverSession NewSession()

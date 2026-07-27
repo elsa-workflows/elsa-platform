@@ -10,7 +10,7 @@ The test project may depend on:
 
 - `ValenceControl.Deployment.Abstractions`.
 - xUnit.
-- FluentAssertions.
+- xUnit's built-in assertions.
 - Microsoft.NET.Test.Sdk.
 
 ## Forbidden Dependencies

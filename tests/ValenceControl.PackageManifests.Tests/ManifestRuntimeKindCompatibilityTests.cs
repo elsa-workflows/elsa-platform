@@ -1,5 +1,4 @@
 using ValenceControl.PackageManifests.Validation;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifests.Tests;
 
@@ -27,7 +26,7 @@ public sealed class ManifestRuntimeKindCompatibilityTests
         }
         """);
 
-        result.IsValid.Should().BeTrue();
+        Assert.True(result.IsValid);
     }
 
     [Theory]
@@ -45,8 +44,8 @@ public sealed class ManifestRuntimeKindCompatibilityTests
         }
         """);
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.RuleId == ruleId);
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => x.RuleId == ruleId);
     }
 
     [Fact]
@@ -61,8 +60,8 @@ public sealed class ManifestRuntimeKindCompatibilityTests
         }
         """);
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.RuleId == "runtimeKind.duplicate");
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => x.RuleId == "runtimeKind.duplicate");
     }
 
     private static string JsonString(string value) => System.Text.Json.JsonSerializer.Serialize(value);

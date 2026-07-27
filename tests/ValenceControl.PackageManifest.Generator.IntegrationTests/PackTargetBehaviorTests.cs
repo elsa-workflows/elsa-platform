@@ -1,5 +1,4 @@
 using ValenceControl.PackageManifest.Generator.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifest.Generator.IntegrationTests;
 
@@ -11,16 +10,16 @@ public sealed class PackTargetBehaviorTests
         await using var project = CreateProjectWithReferencedFeatureAssembly();
 
         var build = await project.BuildAsync("Release");
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
-        File.Exists(project.ManifestPathForConfiguration("Release", "net10.0")).Should().BeTrue();
+        Assert.Equal(0, build.ExitCode);
+        Assert.True(File.Exists(project.ManifestPathForConfiguration("Release", "net10.0")));
 
         DeleteReferencedAssemblyCopies(project);
 
         var pack = await project.PackAsync("Release");
 
-        pack.ExitCode.Should().Be(0, pack.CombinedOutput);
+        Assert.Equal(0, pack.ExitCode);
         NuGetPackageInspector.AssertSingleEntry(project.ReleasePackagePath, "elsa-package.json");
-        NuGetPackageInspector.ReadEntry(project.ReleasePackagePath, "elsa-package.json").Should().Contain("Pack Feature");
+        Assert.Contains("Pack Feature", NuGetPackageInspector.ReadEntry(project.ReleasePackagePath, "elsa-package.json"));
     }
 
     [Fact]
@@ -30,8 +29,8 @@ public sealed class PackTargetBehaviorTests
 
         var pack = await project.PackWithBuildAsync("Release");
 
-        pack.ExitCode.Should().Be(0, pack.CombinedOutput);
-        File.Exists(project.ManifestPathForConfiguration("Release", "net10.0")).Should().BeTrue();
+        Assert.Equal(0, pack.ExitCode);
+        Assert.True(File.Exists(project.ManifestPathForConfiguration("Release", "net10.0")));
         NuGetPackageInspector.AssertSingleEntry(project.ReleasePackagePath, "elsa-package.json");
     }
 
@@ -49,10 +48,10 @@ public sealed class PackTargetBehaviorTests
 
         var pack = await project.PackWithBuildAsync("Release");
 
-        pack.ExitCode.Should().Be(0, pack.CombinedOutput);
-        pack.CombinedOutput.Should().NotContain("Could not find assembly");
+        Assert.Equal(0, pack.ExitCode);
+        Assert.DoesNotContain("Could not find assembly", pack.CombinedOutput);
         NuGetPackageInspector.AssertSingleEntry(project.ReleasePackagePath, "elsa-package.json");
-        NuGetPackageInspector.ReadEntry(project.ReleasePackagePath, "elsa-package.json").Should().Contain("Pack Feature");
+        Assert.Contains("Pack Feature", NuGetPackageInspector.ReadEntry(project.ReleasePackagePath, "elsa-package.json"));
     }
 
     [Fact]
@@ -68,8 +67,8 @@ public sealed class PackTargetBehaviorTests
 
         var pack = await project.PackWithBuildAsync("Release");
 
-        pack.ExitCode.Should().Be(0, pack.CombinedOutput);
-        pack.CombinedOutput.Should().NotContain("Assembly path does not exist");
+        Assert.Equal(0, pack.ExitCode);
+        Assert.DoesNotContain("Assembly path does not exist", pack.CombinedOutput);
     }
 
     [Fact]
@@ -79,10 +78,10 @@ public sealed class PackTargetBehaviorTests
 
         var pack = await project.PackAsync("Release");
 
-        pack.ExitCode.Should().NotBe(0, pack.CombinedOutput);
-        pack.CombinedOutput.Should().Contain("Elsa package manifest was not found");
-        pack.CombinedOutput.Should().Contain("dotnet build");
-        pack.CombinedOutput.Should().Contain("--no-build");
+        Assert.True(pack.ExitCode != 0, pack.CombinedOutput);
+        Assert.Contains("Elsa package manifest was not found", pack.CombinedOutput);
+        Assert.Contains("dotnet build", pack.CombinedOutput);
+        Assert.Contains("--no-build", pack.CombinedOutput);
     }
 
     [Fact]
@@ -96,7 +95,7 @@ public sealed class PackTargetBehaviorTests
 
         var pack = await project.PackWithBuildAsync("Release");
 
-        pack.ExitCode.Should().Be(0, pack.CombinedOutput);
+        Assert.Equal(0, pack.ExitCode);
         NuGetPackageInspector.AssertSingleEntry(project.ReleasePackagePath, "elsa-package.json");
     }
 

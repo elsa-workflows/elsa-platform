@@ -1,5 +1,4 @@
 using ValenceControl.Healing.Core.Reporting;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.Core.Tests.Reporting;
 
@@ -15,13 +14,15 @@ public sealed class HealingReportingServiceTests
         var service = new HealingReportingService(store, new FixedTimeProvider(Now));
 
         await service.GetUsageAsync(new(WorkspaceId, To: Now.AddDays(-10)));
-        store.LastOverviewQuery!.From.Should().Be(Now.AddDays(-376));
-        store.LastOverviewQuery.To.Should().Be(Now.AddDays(-10));
+        Assert.Equal(Now.AddDays(-376), store.LastOverviewQuery!.From);
+        Assert.Equal(Now.AddDays(-10), store.LastOverviewQuery.To);
 
         Func<Task> overlong = async () => await service.GetUsageAsync(new(WorkspaceId, From: Now.AddDays(-367)));
         Func<Task> future = async () => await service.GetUsageAsync(new(WorkspaceId, From: Now.AddDays(2)));
-        await overlong.Should().ThrowAsync<ArgumentException>().WithMessage("*cannot exceed 366 days*");
-        await future.Should().ThrowAsync<ArgumentException>().WithMessage("*cannot be in the future*");
+        var overlongException = await Assert.ThrowsAsync<ArgumentException>(overlong);
+        Assert.Matches(".*cannot exceed 366 days.*", overlongException.Message);
+        var futureException = await Assert.ThrowsAsync<ArgumentException>(future);
+        Assert.Matches(".*cannot be in the future.*", futureException.Message);
     }
 
     [Fact]
@@ -32,8 +33,8 @@ public sealed class HealingReportingServiceTests
 
         await service.GetOverviewAsync(new(WorkspaceId));
 
-        store.LastOverviewQuery!.From.Should().Be(Now.AddDays(-366));
-        store.LastOverviewQuery.To.Should().Be(Now);
+        Assert.Equal(Now.AddDays(-366), store.LastOverviewQuery!.From);
+        Assert.Equal(Now, store.LastOverviewQuery.To);
     }
 
     [Fact]
@@ -52,11 +53,11 @@ public sealed class HealingReportingServiceTests
 
         var usage = await service.GetUsageAsync(new(WorkspaceId));
 
-        usage.InputUnits.Should().Be(long.MaxValue);
-        usage.OutputUnits.Should().Be(long.MaxValue);
-        usage.RepositoryRuns.Should().Be(long.MaxValue);
-        usage.AgentDurationSeconds.Should().Be(TimeSpan.MaxValue.TotalSeconds);
-        usage.RepositoryRunDurationSeconds.Should().Be(TimeSpan.MaxValue.TotalSeconds);
+        Assert.Equal(long.MaxValue, usage.InputUnits);
+        Assert.Equal(long.MaxValue, usage.OutputUnits);
+        Assert.Equal(long.MaxValue, usage.RepositoryRuns);
+        Assert.Equal(TimeSpan.MaxValue.TotalSeconds, usage.AgentDurationSeconds);
+        Assert.Equal(TimeSpan.MaxValue.TotalSeconds, usage.RepositoryRunDurationSeconds);
     }
 
     [Fact]
@@ -74,9 +75,9 @@ public sealed class HealingReportingServiceTests
 
         var page = await service.GetAuditAsync(new(WorkspaceId));
 
-        page.Items.Should().ContainSingle();
-        page.Items[0].ActorId.Should().Be("redacted");
-        page.Items[0].Details.Should().BeEmpty();
+        Assert.Single(page.Items);
+        Assert.Equal("redacted", page.Items[0].ActorId);
+        Assert.Empty(page.Items[0].Details);
     }
 
     private static readonly HealingUsageReport EmptyUsage = new(

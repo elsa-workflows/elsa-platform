@@ -1,6 +1,5 @@
 using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
-using FluentAssertions;
 using Xunit;
 
 namespace ValenceControl.Deployment.Core.Tests;
@@ -18,29 +17,32 @@ public sealed class DeploymentTierServiceTests
 
         var capabilities = service.GetCapabilityCatalog();
 
-        capabilities.Should().Contain(x => x.Id == DeploymentTierCapabilities.ProductionLike);
-        capabilities.Should().Contain(x => x.Id == DeploymentTierCapabilities.PromotionSource);
-        capabilities.Should().Contain(x => x.Id == DeploymentTierCapabilities.PromotionTarget);
-        capabilities.Should().Contain(x => x.Id == DeploymentTierCapabilities.ConfirmationRequired);
-        capabilities.Select(x => x.Id).Should().OnlyHaveUniqueItems();
+        Assert.Contains(capabilities, x => x.Id == DeploymentTierCapabilities.ProductionLike);
+        Assert.Contains(capabilities, x => x.Id == DeploymentTierCapabilities.PromotionSource);
+        Assert.Contains(capabilities, x => x.Id == DeploymentTierCapabilities.PromotionTarget);
+        Assert.Contains(capabilities, x => x.Id == DeploymentTierCapabilities.ConfirmationRequired);
+        Assert.Equal(capabilities.Select(x => x.Id).Distinct().Count(), capabilities.Select(x => x.Id).Count());
     }
 
     [Fact]
     public void Default_tier_mappings_preserve_legacy_semantics()
     {
-        DeploymentTierService.DefaultCapabilitiesByLegacyTier[EnvironmentTier.Dev].Should().BeEquivalentTo(
-            [DeploymentTierCapabilities.DevelopmentLike, DeploymentTierCapabilities.PromotionSource]);
-        DeploymentTierService.DefaultCapabilitiesByLegacyTier[EnvironmentTier.Test].Should().Contain(DeploymentTierCapabilities.PromotionTarget);
-        DeploymentTierService.DefaultCapabilitiesByLegacyTier[EnvironmentTier.Stage].Should().Contain(DeploymentTierCapabilities.SecretVerificationRequired);
-        DeploymentTierService.DefaultCapabilitiesByLegacyTier[EnvironmentTier.Production].Should().BeEquivalentTo(
-            [
+        Assert.Equivalent(
+            new[] { DeploymentTierCapabilities.DevelopmentLike, DeploymentTierCapabilities.PromotionSource },
+            DeploymentTierService.DefaultCapabilitiesByLegacyTier[EnvironmentTier.Dev]);
+        Assert.Contains(DeploymentTierCapabilities.PromotionTarget, DeploymentTierService.DefaultCapabilitiesByLegacyTier[EnvironmentTier.Test]);
+        Assert.Contains(DeploymentTierCapabilities.SecretVerificationRequired, DeploymentTierService.DefaultCapabilitiesByLegacyTier[EnvironmentTier.Stage]);
+        Assert.Equivalent(
+            new[]
+            {
                 DeploymentTierCapabilities.ProductionLike,
                 DeploymentTierCapabilities.PromotionTarget,
                 DeploymentTierCapabilities.ConfirmationRequired,
                 DeploymentTierCapabilities.RollbackEnabled,
                 DeploymentTierCapabilities.SecretVerificationRequired,
                 DeploymentTierCapabilities.ObservabilityRequired
-            ]);
+            },
+            DeploymentTierService.DefaultCapabilitiesByLegacyTier[EnvironmentTier.Production]);
     }
 
     [Fact]
@@ -52,8 +54,8 @@ public sealed class DeploymentTierServiceTests
             _workspaceId,
             new CreateDeploymentTierRequest("UAT", null, 10, ["deployment.unknown"], null));
 
-        await act.Should().ThrowAsync<ArgumentException>();
-        _store.CreatedRequests.Should().BeEmpty();
+        await Assert.ThrowsAsync<ArgumentException>(act);
+        Assert.Empty(_store.CreatedRequests);
     }
 
     [Fact]
@@ -66,8 +68,9 @@ public sealed class DeploymentTierServiceTests
             _workspaceId,
             new CreateDeploymentTierRequest("Production", null, 10, [DeploymentTierCapabilities.ProductionLike], null));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("An active deployment tier with the same name already exists in this workspace.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("An active deployment tier with the same name already exists in this workspace.", exception.Message);
     }
 
     [Fact]
@@ -84,10 +87,10 @@ public sealed class DeploymentTierServiceTests
                 [DeploymentTierCapabilities.PromotionTarget, " ", DeploymentTierCapabilities.PromotionTarget, DeploymentTierCapabilities.PreproductionLike],
                 null));
 
-        _store.CreatedRequests.Should().ContainSingle();
-        _store.CreatedRequests.Single().Capabilities.Should().Equal(
-            DeploymentTierCapabilities.PromotionTarget,
-            DeploymentTierCapabilities.PreproductionLike);
+        Assert.Single(_store.CreatedRequests);
+        Assert.Equal(
+            new[] { DeploymentTierCapabilities.PromotionTarget, DeploymentTierCapabilities.PreproductionLike },
+            _store.CreatedRequests.Single().Capabilities);
     }
 
     [Fact]
@@ -115,8 +118,8 @@ public sealed class DeploymentTierServiceTests
                 ImpactAccepted: false,
                 ActorAccountId: null));
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
-        _store.UpdatedRequests.Should().BeEmpty();
+        await Assert.ThrowsAsync<InvalidOperationException>(act);
+        Assert.Empty(_store.UpdatedRequests);
     }
 
     [Fact]
@@ -127,9 +130,10 @@ public sealed class DeploymentTierServiceTests
 
         var act = () => service.ArchiveTierAsync(_workspaceId, _tierId, new ArchiveDeploymentTierRequest(null));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("At least one active deployment tier is required.");
-        _store.ArchivedTierIds.Should().ContainSingle().Which.Should().Be(_tierId);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("At least one active deployment tier is required.", exception.Message);
+        Assert.Equal(_tierId, Assert.Single(_store.ArchivedTierIds));
     }
 
     [Fact]
@@ -149,9 +153,9 @@ public sealed class DeploymentTierServiceTests
             DeploymentTierStatus.Active.ToString(),
             [DeploymentTierCapabilities.ProductionLike, DeploymentTierCapabilities.ConfirmationRequired]);
 
-        DeploymentTierService.IsProductionLike(environment).Should().BeTrue();
-        DeploymentTierService.RequiresConfirmation(environment).Should().BeTrue();
-        DeploymentTierService.IsPromotionTarget(environment).Should().BeFalse();
+        Assert.True(DeploymentTierService.IsProductionLike(environment));
+        Assert.True(DeploymentTierService.RequiresConfirmation(environment));
+        Assert.False(DeploymentTierService.IsPromotionTarget(environment));
     }
 
     private sealed class RecordingTierStore : IWorkspaceDeploymentTierStore

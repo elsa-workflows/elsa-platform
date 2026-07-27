@@ -1,6 +1,5 @@
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Core.Security;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.Core.Tests;
 
@@ -19,8 +18,8 @@ public sealed class HealingAuditServiceTests
 
         var act = () => service.AppendAsync(write).AsTask();
 
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("*accessToken*not permitted*");
+        var exception = await Assert.ThrowsAsync<ArgumentException>(act);
+        Assert.Matches(".*accessToken.*not permitted.*", exception.Message);
     }
 
     [Fact]
@@ -39,9 +38,9 @@ public sealed class HealingAuditServiceTests
 
         var appended = await service.AppendAsync(write);
 
-        appended.Sequence.Should().Be(1);
-        appended.OccurredAt.Should().Be(Now);
-        appended.SafeDetailJson.Should().Be("{\"attemptCount\":\"1\",\"status\":\"ready\"}");
+        Assert.Equal(1, appended.Sequence);
+        Assert.Equal(Now, appended.OccurredAt);
+        Assert.Equal("{\"attemptCount\":\"1\",\"status\":\"ready\"}", appended.SafeDetailJson);
     }
 
     [Fact]
@@ -55,8 +54,8 @@ public sealed class HealingAuditServiceTests
 
         var act = () => service.AppendAsync(write).AsTask();
 
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("*providerOutcome*credential material*");
+        var exception = await Assert.ThrowsAsync<ArgumentException>(act);
+        Assert.Matches(".*providerOutcome.*credential material.*", exception.Message);
     }
 
     [Fact]
@@ -67,8 +66,8 @@ public sealed class HealingAuditServiceTests
 
         var act = () => service.AppendAsync(write).AsTask();
 
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("*ActorId*unsafe audit material*");
+        var exception = await Assert.ThrowsAsync<ArgumentException>(act);
+        Assert.Matches(".*ActorId.*unsafe audit material.*", exception.Message);
     }
 
     [Theory]
@@ -85,8 +84,8 @@ public sealed class HealingAuditServiceTests
 
         var act = () => service.AppendAsync(write).AsTask();
 
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("*providerOutcome*");
+        var exception = await Assert.ThrowsAsync<ArgumentException>(act);
+        Assert.Matches(".*providerOutcome.*", exception.Message);
     }
 
     [Fact]
@@ -100,8 +99,8 @@ public sealed class HealingAuditServiceTests
 
         var act = () => service.AppendAsync(write).AsTask();
 
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("*detail*not registered*");
+        var exception = await Assert.ThrowsAsync<ArgumentException>(act);
+        Assert.Matches(".*detail.*not registered.*", exception.Message);
     }
 
     private static HealingAuditWrite ValidWrite() => new(

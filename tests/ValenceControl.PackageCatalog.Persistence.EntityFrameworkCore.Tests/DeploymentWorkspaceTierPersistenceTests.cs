@@ -3,7 +3,6 @@ using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -39,18 +38,18 @@ public sealed class DeploymentWorkspaceTierPersistenceTests : IDisposable
     {
         var tiers = await _store.EnsureDefaultTiersAsync(_workspaceId, _accountId);
 
-        tiers.Should().HaveCount(4);
-        tiers.Should().Contain(x =>
+        Assert.Equal(4, tiers.Count());
+        Assert.Contains(tiers, x =>
             x.Name == EnvironmentTier.Dev.ToString()
             && x.IsDefault
             && x.Capabilities.SequenceEqual(DeploymentTierService.DefaultCapabilitiesByLegacyTier[EnvironmentTier.Dev].Order(StringComparer.Ordinal)));
-        tiers.Should().Contain(x =>
+        Assert.Contains(tiers, x =>
             x.Name == EnvironmentTier.Production.ToString()
             && x.Capabilities.Contains(DeploymentTierCapabilities.ProductionLike)
             && x.Capabilities.Contains(DeploymentTierCapabilities.ConfirmationRequired)
             && x.Capabilities.Contains(DeploymentTierCapabilities.RollbackEnabled));
-        (await CountRowsAsync("DeploymentTierDefinitions")).Should().Be(4);
-        (await CountRowsAsync("DeploymentTierChangeRecords")).Should().Be(4);
+        Assert.Equal(4, (await CountRowsAsync("DeploymentTierDefinitions")));
+        Assert.Equal(4, (await CountRowsAsync("DeploymentTierChangeRecords")));
     }
 
     [Fact]
@@ -84,11 +83,11 @@ public sealed class DeploymentWorkspaceTierPersistenceTests : IDisposable
         var archived = await _store.ArchiveTierAsync(_workspaceId, created.Id, new ArchiveDeploymentTierRequest(_accountId));
         var restored = await _store.RestoreTierAsync(_workspaceId, created.Id, new RestoreDeploymentTierRequest(_accountId));
 
-        updated.Description.Should().Be("Final validation");
-        updated.Capabilities.Should().Contain(DeploymentTierCapabilities.SecretVerificationRequired);
-        archived.Status.Should().Be(DeploymentTierStatus.Archived);
-        restored.Status.Should().Be(DeploymentTierStatus.Active);
-        (await CountRowsAsync("DeploymentTierChangeRecords", "TierId", created.Id)).Should().Be(4);
+        Assert.Equal("Final validation", updated.Description);
+        Assert.Contains(DeploymentTierCapabilities.SecretVerificationRequired, updated.Capabilities);
+        Assert.Equal(DeploymentTierStatus.Archived, archived.Status);
+        Assert.Equal(DeploymentTierStatus.Active, restored.Status);
+        Assert.Equal(4, (await CountRowsAsync("DeploymentTierChangeRecords", "TierId", created.Id)));
     }
 
     [Fact]
@@ -103,7 +102,7 @@ public sealed class DeploymentWorkspaceTierPersistenceTests : IDisposable
             _workspaceId,
             new CreateDeploymentTierRequest("UAT", null, 60, [DeploymentTierCapabilities.TestLike], null));
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await Assert.ThrowsAsync<InvalidOperationException>(act);
     }
 
     [Fact]
@@ -116,7 +115,7 @@ public sealed class DeploymentWorkspaceTierPersistenceTests : IDisposable
 
         var act = () => _store.ArchiveTierAsync(_workspaceId, lastActive.Id, new ArchiveDeploymentTierRequest(null));
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await Assert.ThrowsAsync<InvalidOperationException>(act);
     }
 
     [Fact]
@@ -132,8 +131,8 @@ public sealed class DeploymentWorkspaceTierPersistenceTests : IDisposable
         _db.ChangeTracker.Clear();
         var cockpit = await _store.GetCockpitAsync(_workspaceId);
 
-        environment.TierId.Should().Be(productionTier.Id);
-        cockpit.Applications.Single().Environments.Should().ContainSingle(x =>
+        Assert.Equal(productionTier.Id, environment.TierId);
+        Assert.Single(cockpit.Applications.Single().Environments, x =>
             x.Id == environment.Id.ToString("D")
             && x.TierName == EnvironmentTier.Production.ToString()
             && x.TierStatus == DeploymentTierStatus.Archived.ToString()
@@ -157,8 +156,8 @@ public sealed class DeploymentWorkspaceTierPersistenceTests : IDisposable
             _workspaceId,
             new CreateDeploymentEnvironmentRequest(application.Id, "QA", EnvironmentTier.Test, otherTier.Id));
 
-        await archived.Should().ThrowAsync<InvalidOperationException>();
-        await crossWorkspace.Should().ThrowAsync<InvalidOperationException>();
+        await Assert.ThrowsAsync<InvalidOperationException>(archived);
+        await Assert.ThrowsAsync<InvalidOperationException>(crossWorkspace);
     }
 
     [Fact]
@@ -173,7 +172,7 @@ public sealed class DeploymentWorkspaceTierPersistenceTests : IDisposable
         var loaded = await _store.GetCockpitAsync(_workspaceId);
         var productionTier = tiers.Single(x => x.Name == EnvironmentTier.Production.ToString());
 
-        loaded.Applications.Single().Environments.Should().ContainSingle(x =>
+        Assert.Single(loaded.Applications.Single().Environments, x =>
             x.Id == environment.Id.ToString("D")
             && x.TierName == productionTier.Name
             && x.TierCapabilities != null
@@ -193,7 +192,7 @@ public sealed class DeploymentWorkspaceTierPersistenceTests : IDisposable
 
         var tiers = await store.EnsureDefaultTiersAsync(workspace.Id);
 
-        tiers.Should().HaveCount(4);
+        Assert.Equal(4, tiers.Count());
     }
 
     [Fact]
@@ -234,8 +233,8 @@ public sealed class DeploymentWorkspaceTierPersistenceTests : IDisposable
 
         await migrator.MigrateAsync("20260527131902_AddCustomDeploymentTiers");
 
-        (await CountRowsAsync(db, "DeploymentTierDefinitions")).Should().Be(4);
-        (await CountRowsAsync(db, "DeploymentTierCapabilityAssignments")).Should().Be(15);
+        Assert.Equal(4, (await CountRowsAsync(db, "DeploymentTierDefinitions")));
+        Assert.Equal(15, (await CountRowsAsync(db, "DeploymentTierCapabilityAssignments")));
         var productionCapabilityCount = await CountRowsAsync(
             db,
             """
@@ -248,7 +247,7 @@ public sealed class DeploymentWorkspaceTierPersistenceTests : IDisposable
               AND capabilities.CapabilityId = 'deployment.tier.production-like'
             """,
             environmentId);
-        productionCapabilityCount.Should().Be(1);
+        Assert.Equal(1, productionCapabilityCount);
 
         var store = new DeploymentWorkspaceStore(db);
         var productionTier = (await store.ListTiersAsync(workspaceId)).Single(x => x.Name == EnvironmentTier.Production.ToString());
@@ -256,7 +255,7 @@ public sealed class DeploymentWorkspaceTierPersistenceTests : IDisposable
             workspaceId,
             new CreateDeploymentEnvironmentRequest(applicationId, "Prod EU", EnvironmentTier.Production, productionTier.Id));
 
-        createdEnvironment.TierId.Should().Be(productionTier.Id);
+        Assert.Equal(productionTier.Id, createdEnvironment.TierId);
     }
 
     [Fact]
@@ -282,9 +281,9 @@ public sealed class DeploymentWorkspaceTierPersistenceTests : IDisposable
         var tiers = await _store.ListTiersAsync(_workspaceId);
         stopwatch.Stop();
 
-        tiers.Should().HaveCount(20);
-        tiers.Sum(x => x.EnvironmentCount).Should().Be(250);
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+        Assert.Equal(20, tiers.Count());
+        Assert.Equal(250, tiers.Sum(x => x.EnvironmentCount));
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(3));
     }
 
     public void Dispose() => _db.Dispose();

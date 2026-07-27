@@ -1,4 +1,3 @@
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -19,11 +18,9 @@ public sealed class HealingDatabaseProviderTests
 
         var db = scope.ServiceProvider.GetRequiredService<HealingDbContext>();
 
-        db.Database.ProviderName.Should().Be("Microsoft.EntityFrameworkCore.Sqlite");
-        db.GetService<IMigrationsAssembly>().Assembly.GetName().Name
-            .Should().Be(HealingDatabaseServiceCollectionExtensions.SqliteMigrationsAssembly);
-        db.GetService<IHistoryRepository>().GetCreateScript()
-            .Should().Contain(HealingDatabaseServiceCollectionExtensions.MigrationsHistoryTable);
+        Assert.Equal("Microsoft.EntityFrameworkCore.Sqlite", db.Database.ProviderName);
+        Assert.Equal(HealingDatabaseServiceCollectionExtensions.SqliteMigrationsAssembly, db.GetService<IMigrationsAssembly>().Assembly.GetName().Name);
+        Assert.Contains(HealingDatabaseServiceCollectionExtensions.MigrationsHistoryTable, db.GetService<IHistoryRepository>().GetCreateScript());
     }
 
     [Fact]
@@ -39,12 +36,11 @@ public sealed class HealingDatabaseProviderTests
 
         var db = scope.ServiceProvider.GetRequiredService<HealingDbContext>();
 
-        db.Database.ProviderName.Should().Be("Microsoft.EntityFrameworkCore.SqlServer");
-        db.GetService<IMigrationsAssembly>().Assembly.GetName().Name
-            .Should().Be(HealingDatabaseServiceCollectionExtensions.SqlServerMigrationsAssembly);
-        db.GetService<IHistoryRepository>().GetCreateScript()
-            .Should().Contain(HealingDatabaseServiceCollectionExtensions.MigrationsHistoryTable)
-            .And.NotContain("__EFMigrationsHistory_Catalog");
+        Assert.Equal("Microsoft.EntityFrameworkCore.SqlServer", db.Database.ProviderName);
+        Assert.Equal(HealingDatabaseServiceCollectionExtensions.SqlServerMigrationsAssembly, db.GetService<IMigrationsAssembly>().Assembly.GetName().Name);
+        var createScript = db.GetService<IHistoryRepository>().GetCreateScript();
+        Assert.Contains(HealingDatabaseServiceCollectionExtensions.MigrationsHistoryTable, createScript);
+        Assert.DoesNotContain("__EFMigrationsHistory_Catalog", createScript);
     }
 
     private static ServiceProvider BuildProvider(IReadOnlyDictionary<string, string?> settings)

@@ -2,7 +2,6 @@ using System.Net;
 using System.Text.Json;
 using ValenceControl.Deployment.Artifacts;
 using ValenceControl.Studio.Submit;
-using FluentAssertions;
 
 namespace ValenceControl.Studio.Submit.Tests;
 
@@ -30,18 +29,18 @@ public sealed class StudioControlArtifactSubmitClientTests
 
         var result = await client.SubmitAsync(Package(), _options);
 
-        result.Status.Should().Be(StudioSubmitStatus.Submitted);
-        result.ArtifactId.Should().Be("elsa.loom.recipe:payment-retry:abc");
-        result.ArtifactDigest.Should().Be("sha256:abc");
-        handler.RequestUri.Should().Be(new Uri("https://control.example.test/api/workspaces/10000000-0000-0000-0000-000000000001/artifacts"));
+        Assert.Equal(StudioSubmitStatus.Submitted, result.Status);
+        Assert.Equal("elsa.loom.recipe:payment-retry:abc", result.ArtifactId);
+        Assert.Equal("sha256:abc", result.ArtifactDigest);
+        Assert.Equal(new Uri("https://control.example.test/api/workspaces/10000000-0000-0000-0000-000000000001/artifacts"), handler.RequestUri);
         using var document = JsonDocument.Parse(handler.RequestBody!);
-        document.RootElement.GetProperty("artifactTypeId").GetString().Should().Be("elsa.loom.recipe");
-        document.RootElement.GetProperty("format").GetString().Should().Be("Unknown");
-        document.RootElement.GetProperty("manifest").GetProperty("environment").ValueKind.Should().Be(JsonValueKind.Null);
-        document.RootElement.GetProperty("payloadReference").GetProperty("provider").GetString().Should().Be("producer-managed");
-        document.RootElement.GetProperty("displayMetadata").GetProperty("source").GetString().Should().Be("studio://workflows/payment-retry");
-        handler.RequestBody.Should().NotContain("WorkflowDefinitionJson");
-        handler.RequestBody.Should().NotContain("PaymentRetry");
+        Assert.Equal("elsa.loom.recipe", document.RootElement.GetProperty("artifactTypeId").GetString());
+        Assert.Equal("Unknown", document.RootElement.GetProperty("format").GetString());
+        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("manifest").GetProperty("environment").ValueKind);
+        Assert.Equal("producer-managed", document.RootElement.GetProperty("payloadReference").GetProperty("provider").GetString());
+        Assert.Equal("studio://workflows/payment-retry", document.RootElement.GetProperty("displayMetadata").GetProperty("source").GetString());
+        Assert.DoesNotContain("WorkflowDefinitionJson", handler.RequestBody);
+        Assert.DoesNotContain("PaymentRetry", handler.RequestBody);
     }
 
     [Theory]
@@ -56,9 +55,9 @@ public sealed class StudioControlArtifactSubmitClientTests
 
         var result = await client.SubmitAsync(Package(), _options);
 
-        result.Status.Should().Be(expectedStatus);
-        result.Message.Should().NotContain("Bearer");
-        result.Message.Should().Contain("[redacted]");
+        Assert.Equal(expectedStatus, result.Status);
+        Assert.DoesNotContain("Bearer", result.Message);
+        Assert.Contains("[redacted]", result.Message);
     }
 
     [Fact]
@@ -76,9 +75,9 @@ public sealed class StudioControlArtifactSubmitClientTests
 
         var result = await client.SubmitAsync(Package(), _options);
 
-        result.Status.Should().Be(StudioSubmitStatus.Duplicate);
-        result.Succeeded.Should().BeTrue();
-        result.Message.Should().Be("Artifact already exists in Control.");
+        Assert.Equal(StudioSubmitStatus.Duplicate, result.Status);
+        Assert.True(result.Succeeded);
+        Assert.Equal("Artifact already exists in Control.", result.Message);
     }
 
     [Fact]
@@ -89,9 +88,9 @@ public sealed class StudioControlArtifactSubmitClientTests
 
         var result = await client.SubmitAsync(Package(), _options);
 
-        result.Status.Should().Be(StudioSubmitStatus.RetryableError);
-        result.Succeeded.Should().BeFalse();
-        result.Message.Should().Be("Control submission response could not be read.");
+        Assert.Equal(StudioSubmitStatus.RetryableError, result.Status);
+        Assert.False(result.Succeeded);
+        Assert.Equal("Control submission response could not be read.", result.Message);
     }
 
     [Fact]
@@ -102,8 +101,8 @@ public sealed class StudioControlArtifactSubmitClientTests
 
         var result = await client.SubmitAsync(Package(), _options);
 
-        result.Status.Should().Be(StudioSubmitStatus.RetryableError);
-        result.Message.Should().Be("Service Unavailable");
+        Assert.Equal(StudioSubmitStatus.RetryableError, result.Status);
+        Assert.Equal("Service Unavailable", result.Message);
     }
 
     private StudioSubmitPackage Package() =>

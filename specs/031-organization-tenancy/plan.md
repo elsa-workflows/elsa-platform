@@ -12,7 +12,7 @@ Introduce a first-class `Organization` aggregate above workspaces and move the c
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: ASP.NET Core authentication/authorization, ASP.NET Core cookies, JWT bearer validation, EF Core, existing `ValenceControl.PackageCatalog.Core.Accounts` account/workspace services, existing workspace authorization helpers, React Router, TanStack Query, Vitest, Playwright where needed, xUnit, and FluentAssertions.
+**Primary Dependencies**: ASP.NET Core authentication/authorization, ASP.NET Core cookies, JWT bearer validation, EF Core, existing `ValenceControl.PackageCatalog.Core.Accounts` account/workspace services, existing workspace authorization helpers, React Router, TanStack Query, Vitest, Playwright where needed, xUnit and its built-in assertions.
 
 **Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Organization tables store customer tenant records, memberships, entitlements, workspace ownership references, and safe audit metadata.
 

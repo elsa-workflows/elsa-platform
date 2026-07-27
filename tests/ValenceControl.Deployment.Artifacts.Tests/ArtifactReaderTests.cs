@@ -1,6 +1,5 @@
 using System.IO.Compression;
 using System.Text.Json.Nodes;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Artifacts.Tests;
 
@@ -17,12 +16,12 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var result = await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        result.Diagnostics.Should().BeEmpty();
-        result.Succeeded.Should().BeTrue();
-        result.ArtifactId.Should().StartWith("sha256:");
-        result.Metadata!.LayoutVersion.Should().Be(ArtifactLayoutConstants.LayoutVersion);
-        result.NormalizedManifest!.Resources.Should().HaveCount(2);
-        result.Checksums.Should().OnlyContain(x => x.Status == DeploymentArtifactChecksumStatus.Verified);
+        Assert.Empty(result.Diagnostics);
+        Assert.True(result.Succeeded);
+        Assert.StartsWith("sha256:", result.ArtifactId);
+        Assert.Equal(ArtifactLayoutConstants.LayoutVersion, result.Metadata!.LayoutVersion);
+        Assert.Equal(2, result.NormalizedManifest!.Resources.Count());
+        Assert.All(result.Checksums, x => Assert.True(x.Status == DeploymentArtifactChecksumStatus.Verified));
     }
 
     [Fact]
@@ -33,9 +32,9 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var result = await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        result.Succeeded.Should().BeFalse();
-        result.ArtifactId.Should().BeNull();
-        result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumMismatch);
+        Assert.False(result.Succeeded);
+        Assert.Null(result.ArtifactId);
+        Assert.Contains(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.ChecksumMismatch);
     }
 
     [Fact]
@@ -50,9 +49,9 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var result = await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        result.Succeeded.Should().BeFalse();
-        result.ArtifactId.Should().BeNull();
-        result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumMismatch);
+        Assert.False(result.Succeeded);
+        Assert.Null(result.ArtifactId);
+        Assert.Contains(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.ChecksumMismatch);
     }
 
     [Fact]
@@ -66,9 +65,9 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var result = await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        result.Succeeded.Should().BeFalse();
-        result.ArtifactId.Should().BeNull();
-        result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumInvalid);
+        Assert.False(result.Succeeded);
+        Assert.Null(result.ArtifactId);
+        Assert.Contains(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.ChecksumInvalid);
     }
 
     [Fact]
@@ -76,8 +75,8 @@ public class ArtifactReaderTests : IAsyncDisposable
     {
         var result = await _reader.InspectFolderAsync(Path.Combine(_workspace.Root, "missing-artifact"));
 
-        result.Succeeded.Should().BeFalse();
-        result.Diagnostics.Should().ContainSingle(x => x.Code == ArtifactDiagnosticCodes.ReadFailed);
+        Assert.False(result.Succeeded);
+        Assert.Single(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.ReadFailed);
     }
 
     [Fact]
@@ -88,8 +87,8 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var result = await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        result.Succeeded.Should().BeFalse();
-        result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumMissing);
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.ChecksumMissing);
     }
 
     [Fact]
@@ -100,8 +99,8 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var result = await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        result.Succeeded.Should().BeFalse();
-        result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.PayloadUnexpected);
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.PayloadUnexpected);
     }
 
     [Fact]
@@ -121,8 +120,8 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var result = await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        result.Succeeded.Should().BeFalse();
-        result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.PathInvalid);
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.PathInvalid);
     }
 
     [Theory]
@@ -135,8 +134,8 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var result = await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        result.Succeeded.Should().BeFalse();
-        result.Diagnostics.Should().Contain(x => x.Code == expectedCode);
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Diagnostics, x => x.Code == expectedCode);
     }
 
     [Fact]
@@ -149,8 +148,8 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var result = await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        result.Succeeded.Should().BeFalse();
-        result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.LayoutUnsupported);
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.LayoutUnsupported);
     }
 
     [Fact]
@@ -172,8 +171,8 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var result = await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        result.Succeeded.Should().BeFalse();
-        result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.IdentityMismatch);
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.IdentityMismatch);
     }
 
     [Fact]
@@ -185,11 +184,11 @@ public class ArtifactReaderTests : IAsyncDisposable
         var folder = await _reader.InspectFolderAsync(_workspace.OutputFolder);
         var zip = await _reader.InspectZipAsync(_workspace.OutputZip);
 
-        folder.Succeeded.Should().BeTrue();
-        zip.Succeeded.Should().BeTrue();
-        zip.ArtifactId.Should().Be(folder.ArtifactId);
-        zip.Metadata!.Resources.Should().Equal(folder.Metadata!.Resources);
-        zip.Checksums.Select(x => x.Path).Should().BeEquivalentTo(folder.Checksums.Select(x => x.Path));
+        Assert.True(folder.Succeeded);
+        Assert.True(zip.Succeeded);
+        Assert.Equal(folder.ArtifactId, zip.ArtifactId);
+        Assert.Equal(folder.Metadata!.Resources, zip.Metadata!.Resources);
+        Assert.Equivalent(folder.Checksums.Select(x => x.Path), zip.Checksums.Select(x => x.Path));
     }
 
     [Fact]
@@ -201,8 +200,8 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var result = await _reader.InspectZipAsync(_workspace.OutputZip);
 
-        result.Succeeded.Should().BeFalse();
-        result.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.PathInvalid);
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.PathInvalid);
     }
 
     [Fact]
@@ -222,8 +221,8 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var result = await _reader.InspectZipAsync(_workspace.OutputZip);
 
-        result.Succeeded.Should().BeTrue();
-        result.Diagnostics.Should().BeEmpty();
+        Assert.True(result.Succeeded);
+        Assert.Empty(result.Diagnostics);
     }
 
     [Fact]
@@ -239,9 +238,9 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var inspect = async () => await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        var result = await inspect.Should().NotThrowAsync();
-        result.Subject.Succeeded.Should().BeFalse();
-        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumMissing);
+        var result = await inspect();
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.ChecksumMissing);
     }
 
     [Fact]
@@ -252,9 +251,9 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var inspect = async () => await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        var result = await inspect.Should().NotThrowAsync();
-        result.Subject.Succeeded.Should().BeFalse();
-        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumInvalid);
+        var result = await inspect();
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.ChecksumInvalid);
     }
 
     [Fact]
@@ -278,9 +277,9 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var inspect = async () => await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        var result = await inspect.Should().NotThrowAsync();
-        result.Subject.Succeeded.Should().BeFalse();
-        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumMissing);
+        var result = await inspect();
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.ChecksumMissing);
     }
 
     [Fact]
@@ -298,9 +297,9 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var inspect = async () => await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        var result = await inspect.Should().NotThrowAsync();
-        result.Subject.Succeeded.Should().BeFalse();
-        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.ChecksumMissing);
+        var result = await inspect();
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.ChecksumMissing);
     }
 
     [Fact]
@@ -322,9 +321,9 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var inspect = async () => await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        var result = await inspect.Should().NotThrowAsync();
-        result.Subject.Succeeded.Should().BeFalse();
-        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.MetadataInvalid);
+        var result = await inspect();
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.MetadataInvalid);
     }
 
     [Fact]
@@ -345,10 +344,10 @@ public class ArtifactReaderTests : IAsyncDisposable
 
         var inspect = async () => await _reader.InspectFolderAsync(_workspace.OutputFolder);
 
-        var result = await inspect.Should().NotThrowAsync();
-        result.Subject.Succeeded.Should().BeFalse();
-        result.Subject.Metadata.Should().BeNull();
-        result.Subject.Diagnostics.Should().Contain(x => x.Code == ArtifactDiagnosticCodes.MetadataInvalid);
+        var result = await inspect();
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Metadata);
+        Assert.Contains(result.Diagnostics, x => x.Code == ArtifactDiagnosticCodes.MetadataInvalid);
     }
 
     public async ValueTask DisposeAsync() => await _workspace.DisposeAsync();

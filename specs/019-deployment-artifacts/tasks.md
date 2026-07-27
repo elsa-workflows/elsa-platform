@@ -13,7 +13,7 @@
 **Purpose**: Create the artifact package and test project.
 
 - [x] T001 Create `src/ValenceControl.Deployment.Artifacts/ValenceControl.Deployment.Artifacts.csproj` referencing `src/ValenceControl.Deployment.Abstractions/ValenceControl.Deployment.Abstractions.csproj` and `src/ValenceControl.Deployment.Manifest/ValenceControl.Deployment.Manifest.csproj`
-- [x] T002 Create `tests/ValenceControl.Deployment.Artifacts.Tests/ValenceControl.Deployment.Artifacts.Tests.csproj` with references to the artifact, manifest, abstractions, xUnit, and FluentAssertions packages
+- [x] T002 Create `tests/ValenceControl.Deployment.Artifacts.Tests/ValenceControl.Deployment.Artifacts.Tests.csproj` with artifact, manifest, abstractions, and xUnit references; use xUnit's built-in assertions.
 - [x] T003 Add artifact source and test projects to `ValenceControl.sln`
 - [x] T004 [P] Create initial namespace placeholder files in `src/ValenceControl.Deployment.Artifacts/ArtifactLayoutConstants.cs` and `src/ValenceControl.Deployment.Artifacts/ArtifactDiagnosticCodes.cs`
 - [x] T005 [P] Create initial test fixture file `tests/ValenceControl.Deployment.Artifacts.Tests/ArtifactTestFixtures.cs`

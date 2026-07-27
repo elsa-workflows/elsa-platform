@@ -4,7 +4,6 @@ using ValenceControl.Deployment.Abstractions.History;
 using ValenceControl.Deployment.Abstractions.Plans;
 using ValenceControl.Deployment.Abstractions.Resources;
 using ValenceControl.Deployment.Abstractions.Targets;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Abstractions.Tests;
 
@@ -39,9 +38,9 @@ public class HistoryContractTests
             resourceResults: [resourceResult],
             diagnostics: [diagnostic]);
 
-        result.Status.Should().Be(DeploymentStatus.PartiallyApplied);
-        result.ResourceResults.Should().ContainSingle().Which.Retryable.Should().BeTrue();
-        result.Diagnostics.Should().ContainSingle().Which.Should().Be(diagnostic);
+        Assert.Equal(DeploymentStatus.PartiallyApplied, result.Status);
+        Assert.True(Assert.Single(result.ResourceResults).Retryable);
+        Assert.Equal(diagnostic, Assert.Single(result.Diagnostics));
     }
 
     [Fact]
@@ -60,13 +59,13 @@ public class HistoryContractTests
             plan,
             [resourceResult]);
 
-        history.DeploymentId.Should().Be("deploy-1");
-        history.Artifact.Should().Be(_artifact);
-        history.ManifestDigest.Should().Be(_artifact.ManifestDigest);
-        history.Target.Should().Be(_target);
-        history.Actor.Should().Be(_actor);
-        history.Plan.Should().Be(plan);
-        history.ResourceResults.Should().ContainSingle().Which.Should().Be(resourceResult);
+        Assert.Equal("deploy-1", history.DeploymentId);
+        Assert.Equal(_artifact, history.Artifact);
+        Assert.Equal(_artifact.ManifestDigest, history.ManifestDigest);
+        Assert.Equal(_target, history.Target);
+        Assert.Equal(_actor, history.Actor);
+        Assert.Equal(plan, history.Plan);
+        Assert.Equal(resourceResult, Assert.Single(history.ResourceResults));
     }
 
     [Fact]
@@ -79,7 +78,7 @@ public class HistoryContractTests
             DeploymentStatus.NotStarted,
             startedAt: new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.FromHours(2)));
 
-        history.StartedAt.Offset.Should().Be(TimeSpan.Zero);
-        history.CompletedAt.Should().BeNull();
+        Assert.Equal(TimeSpan.Zero, history.StartedAt.Offset);
+        Assert.Null(history.CompletedAt);
     }
 }

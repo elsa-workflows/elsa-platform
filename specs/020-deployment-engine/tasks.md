@@ -13,7 +13,7 @@
 **Purpose**: Create the engine package and test project.
 
 - [x] T001 Create `src/ValenceControl.Deployment.Engine/ValenceControl.Deployment.Engine.csproj` referencing `src/ValenceControl.Deployment.Abstractions/ValenceControl.Deployment.Abstractions.csproj`
-- [x] T002 Create `tests/ValenceControl.Deployment.Engine.Tests/ValenceControl.Deployment.Engine.Tests.csproj` referencing engine, abstractions, xUnit, and FluentAssertions
+- [x] T002 Create `tests/ValenceControl.Deployment.Engine.Tests/ValenceControl.Deployment.Engine.Tests.csproj` referencing engine, abstractions, xUnit and its built-in assertions
 - [x] T003 Add engine source and test projects to `ValenceControl.sln`
 - [x] T004 [P] Create `src/ValenceControl.Deployment.Engine/DeploymentEngineDiagnosticCodes.cs`
 - [x] T005 [P] Create `tests/ValenceControl.Deployment.Engine.Tests/DeploymentEngineTestFixtures.cs`

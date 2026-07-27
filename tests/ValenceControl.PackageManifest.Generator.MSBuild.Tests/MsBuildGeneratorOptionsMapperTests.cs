@@ -1,5 +1,4 @@
 using ValenceControl.PackageManifest.Generator.MSBuild.Packaging;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifest.Generator.MSBuild.Tests;
 
@@ -18,13 +17,13 @@ public sealed class MsBuildGeneratorOptionsMapperTests
             null,
             "A.IFeature;B.IFeature");
 
-        options.OutputPath.Should().Be(Path.Combine("obj", "elsa-package.json"));
-        options.PackagePath.Should().Be("elsa-package.json");
-        options.ValidationSeverity.Should().Be("Error");
-        options.Strict.Should().BeTrue();
-        options.FailOnWarnings.Should().BeTrue();
-        options.AllowTargetFrameworkDifferences.Should().BeFalse();
-        options.AdditionalFeatureInterfaceTypes.Should().Equal("A.IFeature", "B.IFeature");
+        Assert.Equal(Path.Combine("obj", "elsa-package.json"), options.OutputPath);
+        Assert.Equal("elsa-package.json", options.PackagePath);
+        Assert.Equal("Error", options.ValidationSeverity);
+        Assert.True(options.Strict);
+        Assert.True(options.FailOnWarnings);
+        Assert.False(options.AllowTargetFrameworkDifferences);
+        Assert.Equal(["A.IFeature", "B.IFeature"], options.AdditionalFeatureInterfaceTypes);
     }
 
     [Fact]
@@ -44,8 +43,8 @@ public sealed class MsBuildGeneratorOptionsMapperTests
             "net10.0",
             "net10.0;net9.0");
 
-        metadata.Authors.Should().Equal("Ada", "Zed");
-        metadata.TargetFrameworks.Should().Equal("net10.0", "net9.0");
-        metadata.PackageTags.Should().Equal("elsa", "workflow");
+        Assert.Equal(["Ada", "Zed"], metadata.Authors);
+        Assert.Equal(["net10.0", "net9.0"], metadata.TargetFrameworks);
+        Assert.Equal(["elsa", "workflow"], metadata.PackageTags);
     }
 }

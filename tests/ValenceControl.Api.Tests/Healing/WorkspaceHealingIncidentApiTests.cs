@@ -10,7 +10,6 @@ using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Persistence.EntityFrameworkCore;
 using ValenceControl.PackageCatalog.Core.Accounts;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -28,13 +27,13 @@ public sealed class WorkspaceHealingIncidentApiTests
             $"/api/workspaces/{app.WorkspaceId:D}/healing/incidents?applicationId={app.ApplicationId:D}&environmentId={app.EnvironmentId:D}&status=ThresholdPending&severity=Error&repairable=false&take=20");
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var item = body.GetProperty("items").EnumerateArray().Should().ContainSingle().Subject;
-        item.GetProperty("id").GetGuid().Should().Be(incidentId);
-        item.GetProperty("applicationId").GetGuid().Should().Be(app.ApplicationId);
-        item.GetProperty("occurrenceCount").GetInt64().Should().Be(2);
-        item.GetProperty("environmentImpacts").EnumerateArray().Should().ContainSingle();
-        item.TryGetProperty("fingerprint", out _).Should().BeFalse("safe list responses do not expose correlation keys");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var item = Assert.Single(body.GetProperty("items").EnumerateArray());
+        Assert.Equal(incidentId, item.GetProperty("id").GetGuid());
+        Assert.Equal(app.ApplicationId, item.GetProperty("applicationId").GetGuid());
+        Assert.Equal(2, item.GetProperty("occurrenceCount").GetInt64());
+        Assert.Single(item.GetProperty("environmentImpacts").EnumerateArray());
+        Assert.False(item.TryGetProperty("fingerprint", out _));
     }
 
     [Fact]
@@ -47,13 +46,13 @@ public sealed class WorkspaceHealingIncidentApiTests
             $"/api/workspaces/{app.WorkspaceId:D}/healing/incidents/{incidentId:D}");
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        body.GetProperty("id").GetGuid().Should().Be(incidentId);
-        body.GetProperty("episodes").EnumerateArray().Should().ContainSingle();
-        var occurrence = body.GetProperty("occurrences").EnumerateArray().Should().ContainSingle().Subject;
-        occurrence.GetProperty("operationName").GetString().Should().Be("GET /orders/{id}");
-        occurrence.TryGetProperty("normalizedStackJson", out _).Should().BeFalse();
-        occurrence.TryGetProperty("evidenceDigest", out _).Should().BeFalse();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(incidentId, body.GetProperty("id").GetGuid());
+        Assert.Single(body.GetProperty("episodes").EnumerateArray());
+        var occurrence = Assert.Single(body.GetProperty("occurrences").EnumerateArray());
+        Assert.Equal("GET /orders/{id}", occurrence.GetProperty("operationName").GetString());
+        Assert.False(occurrence.TryGetProperty("normalizedStackJson", out _));
+        Assert.False(occurrence.TryGetProperty("evidenceDigest", out _));
     }
 
     [Fact]
@@ -66,17 +65,15 @@ public sealed class WorkspaceHealingIncidentApiTests
         var reader = app.Factory.CreateTrustedWorkspaceClient(readerSubject);
         var detailUri = $"/api/workspaces/{app.WorkspaceId:D}/healing/incidents/{incidentId:D}";
 
-        (await reader.GetAsync(detailUri)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, (await reader.GetAsync(detailUri)).StatusCode);
         await app.Factory.GrantWorkspaceDeploymentPermissionAsync(app.WorkspaceId, readerId, HealingPermissions.Read);
-        (await reader.GetAsync(detailUri)).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await reader.GetAsync($"/api/workspaces/{app.WorkspaceId:D}/healing/incidents/{Guid.NewGuid():D}"))
-            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.OK, (await reader.GetAsync(detailUri)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await reader.GetAsync($"/api/workspaces/{app.WorkspaceId:D}/healing/incidents/{Guid.NewGuid():D}")).StatusCode);
 
         var outsider = app.Factory.CreateTrustedWorkspaceClient("healing-incident-outsider");
-        (await outsider.GetAsync(detailUri)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        (await app.Owner.GetAsync(
-            $"/api/workspaces/{app.WorkspaceId:D}/healing/incidents?applicationId={Guid.NewGuid():D}"))
-            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.Forbidden, (await outsider.GetAsync(detailUri)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await app.Owner.GetAsync(
+            $"/api/workspaces/{app.WorkspaceId:D}/healing/incidents?applicationId={Guid.NewGuid():D}")).StatusCode);
     }
 
     private static async Task<Guid> SeedIncidentAsync(TestApplication app)

@@ -1,6 +1,5 @@
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Core.Configuration;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.Core.Tests;
 
@@ -16,8 +15,8 @@ public sealed class HealingOptionsTests
 
         var act = options.Validate;
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*MaxRepairAttempts*2*");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+        Assert.Matches(".*MaxRepairAttempts.*2.*", exception.Message);
     }
 
     [Fact]
@@ -32,7 +31,7 @@ public sealed class HealingOptionsTests
 
         var result = guard.CanDispatchRepair(new HealingWorkspaceConfiguration(), application);
 
-        result.Should().Be(new HealingGateResult(false, HealingGateReasonCodes.ControlKillSwitch));
+        Assert.Equal(new HealingGateResult(false, HealingGateReasonCodes.ControlKillSwitch), result);
     }
 
     [Fact]
@@ -44,7 +43,7 @@ public sealed class HealingOptionsTests
 
         var result = guard.CanDispatchRepair(workspace, application);
 
-        result.Should().Be(new HealingGateResult(false, HealingGateReasonCodes.WorkspaceKillSwitch));
+        Assert.Equal(new HealingGateResult(false, HealingGateReasonCodes.WorkspaceKillSwitch), result);
     }
 
     [Fact]
@@ -65,7 +64,7 @@ public sealed class HealingOptionsTests
         var result = guard.CanAutomaticallyMerge(new HealingWorkspaceConfiguration(), application);
 
         options.Validate();
-        result.Should().Be(new HealingGateResult(true, HealingGateReasonCodes.Allowed));
+        Assert.Equal(new HealingGateResult(true, HealingGateReasonCodes.Allowed), result);
     }
 
     [Fact]
@@ -79,11 +78,9 @@ public sealed class HealingOptionsTests
         };
         var guard = new HealingKillSwitch(options);
 
-        guard.CanDiscover(new HealingWorkspaceConfiguration(), new HealingConfiguration { DiscoveryEnabled = true })
-            .Allowed.Should().BeTrue();
-        guard.CanReviewIncidents().Should().Be(
-            HealingGateResult.Block(HealingGateReasonCodes.StageDisabled));
-        guard.CanVerify().Allowed.Should().BeTrue();
+        Assert.True(guard.CanDiscover(new HealingWorkspaceConfiguration(), new HealingConfiguration { DiscoveryEnabled = true }).Allowed);
+        Assert.Equal(HealingGateResult.Block(HealingGateReasonCodes.StageDisabled), guard.CanReviewIncidents());
+        Assert.True(guard.CanVerify().Allowed);
     }
 
     [Fact]
@@ -97,13 +94,11 @@ public sealed class HealingOptionsTests
         };
         var guard = new HealingKillSwitch(options);
 
-        guard.CanReviewIncidents().Allowed.Should().BeTrue();
-        guard.CanDispatchRepair(
-                new HealingWorkspaceConfiguration(),
-                new HealingConfiguration { RepairEnabled = true })
-            .Allowed.Should().BeTrue();
-        guard.CanVerify().Should().Be(
-            HealingGateResult.Block(HealingGateReasonCodes.StageDisabled));
+        Assert.True(guard.CanReviewIncidents().Allowed);
+        Assert.True(guard.CanDispatchRepair(
+            new HealingWorkspaceConfiguration(),
+            new HealingConfiguration { RepairEnabled = true }).Allowed);
+        Assert.Equal(HealingGateResult.Block(HealingGateReasonCodes.StageDisabled), guard.CanVerify());
     }
 
     [Fact]
@@ -113,8 +108,8 @@ public sealed class HealingOptionsTests
 
         var act = options.Validate;
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*IdleDelay*100 milliseconds*");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+        Assert.Matches(".*IdleDelay.*100 milliseconds.*", exception.Message);
     }
 
     [Fact]
@@ -128,7 +123,7 @@ public sealed class HealingOptionsTests
 
         var act = options.Validate;
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*LeaseSafetyMargin*less than LeaseDuration*");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+        Assert.Matches(".*LeaseSafetyMargin.*less than LeaseDuration.*", exception.Message);
     }
 }

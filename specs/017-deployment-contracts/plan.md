@@ -12,7 +12,7 @@ Create the first deployable Phase 1 foundation for Valence Control by adding dep
 
 **Language/Version**: C# on .NET 10 using the repository-wide `Directory.Build.props` target.
 
-**Primary Dependencies**: Base class library only for `ValenceControl.Deployment.Abstractions`; xUnit and FluentAssertions for tests.
+**Primary Dependencies**: Base class library only for `ValenceControl.Deployment.Abstractions`; xUnit and its built-in assertions for tests.
 
 **Storage**: N/A for this slice. History is represented by contracts only; no persistence provider is implemented.
 

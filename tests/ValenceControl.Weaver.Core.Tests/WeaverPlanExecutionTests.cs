@@ -1,6 +1,5 @@
 using ValenceControl.Weaver.Core.Plans;
 using ValenceControl.Weaver.Core.Sessions;
-using FluentAssertions;
 
 namespace ValenceControl.Weaver.Core.Tests;
 
@@ -23,11 +22,11 @@ public sealed class WeaverPlanExecutionTests
         var first = await service.ExecuteAsync(_workspaceId, plan.Id, plan.Version);
         var second = await service.ExecuteAsync(_workspaceId, plan.Id, plan.Version);
 
-        approved.Status.Should().Be(WeaverPlanStatus.Approved);
-        first.Status.Should().Be(WeaverPlanExecutionStatus.Succeeded);
-        second.Id.Should().Be(first.Id);
-        _store.Executions.Should().ContainSingle();
-        _store.Plans[plan.Id].Status.Should().Be(WeaverPlanStatus.Succeeded);
+        Assert.Equal(WeaverPlanStatus.Approved, approved.Status);
+        Assert.Equal(WeaverPlanExecutionStatus.Succeeded, first.Status);
+        Assert.Equal(first.Id, second.Id);
+        Assert.Single(_store.Executions);
+        Assert.Equal(WeaverPlanStatus.Succeeded, _store.Plans[plan.Id].Status);
     }
 
     [Fact]
@@ -37,10 +36,10 @@ public sealed class WeaverPlanExecutionTests
         _store.Plans[plan.Id] = plan;
         var service = new WeaverPlanExecutionService(_store, _clock);
 
-        var act = () => service.ExecuteAsync(_workspaceId, plan.Id, plan.Version);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.ExecuteAsync(_workspaceId, plan.Id, plan.Version));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Plan must be approved before execution.");
+        Assert.Equal("Plan must be approved before execution.", exception.Message);
     }
 
     private WeaverPlan NewPlan() => new(

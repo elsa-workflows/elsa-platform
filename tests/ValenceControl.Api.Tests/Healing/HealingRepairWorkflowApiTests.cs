@@ -6,7 +6,6 @@ using ValenceControl.Api.Healing;
 using ValenceControl.Api.Workspace.Healing;
 using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.Agent;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ValenceControl.Api.Tests.Healing;
@@ -29,14 +28,14 @@ public sealed class HealingRepairWorkflowApiTests
                 "one-time-nonce",
                 "signed-github-oidc-assertion"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var grant = await response.Content.ReadControlJsonAsync<HealingWorkloadCapabilityResponse>();
-        grant!.AttemptId.Should().Be(attemptId);
-        grant.AllowedScopes.Should().BeEquivalentTo(
-            WorkloadCapabilityScopes.ReadEvidence,
-            WorkloadCapabilityScopes.CreateProposal);
-        grant.CapabilityToken.Should().Be("incident-capability");
-        workload.ExchangeRequest.Should().NotBeNull();
+        Assert.Equal(attemptId, grant!.AttemptId);
+        Assert.Equivalent(
+            new[] { WorkloadCapabilityScopes.ReadEvidence, WorkloadCapabilityScopes.CreateProposal },
+            grant.AllowedScopes);
+        Assert.Equal("incident-capability", grant.CapabilityToken);
+        Assert.NotNull(workload.ExchangeRequest);
     }
 
     [Fact]
@@ -49,36 +48,40 @@ public sealed class HealingRepairWorkflowApiTests
         var attemptId = workload.AttemptId;
         var baseUri = $"/api/workspaces/{WorkspaceId:D}/healing/workload/attempts/{attemptId:D}";
 
-        (await client.GetAsync($"{baseUri}/evidence")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync($"{baseUri}/evidence")).StatusCode);
 
         authorizer.DeniedScope = WorkloadCapabilityScopes.HeartbeatAttempt;
         using var evidence = Authorized(HttpMethod.Get, $"{baseUri}/evidence");
-        (await client.SendAsync(evidence)).StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(evidence)).StatusCode);
         using var heartbeat = Authorized(
             HttpMethod.Post,
             $"{baseUri}/heartbeat",
             new WorkloadHeartbeatRequest(HealingContractVersions.WorkloadProtocol, attemptId, "heartbeat-1", DateTimeOffset.UtcNow));
-        (await client.SendAsync(heartbeat)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.SendAsync(heartbeat)).StatusCode);
 
         authorizer.DeniedScope = null;
         using var acceptedHeartbeat = Authorized(
             HttpMethod.Post,
             $"{baseUri}/heartbeat",
             new WorkloadHeartbeatRequest(HealingContractVersions.WorkloadProtocol, attemptId, "heartbeat-2", DateTimeOffset.UtcNow));
-        (await client.SendAsync(acceptedHeartbeat)).StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(acceptedHeartbeat)).StatusCode);
         using var result = Authorized(
             HttpMethod.Post,
             $"{baseUri}/result",
             new WorkloadResultUploadRequest(HealingContractVersions.WorkloadProtocol, attemptId, "result-1", Result(attemptId)));
-        (await client.SendAsync(result)).StatusCode.Should().Be(HttpStatusCode.Accepted);
+        Assert.Equal(HttpStatusCode.Accepted, (await client.SendAsync(result)).StatusCode);
 
-        authorizer.Requests.Select(x => x.RequiredScope).Should().Contain(
-            WorkloadCapabilityScopes.ReadEvidence,
-            WorkloadCapabilityScopes.HeartbeatAttempt,
-            WorkloadCapabilityScopes.UploadResult);
-        workload.HeartbeatRequest!.AttemptId.Should().Be(attemptId);
-        workload.ResultRequest!.Result.Reproduction.Classification.Should().Be("not-reproduced");
-        workload.ResultRequest.Result.Confidence.Should().Be(0.93m);
+        Assert.All(
+            new[]
+            {
+                WorkloadCapabilityScopes.ReadEvidence,
+                WorkloadCapabilityScopes.HeartbeatAttempt,
+                WorkloadCapabilityScopes.UploadResult
+            },
+            scope => Assert.Contains(scope, authorizer.Requests.Select(x => x.RequiredScope)));
+        Assert.Equal(attemptId, workload.HeartbeatRequest!.AttemptId);
+        Assert.Equal("not-reproduced", workload.ResultRequest!.Result.Reproduction.Classification);
+        Assert.Equal(0.93m, workload.ResultRequest.Result.Confidence);
     }
 
     [Fact]
@@ -114,11 +117,11 @@ public sealed class HealingRepairWorkflowApiTests
 
         var createResponse = await client.SendAsync(create);
 
-        createResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        workload.ProposalRequest.Should().BeEquivalentTo(request);
-        authorizer.Requests.Should().ContainSingle(x => x.RequiredScope == WorkloadCapabilityScopes.CreateProposal);
+        Assert.Equal(HttpStatusCode.Accepted, createResponse.StatusCode);
+        Assert.Equivalent(request, workload.ProposalRequest);
+        Assert.Single(authorizer.Requests, x => x.RequiredScope == WorkloadCapabilityScopes.CreateProposal);
         var proposal = await createResponse.Content.ReadControlJsonAsync<WorkloadProposalCreateResponse>();
-        proposal!.Proposal.ProposalId.Should().Be(workload.ProposalId);
+        Assert.Equal(workload.ProposalId, proposal!.Proposal.ProposalId);
 
         var finalizeResponse = await client.PostControlJsonAsync(
             $"/api/workspaces/{WorkspaceId:D}/healing/workload/attempts/{attemptId:D}/proposals/{workload.ProposalId:D}/finalize-exchange",
@@ -129,12 +132,12 @@ public sealed class HealingRepairWorkflowApiTests
                 "finalization-nonce",
                 "second-oidc-assertion"));
 
-        finalizeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, finalizeResponse.StatusCode);
         var grant = await finalizeResponse.Content.ReadControlJsonAsync<HealingWorkloadCapabilityResponse>();
-        grant!.AllowedScopes.Should().BeEquivalentTo(
-            WorkloadCapabilityScopes.FinalizeProposal,
-            WorkloadCapabilityScopes.UploadResult);
-        workload.FinalizationRequest.Should().NotBeNull();
+        Assert.Equivalent(
+            new[] { WorkloadCapabilityScopes.FinalizeProposal, WorkloadCapabilityScopes.UploadResult },
+            grant!.AllowedScopes);
+        Assert.NotNull(workload.FinalizationRequest);
     }
 
     [Fact]
@@ -151,8 +154,8 @@ public sealed class HealingRepairWorkflowApiTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        workload.HeartbeatRequest.Should().BeNull();
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(workload.HeartbeatRequest);
     }
 
     [Fact]
@@ -174,8 +177,8 @@ public sealed class HealingRepairWorkflowApiTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        workload.ResultRequest.Should().BeNull();
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(workload.ResultRequest);
     }
 
     [Fact]
@@ -186,8 +189,9 @@ public sealed class HealingRepairWorkflowApiTests
         var client = app.CreateClient();
         const string body = "{\"action\":\"opened\",\"repository\":{\"id\":42}}";
 
-        (await client.PostAsync("/api/integrations/github/webhooks", new StringContent(body, Encoding.UTF8, "application/json")))
-            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            (await client.PostAsync("/api/integrations/github/webhooks", new StringContent(body, Encoding.UTF8, "application/json"))).StatusCode);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/integrations/github/webhooks")
         {
@@ -198,10 +202,10 @@ public sealed class HealingRepairWorkflowApiTests
         request.Headers.Add("X-GitHub-Event", "pull_request");
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        Encoding.UTF8.GetString(webhook.Request!.RawBody).Should().Be(body);
-        webhook.Request.DeliveryId.Should().Be("delivery-42");
-        webhook.Request.Event.Should().Be("pull_request");
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Equal(body, Encoding.UTF8.GetString(webhook.Request!.RawBody));
+        Assert.Equal("delivery-42", webhook.Request.DeliveryId);
+        Assert.Equal("pull_request", webhook.Request.Event);
     }
 
     [Fact]
@@ -211,15 +215,15 @@ public sealed class HealingRepairWorkflowApiTests
         await using var app = CreateApplication(new RecordingWorkloadApi(), webhook: webhook);
         var client = app.CreateClient();
 
-        (await client.SendAsync(WebhookRequest("invalid-delivery"))).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.SendAsync(WebhookRequest("invalid-delivery"))).StatusCode);
         webhook.RejectSignature = false;
         webhook.IsReplay = true;
 
         var replay = await client.SendAsync(WebhookRequest("known-delivery"));
 
-        replay.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
         var receipt = await replay.Content.ReadControlJsonAsync<HealingVerifiedWebhookReceipt>();
-        receipt!.IsReplay.Should().BeTrue();
+        Assert.True(receipt!.IsReplay);
     }
 
     private static ControlApiTestApplication CreateApplication(

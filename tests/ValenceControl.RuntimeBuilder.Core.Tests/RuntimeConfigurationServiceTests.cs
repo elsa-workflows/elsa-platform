@@ -1,7 +1,6 @@
 using ValenceControl.RuntimeBuilder.Abstractions;
 using ValenceControl.RuntimeBuilder.Abstractions.RuntimeConfigurations;
 using ValenceControl.RuntimeBuilder.Core.RuntimeConfigurations;
-using FluentAssertions;
 
 namespace ValenceControl.RuntimeBuilder.Core.Tests;
 
@@ -20,12 +19,12 @@ public sealed class RuntimeConfigurationServiceTests
         var version = await service.CreateVersionAsync(workspaceId, created.Id);
         var versions = await service.ListVersionsAsync(workspaceId, created.Id);
 
-        created.Id.Should().NotBeEmpty();
-        updated!.Name.Should().Be("Production v2");
-        clone!.Id.Should().NotBe(created.Id);
-        clone.Name.Should().Be("Production v2 Copy");
-        version!.VersionNumber.Should().Be(1);
-        versions.Should().ContainSingle(x => x.Id == version.Id);
+        Assert.NotEqual(Guid.Empty, created.Id);
+        Assert.Equal("Production v2", updated!.Name);
+        Assert.NotEqual(created.Id, clone!.Id);
+        Assert.Equal("Production v2 Copy", clone.Name);
+        Assert.Equal(1, version!.VersionNumber);
+        Assert.Single(versions, x => x.Id == version.Id);
     }
 
     [Fact]
@@ -35,10 +34,10 @@ public sealed class RuntimeConfigurationServiceTests
         var service = new RuntimeConfigurationService(new InMemoryStore());
         var created = await service.CreateAsync(workspaceId, "Runtime", null, MinimalIntent());
 
-        (await service.DeleteAsync(workspaceId, created.Id)).Should().BeTrue();
+        Assert.True(await service.DeleteAsync(workspaceId, created.Id));
 
-        (await service.ListAsync(workspaceId)).Should().BeEmpty();
-        (await service.GetAsync(workspaceId, created.Id)).Should().BeNull();
+        Assert.Empty(await service.ListAsync(workspaceId));
+        Assert.Null(await service.GetAsync(workspaceId, created.Id));
     }
 
     private static RuntimeBuilderIntent MinimalIntent() =>

@@ -3,7 +3,6 @@ using ValenceControl.Api.Authentication;
 using ValenceControl.Api.Public.Builder;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -16,10 +15,15 @@ public sealed class PublicBuilderBundleApiTests
         await app.SeedAsync(_ => Task.CompletedTask);
         var response = await BuilderClient(app).PostControlJsonAsync("/api/builder/bundle", MinimalRequest());
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadControlJsonAsync<BuilderBundleResponse>();
-        body!.Files.Select(x => x.Path).Should().Contain(["config.json", "packages.lock.json", "docker-compose.yml", ".env.example", "README.md"]);
-        body.Findings.Should().NotContain(x => x.Level == "error");
+        var paths = body!.Files.Select(x => x.Path);
+        Assert.Contains("config.json", paths);
+        Assert.Contains("packages.lock.json", paths);
+        Assert.Contains("docker-compose.yml", paths);
+        Assert.Contains(".env.example", paths);
+        Assert.Contains("README.md", paths);
+        Assert.DoesNotContain(body.Findings, x => x.Level == "error");
     }
 
     [Fact]
@@ -30,7 +34,7 @@ public sealed class PublicBuilderBundleApiTests
 
         var response = await app.CreateClient().PostControlJsonAsync("/api/builder/bundle", MinimalRequest());
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -43,8 +47,8 @@ public sealed class PublicBuilderBundleApiTests
         var bundle = await client.PostControlJsonAsync("/api/builder/bundle", MinimalRequest());
         var admin = await client.GetAsync("/api/admin/application");
 
-        bundle.StatusCode.Should().Be(HttpStatusCode.OK);
-        admin.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.OK, bundle.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, admin.StatusCode);
     }
 
     [Fact]
@@ -57,7 +61,7 @@ public sealed class PublicBuilderBundleApiTests
 
         var response = await client.PostControlJsonAsync("/api/builder/bundle", MinimalRequest());
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -68,10 +72,10 @@ public sealed class PublicBuilderBundleApiTests
 
         var response = await BuilderClient(app).PostControlJsonAsync("/api/builder/bundle", MinimalRequest(imageSlug: "missing"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadControlJsonAsync<BuilderBundleResponse>();
-        body!.Files.Should().BeEmpty();
-        body.Findings.Should().Contain(x => x.Level == "error" && x.Code == "runtimeImage.unknown");
+        Assert.Empty(body!.Files);
+        Assert.Contains(body.Findings, x => x.Level == "error" && x.Code == "runtimeImage.unknown");
     }
 
     private static BuilderBundleRequest MinimalRequest(string imageSlug = "elsa-pro-combined") =>

@@ -6,7 +6,6 @@ using ValenceControl.Healing.Core.Providers;
 using ValenceControl.Healing.Core.Security;
 using ValenceControl.Healing.GitHub;
 using ValenceControl.Healing.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -79,17 +78,17 @@ public sealed class HealingHumanCommandCoordinatorTests
                 new WorkspacePermissionService(new UnexpectedWorkspacePermissionStore()),
                 commandService);
 
-            (await coordinator.RunOnceAsync()).Should().BeTrue();
+            Assert.True((await coordinator.RunOnceAsync()));
 
             var command = await dbContext.HumanCommands.AsNoTracking().SingleAsync(x => x.Id == commandId);
-            command.Status.Should().Be(HumanCommandStatus.Rejected);
-            command.ResultCode.Should().Be("provider-permission-denied");
-            command.SafeResultDetail.Should().BeNull();
-            command.CompletedAt.Should().Be(Now);
+            Assert.Equal(HumanCommandStatus.Rejected, command.Status);
+            Assert.Equal("provider-permission-denied", command.ResultCode);
+            Assert.Null(command.SafeResultDetail);
+            Assert.Equal(Now, command.CompletedAt);
             var audit = await dbContext.Set<HealingAuditEvent>().AsNoTracking()
                 .SingleAsync(x => x.AggregateType == "human-command" && x.AggregateId == commandId);
-            audit.EventType.Should().Be("human-command-rejected");
-            audit.ReasonCode.Should().Be("provider-permission-denied");
+            Assert.Equal("human-command-rejected", audit.EventType);
+            Assert.Equal("provider-permission-denied", audit.ReasonCode);
         }
         finally
         {

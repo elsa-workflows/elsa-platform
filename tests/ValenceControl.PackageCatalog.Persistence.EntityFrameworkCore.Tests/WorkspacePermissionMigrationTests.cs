@@ -1,7 +1,6 @@
 using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -37,11 +36,10 @@ public sealed class WorkspacePermissionMigrationTests
             workspace.Id,
             new RevokeWorkspacePermissionRequest(account.Id, WorkspaceDeploymentPermissions.Read, account.Id));
 
-        (await store.GetPermissionGrantsAsync(workspace.Id, account.Id))
-            .Should().ContainSingle(x => x.Id == grant.Id && x.RevokedByAccountId == account.Id);
-        (await store.ListPermissionAuditRecordsAsync(workspace.Id, account.Id))
-            .Should().HaveCount(2);
-        (await db.Database.GetPendingMigrationsAsync()).Should().BeEmpty();
+        Assert.Single(await store.GetPermissionGrantsAsync(workspace.Id, account.Id),
+            x => x.Id == grant.Id && x.RevokedByAccountId == account.Id);
+        Assert.Equal(2, (await store.ListPermissionAuditRecordsAsync(workspace.Id, account.Id)).Count());
+        Assert.Empty((await db.Database.GetPendingMigrationsAsync()));
     }
 
     [Fact]
@@ -75,10 +73,10 @@ public sealed class WorkspacePermissionMigrationTests
         var grants = await store.GetPermissionGrantsAsync(workspace.Id, account.Id);
         var audit = await store.ListPermissionAuditRecordsAsync(workspace.Id, account.Id);
 
-        grants.Should().HaveCount(15);
-        grants.Should().ContainSingle(x => x.Id == revokedGrantId && x.RevokedAt.HasValue);
-        grants.Should().NotContain(x => x.Permission == WorkspaceDeploymentPermissions.Read && !x.RevokedAt.HasValue);
-        audit.Should().HaveCount(16);
-        audit.Count(x => x.GrantId == revokedGrantId).Should().Be(2);
+        Assert.Equal(15, grants.Count());
+        Assert.Single(grants, x => x.Id == revokedGrantId && x.RevokedAt.HasValue);
+        Assert.DoesNotContain(grants, x => x.Permission == WorkspaceDeploymentPermissions.Read && !x.RevokedAt.HasValue);
+        Assert.Equal(16, audit.Count());
+        Assert.Equal(2, audit.Count(x => x.GrantId == revokedGrantId));
     }
 }

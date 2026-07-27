@@ -2,7 +2,6 @@ using ValenceControl.Api.Healing;
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.GitHub;
 using ValenceControl.Healing.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -46,10 +45,10 @@ public sealed class ControlGitHubReplayStoreTests
             ReceivedAt = now.AddSeconds(2)
         });
 
-        accepted.Disposition.Should().Be(GitHubWebhookReplayDisposition.Accepted);
-        exactReplay.Should().Be(GitHubWebhookReplayResult.ExactReplay(delivery.BodyDigest));
-        conflict.Should().Be(GitHubWebhookReplayResult.Conflict(delivery.BodyDigest));
-        (await dbContext.ProviderWebhookDeliveries.CountAsync()).Should().Be(1);
+        Assert.Equal(GitHubWebhookReplayDisposition.Accepted, accepted.Disposition);
+        Assert.Equal(GitHubWebhookReplayResult.ExactReplay(delivery.BodyDigest), exactReplay);
+        Assert.Equal(GitHubWebhookReplayResult.Conflict(delivery.BodyDigest), conflict);
+        Assert.Equal(1, (await dbContext.ProviderWebhookDeliveries.CountAsync()));
     }
 
     private static GitHubWebhookReplayRecord Delivery(

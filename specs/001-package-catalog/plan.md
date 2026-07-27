@@ -24,7 +24,7 @@ neutral so PostgreSQL can be introduced later without changing domain concepts.
 
 **Language/Version**: C# on .NET 10 LTS, supported until November 14, 2028.
 
-**Primary Dependencies**: ASP.NET Core, Entity Framework Core, SQLite provider, NuGet.Protocol, System.Text.Json, .NET JSON Schema validation package, OpenAPI tooling, xUnit, FluentAssertions, Microsoft.AspNetCore.Mvc.Testing.
+**Primary Dependencies**: ASP.NET Core, Entity Framework Core, SQLite provider, NuGet.Protocol, System.Text.Json, .NET JSON Schema validation package, OpenAPI tooling, xUnit and its built-in assertions, Microsoft.AspNetCore.Mvc.Testing.
 
 **Storage**: SQLite for initial durable storage, with EF Core mappings and domain model designed for later PostgreSQL support.
 

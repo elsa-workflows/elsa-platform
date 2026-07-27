@@ -1,7 +1,6 @@
 using ValenceControl.Deployment.Abstractions.Diagnostics;
 using ValenceControl.Deployment.Artifacts;
 using ValenceControl.Deployment.Core.Workspace;
-using FluentAssertions;
 using Xunit;
 using ArtifactDigest = ValenceControl.Deployment.Abstractions.Artifacts.ArtifactDigest;
 using ArtifactChecksumStatus = ValenceControl.Deployment.Artifacts.DeploymentArtifactChecksumStatus;
@@ -25,13 +24,14 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
             _workspaceId,
             WorkspaceDeploymentTestFixtures.ArtifactRegistration());
 
-        result.Created.Should().BeTrue();
-        result.Artifact.ArtifactId.Should().Be("sha256:claims-prod");
-        result.Artifact.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaLoomRecipe);
-        result.Artifact.Producer!.ProducerType.Should().Be("manual");
-        result.Artifact.CompatibilityHints.Should().ContainSingle(x => x.RequiredArtifactType == ArtifactTypeIds.ElsaLoomRecipe);
-        result.Artifact.Resources.Should().ContainSingle(x => x.LogicalId == "payment-retry");
-        _store.RegisteredRequests.Should().ContainSingle();
+        Assert.True(result.Created);
+        Assert.Equal("sha256:claims-prod", result.Artifact.ArtifactId);
+        Assert.Equal(ArtifactTypeIds.ElsaLoomRecipe, result.Artifact.ArtifactTypeId);
+        Assert.Equal("manual", result.Artifact.Producer!.ProducerType);
+        Assert.NotNull(result.Artifact.CompatibilityHints);
+        Assert.Single(result.Artifact.CompatibilityHints!, x => x.RequiredArtifactType == ArtifactTypeIds.ElsaLoomRecipe);
+        Assert.Single(result.Artifact.Resources, x => x.LogicalId == "payment-retry");
+        Assert.Single(_store.RegisteredRequests);
     }
 
     [Fact]
@@ -44,9 +44,9 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
 
         var result = await service.RegisterArtifactAsync(_workspaceId, request);
 
-        result.Created.Should().BeFalse();
-        result.Artifact.Id.Should().Be(existing.Id);
-        _store.RegisteredRequests.Should().BeEmpty();
+        Assert.False(result.Created);
+        Assert.Equal(existing.Id, result.Artifact.Id);
+        Assert.Empty(_store.RegisteredRequests);
     }
 
     [Fact]
@@ -58,8 +58,9 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
 
         var act = () => service.RegisterArtifactAsync(_workspaceId, request);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Artifact identity is already registered with different metadata.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Artifact identity is already registered with different metadata.", exception.Message);
     }
 
     [Fact]
@@ -71,8 +72,9 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
 
         var act = () => service.RegisterArtifactAsync(_workspaceId, request);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Artifact identity is already registered with different metadata.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Artifact identity is already registered with different metadata.", exception.Message);
     }
 
     [Fact]
@@ -84,8 +86,9 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
             _workspaceId,
             WorkspaceDeploymentTestFixtures.ArtifactRegistration() with { ArtifactTypeId = "unknown.type" });
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Artifact type is not supported.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Artifact type is not supported.", exception.Message);
     }
 
     [Theory]
@@ -99,8 +102,8 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
             _workspaceId,
             WorkspaceDeploymentTestFixtures.ArtifactRegistration() with { LayoutVersion = layoutVersion });
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
-        _store.RegisteredRequests.Should().BeEmpty();
+        await Assert.ThrowsAsync<InvalidOperationException>(act);
+        Assert.Empty(_store.RegisteredRequests);
     }
 
     [Fact]
@@ -112,8 +115,9 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
             _workspaceId,
             WorkspaceDeploymentTestFixtures.ArtifactRegistration(reference: "local:///tmp/token-value"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Artifact metadata contains unsafe secret-like content.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Artifact metadata contains unsafe secret-like content.", exception.Message);
     }
 
     [Fact]
@@ -133,10 +137,10 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
 
         var result = await service.RefreshInspectionAsync(_workspaceId, artifact.Id);
 
-        result.ChecksumStatus.Should().Be(WorkspaceArtifactChecksumStatus.Verified);
-        result.InspectionStatus.Should().Be(WorkspaceArtifactInspectionStatus.Valid);
-        result.LastInspectedAt.Should().Be(_time.GetUtcNow());
-        result.Resources.Should().ContainSingle(x => x.LogicalId == "payment-retry");
+        Assert.Equal(WorkspaceArtifactChecksumStatus.Verified, result.ChecksumStatus);
+        Assert.Equal(WorkspaceArtifactInspectionStatus.Valid, result.InspectionStatus);
+        Assert.Equal(_time.GetUtcNow(), result.LastInspectedAt);
+        Assert.Single(result.Resources, x => x.LogicalId == "payment-retry");
     }
 
     [Fact]
@@ -157,12 +161,12 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
 
         var result = await service.RefreshInspectionAsync(_workspaceId, artifact.Id);
 
-        result.ArtifactId.Should().Be(artifact.ArtifactId);
-        result.ChecksumStatus.Should().Be(WorkspaceArtifactChecksumStatus.Mismatched);
-        result.InspectionStatus.Should().Be(WorkspaceArtifactInspectionStatus.Invalid);
-        result.Diagnostics.Should().Contain(x => x.Code == "artifact.identity.mismatch");
-        result.Diagnostics.Should().Contain(x => x.Message.Contains("[redacted]", StringComparison.Ordinal));
-        result.Diagnostics.Should().NotContain(x => x.Message.Contains("secret value", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(artifact.ArtifactId, result.ArtifactId);
+        Assert.Equal(WorkspaceArtifactChecksumStatus.Mismatched, result.ChecksumStatus);
+        Assert.Equal(WorkspaceArtifactInspectionStatus.Invalid, result.InspectionStatus);
+        Assert.Contains(result.Diagnostics, x => x.Code == "artifact.identity.mismatch");
+        Assert.Contains(result.Diagnostics, x => x.Message.Contains("[redacted]", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Diagnostics, x => x.Message.Contains("secret value", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -175,9 +179,9 @@ public sealed class WorkspaceArtifactServiceTests : IDisposable
 
         var result = await service.RefreshInspectionAsync(_workspaceId, artifact.Id);
 
-        result.ChecksumStatus.Should().Be(WorkspaceArtifactChecksumStatus.Unavailable);
-        result.InspectionStatus.Should().Be(WorkspaceArtifactInspectionStatus.Unsupported);
-        result.Diagnostics.Should().ContainSingle(x => x.Code == "artifact.reference.unsupported");
+        Assert.Equal(WorkspaceArtifactChecksumStatus.Unavailable, result.ChecksumStatus);
+        Assert.Equal(WorkspaceArtifactInspectionStatus.Unsupported, result.InspectionStatus);
+        Assert.Single(result.Diagnostics, x => x.Code == "artifact.reference.unsupported");
     }
 
     public void Dispose()

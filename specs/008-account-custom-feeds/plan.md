@@ -16,7 +16,7 @@ Add the account/workspace foundation required for paid custom package feeds. The
 
 **Storage**: Existing relational catalog database with new account/workspace/identity/membership/entitlement tables and new ownership fields on `PackageSources`.
 
-**Testing**: xUnit, FluentAssertions, ASP.NET Core WebApplicationFactory integration tests, EF Core persistence tests, and focused core service tests.
+**Testing**: xUnit and its built-in assertions, ASP.NET Core WebApplicationFactory integration tests, EF Core persistence tests, and focused core service tests.
 
 **Target platform**: ASP.NET Core Catalog API deployed as the existing modular monolith.
 

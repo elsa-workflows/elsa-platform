@@ -5,7 +5,6 @@ using ValenceControl.PackageCatalog.Core.Sync;
 using ValenceControl.PackageCatalog.Core.Manifests;
 using ValenceControl.PackageCatalog.Testing;
 using ValenceControl.PackageManifests.Validation;
-using FluentAssertions;
 
 namespace ValenceControl.PackageCatalog.Core.Tests;
 
@@ -24,9 +23,9 @@ public sealed class PackageSyncServiceTests
 
         var run = await service.SyncAllAsync();
 
-        run.Status.Should().Be(SyncRunStatus.Completed);
-        run.Items.Should().ContainSingle(x => x.Status == SyncRunItemStatus.Indexed);
-        catalog.Packages.Should().ContainSingle(x => x.PackageId == "Elsa.Email" && x.DisplayName == "Email");
+        Assert.Equal(SyncRunStatus.Completed, run.Status);
+        Assert.Single(run.Items, x => x.Status == SyncRunItemStatus.Indexed);
+        Assert.Single(catalog.Packages, x => x.PackageId == "Elsa.Email" && x.DisplayName == "Email");
     }
 
     [Fact]
@@ -44,8 +43,8 @@ public sealed class PackageSyncServiceTests
 
         var run = await service.SyncAllAsync();
 
-        run.Items.Should().ContainSingle(x => x.Status == SyncRunItemStatus.Suspicious);
-        version.SuspiciousChangeDetected.Should().BeTrue();
+        Assert.Single(run.Items, x => x.Status == SyncRunItemStatus.Suspicious);
+        Assert.True(version.SuspiciousChangeDetected);
     }
 
     [Fact]
@@ -64,8 +63,8 @@ public sealed class PackageSyncServiceTests
 
         var run = await service.SyncAllAsync();
 
-        run.Status.Should().Be(SyncRunStatus.Completed);
-        package.LatestVersion.Should().Be("2.0.0");
+        Assert.Equal(SyncRunStatus.Completed, run.Status);
+        Assert.Equal("2.0.0", package.LatestVersion);
     }
 
     [Fact]
@@ -79,8 +78,8 @@ public sealed class PackageSyncServiceTests
 
         var run = await service.SyncAllAsync();
 
-        run.Items.Should().ContainSingle(x => x.Status == SyncRunItemStatus.Invalid);
-        catalog.Packages.Should().ContainSingle(x => x.PackageId == "Elsa.Email" && x.DisplayName == "Email");
+        Assert.Single(run.Items, x => x.Status == SyncRunItemStatus.Invalid);
+        Assert.Single(catalog.Packages, x => x.PackageId == "Elsa.Email" && x.DisplayName == "Email");
     }
 
     [Fact]
@@ -105,8 +104,8 @@ public sealed class PackageSyncServiceTests
 
         var run = await service.SyncAllAsync();
 
-        run.Status.Should().Be(SyncRunStatus.Completed);
-        catalog.Packages.Should().ContainSingle(x => x.PackageId == "Elsa.Email" && x.LatestVersion == "2.0.0" && x.DisplayName == "Email Modern");
+        Assert.Equal(SyncRunStatus.Completed, run.Status);
+        Assert.Single(catalog.Packages, x => x.PackageId == "Elsa.Email" && x.LatestVersion == "2.0.0" && x.DisplayName == "Email Modern");
     }
 
     [Fact]
@@ -127,8 +126,8 @@ public sealed class PackageSyncServiceTests
 
         var run = await service.SyncAllAsync();
 
-        run.Items.Should().ContainSingle(x => x.Status == SyncRunItemStatus.Invalid);
-        package.DisplayName.Should().Be("Email");
+        Assert.Single(run.Items, x => x.Status == SyncRunItemStatus.Invalid);
+        Assert.Equal("Email", package.DisplayName);
     }
 
     [Fact]
@@ -144,12 +143,12 @@ public sealed class PackageSyncServiceTests
 
         var run = await service.SyncAllAsync();
 
-        run.Status.Should().Be(SyncRunStatus.CompletedWithErrors);
-        source.Status.Should().Be(PackageSourceStatus.Warning);
-        source.LastSyncedAt.Should().NotBeNull();
-        source.LastSuccessfulSyncAt.Should().Be(previousLastSuccessfulSync);
-        source.LastSyncError.Should().Be("Elsa.Email 1.0.0: download failed");
-        sources.SaveChangesCount.Should().Be(1);
+        Assert.Equal(SyncRunStatus.CompletedWithErrors, run.Status);
+        Assert.Equal(PackageSourceStatus.Warning, source.Status);
+        Assert.NotNull(source.LastSyncedAt);
+        Assert.Equal(previousLastSuccessfulSync, source.LastSuccessfulSyncAt);
+        Assert.Equal("Elsa.Email 1.0.0: download failed", source.LastSyncError);
+        Assert.Equal(1, sources.SaveChangesCount);
     }
 
     [Fact]
@@ -166,9 +165,9 @@ public sealed class PackageSyncServiceTests
 
         await service.SyncAllAsync();
 
-        source.Status.Should().Be(PackageSourceStatus.Healthy);
-        source.LastSyncError.Should().BeNull();
-        source.LastSuccessfulSyncAt.Should().Be(source.LastSyncedAt);
+        Assert.Equal(PackageSourceStatus.Healthy, source.Status);
+        Assert.Null(source.LastSyncError);
+        Assert.Equal(source.LastSyncedAt, source.LastSuccessfulSyncAt);
     }
 
     [Fact]
@@ -180,9 +179,9 @@ public sealed class PackageSyncServiceTests
 
         var run = await service.SyncAllAsync();
 
-        run.Status.Should().Be(SyncRunStatus.CompletedWithErrors);
-        source.Status.Should().Be(PackageSourceStatus.Error);
-        source.LastSyncError.Should().Be("feed unreachable");
+        Assert.Equal(SyncRunStatus.CompletedWithErrors, run.Status);
+        Assert.Equal(PackageSourceStatus.Error, source.Status);
+        Assert.Equal("feed unreachable", source.LastSyncError);
     }
 
     [Fact]
@@ -199,9 +198,9 @@ public sealed class PackageSyncServiceTests
         discovery.Release.SetResult();
         var completed = await running;
 
-        rejected.Status.Should().Be(SyncRunStatus.Failed);
-        rejected.Error.Should().Contain("already active");
-        completed.Status.Should().Be(SyncRunStatus.Completed);
+        Assert.Equal(SyncRunStatus.Failed, rejected.Status);
+        Assert.Contains("already active", rejected.Error);
+        Assert.Equal(SyncRunStatus.Completed, completed.Status);
     }
 
     [Fact]
@@ -214,22 +213,22 @@ public sealed class PackageSyncServiceTests
 
         var started = await service.StartManualAllAsync();
 
-        started.Accepted.Should().BeTrue();
-        started.Run.Status.Should().Be(SyncRunStatus.Running);
-        syncRuns.Runs.Should().ContainSingle(x => x.Id == started.Run.Id && x.Status == SyncRunStatus.Running);
-        discovery.Started.Task.IsCompleted.Should().BeFalse();
+        Assert.True(started.Accepted);
+        Assert.Equal(SyncRunStatus.Running, started.Run.Status);
+        Assert.Single(syncRuns.Runs, x => x.Id == started.Run.Id && x.Status == SyncRunStatus.Running);
+        Assert.False(discovery.Started.Task.IsCompleted);
 
         var rejected = await service.StartManualAllAsync();
-        rejected.Accepted.Should().BeFalse();
-        rejected.Run.Status.Should().Be(SyncRunStatus.Failed);
-        rejected.Run.Error.Should().Contain("already active");
+        Assert.False(rejected.Accepted);
+        Assert.Equal(SyncRunStatus.Failed, rejected.Run.Status);
+        Assert.Contains("already active", rejected.Run.Error);
 
         var executing = service.ExecuteManualWorkItemAsync(started.WorkItem!);
         await discovery.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         discovery.Release.SetResult();
         await executing;
 
-        started.Run.Status.Should().Be(SyncRunStatus.Completed);
+        Assert.Equal(SyncRunStatus.Completed, started.Run.Status);
     }
 
     [Fact]
@@ -242,12 +241,12 @@ public sealed class PackageSyncServiceTests
         await service.MarkManualWorkItemFailedAsync(started.WorkItem!, "database unavailable");
         started.WorkItem!.Dispose();
 
-        started.Run.Status.Should().Be(SyncRunStatus.Failed);
-        started.Run.Error.Should().Be("database unavailable");
-        started.Run.CompletedAt.Should().NotBeNull();
+        Assert.Equal(SyncRunStatus.Failed, started.Run.Status);
+        Assert.Equal("database unavailable", started.Run.Error);
+        Assert.NotNull(started.Run.CompletedAt);
 
         var next = await service.StartManualAllAsync();
-        next.Accepted.Should().BeTrue();
+        Assert.True(next.Accepted);
         next.WorkItem!.Dispose();
     }
 
@@ -262,12 +261,12 @@ public sealed class PackageSyncServiceTests
         var running = service.SyncAllAsync();
         await discovery.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        syncActivity.IsSourceSyncing(source.Id).Should().BeTrue();
+        Assert.True(syncActivity.IsSourceSyncing(source.Id));
 
         discovery.Release.SetResult();
         await running;
 
-        syncActivity.IsSourceSyncing(source.Id).Should().BeFalse();
+        Assert.False(syncActivity.IsSourceSyncing(source.Id));
     }
 
     [Fact]
@@ -288,11 +287,11 @@ public sealed class PackageSyncServiceTests
         var running = service.SyncAllAsync();
         await discovery.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        cancellationRegistry.Cancel(syncRuns.Runs.Single().Id).Should().BeTrue();
+        Assert.True(cancellationRegistry.Cancel(syncRuns.Runs.Single().Id));
         var run = await running;
 
-        run.Status.Should().Be(SyncRunStatus.Canceled);
-        run.Error.Should().Be("Sync canceled by operator.");
+        Assert.Equal(SyncRunStatus.Canceled, run.Status);
+        Assert.Equal("Sync canceled by operator.", run.Error);
     }
 
     private static PackageSyncService CreateService(

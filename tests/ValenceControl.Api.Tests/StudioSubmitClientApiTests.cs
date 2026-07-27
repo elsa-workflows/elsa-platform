@@ -3,7 +3,6 @@ using ValenceControl.Deployment.Artifacts;
 using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.Studio.Submit;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -33,16 +32,16 @@ public sealed class StudioSubmitClientApiTests
         var artifacts = await owner.GetControlJsonAsync<WorkspaceArtifactListResponse>($"/api/workspaces/{workspaceId}/artifacts");
         var cockpit = await owner.GetControlJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
 
-        submitted.Status.Should().Be(StudioSubmitStatus.Submitted);
-        duplicate.Status.Should().Be(StudioSubmitStatus.Duplicate);
-        submitted.ArtifactId.Should().Be(package.Envelope.ArtifactId);
-        duplicate.ArtifactId.Should().Be(package.Envelope.ArtifactId);
-        submitted.ArtifactDigest.Should().Be($"{package.Envelope.ContentDigest.Algorithm}:{package.Envelope.ContentDigest.Value}");
-        artifacts!.Items.Should().ContainSingle(x => x.ArtifactId == package.Envelope.ArtifactId)
-            .Which.Producer!.ProducerType.Should().Be("studio");
-        artifacts.Items.Single().ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaLoomRecipe);
-        artifacts.Items.Single().DisplayMetadata!.Source.Should().Be("studio://workflows/payment-retry");
-        cockpit!.History.Should().BeEmpty();
+        Assert.Equal(StudioSubmitStatus.Submitted, submitted.Status);
+        Assert.Equal(StudioSubmitStatus.Duplicate, duplicate.Status);
+        Assert.Equal(package.Envelope.ArtifactId, submitted.ArtifactId);
+        Assert.Equal(package.Envelope.ArtifactId, duplicate.ArtifactId);
+        Assert.Equal($"{package.Envelope.ContentDigest.Algorithm}:{package.Envelope.ContentDigest.Value}", submitted.ArtifactDigest);
+        var artifact = Assert.Single(artifacts!.Items, x => x.ArtifactId == package.Envelope.ArtifactId);
+        Assert.Equal("studio", artifact.Producer!.ProducerType);
+        Assert.Equal(ArtifactTypeIds.ElsaLoomRecipe, artifacts.Items.Single().ArtifactTypeId);
+        Assert.Equal("studio://workflows/payment-retry", artifacts.Items.Single().DisplayMetadata!.Source);
+        Assert.Empty(cockpit!.History);
     }
 
     [Fact]
@@ -77,13 +76,13 @@ public sealed class StudioSubmitClientApiTests
         var revisions = await owner.GetControlJsonAsync<WorkspaceApplicationRevisionsResponse>(
             $"/api/workspaces/{workspaceId}/deployments/applications/{application.Id}/revisions");
 
-        submitted.Status.Should().Be(StudioSubmitStatus.Submitted);
-        submitted.ArtifactRecordId.Should().NotBeNull();
-        submitted.RevisionId.Should().NotBeNull();
-        artifacts!.Items.Should().ContainSingle(x => x.Id == submitted.ArtifactRecordId)
-            .Which.Format.Should().Be(WorkspaceArtifactFormat.Zip);
-        revisions!.Items.Should().ContainSingle()
-            .Which.Revision.Id.Should().Be(submitted.RevisionId!.Value);
+        Assert.Equal(StudioSubmitStatus.Submitted, submitted.Status);
+        Assert.NotNull(submitted.ArtifactRecordId);
+        Assert.NotNull(submitted.RevisionId);
+        var artifact = Assert.Single(artifacts!.Items, x => x.Id == submitted.ArtifactRecordId);
+        Assert.Equal(WorkspaceArtifactFormat.Zip, artifact.Format);
+        var revision = Assert.Single(revisions!.Items);
+        Assert.Equal(submitted.RevisionId!.Value, revision.Revision.Id);
     }
 
     private static WorkflowSubmissionSnapshot Snapshot() =>

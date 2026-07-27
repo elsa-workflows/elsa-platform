@@ -1,6 +1,5 @@
 using ValenceControl.Deployment.Artifacts;
 using ValenceControl.Studio.Submit;
-using FluentAssertions;
 
 namespace ValenceControl.Studio.Submit.Tests;
 
@@ -22,26 +21,26 @@ public sealed class StudioWorkflowSnapshotPackagerTests
 
         var package = _packager.Package(Snapshot(), _options, packagedAt);
 
-        package.PackagedAt.Should().Be(packagedAt);
-        package.WorkflowDefinitionJson.Should().Contain("\"PaymentRetry\"");
-        package.Envelope.ArtifactId.Should().StartWith("elsa.loom.recipe:payment-retry:");
-        package.Envelope.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaLoomRecipe);
-        package.Envelope.EnvelopeVersion.Should().Be(ArtifactEnvelopeConstants.EnvelopeVersion);
-        package.Envelope.ArtifactSchemaVersion.Should().Be(ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion);
-        package.Envelope.ContentDigest.Algorithm.Should().Be("sha256");
-        package.Envelope.PayloadReference.Provider.Should().Be("producer-managed");
-        package.Envelope.PayloadReference.Uri.Should().StartWith("studio://loom-recipes/payment-retry/snapshots/");
-        package.Envelope.PayloadReference.ReferenceDigest.Should().Be(package.Envelope.ContentDigest);
-        package.Envelope.Producer.ProducerType.Should().Be("studio");
-        package.Envelope.Producer.ProducerName.Should().Be("Elsa Studio");
-        package.Envelope.Producer.ProducerVersion.Should().Be("4.0.0");
-        package.Envelope.Producer.SourceReference.Should().Be("workflow:payment-retry:version:v42");
-        package.Envelope.DisplayMetadata.Name.Should().Be("Payment Retry");
-        package.Envelope.DisplayMetadata.Labels.Should().Contain("domain", "payments");
-        package.Envelope.CompatibilityHints.Should().ContainSingle();
-        package.Envelope.CompatibilityHints.Single().RequiredCapabilities.Should().Contain("loom.recipe.apply");
-        package.WorkflowDefinitionJson.Should().Contain("\"schemaVersion\"");
-        package.WorkflowDefinitionJson.Should().Contain("\"workflowDefinition.upsert\"");
+        Assert.Equal(packagedAt, package.PackagedAt);
+        Assert.Contains("\"PaymentRetry\"", package.WorkflowDefinitionJson);
+        Assert.StartsWith("elsa.loom.recipe:payment-retry:", package.Envelope.ArtifactId);
+        Assert.Equal(ArtifactTypeIds.ElsaLoomRecipe, package.Envelope.ArtifactTypeId);
+        Assert.Equal(ArtifactEnvelopeConstants.EnvelopeVersion, package.Envelope.EnvelopeVersion);
+        Assert.Equal(ArtifactEnvelopeConstants.DefaultArtifactSchemaVersion, package.Envelope.ArtifactSchemaVersion);
+        Assert.Equal("sha256", package.Envelope.ContentDigest.Algorithm);
+        Assert.Equal("producer-managed", package.Envelope.PayloadReference.Provider);
+        Assert.StartsWith("studio://loom-recipes/payment-retry/snapshots/", package.Envelope.PayloadReference.Uri);
+        Assert.Equal(package.Envelope.ContentDigest, package.Envelope.PayloadReference.ReferenceDigest);
+        Assert.Equal("studio", package.Envelope.Producer.ProducerType);
+        Assert.Equal("Elsa Studio", package.Envelope.Producer.ProducerName);
+        Assert.Equal("4.0.0", package.Envelope.Producer.ProducerVersion);
+        Assert.Equal("workflow:payment-retry:version:v42", package.Envelope.Producer.SourceReference);
+        Assert.Equal("Payment Retry", package.Envelope.DisplayMetadata.Name);
+        Assert.Contains(new KeyValuePair<string, string>("domain", "payments"), package.Envelope.DisplayMetadata.Labels);
+        Assert.Single(package.Envelope.CompatibilityHints);
+        Assert.Contains("loom.recipe.apply", package.Envelope.CompatibilityHints.Single().RequiredCapabilities);
+        Assert.Contains("\"schemaVersion\"", package.WorkflowDefinitionJson);
+        Assert.Contains("\"workflowDefinition.upsert\"", package.WorkflowDefinitionJson);
     }
 
     [Fact]
@@ -50,9 +49,9 @@ public sealed class StudioWorkflowSnapshotPackagerTests
         var first = _packager.Package(Snapshot(), _options);
         var second = _packager.Package(Snapshot(), _options);
 
-        second.Envelope.ArtifactId.Should().Be(first.Envelope.ArtifactId);
-        second.Envelope.ContentDigest.Should().Be(first.Envelope.ContentDigest);
-        second.Envelope.PayloadReference.Uri.Should().Be(first.Envelope.PayloadReference.Uri);
+        Assert.Equal(first.Envelope.ArtifactId, second.Envelope.ArtifactId);
+        Assert.Equal(first.Envelope.ContentDigest, second.Envelope.ContentDigest);
+        Assert.Equal(first.Envelope.PayloadReference.Uri, second.Envelope.PayloadReference.Uri);
     }
 
     [Fact]
@@ -61,8 +60,8 @@ public sealed class StudioWorkflowSnapshotPackagerTests
         var first = _packager.Package(Snapshot(), _options);
         var changed = _packager.Package(Snapshot(definitionJson: """{"id":"payment-retry","name":"PaymentRetry","version":43}"""), _options);
 
-        changed.Envelope.ArtifactId.Should().NotBe(first.Envelope.ArtifactId);
-        changed.Envelope.ContentDigest.Should().NotBe(first.Envelope.ContentDigest);
+        Assert.NotEqual(first.Envelope.ArtifactId, changed.Envelope.ArtifactId);
+        Assert.NotEqual(first.Envelope.ContentDigest, changed.Envelope.ContentDigest);
     }
 
     [Fact]
@@ -75,10 +74,10 @@ public sealed class StudioWorkflowSnapshotPackagerTests
         var packageA = _packager.Package(snapshotA, _options);
         var packageB = _packager.Package(snapshotB, _options);
 
-        packageA.Envelope.ContentDigest.Should().NotBe(packageB.Envelope.ContentDigest);
-        packageA.Envelope.ArtifactId.Should().NotBe(packageB.Envelope.ArtifactId);
-        packageA.Envelope.ArtifactId.Length.Should().BeLessThanOrEqualTo(256);
-        packageB.Envelope.ArtifactId.Length.Should().BeLessThanOrEqualTo(256);
+        Assert.NotEqual(packageB.Envelope.ContentDigest, packageA.Envelope.ContentDigest);
+        Assert.NotEqual(packageB.Envelope.ArtifactId, packageA.Envelope.ArtifactId);
+        Assert.True(packageA.Envelope.ArtifactId.Length <= 256);
+        Assert.True(packageB.Envelope.ArtifactId.Length <= 256);
     }
 
     [Fact]
@@ -88,8 +87,8 @@ public sealed class StudioWorkflowSnapshotPackagerTests
 
         var act = () => _packager.Package(snapshot, _options);
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Artifact metadata contains unsafe secret-like content.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+        Assert.Equal("Artifact metadata contains unsafe secret-like content.", exception.Message);
     }
 
     [Fact]
@@ -100,8 +99,8 @@ public sealed class StudioWorkflowSnapshotPackagerTests
 
         labels["token"] = "abc";
 
-        package.Envelope.DisplayMetadata.Labels.Should().Contain("domain", "payments");
-        package.Envelope.DisplayMetadata.Labels.Should().NotContainKey("token");
+        Assert.Contains(new KeyValuePair<string, string>("domain", "payments"), package.Envelope.DisplayMetadata.Labels);
+        Assert.DoesNotContain("token", package.Envelope.DisplayMetadata.Labels.Keys);
     }
 
     [Fact]
@@ -109,8 +108,8 @@ public sealed class StudioWorkflowSnapshotPackagerTests
     {
         var act = () => _packager.Package(Snapshot(), _options with { ControlEndpoint = null });
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Control endpoint is required before submitting to Control.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+        Assert.Equal("Control endpoint is required before submitting to Control.", exception.Message);
     }
 
     [Fact]
@@ -124,8 +123,8 @@ public sealed class StudioWorkflowSnapshotPackagerTests
 
         var act = () => _packager.Package(Snapshot(), options);
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Control credential reference is required for provider-backed Studio submission.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+        Assert.Equal("Control credential reference is required for provider-backed Studio submission.", exception.Message);
     }
 
     private static WorkflowSubmissionSnapshot Snapshot(

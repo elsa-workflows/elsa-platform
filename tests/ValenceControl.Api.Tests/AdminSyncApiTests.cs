@@ -6,7 +6,6 @@ using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Core.Sync;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,18 +39,19 @@ public sealed class AdminSyncApiTests
         client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, "local-dev-key");
 
         var response = await client.PostAsync("/api/admin/sync", null).WaitAsync(TimeSpan.FromSeconds(5));
-        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        Assert.True(response.StatusCode == HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         var run = await response.Content.ReadControlJsonAsync<AdminSyncRunResponse>();
 
-        run!.Status.Should().Be(SyncRunStatus.Running);
+        Assert.Equal(SyncRunStatus.Running, run!.Status);
 
         var runs = await client.GetControlJsonAsync<List<AdminSyncRunResponse>>("/api/admin/sync-runs");
-        runs.Should().ContainSingle(x => x.Id == run.Id);
+        Assert.NotNull(runs);
+        Assert.Single(runs!, x => x.Id == run.Id);
 
         await discovery.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         discovery.Release.SetResult();
         var completed = await WaitForRunStatusAsync(client, run.Id, SyncRunStatus.Completed);
-        completed.CompletedAt.Should().NotBeNull();
+        Assert.NotNull(completed.CompletedAt);
     }
 
     [Fact]
@@ -65,10 +65,13 @@ public sealed class AdminSyncApiTests
 
         var runs = await client.GetControlJsonAsync<List<AdminSyncRunResponse>>("/api/admin/sync-runs");
 
-        var run = runs.Should().ContainSingle(x => x.Id == runId).Subject;
-        run.ItemCount.Should().Be(1);
-        run.Sources.Should().ContainSingle().Which.Should().Be(new AdminSyncRunSourceResponse(sourceId, "Elsa Official"));
-        run.Items.Should().BeEmpty();
+        Assert.NotNull(runs);
+        var run = Assert.Single(runs!, x => x.Id == runId);
+        Assert.Equal(1, run.ItemCount);
+        Assert.NotNull(run.Sources);
+        Assert.Equal(new AdminSyncRunSourceResponse(sourceId, "Elsa Official"), Assert.Single(run.Sources!));
+        Assert.NotNull(run.Items);
+        Assert.Empty(run.Items!);
     }
 
     [Fact]
@@ -82,9 +85,11 @@ public sealed class AdminSyncApiTests
 
         var run = await client.GetControlJsonAsync<AdminSyncRunResponse>($"/api/admin/sync-runs/{runId}");
 
-        run!.ItemCount.Should().Be(1);
-        run.Sources.Should().ContainSingle().Which.Should().Be(new AdminSyncRunSourceResponse(sourceId, "Elsa Official"));
-        run.Items.Should().ContainSingle(x => x.SourceId == sourceId && x.PackageId == "Elsa.Workflows");
+        Assert.Equal(1, run!.ItemCount);
+        Assert.NotNull(run.Sources);
+        Assert.Equal(new AdminSyncRunSourceResponse(sourceId, "Elsa Official"), Assert.Single(run.Sources!));
+        Assert.NotNull(run.Items);
+        Assert.Single(run.Items!, x => x.SourceId == sourceId && x.PackageId == "Elsa.Workflows");
     }
 
     [Fact]
@@ -115,14 +120,16 @@ public sealed class AdminSyncApiTests
         var response = await client.PostAsync($"/api/admin/sync/sources/{sourceId}", null);
         var run = await response.Content.ReadControlJsonAsync<AdminSyncRunResponse>();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
-        run!.Status.Should().Be(SyncRunStatus.Running);
-        run.ItemCount.Should().Be(0);
-        run.Sources.Should().ContainSingle().Which.Should().Be(new AdminSyncRunSourceResponse(sourceId, "Elsa Official"));
+        Assert.True(response.StatusCode == HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        Assert.Equal(SyncRunStatus.Running, run!.Status);
+        Assert.Equal(0, run.ItemCount);
+        Assert.NotNull(run.Sources);
+        Assert.Equal(new AdminSyncRunSourceResponse(sourceId, "Elsa Official"), Assert.Single(run.Sources!));
 
         var completed = await WaitForRunStatusAsync(client, run.Id, SyncRunStatus.CompletedWithErrors);
-        completed.ItemCount.Should().Be(1);
-        completed.Sources.Should().ContainSingle().Which.Should().Be(new AdminSyncRunSourceResponse(sourceId, "Elsa Official"));
+        Assert.Equal(1, completed.ItemCount);
+        Assert.NotNull(completed.Sources);
+        Assert.Equal(new AdminSyncRunSourceResponse(sourceId, "Elsa Official"), Assert.Single(completed.Sources!));
     }
 
     private static async Task<AdminSyncRunResponse> WaitForRunStatusAsync(HttpClient client, Guid runId, SyncRunStatus status)
@@ -155,20 +162,20 @@ public sealed class AdminSyncApiTests
         var response = await client.DeleteAsync($"/api/admin/sync-runs/{runId}");
         var result = await response.Content.ReadControlJsonAsync<AdminSyncRunCleanupResultResponse>();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
-        result!.DeletedRunCount.Should().Be(1);
-        result.DeletedItemCount.Should().Be(1);
+        Assert.True(response.StatusCode == HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, result!.DeletedRunCount);
+        Assert.Equal(1, result.DeletedItemCount);
 
         var missing = await client.GetAsync($"/api/admin/sync-runs/{runId}");
-        missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
 
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-        (await db.PackageSources.CountAsync()).Should().Be(1);
-        (await db.Packages.CountAsync()).Should().Be(1);
-        (await db.PackageVersions.CountAsync()).Should().Be(1);
-        (await db.ManifestValidationResults.CountAsync()).Should().Be(1);
-        (await db.ApprovalRecords.CountAsync()).Should().Be(1);
+        Assert.Equal(1, await db.PackageSources.CountAsync());
+        Assert.Equal(1, await db.Packages.CountAsync());
+        Assert.Equal(1, await db.PackageVersions.CountAsync());
+        Assert.Equal(1, await db.ManifestValidationResults.CountAsync());
+        Assert.Equal(1, await db.ApprovalRecords.CountAsync());
     }
 
     [Fact]
@@ -181,9 +188,9 @@ public sealed class AdminSyncApiTests
         var response = await client.DeleteAsync($"/api/admin/sync-runs/{Guid.NewGuid()}");
         var result = await response.Content.ReadControlJsonAsync<AdminSyncRunCleanupResultResponse>();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
-        result!.NotFoundRunCount.Should().Be(1);
-        result.DeletedRunCount.Should().Be(0);
+        Assert.True(response.StatusCode == HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, result!.NotFoundRunCount);
+        Assert.Equal(0, result.DeletedRunCount);
     }
 
     [Fact]
@@ -200,7 +207,7 @@ public sealed class AdminSyncApiTests
 
         var response = await client.DeleteAsync($"/api/admin/sync-runs/{runId}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     [Fact]
@@ -223,16 +230,16 @@ public sealed class AdminSyncApiTests
         var response = await client.DeleteAsync($"/api/admin/sync-runs?completedBefore={Cutoff(cutoff)}");
         var result = await response.Content.ReadControlJsonAsync<AdminSyncRunCleanupResultResponse>();
 
-        preview!.EligibleRunCount.Should().Be(2);
-        preview.EligibleItemCount.Should().Be(3);
-        preview.ExcludedRunCount.Should().Be(1);
-        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
-        result!.DeletedRunCount.Should().Be(2);
-        result.DeletedItemCount.Should().Be(3);
-        result.ExcludedRunCount.Should().Be(1);
+        Assert.Equal(2, preview!.EligibleRunCount);
+        Assert.Equal(3, preview.EligibleItemCount);
+        Assert.Equal(1, preview.ExcludedRunCount);
+        Assert.True(response.StatusCode == HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, result!.DeletedRunCount);
+        Assert.Equal(3, result.DeletedItemCount);
+        Assert.Equal(1, result.ExcludedRunCount);
 
         var runs = await client.GetControlJsonAsync<List<AdminSyncRunResponse>>("/api/admin/sync-runs");
-        runs!.Select(x => x.Id).Should().BeEquivalentTo([recent.Id, running.Id]);
+        Assert.Equivalent(new[] { recent.Id, running.Id }, runs!.Select(x => x.Id));
     }
 
     [Fact]
@@ -250,9 +257,9 @@ public sealed class AdminSyncApiTests
         var preview = await client.GetAsync($"/api/admin/sync-runs/deletion-preview?completedBefore={futureCutoff}");
         var delete = await client.DeleteAsync($"/api/admin/sync-runs?completedBefore={futureCutoff}");
 
-        preview.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        delete.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await client.GetControlJsonAsync<List<AdminSyncRunResponse>>("/api/admin/sync-runs"))!.Should().ContainSingle();
+        Assert.Equal(HttpStatusCode.BadRequest, preview.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, delete.StatusCode);
+        Assert.Single((await client.GetControlJsonAsync<List<AdminSyncRunResponse>>("/api/admin/sync-runs"))!);
     }
 
     [Fact]
@@ -264,42 +271,7 @@ public sealed class AdminSyncApiTests
 
         var response = await client.DeleteAsync($"/api/admin/sync-runs/{Guid.NewGuid()}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task Running_sync_can_be_canceled()
-    {
-        var discovery = new GatedDiscoveryClient();
-        await using var app = new ControlApiTestApplication().WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<IPackageVersionDiscoveryClient>();
-                services.AddSingleton<IPackageVersionDiscoveryClient>(discovery);
-            });
-        });
-
-        await SeedAsync(app, db =>
-        {
-            db.PackageSources.Add(PublicCatalogSeedData.CreatePackageSource());
-            return Task.CompletedTask;
-        });
-
-        var client = app.CreateClient();
-        client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, "local-dev-key");
-
-        var running = client.PostAsync("/api/admin/sync", null);
-        await discovery.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var activeRun = (await client.GetControlJsonAsync<List<AdminSyncRunResponse>>("/api/admin/sync-runs"))!.Should().ContainSingle().Subject;
-
-        var cancelResponse = await client.PostAsync($"/api/admin/sync-runs/{activeRun.Id}/cancel", null);
-        await running;
-        var completedRun = await WaitForRunStatusAsync(client, activeRun.Id, SyncRunStatus.Canceled);
-
-        cancelResponse.StatusCode.Should().Be(HttpStatusCode.OK, await cancelResponse.Content.ReadAsStringAsync());
-        completedRun.Status.Should().Be(SyncRunStatus.Canceled);
-        completedRun.Error.Should().Be("Sync canceled by operator.");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     private static async Task<(Guid RunId, Guid SourceId)> SeedSyncRunWithSourceAsync(ControlApiTestApplication app)

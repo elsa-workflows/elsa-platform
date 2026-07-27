@@ -2,7 +2,6 @@ using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
 using ValenceControl.Healing.ComponentManifest;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.ComponentManifest.Tests;
 
@@ -29,12 +28,12 @@ public sealed class ComponentManifestTests
         var firstJson = ComponentManifestSerializer.Serialize(first);
         var secondJson = ComponentManifestSerializer.Serialize(second);
 
-        firstJson.Should().Be(secondJson);
-        firstJson.Should().Contain("https://github.com/Acme/WorkflowHost");
-        firstJson.Should().NotContain("\\\\");
+        Assert.Equal(secondJson, firstJson);
+        Assert.Contains("https://github.com/Acme/WorkflowHost", firstJson);
+        Assert.DoesNotContain("\\\\", firstJson);
         using var document = JsonDocument.Parse(firstJson);
-        document.RootElement.GetProperty("components")[0].GetProperty("name").GetString().Should().Be("Alpha");
-        document.RootElement.GetProperty("manifestDigest").GetString().Should().MatchRegex("^sha256:[0-9a-f]{64}$");
+        Assert.Equal("Alpha", document.RootElement.GetProperty("components")[0].GetProperty("name").GetString());
+        Assert.Matches("^sha256:[0-9a-f]{64}$", document.RootElement.GetProperty("manifestDigest").GetString());
     }
 
     [Fact]
@@ -47,8 +46,8 @@ public sealed class ComponentManifestTests
 
         const string expectedCanonicalBody = "{\"application\":{\"name\":\"Acme.WorkflowHost\",\"runtimeIdentifier\":\"linux-x64\",\"targetFramework\":\"net10.0\",\"version\":\"2.4.1\"},\"components\":[{\"assemblies\":[{\"contentHash\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"name\":\"Alpha\",\"publicKeyToken\":null,\"relativePath\":\"lib/net10.0/Alpha.dll\",\"version\":\"1.0.0.0\"}],\"contentHash\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"dependencies\":[],\"directDependency\":true,\"key\":\"nuget:Alpha:1.0.0\",\"kind\":\"package\",\"name\":\"Alpha\",\"repositoryCommit\":null,\"repositoryUrl\":\"https://github.com/acme/packages\",\"version\":\"1.0.0\"}],\"revision\":{\"buildId\":\"build-42\",\"createdAt\":\"2026-07-16T00:00:00Z\",\"repositoryUrl\":\"https://github.com/acme/workflow-host\",\"sourceRevision\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"schemaVersion\":\"1.0\"}";
         var expectedDigest = $"sha256:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(expectedCanonicalBody))).ToLowerInvariant()}";
-        digest.Should().Be(expectedDigest);
-        serialized.Should().Contain($"\"manifestDigest\":\"{digest}\"");
+        Assert.Equal(expectedDigest, digest);
+        Assert.Contains($"\"manifestDigest\":\"{digest}\"", serialized);
     }
 
     [Theory]
@@ -62,7 +61,7 @@ public sealed class ComponentManifestTests
 
         var findings = ComponentManifestValidator.Validate(manifest);
 
-        findings.Should().Contain(x => x.Code == "manifest.path.unsafe");
+        Assert.Contains(findings, x => x.Code == "manifest.path.unsafe");
     }
 
     [Fact]
@@ -74,8 +73,8 @@ public sealed class ComponentManifestTests
 
         var findings = ComponentManifestValidator.Validate(manifest);
 
-        findings.Should().Contain(x => x.Code == "manifest.component.duplicate-key");
-        findings.Should().Contain(x => x.Code == "manifest.dependency.unknown");
+        Assert.Contains(findings, x => x.Code == "manifest.component.duplicate-key");
+        Assert.Contains(findings, x => x.Code == "manifest.dependency.unknown");
     }
 
     [Fact]
@@ -89,7 +88,7 @@ public sealed class ComponentManifestTests
             Components = [duplicate, duplicate]
         });
 
-        findings.Should().ContainSingle(x => x.Code == "manifest.component.duplicate-key");
+        Assert.Single(findings, x => x.Code == "manifest.component.duplicate-key");
     }
 
     [Fact]
@@ -101,8 +100,8 @@ public sealed class ComponentManifestTests
 
         var action = () => ComponentManifestSerializer.Serialize(manifest);
 
-        action.Should().Throw<ComponentManifestValidationException>()
-            .Which.Findings.Should().Contain(x => x.Code == "manifest.repository.credentials");
+        var exception = Assert.Throws<ComponentManifestValidationException>(action);
+        Assert.Contains(exception.Findings, x => x.Code == "manifest.repository.credentials");
     }
 
     [Fact]
@@ -119,8 +118,10 @@ public sealed class ComponentManifestTests
         var json = ComponentManifestSerializer.Serialize(manifest);
         var roundTrip = ComponentManifestSerializer.Deserialize(json);
 
-        roundTrip.Components.Should().ContainSingle(x => x.Kind == "future-component-kind");
-        roundTrip.Components[0].ExtensionData.Should().ContainKey("confidence");
+        Assert.NotNull(roundTrip);
+        var component = Assert.Single(roundTrip.Components, x => x.Kind == "future-component-kind");
+        Assert.NotNull(component.ExtensionData);
+        Assert.Contains("confidence", component.ExtensionData!.Keys);
     }
 
     [Theory]
@@ -142,7 +143,7 @@ public sealed class ComponentManifestTests
 
         var findings = ComponentManifestValidator.Validate(manifest);
 
-        findings.Should().Contain(x => x.Code == "manifest.extension.unsafe");
+        Assert.Contains(findings, x => x.Code == "manifest.extension.unsafe");
     }
 
     [Fact]
@@ -152,8 +153,8 @@ public sealed class ComponentManifestTests
 
         var action = () => ComponentManifestValidator.Validate(manifest);
 
-        action.Should().NotThrow();
-        action().Should().Contain(x => x.Code == "manifest.shape.invalid");
+        Assert.Null(Record.Exception(action));
+        Assert.Contains(action(), x => x.Code == "manifest.shape.invalid");
     }
 
     [Fact]
@@ -169,9 +170,9 @@ public sealed class ComponentManifestTests
 
         var action = () => ComponentManifestValidator.Validate(manifest);
 
-        action.Should().NotThrow();
-        action().Should().Contain(x => x.Code == "manifest.shape.invalid");
-        action().Should().Contain(x => x.Code == "manifest.hash.invalid");
+        Assert.Null(Record.Exception(action));
+        Assert.Contains(action(), x => x.Code == "manifest.shape.invalid");
+        Assert.Contains(action(), x => x.Code == "manifest.hash.invalid");
     }
 
     [Fact]
@@ -180,8 +181,7 @@ public sealed class ComponentManifestTests
         var manifest = CreateManifest([Package("Alpha", "1.0.0", "lib/net10.0/Alpha.dll", [])]);
         manifest = manifest with { Revision = manifest.Revision with { SourceRevision = "main" } };
 
-        ComponentManifestValidator.Validate(manifest)
-            .Should().Contain(x => x.Code == "manifest.revision.source-revision");
+        Assert.Contains(ComponentManifestValidator.Validate(manifest), x => x.Code == "manifest.revision.source-revision");
     }
 
     [Fact]
@@ -193,14 +193,13 @@ public sealed class ComponentManifestTests
 
         var json = ComponentManifestSerializer.Serialize(manifest);
 
-        json.Should().Contain($"\"repositoryCommit\":\"{uppercaseCommit.ToLowerInvariant()}\"");
+        Assert.Contains($"\"repositoryCommit\":\"{uppercaseCommit.ToLowerInvariant()}\"", json);
 
         var malicious = manifest with
         {
             Components = [component with { RepositoryCommit = "$(HOME)/token?secret=value" }]
         };
-        ComponentManifestValidator.Validate(malicious)
-            .Should().Contain(x => x.Code == "manifest.repository-commit.invalid");
+        Assert.Contains(ComponentManifestValidator.Validate(malicious), x => x.Code == "manifest.repository-commit.invalid");
     }
 
     [Fact]
@@ -217,13 +216,13 @@ public sealed class ComponentManifestTests
 
         var findings = ComponentManifestValidator.Validate(manifest);
 
-        findings.Should().ContainSingle(x => x.Code == "manifest.assembly.duplicate-path");
-        ComponentManifestValidator.Validate(manifest with
+        Assert.Single(findings, x => x.Code == "manifest.assembly.duplicate-path");
+        Assert.Single(ComponentManifestValidator.Validate(manifest with
         {
             Components = [component with { Assemblies = [conflictingDuplicate, component.Assemblies[0]] }]
-        }).Should().ContainSingle(x => x.Code == "manifest.assembly.duplicate-path");
+        }), x => x.Code == "manifest.assembly.duplicate-path");
         var action = () => ComponentManifestSerializer.Serialize(manifest);
-        action.Should().Throw<ComponentManifestValidationException>();
+        Assert.Throws<ComponentManifestValidationException>(action);
     }
 
     private static HealingComponentManifest CreateManifest(

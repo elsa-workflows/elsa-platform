@@ -1,6 +1,5 @@
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 
 namespace ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
@@ -28,7 +27,7 @@ public sealed class CatalogDbContextMappingTests
         await db.SaveChangesAsync();
 
         var saved = await db.PackageSources.SingleAsync();
-        saved.VersionDiscoveryPolicy.Should().Be(PackageSourceVersionDiscoveryPolicy.LatestPreview);
+        Assert.Equal(PackageSourceVersionDiscoveryPolicy.LatestPreview, saved.VersionDiscoveryPolicy);
     }
 
     [Fact]
@@ -58,8 +57,8 @@ public sealed class CatalogDbContextMappingTests
         db.ChangeTracker.Clear();
 
         var saved = await db.PackageSources.SingleAsync();
-        saved.IncludePatterns.Should().Contain("Elsa.Workflows.*");
-        saved.ExcludePatterns.Should().Contain("Elsa.Experimental.*");
+        Assert.Contains("Elsa.Workflows.*", saved.IncludePatterns);
+        Assert.Contains("Elsa.Experimental.*", saved.ExcludePatterns);
     }
 
     [Fact]
@@ -75,10 +74,10 @@ public sealed class CatalogDbContextMappingTests
             .FindProperty(nameof(PackageSource.IncludePatterns))!
             .GetValueComparer();
 
-        comparer.Should().NotBeNull();
-        comparer!.Equals(null, null).Should().BeTrue();
-        comparer.GetHashCode(null).Should().Be(0);
+        Assert.NotNull(comparer);
+        Assert.True(comparer!.Equals(null, null));
+        Assert.Equal(0, comparer.GetHashCode(null));
         var snapshot = () => comparer.Snapshot(null);
-        snapshot.Should().NotThrow();
+        Assert.Null(Record.Exception(snapshot));
     }
 }

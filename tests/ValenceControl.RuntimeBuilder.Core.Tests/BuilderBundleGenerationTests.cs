@@ -10,7 +10,6 @@ using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Testing;
 using ValenceControl.RuntimeBuilder.Core.Builder;
 using ValenceControl.RuntimeBuilder.Core.Builder.Planner;
-using FluentAssertions;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -26,9 +25,9 @@ public sealed class BuilderBundleGenerationTests
 
         var result = await service.GenerateAsync(new BuilderBundleFixtureBuilder().Build());
 
-        result.Findings.Should().NotContain(x => x.Level == "error");
-        result.Files.Select(x => x.Path).Should().StartWith(BundleFilePolicy.RequiredFilePaths);
-        result.Files.Should().Contain(x => x.Path == "Program.Generated.cs" && !x.Required);
+        Assert.DoesNotContain(result.Findings, x => x.Level == "error");
+        Assert.True(result.Files.Select(x => x.Path).Take(BundleFilePolicy.RequiredFilePaths.Count).SequenceEqual(BundleFilePolicy.RequiredFilePaths));
+        Assert.Contains(result.Files, x => x.Path == "Program.Generated.cs" && !x.Required);
     }
 
     [Fact]
@@ -41,7 +40,7 @@ public sealed class BuilderBundleGenerationTests
         var first = await service.GenerateAsync(intent);
         var second = await service.GenerateAsync(intent);
 
-        first.Files.Select(x => (x.Path, x.Contents)).Should().Equal(second.Files.Select(x => (x.Path, x.Contents)));
+        Assert.Equal(second.Files.Select(x => (x.Path, x.Contents)), first.Files.Select(x => (x.Path, x.Contents)));
     }
 
     [Fact]
@@ -52,10 +51,10 @@ public sealed class BuilderBundleGenerationTests
         var result = await service.GenerateAsync(new BuilderBundleFixtureBuilder().WithImage("elsa-pro-studio", hostPort: 8081).Build());
 
         var compose = result.Files.Single(x => x.Path == "docker-compose.yml").Contents;
-        compose.Should().Contain("image: elsaworkflows/elsa-pro-studio:latest");
-        compose.Should().Contain("container_name: elsa-pro-studio");
-        compose.Should().Contain("\"8081:8080\"");
-        compose.Should().Contain("Backend__Url");
+        Assert.Contains("image: elsaworkflows/elsa-pro-studio:latest", compose);
+        Assert.Contains("container_name: elsa-pro-studio", compose);
+        Assert.Contains("\"8081:8080\"", compose);
+        Assert.Contains("Backend__Url", compose);
     }
 
     [Fact]
@@ -65,8 +64,8 @@ public sealed class BuilderBundleGenerationTests
 
         var result = await service.GenerateAsync(new BuilderBundleFixtureBuilder().WithImage("missing").Build());
 
-        result.Files.Should().BeEmpty();
-        result.Findings.Should().ContainSingle(x => x.Code == "runtimeImage.unknown" && x.Level == "error");
+        Assert.Empty(result.Files);
+        Assert.Single(result.Findings, x => x.Code == "runtimeImage.unknown" && x.Level == "error");
     }
 
     [Fact]
@@ -77,8 +76,8 @@ public sealed class BuilderBundleGenerationTests
 
         var result = await service.GenerateAsync(new BuilderBundleFixtureBuilder().WithPackage(source, "Elsa.Missing").Build());
 
-        result.Files.Should().BeEmpty();
-        result.Findings.Should().Contain(x => x.Code == "package.missing");
+        Assert.Empty(result.Files);
+        Assert.Contains(result.Findings, x => x.Code == "package.missing");
     }
 
     [Fact]
@@ -108,8 +107,8 @@ public sealed class BuilderBundleGenerationTests
             .WithPackage(source, "Elsa.Email", features: ["email"])
             .Build());
 
-        result.Files.Should().BeEmpty();
-        result.Findings.Should().Contain(x => x.Code == "feature.runtimeKindUnsupported" && x.Level == "error");
+        Assert.Empty(result.Files);
+        Assert.Contains(result.Findings, x => x.Code == "feature.runtimeKindUnsupported" && x.Level == "error");
     }
 
     [Fact]
@@ -123,8 +122,8 @@ public sealed class BuilderBundleGenerationTests
             .WithPackage(source, "Elsa.Email", features: ["email"])
             .Build());
 
-        result.Files.Should().BeEmpty();
-        result.Findings.Should().Contain(x => x.Code == "package.runtimeKindMismatch" && x.Level == "error");
+        Assert.Empty(result.Files);
+        Assert.Contains(result.Findings, x => x.Code == "package.runtimeKindMismatch" && x.Level == "error");
     }
 
     [Fact]
@@ -144,8 +143,8 @@ public sealed class BuilderBundleGenerationTests
             "feature.runtimeKindUnsupported"
         };
 
-        result.Files.Should().NotBeEmpty();
-        result.Findings.Should().NotContain(x => runtimeKindFindingCodes.Contains(x.Code));
+        Assert.NotEmpty(result.Files);
+        Assert.DoesNotContain(result.Findings, x => runtimeKindFindingCodes.Contains(x.Code));
     }
 
     [Fact]
@@ -156,9 +155,9 @@ public sealed class BuilderBundleGenerationTests
 
         var result = await service.GenerateAsync(new BuilderBundleFixtureBuilder().WithPackage(source, "Elsa.Email", features: ["email"]).Build());
 
-        result.Files.Should().NotBeEmpty();
-        result.Findings.Should().Contain(x => x.Code == "setting.placeholder" && x.Level == "warning");
-        result.Files.Single(x => x.Path == "config.json").Contents.Should().Contain("${SMTP_HOST}");
+        Assert.NotEmpty(result.Files);
+        Assert.Contains(result.Findings, x => x.Code == "setting.placeholder" && x.Level == "warning");
+        Assert.Contains("${SMTP_HOST}", result.Files.Single(x => x.Path == "config.json").Contents);
     }
 
     [Fact]
@@ -186,8 +185,8 @@ public sealed class BuilderBundleGenerationTests
 
         var result = await service.GenerateAsync(intent);
 
-        result.Files.Select(x => x.Contents).Should().NotContain(contents => contents.Contains("super-secret", StringComparison.Ordinal));
-        result.Findings.Select(x => x.Message).Should().NotContain(message => message.Contains("super-secret", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Files.Select(x => x.Contents), contents => contents.Contains("super-secret", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Findings.Select(x => x.Message), message => message.Contains("super-secret", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -199,8 +198,8 @@ public sealed class BuilderBundleGenerationTests
 
         await service.GenerateAsync(new BuilderBundleFixtureBuilder().WithPackage(source, "Elsa.Email", features: ["email"]).Build());
 
-        queries.CallCount.Should().BeGreaterThan(0);
-        queries.ExternalCallCount.Should().Be(0);
+        Assert.True(queries.CallCount > 0);
+        Assert.Equal(0, queries.ExternalCallCount);
     }
 
     [Fact]
@@ -213,7 +212,7 @@ public sealed class BuilderBundleGenerationTests
         var publicResult = await service.GenerateAsync(intent);
         var workspaceResult = await service.GenerateAsync(intent, Guid.NewGuid());
 
-        publicResult.Files.Select(x => (x.Path, x.Contents)).Should().Equal(workspaceResult.Files.Select(x => (x.Path, x.Contents)));
+        Assert.Equal(workspaceResult.Files.Select(x => (x.Path, x.Contents)), publicResult.Files.Select(x => (x.Path, x.Contents)));
     }
 
     [Fact]
@@ -231,8 +230,8 @@ public sealed class BuilderBundleGenerationTests
         var result = await service.GenerateAsync(intent);
         stopwatch.Stop();
 
-        result.Files.Should().NotBeEmpty();
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
+        Assert.NotEmpty(result.Files);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1));
     }
 
     [Theory]
@@ -249,8 +248,8 @@ public sealed class BuilderBundleGenerationTests
         var result = await service.GenerateAsync(intent);
         var summary = BuilderBundleFixtureBuilder.Summarize(result);
 
-        result.Findings.Should().NotContain(x => x.Level == "error", summary);
-        result.Files.Select(x => x.Path).Should().Contain(BundleFilePolicy.RequiredFilePaths, summary);
+        Assert.True(!result.Findings.Any(x => x.Level == "error"), summary);
+        Assert.True(BundleFilePolicy.RequiredFilePaths.All(path => result.Files.Select(file => file.Path).Contains(path)), summary);
     }
 
     private static BundleGenerationService CreateService(PackageSource source, bool secretSetting = false)

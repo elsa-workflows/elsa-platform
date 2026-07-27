@@ -1,7 +1,6 @@
 using System.Collections;
 using ValenceControl.PackageManifest.Generator.MSBuild;
 using ValenceControl.PackageManifest.Generator.Testing;
-using FluentAssertions;
 using Microsoft.Build.Framework;
 
 namespace ValenceControl.PackageManifest.Generator.MSBuild.Tests;
@@ -16,10 +15,10 @@ public sealed class GenerateElsaPackageManifestTaskDiagnosticTests
 
         var result = CreateTask(project, buildEngine, failOnWarnings: false).Execute();
 
-        result.Should().BeTrue();
-        buildEngine.Errors.Should().BeEmpty();
-        buildEngine.Warnings.Should().NotBeEmpty();
-        buildEngine.Errors.Should().NotContain(x => x.Message != null && x.Message.Contains("MSB4181", StringComparison.Ordinal));
+        Assert.True(result);
+        Assert.Empty(buildEngine.Errors);
+        Assert.NotEmpty(buildEngine.Warnings);
+        Assert.DoesNotContain(buildEngine.Errors, x => x.Message != null && x.Message.Contains("MSB4181", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -30,9 +29,9 @@ public sealed class GenerateElsaPackageManifestTaskDiagnosticTests
 
         var result = CreateTask(project, buildEngine, failOnWarnings: true).Execute();
 
-        result.Should().BeFalse();
-        buildEngine.Errors.Should().BeEmpty();
-        buildEngine.Warnings.Should().NotBeEmpty();
+        Assert.False(result);
+        Assert.Empty(buildEngine.Errors);
+        Assert.NotEmpty(buildEngine.Warnings);
     }
 
     [Fact]
@@ -43,10 +42,10 @@ public sealed class GenerateElsaPackageManifestTaskDiagnosticTests
 
         var result = CreateTask(project, buildEngine, failOnWarnings: true).Execute();
 
-        result.Should().BeTrue();
-        buildEngine.Errors.Should().BeEmpty();
-        buildEngine.Warnings.Should().BeEmpty();
-        buildEngine.Messages.Should().Contain(x => x.Message != null && x.Message.Contains("EPMGEN_SETTING_TYPE_UNSUPPORTED", StringComparison.Ordinal));
+        Assert.True(result);
+        Assert.Empty(buildEngine.Errors);
+        Assert.Empty(buildEngine.Warnings);
+        Assert.Contains(buildEngine.Messages, x => x.Message != null && x.Message.Contains("EPMGEN_SETTING_TYPE_UNSUPPORTED", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -62,8 +61,8 @@ public sealed class GenerateElsaPackageManifestTaskDiagnosticTests
             FailOnWarnings = "false"
         };
 
-        task.Execute().Should().BeFalse();
-        buildEngine.Errors.Should().NotBeEmpty();
+        Assert.False(task.Execute());
+        Assert.NotEmpty(buildEngine.Errors);
     }
 
     private static GenerateElsaPackageManifestTask CreateTask(SampleProjectBuilder project, CapturingBuildEngine buildEngine, bool failOnWarnings) =>
@@ -95,7 +94,7 @@ public sealed class WarningFeature : IShellFeature
 }
 """);
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
         return project;
     }
 
@@ -117,7 +116,7 @@ public sealed class IdentityFeature : IShellFeature
 }
 """);
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
         return project;
     }
 

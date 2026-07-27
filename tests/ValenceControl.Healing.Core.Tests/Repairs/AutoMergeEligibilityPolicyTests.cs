@@ -3,7 +3,6 @@ using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Core.Repairs;
 using ValenceControl.Healing.Core.Security;
-using FluentAssertions;
 using ContractGateResult = ValenceControl.Healing.Abstractions.PolicyGateResult;
 
 namespace ValenceControl.Healing.Core.Tests.Repairs;
@@ -26,9 +25,9 @@ public sealed class AutoMergeEligibilityPolicyTests
     {
         var result = AutoMergeEligibilityPolicy.Evaluate(Policy(), EligibleInput(), Now);
 
-        result.Decision.Should().Be(PolicyDecisions.AllowAutomaticMerge);
-        result.Gates.Should().OnlyContain(x => x.State == PolicyGateState.Pass);
-        result.EvaluatedAt.Should().Be(Now);
+        Assert.Equal(PolicyDecisions.AllowAutomaticMerge, result.Decision);
+        Assert.All(result.Gates, x => Assert.Equal(PolicyGateState.Pass, x.State));
+        Assert.Equal(Now, result.EvaluatedAt);
     }
 
     [Theory]
@@ -44,9 +43,10 @@ public sealed class AutoMergeEligibilityPolicyTests
 
         var result = AutoMergeEligibilityPolicy.Evaluate(Policy(), input with { Observations = observations }, Now);
 
-        result.Decision.Should().Be(PolicyDecisions.HumanOnly);
-        result.Gates.Should().ContainSingle(x => x.Gate == gate).Which.Should().Match<ContractGateResult>(x =>
-            x.State != PolicyGateState.Pass && x.ReasonCode == $"{gate}-{StateReason(state)}");
+        Assert.Equal(PolicyDecisions.HumanOnly, result.Decision);
+        var gateResult = Assert.Single(result.Gates, x => x.Gate == gate);
+        Assert.NotEqual(PolicyGateState.Pass, gateResult.State);
+        Assert.Equal($"{gate}-{StateReason(state)}", gateResult.ReasonCode);
     }
 
     [Fact]
@@ -59,9 +59,10 @@ public sealed class AutoMergeEligibilityPolicyTests
             input with { Observations = input.Observations.Where(x => x.Gate != AutoMergePolicyGates.RequiredChecks).ToArray() },
             Now);
 
-        result.Decision.Should().Be(PolicyDecisions.HumanOnly);
-        result.Gates.Should().ContainSingle(x => x.Gate == AutoMergePolicyGates.RequiredChecks).Which.Should().BeEquivalentTo(
-            new ContractGateResult(AutoMergePolicyGates.RequiredChecks, PolicyGateState.Unknown, "required-checks-missing"));
+        Assert.Equal(PolicyDecisions.HumanOnly, result.Decision);
+        Assert.Equal(
+            new ContractGateResult(AutoMergePolicyGates.RequiredChecks, PolicyGateState.Unknown, "required-checks-missing"),
+            Assert.Single(result.Gates, x => x.Gate == AutoMergePolicyGates.RequiredChecks));
     }
 
     [Fact]
@@ -75,9 +76,10 @@ public sealed class AutoMergeEligibilityPolicyTests
             input with { Observations = [.. input.Observations, duplicate] },
             Now);
 
-        result.Decision.Should().Be(PolicyDecisions.HumanOnly);
-        result.Gates.Should().ContainSingle(x => x.Gate == AutoMergePolicyGates.IndependentVerification).Which.Should().BeEquivalentTo(
-            new ContractGateResult(AutoMergePolicyGates.IndependentVerification, PolicyGateState.Block, "independent-verification-ambiguous"));
+        Assert.Equal(PolicyDecisions.HumanOnly, result.Decision);
+        Assert.Equal(
+            new ContractGateResult(AutoMergePolicyGates.IndependentVerification, PolicyGateState.Block, "independent-verification-ambiguous"),
+            Assert.Single(result.Gates, x => x.Gate == AutoMergePolicyGates.IndependentVerification));
     }
 
     [Fact]
@@ -88,9 +90,10 @@ public sealed class AutoMergeEligibilityPolicyTests
 
         var result = AutoMergeEligibilityPolicy.Evaluate(policy, EligibleInput(), Now);
 
-        result.Decision.Should().Be(PolicyDecisions.HumanOnly);
-        result.Gates.Should().ContainSingle(x => x.Gate == AutoMergePolicyGates.RepositoryOptIn).Which.ReasonCode
-            .Should().Be("automatic-merge-disabled");
+        Assert.Equal(PolicyDecisions.HumanOnly, result.Decision);
+        Assert.Equal(
+            "automatic-merge-disabled",
+            Assert.Single(result.Gates, x => x.Gate == AutoMergePolicyGates.RepositoryOptIn).ReasonCode);
     }
 
     [Fact]
@@ -101,9 +104,8 @@ public sealed class AutoMergeEligibilityPolicyTests
 
         var result = AutoMergeEligibilityPolicy.Evaluate(policy, EligibleInput(), Now);
 
-        result.Decision.Should().Be(PolicyDecisions.HumanOnly);
-        result.Gates.Should().ContainSingle(x => x.Gate == "policy-definition").Which.ReasonCode
-            .Should().Be("merge-policy-invalid");
+        Assert.Equal(PolicyDecisions.HumanOnly, result.Decision);
+        Assert.Equal("merge-policy-invalid", Assert.Single(result.Gates, x => x.Gate == "policy-definition").ReasonCode);
     }
 
     [Fact]
@@ -114,9 +116,8 @@ public sealed class AutoMergeEligibilityPolicyTests
 
         var result = AutoMergeEligibilityPolicy.Evaluate(policy, EligibleInput(), Now);
 
-        result.Decision.Should().Be(PolicyDecisions.HumanOnly);
-        result.Gates.Should().ContainSingle(x => x.Gate == "policy-definition").Which.ReasonCode
-            .Should().Be("merge-policy-invalid");
+        Assert.Equal(PolicyDecisions.HumanOnly, result.Decision);
+        Assert.Equal("merge-policy-invalid", Assert.Single(result.Gates, x => x.Gate == "policy-definition").ReasonCode);
     }
 
     [Fact]
@@ -127,9 +128,8 @@ public sealed class AutoMergeEligibilityPolicyTests
 
         var result = AutoMergeEligibilityPolicy.Evaluate(policy, EligibleInput(), Now);
 
-        result.Decision.Should().Be(PolicyDecisions.HumanOnly);
-        result.Gates.Should().ContainSingle(x => x.Gate == "policy-definition").Which.ReasonCode
-            .Should().Be("merge-policy-invalid");
+        Assert.Equal(PolicyDecisions.HumanOnly, result.Decision);
+        Assert.Equal("merge-policy-invalid", Assert.Single(result.Gates, x => x.Gate == "policy-definition").ReasonCode);
     }
 
     [Fact]
@@ -140,8 +140,8 @@ public sealed class AutoMergeEligibilityPolicyTests
         var publicContract = RepairChangeRiskClassifier.Classify(
             [new("src/Orders/OrderCalculator.cs", ["public decimal Calculate(Order order)"])]);
 
-        lowRisk.Should().BeEmpty();
-        publicContract.Should().Contain("public-contract");
+        Assert.Empty(lowRisk);
+        Assert.Contains("public-contract", publicContract);
     }
 
     [Theory]
@@ -154,8 +154,9 @@ public sealed class AutoMergeEligibilityPolicyTests
     [InlineData(".github/workflows/healing.yml", "self-protection")]
     public void DeterministicRiskClassifierBlocksMandatorySensitivePaths(string path, string expectedCategory)
     {
-        RepairChangeRiskClassifier.Classify([new(path, ["private static void Change() { }"])])
-            .Should().Contain(expectedCategory);
+        Assert.Contains(
+            expectedCategory,
+            RepairChangeRiskClassifier.Classify([new(path, ["private static void Change() { }"])]));
     }
 
     [Fact]
@@ -172,9 +173,9 @@ public sealed class AutoMergeEligibilityPolicyTests
         var result = HealingPathPolicy.Evaluate(policy, new PathPolicyEvaluationInput(
             new string('d', 64), [new RepairPathChange("src/healing/Publisher.cs", 2)], 120), Now);
 
-        result.PolicyVersion.Should().Be("3");
-        result.Decision.Should().Be(PolicyDecisions.Deny);
-        result.Gates.Should().ContainSingle(x => x.Gate == "forbidden-roots").Which.ReasonCode.Should().Be("forbidden-path");
+        Assert.Equal("3", result.PolicyVersion);
+        Assert.Equal(PolicyDecisions.Deny, result.Decision);
+        Assert.Equal("forbidden-path", Assert.Single(result.Gates, x => x.Gate == "forbidden-roots").ReasonCode);
     }
 
     [Fact]
@@ -191,8 +192,8 @@ public sealed class AutoMergeEligibilityPolicyTests
             new string('f', 64), RepairClassification.InferredHighConfidence, .92m,
             EvidenceTier.DefaultRedacted, [], true, false), Now);
 
-        result.Decision.Should().Be(PolicyDecisions.HumanOnly);
-        result.Gates.Should().OnlyContain(x => x.State == PolicyGateState.Pass);
+        Assert.Equal(PolicyDecisions.HumanOnly, result.Decision);
+        Assert.All(result.Gates, x => Assert.Equal(PolicyGateState.Pass, x.State));
     }
 
     [Fact]
@@ -207,8 +208,8 @@ public sealed class AutoMergeEligibilityPolicyTests
         var result = HealingPublicationPolicy.Evaluate(policy, new PublicationPolicyEvaluationInput(
             new string('1', 64), observations, false), Now);
 
-        result.Decision.Should().Be(PolicyDecisions.Deny);
-        result.Gates.Should().ContainSingle(x => x.Gate == "kill-switches").Which.State.Should().Be(PolicyGateState.Unknown);
+        Assert.Equal(PolicyDecisions.Deny, result.Decision);
+        Assert.Equal(PolicyGateState.Unknown, Assert.Single(result.Gates, x => x.Gate == "kill-switches").State);
     }
 
     [Fact]
@@ -225,19 +226,20 @@ public sealed class AutoMergeEligibilityPolicyTests
 
         var result = await service.EvaluateAsync(request);
 
-        result.AutomaticMergeAllowed.Should().BeTrue();
-        result.Evaluation.EvaluatedAt.Should().Be(Now);
-        result.Evaluation.GateResultsJson.Should().Contain(AutoMergePolicyGates.RequiredChecks);
-        result.Evaluation.ReasonCodesJson.Should().Be("[]");
-        evaluations.Saved.Should().ContainSingle().Which.Should().BeSameAs(result.Evaluation);
-        audits.Events.Should().ContainSingle().Which.Should().Match<HealingAuditEvent>(x =>
-            x.AggregateId == request.PullRequestId &&
-            x.EventType == "merge-eligibility-evaluated" &&
-            x.ReasonCode == "automatic-merge-allowed" &&
-            x.PolicyVersion == policy.PolicyVersion &&
-            x.InputHash == request.Input.InputDigest &&
-            x.OutputHash != null && x.OutputHash.Length == 64 &&
-            x.SafeDetailJson.Contains("allow-automatic-merge", StringComparison.Ordinal));
+        Assert.True(result.AutomaticMergeAllowed);
+        Assert.Equal(Now, result.Evaluation.EvaluatedAt);
+        Assert.Contains(AutoMergePolicyGates.RequiredChecks, result.Evaluation.GateResultsJson);
+        Assert.Equal("[]", result.Evaluation.ReasonCodesJson);
+        Assert.Same(result.Evaluation, Assert.Single(evaluations.Saved));
+        var audit = Assert.Single(audits.Events);
+        Assert.Equal(request.PullRequestId, audit.AggregateId);
+        Assert.Equal("merge-eligibility-evaluated", audit.EventType);
+        Assert.Equal("automatic-merge-allowed", audit.ReasonCode);
+        Assert.Equal(policy.PolicyVersion, audit.PolicyVersion);
+        Assert.Equal(request.Input.InputDigest, audit.InputHash);
+        Assert.NotNull(audit.OutputHash);
+        Assert.Equal(64, audit.OutputHash.Length);
+        Assert.Contains("allow-automatic-merge", audit.SafeDetailJson, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -259,10 +261,11 @@ public sealed class AutoMergeEligibilityPolicyTests
 
         var result = await service.EvaluateAsync(Request(policy, input));
 
-        result.AutomaticMergeAllowed.Should().BeFalse();
-        result.Evaluation.Decision.Should().Be(PolicyDecision.HumanOnly);
-        result.Evaluation.ReasonCodesJson.Should().Contain("required-checks-failed").And.Contain("provider-snapshot-stale");
-        audits.Events.Should().ContainSingle().Which.ReasonCode.Should().Be("automatic-merge-blocked");
+        Assert.False(result.AutomaticMergeAllowed);
+        Assert.Equal(PolicyDecision.HumanOnly, result.Evaluation.Decision);
+        Assert.Contains("required-checks-failed", result.Evaluation.ReasonCodesJson);
+        Assert.Contains("provider-snapshot-stale", result.Evaluation.ReasonCodesJson);
+        Assert.Equal("automatic-merge-blocked", Assert.Single(audits.Events).ReasonCode);
     }
 
     [Fact]
@@ -279,10 +282,11 @@ public sealed class AutoMergeEligibilityPolicyTests
         var first = await service.EvaluateAsync(request);
         var second = await service.EvaluateAsync(request);
 
-        audits.Events.Should().HaveCount(2);
-        audits.Events.Select(x => x.CorrelationId).Should().BeEquivalentTo(
-            [first.Evaluation.Id, second.Evaluation.Id]);
-        audits.Events.Should().OnlyContain(x => x.CausationId == request.CorrelationId);
+        Assert.Equal(2, audits.Events.Count);
+        Assert.Equal(
+            new[] { first.Evaluation.Id, second.Evaluation.Id }.Order(),
+            audits.Events.Select(x => x.CorrelationId).Order());
+        Assert.All(audits.Events, x => Assert.Equal(request.CorrelationId, x.CausationId));
     }
 
     private static MergePolicy Policy() => new()

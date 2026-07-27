@@ -1,5 +1,4 @@
 using ValenceControl.Deployment.Abstractions.Artifacts;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Artifacts.Tests;
 
@@ -18,10 +17,11 @@ public sealed class ArtifactEnvelopeValidationTests
     {
         var type = _types.FindType(ArtifactTypeIds.ElsaWorkflowDefinition);
 
-        type.Should().NotBeNull();
-        type!.Enabled.Should().BeTrue();
-        type.DefaultRuntimeFamily.Should().Be("elsa-workflows");
-        type.DefaultRequiredCapabilities.Should().Contain(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaWorkflowDefinition));
+        Assert.NotNull(type);
+        Assert.True(type!.Enabled);
+        Assert.Equal("elsa-workflows", type.DefaultRuntimeFamily);
+        Assert.NotNull(type.DefaultRequiredCapabilities);
+        Assert.Contains(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaWorkflowDefinition), type.DefaultRequiredCapabilities!);
     }
 
     [Fact]
@@ -29,10 +29,11 @@ public sealed class ArtifactEnvelopeValidationTests
     {
         var type = _types.FindType(ArtifactTypeIds.ElsaLoomRecipe);
 
-        type.Should().NotBeNull();
-        type!.Enabled.Should().BeTrue();
-        type.DefaultRuntimeFamily.Should().Be("elsa-workflows");
-        type.DefaultRequiredCapabilities.Should().Contain(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe));
+        Assert.NotNull(type);
+        Assert.True(type!.Enabled);
+        Assert.Equal("elsa-workflows", type.DefaultRuntimeFamily);
+        Assert.NotNull(type.DefaultRequiredCapabilities);
+        Assert.Contains(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe), type.DefaultRequiredCapabilities!);
     }
 
     [Fact]
@@ -40,7 +41,7 @@ public sealed class ArtifactEnvelopeValidationTests
     {
         var act = () => _validator.Validate(Envelope());
 
-        act.Should().NotThrow();
+        Assert.Null(Record.Exception(act));
     }
 
     [Fact]
@@ -48,8 +49,9 @@ public sealed class ArtifactEnvelopeValidationTests
     {
         var act = () => _validator.Validate(Envelope() with { ArtifactTypeId = "unknown.type" });
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Artifact type is not supported.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+
+        Assert.Equal("Artifact type is not supported.", exception.Message);
     }
 
     [Theory]
@@ -60,7 +62,7 @@ public sealed class ArtifactEnvelopeValidationTests
     {
         var act = () => _validator.Validate(Envelope() with { ContentDigest = new ArtifactDigest(algorithm, value) });
 
-        act.Should().Throw<InvalidOperationException>();
+        Assert.Throws<InvalidOperationException>(act);
     }
 
     [Fact]
@@ -78,8 +80,9 @@ public sealed class ArtifactEnvelopeValidationTests
 
         var act = () => _validator.Validate(envelope);
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Artifact metadata contains unsafe secret-like content.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+
+        Assert.Equal("Artifact metadata contains unsafe secret-like content.", exception.Message);
     }
 
     [Fact]
@@ -100,8 +103,9 @@ public sealed class ArtifactEnvelopeValidationTests
 
         var act = () => _validator.Validate(envelope);
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Artifact compatibility hint does not match the artifact type.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+
+        Assert.Equal("Artifact compatibility hint does not match the artifact type.", exception.Message);
     }
 
     private static ArtifactEnvelope Envelope() =>

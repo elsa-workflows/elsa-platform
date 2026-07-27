@@ -1,4 +1,3 @@
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifests.Tests;
 
@@ -9,6 +8,6 @@ public sealed class EmbeddedSchemaResourceTests
     {
         var resources = typeof(ElsaPackageManifest).Assembly.GetManifestResourceNames();
 
-        resources.Should().Contain(x => x.EndsWith("Schemas.elsa-package-manifest.v1.json", StringComparison.Ordinal));
+        Assert.Contains(resources, x => x.EndsWith("Schemas.elsa-package-manifest.v1.json", StringComparison.Ordinal));
     }
 }

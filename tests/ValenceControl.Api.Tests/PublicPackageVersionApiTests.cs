@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using ValenceControl.Api.Public.Packages;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -25,8 +24,8 @@ public sealed class PublicPackageVersionApiTests
 
         var version = await app.CreateClient().GetFromJsonAsync<PublicPackageVersionResponse>($"/api/sources/{sourceId}/packages/Elsa.Email/versions/1.0.0");
 
-        version!.Features.Should().ContainSingle(x => x.FeatureId == "email");
-        version.Features[0].Settings.Should().ContainSingle(x => x.Name == "smtpHost");
+        Assert.Single(version!.Features, x => x.FeatureId == "email");
+        Assert.Single(version.Features[0].Settings, x => x.Name == "smtpHost");
     }
 
     [Fact]
@@ -46,7 +45,7 @@ public sealed class PublicPackageVersionApiTests
 
         var response = await app.CreateClient().GetAsync($"/api/sources/{sourceId}/packages/Elsa.Email/versions/1.0.0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -66,7 +65,7 @@ public sealed class PublicPackageVersionApiTests
 
         var version = await app.CreateClient().GetFromJsonAsync<PublicPackageVersionResponse>($"/api/sources/{sourceId}/packages/Elsa.Email/versions/1.0.0");
 
-        version!.RuntimeKinds.Should().BeEmpty();
-        version.Features[0].RuntimeKinds.Should().BeEmpty();
+        Assert.Empty(version!.RuntimeKinds);
+        Assert.Empty(version.Features[0].RuntimeKinds);
     }
 }

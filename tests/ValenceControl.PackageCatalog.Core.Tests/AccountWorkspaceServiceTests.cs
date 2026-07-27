@@ -1,6 +1,5 @@
 using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Core.Packages;
-using FluentAssertions;
 
 namespace ValenceControl.PackageCatalog.Core.Tests;
 
@@ -22,14 +21,14 @@ public sealed class AccountWorkspaceServiceTests
 
         var context = await service.GetOrCreateAsync(Identity("first-user"));
 
-        context.Account.Id.Should().NotBeEmpty();
-        context.Organizations.Should().ContainSingle(x => x.Role == OrganizationRole.Owner);
-        context.Workspaces.Should().ContainSingle(x => x.Role == WorkspaceRole.Owner && x.Kind == WorkspaceKind.Personal);
-        context.Workspaces.Single().OrganizationId.Should().Be(context.Organizations.Single().Id);
-        _store.AddedAccounts.Should().ContainSingle();
-        _store.AddedAccounts.Single().OrganizationMemberships.Should().ContainSingle(x => x.Role == OrganizationRole.Owner);
-        _store.AddedAccounts.Single().Memberships.Should().ContainSingle(x => x.Role == WorkspaceRole.Owner);
-        provisioner.Provisioned.Should().ContainSingle().Which.Should().Be((context.Workspaces.Single().Id, context.Account.Id));
+        Assert.NotEqual(Guid.Empty, context.Account.Id);
+        Assert.Single(context.Organizations, x => x.Role == OrganizationRole.Owner);
+        Assert.Single(context.Workspaces, x => x.Role == WorkspaceRole.Owner && x.Kind == WorkspaceKind.Personal);
+        Assert.Equal(context.Organizations.Single().Id, context.Workspaces.Single().OrganizationId);
+        Assert.Single(_store.AddedAccounts);
+        Assert.Single(_store.AddedAccounts.Single().OrganizationMemberships, x => x.Role == OrganizationRole.Owner);
+        Assert.Single(_store.AddedAccounts.Single().Memberships, x => x.Role == WorkspaceRole.Owner);
+        Assert.Equal((context.Workspaces.Single().Id, context.Account.Id), Assert.Single(provisioner.Provisioned));
     }
 
     [Fact]
@@ -41,8 +40,8 @@ public sealed class AccountWorkspaceServiceTests
 
         await service.GetOrCreateAsync(Identity("existing-user"));
 
-        provisioner.Provisioned.Should().HaveCount(2);
-        provisioner.Provisioned.Distinct().Should().ContainSingle();
+        Assert.Equal(2, provisioner.Provisioned.Count());
+        Assert.Single(provisioner.Provisioned.Distinct());
     }
 
     [Fact]
@@ -53,12 +52,11 @@ public sealed class AccountWorkspaceServiceTests
         var service = new AccountWorkspaceService(_store, [provisioner]);
 
         var firstAttempt = () => service.GetOrCreateAsync(Identity("retry-owner"));
-        await firstAttempt.Should().ThrowAsync<InvalidOperationException>();
+        await Assert.ThrowsAsync<InvalidOperationException>(firstAttempt);
         var context = await service.GetOrCreateAsync(Identity("retry-owner"));
 
-        provisioner.Attempts.Should().Be(2);
-        provisioner.Provisioned.Should().ContainSingle()
-            .Which.Should().Be((context.Workspaces.Single().Id, context.Account.Id));
+        Assert.Equal(2, provisioner.Attempts);
+        Assert.Equal((context.Workspaces.Single().Id, context.Account.Id), Assert.Single(provisioner.Provisioned));
     }
 
     [Fact]
@@ -78,7 +76,7 @@ public sealed class AccountWorkspaceServiceTests
 
         var access = await _service.GetWorkspaceAccessAsync(Identity("member"), workspaceId);
 
-        access.Should().BeNull();
+        Assert.Null(access);
     }
 
     private static TrustedWorkspaceIdentity Identity(string subject) =>

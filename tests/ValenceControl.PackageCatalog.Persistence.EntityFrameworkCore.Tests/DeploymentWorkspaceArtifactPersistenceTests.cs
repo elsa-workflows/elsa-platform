@@ -3,7 +3,6 @@ using ValenceControl.Deployment.Artifacts;
 using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 
 namespace ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
@@ -38,22 +37,22 @@ public sealed class DeploymentWorkspaceArtifactPersistenceTests : IDisposable
         var artifact = await _store.RegisterArtifactAsync(_workspaceId, ArtifactRegistration());
         _db.ChangeTracker.Clear();
 
-        var loaded = await _store.GetArtifactAsync(_workspaceId, artifact.Id);
+        var loaded = (await _store.GetArtifactAsync(_workspaceId, artifact.Id))!;
         var listed = await _store.ListArtifactsAsync(_workspaceId);
         var rawJson = await ReadScalarAsync<string>("SELECT ResourceSummaryJson || DiagnosticsJson FROM WorkspaceDeploymentArtifacts LIMIT 1");
 
-        loaded.Should().NotBeNull();
-        loaded!.ArtifactId.Should().Be("sha256:claims-prod");
-        loaded.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaLoomRecipe);
-        loaded.Producer!.ProducerType.Should().Be("manual");
-        loaded.DisplayMetadata!.Name.Should().Be("claims");
-        loaded.CompatibilityHints.Should().ContainSingle(x => x.RequiredArtifactType == ArtifactTypeIds.ElsaLoomRecipe);
-        loaded.Manifest.Name.Should().Be("claims");
-        loaded.Resources.Should().ContainSingle(x => x.LogicalId == "payment-retry");
-        listed.Should().ContainSingle(x => x.Id == artifact.Id);
-        rawJson.Should().NotContain("workflow definition payload");
-        rawJson.Should().NotContain("secret value");
-        rawJson.Should().NotContain("token");
+        Assert.NotNull(loaded);
+        Assert.Equal("sha256:claims-prod", loaded.ArtifactId);
+        Assert.Equal(ArtifactTypeIds.ElsaLoomRecipe, loaded.ArtifactTypeId);
+        Assert.Equal("manual", loaded.Producer!.ProducerType);
+        Assert.Equal("claims", loaded.DisplayMetadata!.Name);
+        Assert.Single(loaded.CompatibilityHints!, x => x.RequiredArtifactType == ArtifactTypeIds.ElsaLoomRecipe);
+        Assert.Equal("claims", loaded.Manifest.Name);
+        Assert.Single(loaded.Resources, x => x.LogicalId == "payment-retry");
+        Assert.Single(listed, x => x.Id == artifact.Id);
+        Assert.DoesNotContain("workflow definition payload", rawJson);
+        Assert.DoesNotContain("secret value", rawJson);
+        Assert.DoesNotContain("token", rawJson);
     }
 
     [Fact]
@@ -82,16 +81,16 @@ public sealed class DeploymentWorkspaceArtifactPersistenceTests : IDisposable
             });
         _db.ChangeTracker.Clear();
 
-        var loaded = await _store.GetArtifactAsync(_workspaceId, artifact.Id);
+        var loaded = (await _store.GetArtifactAsync(_workspaceId, artifact.Id))!;
         var rawJson = await ReadScalarAsync<string>("SELECT PayloadReferenceJson || ProducerJson || DisplayMetadataJson || CompatibilityHintsJson FROM WorkspaceDeploymentArtifacts LIMIT 1");
 
-        loaded!.Producer!.ProducerType.Should().Be("studio");
-        loaded.DisplayMetadata!.Labels.Should().ContainKey("domain");
-        loaded.CompatibilityHints.Should().ContainSingle(x => x.RuntimeFamily == "elsa-workflows");
-        rawJson.Should().NotContain("workflow definition payload");
-        rawJson.Should().NotContain("secret value");
-        rawJson.Should().NotContain("token");
-        rawJson.Should().NotContain("password");
+        Assert.Equal("studio", loaded.Producer!.ProducerType);
+        Assert.Contains("domain", loaded.DisplayMetadata!.Labels.Keys);
+        Assert.Single(loaded.CompatibilityHints!, x => x.RuntimeFamily == "elsa-workflows");
+        Assert.DoesNotContain("workflow definition payload", rawJson);
+        Assert.DoesNotContain("secret value", rawJson);
+        Assert.DoesNotContain("token", rawJson);
+        Assert.DoesNotContain("password", rawJson);
     }
 
     [Fact]
@@ -101,7 +100,7 @@ public sealed class DeploymentWorkspaceArtifactPersistenceTests : IDisposable
 
         var act = () => _store.RegisterArtifactAsync(_workspaceId, ArtifactRegistration(reference: "/tmp/other"));
 
-        await act.Should().ThrowAsync<DbUpdateException>();
+        await Assert.ThrowsAsync<DbUpdateException>(act);
     }
 
     [Fact]
@@ -111,8 +110,8 @@ public sealed class DeploymentWorkspaceArtifactPersistenceTests : IDisposable
         var first = await _store.RegisterArtifactAsync(_workspaceId, ArtifactRegistration());
         var second = await _store.RegisterArtifactAsync(otherWorkspaceId, ArtifactRegistration());
 
-        first.ArtifactId.Should().Be(second.ArtifactId);
-        first.WorkspaceId.Should().NotBe(second.WorkspaceId);
+        Assert.Equal(second.ArtifactId, first.ArtifactId);
+        Assert.NotEqual(second.WorkspaceId, first.WorkspaceId);
     }
 
     [Fact]
@@ -134,11 +133,11 @@ public sealed class DeploymentWorkspaceArtifactPersistenceTests : IDisposable
         _db.ChangeTracker.Clear();
         var loaded = await _store.GetArtifactAsync(_workspaceId, artifact.Id);
 
-        update.ArtifactId.Should().Be(artifact.ArtifactId);
-        update.ChecksumStatus.Should().Be(WorkspaceArtifactChecksumStatus.Mismatched);
-        loaded!.ArtifactId.Should().Be(artifact.ArtifactId);
-        loaded.Resources.Should().ContainSingle(x => x.LogicalId == "payment-retry-v2");
-        loaded.Diagnostics.Should().ContainSingle(x => x.Code == "artifact.identity.mismatch");
+        Assert.Equal(artifact.ArtifactId, update.ArtifactId);
+        Assert.Equal(WorkspaceArtifactChecksumStatus.Mismatched, update.ChecksumStatus);
+        Assert.Equal(artifact.ArtifactId, loaded!.ArtifactId);
+        Assert.Single(loaded.Resources, x => x.LogicalId == "payment-retry-v2");
+        Assert.Single(loaded.Diagnostics, x => x.Code == "artifact.identity.mismatch");
     }
 
     [Fact]
@@ -177,11 +176,11 @@ public sealed class DeploymentWorkspaceArtifactPersistenceTests : IDisposable
         var byIdempotency = await _store.FindArtifactUploadByIdempotencyKeyAsync(_workspaceId, "upload-key");
         var crossWorkspace = await _store.GetArtifactUploadSessionAsync(otherWorkspaceId, session.Id);
 
-        updated.Status.Should().Be(WorkspaceArtifactUploadStatus.Completed);
-        loaded!.UploadedSizeBytes.Should().Be(1024);
-        loaded.Diagnostics.Should().ContainSingle(x => x.Code == "artifact.upload.completed");
-        byIdempotency!.Id.Should().Be(session.Id);
-        crossWorkspace.Should().BeNull();
+        Assert.Equal(WorkspaceArtifactUploadStatus.Completed, updated.Status);
+        Assert.Equal(1024, loaded!.UploadedSizeBytes);
+        Assert.Single(loaded.Diagnostics, x => x.Code == "artifact.upload.completed");
+        Assert.Equal(session.Id, byIdempotency!.Id);
+        Assert.Null(crossWorkspace);
     }
 
     [Fact]
@@ -200,8 +199,8 @@ public sealed class DeploymentWorkspaceArtifactPersistenceTests : IDisposable
                 artifact.Resources,
                 []));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Artifact inspection update cannot change the registered artifact identity.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+        Assert.Equal("Artifact inspection update cannot change the registered artifact identity.", exception.Message);
     }
 
     [Fact]
@@ -214,8 +213,8 @@ public sealed class DeploymentWorkspaceArtifactPersistenceTests : IDisposable
         var artifacts = await _store.ListArtifactsAsync(_workspaceId);
         stopwatch.Stop();
 
-        artifacts.Should().HaveCount(250);
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+        Assert.Equal(250, artifacts.Count());
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(3));
     }
 
     public void Dispose() => _db.Dispose();

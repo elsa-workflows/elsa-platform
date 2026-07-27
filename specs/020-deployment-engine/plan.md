@@ -12,7 +12,7 @@ Implement the Phase 1 deployment engine package that proves the core deployment 
 
 **Language/Version**: C# on .NET 10.
 
-**Primary Dependencies**: `ValenceControl.Deployment.Abstractions`, .NET base class libraries, xUnit and FluentAssertions for tests.
+**Primary Dependencies**: `ValenceControl.Deployment.Abstractions`, .NET base class libraries, xUnit and its built-in assertions for tests.
 
 **Storage**: In-memory deployment history store only for Phase 1; durable persistence is deferred.
 

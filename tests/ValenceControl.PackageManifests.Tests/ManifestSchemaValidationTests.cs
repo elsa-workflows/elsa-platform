@@ -1,5 +1,4 @@
 using ValenceControl.PackageManifests.Validation;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifests.Tests;
 
@@ -18,7 +17,7 @@ public sealed class ManifestSchemaValidationTests
         }
         """);
 
-        result.IsValid.Should().BeTrue();
+        Assert.True(result.IsValid);
     }
 
     [Fact]
@@ -32,7 +31,7 @@ public sealed class ManifestSchemaValidationTests
         }
         """);
 
-        result.Status.Should().Be(ManifestValidationStatus.UnsupportedSchema);
+        Assert.Equal(ManifestValidationStatus.UnsupportedSchema, result.Status);
     }
 
     [Fact]
@@ -42,8 +41,8 @@ public sealed class ManifestSchemaValidationTests
 
         var result = _validator.Validate(json);
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.RuleId == "manifest.size");
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => x.RuleId == "manifest.size");
     }
 
     [Fact]
@@ -57,8 +56,8 @@ public sealed class ManifestSchemaValidationTests
         }
         """);
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.RuleId == "package.required");
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => x.RuleId == "package.required");
     }
 
     [Fact]
@@ -73,8 +72,8 @@ public sealed class ManifestSchemaValidationTests
         }
         """);
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.RuleId == "features.invalid");
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => x.RuleId == "features.invalid");
     }
 
     [Fact]
@@ -103,7 +102,7 @@ public sealed class ManifestSchemaValidationTests
         }
         """);
 
-        result.IsValid.Should().BeTrue();
+        Assert.True(result.IsValid);
     }
 
     [Fact]
@@ -125,7 +124,7 @@ public sealed class ManifestSchemaValidationTests
         }
         """);
 
-        result.IsValid.Should().BeTrue();
+        Assert.True(result.IsValid);
     }
 
     [Fact]
@@ -147,9 +146,9 @@ public sealed class ManifestSchemaValidationTests
         }
         """);
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.RuleId == "feature.category.required");
-        result.Errors.Should().Contain(x => x.RuleId == "feature.category.duplicate");
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => x.RuleId == "feature.category.required");
+        Assert.Contains(result.Errors, x => x.RuleId == "feature.category.duplicate");
     }
 
     [Fact]
@@ -173,8 +172,8 @@ public sealed class ManifestSchemaValidationTests
         }
         """);
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.RuleId == "infrastructure.id.required");
-        result.Errors.Should().Contain(x => x.RuleId == "infrastructure.kind.required");
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => x.RuleId == "infrastructure.id.required");
+        Assert.Contains(result.Errors, x => x.RuleId == "infrastructure.kind.required");
     }
 }

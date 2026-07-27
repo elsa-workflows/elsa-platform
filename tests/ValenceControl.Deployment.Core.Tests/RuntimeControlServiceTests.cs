@@ -1,6 +1,5 @@
 using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
-using FluentAssertions;
 using Xunit;
 
 namespace ValenceControl.Deployment.Core.Tests;
@@ -23,8 +22,8 @@ public sealed class RuntimeControlServiceTests
         var supported = service.ValidateControl(control, [WorkspaceDeploymentTestFixtures.Capability()]);
         var unsupported = service.ValidateControl(control, [WorkspaceDeploymentTestFixtures.Capability(id: "hosting.restart")]);
 
-        supported.Severity.Should().Be(ValidationSeverity.Pass);
-        unsupported.Severity.Should().Be(ValidationSeverity.Blocker);
+        Assert.Equal(ValidationSeverity.Pass, supported.Severity);
+        Assert.Equal(ValidationSeverity.Blocker, unsupported.Severity);
     }
 
     [Fact]
@@ -44,10 +43,10 @@ public sealed class RuntimeControlServiceTests
             _workspaceId,
             new RuntimeControlExecutionRequest(_engineId, "reload-configuration", confirmation.Id, _accountId));
 
-        execution.Status.Should().Be(RuntimeControlExecutionStatus.Succeeded);
-        execution.ControlId.Should().Be("reload-configuration");
-        _store.Confirmations[confirmation.Id].UsedAt.Should().Be(_now);
-        _store.Executions.Should().ContainSingle(x => x.Id == execution.Id);
+        Assert.Equal(RuntimeControlExecutionStatus.Succeeded, execution.Status);
+        Assert.Equal("reload-configuration", execution.ControlId);
+        Assert.Equal(_now, _store.Confirmations[confirmation.Id].UsedAt);
+        Assert.Single(_store.Executions, x => x.Id == execution.Id);
     }
 
     [Fact]
@@ -69,10 +68,11 @@ public sealed class RuntimeControlServiceTests
             _workspaceId,
             new RuntimeControlExecutionRequest(_engineId, "reload-configuration", confirmation.Id, _accountId));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Runtime control is not supported by the selected engine.");
-        _store.Confirmations[confirmation.Id].UsedAt.Should().BeNull();
-        _store.Executions.Should().BeEmpty();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Runtime control is not supported by the selected engine.", exception.Message);
+        Assert.Null(_store.Confirmations[confirmation.Id].UsedAt);
+        Assert.Empty(_store.Executions);
     }
 
     [Fact]
@@ -95,10 +95,11 @@ public sealed class RuntimeControlServiceTests
             _workspaceId,
             new RuntimeControlExecutionRequest(_engineId, "reload-configuration", confirmation.Id, _accountId));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Runtime control cannot execute while the selected engine is unreachable.");
-        _store.Confirmations[confirmation.Id].UsedAt.Should().BeNull();
-        _store.Executions.Should().BeEmpty();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Runtime control cannot execute while the selected engine is unreachable.", exception.Message);
+        Assert.Null(_store.Confirmations[confirmation.Id].UsedAt);
+        Assert.Empty(_store.Executions);
     }
 
     [Fact]
@@ -119,8 +120,9 @@ public sealed class RuntimeControlServiceTests
             _workspaceId,
             new RuntimeControlExecutionRequest(_engineId, "reload-configuration", confirmation.Id, _accountId));
 
-        await replay.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Confirmation has already been used.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(replay);
+
+        Assert.Equal("Confirmation has already been used.", exception.Message);
     }
 
     private DeploymentCockpit Cockpit(

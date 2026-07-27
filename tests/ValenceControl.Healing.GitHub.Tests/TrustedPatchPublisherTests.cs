@@ -3,7 +3,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ValenceControl.Healing.Abstractions;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.GitHub.Tests;
 
@@ -25,9 +24,9 @@ public sealed class TrustedPatchPublisherTests
 
         var act = () => publisher.PublishAsync(Request(context, diff)).AsTask();
 
-        await act.Should().ThrowAsync<GitHubSecurityException>();
-        handler.Count.Should().Be(0);
-        repository.PublishCount.Should().Be(0);
+        await Assert.ThrowsAsync<GitHubSecurityException>(act);
+        Assert.Equal(0, handler.Count);
+        Assert.Equal(0, repository.PublishCount);
     }
 
     public static TheoryData<string> MaliciousDiffs => new()
@@ -57,9 +56,9 @@ public sealed class TrustedPatchPublisherTests
 
         var act = () => publisher.PublishAsync(Request(context, SafeDiff())).AsTask();
 
-        await act.Should().ThrowAsync<GitHubSecurityException>()
-            .Where(x => x.ReasonCode == GitHubSecurityReasonCodes.TargetRevisionStale);
-        repository.PublishCount.Should().Be(0);
+        var exception = await Assert.ThrowsAsync<GitHubSecurityException>(act);
+        Assert.Equal(GitHubSecurityReasonCodes.TargetRevisionStale, exception.ReasonCode);
+        Assert.Equal(0, repository.PublishCount);
     }
 
     [Fact]
@@ -80,15 +79,14 @@ public sealed class TrustedPatchPublisherTests
 
         var result = await publisher.PublishAsync(Request(context, SafeDiff(), "inferred-high-confidence"));
 
-        result.Number.Should().Be(12);
-        handler.Count.Should().Be(2);
-        repository.Plan.Should().NotBeNull();
-        repository.Plan!.Branch.Should().StartWith("valence-control-healing/");
-        repository.Plan.IsDraft.Should().BeTrue();
-        repository.Plan.Patch.Files.Select(x => x.EffectivePath).Should().Equal("src/A.cs");
+        Assert.Equal(12, result.Number);
+        Assert.Equal(2, handler.Count);
+        Assert.NotNull(repository.Plan);
+        Assert.StartsWith("valence-control-healing/", repository.Plan!.Branch);
+        Assert.True(repository.Plan.IsDraft);
+        Assert.Equal(["src/A.cs"], repository.Plan.Patch.Files.Select(x => x.EffectivePath));
         using var payload = JsonDocument.Parse(tokenPayload!);
-        payload.RootElement.GetProperty("permissions").EnumerateObject().Select(x => x.Name)
-            .Should().BeEquivalentTo("contents", "pull_requests", "metadata");
+        Assert.Equivalent(new[] { "contents", "pull_requests", "metadata" }, payload.RootElement.GetProperty("permissions").EnumerateObject().Select(x => x.Name));
     }
 
     [Fact]
@@ -98,7 +96,7 @@ public sealed class TrustedPatchPublisherTests
 
         var act = () => UnifiedDiffParser.Parse(malformed);
 
-        act.Should().Throw<GitHubSecurityException>();
+        Assert.Throws<GitHubSecurityException>(act);
     }
 
     [Fact]
@@ -145,8 +143,8 @@ public sealed class TrustedPatchPublisherTests
 
         var act = () => publisher.PublishAsync(authorization, "token", plan, idempotencyKey).AsTask();
 
-        await act.Should().ThrowAsync<GitHubSecurityException>()
-            .Where(x => x.ReasonCode == GitHubSecurityReasonCodes.IdempotencyConflict);
+        var exception = await Assert.ThrowsAsync<GitHubSecurityException>(act);
+        Assert.Equal(GitHubSecurityReasonCodes.IdempotencyConflict, exception.ReasonCode);
     }
 
     private static RepairPublicationRequest Request(

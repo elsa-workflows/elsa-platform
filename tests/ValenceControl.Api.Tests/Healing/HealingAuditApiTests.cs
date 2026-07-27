@@ -9,7 +9,6 @@ using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Core.Security;
 using ValenceControl.Healing.Persistence.EntityFrameworkCore;
 using ValenceControl.PackageCatalog.Core.Accounts;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ValenceControl.Api.Tests.Healing;
@@ -26,27 +25,26 @@ public sealed class HealingAuditApiTests
             $"/api/workspaces/{app.WorkspaceId:D}/healing/overview?applicationId={app.ApplicationId:D}&environmentId={app.EnvironmentId:D}");
         var overview = await overviewResponse.Content.ReadFromJsonAsync<JsonElement>();
 
-        overviewResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        overview.GetProperty("applications").GetProperty("enabled").GetInt64().Should().Be(1);
-        overview.GetProperty("repairability").GetProperty("repairable").GetInt64().Should().Be(1);
-        overview.GetProperty("repairActivity").GetProperty("blockedAttempts").GetInt64().Should().Be(1);
-        overview.GetProperty("verificationOutcomes").EnumerateArray()
-            .Should().Contain(x => x.GetProperty("name").GetString() == "FailedVerification");
-        overview.GetProperty("recentIncidents").EnumerateArray().Should().HaveCount(2);
-        overview.GetProperty("permissions").EnumerateArray().Select(x => x.GetString())
-            .Should().Contain(HealingPermissions.Read);
+        Assert.Equal(HttpStatusCode.OK, overviewResponse.StatusCode);
+        Assert.Equal(1, overview.GetProperty("applications").GetProperty("enabled").GetInt64());
+        Assert.Equal(1, overview.GetProperty("repairability").GetProperty("repairable").GetInt64());
+        Assert.Equal(1, overview.GetProperty("repairActivity").GetProperty("blockedAttempts").GetInt64());
+        Assert.Contains(overview.GetProperty("verificationOutcomes").EnumerateArray(), x =>
+            x.GetProperty("name").GetString() == "FailedVerification");
+        Assert.Equal(2, overview.GetProperty("recentIncidents").EnumerateArray().Count());
+        Assert.Contains(HealingPermissions.Read, overview.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()));
 
         var usageResponse = await app.Owner.GetAsync(
             $"/api/workspaces/{app.WorkspaceId:D}/healing/usage?applicationId={app.ApplicationId:D}&from=2026-07-15T00:00:00Z&to=2026-07-17T00:00:00Z");
         var usage = await usageResponse.Content.ReadFromJsonAsync<JsonElement>();
-        usageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        usage.GetProperty("attempts").GetInt64().Should().Be(1);
-        usage.GetProperty("inputUnits").GetInt64().Should().Be(20);
-        usage.GetProperty("outputUnits").GetInt64().Should().Be(10);
-        usage.GetProperty("repositoryRuns").GetInt64().Should().Be(1);
-        usage.GetProperty("providerOperations").GetInt64().Should().Be(1);
-        usage.GetRawText().ToLowerInvariant().Should().NotContain("prompt");
-        usage.GetRawText().Should().NotContain("protected-production-payload");
+        Assert.Equal(HttpStatusCode.OK, usageResponse.StatusCode);
+        Assert.Equal(1, usage.GetProperty("attempts").GetInt64());
+        Assert.Equal(20, usage.GetProperty("inputUnits").GetInt64());
+        Assert.Equal(10, usage.GetProperty("outputUnits").GetInt64());
+        Assert.Equal(1, usage.GetProperty("repositoryRuns").GetInt64());
+        Assert.Equal(1, usage.GetProperty("providerOperations").GetInt64());
+        Assert.DoesNotContain("prompt", usage.GetRawText().ToLowerInvariant());
+        Assert.DoesNotContain("protected-production-payload", usage.GetRawText());
     }
 
     [Fact]
@@ -61,26 +59,25 @@ public sealed class HealingAuditApiTests
         var firstResponse = await app.Owner.GetAsync(
             $"/api/workspaces/{app.WorkspaceId:D}/healing/audit?applicationId={app.ApplicationId:D}&incidentId={ids.BlockedIncidentId:D}&take=2");
         var first = await firstResponse.Content.ReadFromJsonAsync<JsonElement>();
-        firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        first.GetProperty("items").EnumerateArray().Should().HaveCount(2);
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal(2, first.GetProperty("items").EnumerateArray().Count());
         var cursor = first.GetProperty("nextCursor").GetString();
-        cursor.Should().NotBeNullOrWhiteSpace();
+        Assert.False(string.IsNullOrWhiteSpace(cursor));
         var newest = first.GetProperty("items").EnumerateArray().First();
-        newest.GetProperty("eventType").GetString().Should().Be("merge-blocked");
-        newest.GetProperty("details").GetProperty("gateReason").GetString().Should().Be("revision-unverified");
+        Assert.Equal("merge-blocked", newest.GetProperty("eventType").GetString());
+        Assert.Equal("revision-unverified", newest.GetProperty("details").GetProperty("gateReason").GetString());
 
         var secondResponse = await app.Owner.GetAsync(
             $"/api/workspaces/{app.WorkspaceId:D}/healing/audit?incidentId={ids.BlockedIncidentId:D}&take=2&cursor={Uri.EscapeDataString(cursor!)}");
         var second = await secondResponse.Content.ReadFromJsonAsync<JsonElement>();
-        secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        second.GetProperty("items").EnumerateArray().Should().ContainSingle();
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        Assert.Single(second.GetProperty("items").EnumerateArray());
 
         var serialized = first.GetRawText() + second.GetRawText();
-        serialized.Should().NotContain("safeDetailJson");
-        serialized.Should().NotContain("protected-production-payload");
-        serialized.Should().NotContain("normalizedStackJson");
-        (await app.Owner.GetAsync($"/api/workspaces/{app.WorkspaceId:D}/healing/audit?cursor=not-a-cursor"))
-            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.DoesNotContain("safeDetailJson", serialized);
+        Assert.DoesNotContain("protected-production-payload", serialized);
+        Assert.DoesNotContain("normalizedStackJson", serialized);
+        Assert.Equal(HttpStatusCode.BadRequest, (await app.Owner.GetAsync($"/api/workspaces/{app.WorkspaceId:D}/healing/audit?cursor=not-a-cursor")).StatusCode);
     }
 
     [Fact]
@@ -94,15 +91,15 @@ public sealed class HealingAuditApiTests
         var reader = app.Factory.CreateTrustedWorkspaceClient(readerSubject);
         var route = $"/api/workspaces/{app.WorkspaceId:D}/healing/audit?incidentId={ids.BlockedIncidentId:D}";
 
-        (await reader.GetAsync(route)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, (await reader.GetAsync(route)).StatusCode);
         await app.Factory.GrantWorkspaceDeploymentPermissionAsync(app.WorkspaceId, readerId, HealingPermissions.Read);
-        (await reader.GetAsync(route)).StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, (await reader.GetAsync(route)).StatusCode);
         var foreign = await reader.GetFromJsonAsync<JsonElement>(
             $"/api/workspaces/{app.WorkspaceId:D}/healing/audit?incidentId={Guid.NewGuid():D}");
-        foreign.GetProperty("items").EnumerateArray().Should().BeEmpty();
+        Assert.Empty(foreign.GetProperty("items").EnumerateArray());
 
         var outsider = app.Factory.CreateTrustedWorkspaceClient("healing-report-outsider");
-        (await outsider.GetAsync(route)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, (await outsider.GetAsync(route)).StatusCode);
     }
 
     [Fact]
@@ -116,9 +113,10 @@ public sealed class HealingAuditApiTests
             $"/api/workspaces/{app.WorkspaceId:D}/healing/audit?incidentId={ids.BlockedIncidentId:D}");
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        body.GetProperty("items").EnumerateArray().Should().ContainSingle()
-            .Which.GetProperty("eventType").GetString().Should().Be("deployment-observed");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(
+            "deployment-observed",
+            Assert.Single(body.GetProperty("items").EnumerateArray()).GetProperty("eventType").GetString());
     }
 
     private static async Task<ReportingIds> SeedReportingScenarioAsync(TestApplication app)

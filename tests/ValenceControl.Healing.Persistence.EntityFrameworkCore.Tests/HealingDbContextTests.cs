@@ -1,5 +1,4 @@
 using ValenceControl.Healing.Core;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using ComponentManifestModel = ValenceControl.Healing.Core.ComponentManifest;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -19,7 +18,7 @@ public sealed class HealingDbContextTests
 
         var act = () => fixture.Db.SaveChangesAsync();
 
-        await act.Should().ThrowAsync<DbUpdateException>();
+        await Assert.ThrowsAsync<DbUpdateException>(act);
     }
 
     [Fact]
@@ -47,8 +46,7 @@ public sealed class HealingDbContextTests
         auditEvent.ReasonCode = "tampered";
         var act = () => fixture.Db.SaveChangesAsync();
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*append-only*");
+        Assert.Contains("append-only", (await Assert.ThrowsAsync<InvalidOperationException>(act)).Message);
     }
 
     [Fact]
@@ -87,8 +85,8 @@ public sealed class HealingDbContextTests
             OccurredAt = candidate.OccurredAt.AddSeconds(1)
         });
 
-        replay.Id.Should().Be(first.Id);
-        (await fixture.Db.Set<HealingAuditEvent>().CountAsync()).Should().Be(1);
+        Assert.Equal(first.Id, replay.Id);
+        Assert.Equal(1, (await fixture.Db.Set<HealingAuditEvent>().CountAsync()));
     }
 
     [Fact]
@@ -117,7 +115,7 @@ public sealed class HealingDbContextTests
             await first.SaveChangesAsync();
             var act = () => stale.SaveChangesAsync();
 
-            await act.Should().ThrowAsync<DbUpdateConcurrencyException>();
+            await Assert.ThrowsAsync<DbUpdateConcurrencyException>(act);
         }
         finally
         {
@@ -133,10 +131,14 @@ public sealed class HealingDbContextTests
         using var sqlServer = new HealingDbContext(new DbContextOptionsBuilder<HealingDbContext>()
             .UseSqlServer("Server=localhost;Database=ValenceControlHealing;User ID=test;Password=not-real;Encrypt=False").Options);
 
-        Filter<HealingIncident>(sqlite).Should().Contain("Status").And.Contain("NOT IN");
-        Filter<HealingIncident>(sqlServer).Should().Contain("Status").And.Contain("NOT IN");
-        Filter<SourceOwnershipBinding>(sqlite).Should().Contain("Status").And.Contain("= 1");
-        Filter<SourceOwnershipBinding>(sqlServer).Should().Contain("Status").And.Contain("= 1");
+        Assert.Contains("Status", Filter<HealingIncident>(sqlite));
+        Assert.Contains("NOT IN", Filter<HealingIncident>(sqlite));
+        Assert.Contains("Status", Filter<HealingIncident>(sqlServer));
+        Assert.Contains("NOT IN", Filter<HealingIncident>(sqlServer));
+        Assert.Contains("Status", Filter<SourceOwnershipBinding>(sqlite));
+        Assert.Contains("= 1", Filter<SourceOwnershipBinding>(sqlite));
+        Assert.Contains("Status", Filter<SourceOwnershipBinding>(sqlServer));
+        Assert.Contains("= 1", Filter<SourceOwnershipBinding>(sqlServer));
     }
 
     [Fact]
@@ -145,24 +147,15 @@ public sealed class HealingDbContextTests
         using var db = new HealingDbContext(new DbContextOptionsBuilder<HealingDbContext>()
             .UseSqlite("Data Source=:memory:").Options);
 
-        ForeignKeyProperties<ComponentAttribution, IncidentOccurrence>(db)
-            .Should().BeEquivalentTo("WorkspaceId", "ApplicationId", "OccurrenceId");
-        ForeignKeyProperties<IncidentOccurrence, HealingIncident>(db)
-            .Should().BeEquivalentTo("WorkspaceId", "ApplicationId", "IncidentId");
-        ForeignKeyProperties<IncidentOccurrence, IncidentEpisode>(db)
-            .Should().BeEquivalentTo("WorkspaceId", "ApplicationId", "EpisodeId");
-        ForeignKeyProperties<ComponentAttribution, SourceOwnershipBinding>(db)
-            .Should().BeEquivalentTo("WorkspaceId", "ApplicationId", "BindingId");
-        ForeignKeyProperties<RepairAttempt, HealingIncident>(db)
-            .Should().BeEquivalentTo("WorkspaceId", "ApplicationId", "IncidentId");
-        ForeignKeyProperties<RepairAttempt, SourceOwnershipBinding>(db)
-            .Should().BeEquivalentTo("WorkspaceId", "ApplicationId", "BindingId");
-        ForeignKeyProperties<PolicyEvaluation, HealingPolicyDefinition>(db)
-            .Should().BeEquivalentTo("WorkspaceId", "ApplicationId", "PolicyId");
-        ForeignKeyProperties<ProviderOperation, ProviderConnection>(db)
-            .Should().BeEquivalentTo("WorkspaceId", "ProviderConnectionId");
-        ForeignKeyProperties<ProviderOperation, RepairAttempt>(db)
-            .Should().BeEquivalentTo("WorkspaceId", "ApplicationId", "AttemptId");
+        Assert.Equal(new[] { "WorkspaceId", "ApplicationId", "OccurrenceId" }.Order(), ForeignKeyProperties<ComponentAttribution, IncidentOccurrence>(db).Order());
+        Assert.Equal(new[] { "WorkspaceId", "ApplicationId", "IncidentId" }.Order(), ForeignKeyProperties<IncidentOccurrence, HealingIncident>(db).Order());
+        Assert.Equal(new[] { "WorkspaceId", "ApplicationId", "EpisodeId" }.Order(), ForeignKeyProperties<IncidentOccurrence, IncidentEpisode>(db).Order());
+        Assert.Equal(new[] { "WorkspaceId", "ApplicationId", "BindingId" }.Order(), ForeignKeyProperties<ComponentAttribution, SourceOwnershipBinding>(db).Order());
+        Assert.Equal(new[] { "WorkspaceId", "ApplicationId", "IncidentId" }.Order(), ForeignKeyProperties<RepairAttempt, HealingIncident>(db).Order());
+        Assert.Equal(new[] { "WorkspaceId", "ApplicationId", "BindingId" }.Order(), ForeignKeyProperties<RepairAttempt, SourceOwnershipBinding>(db).Order());
+        Assert.Equal(new[] { "WorkspaceId", "ApplicationId", "PolicyId" }.Order(), ForeignKeyProperties<PolicyEvaluation, HealingPolicyDefinition>(db).Order());
+        Assert.Equal(new[] { "WorkspaceId", "ProviderConnectionId" }.Order(), ForeignKeyProperties<ProviderOperation, ProviderConnection>(db).Order());
+        Assert.Equal(new[] { "WorkspaceId", "ApplicationId", "AttemptId" }.Order(), ForeignKeyProperties<ProviderOperation, RepairAttempt>(db).Order());
     }
 
     [Fact]
@@ -174,8 +167,7 @@ public sealed class HealingDbContextTests
         var index = db.Model.FindEntityType(typeof(HealingIncident))!.GetIndexes()
             .Single(x => x.IsUnique && x.GetFilter()?.Contains("Status", StringComparison.Ordinal) == true);
 
-        index.Properties.Select(x => x.Name).Should().Equal(
-            "WorkspaceId", "ApplicationId", "FingerprintVersion", "Fingerprint", "RepairRepositoryKey");
+        Assert.Equal(new[] { "WorkspaceId", "ApplicationId", "FingerprintVersion", "Fingerprint", "RepairRepositoryKey" }, index.Properties.Select(x => x.Name));
     }
 
     [Fact]
@@ -194,7 +186,7 @@ public sealed class HealingDbContextTests
 
         var act = () => fixture.Db.SaveChangesAsync();
 
-        await act.Should().ThrowAsync<DbUpdateException>();
+        await Assert.ThrowsAsync<DbUpdateException>(act);
     }
 
     [Fact]
@@ -205,7 +197,7 @@ public sealed class HealingDbContextTests
 
         var act = () => fixture.Db.SaveChangesAsync();
 
-        await act.Should().ThrowAsync<DbUpdateException>();
+        await Assert.ThrowsAsync<DbUpdateException>(act);
     }
 
     [Fact]
@@ -230,7 +222,7 @@ public sealed class HealingDbContextTests
 
         var act = () => fixture.Db.SaveChangesAsync();
 
-        await act.Should().ThrowAsync<DbUpdateException>();
+        await Assert.ThrowsAsync<DbUpdateException>(act);
     }
 
     private static string? Filter<TEntity>(HealingDbContext db) where TEntity : class =>

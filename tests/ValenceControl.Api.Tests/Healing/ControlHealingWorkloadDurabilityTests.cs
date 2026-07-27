@@ -5,7 +5,6 @@ using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.Agent;
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
@@ -58,11 +57,11 @@ public sealed class ControlHealingWorkloadDurabilityTests
         var result = await authorizer.AuthorizeAsync(new(
             ids.WorkspaceId, ids.AttemptId, capability, WorkloadCapabilityScopes.ReadEvidence));
 
-        result.Authorized.Should().BeFalse();
+        Assert.False(result.Authorized);
         var dbContext = scope.ServiceProvider.GetRequiredService<HealingDbContext>();
         var exchange = await dbContext.WorkloadIdentityExchanges.SingleAsync();
-        exchange.Status.Should().Be(WorkloadIdentityExchangeStatus.Revoked);
-        exchange.CapabilityTokenHash.Should().BeNull();
+        Assert.Equal(WorkloadIdentityExchangeStatus.Revoked, exchange.Status);
+        Assert.Null(exchange.CapabilityTokenHash);
     }
 
     [Fact]
@@ -82,20 +81,21 @@ public sealed class ControlHealingWorkloadDurabilityTests
         await using var secondScope = app.Services.CreateAsyncScope();
         var secondApi = secondScope.ServiceProvider.GetRequiredService<IHealingWorkloadApi>();
         var second = () => secondApi.CreateProposalAsync(request).AsTask();
-        var conflict = await second.Should().ThrowAsync<HealingWorkflowRequestException>();
-        conflict.Which.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        conflict.Which.ReasonCode.Should().Be("healing.workload.inference-reservation-active");
+        var conflict = await Assert.ThrowsAsync<HealingWorkflowRequestException>(second);
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        Assert.Equal("healing.workload.inference-reservation-active", conflict.ReasonCode);
 
         provider.Release.TrySetResult();
         var response = await first;
-        response.IsReplay.Should().BeFalse();
-        provider.CallCount.Should().Be(1);
+        Assert.False(response.IsReplay);
+        Assert.Equal(1, provider.CallCount);
         await using var assertScope = app.Services.CreateAsyncScope();
         var db = assertScope.ServiceProvider.GetRequiredService<HealingDbContext>();
-        (await db.ManagedRepairInferenceReservations.SingleAsync()).Status
-            .Should().Be(ManagedRepairInferenceReservationStatus.Completed);
-        (await db.ManagedRepairProposals.CountAsync()).Should().Be(1);
-        (await db.HealingAuditEventsForTest().CountAsync(x => x.EventType == "repair-proposal-created")).Should().Be(1);
+        Assert.Equal(
+            ManagedRepairInferenceReservationStatus.Completed,
+            (await db.ManagedRepairInferenceReservations.SingleAsync()).Status);
+        Assert.Equal(1, (await db.ManagedRepairProposals.CountAsync()));
+        Assert.Equal(1, (await db.HealingAuditEventsForTest().CountAsync(x => x.EventType == "repair-proposal-created")));
     }
 
     [Fact]
@@ -125,19 +125,20 @@ public sealed class ControlHealingWorkloadDurabilityTests
         var recovered = await ControlManagedInferenceRecovery.RecoverExpiredAsync(db, TimeProvider.System);
         var replayedRecovery = await ControlManagedInferenceRecovery.RecoverExpiredAsync(db, TimeProvider.System);
 
-        recovered.Should().BeInRange(0, 1, "the hosted coordinator may win the same idempotent recovery race");
-        replayedRecovery.Should().Be(0);
-        provider.CallCount.Should().Be(0);
-        (await db.ManagedRepairInferenceReservations.SingleAsync()).Status
-            .Should().Be(ManagedRepairInferenceReservationStatus.Abandoned);
+        Assert.InRange(recovered, 0, 1);
+        Assert.Equal(0, replayedRecovery);
+        Assert.Equal(0, provider.CallCount);
+        Assert.Equal(
+            ManagedRepairInferenceReservationStatus.Abandoned,
+            (await db.ManagedRepairInferenceReservations.SingleAsync()).Status);
         var attempt = await db.RepairAttempts.SingleAsync();
-        attempt.Status.Should().Be(RepairAttemptStatus.Failed);
-        attempt.LeaseToken.Should().BeNull();
-        attempt.OutcomeCode.Should().Be("managed-inference-outcome-indeterminate");
+        Assert.Equal(RepairAttemptStatus.Failed, attempt.Status);
+        Assert.Null(attempt.LeaseToken);
+        Assert.Equal("managed-inference-outcome-indeterminate", attempt.OutcomeCode);
         var incident = await db.HealingIncidents.SingleAsync();
-        incident.Status.Should().Be(HealingIncidentStatus.NeedsHuman);
-        incident.NeedsHumanReason.Should().Be(NeedsHumanReason.PolicyBlocked);
-        (await db.HealingAuditEventsForTest().SingleAsync()).EventType.Should().Be("repair-inference-abandoned");
+        Assert.Equal(HealingIncidentStatus.NeedsHuman, incident.Status);
+        Assert.Equal(NeedsHumanReason.PolicyBlocked, incident.NeedsHumanReason);
+        Assert.Equal("repair-inference-abandoned", (await db.HealingAuditEventsForTest().SingleAsync()).EventType);
     }
 
     [Fact]
@@ -161,13 +162,13 @@ public sealed class ControlHealingWorkloadDurabilityTests
         var response = await scope.ServiceProvider.GetRequiredService<IHealingWorkloadApi>()
             .CreateProposalAsync(request);
 
-        response.IsReplay.Should().BeTrue();
-        provider.CallCount.Should().Be(0);
+        Assert.True(response.IsReplay);
+        Assert.Equal(0, provider.CallCount);
         var db = scope.ServiceProvider.GetRequiredService<HealingDbContext>();
-        (await db.HealingAuditEventsForTest().SingleAsync()).EventType.Should().Be("repair-proposal-created");
+        Assert.Equal("repair-proposal-created", (await db.HealingAuditEventsForTest().SingleAsync()).EventType);
         var second = await scope.ServiceProvider.GetRequiredService<IHealingWorkloadApi>().CreateProposalAsync(request);
-        second.IsReplay.Should().BeTrue();
-        (await db.HealingAuditEventsForTest().CountAsync()).Should().Be(1);
+        Assert.True(second.IsReplay);
+        Assert.Equal(1, (await db.HealingAuditEventsForTest().CountAsync()));
     }
 
     [Fact]
@@ -205,11 +206,11 @@ public sealed class ControlHealingWorkloadDurabilityTests
                 "result-1",
                 envelope));
 
-        receipt.IsReplay.Should().BeTrue();
+        Assert.True(receipt.IsReplay);
         var db = scope.ServiceProvider.GetRequiredService<HealingDbContext>();
-        (await db.RepairAttempts.SingleAsync()).Status.Should().Be(RepairAttemptStatus.ResultReceived);
-        (await db.RepairResults.CountAsync()).Should().Be(1);
-        (await db.HealingAuditEventsForTest().SingleAsync()).EventType.Should().Be("repair-result-accepted");
+        Assert.Equal(RepairAttemptStatus.ResultReceived, (await db.RepairAttempts.SingleAsync()).Status);
+        Assert.Equal(1, (await db.RepairResults.CountAsync()));
+        Assert.Equal("repair-result-accepted", (await db.HealingAuditEventsForTest().SingleAsync()).EventType);
     }
 
     private static ControlApiTestApplication Application(

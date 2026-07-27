@@ -6,7 +6,6 @@ using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -27,7 +26,7 @@ public sealed class WorkspaceDeploymentMutationAuthorizationTests
             $"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}/controls/reload-configuration/run",
             new WorkspaceRuntimeControlRunRequest(Guid.NewGuid()));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -43,7 +42,7 @@ public sealed class WorkspaceDeploymentMutationAuthorizationTests
             $"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}/controls/reload-configuration/run",
             new WorkspaceRuntimeControlRunRequest(Guid.NewGuid()));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     [Fact]
@@ -60,9 +59,9 @@ public sealed class WorkspaceDeploymentMutationAuthorizationTests
             $"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}/controls/reload-configuration/run",
             new WorkspaceRuntimeControlRunRequest(confirmation.Id));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         var usedAt = await ConfirmationUsedAtAsync(app, workspaceId, confirmation.Id);
-        usedAt.Should().BeNull();
+        Assert.Null(usedAt);
     }
 
     [Fact]
@@ -79,9 +78,9 @@ public sealed class WorkspaceDeploymentMutationAuthorizationTests
             $"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}/controls/reload-configuration/run",
             new WorkspaceRuntimeControlRunRequest(confirmation.Id));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         var usedAt = await ConfirmationUsedAtAsync(app, workspaceId, confirmation.Id);
-        usedAt.Should().BeNull();
+        Assert.Null(usedAt);
     }
 
     [Fact]
@@ -102,9 +101,9 @@ public sealed class WorkspaceDeploymentMutationAuthorizationTests
             $"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}/controls/reload-configuration/run",
             new WorkspaceRuntimeControlRunRequest(confirmation.Id));
 
-        first.StatusCode.Should().Be(HttpStatusCode.OK);
-        execution!.Status.Should().Be(RuntimeControlExecutionStatus.Succeeded);
-        replay.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(RuntimeControlExecutionStatus.Succeeded, execution!.Status);
+        Assert.Equal(HttpStatusCode.Conflict, replay.StatusCode);
     }
 
     [Fact]
@@ -124,7 +123,7 @@ public sealed class WorkspaceDeploymentMutationAuthorizationTests
                 $"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}/controls/reload-configuration/run",
                 new WorkspaceRuntimeControlRunRequest(confirmation.Id));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     private static async Task<(WorkspaceDeploymentApplication Application, WorkspaceDeploymentEnvironment Environment, WorkspaceWorkflowEngine Engine)> SeedControlTopologyAsync(
@@ -166,7 +165,7 @@ public sealed class WorkspaceDeploymentMutationAuthorizationTests
                 ConfirmationActionType.RuntimeControl,
                 RuntimeControlService.RuntimeControlTargetId(engineId, controlId),
                 null));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadControlJsonAsync<ActionConfirmation>())!;
     }
 

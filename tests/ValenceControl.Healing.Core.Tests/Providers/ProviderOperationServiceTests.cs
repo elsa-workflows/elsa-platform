@@ -1,7 +1,6 @@
 using ValenceControl.Healing.Core.Configuration;
 using ValenceControl.Healing.Core.Operations;
 using ValenceControl.Healing.Core.Providers;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.Core.Tests.Providers;
 
@@ -19,11 +18,11 @@ public sealed class ProviderOperationServiceTests
             Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), ProviderOperationKind.DispatchWorkflow,
             "dispatch-1", "{ \"attempt\": 1 }"));
 
-        result.IsReplay.Should().BeFalse();
-        result.Operation.PayloadJson.Should().Be("{\"attempt\":1}");
-        result.Operation.PayloadHash.Should().MatchRegex("^[0-9a-f]{64}$");
-        result.Operation.Status.Should().Be(ProviderOperationStatus.Pending);
-        result.Operation.CreatedAt.Should().Be(Now);
+        Assert.False(result.IsReplay);
+        Assert.Equal("{\"attempt\":1}", result.Operation.PayloadJson);
+        Assert.Matches("^[0-9a-f]{64}$", result.Operation.PayloadHash);
+        Assert.Equal(ProviderOperationStatus.Pending, result.Operation.Status);
+        Assert.Equal(Now, result.Operation.CreatedAt);
     }
 
     [Fact]
@@ -38,9 +37,9 @@ public sealed class ProviderOperationServiceTests
 
         var result = await service.RunOnceAsync();
 
-        result.Status.Should().Be(HealingWorkerRunStatus.RetryScheduled);
-        store.Outcome.Should().Be(HealingOperationOutcome.Retry("github-rate-limited"));
-        store.NextAttemptAt.Should().Be(Now.AddMinutes(1));
+        Assert.Equal(HealingWorkerRunStatus.RetryScheduled, result.Status);
+        Assert.Equal(HealingOperationOutcome.Retry("github-rate-limited"), store.Outcome);
+        Assert.Equal(Now.AddMinutes(1), store.NextAttemptAt);
     }
 
     [Fact]
@@ -55,8 +54,8 @@ public sealed class ProviderOperationServiceTests
 
         var result = await service.RunOnceAsync();
 
-        result.Status.Should().Be(HealingWorkerRunStatus.DeadLettered);
-        store.Outcome!.OutcomeCode.Should().Be("provider-operation-handler-not-configured");
+        Assert.Equal(HealingWorkerRunStatus.DeadLettered, result.Status);
+        Assert.Equal("provider-operation-handler-not-configured", store.Outcome!.OutcomeCode);
     }
 
     private static ProviderOperationService CreateService(

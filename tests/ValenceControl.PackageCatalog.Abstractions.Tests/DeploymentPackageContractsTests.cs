@@ -1,5 +1,4 @@
 using ValenceControl.PackageCatalog.Abstractions.Deployment;
-using FluentAssertions;
 
 namespace ValenceControl.PackageCatalog.Abstractions.Tests;
 
@@ -28,31 +27,29 @@ public sealed class DeploymentPackageContractsTests
                 new DeploymentPackageFinding(DeploymentPackageFindingSeverity.Error, DeploymentPackageFindingCategory.Compatibility, "package.incompatible", "Package is incompatible with the target runtime.", "Elsa.Email", "1.0.0")
             ]);
 
-        result.HasErrors.Should().BeTrue();
-        result.Resolutions.Single().Approval.Should().Be(PackageApprovalState.Rejected);
-        result.Resolutions.Single().Trust.Should().Be(PackageTrustState.Trusted);
-        result.Resolutions.Single().Suspicion.Should().Be(PackageSuspicionState.Suspicious);
-        result.Resolutions.Single().Compatibility.Should().Be(PackageCompatibilityState.Incompatible);
-        result.Findings.Select(x => x.Category).Should().Contain([
-            DeploymentPackageFindingCategory.Approval,
-            DeploymentPackageFindingCategory.Suspicion,
-            DeploymentPackageFindingCategory.Compatibility
-        ]);
+        Assert.True(result.HasErrors);
+        Assert.Equal(PackageApprovalState.Rejected, result.Resolutions.Single().Approval);
+        Assert.Equal(PackageTrustState.Trusted, result.Resolutions.Single().Trust);
+        Assert.Equal(PackageSuspicionState.Suspicious, result.Resolutions.Single().Suspicion);
+        Assert.Equal(PackageCompatibilityState.Incompatible, result.Resolutions.Single().Compatibility);
+        var categories = result.Findings.Select(x => x.Category);
+        Assert.Contains(DeploymentPackageFindingCategory.Approval, categories);
+        Assert.Contains(DeploymentPackageFindingCategory.Suspicion, categories);
+        Assert.Contains(DeploymentPackageFindingCategory.Compatibility, categories);
     }
 
     [Fact]
     public void Finding_categories_cover_required_deployment_validation_states()
     {
-        Enum.GetValues<DeploymentPackageFindingCategory>().Should().Contain([
-            DeploymentPackageFindingCategory.Discovery,
-            DeploymentPackageFindingCategory.ManifestValidation,
-            DeploymentPackageFindingCategory.Approval,
-            DeploymentPackageFindingCategory.Trust,
-            DeploymentPackageFindingCategory.Suspicion,
-            DeploymentPackageFindingCategory.Compatibility,
-            DeploymentPackageFindingCategory.Feature,
-            DeploymentPackageFindingCategory.Conflict
-        ]);
+        var categories = Enum.GetValues<DeploymentPackageFindingCategory>();
+        Assert.Contains(DeploymentPackageFindingCategory.Discovery, categories);
+        Assert.Contains(DeploymentPackageFindingCategory.ManifestValidation, categories);
+        Assert.Contains(DeploymentPackageFindingCategory.Approval, categories);
+        Assert.Contains(DeploymentPackageFindingCategory.Trust, categories);
+        Assert.Contains(DeploymentPackageFindingCategory.Suspicion, categories);
+        Assert.Contains(DeploymentPackageFindingCategory.Compatibility, categories);
+        Assert.Contains(DeploymentPackageFindingCategory.Feature, categories);
+        Assert.Contains(DeploymentPackageFindingCategory.Conflict, categories);
     }
 
     [Fact]
@@ -60,8 +57,8 @@ public sealed class DeploymentPackageContractsTests
     {
         var method = typeof(IDeploymentPackageCatalog).GetMethod(nameof(IDeploymentPackageCatalog.ValidateRequirementsAsync));
 
-        method.Should().NotBeNull();
-        method!.ReturnType.Should().Be(typeof(Task<DeploymentPackageValidationResult>));
-        method.GetParameters().Select(x => x.ParameterType).Should().Equal(typeof(DeploymentPackageValidationRequest), typeof(CancellationToken));
+        Assert.NotNull(method);
+        Assert.Equal(typeof(Task<DeploymentPackageValidationResult>), method!.ReturnType);
+        Assert.Equal([typeof(DeploymentPackageValidationRequest), typeof(CancellationToken)], method.GetParameters().Select(x => x.ParameterType));
     }
 }

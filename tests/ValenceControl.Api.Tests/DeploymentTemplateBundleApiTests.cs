@@ -1,7 +1,6 @@
 using System.Net;
 using ValenceControl.Api.Authentication;
 using ValenceControl.Api.Public.Builder;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -18,9 +17,9 @@ public sealed class DeploymentTemplateBundleApiTests
 
         var response = await BuilderClient(app).PostControlJsonAsync("/api/builder/bundle", Request(target));
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadControlJsonAsync<BuilderBundleResponse>();
-        body!.Files.Should().Contain(x => x.Path == expectedFile);
+        Assert.Contains(body!.Files, x => x.Path == expectedFile);
     }
 
     [Fact]
@@ -32,8 +31,8 @@ public sealed class DeploymentTemplateBundleApiTests
         var response = await BuilderClient(app).PostControlJsonAsync("/api/builder/bundle", Request("terraform"));
 
         var body = await response.Content.ReadControlJsonAsync<BuilderBundleResponse>();
-        body!.Files.Should().BeEmpty();
-        body.Findings.Should().ContainSingle(x => x.Code == "deploymentTarget.unsupported");
+        Assert.Empty(body!.Files);
+        Assert.Single(body.Findings, x => x.Code == "deploymentTarget.unsupported");
     }
 
     private static BuilderBundleRequest Request(string target) =>

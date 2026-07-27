@@ -4,7 +4,6 @@ using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.OpenTelemetry;
 using ValenceControl.Healing.Core.Verification;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ValenceControl.Healing.OpenTelemetry.Tests;
@@ -24,31 +23,31 @@ public sealed class HealingOpenTelemetryContributorTests
 
         await contributor.ContributeAsync(CreateExceptionLogBatch(), TrustedContext());
 
-        appender.Items.Should().ContainSingle();
+        Assert.Single(appender.Items);
         var item = appender.Items.Single();
-        item.WorkspaceId.Should().Be(WorkspaceId);
-        item.ApplicationId.Should().Be(ApplicationId);
-        item.EnvironmentId.Should().Be(EnvironmentId);
-        item.Source.Should().Be(HealingSignalSource.OpenTelemetry);
-        item.AcceptedAt.Should().Be(AcceptedAt);
-        item.Status.Should().Be(HealingInboxStatus.Pending);
-        item.IdempotencyKey.Should().Be("occurrence-42");
-        item.EnvelopeHash.Should().MatchRegex("^[0-9a-f]{64}$");
+        Assert.Equal(WorkspaceId, item.WorkspaceId);
+        Assert.Equal(ApplicationId, item.ApplicationId);
+        Assert.Equal(EnvironmentId, item.EnvironmentId);
+        Assert.Equal(HealingSignalSource.OpenTelemetry, item.Source);
+        Assert.Equal(AcceptedAt, item.AcceptedAt);
+        Assert.Equal(HealingInboxStatus.Pending, item.Status);
+        Assert.Equal("occurrence-42", item.IdempotencyKey);
+        Assert.Matches("^[0-9a-f]{64}$", item.EnvelopeHash);
 
         var signal = JsonSerializer.Deserialize<HealingSignal>(item.RedactedEnvelopeJson);
-        signal.Should().NotBeNull();
-        signal!.ApplicationId.Should().Be(ApplicationId);
-        signal.EnvironmentId.Should().Be(EnvironmentId);
-        signal.OperationName.Should().Be("GET /orders/{id}");
-        signal.Exception.Type.Should().Be("System.InvalidOperationException");
-        signal.Exception.Message.Should().Be("safe redacted message");
-        signal.Exception.StackTrace.Should().Contain("OrderService.Load");
-        signal.Evidence.IsRedacted.Should().BeTrue();
-        signal.Trace.Should().Be(new HealingTraceContext("trace-1", "span-1"));
-        signal.ServiceName.Should().Be("orders-api");
-        signal.ResourceIdentity.Should().Be("resource-1");
-        signal.Severity.Should().Be("Error");
-        item.RedactedEnvelopeJson.Should().NotContain("must-never-enter-healing");
+        Assert.NotNull(signal);
+        Assert.Equal(ApplicationId, signal!.ApplicationId);
+        Assert.Equal(EnvironmentId, signal.EnvironmentId);
+        Assert.Equal("GET /orders/{id}", signal.OperationName);
+        Assert.Equal("System.InvalidOperationException", signal.Exception.Type);
+        Assert.Equal("safe redacted message", signal.Exception.Message);
+        Assert.Contains("OrderService.Load", signal.Exception.StackTrace);
+        Assert.True(signal.Evidence.IsRedacted);
+        Assert.Equal(new HealingTraceContext("trace-1", "span-1"), signal.Trace);
+        Assert.Equal("orders-api", signal.ServiceName);
+        Assert.Equal("resource-1", signal.ResourceIdentity);
+        Assert.Equal("Error", signal.Severity);
+        Assert.DoesNotContain("must-never-enter-healing", item.RedactedEnvelopeJson);
     }
 
     [Fact]
@@ -60,10 +59,9 @@ public sealed class HealingOpenTelemetryContributorTests
         await contributor.ContributeAsync(CreateExceptionLogBatch(occurrenceId: null, receiverLogId: "receiver-id-1"), TrustedContext());
         await contributor.ContributeAsync(CreateExceptionLogBatch(occurrenceId: null, receiverLogId: "receiver-id-2"), TrustedContext());
 
-        appender.Items.Should().HaveCount(2);
-        appender.Items.Select(x => x.IdempotencyKey).Distinct().Should().ContainSingle()
-            .Which.Should().MatchRegex("^otel:v1:[0-9a-f]{64}$");
-        appender.Items.Select(x => x.EnvelopeHash).Distinct().Should().ContainSingle();
+        Assert.Equal(2, appender.Items.Count());
+        Assert.Matches("^otel:v1:[0-9a-f]{64}$", Assert.Single(appender.Items.Select(x => x.IdempotencyKey).Distinct()));
+        Assert.Single(appender.Items.Select(x => x.EnvelopeHash).Distinct());
     }
 
     [Fact]
@@ -76,8 +74,8 @@ public sealed class HealingOpenTelemetryContributorTests
             CreateExceptionLogBatch(severityNumber: 17, severityText: string.Empty),
             TrustedContext());
 
-        var item = appender.Items.Should().ContainSingle().Subject;
-        JsonSerializer.Deserialize<HealingSignal>(item.RedactedEnvelopeJson)!.Severity.Should().Be("error");
+        var item = Assert.Single(appender.Items);
+        Assert.Equal("error", JsonSerializer.Deserialize<HealingSignal>(item.RedactedEnvelopeJson)!.Severity);
     }
 
     [Fact]
@@ -89,10 +87,11 @@ public sealed class HealingOpenTelemetryContributorTests
         var contribution = contributor.ContributeAsync(CreateExceptionLogBatch(), TrustedContext()).AsTask();
         await appender.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        contribution.IsCompleted.Should().BeFalse();
+        Assert.False(contribution.IsCompleted);
         appender.Completion.SetException(new InvalidOperationException("database unavailable"));
         var act = () => contribution;
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("database unavailable");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+        Assert.Equal("database unavailable", exception.Message);
     }
 
     [Fact]
@@ -139,16 +138,16 @@ public sealed class HealingOpenTelemetryContributorTests
 
         await contributor.ContributeAsync(new([resource], [], [span], [], [], []), TrustedContext());
 
-        var item = appender.Items.Should().ContainSingle().Subject;
-        item.IdempotencyKey.Should().Be("span-occurrence-1");
-        item.OccurredAt.Should().Be(occurredAt);
+        var item = Assert.Single(appender.Items);
+        Assert.Equal("span-occurrence-1", item.IdempotencyKey);
+        Assert.Equal(occurredAt, item.OccurredAt);
         var signal = JsonSerializer.Deserialize<HealingSignal>(item.RedactedEnvelopeJson)!;
-        signal.Exception.Type.Should().Be("System.TimeoutException");
-        signal.Exception.Message.Should().Be("redacted timeout");
-        signal.OperationName.Should().Be("orders.send");
-        signal.Trace.Should().Be(new HealingTraceContext("trace-2", "span-2"));
-        signal.ServiceName.Should().Be("orders-api");
-        signal.Severity.Should().Be("Error");
+        Assert.Equal("System.TimeoutException", signal.Exception.Type);
+        Assert.Equal("redacted timeout", signal.Exception.Message);
+        Assert.Equal("orders.send", signal.OperationName);
+        Assert.Equal(new HealingTraceContext("trace-2", "span-2"), signal.Trace);
+        Assert.Equal("orders-api", signal.ServiceName);
+        Assert.Equal("Error", signal.Severity);
     }
 
     [Fact]
@@ -183,9 +182,9 @@ public sealed class HealingOpenTelemetryContributorTests
 
         await contributor.ContributeAsync(new([resource], [], [span], [], [], []), TrustedContext());
 
-        scope.Verification!.RelevantOperationSuccessCount.Should().Be(1);
-        scope.Verification.LastRelevantOperationSuccessAt.Should().Be(AcceptedAt.AddMinutes(-1));
-        appender.Items.Should().BeEmpty("a successful span is verification evidence, not a failure incident");
+        Assert.Equal(1, scope.Verification!.RelevantOperationSuccessCount);
+        Assert.Equal(AcceptedAt.AddMinutes(-1), scope.Verification.LastRelevantOperationSuccessAt);
+        Assert.Empty(appender.Items);
     }
 
     [Fact]
@@ -206,7 +205,7 @@ public sealed class HealingOpenTelemetryContributorTests
         await contributor.ContributeAsync(missingService, TrustedContext());
         await CreateContributor(appender, null).ContributeAsync(CreateExceptionLogBatch(), TrustedContext());
 
-        appender.Items.Should().BeEmpty();
+        Assert.Empty(appender.Items);
     }
 
     [Fact]
@@ -221,19 +220,21 @@ public sealed class HealingOpenTelemetryContributorTests
 
         await contributor.ContributeAsync(batch, TrustedContext());
 
-        var item = appender.Items.Should().ContainSingle().Subject;
-        item.IdempotencyKey.Should().MatchRegex("^otel:v1:[0-9a-f]{64}$");
-        item.RedactedEnvelopeJson.Length.Should().BeLessThan(262_144);
+        var item = Assert.Single(appender.Items);
+        Assert.Matches("^otel:v1:[0-9a-f]{64}$", item.IdempotencyKey);
+        Assert.True(item.RedactedEnvelopeJson.Length < 262_144);
         var signal = JsonSerializer.Deserialize<HealingSignal>(item.RedactedEnvelopeJson)!;
-        signal.Exception.Message.Should().HaveLength(8_192);
-        signal.Exception.StackTrace.Should().HaveLength(131_072);
-        signal.ComponentKey.Should().HaveLength(2_048);
-        signal.Evidence.IsTruncated.Should().BeTrue();
-        signal.Evidence.OmittedFields.Should().BeEquivalentTo(
+        Assert.Equal(8_192, Assert.IsType<string>(signal.Exception.Message).Length);
+        Assert.Equal(131_072, Assert.IsType<string>(signal.Exception.StackTrace).Length);
+        Assert.Equal(2_048, Assert.IsType<string>(signal.ComponentKey).Length);
+        Assert.True(signal.Evidence.IsTruncated);
+        Assert.Equivalent(new[]
+        {
             HealingSignalAttributes.OccurrenceId,
             HealingSignalAttributes.ComponentKey,
             "exception.message",
-            "exception.stacktrace");
+            "exception.stacktrace"
+        }, signal.Evidence.OmittedFields);
     }
 
     [Fact]
@@ -257,13 +258,13 @@ public sealed class HealingOpenTelemetryContributorTests
 
         await contributor.ContributeAsync(batch, context);
 
-        var item = appender.Items.Should().ContainSingle().Subject;
-        item.WorkspaceId.Should().Be(WorkspaceId);
-        item.ApplicationId.Should().Be(contextApplicationId);
-        item.EnvironmentId.Should().Be(contextEnvironmentId);
+        var item = Assert.Single(appender.Items);
+        Assert.Equal(WorkspaceId, item.WorkspaceId);
+        Assert.Equal(contextApplicationId, item.ApplicationId);
+        Assert.Equal(contextEnvironmentId, item.EnvironmentId);
         var signal = JsonSerializer.Deserialize<HealingSignal>(item.RedactedEnvelopeJson)!;
-        signal.ApplicationId.Should().Be(contextApplicationId);
-        signal.EnvironmentId.Should().Be(contextEnvironmentId);
+        Assert.Equal(contextApplicationId, signal.ApplicationId);
+        Assert.Equal(contextEnvironmentId, signal.EnvironmentId);
     }
 
     [Fact]
@@ -277,7 +278,7 @@ public sealed class HealingOpenTelemetryContributorTests
             CreateExceptionLogBatch(),
             OpenTelemetryIngestionContext.Authenticated("elsa:otlp:configured-api-key"));
 
-        appender.Items.Should().BeEmpty();
+        Assert.Empty(appender.Items);
     }
 
     [Fact]
@@ -298,7 +299,7 @@ public sealed class HealingOpenTelemetryContributorTests
 
         await contributor.ContributeAsync(CreateExceptionLogBatch(), context);
 
-        appender.Items.Should().BeEmpty();
+        Assert.Empty(appender.Items);
     }
 
     private static HealingOpenTelemetryIngestionContributor CreateContributor(IHealingSignalInboxAppender appender) =>

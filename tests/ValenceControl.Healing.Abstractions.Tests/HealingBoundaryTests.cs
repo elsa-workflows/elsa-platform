@@ -1,5 +1,4 @@
 using ValenceControl.Healing.Abstractions;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.Abstractions.Tests;
 
@@ -8,7 +7,7 @@ public class HealingBoundaryTests
     [Fact]
     public void PublishedContractVersionsRemainAtV1()
     {
-        HealingContractVersions.All.Should().BeEquivalentTo(
+        Assert.Equivalent(
             new Dictionary<string, string>
             {
                 ["signal-profile"] = "1.0",
@@ -19,7 +18,8 @@ public class HealingBoundaryTests
                 ["policy-protocol"] = "1.0",
                 ["deployment-protocol"] = "1.0",
                 ["audit-protocol"] = "1.0"
-            });
+            },
+            HealingContractVersions.All);
     }
 
     [Fact]
@@ -29,12 +29,11 @@ public class HealingBoundaryTests
             .Select(reference => reference.Name ?? string.Empty)
             .ToArray();
 
-        referenceNames.Should().NotContain(name =>
+        Assert.DoesNotContain(referenceNames, name =>
             new[] { "GitHub", "Octokit", "AspNetCore", "EntityFrameworkCore" }
                 .Any(forbidden => name.Contains(forbidden, StringComparison.OrdinalIgnoreCase)));
 
-        typeof(HealingSignal).Assembly.GetExportedTypes().Select(type => type.FullName ?? string.Empty)
-            .Should().NotContain(name =>
+        Assert.DoesNotContain(typeof(HealingSignal).Assembly.GetExportedTypes().Select(type => type.FullName ?? string.Empty), name =>
                 name.Contains("GitHub", StringComparison.OrdinalIgnoreCase) ||
                 name.Contains("Octokit", StringComparison.OrdinalIgnoreCase));
     }
@@ -48,7 +47,7 @@ public class HealingBoundaryTests
     [InlineData("1.0.0", false)]
     public void SignalProfileCompatibilityAcceptsSupportedMinorVersionsOnly(string candidate, bool expected)
     {
-        HealingContractVersion.IsCompatible(HealingContractVersions.SignalProfile, candidate).Should().Be(expected);
+        Assert.Equal(expected, HealingContractVersion.IsCompatible(HealingContractVersions.SignalProfile, candidate));
     }
 
     [Fact]
@@ -56,7 +55,7 @@ public class HealingBoundaryTests
     {
         var propertyNames = typeof(HealingSignal).GetProperties().Select(property => property.Name).ToArray();
 
-        propertyNames.Should().NotContain(name =>
+        Assert.DoesNotContain(propertyNames, name =>
             new[] { "Repository", "WorkflowIdentity", "TargetBranch", "ProviderConnection", "MergePolicy" }
                 .Any(forbidden => name.Contains(forbidden, StringComparison.OrdinalIgnoreCase)));
     }
@@ -69,7 +68,7 @@ public class HealingBoundaryTests
             .Select(property => property.Name)
             .ToArray();
 
-        propertyNames.Should().NotContain(name =>
+        Assert.DoesNotContain(propertyNames, name =>
             new[] { "Secret", "AccessToken", "RefreshToken", "PrivateKey", "Credential", "ConnectionString" }
                 .Any(forbidden => name.Contains(forbidden, StringComparison.OrdinalIgnoreCase)));
     }
@@ -79,7 +78,7 @@ public class HealingBoundaryTests
     {
         var propertyNames = typeof(RepairWorkflowDispatchRequest).GetProperties().Select(property => property.Name).ToArray();
 
-        propertyNames.Should().NotContain(name =>
+        Assert.DoesNotContain(propertyNames, name =>
             new[] { "Exception", "Stack", "Evidence", "Diff", "Patch", "Token", "Secret", "Prompt" }
                 .Any(forbidden => name.Contains(forbidden, StringComparison.OrdinalIgnoreCase)));
     }
@@ -87,7 +86,7 @@ public class HealingBoundaryTests
     [Fact]
     public void WorkloadCapabilityIsLimitedToTheFiveProtocolOperations()
     {
-        WorkloadCapabilityScopes.All.Should().BeEquivalentTo(
+        Assert.Equivalent(
             new[]
             {
                 "evidence.read",
@@ -95,15 +94,16 @@ public class HealingBoundaryTests
                 "proposal.finalize",
                 "attempt.heartbeat",
                 "result.upload"
-            });
+            },
+            WorkloadCapabilityScopes.All);
 
-        typeof(WorkloadCapabilityGrant).GetProperties().Select(property => property.Name)
-            .Should().Contain(new[] { "ProtocolVersion", "AttemptId", "AllowedScopes", "ExpiresAt" });
+        var propertyNames = typeof(WorkloadCapabilityGrant).GetProperties().Select(property => property.Name);
+        Assert.All(new[] { "ProtocolVersion", "AttemptId", "AllowedScopes", "ExpiresAt" }, propertyName => Assert.Contains(propertyName, propertyNames));
 
-        WorkloadCapabilityScopes.All.Should().NotBeAssignableTo<HashSet<string>>();
-        HealingPermissions.All.Should().NotBeAssignableTo<HashSet<string>>();
-        HealingActorTypes.All.Should().NotBeAssignableTo<HashSet<string>>();
-        HealingHumanCommands.All.Should().NotBeAssignableTo<HashSet<string>>();
+        Assert.IsNotAssignableFrom<HashSet<string>>(WorkloadCapabilityScopes.All);
+        Assert.IsNotAssignableFrom<HashSet<string>>(HealingPermissions.All);
+        Assert.IsNotAssignableFrom<HashSet<string>>(HealingActorTypes.All);
+        Assert.IsNotAssignableFrom<HashSet<string>>(HealingHumanCommands.All);
     }
 
     [Fact]
@@ -121,7 +121,7 @@ public class HealingBoundaryTests
             .Select(property => property.Name)
             .ToArray();
 
-        propertyNames.Should().NotContain(name =>
+        Assert.DoesNotContain(propertyNames, name =>
             new[] { "InstallationToken", "ProviderToken", "RepositoryCredential", "MergePermission" }
                 .Any(forbidden => name.Contains(forbidden, StringComparison.OrdinalIgnoreCase)));
     }
@@ -129,33 +129,30 @@ public class HealingBoundaryTests
     [Fact]
     public void DeploymentAndAuditWireContractsAreExplicitlyVersioned()
     {
-        new[]
+        Assert.DoesNotContain(
+            new[]
             {
                 typeof(DeploymentObservationRequest),
                 typeof(RepairVerificationFailedSignal),
                 typeof(HealingAuditEventContract),
                 typeof(HealingAuditQuery)
-            }
-            .Where(type => type.GetProperty("ProtocolVersion") is null)
-            .Should().BeEmpty();
+            },
+            type => type.GetProperty("ProtocolVersion") is null);
     }
 
     [Fact]
     public void AuditPortIsAppendOnly()
     {
-        typeof(IHealingAuditSink).GetMethods().Select(method => method.Name)
-            .Should().BeEquivalentTo(new[] { "AppendAsync" });
+        Assert.Equivalent(new[] { "AppendAsync" }, typeof(IHealingAuditSink).GetMethods().Select(method => method.Name));
 
-        typeof(IHealingAuditQuery).GetMethods().Select(method => method.Name)
-            .Should().BeEquivalentTo(new[] { "ListAsync" });
+        Assert.Equivalent(new[] { "ListAsync" }, typeof(IHealingAuditQuery).GetMethods().Select(method => method.Name));
     }
 
     [Fact]
     public void PolicyEvaluationCarriesEveryGateState()
     {
-        Enum.GetNames<PolicyGateState>().Should().BeEquivalentTo(
-            new[] { "Pass", "Block", "Unknown", "Stale" });
+        Assert.Equivalent(new[] { "Pass", "Block", "Unknown", "Stale" }, Enum.GetNames<PolicyGateState>());
 
-        typeof(PolicyEvaluationSnapshot).GetProperty("Gates").Should().NotBeNull();
+        Assert.NotNull(typeof(PolicyEvaluationSnapshot).GetProperty("Gates"));
     }
 }

@@ -4,7 +4,6 @@ using System.Net.Sockets;
 using System.Text;
 using ValenceControl.Deployment.Artifacts;
 using ValenceControl.Workflows.RuntimeApplier;
-using FluentAssertions;
 
 namespace ValenceControl.Workflows.RuntimeApplier.Tests;
 
@@ -34,11 +33,11 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var payload = await fetcher.FetchAsync(reference);
 
-        payload.Reference.Should().Be(reference);
-        Encoding.UTF8.GetString(payload.Content).Should().Be("""{"id":"payment-retry"}""");
-        payload.MediaType.Should().Be("application/vnd.elsa.workflow-definition+json");
-        handler.RequestUri.Should().Be(reference.Uri);
-        handler.Accept.Should().Be("application/vnd.elsa.workflow-definition+json");
+        Assert.Equal(reference, payload.Reference);
+        Assert.Equal("""{"id":"payment-retry"}""", Encoding.UTF8.GetString(payload.Content));
+        Assert.Equal("application/vnd.elsa.workflow-definition+json", payload.MediaType);
+        Assert.Equal(reference.Uri, handler.RequestUri);
+        Assert.Equal("application/vnd.elsa.workflow-definition+json", handler.Accept);
     }
 
     [Fact]
@@ -51,8 +50,8 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
             "https://payloads.example.test/workflows/payment-retry",
             mediaType: "   "));
 
-        payload.MediaType.Should().Be("application/vnd.elsa.workflow-definition+json");
-        handler.Accept.Should().BeEmpty();
+        Assert.Equal("application/vnd.elsa.workflow-definition+json", payload.MediaType);
+        Assert.Equal(string.Empty, handler.Accept);
     }
 
     [Fact]
@@ -63,9 +62,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry", expiresAt: Now));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload reference has expired.");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload reference has expired.", exception.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Fact]
@@ -76,9 +76,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("studio://workflows/payment-retry/snapshots/42"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload reference scheme is not supported by this runtime.");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload reference scheme is not supported by this runtime.", exception.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Fact]
@@ -89,9 +90,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("not a uri"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload reference URI is invalid.");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload reference URI is invalid.", exception.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Fact]
@@ -102,9 +104,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry", sizeBytes: 65));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload reference exceeds the configured runtime size limit.");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload reference exceeds the configured runtime size limit.", exception.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Fact]
@@ -115,9 +118,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry", sizeBytes: -1));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload reference size is invalid.");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload reference size is invalid.", exception.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Fact]
@@ -130,9 +134,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
             "https://payloads.example.test/workflows/payment-retry",
             mediaType: "Bearer token"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload media type is invalid.");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload media type is invalid.", exception.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Fact]
@@ -145,9 +150,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
             "https://payloads.example.test/workflows/payment-retry",
             mediaType: "application/json, */*"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload media type is invalid.");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload media type is invalid.", exception.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Theory]
@@ -162,9 +168,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
             "https://payloads.example.test/workflows/payment-retry",
             mediaType: mediaType));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload media type is invalid.");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload media type is invalid.", exception.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Fact]
@@ -175,8 +182,9 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload exceeds the configured runtime size limit.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload exceeds the configured runtime size limit.", exception.Message);
     }
 
     [Fact]
@@ -187,8 +195,9 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload exceeds the configured runtime size limit.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload exceeds the configured runtime size limit.", exception.Message);
     }
 
     [Fact]
@@ -200,10 +209,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(reference);
 
-        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
-        exception.Which.Message.Should().Be("Workflow artifact payload request failed with status 404.");
-        exception.Which.Message.Should().NotContain("secret");
-        exception.Which.Message.Should().NotContain(reference.Uri);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+        Assert.Equal("Workflow artifact payload request failed with status 404.", exception.Message);
+        Assert.DoesNotContain("secret", exception.Message);
+        Assert.DoesNotContain(reference.Uri, exception.Message);
     }
 
     [Fact]
@@ -214,13 +223,13 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry?token=secret"));
 
-        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
-        exception.Which.Message.Should().Be("Workflow artifact payload request failed.");
-        exception.Which.InnerException.Should().BeNull();
-        exception.Which.Message.Should().NotContain("payloads.example.test");
-        exception.Which.Message.Should().NotContain("secret");
-        exception.Which.ToString().Should().NotContain("payloads.example.test");
-        exception.Which.ToString().Should().NotContain("secret");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+        Assert.Equal("Workflow artifact payload request failed.", exception.Message);
+        Assert.Null(exception.InnerException);
+        Assert.DoesNotContain("payloads.example.test", exception.Message);
+        Assert.DoesNotContain("secret", exception.Message);
+        Assert.DoesNotContain("payloads.example.test", exception.ToString());
+        Assert.DoesNotContain("secret", exception.ToString());
     }
 
     [Fact]
@@ -231,13 +240,13 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry?token=secret"));
 
-        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
-        exception.Which.Message.Should().Be("Workflow artifact payload request failed.");
-        exception.Which.InnerException.Should().BeNull();
-        exception.Which.Message.Should().NotContain("payloads.example.test");
-        exception.Which.Message.Should().NotContain("secret");
-        exception.Which.ToString().Should().NotContain("payloads.example.test");
-        exception.Which.ToString().Should().NotContain("secret");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+        Assert.Equal("Workflow artifact payload request failed.", exception.Message);
+        Assert.Null(exception.InnerException);
+        Assert.DoesNotContain("payloads.example.test", exception.Message);
+        Assert.DoesNotContain("secret", exception.Message);
+        Assert.DoesNotContain("payloads.example.test", exception.ToString());
+        Assert.DoesNotContain("secret", exception.ToString());
     }
 
     [Fact]
@@ -248,9 +257,9 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
 
-        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
-        exception.Which.Message.Should().Be("Workflow artifact payload request timed out.");
-        exception.Which.InnerException.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+        Assert.Equal("Workflow artifact payload request timed out.", exception.Message);
+        Assert.Null(exception.InnerException);
     }
 
     [Fact]
@@ -263,9 +272,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
             "untrusted-provider",
             "https://payloads.example.test/workflows/payment-retry"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload reference provider is not approved by this runtime.");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload reference provider is not approved by this runtime.", exception.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Fact]
@@ -276,9 +286,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload reference provider is not approved by this runtime.");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload reference provider is not approved by this runtime.", exception.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Fact]
@@ -289,9 +300,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://unapproved.example.test/workflows/payment-retry"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload host is not approved by this runtime.");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload host is not approved by this runtime.", exception.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Fact]
@@ -302,9 +314,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload host is not approved by this runtime.");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload host is not approved by this runtime.", exception.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Theory]
@@ -327,9 +340,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference(uri));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload host resolves to a non-public address.");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload host resolves to a non-public address.", exception.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Fact]
@@ -340,9 +354,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload host resolves to a non-public address.");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload host resolves to a non-public address.", exception.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Fact]
@@ -353,9 +368,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload host could not be resolved.");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload host could not be resolved.", exception.Message);
+        Assert.Null(handler.RequestUri);
     }
 
     [Fact]
@@ -366,13 +382,13 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
 
-        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
-        exception.Which.Message.Should().Be("Workflow artifact payload host could not be resolved.");
-        exception.Which.InnerException.Should().BeNull();
-        exception.Which.Message.Should().NotContain("payloads.example.test");
-        exception.Which.ToString().Should().NotContain("payloads.example.test");
-        exception.Which.ToString().Should().NotContain("secret");
-        handler.RequestUri.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+        Assert.Equal("Workflow artifact payload host could not be resolved.", exception.Message);
+        Assert.Null(exception.InnerException);
+        Assert.DoesNotContain("payloads.example.test", exception.Message);
+        Assert.DoesNotContain("payloads.example.test", exception.ToString());
+        Assert.DoesNotContain("secret", exception.ToString());
+        Assert.Null(handler.RequestUri);
     }
 
     [Fact]
@@ -383,9 +399,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload redirects are not supported.");
-        handler.RequestUri.Should().Be("https://payloads.example.test/workflows/payment-retry");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload redirects are not supported.", exception.Message);
+        Assert.Equal("https://payloads.example.test/workflows/payment-retry", handler.RequestUri);
     }
 
     [Fact]
@@ -399,9 +416,10 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         var act = () => fetcher.FetchAsync(Reference("https://payloads.example.test/workflows/payment-retry"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Workflow artifact payload redirects are not supported.");
-        handler.RequestUri.Should().Be("https://payloads.example.test/workflows/payment-retry");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Workflow artifact payload redirects are not supported.", exception.Message);
+        Assert.Equal("https://payloads.example.test/workflows/payment-retry", handler.RequestUri);
     }
 
     [Fact]
@@ -412,7 +430,7 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
 
         fetcher.Dispose();
 
-        handler.IsDisposed.Should().BeFalse();
+        Assert.False(handler.IsDisposed);
     }
 
     [Fact]
@@ -430,8 +448,8 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
                 CancellationToken.None);
             using var connection = await acceptConnection.WaitAsync(TimeSpan.FromSeconds(5));
 
-            stream.CanWrite.Should().BeTrue();
-            connection.Client.RemoteEndPoint.Should().NotBeNull();
+            Assert.True(stream.CanWrite);
+            Assert.NotNull(connection.Client.RemoteEndPoint);
         }
         finally
         {
@@ -444,8 +462,8 @@ public sealed class WorkflowArtifactHttpPayloadFetcherTests
     {
         using var handler = WorkflowArtifactHttpPayloadFetcher.CreateDefaultHttpHandler();
 
-        handler.UseProxy.Should().BeFalse();
-        handler.AllowAutoRedirect.Should().BeFalse();
+        Assert.False(handler.UseProxy);
+        Assert.False(handler.AllowAutoRedirect);
     }
 
     private WorkflowArtifactHttpPayloadFetcher Fetcher(

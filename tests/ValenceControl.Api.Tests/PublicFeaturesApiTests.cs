@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using ValenceControl.Api.Public.Features;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -23,7 +22,7 @@ public sealed class PublicFeaturesApiTests
 
         var features = await app.CreateClient().GetFromJsonAsync<List<PublicFeatureResponse>>("/api/features");
 
-        features.Should().ContainSingle(x => x.FeatureId == "email" && x.PackageId == "Elsa.Email");
+        Assert.Single(features!, x => x.FeatureId == "email" && x.PackageId == "Elsa.Email");
     }
 
     [Fact]
@@ -41,7 +40,7 @@ public sealed class PublicFeaturesApiTests
 
         var response = await app.CreateClient().GetAsync("/api/features/email");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -61,6 +60,6 @@ public sealed class PublicFeaturesApiTests
 
         var feature = await app.CreateClient().GetFromJsonAsync<PublicFeatureResponse>("/api/features/email");
 
-        feature!.Settings[0].DefaultValue.Should().BeNull();
+        Assert.Null(feature!.Settings[0].DefaultValue);
     }
 }

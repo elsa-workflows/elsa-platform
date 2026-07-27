@@ -5,7 +5,6 @@ using ValenceControl.Healing.Core.Ownership;
 using ValenceControl.Healing.Core.Repairs;
 using ValenceControl.Healing.Core.Security;
 using ValenceControl.Healing.Abstractions;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
@@ -98,13 +97,13 @@ public sealed partial class IncidentProjectionConcurrencyTests
 
             var results = await Task.WhenAll(attempts.Select(AdmitAsync));
 
-            results.Select(x => x.Outcome).Should().BeEquivalentTo(new[]
+            Assert.Equal(new[]
             {
                 RepairAttemptStoreOutcome.Created,
                 RepairAttemptStoreOutcome.ConcurrencyLimitReached
-            });
+            }.Order(), results.Select(x => x.Outcome).Order());
             await using var verify = new HealingDbContext(options);
-            (await verify.RepairAttempts.CountAsync()).Should().Be(1);
+            Assert.Equal(1, (await verify.RepairAttempts.CountAsync()));
         }
         finally
         {
@@ -144,13 +143,13 @@ public sealed partial class IncidentProjectionConcurrencyTests
 
             await using var verify = new HealingDbContext(options);
             var incident = await verify.HealingIncidents.SingleAsync();
-            incident.OccurrenceCount.Should().Be(requests.Length);
-            incident.Status.Should().Be(HealingIncidentStatus.ThresholdPending);
-            (await verify.IncidentOccurrences.CountAsync()).Should().Be(requests.Length);
+            Assert.Equal(requests.Length, incident.OccurrenceCount);
+            Assert.Equal(HealingIncidentStatus.ThresholdPending, incident.Status);
+            Assert.Equal(requests.Length, (await verify.IncidentOccurrences.CountAsync()));
             var impacts = await verify.EnvironmentImpacts.OrderBy(x => x.EnvironmentId).ToListAsync();
-            impacts.Should().HaveCount(2);
-            impacts.Should().OnlyContain(x => x.OccurrenceCount == requests.Length / 2);
-            impacts.Should().OnlyContain(x => x.OccurrenceThreshold == 3 && x.DebounceWindow == TimeSpan.FromMinutes(5));
+            Assert.Equal(2, impacts.Count());
+            Assert.All(impacts, item => Assert.True(item.OccurrenceCount == requests.Length / 2));
+            Assert.All(impacts, item => Assert.True(item.OccurrenceThreshold == 3 && item.DebounceWindow == TimeSpan.FromMinutes(5)));
         }
         finally
         {
@@ -178,14 +177,13 @@ public sealed partial class IncidentProjectionConcurrencyTests
         var early = await store.PromoteDueIncidentsAsync(request.AcceptedAt.AddMinutes(4), 10);
         var due = await store.PromoteDueIncidentsAsync(request.AcceptedAt.AddMinutes(5), 10);
 
-        first.IsReplay.Should().BeFalse();
-        replay.IsReplay.Should().BeTrue();
-        replay.Incident.Id.Should().Be(first.Incident.Id);
-        early.Should().Be(0);
-        due.Should().Be(1);
-        (await fixture.Db.HealingIncidents.AsNoTracking().SingleAsync()).Status
-            .Should().Be(HealingIncidentStatus.ReadyForRepair);
-        (await fixture.Db.RepairWorkItemProjections.CountAsync()).Should().Be(1);
+        Assert.False(first.IsReplay);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(first.Incident.Id, replay.Incident.Id);
+        Assert.Equal(0, early);
+        Assert.Equal(1, due);
+        Assert.Equal(HealingIncidentStatus.ReadyForRepair, (await fixture.Db.HealingIncidents.AsNoTracking().SingleAsync()).Status);
+        Assert.Equal(1, (await fixture.Db.RepairWorkItemProjections.CountAsync()));
     }
 
     [Theory]
@@ -225,9 +223,9 @@ public sealed partial class IncidentProjectionConcurrencyTests
 
         var projected = await store.ProjectOccurrenceAsync(nextRequest);
 
-        projected.Incident.Status.Should().Be(advancedStatus);
-        (await fixture.Db.HealingIncidents.AsNoTracking().SingleAsync()).Status.Should().Be(advancedStatus);
-        (await fixture.Db.IncidentOccurrences.CountAsync()).Should().Be(2);
+        Assert.Equal(advancedStatus, projected.Incident.Status);
+        Assert.Equal(advancedStatus, (await fixture.Db.HealingIncidents.AsNoTracking().SingleAsync()).Status);
+        Assert.Equal(2, (await fixture.Db.IncidentOccurrences.CountAsync()));
     }
 
     [Fact]
@@ -258,10 +256,10 @@ public sealed partial class IncidentProjectionConcurrencyTests
                 return await new HealingStore(db).PromoteDueIncidentsAsync(dueAt, 10);
             }));
 
-            promotions.Sum().Should().Be(1);
+            Assert.Equal(1, promotions.Sum());
             await using var verify = new HealingDbContext(options);
-            (await verify.RepairWorkItemProjections.CountAsync()).Should().Be(1);
-            (await verify.HealingIncidents.SingleAsync()).Status.Should().Be(HealingIncidentStatus.ReadyForRepair);
+            Assert.Equal(1, (await verify.RepairWorkItemProjections.CountAsync()));
+            Assert.Equal(HealingIncidentStatus.ReadyForRepair, (await verify.HealingIncidents.SingleAsync()).Status);
         }
         finally
         {
@@ -295,13 +293,13 @@ public sealed partial class IncidentProjectionConcurrencyTests
         var readyBeforeIndependentThreshold = beforeIndependentThreshold.Incident.ReadyAfter;
         var afterIndependentThreshold = await store.ProjectOccurrenceAsync(requests[3]);
 
-        beforeIndependentThreshold.Incident.Status.Should().Be(HealingIncidentStatus.ThresholdPending);
-        readyBeforeIndependentThreshold.Should().BeNull();
-        afterIndependentThreshold.Incident.Status.Should().Be(HealingIncidentStatus.ThresholdPending);
-        afterIndependentThreshold.Incident.ReadyAfter.Should().Be(requests[3].AcceptedAt.AddMinutes(5));
+        Assert.Equal(HealingIncidentStatus.ThresholdPending, beforeIndependentThreshold.Incident.Status);
+        Assert.Null(readyBeforeIndependentThreshold);
+        Assert.Equal(HealingIncidentStatus.ThresholdPending, afterIndependentThreshold.Incident.Status);
+        Assert.Equal(requests[3].AcceptedAt.AddMinutes(5), afterIndependentThreshold.Incident.ReadyAfter);
         var impacts = await fixture.Db.EnvironmentImpacts.AsNoTracking().ToArrayAsync();
-        impacts.Single(x => x.EnvironmentId == secondEnvironment).ThresholdReachedAt.Should().BeNull();
-        impacts.Single(x => x.EnvironmentId == firstEnvironment).ThresholdReachedAt.Should().Be(requests[3].AcceptedAt);
+        Assert.Null(impacts.Single(x => x.EnvironmentId == secondEnvironment).ThresholdReachedAt);
+        Assert.Equal(requests[3].AcceptedAt, impacts.Single(x => x.EnvironmentId == firstEnvironment).ThresholdReachedAt);
     }
 
     [Fact]
@@ -341,13 +339,11 @@ public sealed partial class IncidentProjectionConcurrencyTests
 
         var recurrence = await store.ProjectOccurrenceAsync(recurrenceRequest);
 
-        recurrence.IsRegression.Should().BeTrue();
-        recurrence.Incident.Id.Should().NotBe(first.Incident.Id);
-        recurrence.Episode.PreviousEpisodeId.Should().Be(first.Episode.Id);
-        (await fixture.Db.HealingIncidents.AsNoTracking().SingleAsync(x => x.Id == first.Incident.Id)).Status
-            .Should().Be(HealingIncidentStatus.Healed);
-        (await fixture.Db.IncidentEpisodes.AsNoTracking().SingleAsync(x => x.Id == first.Episode.Id)).Outcome
-            .Should().Be(IncidentEpisodeOutcome.Healed);
+        Assert.True(recurrence.IsRegression);
+        Assert.NotEqual(first.Incident.Id, recurrence.Incident.Id);
+        Assert.Equal(first.Episode.Id, recurrence.Episode.PreviousEpisodeId);
+        Assert.Equal(HealingIncidentStatus.Healed, (await fixture.Db.HealingIncidents.AsNoTracking().SingleAsync(x => x.Id == first.Incident.Id)).Status);
+        Assert.Equal(IncidentEpisodeOutcome.Healed, (await fixture.Db.IncidentEpisodes.AsNoTracking().SingleAsync(x => x.Id == first.Episode.Id)).Outcome);
     }
 
     [Fact]
@@ -364,7 +360,7 @@ public sealed partial class IncidentProjectionConcurrencyTests
         await store.ProjectOccurrenceAsync(first);
         await store.ProjectOccurrenceAsync(second);
 
-        (await fixture.Db.HealingIncidents.CountAsync()).Should().Be(2);
+        Assert.Equal(2, (await fixture.Db.HealingIncidents.CountAsync()));
     }
 
     [Fact]
@@ -456,17 +452,19 @@ public sealed partial class IncidentProjectionConcurrencyTests
         await fixture.Db.SaveChangesAsync();
         var stopped = await worker.RunOnceAsync("worker-1");
 
-        new[] { first.Status, second.Status }.Should().BeEquivalentTo(
-            new[] { HealingInboxWorkerStatus.Projected, HealingInboxWorkerStatus.Rejected });
-        missingWorkspaceResult.Status.Should().Be(HealingInboxWorkerStatus.Rejected);
-        missingWorkspaceResult.OutcomeCode.Should().Be(HealingGateReasonCodes.WorkspaceConfigurationNotFound);
-        stopped.Status.Should().Be(HealingInboxWorkerStatus.Rejected);
-        stopped.OutcomeCode.Should().Be(HealingGateReasonCodes.WorkspaceKillSwitch);
-        (await fixture.Db.IncidentOccurrences.CountAsync()).Should().Be(1);
-        (await fixture.Db.HealingIncidents.SingleAsync()).Status.Should().Be(HealingIncidentStatus.ReadyForRepair);
-        (await fixture.Db.RepairWorkItemProjections.CountAsync()).Should().Be(1);
-        (await store.QueryAsync(new ValenceControl.Healing.Core.Security.HealingAuditQuery(workspaceId))).Select(x => x.EventType)
-            .Should().Contain(["occurrence-projected", "candidate-rejected"]);
+        Assert.Equal(
+            new[] { HealingInboxWorkerStatus.Projected, HealingInboxWorkerStatus.Rejected }.Order(),
+            new[] { first.Status, second.Status }.Order());
+        Assert.Equal(HealingInboxWorkerStatus.Rejected, missingWorkspaceResult.Status);
+        Assert.Equal(HealingGateReasonCodes.WorkspaceConfigurationNotFound, missingWorkspaceResult.OutcomeCode);
+        Assert.Equal(HealingInboxWorkerStatus.Rejected, stopped.Status);
+        Assert.Equal(HealingGateReasonCodes.WorkspaceKillSwitch, stopped.OutcomeCode);
+        Assert.Equal(1, (await fixture.Db.IncidentOccurrences.CountAsync()));
+        Assert.Equal(HealingIncidentStatus.ReadyForRepair, (await fixture.Db.HealingIncidents.SingleAsync()).Status);
+        Assert.Equal(1, (await fixture.Db.RepairWorkItemProjections.CountAsync()));
+        var eventTypes = (await store.QueryAsync(new ValenceControl.Healing.Core.Security.HealingAuditQuery(workspaceId))).Select(x => x.EventType);
+        Assert.Contains("occurrence-projected", eventTypes);
+        Assert.Contains("candidate-rejected", eventTypes);
     }
 
     [Fact]
@@ -494,11 +492,11 @@ public sealed partial class IncidentProjectionConcurrencyTests
 
         var result = await worker.RunOnceAsync("review-disabled-worker");
 
-        result.Should().Be(new HealingInboxWorkerResult(
-            HealingInboxWorkerStatus.Idle, OutcomeCode: HealingGateReasonCodes.StageDisabled));
+        Assert.Equal(new HealingInboxWorkerResult(
+            HealingInboxWorkerStatus.Idle, OutcomeCode: HealingGateReasonCodes.StageDisabled), result);
         var pending = await fixture.Db.HealingSignalInboxItems.AsNoTracking().SingleAsync();
-        pending.Status.Should().Be(HealingInboxStatus.Pending);
-        pending.AttemptCount.Should().Be(0);
+        Assert.Equal(HealingInboxStatus.Pending, pending.Status);
+        Assert.Equal(0, pending.AttemptCount);
     }
 
     [Theory]
@@ -556,17 +554,17 @@ public sealed partial class IncidentProjectionConcurrencyTests
 
         var result = await worker.RunOnceAsync("failure-worker");
 
-        result.Status.Should().Be(expectedWorkerStatus);
-        result.OutcomeCode.Should().Be(expectedOutcomeCode);
+        Assert.Equal(expectedWorkerStatus, result.Status);
+        Assert.Equal(expectedOutcomeCode, result.OutcomeCode);
         var persisted = await fixture.Db.HealingSignalInboxItems.AsNoTracking().SingleAsync();
-        persisted.Status.Should().Be(expectedInboxStatus);
-        persisted.AttemptCount.Should().Be(initialAttemptCount + 1);
+        Assert.Equal(expectedInboxStatus, persisted.Status);
+        Assert.Equal(initialAttemptCount + 1, persisted.AttemptCount);
         if (expectedWorkerStatus == HealingInboxWorkerStatus.RetryScheduled)
-            persisted.NextAttemptAt.Should().Be(now.AddMinutes(1));
+            Assert.Equal(now.AddMinutes(1), persisted.NextAttemptAt);
         if (expectedWorkerStatus == HealingInboxWorkerStatus.LeaseLost)
-            persisted.OutcomeCode.Should().BeNull();
+            Assert.Null(persisted.OutcomeCode);
         else
-            persisted.OutcomeCode.Should().Be(expectedOutcomeCode);
+            Assert.Equal(expectedOutcomeCode, persisted.OutcomeCode);
     }
 
     private static HealingIncidentProjectionRequest Request(

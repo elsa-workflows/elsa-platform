@@ -1,5 +1,4 @@
 using ValenceControl.PackageManifest.Generator.Core.Validation;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifest.Generator.Core.Tests;
 
@@ -11,8 +10,8 @@ public sealed class GenerationDiagnosticSeverityTests
         var diagnostics = CreateManifestValidationDiagnostics();
         var policy = new ValidationSeverityPolicy("Warning", false);
 
-        policy.MapLoggedSeverity(diagnostics.Items[0]).Severity.Should().Be(GenerationDiagnosticSeverity.Warning);
-        policy.ShouldFail(diagnostics).Should().BeFalse();
+        Assert.Equal(GenerationDiagnosticSeverity.Warning, policy.MapLoggedSeverity(diagnostics.Items[0]).Severity);
+        Assert.False(policy.ShouldFail(diagnostics));
     }
 
     [Fact]
@@ -20,7 +19,7 @@ public sealed class GenerationDiagnosticSeverityTests
     {
         var diagnostics = CreateManifestValidationDiagnostics();
 
-        new ValidationSeverityPolicy("Warning", true).ShouldFail(diagnostics).Should().BeTrue();
+        Assert.True(new ValidationSeverityPolicy("Warning", true).ShouldFail(diagnostics));
     }
 
     [Fact]
@@ -31,8 +30,8 @@ public sealed class GenerationDiagnosticSeverityTests
 
         var policy = new ValidationSeverityPolicy("Warning", false);
 
-        policy.MapLoggedSeverity(diagnostics.Items[0]).Severity.Should().Be(GenerationDiagnosticSeverity.Error);
-        policy.ShouldFail(diagnostics).Should().BeTrue();
+        Assert.Equal(GenerationDiagnosticSeverity.Error, policy.MapLoggedSeverity(diagnostics.Items[0]).Severity);
+        Assert.True(policy.ShouldFail(diagnostics));
     }
 
     [Fact]
@@ -42,8 +41,8 @@ public sealed class GenerationDiagnosticSeverityTests
         diagnostics.Error("EPMGEN_SETTING_TYPE_UNSUPPORTED", "Setting type is unsupported.");
         var policy = new ValidationSeverityPolicy("None", false);
 
-        policy.MapLoggedSeverity(diagnostics.Items[0]).Severity.Should().Be(GenerationDiagnosticSeverity.Info);
-        policy.ShouldFail(diagnostics).Should().BeFalse();
+        Assert.Equal(GenerationDiagnosticSeverity.Info, policy.MapLoggedSeverity(diagnostics.Items[0]).Severity);
+        Assert.False(policy.ShouldFail(diagnostics));
     }
 
     [Fact]
@@ -53,8 +52,8 @@ public sealed class GenerationDiagnosticSeverityTests
         diagnostics.Fatal("EPMGEN_ASSEMBLY_INVALID", "Assembly could not be inspected.");
         var policy = new ValidationSeverityPolicy("None", false);
 
-        policy.MapLoggedSeverity(diagnostics.Items[0]).Severity.Should().Be(GenerationDiagnosticSeverity.Error);
-        policy.ShouldFail(diagnostics).Should().BeTrue();
+        Assert.Equal(GenerationDiagnosticSeverity.Error, policy.MapLoggedSeverity(diagnostics.Items[0]).Severity);
+        Assert.True(policy.ShouldFail(diagnostics));
     }
 
     private static GenerationDiagnostics CreateManifestValidationDiagnostics()

@@ -1,6 +1,5 @@
 using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
-using FluentAssertions;
 using Xunit;
 
 namespace ValenceControl.Deployment.Core.Tests;
@@ -23,12 +22,12 @@ public sealed class EngineHealthServiceTests
 
         var result = await service.VerifyEngineAsync(_workspaceId, new EngineHealthVerificationRequest(_engineId, Guid.NewGuid()));
 
-        result.Health.Should().Be(DeploymentHealth.Healthy);
-        result.Version.Should().Be("Elsa 4.1.0");
-        result.LastHeartbeatAt.Should().Be(_now);
-        result.LastVerificationAt.Should().Be(_now);
-        result.CredentialLastVerifiedAt.Should().Be(_now);
-        result.Message.Should().Be("Endpoint responded successfully.");
+        Assert.Equal(DeploymentHealth.Healthy, result.Health);
+        Assert.Equal("Elsa 4.1.0", result.Version);
+        Assert.Equal(_now, result.LastHeartbeatAt);
+        Assert.Equal(_now, result.LastVerificationAt);
+        Assert.Equal(_now, result.CredentialLastVerifiedAt);
+        Assert.Equal("Endpoint responded successfully.", result.Message);
     }
 
     [Fact]
@@ -43,10 +42,10 @@ public sealed class EngineHealthServiceTests
 
         var result = await service.VerifyEngineAsync(_workspaceId, new EngineHealthVerificationRequest(_engineId, Guid.NewGuid()));
 
-        result.Health.Should().Be(DeploymentHealth.Unreachable);
-        result.LastHeartbeatAt.Should().Be(lastHeartbeatAt);
-        result.LastVerificationAt.Should().Be(_now);
-        result.CredentialVerificationStatus.Should().Be(CredentialVerificationStatus.Unverified);
+        Assert.Equal(DeploymentHealth.Unreachable, result.Health);
+        Assert.Equal(lastHeartbeatAt, result.LastHeartbeatAt);
+        Assert.Equal(_now, result.LastVerificationAt);
+        Assert.Equal(CredentialVerificationStatus.Unverified, result.CredentialVerificationStatus);
     }
 
     [Fact]
@@ -71,8 +70,9 @@ public sealed class EngineHealthServiceTests
                 null,
                 "Heartbeat accepted."));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Heartbeat is stale.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Heartbeat is stale.", exception.Message);
     }
 
     private WorkspaceWorkflowEngine Engine(DateTimeOffset? lastHeartbeatAt = null) =>

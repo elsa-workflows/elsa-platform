@@ -1,7 +1,6 @@
 using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 
 namespace ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
@@ -39,8 +38,8 @@ public sealed class ConfirmationConsumptionConcurrencyTests
                     ConfirmationActionType.HealingAutomaticMerge,
                     database.TargetId));
 
-            results.Should().ContainSingle(x => x.Succeeded);
-            results.Should().ContainSingle(x =>
+            Assert.Single(results, x => x.Succeeded);
+            Assert.Single(results, x =>
                 !x.Succeeded && x.Validation.Id == "deployment.confirmation.used");
         }
         finally
@@ -70,11 +69,11 @@ public sealed class ConfirmationConsumptionConcurrencyTests
                 await secondStore.TryMarkConfirmationUsedAsync(database.WorkspaceId, database.ConfirmationId, database.Now)
             };
 
-            snapshots.Select(x => x!.UsedAt).Should().OnlyContain(x => x == null);
-            attempts.Should().NotContainNulls();
-            attempts.Should().ContainSingle(x => x!.Consumed);
-            attempts.Should().ContainSingle(x => !x!.Consumed);
-            attempts.Select(x => x!.Confirmation.UsedAt).Should().OnlyContain(x => x == database.Now);
+            Assert.All(snapshots.Select(x => x!.UsedAt), x => Assert.Null(x));
+            Assert.All(attempts, Assert.NotNull);
+            Assert.Single(attempts, x => x!.Consumed);
+            Assert.Single(attempts, x => !x!.Consumed);
+            Assert.All(attempts.Select(x => x!.Confirmation.UsedAt), x => Assert.Equal(database.Now, x));
         }
         finally
         {

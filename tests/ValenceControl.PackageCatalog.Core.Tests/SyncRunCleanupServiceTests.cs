@@ -1,6 +1,5 @@
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Core.Sync;
-using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ValenceControl.PackageCatalog.Core.Tests;
@@ -16,11 +15,11 @@ public sealed class SyncRunCleanupServiceTests
 
         var result = await service.DeleteAsync(run.Id, "tester");
 
-        result.IsConflict.Should().BeFalse();
-        result.Cleanup!.DeletedRunCount.Should().Be(1);
-        result.Cleanup.DeletedItemCount.Should().Be(2);
-        result.Cleanup.DeletedRunIds.Should().ContainSingle().Which.Should().Be(run.Id);
-        store.Runs.Should().BeEmpty();
+        Assert.False(result.IsConflict);
+        Assert.Equal(1, result.Cleanup!.DeletedRunCount);
+        Assert.Equal(2, result.Cleanup.DeletedItemCount);
+        Assert.Equal(run.Id, Assert.Single(result.Cleanup.DeletedRunIds));
+        Assert.Empty(store.Runs);
     }
 
     [Fact]
@@ -30,9 +29,9 @@ public sealed class SyncRunCleanupServiceTests
 
         var result = await service.DeleteAsync(Guid.NewGuid());
 
-        result.IsConflict.Should().BeFalse();
-        result.Cleanup!.NotFoundRunCount.Should().Be(1);
-        result.Cleanup.DeletedRunCount.Should().Be(0);
+        Assert.False(result.IsConflict);
+        Assert.Equal(1, result.Cleanup!.NotFoundRunCount);
+        Assert.Equal(0, result.Cleanup.DeletedRunCount);
     }
 
     [Fact]
@@ -44,9 +43,9 @@ public sealed class SyncRunCleanupServiceTests
 
         var result = await service.DeleteAsync(run.Id);
 
-        result.IsConflict.Should().BeTrue();
-        result.NonTerminalStatus.Should().Be(SyncRunStatus.Running);
-        store.Runs.Should().ContainSingle();
+        Assert.True(result.IsConflict);
+        Assert.Equal(SyncRunStatus.Running, result.NonTerminalStatus);
+        Assert.Single(store.Runs);
     }
 
     [Fact]
@@ -63,15 +62,15 @@ public sealed class SyncRunCleanupServiceTests
         var preview = await service.PreviewDeleteBeforeAsync(cutoff);
         var result = await service.DeleteBeforeAsync(cutoff, "tester");
 
-        preview.IsValid.Should().BeTrue();
-        preview.Preview!.EligibleRunCount.Should().Be(2);
-        preview.Preview.EligibleItemCount.Should().Be(3);
-        preview.Preview.ExcludedRunCount.Should().Be(1);
-        result.IsValid.Should().BeTrue();
-        result.Cleanup!.DeletedRunCount.Should().Be(2);
-        result.Cleanup.DeletedItemCount.Should().Be(3);
-        result.Cleanup.ExcludedRunCount.Should().Be(1);
-        store.Runs.Select(x => x.Id).Should().BeEquivalentTo([recent.Id, running.Id]);
+        Assert.True(preview.IsValid);
+        Assert.Equal(2, preview.Preview!.EligibleRunCount);
+        Assert.Equal(3, preview.Preview.EligibleItemCount);
+        Assert.Equal(1, preview.Preview.ExcludedRunCount);
+        Assert.True(result.IsValid);
+        Assert.Equal(2, result.Cleanup!.DeletedRunCount);
+        Assert.Equal(3, result.Cleanup.DeletedItemCount);
+        Assert.Equal(1, result.Cleanup.ExcludedRunCount);
+        Assert.Equal(new[] { recent.Id, running.Id }.Order(), store.Runs.Select(x => x.Id).Order());
     }
 
     [Fact]
@@ -83,9 +82,9 @@ public sealed class SyncRunCleanupServiceTests
         var preview = await service.PreviewDeleteBeforeAsync(DateTimeOffset.UtcNow.AddMinutes(1));
         var result = await service.DeleteBeforeAsync(DateTimeOffset.UtcNow.AddMinutes(1));
 
-        preview.IsValid.Should().BeFalse();
-        result.IsValid.Should().BeFalse();
-        store.Runs.Should().ContainSingle();
+        Assert.False(preview.IsValid);
+        Assert.False(result.IsValid);
+        Assert.Single(store.Runs);
     }
 
     private static SyncRunCleanupService CreateService(InMemorySyncRunStore store) =>

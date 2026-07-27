@@ -1,6 +1,5 @@
 using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
-using FluentAssertions;
 using Xunit;
 
 namespace ValenceControl.Deployment.Core.Tests;
@@ -20,10 +19,10 @@ public sealed class DeploymentQueueWorkerTests
 
         var recovered = await worker.RecoverStaleRunsAsync(TimeSpan.FromMinutes(10));
 
-        recovered.Should().Be(2);
-        _store.LastRecoveryCutoff.Should().Be(TimeSpan.FromMinutes(10));
-        _store.ClaimedWorkerId.Should().BeNull();
-        _store.UpdatedStatuses.Should().BeEmpty();
+        Assert.Equal(2, recovered);
+        Assert.Equal(TimeSpan.FromMinutes(10), _store.LastRecoveryCutoff);
+        Assert.Null(_store.ClaimedWorkerId);
+        Assert.Empty(_store.UpdatedStatuses);
     }
 
     [Fact]
@@ -34,7 +33,7 @@ public sealed class DeploymentQueueWorkerTests
 
         var status = worker.RecoverStatus(run, _clock.GetUtcNow(), TimeSpan.FromMinutes(10));
 
-        status.Should().Be(WorkspaceDeploymentRunStatus.RecoveryRequired);
+        Assert.Equal(WorkspaceDeploymentRunStatus.RecoveryRequired, status);
     }
 
     private WorkspaceDeploymentRun Run(WorkspaceDeploymentRunStatus status) =>

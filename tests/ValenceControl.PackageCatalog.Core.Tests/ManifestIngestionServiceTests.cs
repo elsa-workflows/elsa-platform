@@ -1,7 +1,6 @@
 using ValenceControl.PackageCatalog.Core.Manifests;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Core.Compatibility;
-using FluentAssertions;
 
 namespace ValenceControl.PackageCatalog.Core.Tests;
 
@@ -37,10 +36,10 @@ public sealed class ManifestIngestionServiceTests
 
         new ManifestIngestionService().Ingest(packageVersion, manifestJson);
 
-        packageVersion.Features.Should().ContainSingle();
-        packageVersion.Features[0].ExtensionsJson.Should().Contain("x-feature");
-        packageVersion.Features[0].Settings.Should().ContainSingle();
-        packageVersion.Features[0].Settings[0].ExtensionsJson.Should().Contain("x-setting");
+        Assert.Single(packageVersion.Features);
+        Assert.Contains("x-feature", packageVersion.Features[0].ExtensionsJson);
+        Assert.Single(packageVersion.Features[0].Settings);
+        Assert.Contains("x-setting", packageVersion.Features[0].Settings[0].ExtensionsJson);
     }
 
     [Fact]
@@ -72,9 +71,9 @@ public sealed class ManifestIngestionServiceTests
 
         new ManifestIngestionService().Ingest(packageVersion, manifestJson);
 
-        packageVersion.Features.Should().ContainSingle();
-        packageVersion.Features[0].InfrastructureJson.Should().Contain("message-broker");
-        packageVersion.Features[0].InfrastructureJson.Should().Contain("RabbitMq:ConnectionString");
+        Assert.Single(packageVersion.Features);
+        Assert.Contains("message-broker", packageVersion.Features[0].InfrastructureJson);
+        Assert.Contains("RabbitMq:ConnectionString", packageVersion.Features[0].InfrastructureJson);
     }
 
     [Fact]
@@ -108,9 +107,9 @@ public sealed class ManifestIngestionServiceTests
         var inherited = RuntimeKindCompatibilityPolicy.ResolveFeatureRuntimeKinds(ingested.Manifest.Features[0], packageRuntimeKinds);
         var overridden = RuntimeKindCompatibilityPolicy.ResolveFeatureRuntimeKinds(ingested.Manifest.Features[1], packageRuntimeKinds);
 
-        packageRuntimeKinds.Should().BeEquivalentTo("elsa.server", "acme.custom-host");
-        inherited.Should().BeEquivalentTo("elsa.server", "acme.custom-host");
-        overridden.Should().BeEquivalentTo("elsa.studio");
+        Assert.Equal(["acme.custom-host", "elsa.server"], packageRuntimeKinds.Order());
+        Assert.Equal(["acme.custom-host", "elsa.server"], inherited.Order());
+        Assert.Equal(["elsa.studio"], overridden);
     }
 
     [Fact]
@@ -136,8 +135,8 @@ public sealed class ManifestIngestionServiceTests
         var packageRuntimeKinds = RuntimeKindCompatibilityPolicy.ResolvePackageRuntimeKinds(ingested.Manifest);
         var featureRuntimeKinds = RuntimeKindCompatibilityPolicy.ResolveFeatureRuntimeKinds(ingested.Manifest.Features[0], packageRuntimeKinds);
 
-        packageRuntimeKinds.Should().BeEmpty();
-        featureRuntimeKinds.Should().BeEmpty();
-        RuntimeKindCompatibilityPolicy.IsCompatibleWith(featureRuntimeKinds, "elsa.studio").Should().BeFalse();
+        Assert.Empty(packageRuntimeKinds);
+        Assert.Empty(featureRuntimeKinds);
+        Assert.False(RuntimeKindCompatibilityPolicy.IsCompatibleWith(featureRuntimeKinds, "elsa.studio"));
     }
 }

@@ -12,11 +12,11 @@ Move deployment-affecting Elsa Docker runtime image metadata into the Catalog AP
 
 **Language/Version**: C# on .NET 10 LTS for API/Core; existing TypeScript/React console remains out of scope.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, System.Text.Json, options/configuration binding, existing builder catalog and bundle generation services, xUnit, FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, System.Text.Json, options/configuration binding, existing builder catalog and bundle generation services, xUnit and its built-in assertions.
 
 **Storage**: Source-controlled or appsettings-backed runtime image seed metadata in the first slice. Current implementation may use static in-memory backend seed definitions as an intermediate step. No database migration is required until product decisions are made for operator-managed image records, organization/workspace scoping, lifecycle states, and registry tag discovery.
 
-**Testing**: xUnit and FluentAssertions for runtime image catalog validation; ASP.NET Core WebApplicationFactory tests for builder catalog image metadata and bundle image lookup behavior.
+**Testing**: xUnit and its built-in assertions for runtime image catalog validation; ASP.NET Core WebApplicationFactory tests for builder catalog image metadata and bundle image lookup behavior.
 
 **Target platform**: Existing ASP.NET Core Catalog API modular monolith.
 

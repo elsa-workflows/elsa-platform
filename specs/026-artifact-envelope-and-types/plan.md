@@ -12,7 +12,7 @@ Upgrade the artifact registry from metadata-only records toward a shared typed a
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `ValenceControl.Deployment.Artifacts`, `ValenceControl.Deployment.Core` workspace artifact services, React Router, TanStack Query, Vitest, xUnit, and FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `ValenceControl.Deployment.Artifacts`, `ValenceControl.Deployment.Core` workspace artifact services, React Router, TanStack Query, Vitest, xUnit and its built-in assertions.
 
 **Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Catalog records store envelope metadata, type IDs, producer metadata, safe metadata, compatibility hints, digests, diagnostics, and payload references only.
 

@@ -5,7 +5,6 @@ using ValenceControl.PackageCatalog.Core.Compatibility;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.RuntimeBuilder.Core.Builder;
 using ValenceControl.RuntimeBuilder.Core.Builder.Planner;
-using FluentAssertions;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace ValenceControl.RuntimeBuilder.Core.Tests;
@@ -30,12 +29,12 @@ public sealed class BuilderPlannerTests
             [],
             new LocalPackagesOptions(false, "packages"))));
 
-        result.Resolved.Packages.Should().Contain(x => x.PackageId == "Elsa.Smtp");
-        result.Resolved.Packages.Single(x => x.PackageId == "Elsa.Smtp").SelectedFeatures.Should().Contain("smtp");
-        result.Resolved.Infrastructure.Should().ContainSingle(x => x.ProviderId == "postgres-compose");
-        result.AutoAdded.Packages.Should().ContainSingle(x => x.PackageId == "Elsa.Smtp");
-        result.AutoAdded.Features.Should().Contain("smtp");
-        result.AutoAdded.Infrastructure.Should().ContainSingle(x => x.ProviderId == "postgres-compose");
+        Assert.Contains(result.Resolved.Packages, x => x.PackageId == "Elsa.Smtp");
+        Assert.Contains("smtp", result.Resolved.Packages.Single(x => x.PackageId == "Elsa.Smtp").SelectedFeatures!);
+        Assert.Single(result.Resolved.Infrastructure, x => x.ProviderId == "postgres-compose");
+        Assert.Single(result.AutoAdded.Packages, x => x.PackageId == "Elsa.Smtp");
+        Assert.Contains("smtp", result.AutoAdded.Features);
+        Assert.Single(result.AutoAdded.Infrastructure, x => x.ProviderId == "postgres-compose");
     }
 
     [Fact]
@@ -58,10 +57,10 @@ public sealed class BuilderPlannerTests
             [],
             new LocalPackagesOptions(false, "packages"))));
 
-        result.Resolved.Packages.Should().Contain(x => x.PackageId == "Elsa.Workflows.Management");
-        result.Resolved.Packages.Single(x => x.PackageId == "Elsa.Workflows.Management").SelectedFeatures.Should().Contain("Elsa.Workflows.Management.WorkflowManagement");
-        result.AutoAdded.Features.Should().Contain("Elsa.Workflows.Management.WorkflowManagement");
-        result.Findings.Should().NotContain(x => new[] { "feature.missing", "feature.dependency" }.Contains(x.Code));
+        Assert.Contains(result.Resolved.Packages, x => x.PackageId == "Elsa.Workflows.Management");
+        Assert.Contains("Elsa.Workflows.Management.WorkflowManagement", result.Resolved.Packages.Single(x => x.PackageId == "Elsa.Workflows.Management").SelectedFeatures!);
+        Assert.Contains("Elsa.Workflows.Management.WorkflowManagement", result.AutoAdded.Features);
+        Assert.DoesNotContain(result.Findings, x => new[] { "feature.missing", "feature.dependency" }.Contains(x.Code));
     }
 
     [Fact]
@@ -78,7 +77,7 @@ public sealed class BuilderPlannerTests
             [],
             new LocalPackagesOptions(false, "packages"))));
 
-        result.Findings.Should().Contain(x => x.Code == "feature.packageDependency");
+        Assert.Contains(result.Findings, x => x.Code == "feature.packageDependency");
     }
 
     [Fact]
@@ -95,7 +94,7 @@ public sealed class BuilderPlannerTests
             [],
             new LocalPackagesOptions(false, "packages"))));
 
-        result.Findings.Should().ContainSingle(x => x.Code == "feature.runtimeKindUnsupported");
+        Assert.Single(result.Findings, x => x.Code == "feature.runtimeKindUnsupported");
     }
 
     private static BuilderPlannerService CreateService(IReadOnlyList<PublicPackageProjection> packages)

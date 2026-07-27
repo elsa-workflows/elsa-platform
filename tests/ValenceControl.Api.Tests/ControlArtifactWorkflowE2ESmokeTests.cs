@@ -7,7 +7,6 @@ using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.Studio.Submit;
 using ValenceControl.Workflows.RuntimeApplier;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ValenceControl.Api.Tests;
@@ -64,24 +63,24 @@ public sealed class ControlArtifactWorkflowE2ESmokeTests
                 rollbackConfirmation.Id,
                 secondDeploy.Run.Id,
                 DeploymentRunMode.Apply));
-        rollbackResponse.StatusCode.Should().Be(HttpStatusCode.Created, await rollbackResponse.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Created, rollbackResponse.StatusCode);
         var rollback = (await rollbackResponse.Content.ReadControlJsonAsync<WorkspaceDeploymentRun>())!;
         var rollbackApply = await ProcessNextRuntimeCommandAsync(owner, workspaceId, topology.TargetEngine.Id, payloads, runtimeStore, applyJournal);
         var rollbackDetail = await owner.GetControlJsonAsync<WorkspaceDeploymentRunDetailResponse>(
             $"/api/workspaces/{workspaceId}/deployments/runs/{rollback.Id}");
 
-        firstArtifact.Submit.Status.Should().Be(StudioSubmitStatus.Submitted);
-        firstArtifact.Duplicate.Status.Should().Be(StudioSubmitStatus.Duplicate);
-        firstDeploy.Apply.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Completed);
-        secondDeploy.Apply.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Completed);
-        rollback.RollbackSourceRunId.Should().Be(secondDeploy.Run.Id);
-        rollbackApply.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Completed);
-        rollbackDetail!.Run.Status.Should().Be(WorkspaceDeploymentRunStatus.RolledBack);
-        rollbackDetail.Commands.Should().ContainSingle(x =>
+        Assert.Equal(StudioSubmitStatus.Submitted, firstArtifact.Submit.Status);
+        Assert.Equal(StudioSubmitStatus.Duplicate, firstArtifact.Duplicate.Status);
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.Completed, firstDeploy.Apply.Status);
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.Completed, secondDeploy.Apply.Status);
+        Assert.Equal(secondDeploy.Run.Id, rollback.RollbackSourceRunId);
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.Completed, rollbackApply.Status);
+        Assert.Equal(WorkspaceDeploymentRunStatus.RolledBack, rollbackDetail!.Run.Status);
+        Assert.Single(rollbackDetail.Commands, x =>
             x.Action == DeploymentCommandAction.Rollback
             && x.Artifact!.ArtifactRecordId == firstArtifact.Artifact.Id
             && x.RuntimeReference == "elsa://workflows/payment-retry");
-        runtimeStore.Definitions.Should().ContainSingle(x =>
+        Assert.Single(runtimeStore.Definitions, x =>
             x.WorkflowDefinitionId == "payment-retry"
             && x.WorkflowDefinitionJson.Contains("\"version\":1", StringComparison.Ordinal));
     }
@@ -144,7 +143,7 @@ public sealed class ControlArtifactWorkflowE2ESmokeTests
                     ArtifactReferenceRecord(artifact),
                     Record(DesiredStateRecordKind.ObservabilityBinding, "OpenTelemetry", "{\"provider\":\"otlp\"}")
                 ]));
-        sourceRevisionResponse.StatusCode.Should().Be(HttpStatusCode.Created, await sourceRevisionResponse.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Created, sourceRevisionResponse.StatusCode);
         var sourceRevision = (await sourceRevisionResponse.Content.ReadControlJsonAsync<WorkspaceDesiredStateRevision>())!;
 
         var previewResponse = await owner.PostControlJsonAsync(
@@ -154,7 +153,7 @@ public sealed class ControlArtifactWorkflowE2ESmokeTests
                 topology.TargetEnvironment.Id,
                 sourceRevision.Id,
                 topology.TargetEngine.Id));
-        previewResponse.StatusCode.Should().Be(HttpStatusCode.OK, await previewResponse.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
 
         var promotionResponse = await owner.PostControlJsonAsync(
             $"/api/workspaces/{workspaceId}/deployments/promotions",
@@ -165,7 +164,7 @@ public sealed class ControlArtifactWorkflowE2ESmokeTests
                 topology.TargetEngine.Id,
                 promotionLabel,
                 null));
-        promotionResponse.StatusCode.Should().Be(HttpStatusCode.Created, await promotionResponse.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Created, promotionResponse.StatusCode);
         var promotion = (await promotionResponse.Content.ReadControlJsonAsync<WorkspacePromotionResult>())!;
         var confirmation = await CreateConfirmationAsync(owner, workspaceId, ConfirmationActionType.Deploy, promotion.TargetRevision.Id);
         var runResponse = await owner.PostControlJsonAsync(
@@ -176,7 +175,7 @@ public sealed class ControlArtifactWorkflowE2ESmokeTests
                 topology.TargetEngine.Id,
                 confirmation.Id,
                 DeploymentRunMode.Apply));
-        runResponse.StatusCode.Should().Be(HttpStatusCode.Created, await runResponse.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Created, runResponse.StatusCode);
         var run = (await runResponse.Content.ReadControlJsonAsync<WorkspaceDeploymentRun>())!;
         var apply = await ProcessNextRuntimeCommandAsync(owner, workspaceId, topology.TargetEngine.Id, payloads, runtimeStore, applyJournal);
 
@@ -203,9 +202,9 @@ public sealed class ControlArtifactWorkflowE2ESmokeTests
         };
         var commandClient = new WorkflowRuntimeCommandHttpClient(owner, options);
         var polled = await commandClient.PollAsync(limit: 1);
-        var command = polled.Should().ContainSingle().Subject;
+        var command = Assert.Single(polled);
         var claim = await commandClient.ClaimAsync(command.Id);
-        claim.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Succeeded);
+        Assert.Equal(WorkflowRuntimeCommandClientStatus.Succeeded, claim.Status);
 
         var processor = new WorkflowArtifactCommandProcessor(
             commandClient,
@@ -253,7 +252,7 @@ public sealed class ControlArtifactWorkflowE2ESmokeTests
         var response = await owner.PostControlJsonAsync(
             $"/api/workspaces/{workspaceId}/deployments/confirmations",
             new WorkspaceActionConfirmationRequest(actionType, targetId.ToString("D"), null));
-        response.StatusCode.Should().Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadControlJsonAsync<ActionConfirmation>())!;
     }
 
@@ -289,7 +288,7 @@ public sealed class ControlArtifactWorkflowE2ESmokeTests
             ArtifactPayloadReference reference,
             CancellationToken cancellationToken = default)
         {
-            _payloads.TryGetValue(reference.Uri, out var workflowJson).Should().BeTrue($"payload {reference.Uri} should be available to the smoke runtime");
+            Assert.True(_payloads.TryGetValue(reference.Uri, out var workflowJson), $"Payload {reference.Uri} should be available to the smoke runtime.");
             return Task.FromResult(new WorkflowArtifactPayload(
                 reference,
                 Encoding.UTF8.GetBytes(workflowJson!),

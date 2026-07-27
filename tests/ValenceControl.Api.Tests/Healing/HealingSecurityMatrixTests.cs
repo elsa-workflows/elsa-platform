@@ -19,7 +19,6 @@ using ValenceControl.Healing.Core.Security;
 using ValenceControl.Healing.GitHub;
 using ValenceControl.Healing.Persistence.EntityFrameworkCore;
 using ValenceControl.PackageCatalog.Core.Accounts;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -51,20 +50,21 @@ public sealed class HealingSecurityMatrixTests
 
         var readerId = await app.AddWorkspaceMemberAsync(workspaceId, "security-reader", WorkspaceRole.Reader);
         var reader = app.CreateTrustedWorkspaceClient("security-reader");
-        (await reader.GetAsync(configurationUri)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, (await reader.GetAsync(configurationUri)).StatusCode);
 
         await app.GrantWorkspaceDeploymentPermissionAsync(workspaceId, readerId, HealingPermissions.Read);
-        (await reader.GetAsync(configurationUri)).StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, (await reader.GetAsync(configurationUri)).StatusCode);
         var deployment = await reader.PostControlJsonAsync(
             $"/api/workspaces/{workspaceId:D}/healing/applications/{application.Id:D}/environments/{environment!.Id:D}/deployment-observations",
             new HealingDeploymentObservationApiRequest(new string('a', 40), Now, "delivery-1", Sha('a')));
-        deployment.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, deployment.StatusCode);
 
         var outsider = app.CreateTrustedWorkspaceClient("security-outsider");
-        (await outsider.GetAsync(configurationUri)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, (await outsider.GetAsync(configurationUri)).StatusCode);
         var outsiderWorkspaceId = await outsider.GetDefaultWorkspaceIdAsync();
-        (await owner.GetAsync($"/api/workspaces/{outsiderWorkspaceId:D}/healing/applications/{application.Id:D}/configuration"))
-            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await owner.GetAsync($"/api/workspaces/{outsiderWorkspaceId:D}/healing/applications/{application.Id:D}/configuration")).StatusCode);
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public sealed class HealingSecurityMatrixTests
 
         var expired = await new ConfirmationService(store, new FixedTimeProvider(Now.AddMinutes(2)))
             .ConsumeConfirmationAsync(workspaceId, expiring.Id, accountId, ConfirmationActionType.HealingEmergencyStop, target);
-        expired.Validation.Id.Should().Be("deployment.confirmation.expired");
+        Assert.Equal("deployment.confirmation.expired", expired.Validation.Id);
 
         var oneUse = await issuing.CreateConfirmationAsync(workspaceId,
             new CreateActionConfirmationRequest(ConfirmationActionType.HealingEmergencyStop, target, accountId, TimeSpan.FromMinutes(5)));
@@ -92,8 +92,8 @@ public sealed class HealingSecurityMatrixTests
             workspaceId, oneUse.Id, accountId, ConfirmationActionType.HealingEmergencyStop, target);
         var replay = await issuing.ConsumeConfirmationAsync(
             workspaceId, oneUse.Id, accountId, ConfirmationActionType.HealingEmergencyStop, target);
-        first.Succeeded.Should().BeTrue();
-        replay.Validation.Id.Should().Be("deployment.confirmation.used");
+        Assert.True(first.Succeeded);
+        Assert.Equal("deployment.confirmation.used", replay.Validation.Id);
     }
 
     [Fact]
@@ -104,17 +104,19 @@ public sealed class HealingSecurityMatrixTests
             services.AddSingleton<IHealingVerifiedWebhookHandler>(handler));
         var client = app.CreateClient();
 
-        (await client.PostAsync("/api/integrations/github/webhooks",
-            new StringContent("{}", Encoding.UTF8, "application/json"))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            (await client.PostAsync("/api/integrations/github/webhooks",
+                new StringContent("{}", Encoding.UTF8, "application/json"))).StatusCode);
         handler.RejectSignature = true;
-        (await client.SendAsync(Webhook("delivery-invalid"))).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.SendAsync(Webhook("delivery-invalid"))).StatusCode);
 
         handler.RejectSignature = false;
         var accepted = await client.SendAsync(Webhook("delivery-1"));
         var replay = await client.SendAsync(Webhook("delivery-1"));
-        accepted.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        replay.StatusCode.Should().Be(HttpStatusCode.OK);
-        handler.ProcessedDeliveries.Should().ContainSingle().Which.Should().Be("delivery-1");
+        Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        Assert.Equal("delivery-1", Assert.Single(handler.ProcessedDeliveries));
     }
 
     [Fact]
@@ -131,8 +133,8 @@ public sealed class HealingSecurityMatrixTests
         var substituted = await validator.ValidateAsync(WorkloadToken(rsa, repositoryId: "attacker-repository"), nonce, expectation);
         var valid = await validator.ValidateAsync(WorkloadToken(rsa, repositoryId: "987"), nonce, expectation);
 
-        substituted.ReasonCode.Should().Be(GitHubSecurityReasonCodes.IdentityInvalid);
-        valid.Succeeded.Should().BeTrue("a rejected substitution must not consume the legitimate one-use exchange");
+        Assert.Equal(GitHubSecurityReasonCodes.IdentityInvalid, substituted.ReasonCode);
+        Assert.True(valid.Succeeded, "A rejected substitution must not consume the legitimate one-use exchange.");
     }
 
     [Fact]
@@ -163,11 +165,11 @@ public sealed class HealingSecurityMatrixTests
 
         var result = await handler.ExecuteAsync(operation);
 
-        substituted.Disposition.Should().Be(HealingOperationDisposition.DeadLettered);
-        substituted.OutcomeCode.Should().Be("repository-authority-mismatch");
-        result.Disposition.Should().Be(HealingOperationDisposition.DeadLettered);
-        result.OutcomeCode.Should().Be("healing-authority-revoked");
-        provider.UpsertCalls.Should().Be(0);
+        Assert.Equal(HealingOperationDisposition.DeadLettered, substituted.Disposition);
+        Assert.Equal("repository-authority-mismatch", substituted.OutcomeCode);
+        Assert.Equal(HealingOperationDisposition.DeadLettered, result.Disposition);
+        Assert.Equal("healing-authority-revoked", result.OutcomeCode);
+        Assert.Equal(0, provider.UpsertCalls);
     }
 
     [Fact]
@@ -201,7 +203,7 @@ public sealed class HealingSecurityMatrixTests
         var allowed = await authority.CanMutateAsync(
             ids.WorkspaceId, ids.ApplicationId, ids.EpisodeId, ids.ProviderId, ids.IncidentId);
 
-        allowed.Should().BeFalse();
+        Assert.False(allowed);
     }
 
     [Fact]
@@ -244,9 +246,9 @@ public sealed class HealingSecurityMatrixTests
             ids.WorkspaceId, ids.ApplicationId, ids.EpisodeId, ids.ProviderId,
             ids.AttemptId, RepairAttemptStatus.PullRequestOpen);
 
-        compatible.Should().BeTrue();
-        wrongStage.Should().BeFalse("a queued mutation is only valid for its exact lifecycle stage");
-        staleEpisode.Should().BeFalse("an old attempt loses mutation authority when the incident advances");
+        Assert.True(compatible);
+        Assert.False(wrongStage, "A queued mutation is only valid for its exact lifecycle stage.");
+        Assert.False(staleEpisode, "An old attempt loses mutation authority when the incident advances.");
     }
 
     [Fact]
@@ -295,14 +297,13 @@ public sealed class HealingSecurityMatrixTests
         var outcome = await handler.ExecuteAsync(
             Operation(ids, request, ProviderOperationKind.PublishPullRequest, ids.AttemptId));
 
-        outcome.Disposition.Should().Be(HealingOperationDisposition.Completed);
-        outcome.OutcomeCode.Should().Be("repair-pull-request-published-stale");
+        Assert.Equal(HealingOperationDisposition.Completed, outcome.Disposition);
+        Assert.Equal("repair-pull-request-published-stale", outcome.OutcomeCode);
         var incident = await db.HealingIncidents.AsNoTracking().SingleAsync();
-        incident.ActiveEpisodeId.Should().Be(nextEpisodeId);
-        incident.Status.Should().Be(HealingIncidentStatus.ReadyForRepair);
-        (await db.RepairAttempts.AsNoTracking().SingleAsync()).Status.Should().Be(RepairAttemptStatus.Stopped);
-        (await db.RepairPullRequests.AsNoTracking().SingleAsync()).AttemptId.Should().Be(ids.AttemptId,
-            "the historical PR must remain correlated for late signed webhook observations");
+        Assert.Equal(nextEpisodeId, incident.ActiveEpisodeId);
+        Assert.Equal(HealingIncidentStatus.ReadyForRepair, incident.Status);
+        Assert.Equal(RepairAttemptStatus.Stopped, (await db.RepairAttempts.AsNoTracking().SingleAsync()).Status);
+        Assert.Equal(ids.AttemptId, (await db.RepairPullRequests.AsNoTracking().SingleAsync()).AttemptId);
     }
 
     [Fact]
@@ -330,11 +331,11 @@ public sealed class HealingSecurityMatrixTests
 
         var result = await handler.ExecuteAsync(Operation(ids, request, ProviderOperationKind.RequestMerge, ids.AttemptId));
 
-        result.OutcomeCode.Should().Be("merge-policy-changed");
-        provider.Calls.Should().Be(0);
+        Assert.Equal("merge-policy-changed", result.OutcomeCode);
+        Assert.Equal(0, provider.Calls);
         var pullRequest = await db.RepairPullRequests.SingleAsync();
-        pullRequest.MergeState.Should().Be(PullRequestMergeState.Open);
-        pullRequest.MergePolicyEvaluationId.Should().BeNull();
+        Assert.Equal(PullRequestMergeState.Open, pullRequest.MergeState);
+        Assert.Null(pullRequest.MergePolicyEvaluationId);
     }
 
     [Fact]
@@ -358,11 +359,11 @@ public sealed class HealingSecurityMatrixTests
         var result = await handler.ExecuteAsync(
             Operation(ids, MergeRequest(ids), ProviderOperationKind.RequestMerge, ids.AttemptId));
 
-        result.OutcomeCode.Should().Be("deployment-safety-changed");
-        provider.Calls.Should().Be(0);
+        Assert.Equal("deployment-safety-changed", result.OutcomeCode);
+        Assert.Equal(0, provider.Calls);
         var pullRequest = await db.RepairPullRequests.SingleAsync();
-        pullRequest.MergeState.Should().Be(PullRequestMergeState.Open);
-        pullRequest.MergePolicyEvaluationId.Should().BeNull();
+        Assert.Equal(PullRequestMergeState.Open, pullRequest.MergeState);
+        Assert.Null(pullRequest.MergePolicyEvaluationId);
     }
 
     [Fact]
@@ -399,14 +400,14 @@ public sealed class HealingSecurityMatrixTests
                 new DeploymentSafetySource(), Options.Create(options))
             .ExecuteAsync(Operation(ids, MergeRequest(ids), ProviderOperationKind.RequestMerge, ids.AttemptId));
 
-        webhookOutcome.Should().Be("check-observed");
-        outcome.Disposition.Should().Be(HealingOperationDisposition.Completed);
-        outcome.OutcomeCode.Should().Be("merge-operation-superseded");
-        provider.Calls.Should().Be(0);
+        Assert.Equal("check-observed", webhookOutcome);
+        Assert.Equal(HealingOperationDisposition.Completed, outcome.Disposition);
+        Assert.Equal("merge-operation-superseded", outcome.OutcomeCode);
+        Assert.Equal(0, provider.Calls);
         var pullRequest = await db.RepairPullRequests.SingleAsync();
-        pullRequest.MergeState.Should().Be(PullRequestMergeState.Open);
-        pullRequest.MergePolicyEvaluationId.Should().BeNull();
-        (await db.RepairAttempts.SingleAsync()).Status.Should().Be(RepairAttemptStatus.PullRequestOpen);
+        Assert.Equal(PullRequestMergeState.Open, pullRequest.MergeState);
+        Assert.Null(pullRequest.MergePolicyEvaluationId);
+        Assert.Equal(RepairAttemptStatus.PullRequestOpen, (await db.RepairAttempts.SingleAsync()).Status);
     }
 
     [Fact]
@@ -464,20 +465,21 @@ public sealed class HealingSecurityMatrixTests
             .ProcessAsync(connection, delivery.ProviderDeliveryId, delivery.Event, body);
         var allowed = await mergeService.EvaluateAsync(request with { Input = MergeInput(checksPassed: true, '2') });
 
-        blocked.AutomaticMergeAllowed.Should().BeFalse();
-        webhookOutcome.Should().Be("check-observed");
-        allowed.AutomaticMergeAllowed.Should().BeTrue();
+        Assert.False(blocked.AutomaticMergeAllowed);
+        Assert.Equal("check-observed", webhookOutcome);
+        Assert.True(allowed.AutomaticMergeAllowed);
         var evaluations = await db.PolicyEvaluations
             .Where(x => x.Id == blocked.Evaluation.Id || x.Id == allowed.Evaluation.Id)
             .ToArrayAsync();
-        evaluations.Should().HaveCount(2);
+        Assert.Equal(2, evaluations.Count());
         var audits = await db.Set<HealingAuditEvent>().AsNoTracking()
             .Where(x => x.EventType == "merge-eligibility-evaluated")
             .ToArrayAsync();
-        audits.Should().HaveCount(2);
-        audits.Select(x => x.CorrelationId).Should().BeEquivalentTo(
-            [blocked.Evaluation.Id, allowed.Evaluation.Id]);
-        audits.Should().OnlyContain(x => x.CausationId == ids.IncidentId);
+        Assert.Equal(2, audits.Count());
+        Assert.Equivalent(
+            new[] { blocked.Evaluation.Id, allowed.Evaluation.Id },
+            audits.Select(x => x.CorrelationId));
+        Assert.All(audits, x => Assert.Equal(ids.IncidentId, x.CausationId));
     }
 
     [Fact]
@@ -519,15 +521,15 @@ public sealed class HealingSecurityMatrixTests
                 new DeploymentSafetySource(), Options.Create(options))
             .ExecuteAsync(Operation(ids, MergeRequest(ids), ProviderOperationKind.RequestMerge, ids.AttemptId));
 
-        webhookOutcome.Should().Be("pull-request-merged");
-        outcome.Disposition.Should().Be(HealingOperationDisposition.Completed);
-        outcome.OutcomeCode.Should().Be("merge-operation-superseded");
-        provider.Calls.Should().Be(0);
+        Assert.Equal("pull-request-merged", webhookOutcome);
+        Assert.Equal(HealingOperationDisposition.Completed, outcome.Disposition);
+        Assert.Equal("merge-operation-superseded", outcome.OutcomeCode);
+        Assert.Equal(0, provider.Calls);
         var pullRequest = await db.RepairPullRequests.SingleAsync();
-        pullRequest.MergeState.Should().Be(PullRequestMergeState.Merged);
-        pullRequest.MergedRevision.Should().Be(mergedRevision);
-        (await db.RepairAttempts.SingleAsync()).Status.Should().Be(RepairAttemptStatus.Succeeded);
-        (await db.HealingIncidents.SingleAsync()).Status.Should().Be(HealingIncidentStatus.Merged);
+        Assert.Equal(PullRequestMergeState.Merged, pullRequest.MergeState);
+        Assert.Equal(mergedRevision, pullRequest.MergedRevision);
+        Assert.Equal(RepairAttemptStatus.Succeeded, (await db.RepairAttempts.SingleAsync()).Status);
+        Assert.Equal(HealingIncidentStatus.Merged, (await db.HealingIncidents.SingleAsync()).Status);
     }
 
     [Fact]
@@ -568,11 +570,11 @@ public sealed class HealingSecurityMatrixTests
                 "pull_request",
                 PullRequestBody(ids, isMerged: true));
 
-        outcome.Should().Be("pull-request-merged");
+        Assert.Equal("pull-request-merged", outcome);
         var incident = await db.HealingIncidents.AsNoTracking().SingleAsync();
-        incident.ActiveEpisodeId.Should().Be(nextEpisodeId);
-        incident.Status.Should().Be(HealingIncidentStatus.ReadyForRepair);
-        (await db.RepairPullRequests.AsNoTracking().SingleAsync()).MergeState.Should().Be(PullRequestMergeState.Merged);
+        Assert.Equal(nextEpisodeId, incident.ActiveEpisodeId);
+        Assert.Equal(HealingIncidentStatus.ReadyForRepair, incident.Status);
+        Assert.Equal(PullRequestMergeState.Merged, (await db.RepairPullRequests.AsNoTracking().SingleAsync()).MergeState);
     }
 
     [Fact]
@@ -602,15 +604,15 @@ public sealed class HealingSecurityMatrixTests
         var lateOpen = await processor.ProcessAsync(
             connection, "late-reopened", "pull_request", PullRequestBody(ids, isMerged: false, action: "reopened"));
 
-        merged.Should().Be("pull-request-merged");
-        duplicate.Should().Be("pull-request-merged");
-        lateOpen.Should().Be("pull-request-observed");
+        Assert.Equal("pull-request-merged", merged);
+        Assert.Equal("pull-request-merged", duplicate);
+        Assert.Equal("pull-request-observed", lateOpen);
         var pullRequest = await db.RepairPullRequests.AsNoTracking().SingleAsync();
-        pullRequest.MergeState.Should().Be(PullRequestMergeState.Merged);
-        pullRequest.MergedRevision.Should().Be(new string('e', 40));
-        pullRequest.Version.Should().Equal(mergedVersion, "duplicate and older observations must be state-idempotent");
-        (await db.RepairAttempts.AsNoTracking().SingleAsync()).Status.Should().Be(RepairAttemptStatus.Succeeded);
-        (await db.HealingIncidents.AsNoTracking().SingleAsync()).Status.Should().Be(HealingIncidentStatus.Merged);
+        Assert.Equal(PullRequestMergeState.Merged, pullRequest.MergeState);
+        Assert.Equal(new string('e', 40), pullRequest.MergedRevision);
+        Assert.Equal(mergedVersion, pullRequest.Version);
+        Assert.Equal(RepairAttemptStatus.Succeeded, (await db.RepairAttempts.AsNoTracking().SingleAsync()).Status);
+        Assert.Equal(HealingIncidentStatus.Merged, (await db.HealingIncidents.AsNoTracking().SingleAsync()).Status);
     }
 
     [Fact]
@@ -631,13 +633,13 @@ public sealed class HealingSecurityMatrixTests
                 new DeploymentSafetySource(), Options.Create(options))
             .ExecuteAsync(Operation(ids, MergeRequest(ids), ProviderOperationKind.RequestMerge, ids.AttemptId));
 
-        outcome.Disposition.Should().Be(HealingOperationDisposition.Completed);
-        outcome.OutcomeCode.Should().Be("merge-provider-terminal-observed");
-        provider.Calls.Should().Be(1);
+        Assert.Equal(HealingOperationDisposition.Completed, outcome.Disposition);
+        Assert.Equal("merge-provider-terminal-observed", outcome.OutcomeCode);
+        Assert.Equal(1, provider.Calls);
         var pullRequest = await db.RepairPullRequests.SingleAsync();
-        pullRequest.MergeState.Should().Be(PullRequestMergeState.MergeRequested);
-        pullRequest.MergePolicyEvaluationId.Should().Be(ids.EvaluationId);
-        (await db.RepairAttempts.SingleAsync()).Status.Should().Be(RepairAttemptStatus.PullRequestOpen);
+        Assert.Equal(PullRequestMergeState.MergeRequested, pullRequest.MergeState);
+        Assert.Equal(ids.EvaluationId, pullRequest.MergePolicyEvaluationId);
+        Assert.Equal(RepairAttemptStatus.PullRequestOpen, (await db.RepairAttempts.SingleAsync()).Status);
     }
 
     [Fact]
@@ -666,12 +668,12 @@ public sealed class HealingSecurityMatrixTests
 
         var recovered = await coordinator.RunOnceAsync();
 
-        recovered.Should().BeTrue();
-        provider.Calls.Should().Be(0);
+        Assert.True(recovered);
+        Assert.Equal(0, provider.Calls);
         var pullRequest = await db.RepairPullRequests.SingleAsync();
-        pullRequest.MergeState.Should().Be(PullRequestMergeState.Open);
-        pullRequest.MergePolicyEvaluationId.Should().BeNull();
-        (await db.PolicyEvaluations.SingleAsync()).Decision.Should().Be(PolicyDecision.AllowAutomaticMerge);
+        Assert.Equal(PullRequestMergeState.Open, pullRequest.MergeState);
+        Assert.Null(pullRequest.MergePolicyEvaluationId);
+        Assert.Equal(PolicyDecision.AllowAutomaticMerge, (await db.PolicyEvaluations.SingleAsync()).Decision);
     }
 
     [Fact]
@@ -687,9 +689,9 @@ public sealed class HealingSecurityMatrixTests
         var malicious = "diff --git a/src/a.cs b/../secret.cs\n--- a/src/a.cs\n+++ b/../secret.cs\n@@ -1 +1 @@\n-old\n+new\n";
 
         var publish = () => publisher.PublishAsync(PublicationRequest(context, malicious)).AsTask();
-        await publish.Should().ThrowAsync<GitHubSecurityException>();
-        tokenHandler.Count.Should().Be(0);
-        repository.PublishCalls.Should().Be(0);
+        await Assert.ThrowsAsync<GitHubSecurityException>(publish);
+        Assert.Equal(0, tokenHandler.Count);
+        Assert.Equal(0, repository.PublishCalls);
 
         var auditStore = new RecordingAuditStore();
         var audit = new HealingAuditService(auditStore, new FixedTimeProvider(Now));
@@ -698,8 +700,8 @@ public sealed class HealingSecurityMatrixTests
             Guid.NewGuid(), null, null, null, null,
             new Dictionary<string, string?> { ["outcomeCode"] = "github_pat_secret_material" });
         var append = () => audit.AppendAsync(write).AsTask();
-        await append.Should().ThrowAsync<ArgumentException>();
-        auditStore.AppendCalls.Should().Be(0);
+        await Assert.ThrowsAsync<ArgumentException>(append);
+        Assert.Equal(0, auditStore.AppendCalls);
     }
 
     private static async Task SeedAuthorityAsync(HealingDbContext db)

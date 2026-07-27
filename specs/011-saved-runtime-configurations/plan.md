@@ -10,7 +10,7 @@ Add workspace-owned saved runtime configurations and explicit version snapshots 
 
 **Language/Version**: C# on .NET 10 LTS for API/Core/Persistence.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity adapter, EF Core, System.Text.Json, existing bundle generation service, xUnit, FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity adapter, EF Core, System.Text.Json, existing bundle generation service, xUnit and its built-in assertions.
 
 **Storage**: Existing relational catalog database extended with runtime configuration and version snapshot tables.
 

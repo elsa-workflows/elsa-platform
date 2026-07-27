@@ -1,6 +1,5 @@
 using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
-using FluentAssertions;
 using Xunit;
 
 namespace ValenceControl.Deployment.Core.Tests;
@@ -25,8 +24,8 @@ public sealed class WorkspaceDeploymentServiceTests
 
         var cockpit = await service.GetCockpitAsync(_workspaceId);
 
-        cockpit.Applications.Should().ContainSingle(x => x.Id == "app-1");
-        _store.LastWorkspaceId.Should().Be(_workspaceId);
+        Assert.Single(cockpit.Applications, x => x.Id == "app-1");
+        Assert.Equal(_workspaceId, _store.LastWorkspaceId);
     }
 
     [Fact]
@@ -34,9 +33,9 @@ public sealed class WorkspaceDeploymentServiceTests
     {
         var hash = WorkspaceDeploymentService.ComputeDesiredStateHash("{\"kind\":\"Workflow\"}");
 
-        hash.Should().Be(WorkspaceDeploymentService.ComputeDesiredStateHash("{\"kind\":\"Workflow\"}"));
-        hash.Should().Be(WorkspaceDeploymentService.ComputeDesiredStateHash("{ \"kind\" : \"Workflow\" }"));
-        hash.Should().NotBe(WorkspaceDeploymentService.ComputeDesiredStateHash("{\"kind\":\"Feature\"}"));
+        Assert.Equal(WorkspaceDeploymentService.ComputeDesiredStateHash("{\"kind\":\"Workflow\"}"), hash);
+        Assert.Equal(WorkspaceDeploymentService.ComputeDesiredStateHash("{ \"kind\" : \"Workflow\" }"), hash);
+        Assert.NotEqual(WorkspaceDeploymentService.ComputeDesiredStateHash("{\"kind\":\"Feature\"}"), hash);
     }
 
     [Fact]
@@ -45,7 +44,7 @@ public sealed class WorkspaceDeploymentServiceTests
         var left = WorkspaceDeploymentService.ComputeDesiredStateHash("{\"payload\":{\"name\":\"Payment Retry\",\"version\":8}}");
         var right = WorkspaceDeploymentService.ComputeDesiredStateHash("{\"payload\":{\"version\":8,\"name\":\"Payment Retry\"}}");
 
-        left.Should().Be(right);
+        Assert.Equal(right, left);
     }
 
     [Fact]
@@ -66,7 +65,7 @@ public sealed class WorkspaceDeploymentServiceTests
                 [],
                 null));
 
-        await act.Should().ThrowAsync<ArgumentException>();
+        await Assert.ThrowsAsync<ArgumentException>(act);
     }
 
     [Fact]
@@ -89,10 +88,10 @@ public sealed class WorkspaceDeploymentServiceTests
                 null,
                 EngineCredentialAssignmentStatus.Deferred));
 
-        engine.CredentialAssignmentStatus.Should().Be(EngineCredentialAssignmentStatus.Deferred);
-        engine.CredentialProvider.Should().BeEmpty();
-        engine.CredentialReference.Should().BeEmpty();
-        _store.RegisteredEngineRequests.Should().ContainSingle().Which.CredentialAssignmentStatus.Should().Be(EngineCredentialAssignmentStatus.Deferred);
+        Assert.Equal(EngineCredentialAssignmentStatus.Deferred, engine.CredentialAssignmentStatus);
+        Assert.Empty(engine.CredentialProvider);
+        Assert.Empty(engine.CredentialReference);
+        Assert.Equal(EngineCredentialAssignmentStatus.Deferred, Assert.Single(_store.RegisteredEngineRequests).CredentialAssignmentStatus);
     }
 
     [Fact]
@@ -109,8 +108,8 @@ public sealed class WorkspaceDeploymentServiceTests
                 null,
                 DeploymentSecretStoreType.LocalEncryptedDatabase));
 
-        store.Provider.Should().Be("Local encrypted database");
-        _store.CreatedSecretStoreRequests.Should().ContainSingle().Which.Provider.Should().Be("Local encrypted database");
+        Assert.Equal("Local encrypted database", store.Provider);
+        Assert.Equal("Local encrypted database", Assert.Single(_store.CreatedSecretStoreRequests).Provider);
     }
 
     [Fact]
@@ -129,9 +128,10 @@ public sealed class WorkspaceDeploymentServiceTests
             _workspaceId,
             new CreateDeploymentCredentialReferenceRequest(localStore.Id, "Dev engine", "local://engine-credentials/dev", null, null, "protected:v1"));
 
-        await external.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("External engine credential stores accept locator metadata only, not secret values.");
-        local.HasProtectedSecret.Should().BeTrue();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(external);
+
+        Assert.Equal("External engine credential stores accept locator metadata only, not secret values.", exception.Message);
+        Assert.True(local.HasProtectedSecret);
     }
 
     [Fact]
@@ -145,8 +145,8 @@ public sealed class WorkspaceDeploymentServiceTests
             _workspaceId,
             new CreateDeploymentEnvironmentRequest(applicationId, "Production EU", EnvironmentTier.Production, tierId));
 
-        environment.TierId.Should().Be(tierId);
-        _store.CreatedEnvironmentRequests.Should().ContainSingle().Which.TierId.Should().Be(tierId);
+        Assert.Equal(tierId, environment.TierId);
+        Assert.Equal(tierId, Assert.Single(_store.CreatedEnvironmentRequests).TierId);
     }
 
     [Fact]
@@ -161,9 +161,9 @@ public sealed class WorkspaceDeploymentServiceTests
             environmentId,
             new UpdateDeploymentEnvironmentRequest(Guid.NewGuid(), "UAT", EnvironmentTier.Stage, tierId));
 
-        environment.Id.Should().Be(environmentId);
-        environment.TierId.Should().Be(tierId);
-        _store.UpdatedEnvironmentRequests.Should().ContainSingle().Which.TierId.Should().Be(tierId);
+        Assert.Equal(environmentId, environment.Id);
+        Assert.Equal(tierId, environment.TierId);
+        Assert.Equal(tierId, Assert.Single(_store.UpdatedEnvironmentRequests).TierId);
     }
 
     [Fact]
@@ -176,8 +176,9 @@ public sealed class WorkspaceDeploymentServiceTests
             _workspaceId,
             new CreateDeploymentEnvironmentRequest(Guid.NewGuid(), "Prod", EnvironmentTier.Production, Guid.NewGuid()));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Deployment tier must be active in the workspace.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Deployment tier must be active in the workspace.", exception.Message);
     }
 
     private static WorkspaceDeploymentSecretStore SecretStore(Guid id, DeploymentSecretStoreType type) =>

@@ -5,7 +5,6 @@ using System.Text;
 using System.Text.Json;
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Core.Ownership;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.GitHub.Tests;
 
@@ -24,14 +23,14 @@ public sealed class GitHubProviderConnectionValidatorTests
         {
             if (request.RequestUri!.AbsolutePath.EndsWith("/access_tokens", StringComparison.Ordinal))
             {
-                request.Headers.Authorization!.Scheme.Should().Be("Bearer");
+                Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
                 var jwt = new JwtSecurityTokenHandler().ReadJwtToken(request.Headers.Authorization.Parameter);
-                jwt.Issuer.Should().Be("12345");
-                jwt.Header.Alg.Should().Be("RS256");
+                Assert.Equal("12345", jwt.Issuer);
+                Assert.Equal("RS256", jwt.Header.Alg);
                 var body = await request.Content!.ReadAsStringAsync();
                 using var document = JsonDocument.Parse(body);
-                document.RootElement.GetProperty("repositories")[0].GetString().Should().Be("claims");
-                document.RootElement.GetProperty("permissions").GetProperty("metadata").GetString().Should().Be("read");
+                Assert.Equal("claims", document.RootElement.GetProperty("repositories")[0].GetString());
+                Assert.Equal("read", document.RootElement.GetProperty("permissions").GetProperty("metadata").GetString());
                 return Json(HttpStatusCode.Created, new
                 {
                     token = "installation-token",
@@ -39,8 +38,8 @@ public sealed class GitHubProviderConnectionValidatorTests
                 });
             }
 
-            request.RequestUri.AbsolutePath.Should().Be("/repos/acme/claims");
-            request.Headers.Authorization!.Parameter.Should().Be("installation-token");
+            Assert.Equal("/repos/acme/claims", request.RequestUri.AbsolutePath);
+            Assert.Equal("installation-token", request.Headers.Authorization!.Parameter);
             return Json(HttpStatusCode.OK, new { id = 987654321L, full_name = "acme/claims" });
         });
         using var tokenClient = Client(handler);
@@ -52,8 +51,8 @@ public sealed class GitHubProviderConnectionValidatorTests
 
         var result = await validator.ValidateAsync(Connection());
 
-        result.Should().Be(ProviderConnectionValidationResult.Valid("987654321"));
-        handler.RequestCount.Should().Be(2);
+        Assert.Equal(ProviderConnectionValidationResult.Valid("987654321"), result);
+        Assert.Equal(2, handler.RequestCount);
     }
 
     [Fact]
@@ -69,9 +68,9 @@ public sealed class GitHubProviderConnectionValidatorTests
 
         var result = await validator.ValidateAsync(Connection());
 
-        result.Succeeded.Should().BeFalse();
-        result.ReasonCode.Should().Be(HealingOwnershipReasonCodes.ProviderValidationFailed);
-        handler.RequestCount.Should().Be(0);
+        Assert.False(result.Succeeded);
+        Assert.Equal(HealingOwnershipReasonCodes.ProviderValidationFailed, result.ReasonCode);
+        Assert.Equal(0, handler.RequestCount);
     }
 
     [Fact]
@@ -92,7 +91,7 @@ public sealed class GitHubProviderConnectionValidatorTests
 
         var result = await validator.ValidateAsync(Connection());
 
-        result.ReasonCode.Should().Be(HealingOwnershipReasonCodes.ProviderRepositoryMismatch);
+        Assert.Equal(HealingOwnershipReasonCodes.ProviderRepositoryMismatch, result.ReasonCode);
     }
 
     [Theory]
@@ -122,8 +121,8 @@ public sealed class GitHubProviderConnectionValidatorTests
 
         var result = await validator.ValidateAsync(Connection());
 
-        result.ReasonCode.Should().Be(HealingOwnershipReasonCodes.ProviderValidationFailed);
-        handler.RequestCount.Should().Be(failDuringTokenExchange ? 1 : 2);
+        Assert.Equal(HealingOwnershipReasonCodes.ProviderValidationFailed, result.ReasonCode);
+        Assert.Equal(failDuringTokenExchange ? 1 : 2, handler.RequestCount);
     }
 
     private static ProviderConnection Connection() => new()

@@ -3,7 +3,6 @@ using ValenceControl.RuntimeBuilder.Abstractions;
 using ValenceControl.RuntimeBuilder.Abstractions.RuntimeConfigurations;
 using ValenceControl.RuntimeBuilder.Core.RuntimeConfigurations;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 
 namespace ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
@@ -24,8 +23,8 @@ public sealed class RuntimeConfigurationPersistenceTests
         var version = await service.CreateVersionAsync(workspace.Id, created.Id);
 
         db.ChangeTracker.Clear();
-        (await store.ListAsync(workspace.Id)).Should().ContainSingle(x => x.Name == "Runtime");
-        (await store.ListVersionsAsync(workspace.Id, created.Id)).Should().ContainSingle(x => x.VersionNumber == version!.VersionNumber);
+        Assert.Single((await store.ListAsync(workspace.Id)), x => x.Name == "Runtime");
+        Assert.Single((await store.ListVersionsAsync(workspace.Id, created.Id)), x => x.VersionNumber == version!.VersionNumber);
     }
 
     [Fact]
@@ -45,7 +44,7 @@ public sealed class RuntimeConfigurationPersistenceTests
 
         await db.SaveChangesAsync();
 
-        (await db.RuntimeConfigurations.CountAsync()).Should().Be(1);
+        Assert.Equal(1, (await db.RuntimeConfigurations.CountAsync()));
     }
 
     private static async Task<CatalogDbContext> CreateDbContextAsync()

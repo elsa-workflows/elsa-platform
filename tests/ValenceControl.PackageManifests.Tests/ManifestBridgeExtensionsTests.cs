@@ -1,6 +1,5 @@
 using System.Text.Json;
 using ValenceControl.PackageManifests;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifests.Tests;
 
@@ -23,10 +22,10 @@ public sealed class ManifestBridgeExtensionsTests
         }
         """);
 
-        setting.UI.GetString("group").Should().Be("Mail");
-        setting.UI.GetBool("advanced").Should().BeTrue();
-        setting.UI.GetBool("experimental").Should().BeFalse();
-        setting.UI.GetElement("group").Should().NotBeNull();
+        Assert.Equal("Mail", setting.UI.GetString("group"));
+        Assert.True(setting.UI.GetBool("advanced"));
+        Assert.False(setting.UI.GetBool("experimental"));
+        Assert.NotNull(setting.UI.GetElement("group"));
     }
 
     [Fact]
@@ -40,11 +39,11 @@ public sealed class ManifestBridgeExtensionsTests
         }
         """);
 
-        setting.UI.GetElement("missing").Should().BeNull();
-        setting.UI.GetString("missing").Should().BeNull();
-        setting.UI.GetString("hint").Should().BeNull();     // number, not a string
-        setting.UI.GetBool("missing").Should().BeFalse();
-        setting.UI.GetBool("advanced").Should().BeFalse();  // string "yes" is not the JSON literal true
+        Assert.Null(setting.UI.GetElement("missing"));
+        Assert.Null(setting.UI.GetString("missing"));
+        Assert.Null(setting.UI.GetString("hint"));     // number, not a string
+        Assert.False(setting.UI.GetBool("missing"));
+        Assert.False(setting.UI.GetBool("advanced"));  // string "yes" is not the JSON literal true
     }
 
     [Fact]
@@ -59,12 +58,12 @@ public sealed class ManifestBridgeExtensionsTests
         """);
 
         var obj = setting.UI.GetElement("obj")!.Value;
-        obj.GetJsonString("label").Should().Be("Hello");
-        obj.GetJsonString("count").Should().BeNull();   // not a string
-        obj.GetJsonString("missing").Should().BeNull();
+        Assert.Equal("Hello", obj.GetJsonString("label"));
+        Assert.Null(obj.GetJsonString("count"));   // not a string
+        Assert.Null(obj.GetJsonString("missing"));
 
         var arr = setting.UI.GetElement("arr")!.Value;
-        arr.GetJsonString("label").Should().BeNull();   // not an object
+        Assert.Null(arr.GetJsonString("label"));   // not an object
     }
 
     [Fact]
@@ -85,8 +84,8 @@ public sealed class ManifestBridgeExtensionsTests
         }
         """);
 
-        feature.GetNormalizedDependencyIds("Elsa.JavaScript")
-            .Should().Equal("JintEngine", "SomeOther.Feature");
+        Assert.Equal(["JintEngine", "SomeOther.Feature"],
+            feature.GetNormalizedDependencyIds("Elsa.JavaScript"));
     }
 
     [Fact]
@@ -104,10 +103,8 @@ public sealed class ManifestBridgeExtensionsTests
         }
         """);
 
-        feature.GetNormalizedDependencyIds(null)
-            .Should().Equal("Elsa.JavaScript.JintEngine", "Other");
-        feature.GetNormalizedDependencyIds("   ")
-            .Should().Equal("Elsa.JavaScript.JintEngine", "Other");
+        Assert.Equal(["Elsa.JavaScript.JintEngine", "Other"], feature.GetNormalizedDependencyIds(null));
+        Assert.Equal(["Elsa.JavaScript.JintEngine", "Other"], feature.GetNormalizedDependencyIds("   "));
     }
 
     [Fact]
@@ -126,13 +123,14 @@ public sealed class ManifestBridgeExtensionsTests
 
         var (options, provider) = setting.GetSettingOptions();
 
-        provider.Should().BeNull();
-        options.Should().HaveCount(2);
-        options[0].Should().BeEquivalentTo(new { Label = "Low", Description = "Quiet" });
-        options[0].Value!.Value.GetString().Should().Be("low");
-        options[1].Label.Should().Be("high");
-        options[1].Value!.Value.GetString().Should().Be("high");
-        options[1].Description.Should().BeNull();
+        Assert.Null(provider);
+        Assert.Equal(2, options.Count());
+        Assert.Equal("Low", options[0].Label);
+        Assert.Equal("Quiet", options[0].Description);
+        Assert.Equal("low", options[0].Value!.Value.GetString());
+        Assert.Equal("high", options[1].Label);
+        Assert.Equal("high", options[1].Value!.Value.GetString());
+        Assert.Null(options[1].Description);
     }
 
     [Fact]
@@ -148,8 +146,8 @@ public sealed class ManifestBridgeExtensionsTests
 
         var (options, provider) = setting.GetSettingOptions();
 
-        options.Should().BeEmpty();
-        provider.Should().Be("LogLevels");
+        Assert.Empty(options);
+        Assert.Equal("LogLevels", provider);
     }
 
     [Fact]
@@ -165,8 +163,8 @@ public sealed class ManifestBridgeExtensionsTests
 
         var (options, provider) = setting.GetSettingOptions();
 
-        provider.Should().BeNull();
-        options.Select(o => o.Label).Should().Equal("a", "b");
+        Assert.Null(provider);
+        Assert.Equal(["a", "b"], options.Select(o => o.Label));
     }
 
     [Fact]
@@ -182,8 +180,8 @@ public sealed class ManifestBridgeExtensionsTests
 
         var (options, provider) = setting.GetSettingOptions();
 
-        provider.Should().BeNull();
-        options.Select(o => o.Label).Should().Equal("x", "y", "z");
+        Assert.Null(provider);
+        Assert.Equal(["x", "y", "z"], options.Select(o => o.Label));
     }
 
     [Fact]
@@ -198,7 +196,7 @@ public sealed class ManifestBridgeExtensionsTests
 
         var (options, provider) = setting.GetSettingOptions();
 
-        options.Should().BeEmpty();
-        provider.Should().BeNull();
+        Assert.Empty(options);
+        Assert.Null(provider);
     }
 }

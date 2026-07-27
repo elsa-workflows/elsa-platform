@@ -7,7 +7,6 @@ using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using ValenceControl.Workflows.RuntimeApplier;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -45,13 +44,13 @@ public sealed class RuntimeCommandApiTests
         var detail = await owner.GetControlJsonAsync<WorkspaceDeploymentRunDetailResponse>(
             $"/api/workspaces/{workspaceId}/deployments/runs/{seeded.RunId}");
 
-        claim.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Succeeded);
-        progress.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Succeeded);
-        complete.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Succeeded);
-        complete.Command!.Status.Should().Be(WorkflowRuntimeCommandStatus.Completed);
-        detail!.Run.Status.Should().Be(WorkspaceDeploymentRunStatus.Succeeded);
-        detail.Commands.Single().WorkerId.Should().Be("runtime-applier-worker");
-        detail.Commands.Single().RuntimeReference.Should().Be("elsa://workflows/payment-retry");
+        Assert.Equal(WorkflowRuntimeCommandClientStatus.Succeeded, claim.Status);
+        Assert.Equal(WorkflowRuntimeCommandClientStatus.Succeeded, progress.Status);
+        Assert.Equal(WorkflowRuntimeCommandClientStatus.Succeeded, complete.Status);
+        Assert.Equal(WorkflowRuntimeCommandStatus.Completed, complete.Command!.Status);
+        Assert.Equal(WorkspaceDeploymentRunStatus.Succeeded, detail!.Run.Status);
+        Assert.Equal("runtime-applier-worker", detail.Commands.Single().WorkerId);
+        Assert.Equal("elsa://workflows/payment-retry", detail.Commands.Single().RuntimeReference);
     }
 
     [Fact]
@@ -88,10 +87,10 @@ public sealed class RuntimeCommandApiTests
             "elsa://workflows/secret-authorized",
             []);
 
-        denied.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
-        claim.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Succeeded);
-        complete.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Succeeded);
-        complete.Command!.RuntimeReference.Should().Be("elsa://workflows/secret-authorized");
+        Assert.Contains(denied.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
+        Assert.Equal(WorkflowRuntimeCommandClientStatus.Succeeded, claim.Status);
+        Assert.Equal(WorkflowRuntimeCommandClientStatus.Succeeded, complete.Status);
+        Assert.Equal("elsa://workflows/secret-authorized", complete.Command!.RuntimeReference);
     }
 
     [Fact]
@@ -133,22 +132,22 @@ public sealed class RuntimeCommandApiTests
         var detail = await owner.GetControlJsonAsync<WorkspaceDeploymentRunDetailResponse>(
             $"/api/workspaces/{workspaceId}/deployments/runs/{seeded.RunId}");
 
-        claimResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        progressResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        completeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        duplicateCompleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        wrongLeaseCompleteResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        detail!.Run.Status.Should().Be(WorkspaceDeploymentRunStatus.Succeeded);
-        detail.History.Should().Contain(x => x.Message == "Runtime command completed.");
-        detail.Commands.Should().ContainSingle();
+        Assert.Equal(HttpStatusCode.OK, claimResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, progressResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, completeResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, duplicateCompleteResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, wrongLeaseCompleteResponse.StatusCode);
+        Assert.Equal(WorkspaceDeploymentRunStatus.Succeeded, detail!.Run.Status);
+        Assert.Contains(detail.History, x => x.Message == "Runtime command completed.");
+        Assert.Single(detail.Commands);
         var summary = detail.Commands.Single();
-        summary.Id.Should().Be(command.Id);
-        summary.Status.Should().Be(DeploymentCommandStatus.Completed);
-        summary.ProgressMessage.Should().Be("Applying workflow definitions");
-        summary.PercentComplete.Should().Be(75);
-        summary.RuntimeReference.Should().Be("elsa://workflows/payment-retry");
-        summary.ObservedArtifactDigest.Should().Be(new WorkspaceArtifactDigest("sha256", "observed"));
-        summary.WorkerId.Should().Be("runtime-worker-1");
+        Assert.Equal(command.Id, summary.Id);
+        Assert.Equal(DeploymentCommandStatus.Completed, summary.Status);
+        Assert.Equal("Applying workflow definitions", summary.ProgressMessage);
+        Assert.Equal(75, summary.PercentComplete);
+        Assert.Equal("elsa://workflows/payment-retry", summary.RuntimeReference);
+        Assert.Equal(new WorkspaceArtifactDigest("sha256", "observed"), summary.ObservedArtifactDigest);
+        Assert.Equal("runtime-worker-1", summary.WorkerId);
     }
 
     [Fact]
@@ -190,17 +189,17 @@ public sealed class RuntimeCommandApiTests
                 ]));
         var completed = await completeResponse.Content.ReadControlJsonAsync<RuntimeCommandDto>();
 
-        claimResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        artifactItem.DownloadUrl.Should().Be($"/api/workspaces/{workspaceId:D}/deployments/runtime/commands/{command.Id:D}/artifacts/{seeded.Artifact.Id:D}/download");
-        missingLeaseResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        downloadResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        downloadResponse.Content.Headers.ContentType!.MediaType.Should().Be("application/zip");
-        downloadResponse.Headers.GetValues("X-Elsa-Artifact-Digest").Single().Should().Be(seeded.Artifact.ContentDigest.Value);
-        downloaded.Should().Equal(artifactBytes);
-        completeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        completed!.Status.Should().Be(DeploymentCommandStatus.Completed);
-        completed.Artifacts!.Single().Status.Should().Be(DeploymentCommandArtifactStatus.Applied);
-        completed.Artifacts!.Single().DownloadUrl.Should().Be(artifactItem.DownloadUrl);
+        Assert.Equal(HttpStatusCode.OK, claimResponse.StatusCode);
+        Assert.Equal($"/api/workspaces/{workspaceId:D}/deployments/runtime/commands/{command.Id:D}/artifacts/{seeded.Artifact.Id:D}/download", artifactItem.DownloadUrl);
+        Assert.Equal(HttpStatusCode.Conflict, missingLeaseResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, downloadResponse.StatusCode);
+        Assert.Equal("application/zip", downloadResponse.Content.Headers.ContentType!.MediaType);
+        Assert.Equal(seeded.Artifact.ContentDigest.Value, downloadResponse.Headers.GetValues("X-Elsa-Artifact-Digest").Single());
+        Assert.Equal(artifactBytes, downloaded);
+        Assert.Equal(HttpStatusCode.OK, completeResponse.StatusCode);
+        Assert.Equal(DeploymentCommandStatus.Completed, completed!.Status);
+        Assert.Equal(DeploymentCommandArtifactStatus.Applied, completed.Artifacts!.Single().Status);
+        Assert.Equal(artifactItem.DownloadUrl, completed.Artifacts!.Single().DownloadUrl);
     }
 
     [Fact]
@@ -222,8 +221,8 @@ public sealed class RuntimeCommandApiTests
             $"/api/workspaces/{workspaceId}/deployments/runtime/commands/{command.Id}/claim",
             new RuntimeCommandClaimRequest(seeded.EngineId, "runtime-worker-2", 300));
 
-        first.StatusCode.Should().Be(HttpStatusCode.OK);
-        second.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
     }
 
     [Fact]
@@ -249,12 +248,12 @@ public sealed class RuntimeCommandApiTests
                 [new DeploymentCommandDiagnostic("unsupported", DeploymentCommandDiagnosticSeverity.Warning, "private key missing")]));
         var rejectBody = await rejectResponse.Content.ReadControlJsonAsync<RuntimeCommandDto>();
 
-        failResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        failBody!.Status.Should().Be(DeploymentCommandStatus.Failed);
-        failBody.Diagnostics.Single().Message.Should().Be("[redacted] [redacted] leaked");
-        rejectResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        rejectBody!.Status.Should().Be(DeploymentCommandStatus.Rejected);
-        rejectBody.Diagnostics.Single().Message.Should().Be("[redacted] missing");
+        Assert.Equal(HttpStatusCode.OK, failResponse.StatusCode);
+        Assert.Equal(DeploymentCommandStatus.Failed, failBody!.Status);
+        Assert.Equal("[redacted] [redacted] leaked", failBody.Diagnostics.Single().Message);
+        Assert.Equal(HttpStatusCode.OK, rejectResponse.StatusCode);
+        Assert.Equal(DeploymentCommandStatus.Rejected, rejectBody!.Status);
+        Assert.Equal("[redacted] missing", rejectBody.Diagnostics.Single().Message);
     }
 
     [Fact]
@@ -282,16 +281,16 @@ public sealed class RuntimeCommandApiTests
             $"/api/workspaces/{workspaceId}/deployments/runtime/commands/{command.Id}/claim",
             new RuntimeCommandClaimRequest(seeded.EngineId, "runtime-worker-1", 300));
 
-        firstNotificationResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        secondNotificationResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        firstNotification!.WorkspaceId.Should().Be(workspaceId);
-        firstNotification.EngineId.Should().Be(seeded.EngineId);
-        firstNotification.CommandHint.Should().Be(command.Id);
-        firstNotification.SafePayloadJson.Should().Contain(command.Id.ToString("D"));
-        firstNotification.SafePayloadJson.ToLowerInvariant().Should().NotContain("lease");
-        firstNotification.SafePayloadJson.ToLowerInvariant().Should().NotContain("secret");
-        afterWebhookPoll!.Commands.Should().ContainSingle(x => x.Id == command.Id);
-        claimResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, firstNotificationResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, secondNotificationResponse.StatusCode);
+        Assert.Equal(workspaceId, firstNotification!.WorkspaceId);
+        Assert.Equal(seeded.EngineId, firstNotification.EngineId);
+        Assert.Equal(command.Id, firstNotification.CommandHint);
+        Assert.Contains(command.Id.ToString("D"), firstNotification.SafePayloadJson);
+        Assert.DoesNotContain("lease", firstNotification.SafePayloadJson.ToLowerInvariant());
+        Assert.DoesNotContain("secret", firstNotification.SafePayloadJson.ToLowerInvariant());
+        Assert.Single(afterWebhookPoll!.Commands, x => x.Id == command.Id);
+        Assert.Equal(HttpStatusCode.OK, claimResponse.StatusCode);
     }
 
     private static async Task<RuntimeCommandClaimResponse> ClaimNextCommandAsync(

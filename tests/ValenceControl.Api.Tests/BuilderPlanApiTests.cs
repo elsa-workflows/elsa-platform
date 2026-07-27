@@ -3,7 +3,6 @@ using ValenceControl.Api.Authentication;
 using ValenceControl.Api.Public.Builder;
 using ValenceControl.Api.Workspace;
 using ValenceControl.RuntimeBuilder.Abstractions;
-using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace ValenceControl.Api.Tests;
@@ -18,12 +17,12 @@ public sealed class BuilderPlanApiTests
 
         var response = await app.CreateClient().PostControlJsonAsync("/api/builder/plan", new BuilderPlanApiRequest(MinimalIntent()));
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadControlJsonAsync<BuilderPlanApiResponse>();
-        body!.Resolved.Image.Slug.Should().Be("elsa-pro-combined");
-        body.AutoAdded.Packages.Should().BeEmpty();
-        body.AutoAdded.Features.Should().BeEmpty();
-        body.AutoAdded.Infrastructure.Should().BeEmpty();
+        Assert.Equal("elsa-pro-combined", body!.Resolved.Image.Slug);
+        Assert.Empty(body.AutoAdded.Packages);
+        Assert.Empty(body.AutoAdded.Features);
+        Assert.Empty(body.AutoAdded.Infrastructure);
     }
 
     [Fact]
@@ -38,9 +37,9 @@ public sealed class BuilderPlanApiTests
         var anonymous = await app.CreateClient().PostControlJsonAsync($"/api/workspaces/{workspaceId}/builder/plan", new BuilderPlanApiRequest(MinimalIntent()));
         var nonMember = await WorkspaceClient(app, "other").PostControlJsonAsync($"/api/workspaces/{workspaceId}/builder/plan", new BuilderPlanApiRequest(MinimalIntent()));
 
-        success.StatusCode.Should().Be(HttpStatusCode.OK);
-        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        nonMember.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.OK, success.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, nonMember.StatusCode);
     }
 
     private static RuntimeBuilderIntent MinimalIntent() =>

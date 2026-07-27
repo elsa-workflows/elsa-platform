@@ -18,7 +18,7 @@ Protect the deployed console from anonymous access by adding a small app-owned c
 
 **Storage**: Existing configuration secret for the admin API key; HTTP-only auth cookie for dashboard sessions; in-memory per-client failed-login throttle only. No new durable storage.
 
-**Testing**: xUnit, FluentAssertions, ASP.NET Core WebApplicationFactory integration tests.
+**Testing**: xUnit and its built-in assertions, ASP.NET Core WebApplicationFactory integration tests.
 
 **Target platform**: ASP.NET Core API container deployed to Azure App Service.
 

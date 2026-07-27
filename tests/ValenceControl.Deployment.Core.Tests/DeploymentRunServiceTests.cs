@@ -1,6 +1,5 @@
 using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
-using FluentAssertions;
 using Xunit;
 
 namespace ValenceControl.Deployment.Core.Tests;
@@ -26,11 +25,11 @@ public sealed class DeploymentRunServiceTests
 
         var run = await service.QueueDeploymentAsync(_workspaceId, RunRequest(), confirmation.Id);
 
-        run.Status.Should().Be(WorkspaceDeploymentRunStatus.Queued);
-        run.ConfirmationId.Should().Be(confirmation.Id);
-        run.ActorAccountId.Should().Be(_accountId);
-        _store.Confirmations[confirmation.Id].UsedAt.Should().Be(_clock.GetUtcNow());
-        _store.CreatedRuns.Should().ContainSingle();
+        Assert.Equal(WorkspaceDeploymentRunStatus.Queued, run.Status);
+        Assert.Equal(confirmation.Id, run.ConfirmationId);
+        Assert.Equal(_accountId, run.ActorAccountId);
+        Assert.Equal(_clock.GetUtcNow(), _store.Confirmations[confirmation.Id].UsedAt);
+        Assert.Single(_store.CreatedRuns);
     }
 
     [Fact]
@@ -45,8 +44,8 @@ public sealed class DeploymentRunServiceTests
 
         var run = await service.QueueRollbackAsync(_workspaceId, RunRequest(), confirmation.Id, rollbackSourceRunId);
 
-        run.RollbackSourceRunId.Should().Be(rollbackSourceRunId);
-        run.Status.Should().Be(WorkspaceDeploymentRunStatus.Queued);
+        Assert.Equal(rollbackSourceRunId, run.RollbackSourceRunId);
+        Assert.Equal(WorkspaceDeploymentRunStatus.Queued, run.Status);
     }
 
     [Fact]
@@ -62,9 +61,10 @@ public sealed class DeploymentRunServiceTests
 
         var act = () => service.QueueRollbackAsync(_workspaceId, RunRequest(), confirmation.Id, rollbackSourceRunId);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("UAT does not allow rollback actions.");
-        _store.Confirmations[confirmation.Id].UsedAt.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("UAT does not allow rollback actions.", exception.Message);
+        Assert.Null(_store.Confirmations[confirmation.Id].UsedAt);
     }
 
 
@@ -80,9 +80,10 @@ public sealed class DeploymentRunServiceTests
 
         var act = () => service.QueueDeploymentAsync(_workspaceId, RunRequest(), confirmation.Id);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("An active deployment run already exists for the target environment.");
-        _store.Confirmations[confirmation.Id].UsedAt.Should().BeNull();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("An active deployment run already exists for the target environment.", exception.Message);
+        Assert.Null(_store.Confirmations[confirmation.Id].UsedAt);
     }
 
     private WorkspaceDeploymentRunRequest RunRequest() =>

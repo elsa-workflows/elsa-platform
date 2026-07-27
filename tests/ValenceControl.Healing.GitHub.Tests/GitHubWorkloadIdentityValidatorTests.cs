@@ -2,7 +2,6 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
-using FluentAssertions;
 using Microsoft.IdentityModel.Tokens;
 
 namespace ValenceControl.Healing.GitHub.Tests;
@@ -22,9 +21,8 @@ public sealed class GitHubWorkloadIdentityValidatorTests
 
         var result = await validator.ValidateAsync(Token(rsa), Nonce, Expected());
 
-        result.Succeeded.Should().BeTrue();
-        result.Identity.Should().Match<VerifiedGitHubWorkloadIdentity>(x =>
-            x.RepositoryId == "987" && x.RunId == "123456" && x.RunAttempt == 2 && x.ActorId == "99");
+        Assert.True(result.Succeeded);
+        Assert.True(result.Identity is { RepositoryId: "987", RunId: "123456", RunAttempt: 2, ActorId: "99" });
     }
 
     [Theory]
@@ -49,8 +47,8 @@ public sealed class GitHubWorkloadIdentityValidatorTests
 
         var result = await validator.ValidateAsync(Token(rsa, issuer, audience, overrides), Nonce, Expected());
 
-        result.Succeeded.Should().BeFalse();
-        result.ReasonCode.Should().Be(GitHubSecurityReasonCodes.IdentityInvalid);
+        Assert.False(result.Succeeded);
+        Assert.Equal(GitHubSecurityReasonCodes.IdentityInvalid, result.ReasonCode);
     }
 
     [Fact]
@@ -64,8 +62,8 @@ public sealed class GitHubWorkloadIdentityValidatorTests
         var wrong = await validator.ValidateAsync(token, "a-different-one-time-nonce-value-here", Expected());
         var valid = await validator.ValidateAsync(token, Nonce, Expected());
 
-        wrong.ReasonCode.Should().Be(GitHubSecurityReasonCodes.IdentityInvalid);
-        valid.Succeeded.Should().BeTrue();
+        Assert.Equal(GitHubSecurityReasonCodes.IdentityInvalid, wrong.ReasonCode);
+        Assert.True(valid.Succeeded);
     }
 
     [Fact]
@@ -77,8 +75,8 @@ public sealed class GitHubWorkloadIdentityValidatorTests
         var first = await validator.ValidateAsync(Token(rsa), Nonce, Expected());
         var replay = await validator.ValidateAsync(Token(rsa), Nonce, Expected());
 
-        first.Succeeded.Should().BeTrue();
-        replay.ReasonCode.Should().Be(GitHubSecurityReasonCodes.IdentityReplay);
+        Assert.True(first.Succeeded);
+        Assert.Equal(GitHubSecurityReasonCodes.IdentityReplay, replay.ReasonCode);
     }
 
     [Fact]
@@ -90,7 +88,7 @@ public sealed class GitHubWorkloadIdentityValidatorTests
 
         var result = await validator.ValidateAsync(Token(attacker), Nonce, Expected());
 
-        result.ReasonCode.Should().Be(GitHubSecurityReasonCodes.IdentityInvalid);
+        Assert.Equal(GitHubSecurityReasonCodes.IdentityInvalid, result.ReasonCode);
     }
 
     [Fact]
@@ -106,8 +104,8 @@ public sealed class GitHubWorkloadIdentityValidatorTests
 
         var result = await validator.ValidateAsync(Token(currentKey), Nonce, Expected());
 
-        result.Succeeded.Should().BeTrue();
-        provider.RefreshCount.Should().Be(1);
+        Assert.True(result.Succeeded);
+        Assert.Equal(1, provider.RefreshCount);
     }
 
     private static GitHubWorkloadIdentityValidator Validator(RSA rsa, IGitHubWorkloadReplayStore replay) => new(

@@ -16,7 +16,7 @@ Add a workspace-scoped deployment artifact registry that stores immutable artifa
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `ValenceControl.Deployment.Artifacts`, React Router, TanStack Query, Vitest, xUnit, and FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `ValenceControl.Deployment.Artifacts`, React Router, TanStack Query, Vitest, xUnit and its built-in assertions.
 
 **Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Artifact records store metadata, digests, resource summaries, diagnostics, and references only. Raw payload files, manifest JSON, workflow definitions, tokens, and secrets are not stored.
 

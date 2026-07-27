@@ -1,5 +1,4 @@
 using ValenceControl.PackageCatalog.Core.Packages;
-using FluentAssertions;
 
 namespace ValenceControl.PackageCatalog.Core.Tests;
 
@@ -13,10 +12,10 @@ public sealed class PackageVersionImmutabilityTests
 
         var result = policy.CompareManifest(version, "new");
 
-        result.IsSuspicious.Should().BeTrue();
-        result.ObservedHash.Should().Be("new");
-        version.ManifestHash.Should().Be("old");
-        version.SuspiciousChangeDetected.Should().BeFalse();
-        version.SuspiciousManifestHash.Should().BeNull();
+        Assert.True(result.IsSuspicious);
+        Assert.Equal("new", result.ObservedHash);
+        Assert.Equal("old", version.ManifestHash);
+        Assert.False(version.SuspiciousChangeDetected);
+        Assert.Null(version.SuspiciousManifestHash);
     }
 }

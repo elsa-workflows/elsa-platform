@@ -1,6 +1,5 @@
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Core.Incidents;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
@@ -99,26 +98,25 @@ public sealed partial class IncidentProjectionConcurrencyTests
             var impacts = await verify.EnvironmentImpacts.AsNoTracking().ToArrayAsync();
             var producingRevisions = JsonSerializer.Deserialize<Guid[]>(episode.ProducingRevisionsJson)!;
 
-            occurrences.Should().HaveCount(instanceCount * occurrencesPerInstance);
-            occurrences.Should().OnlyContain(x => x.IncidentId == incident.Id && x.EpisodeId == episode.Id);
-            occurrences.Select(x => x.OccurrenceKey).Should().OnlyHaveUniqueItems();
-            occurrences.GroupBy(x => x.OccurrenceKey.Split(':')[1]).Should().HaveCount(instanceCount);
-            occurrences.GroupBy(x => x.OccurrenceKey.Split(':')[1]).Should().OnlyContain(x => x.Count() == occurrencesPerInstance);
-            occurrences.GroupBy(x => x.TraceId).Should().HaveCount(instanceCount);
-            occurrences.GroupBy(x => x.TraceId).Should().OnlyContain(x => x.Count() == occurrencesPerInstance);
-            incident.Fingerprint.Should().Be(fingerprint);
-            incident.RepairRepositoryKey.Should().Be("github:repository-1");
-            incident.OccurrenceCount.Should().Be(instanceCount * occurrencesPerInstance);
-            incident.Status.Should().Be(HealingIncidentStatus.ReadyForRepair);
-            incident.ActiveEpisodeId.Should().Be(episode.Id);
-            incident.WorkItemProjectionId.Should().Be(workItem.Id);
-            workItem.IncidentId.Should().Be(incident.Id);
-            workItem.EpisodeId.Should().Be(episode.Id);
-            impacts.Should().HaveCount(environmentCount);
-            impacts.Should().OnlyContain(x => x.OccurrenceCount == instanceCount * occurrencesPerInstance / environmentCount);
-            impacts.Should().AllSatisfy(x =>
-                JsonSerializer.Deserialize<Guid[]>(x.ProducingRevisionsJson).Should().BeEquivalentTo(revisions));
-            producingRevisions.Should().BeEquivalentTo(revisions);
+            Assert.Equal(instanceCount * occurrencesPerInstance, occurrences.Count());
+            Assert.All(occurrences, item => Assert.True(item.IncidentId == incident.Id && item.EpisodeId == episode.Id));
+            Assert.Equal(occurrences.Select(x => x.OccurrenceKey).Distinct().Count(), occurrences.Select(x => x.OccurrenceKey).Count());
+            Assert.Equal(instanceCount, occurrences.GroupBy(x => x.OccurrenceKey.Split(':')[1]).Count());
+            Assert.All(occurrences.GroupBy(x => x.OccurrenceKey.Split(':')[1]), item => Assert.True(item.Count() == occurrencesPerInstance));
+            Assert.Equal(instanceCount, occurrences.GroupBy(x => x.TraceId).Count());
+            Assert.All(occurrences.GroupBy(x => x.TraceId), item => Assert.True(item.Count() == occurrencesPerInstance));
+            Assert.Equal(fingerprint, incident.Fingerprint);
+            Assert.Equal("github:repository-1", incident.RepairRepositoryKey);
+            Assert.Equal(instanceCount * occurrencesPerInstance, incident.OccurrenceCount);
+            Assert.Equal(HealingIncidentStatus.ReadyForRepair, incident.Status);
+            Assert.Equal(episode.Id, incident.ActiveEpisodeId);
+            Assert.Equal(workItem.Id, incident.WorkItemProjectionId);
+            Assert.Equal(incident.Id, workItem.IncidentId);
+            Assert.Equal(episode.Id, workItem.EpisodeId);
+            Assert.Equal(environmentCount, impacts.Count());
+            Assert.All(impacts, item => Assert.True(item.OccurrenceCount == instanceCount * occurrencesPerInstance / environmentCount));
+            Assert.All(impacts, x => Assert.Equal(revisions.Order(), JsonSerializer.Deserialize<Guid[]>(x.ProducingRevisionsJson)!.Order()));
+            Assert.Equal(revisions.Order(), producingRevisions.Order());
         }
         finally
         {

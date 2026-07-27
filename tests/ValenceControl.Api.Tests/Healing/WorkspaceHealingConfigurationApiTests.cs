@@ -13,7 +13,6 @@ using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Core.Ownership;
 using ValenceControl.Healing.Persistence.EntityFrameworkCore;
 using ValenceControl.PackageCatalog.Core.Accounts;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -31,28 +30,28 @@ public sealed class WorkspaceHealingConfigurationApiTests
 
         var initial = await owner.GetAsync(configurationUri);
         var initialJson = await initial.Content.ReadFromJsonAsync<JsonElement>();
-        initial.StatusCode.Should().Be(HttpStatusCode.OK);
-        initialJson.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()).Should().Contain(HealingPermissions.ConfigureAutoMerge);
+        Assert.Equal(HttpStatusCode.OK, initial.StatusCode);
+        Assert.Contains(HealingPermissions.ConfigureAutoMerge, initialJson.GetProperty("permissions").EnumerateArray().Select(x => x.GetString()));
 
         var updated = await owner.PutControlJsonAsync(configurationUri, ConfigurationRequest(initialJson.GetProperty("version").GetString()!));
-        updated.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
 
         var confirmationResponse = await owner.PostControlJsonAsync(
             ApplicationUri(app, "/confirmations"),
             new { actionType = ConfirmationActionType.HealingEmergencyStop });
         var confirmation = await confirmationResponse.Content.ReadFromJsonAsync<JsonElement>();
-        confirmationResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, confirmationResponse.StatusCode);
 
         var stopBody = new { confirmationId = confirmation.GetProperty("id").GetGuid() };
         var stopped = await owner.PostControlJsonAsync(ApplicationUri(app, "/stop"), stopBody);
         var replay = await owner.PostControlJsonAsync(ApplicationUri(app, "/stop"), stopBody);
 
-        stopped.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await stopped.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("applicationKillSwitch").GetBoolean().Should().BeTrue();
-        replay.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.OK, stopped.StatusCode);
+        Assert.True((await stopped.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("applicationKillSwitch").GetBoolean());
+        Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
         var replayProblem = await replay.Content.ReadFromJsonAsync<JsonElement>();
-        replayProblem.GetProperty("code").GetString().Should().Be("deployment.confirmation.used");
-        replayProblem.GetProperty("correlationId").GetString().Should().NotBeNullOrWhiteSpace();
+        Assert.Equal("deployment.confirmation.used", replayProblem.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(replayProblem.GetProperty("correlationId").GetString()));
 
         var resumeConfirmationResponse = await owner.PostControlJsonAsync(
             ApplicationUri(app, "/confirmations"),
@@ -61,8 +60,8 @@ public sealed class WorkspaceHealingConfigurationApiTests
         var resumed = await owner.PostControlJsonAsync(
             ApplicationUri(app, "/resume"),
             new { confirmationId = resumeConfirmation.GetProperty("id").GetGuid() });
-        resumed.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await resumed.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("applicationKillSwitch").GetBoolean().Should().BeFalse();
+        Assert.Equal(HttpStatusCode.OK, resumed.StatusCode);
+        Assert.False((await resumed.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("applicationKillSwitch").GetBoolean());
 
         var wrongConfirmationResponse = await owner.PostControlJsonAsync(
             ApplicationUri(app, "/confirmations"),
@@ -72,8 +71,8 @@ public sealed class WorkspaceHealingConfigurationApiTests
         var mismatched = await owner.PutControlJsonAsync(configurationUri, ConfigurationRequest(
             current.GetProperty("version").GetString()!, automaticMergeEnabled: true,
             confirmationId: wrongConfirmation.GetProperty("id").GetGuid()));
-        mismatched.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await mismatched.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString().Should().Be("deployment.confirmation.target");
+        Assert.Equal(HttpStatusCode.BadRequest, mismatched.StatusCode);
+        Assert.Equal("deployment.confirmation.target", (await mismatched.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
     }
 
     [Fact]
@@ -88,16 +87,14 @@ public sealed class WorkspaceHealingConfigurationApiTests
         var foreign = await app.Owner.PutControlJsonAsync(
             uri,
             ConfigurationRequest(version, environments: [EnvironmentRequest(Guid.NewGuid())]));
-        foreign.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await foreign.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString()
-            .Should().Be("healing.environment.not-found");
+        Assert.Equal(HttpStatusCode.BadRequest, foreign.StatusCode);
+        Assert.Equal("healing.environment.not-found", (await foreign.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
 
         var duplicate = await app.Owner.PutControlJsonAsync(
             uri,
             ConfigurationRequest(version, environments: [EnvironmentRequest(environmentId), EnvironmentRequest(environmentId)]));
-        duplicate.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await duplicate.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString()
-            .Should().Be("healing.environment.duplicate");
+        Assert.Equal(HttpStatusCode.BadRequest, duplicate.StatusCode);
+        Assert.Equal("healing.environment.duplicate", (await duplicate.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
     }
 
     [Fact]
@@ -112,10 +109,10 @@ public sealed class WorkspaceHealingConfigurationApiTests
         var response = await app.Owner.SendAsync(request);
         var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        problem.GetProperty("code").GetString().Should().Be("healing.request.invalid");
-        problem.GetProperty("correlationId").GetString().Should().NotBeNullOrWhiteSpace();
-        problem.ToString().Should().NotContain("JsonException");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("healing.request.invalid", problem.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(problem.GetProperty("correlationId").GetString()));
+        Assert.DoesNotContain("JsonException", problem.ToString());
     }
 
     [Fact]
@@ -133,9 +130,8 @@ public sealed class WorkspaceHealingConfigurationApiTests
             repositoryName = (string?)null,
             credentialReferenceId
         });
-        semanticNull.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await semanticNull.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString()
-            .Should().Be("healing.invalid-configuration");
+        Assert.Equal(HttpStatusCode.BadRequest, semanticNull.StatusCode);
+        Assert.Equal("healing.invalid-configuration", (await semanticNull.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
 
         var request = new
         {
@@ -146,7 +142,7 @@ public sealed class WorkspaceHealingConfigurationApiTests
             credentialReferenceId
         };
         var created = await app.Owner.PostControlJsonAsync(uri, request);
-        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         var providerId = (await created.Content.ReadFromJsonAsync<JsonElement>())
             .GetProperty("providerConnection").GetProperty("id").GetGuid();
         var duplicate = await app.Owner.PostControlJsonAsync(uri, new
@@ -157,16 +153,14 @@ public sealed class WorkspaceHealingConfigurationApiTests
             repositoryName = "other",
             credentialReferenceId
         });
-        duplicate.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        (await duplicate.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString()
-            .Should().Be("healing.administration-conflict");
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+        Assert.Equal("healing.administration-conflict", (await duplicate.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
 
         var nullVersion = await app.Owner.PostControlJsonAsync(
             ApplicationUri(app, $"/provider-connections/{providerId:D}/validate"),
             new { version = (string?)null });
-        nullVersion.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await nullVersion.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString()
-            .Should().Be("healing.provider.version");
+        Assert.Equal(HttpStatusCode.BadRequest, nullVersion.StatusCode);
+        Assert.Equal("healing.provider.version", (await nullVersion.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
     }
 
     [Fact]
@@ -186,9 +180,8 @@ public sealed class WorkspaceHealingConfigurationApiTests
         };
 
         var missingConfirmation = await app.Owner.PostControlJsonAsync(uri, request);
-        missingConfirmation.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await missingConfirmation.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString()
-            .Should().Be("deployment.confirmation.missing");
+        Assert.Equal(HttpStatusCode.BadRequest, missingConfirmation.StatusCode);
+        Assert.Equal("deployment.confirmation.missing", (await missingConfirmation.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
 
         var confirmationResponse = await app.Owner.PostControlJsonAsync(
             ApplicationUri(app, "/confirmations"),
@@ -205,9 +198,8 @@ public sealed class WorkspaceHealingConfigurationApiTests
             confirmationId = confirmation.GetProperty("id").GetGuid()
         });
 
-        confirmed.StatusCode.Should().Be(HttpStatusCode.Created);
-        (await confirmed.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("mergePolicy")
-            .GetProperty("automaticMergeEnabled").GetBoolean().Should().BeTrue();
+        Assert.Equal(HttpStatusCode.Created, confirmed.StatusCode);
+        Assert.True((await confirmed.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("mergePolicy").GetProperty("automaticMergeEnabled").GetBoolean());
     }
 
     [Fact]
@@ -219,27 +211,27 @@ public sealed class WorkspaceHealingConfigurationApiTests
         var reader = app.Factory.CreateTrustedWorkspaceClient(readerSubject);
         var uri = ApplicationUri(app, "/configuration");
 
-        (await reader.GetAsync(uri)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, (await reader.GetAsync(uri)).StatusCode);
         await app.Factory.GrantWorkspaceDeploymentPermissionAsync(app.WorkspaceId, readerId, HealingPermissions.Read);
-        (await reader.GetAsync(uri)).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await reader.PutControlJsonAsync(uri, ConfigurationRequest(""))).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.OK, (await reader.GetAsync(uri)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await reader.PutControlJsonAsync(uri, ConfigurationRequest(""))).StatusCode);
 
         var revoke = await app.Owner.PostControlJsonAsync(
             $"/api/workspaces/{app.WorkspaceId:D}/permissions/revocations",
             new WorkspacePermissionRevokeRequest(readerId, HealingPermissions.Read));
         revoke.EnsureSuccessStatusCode();
-        (await reader.GetAsync(uri)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, (await reader.GetAsync(uri)).StatusCode);
 
         var outsider = app.Factory.CreateTrustedWorkspaceClient("healing-outsider");
-        (await outsider.GetAsync(uri)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        (await app.Owner.GetAsync($"/api/workspaces/{app.WorkspaceId:D}/healing/applications/{Guid.NewGuid():D}/configuration")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.Forbidden, (await outsider.GetAsync(uri)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await app.Owner.GetAsync($"/api/workspaces/{app.WorkspaceId:D}/healing/applications/{Guid.NewGuid():D}/configuration")).StatusCode);
 
         var outsiderWorkspaceId = await outsider.GetDefaultWorkspaceIdAsync();
         var outsiderApplicationResponse = await outsider.PostControlJsonAsync(
             $"/api/workspaces/{outsiderWorkspaceId:D}/deployments/applications",
             new WorkspaceDeploymentApplicationRequest("Outsider API", null));
         var outsiderApplication = await outsiderApplicationResponse.Content.ReadControlJsonAsync<WorkspaceDeploymentApplication>();
-        (await app.Owner.GetAsync($"/api/workspaces/{outsiderWorkspaceId:D}/healing/applications/{outsiderApplication!.Id:D}/configuration")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, (await app.Owner.GetAsync($"/api/workspaces/{outsiderWorkspaceId:D}/healing/applications/{outsiderApplication!.Id:D}/configuration")).StatusCode);
     }
 
     [Fact]
@@ -252,53 +244,48 @@ public sealed class WorkspaceHealingConfigurationApiTests
 
         var registered = await SendManifestAsync(app.Owner, uri, canonical, ContentDigest(canonical), idempotencyKey);
         var registeredJson = await registered.Content.ReadFromJsonAsync<JsonElement>();
-        registered.StatusCode.Should().Be(HttpStatusCode.Created);
-        registeredJson.GetProperty("trustState").GetString().Should().Be("Unverified");
+        Assert.Equal(HttpStatusCode.Created, registered.StatusCode);
+        Assert.Equal("Unverified", registeredJson.GetProperty("trustState").GetString());
 
         var replay = await SendManifestAsync(app.Owner, uri, canonical, ContentDigest(canonical), idempotencyKey);
-        replay.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
         var changedPayload = CanonicalManifest(buildId: "build-2");
         var idempotencyConflict = await SendManifestAsync(app.Owner, uri, changedPayload, ContentDigest(changedPayload), idempotencyKey);
-        idempotencyConflict.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        (await idempotencyConflict.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString()
-            .Should().Be("healing.idempotency-key.conflict");
+        Assert.Equal(HttpStatusCode.Conflict, idempotencyConflict.StatusCode);
+        Assert.Equal("healing.idempotency-key.conflict", (await idempotencyConflict.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
         var invalidDigest = await SendManifestAsync(app.Owner, uri, canonical, "sha256:" + new string('0', 64));
-        invalidDigest.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, invalidDigest.StatusCode);
         var malformedDigest = await SendManifestAsync(app.Owner, uri, canonical, "SHA256:not-a-digest");
-        malformedDigest.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await malformedDigest.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString()
-            .Should().Be("healing.content-digest.invalid");
+        Assert.Equal(HttpStatusCode.BadRequest, malformedDigest.StatusCode);
+        Assert.Equal("healing.content-digest.invalid", (await malformedDigest.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
         var oversizedKey = await SendManifestAsync(app.Owner, uri, canonical, ContentDigest(canonical), new string('k', 257));
-        oversizedKey.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await oversizedKey.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString()
-            .Should().Be("healing.idempotency-key.invalid");
+        Assert.Equal(HttpStatusCode.BadRequest, oversizedKey.StatusCode);
+        Assert.Equal("healing.idempotency-key.invalid", (await oversizedKey.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
         var nonCanonical = canonical + Environment.NewLine;
         var nonCanonicalResponse = await SendManifestAsync(app.Owner, uri, nonCanonical, ContentDigest(nonCanonical));
-        nonCanonicalResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await nonCanonicalResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString().Should().Be("healing.manifest.non-canonical");
+        Assert.Equal(HttpStatusCode.BadRequest, nonCanonicalResponse.StatusCode);
+        Assert.Equal("healing.manifest.non-canonical", (await nonCanonicalResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
         var arbitraryRevision = await SendManifestAsync(app.Owner, ApplicationUri(app, $"/revisions/{Guid.NewGuid():D}/component-manifests"), canonical, ContentDigest(canonical));
-        arbitraryRevision.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.NotFound, arbitraryRevision.StatusCode);
         var mismatchedRevision = CanonicalManifest(sourceRevision: new string('f', 40));
         var mismatchedRevisionResponse = await SendManifestAsync(app.Owner, uri, mismatchedRevision, ContentDigest(mismatchedRevision));
-        mismatchedRevisionResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        (await mismatchedRevisionResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString()
-            .Should().Be("healing.manifest.revision-mismatch");
+        Assert.Equal(HttpStatusCode.Conflict, mismatchedRevisionResponse.StatusCode);
+        Assert.Equal("healing.manifest.revision-mismatch", (await mismatchedRevisionResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
 
         var manifestId = registeredJson.GetProperty("id").GetGuid();
         const string configurerSubject = "manifest-configurer";
         var configurerId = await app.Factory.AddWorkspaceMemberAsync(app.WorkspaceId, configurerSubject, WorkspaceRole.Reader);
         await app.Factory.GrantWorkspaceDeploymentPermissionAsync(app.WorkspaceId, configurerId, HealingPermissions.Configure);
         var configurer = app.Factory.CreateTrustedWorkspaceClient(configurerSubject);
-        (await configurer.PostAsync(ApplicationUri(app, $"/component-manifests/{manifestId:D}/verify"), null)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, (await configurer.PostAsync(ApplicationUri(app, $"/component-manifests/{manifestId:D}/verify"), null)).StatusCode);
         var autoMergeConfirmation = await configurer.PostControlJsonAsync(ApplicationUri(app, "/confirmations"), new { actionType = ConfirmationActionType.HealingAutomaticMerge, automaticMergeEnabled = true });
-        autoMergeConfirmation.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, autoMergeConfirmation.StatusCode);
         var verified = await app.Owner.PostAsync(ApplicationUri(app, $"/component-manifests/{manifestId:D}/verify"), null);
-        verified.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await verified.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("trustState").GetString().Should().Be("Verified");
-        (await app.Owner.GetFromJsonAsync<JsonElement>(ApplicationUri(app, "/configuration")))
-            .GetProperty("manifestReadiness").GetString().Should().Be("Untrusted");
+        Assert.Equal(HttpStatusCode.OK, verified.StatusCode);
+        Assert.Equal("Verified", (await verified.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("trustState").GetString());
+        Assert.Equal("Untrusted", (await app.Owner.GetFromJsonAsync<JsonElement>(ApplicationUri(app, "/configuration"))).GetProperty("manifestReadiness").GetString());
         var revoked = await app.Owner.PostAsync(ApplicationUri(app, $"/component-manifests/{manifestId:D}/revoke"), null);
-        revoked.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, revoked.StatusCode);
     }
 
     [Fact]
@@ -314,14 +301,13 @@ public sealed class WorkspaceHealingConfigurationApiTests
             "readiness-delivery");
         registered.EnsureSuccessStatusCode();
         var manifestId = (await registered.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
-        (await app.Owner.PostAsync(AttestationUri(app, manifestId), null)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        (await AttestManifestAsync(app, manifestId, "sha256:" + new string('0', 64), "build-1"))
-            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await app.Owner.PostAsync(AttestationUri(app, manifestId), null)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await AttestManifestAsync(app, manifestId, "sha256:" + new string('0', 64), "build-1")).StatusCode);
         (await AttestManifestAsync(app, manifestId, ManifestDigest(canonical), "build-1")).EnsureSuccessStatusCode();
 
         var configurationUri = ApplicationUri(app, "/configuration");
         var ready = await app.Owner.GetFromJsonAsync<JsonElement>(configurationUri);
-        ready.GetProperty("manifestReadiness").GetString().Should().Be("Ready");
+        Assert.Equal("Ready", ready.GetProperty("manifestReadiness").GetString());
         var stagingEnvironmentResponse = await app.Owner.PostControlJsonAsync(
             $"/api/workspaces/{app.WorkspaceId:D}/deployments/applications/{app.ApplicationId:D}/environments",
             new WorkspaceDeploymentEnvironmentRequest("Staging", EnvironmentTier.Stage));
@@ -332,8 +318,7 @@ public sealed class WorkspaceHealingConfigurationApiTests
             new WorkspaceDesiredStateRevisionRequest("staging-1", new string('e', 40), []));
         var stagingRevision = await stagingRevisionResponse.Content.ReadControlJsonAsync<WorkspaceDesiredStateRevision>();
         stagingRevisionResponse.EnsureSuccessStatusCode();
-        (await app.Owner.GetFromJsonAsync<JsonElement>(configurationUri))
-            .GetProperty("manifestReadiness").GetString().Should().Be("Stale");
+        Assert.Equal("Stale", (await app.Owner.GetFromJsonAsync<JsonElement>(configurationUri)).GetProperty("manifestReadiness").GetString());
 
         var stagingCanonical = CanonicalManifest(new string('e', 40), "build-staging");
         var stagingManifestResponse = await SendManifestAsync(
@@ -345,8 +330,7 @@ public sealed class WorkspaceHealingConfigurationApiTests
         var stagingManifestId = (await stagingManifestResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
         stagingManifestResponse.EnsureSuccessStatusCode();
         (await AttestManifestAsync(app, stagingManifestId, ManifestDigest(stagingCanonical), "build-staging")).EnsureSuccessStatusCode();
-        (await app.Owner.GetFromJsonAsync<JsonElement>(configurationUri))
-            .GetProperty("manifestReadiness").GetString().Should().Be("Ready");
+        Assert.Equal("Ready", (await app.Owner.GetFromJsonAsync<JsonElement>(configurationUri)).GetProperty("manifestReadiness").GetString());
 
         var environmentId = ready.GetProperty("environments")[0].GetProperty("environmentId").GetGuid();
         var nextRevision = await app.Owner.PostControlJsonAsync(
@@ -355,7 +339,7 @@ public sealed class WorkspaceHealingConfigurationApiTests
         nextRevision.EnsureSuccessStatusCode();
 
         var stale = await app.Owner.GetFromJsonAsync<JsonElement>(configurationUri);
-        stale.GetProperty("manifestReadiness").GetString().Should().Be("Stale");
+        Assert.Equal("Stale", stale.GetProperty("manifestReadiness").GetString());
     }
 
     [Fact]
@@ -374,24 +358,24 @@ public sealed class WorkspaceHealingConfigurationApiTests
                 credentialReferenceId
             });
         var authority = await authorityResponse.Content.ReadFromJsonAsync<JsonElement>();
-        authorityResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        authority.ToString().Should().NotContain("secret://");
+        Assert.Equal(HttpStatusCode.Created, authorityResponse.StatusCode);
+        Assert.DoesNotContain("secret://", authority.ToString());
         var providerId = authority.GetProperty("providerConnection").GetProperty("id").GetGuid();
         var providerVersion = authority.GetProperty("providerConnection").GetProperty("version").GetString()!;
-        authority.GetProperty("providerConnection").GetProperty("status").GetString().Should().Be("PendingValidation");
+        Assert.Equal("PendingValidation", authority.GetProperty("providerConnection").GetProperty("status").GetString());
         var pathPolicyId = authority.GetProperty("pathPolicy").GetProperty("id").GetGuid();
         var evidencePolicyId = authority.GetProperty("evidencePolicy").GetProperty("id").GetGuid();
         var mergePolicyId = authority.GetProperty("mergePolicy").GetProperty("id").GetGuid();
         var catalog = await app.Owner.GetFromJsonAsync<JsonElement>(ApplicationUri(app, "/authority-catalog"));
-        catalog.GetProperty("providerConnections").GetArrayLength().Should().Be(1);
-        catalog.ToString().Should().NotContain("credentialReference");
+        Assert.Equal(1, catalog.GetProperty("providerConnections").GetArrayLength());
+        Assert.DoesNotContain("credentialReference", catalog.ToString());
 
         var validatedResponse = await app.Owner.PostControlJsonAsync(
             ApplicationUri(app, $"/provider-connections/{providerId:D}/validate"),
             new { version = providerVersion });
         var validated = await validatedResponse.Content.ReadFromJsonAsync<JsonElement>();
-        validatedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        validated.GetProperty("status").GetString().Should().Be("Active");
+        Assert.Equal(HttpStatusCode.OK, validatedResponse.StatusCode);
+        Assert.Equal("Active", validated.GetProperty("status").GetString());
         var repositoryProviderId = validated.GetProperty("repositoryProviderId").GetString()!;
         providerVersion = validated.GetProperty("version").GetString()!;
 
@@ -409,33 +393,33 @@ public sealed class WorkspaceHealingConfigurationApiTests
         var crossApplicationActorLinkUri =
             $"/api/workspaces/{app.WorkspaceId:D}/healing/applications/{otherApplication!.Id:D}" +
             $"/provider-connections/{providerId:D}/actor-links/12345";
-        (await app.Owner.PutControlJsonAsync(crossApplicationActorLinkUri, new
+        Assert.Equal(HttpStatusCode.NotFound, (await app.Owner.PutControlJsonAsync(crossApplicationActorLinkUri, new
         {
             providerActorLogin = "cross-application-escalation",
             controlAccountId = memberId
-        })).StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await member.PutControlJsonAsync(actorLinkUri, new
+        })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.PutControlJsonAsync(actorLinkUri, new
         {
             providerActorLogin = "healing-maintainer",
             controlAccountId = memberId
-        })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        (await app.Owner.PutControlJsonAsync(actorLinkUri, new
+        })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await app.Owner.PutControlJsonAsync(actorLinkUri, new
         {
             providerActorLogin = "healing-maintainer",
             controlAccountId = memberId
-        })).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await member.PutControlJsonAsync(actorLinkUri, new
+        })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.PutControlJsonAsync(actorLinkUri, new
         {
             providerActorLogin = "identity-escalation",
             controlAccountId = memberId
-        })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        (await member.DeleteAsync(actorLinkUri)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        (await app.Owner.PutControlJsonAsync(actorLinkUri, new
+        })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.DeleteAsync(actorLinkUri)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await app.Owner.PutControlJsonAsync(actorLinkUri, new
         {
             providerActorLogin = "healing-maintainer-updated",
             controlAccountId = memberId
-        })).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await app.Owner.DeleteAsync(actorLinkUri)).StatusCode.Should().Be(HttpStatusCode.OK);
+        })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await app.Owner.DeleteAsync(actorLinkUri)).StatusCode);
         await using (var auditScope = app.Factory.Services.CreateAsyncScope())
         {
             var auditEvents = await auditScope.ServiceProvider.GetRequiredService<HealingDbContext>()
@@ -443,17 +427,19 @@ public sealed class WorkspaceHealingConfigurationApiTests
                 .Where(x => x.WorkspaceId == app.WorkspaceId && x.AggregateType == "provider-actor-link")
                 .OrderBy(x => x.Sequence)
                 .ToArrayAsync();
-            auditEvents.Select(x => x.EventType).Should().Equal(
-                "actor-link-created", "actor-link-updated", "actor-link-revoked");
-            auditEvents.Should().OnlyContain(x => x.CausationId == app.ApplicationId);
-            auditEvents.Select(x => x.CorrelationId).Should().OnlyHaveUniqueItems();
+            Assert.Equal(
+                ["actor-link-created", "actor-link-updated", "actor-link-revoked"],
+                auditEvents.Select(x => x.EventType));
+            Assert.All(auditEvents, x => Assert.Equal(app.ApplicationId, x.CausationId));
+            var correlationIds = auditEvents.Select(x => x.CorrelationId).ToArray();
+            Assert.Equal(correlationIds.Length, correlationIds.Distinct().Count());
         }
 
-        (await member.PostControlJsonAsync(ApplicationUri(app, "/authority-profiles"), new
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.PostControlJsonAsync(ApplicationUri(app, "/authority-profiles"), new
         {
             name = "Unauthorized", installationId = "99",
             repositoryOwner = "acme", repositoryName = "other", credentialReferenceId
-        })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        })).StatusCode);
         var collectionUri = ApplicationUri(app, "/source-ownership-bindings");
         var request = new
         {
@@ -476,21 +462,20 @@ public sealed class WorkspaceHealingConfigurationApiTests
 
         var draftResponse = await member.PostControlJsonAsync(collectionUri, request);
         var draft = await draftResponse.Content.ReadFromJsonAsync<JsonElement>();
-        draftResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        draft.GetProperty("status").GetString().Should().Be("Draft");
-        draft.GetProperty("version").GetString().Should().NotBeNullOrWhiteSpace();
+        Assert.Equal(HttpStatusCode.OK, draftResponse.StatusCode);
+        Assert.Equal("Draft", draft.GetProperty("status").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(draft.GetProperty("version").GetString()));
         var bindingId = draft.GetProperty("id").GetGuid();
         var applicationAudit = await app.Owner.GetFromJsonAsync<JsonElement>(
             $"/api/workspaces/{app.WorkspaceId:D}/healing/audit?applicationId={app.ApplicationId:D}&take=100");
-        applicationAudit.GetProperty("items").EnumerateArray()
-            .Select(x => x.GetProperty("eventType").GetString())
-            .Should().Contain(["actor-link-created", "actor-link-updated", "actor-link-revoked"]);
+        var auditEventTypes = applicationAudit.GetProperty("items").EnumerateArray()
+            .Select(x => x.GetProperty("eventType").GetString());
+        Assert.All(["actor-link-created", "actor-link-updated", "actor-link-revoked"], eventType => Assert.Contains(eventType, auditEventTypes));
 
         var updateUri = ApplicationUri(app, $"/source-ownership-bindings/{bindingId:D}");
         var missingVersion = await member.PutControlJsonAsync(updateUri, request);
-        missingVersion.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await missingVersion.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString()
-            .Should().Be("healing.binding.version.required");
+        Assert.Equal(HttpStatusCode.BadRequest, missingVersion.StatusCode);
+        Assert.Equal("healing.binding.version.required", (await missingVersion.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
         var updatedRequest = new
         {
             request.name,
@@ -511,12 +496,12 @@ public sealed class WorkspaceHealingConfigurationApiTests
             version = draft.GetProperty("version").GetString()
         };
         var updated = await member.PutControlJsonAsync(updateUri, updatedRequest);
-        updated.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
         var updatedJson = await updated.Content.ReadFromJsonAsync<JsonElement>();
-        updatedJson.GetProperty("version").GetString().Should().NotBe(updatedRequest.version);
+        Assert.NotEqual(updatedRequest.version, updatedJson.GetProperty("version").GetString());
         var stale = await member.PutControlJsonAsync(updateUri, updatedRequest);
-        stale.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        (await stale.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString().Should().Be("healing.binding.stale");
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        Assert.Equal("healing.binding.stale", (await stale.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
 
         var oversizedBinding = new
         {
@@ -537,30 +522,29 @@ public sealed class WorkspaceHealingConfigurationApiTests
             request.mergePolicyId
         };
         var invalidBinding = await member.PostControlJsonAsync(collectionUri, oversizedBinding);
-        invalidBinding.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await invalidBinding.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString()
-            .Should().Be("healing.binding.invalid");
+        Assert.Equal(HttpStatusCode.BadRequest, invalidBinding.StatusCode);
+        Assert.Equal("healing.binding.invalid", (await invalidBinding.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
 
-        (await member.PostAsync(ApplicationUri(app, $"/source-ownership-bindings/{bindingId:D}/activate"), null)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        (await app.Owner.PostAsync(ApplicationUri(app, $"/source-ownership-bindings/{bindingId:D}/activate"), null)).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await app.Owner.PostAsync(ApplicationUri(app, $"/source-ownership-bindings/{bindingId:D}/suspend"), null)).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await app.Owner.PostAsync(ApplicationUri(app, $"/source-ownership-bindings/{bindingId:D}/activate"), null)).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await app.Owner.PostAsync(ApplicationUri(app, $"/source-ownership-bindings/{bindingId:D}/revoke"), null)).StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.PostAsync(ApplicationUri(app, $"/source-ownership-bindings/{bindingId:D}/activate"), null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await app.Owner.PostAsync(ApplicationUri(app, $"/source-ownership-bindings/{bindingId:D}/activate"), null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await app.Owner.PostAsync(ApplicationUri(app, $"/source-ownership-bindings/{bindingId:D}/suspend"), null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await app.Owner.PostAsync(ApplicationUri(app, $"/source-ownership-bindings/{bindingId:D}/activate"), null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await app.Owner.PostAsync(ApplicationUri(app, $"/source-ownership-bindings/{bindingId:D}/revoke"), null)).StatusCode);
 
         var suspendedProvider = await app.Owner.PostControlJsonAsync(
             ApplicationUri(app, $"/provider-connections/{providerId:D}/suspend"),
             new { version = providerVersion });
-        suspendedProvider.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, suspendedProvider.StatusCode);
         var suspendedProviderJson = await suspendedProvider.Content.ReadFromJsonAsync<JsonElement>();
-        suspendedProviderJson.GetProperty("status").GetString().Should().Be("Suspended");
-        (await app.Owner.PostControlJsonAsync(
+        Assert.Equal("Suspended", suspendedProviderJson.GetProperty("status").GetString());
+        Assert.Equal(HttpStatusCode.NotFound, (await app.Owner.PostControlJsonAsync(
             ApplicationUri(app, $"/provider-connections/{providerId:D}/activate"),
-            new { version = suspendedProviderJson.GetProperty("version").GetString() })).StatusCode.Should().Be(HttpStatusCode.NotFound);
+            new { version = suspendedProviderJson.GetProperty("version").GetString() })).StatusCode);
         var revalidatedProvider = await app.Owner.PostControlJsonAsync(
             ApplicationUri(app, $"/provider-connections/{providerId:D}/validate"),
             new { version = suspendedProviderJson.GetProperty("version").GetString() });
-        revalidatedProvider.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await revalidatedProvider.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("status").GetString().Should().Be("Active");
+        Assert.Equal(HttpStatusCode.OK, revalidatedProvider.StatusCode);
+        Assert.Equal("Active", (await revalidatedProvider.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("status").GetString());
     }
 
     private static object EnvironmentRequest(Guid environmentId) => new

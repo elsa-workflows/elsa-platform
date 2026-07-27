@@ -18,7 +18,7 @@ Make source/feed selection a first-class catalog concern. Public browsing and Ru
 
 **Storage**: Existing relational catalog database for sources/packages; later migrations add browseability, account/workspace ownership, external identity mappings, and entitlement snapshots.
 
-**Testing**: xUnit, FluentAssertions, ASP.NET Core WebApplicationFactory integration tests, EF Core persistence tests, and UI/integration tests where source selection behavior is implemented.
+**Testing**: xUnit and its built-in assertions, ASP.NET Core WebApplicationFactory integration tests, EF Core persistence tests, and UI/integration tests where source selection behavior is implemented.
 
 **Target platform**: ASP.NET Core API container deployed to Azure App Service, with static console assets served by the API host and a separate Lovable-built public UX consuming public APIs.
 

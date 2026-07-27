@@ -18,7 +18,7 @@ Add an administrator-only sync run cleanup capability that can delete a single t
 
 **Storage**: Existing relational catalog database. No new durable entity is required; existing `SyncRuns` and `SyncRunItems` are deleted with existing cascade semantics.
 
-**Testing**: xUnit, FluentAssertions, ASP.NET Core WebApplicationFactory integration tests, EF Core persistence tests, Vitest/Testing Library for console behavior where UI controls are added.
+**Testing**: xUnit and its built-in assertions, ASP.NET Core WebApplicationFactory integration tests, EF Core persistence tests, Vitest/Testing Library for console behavior where UI controls are added.
 
 **Target platform**: ASP.NET Core API container deployed to Azure App Service with the built React console served by the API host.
 

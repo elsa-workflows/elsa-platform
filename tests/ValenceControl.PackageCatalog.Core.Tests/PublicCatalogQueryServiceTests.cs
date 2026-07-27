@@ -1,6 +1,5 @@
 using ValenceControl.PackageCatalog.Abstractions.Catalog;
 using ValenceControl.PackageCatalog.Core.Packages;
-using FluentAssertions;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace ValenceControl.PackageCatalog.Core.Tests;
@@ -16,9 +15,9 @@ public sealed class PublicCatalogQueryServiceTests
 
         var packages = await service.ListPackagesAsync([sourceId]);
 
-        packages.Should().ContainSingle(x => x.PackageId == "Elsa.Email");
-        queries.ListPackagesCalled.Should().BeTrue();
-        queries.ListPackageSourceIds.Should().ContainSingle().Which.Should().Be(sourceId);
+        Assert.Single(packages, x => x.PackageId == "Elsa.Email");
+        Assert.True(queries.ListPackagesCalled);
+        Assert.Equal(sourceId, Assert.Single(queries.ListPackageSourceIds));
     }
 
     [Fact]
@@ -33,7 +32,7 @@ public sealed class PublicCatalogQueryServiceTests
         cache.Invalidate();
         await service.ListPackagesAsync();
 
-        queries.ListPackagesCallCount.Should().Be(2);
+        Assert.Equal(2, queries.ListPackagesCallCount);
     }
 
     [Fact]
@@ -46,12 +45,12 @@ public sealed class PublicCatalogQueryServiceTests
 
         var requests = Enumerable.Range(0, 10).Select(_ => service.ListPackagesAsync()).ToList();
         await WaitForAsync(() => queries.ListPackagesCallCount == 1);
-        queries.ListPackagesCallCount.Should().Be(1);
+        Assert.Equal(1, queries.ListPackagesCallCount);
 
         releaseQuery.SetResult();
         await Task.WhenAll(requests);
 
-        queries.ListPackagesCallCount.Should().Be(1);
+        Assert.Equal(1, queries.ListPackagesCallCount);
     }
 
     [Fact]
@@ -79,19 +78,19 @@ public sealed class PublicCatalogQueryServiceTests
         canceledWait.Cancel();
 
         var canceledAct = async () => await waiting;
-        await canceledAct.Should().ThrowAsync<OperationCanceledException>();
+        await Assert.ThrowsAsync<OperationCanceledException>(canceledAct);
 
         var next = cache.GetOrCreateAsync("packages:list", _ =>
         {
             Interlocked.Increment(ref factoryCalls);
             return Task.FromResult(3);
         });
-        factoryCalls.Should().Be(1);
+        Assert.Equal(1, factoryCalls);
 
         releaseFactory.SetResult();
-        (await first).Should().Be(1);
-        (await next).Should().Be(1);
-        factoryCalls.Should().Be(1);
+        Assert.Equal(1, (await first));
+        Assert.Equal(1, (await next));
+        Assert.Equal(1, factoryCalls);
     }
 
     [Fact]
@@ -103,7 +102,7 @@ public sealed class PublicCatalogQueryServiceTests
         await service.ListPackagesAsync([Guid.Parse("00000000-0000-0000-0000-000000000001")]);
         await service.ListPackagesAsync([Guid.Parse("00000000-0000-0000-0000-000000000002")]);
 
-        queries.ListPackagesCallCount.Should().Be(2);
+        Assert.Equal(2, queries.ListPackagesCallCount);
     }
 
     private static PublicCatalogCache CreateCache() =>
@@ -119,7 +118,7 @@ public sealed class PublicCatalogQueryServiceTests
             await Task.Delay(10);
         }
 
-        condition().Should().BeTrue();
+        Assert.True(condition());
     }
 
     private sealed class CapturingPublicCatalogQueries : IPublicCatalogQueries

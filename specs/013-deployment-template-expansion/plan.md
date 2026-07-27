@@ -9,7 +9,7 @@ Extend the bundle generation service with target-specific renderers while keepin
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 LTS for API/Core.
-**Primary Dependencies**: Existing bundle generation service, planner, runtime image metadata, System.Text.Json/YAML text rendering, xUnit, FluentAssertions.
+**Primary Dependencies**: Existing bundle generation service, planner, runtime image metadata, System.Text.Json/YAML text rendering, xUnit and its built-in assertions.
 **Storage**: No new durable storage.
 **Testing**: Renderer snapshot tests and API integration tests.
 **Target platform**: Existing ASP.NET Core modular monolith.

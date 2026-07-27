@@ -1,6 +1,5 @@
 using System.Net;
 using ValenceControl.Api.Authentication;
-using FluentAssertions;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,10 +22,10 @@ public sealed class CustomerAuthenticationTests
 
         var response = await app.CreateClient().GetControlJsonAsync<CustomerAuthSessionResponse>(CustomerAuthenticationDefaults.SessionPath);
 
-        response!.LoginEnabled.Should().BeFalse();
-        response.Authenticated.Should().BeFalse();
-        response.LoginPath.Should().Be(CustomerAuthenticationDefaults.LoginPath);
-        response.LogoutPath.Should().Be(CustomerAuthenticationDefaults.LogoutPath);
+        Assert.False(response!.LoginEnabled);
+        Assert.False(response.Authenticated);
+        Assert.Equal(CustomerAuthenticationDefaults.LoginPath, response.LoginPath);
+        Assert.Equal(CustomerAuthenticationDefaults.LogoutPath, response.LogoutPath);
     }
 
     [Fact]
@@ -42,7 +41,7 @@ public sealed class CustomerAuthenticationTests
         var response = await app.CreateClient(new() { AllowAutoRedirect = false })
             .GetAsync($"{CustomerAuthenticationDefaults.LoginPath}?returnUrl=/admin/runtime-builder");
 
-        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
     }
 
     [Theory]
@@ -62,7 +61,7 @@ public sealed class CustomerAuthenticationTests
     [InlineData("/api/auth/callback", CustomerAuthenticationDefaults.DefaultReturnPath)]
     public void Safe_return_url_accepts_only_root_relative_paths(string? returnUrl, string expected)
     {
-        CustomerAuthEndpoints.GetSafeReturnUrl(returnUrl).Should().Be(expected);
+        Assert.Equal(expected, CustomerAuthEndpoints.GetSafeReturnUrl(returnUrl));
     }
 
     [Fact]
@@ -74,11 +73,11 @@ public sealed class CustomerAuthenticationTests
         var customer = options.Get(CustomerAuthenticationDefaults.CookieScheme);
         var admin = options.Get(AdminDashboardAuthenticationDefaults.Scheme);
 
-        customer.Cookie.Name.Should().Be(CustomerAuthenticationDefaults.CookieName);
-        customer.Cookie.Name.Should().NotBe(admin.Cookie.Name);
-        customer.Cookie.HttpOnly.Should().BeTrue();
-        customer.ExpireTimeSpan.Should().Be(CustomerAuthenticationDefaults.SessionLifetime);
-        customer.SlidingExpiration.Should().BeTrue();
+        Assert.Equal(CustomerAuthenticationDefaults.CookieName, customer.Cookie.Name);
+        Assert.NotEqual(admin.Cookie.Name, customer.Cookie.Name);
+        Assert.True(customer.Cookie.HttpOnly);
+        Assert.Equal(CustomerAuthenticationDefaults.SessionLifetime, customer.ExpireTimeSpan);
+        Assert.True(customer.SlidingExpiration);
     }
 
     [Fact]
@@ -92,9 +91,9 @@ public sealed class CustomerAuthenticationTests
             RedirectUri = CustomerAuthenticationDefaults.CallbackPath
         });
 
-        options.PushedAuthorizationBehavior.Should().Be(PushedAuthorizationBehavior.Disable);
-        options.CorrelationCookie.Path.Should().Be(CustomerAuthenticationDefaults.CallbackPath);
-        options.NonceCookie.Path.Should().Be(CustomerAuthenticationDefaults.CallbackPath);
+        Assert.Equal(PushedAuthorizationBehavior.Disable, options.PushedAuthorizationBehavior);
+        Assert.Equal(CustomerAuthenticationDefaults.CallbackPath, options.CorrelationCookie.Path);
+        Assert.Equal(CustomerAuthenticationDefaults.CallbackPath, options.NonceCookie.Path);
     }
 
     [Fact]
@@ -107,7 +106,7 @@ public sealed class CustomerAuthenticationTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -120,6 +119,6 @@ public sealed class CustomerAuthenticationTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 }

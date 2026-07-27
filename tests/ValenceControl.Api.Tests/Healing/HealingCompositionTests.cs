@@ -10,7 +10,6 @@ using ValenceControl.Healing.Core.Ownership;
 using ValenceControl.Healing.Core.Providers;
 using ValenceControl.Healing.Core.Repairs;
 using ValenceControl.Api.Workspace.Healing;
-using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
@@ -38,22 +37,19 @@ public sealed class HealingCompositionTests
         services.AddControlHealing(configuration, Environment("Development"));
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-        provider.GetRequiredService<IOptions<HealingOptions>>().Value.DiscoveryEnabled.Should().BeFalse();
-        provider.GetRequiredService<HealingKillSwitch>().Should().NotBeNull();
+        Assert.False(provider.GetRequiredService<IOptions<HealingOptions>>().Value.DiscoveryEnabled);
+        Assert.NotNull(provider.GetRequiredService<HealingKillSwitch>());
         var permissionContribution = provider.GetServices<IWorkspacePermissionContribution>().Single();
-        permissionContribution.All.Should().BeEquivalentTo(HealingPermissions.All);
-        permissionContribution.OwnerDefaults.Should().BeEquivalentTo(HealingPermissions.All);
+        Assert.Equivalent(HealingPermissions.All, permissionContribution.All);
+        Assert.Equivalent(HealingPermissions.All, permissionContribution.OwnerDefaults);
         using var scope = provider.CreateScope();
-        scope.ServiceProvider.GetRequiredService<HealingDbContext>().Should().NotBeNull();
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<HealingDbContext>());
         var store = scope.ServiceProvider.GetRequiredService<HealingStore>();
-        scope.ServiceProvider.GetRequiredService<IHealingAuditStore>().Should().BeSameAs(store);
-        scope.ServiceProvider.GetRequiredService<IHealingMergeEvaluationStore>()
-            .Should().BeOfType<HealingMergeEvaluationStore>();
-        scope.ServiceProvider.GetRequiredService<IHumanProviderCommandStore>()
-            .Should().BeOfType<HealingHumanProviderCommandStore>();
-        scope.ServiceProvider.GetRequiredService<HealingAuditService>().Should().NotBeNull();
-        scope.ServiceProvider.GetRequiredService<IProviderConnectionValidator>()
-            .Should().BeOfType<GitHubProviderConnectionValidator>();
+        Assert.Same(store, scope.ServiceProvider.GetRequiredService<IHealingAuditStore>());
+        Assert.IsType<HealingMergeEvaluationStore>(scope.ServiceProvider.GetRequiredService<IHealingMergeEvaluationStore>());
+        Assert.IsType<HealingHumanProviderCommandStore>(scope.ServiceProvider.GetRequiredService<IHumanProviderCommandStore>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<HealingAuditService>());
+        Assert.IsType<GitHubProviderConnectionValidator>(scope.ServiceProvider.GetRequiredService<IProviderConnectionValidator>());
     }
 
     [Fact]
@@ -70,8 +66,8 @@ public sealed class HealingCompositionTests
         using var provider = services.BuildServiceProvider();
         var resolve = () => provider.GetRequiredService<IOptions<HealingOptions>>().Value;
 
-        resolve.Should().Throw<OptionsValidationException>()
-            .WithMessage("*LeaseDuration*");
+        var exception = Assert.Throws<OptionsValidationException>(resolve);
+        Assert.Contains("LeaseDuration", exception.Message);
     }
 
     [Fact]
@@ -89,13 +85,14 @@ public sealed class HealingCompositionTests
         var killSwitch = provider.GetRequiredService<HealingKillSwitch>();
         var workspace = new HealingWorkspaceConfiguration();
         var application = new HealingConfiguration { DiscoveryEnabled = true };
-        killSwitch.CanDiscover(workspace, application).Allowed.Should().BeTrue();
+        Assert.True(killSwitch.CanDiscover(workspace, application).Allowed);
 
         configuration["Healing:ControlKillSwitch"] = "true";
         ((IConfigurationRoot)configuration).Reload();
 
-        killSwitch.CanDiscover(workspace, application).Should().Be(
-            HealingGateResult.Block(HealingGateReasonCodes.ControlKillSwitch));
+        Assert.Equal(
+            HealingGateResult.Block(HealingGateReasonCodes.ControlKillSwitch),
+            killSwitch.CanDiscover(workspace, application));
     }
 
     [Theory]
@@ -118,7 +115,7 @@ public sealed class HealingCompositionTests
             .AddHostedWorker<TestHealingWorker>();
 
         using var provider = services.BuildServiceProvider();
-        provider.GetServices<IHostedService>().OfType<TestHealingWorker>().Any().Should().Be(expected);
+        Assert.Equal(expected, provider.GetServices<IHostedService>().OfType<TestHealingWorker>().Any());
     }
 
     [Theory]
@@ -153,13 +150,13 @@ public sealed class HealingCompositionTests
         using var provider = services.BuildServiceProvider();
         if (configurationKey.EndsWith(nameof(HealingOptions.IncidentReviewEnabled), StringComparison.Ordinal))
         {
-            provider.GetServices<IHostedService>().OfType<HealingSignalInboxHostedService>().Any().Should().Be(enabled);
-            provider.GetServices<IHealingEndpointModule>().OfType<WorkspaceHealingIncidentEndpointModule>().Any().Should().Be(enabled);
+            Assert.Equal(enabled, provider.GetServices<IHostedService>().OfType<HealingSignalInboxHostedService>().Any());
+            Assert.Equal(enabled, provider.GetServices<IHealingEndpointModule>().OfType<WorkspaceHealingIncidentEndpointModule>().Any());
         }
         else
         {
-            provider.GetServices<IHostedService>().OfType<HealingVerificationHostedService>().Any().Should().Be(enabled);
-            provider.GetServices<IHealingEndpointModule>().OfType<HealingVerificationEndpointModule>().Any().Should().Be(enabled);
+            Assert.Equal(enabled, provider.GetServices<IHostedService>().OfType<HealingVerificationHostedService>().Any());
+            Assert.Equal(enabled, provider.GetServices<IHealingEndpointModule>().OfType<HealingVerificationEndpointModule>().Any());
         }
     }
 
@@ -185,11 +182,9 @@ public sealed class HealingCompositionTests
                 HealingOptions.VerificationEnabledConfigurationKey);
 
         using var provider = services.BuildServiceProvider();
-        provider.GetServices<IHostedService>()
-            .Should().ContainSingle(x => x is HealingVerificationFailureDeliveryHostedService);
+        Assert.Single(provider.GetServices<IHostedService>(), x => x is HealingVerificationFailureDeliveryHostedService);
         using var scope = provider.CreateScope();
-        scope.ServiceProvider.GetServices<IRepairVerificationFailureConsumer>()
-            .Should().ContainSingle(x => x is TestVerificationFailureConsumer);
+        Assert.Single(scope.ServiceProvider.GetServices<IRepairVerificationFailureConsumer>(), x => x is TestVerificationFailureConsumer);
     }
 
     [Fact]
@@ -208,8 +203,7 @@ public sealed class HealingCompositionTests
 
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
-        scope.ServiceProvider.GetServices<IRepairVerificationFailureConsumer>()
-            .Should().ContainSingle(x => x is HttpRepairVerificationFailureConsumer);
+        Assert.Single(scope.ServiceProvider.GetServices<IRepairVerificationFailureConsumer>(), x => x is HttpRepairVerificationFailureConsumer);
     }
 
     [Fact]
@@ -226,7 +220,7 @@ public sealed class HealingCompositionTests
 
         using var provider = services.BuildServiceProvider();
         var resolveOptions = () => provider.GetRequiredService<IOptions<HealingVerificationFailureDeliveryOptions>>().Value;
-        resolveOptions.Should().Throw<OptionsValidationException>();
+        Assert.Throws<OptionsValidationException>(resolveOptions);
     }
 
     [Fact]
@@ -248,8 +242,8 @@ public sealed class HealingCompositionTests
             await scope.ServiceProvider.MigrateControlHealingDatabaseAsync();
 
             var dbContext = scope.ServiceProvider.GetRequiredService<HealingDbContext>();
-            (await dbContext.Database.GetAppliedMigrationsAsync()).Should().NotBeEmpty();
-            (await dbContext.HealingConfigurations.CountAsync()).Should().Be(0);
+            Assert.NotEmpty((await dbContext.Database.GetAppliedMigrationsAsync()));
+            Assert.Equal(0, (await dbContext.HealingConfigurations.CountAsync()));
         }
         finally
         {
@@ -268,7 +262,7 @@ public sealed class HealingCompositionTests
 
         app.MapControlHealingEndpoints();
 
-        module.WasMapped.Should().BeTrue();
+        Assert.True(module.WasMapped);
     }
 
     private static IConfiguration Configuration(IReadOnlyDictionary<string, string?> values) =>

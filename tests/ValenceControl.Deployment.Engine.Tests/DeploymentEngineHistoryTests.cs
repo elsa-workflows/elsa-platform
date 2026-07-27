@@ -1,7 +1,6 @@
 using ValenceControl.Deployment.Abstractions;
 using ValenceControl.Deployment.Abstractions.History;
 using ValenceControl.Deployment.Abstractions.Resources;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Engine.Tests;
 
@@ -27,8 +26,8 @@ public class DeploymentEngineHistoryTests
         await foreach (var item in _history.ListAsync(DeploymentEngineTestFixtures.TargetDescriptor))
             listed.Add(item);
 
-        found.Should().Be(record);
-        listed.Should().ContainSingle().Which.Should().Be(record);
+        Assert.Equal(record, found);
+        Assert.Equal(record, Assert.Single(listed));
     }
 
     [Fact]
@@ -42,12 +41,12 @@ public class DeploymentEngineHistoryTests
         var result = await engine.ApplyAsync(plan, _target, new DeploymentExecutionContext(actor));
         var history = await _history.FindAsync(result.DeploymentId);
 
-        history.Should().NotBeNull();
-        history!.DeploymentId.Should().Be("deploy-1");
-        history.Target.Should().Be(DeploymentEngineTestFixtures.TargetDescriptor);
-        history.Actor.Should().Be(actor);
-        history.Artifact.Should().Be(DeploymentEngineTestFixtures.Artifact);
-        history.Plan.Should().Be(plan);
-        history.CompletedAt.Should().NotBeNull();
+        Assert.NotNull(history);
+        Assert.Equal("deploy-1", history!.DeploymentId);
+        Assert.Equal(DeploymentEngineTestFixtures.TargetDescriptor, history.Target);
+        Assert.Equal(actor, history.Actor);
+        Assert.Equal(DeploymentEngineTestFixtures.Artifact, history.Artifact);
+        Assert.Equal(plan, history.Plan);
+        Assert.NotNull(history.CompletedAt);
     }
 }

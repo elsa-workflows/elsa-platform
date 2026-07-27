@@ -16,7 +16,7 @@ The API exposes authorized workspace routes for setup, cockpit, promotion previe
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence/worker; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, ASP.NET Core hosted services for the first in-process queue worker, existing workspace identity, new workspace permission grants, EF Core catalog persistence, `ValenceControl.Deployment.Abstractions`, `ValenceControl.Deployment.Engine`, React Router, TanStack Query, Vitest, Playwright where needed, xUnit, and FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, ASP.NET Core hosted services for the first in-process queue worker, existing workspace identity, new workspace permission grants, EF Core catalog persistence, `ValenceControl.Deployment.Abstractions`, `ValenceControl.Deployment.Engine`, React Router, TanStack Query, Vitest, Playwright where needed, xUnit and its built-in assertions.
 
 **Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Deployment tables store provider-backed secret references only, structured desired-state records, permission grants, confirmation metadata, queued run state, and append-only history.
 

@@ -4,7 +4,6 @@ using ValenceControl.Api.Public.Builder;
 using ValenceControl.PackageCatalog.Core.Manifests;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -38,13 +37,13 @@ public sealed class PublicBuilderApiTests
 
         var catalog = await app.CreateClient().GetFromJsonAsync<BuilderCatalogResponse>("/api/builder/catalog");
 
-        catalog.Should().NotBeNull();
-        var package = catalog!.Packages.Should().ContainSingle(x => x.PackageId == "Elsa.RabbitMq").Subject;
-        package.Source.Name.Should().Be("Test NuGet");
-        package.Source.Url.Should().Be("https://example.test/v3/index.json");
-        var feature = package.Versions.Single().Features.Should().ContainSingle(x => x.FeatureId == "rabbitmq-messaging").Subject;
-        feature.Infrastructure.Should().ContainSingle(x => x.Kind == "message-broker" && x.ConfigurationKeys.Contains("RabbitMq:ConnectionString"));
-        catalog.InfrastructureProviders.Should().Contain(x => x.Kind == "message-broker" && x.Provider == "rabbitmq");
+        Assert.NotNull(catalog);
+        var package = Assert.Single(catalog!.Packages, x => x.PackageId == "Elsa.RabbitMq");
+        Assert.Equal("Test NuGet", package.Source.Name);
+        Assert.Equal("https://example.test/v3/index.json", package.Source.Url);
+        var feature = Assert.Single(package.Versions.Single().Features, x => x.FeatureId == "rabbitmq-messaging");
+        Assert.Single(feature.Infrastructure, x => x.Kind == "message-broker" && x.ConfigurationKeys.Contains("RabbitMq:ConnectionString"));
+        Assert.Contains(catalog.InfrastructureProviders, x => x.Kind == "message-broker" && x.Provider == "rabbitmq");
     }
 
     [Fact]
@@ -82,12 +81,12 @@ public sealed class PublicBuilderApiTests
 
         var catalog = await app.CreateClient().GetFromJsonAsync<BuilderCatalogResponse>("/api/builder/catalog");
 
-        catalog!.Images.Single(x => x.Slug == "elsa-pro-server").RuntimeKinds.Should().BeEquivalentTo("elsa.server");
-        catalog.Images.Single(x => x.Slug == "elsa-pro-studio").RuntimeKinds.Should().BeEquivalentTo("elsa.studio");
-        catalog.Images.Single(x => x.Slug == "elsa-pro-combined").RuntimeKinds.Should().BeEquivalentTo("elsa.server", "elsa.studio");
+        Assert.Equal(new[] { "elsa.server" }, catalog!.Images.Single(x => x.Slug == "elsa-pro-server").RuntimeKinds);
+        Assert.Equal(new[] { "elsa.studio" }, catalog.Images.Single(x => x.Slug == "elsa-pro-studio").RuntimeKinds);
+        Assert.Equal(new[] { "elsa.server", "elsa.studio" }.Order(), catalog.Images.Single(x => x.Slug == "elsa-pro-combined").RuntimeKinds.Order());
         var features = catalog.Packages.Single(x => x.PackageId == "Elsa.RuntimeKinds").Versions.Single().Features;
-        features.Single(x => x.FeatureId == "server-default").RuntimeKinds.Should().BeEquivalentTo("elsa.server");
-        features.Single(x => x.FeatureId == "studio-override").RuntimeKinds.Should().BeEquivalentTo("elsa.studio");
+        Assert.Equal(new[] { "elsa.server" }, features.Single(x => x.FeatureId == "server-default").RuntimeKinds);
+        Assert.Equal(new[] { "elsa.studio" }, features.Single(x => x.FeatureId == "studio-override").RuntimeKinds);
     }
 
     [Fact]
@@ -110,8 +109,8 @@ public sealed class PublicBuilderApiTests
 
         var catalog = await app.CreateClient().GetFromJsonAsync<BuilderCatalogResponse>($"/api/builder/catalog?sourceIds={selectedSourceId}");
 
-        catalog!.Packages.Should().ContainSingle(x => x.PackageId == "Elsa.Selected");
-        catalog.Packages.Should().NotContain(x => x.PackageId == "Elsa.Hidden");
+        Assert.Single(catalog!.Packages, x => x.PackageId == "Elsa.Selected");
+        Assert.DoesNotContain(catalog.Packages, x => x.PackageId == "Elsa.Hidden");
     }
 
     [Fact]
@@ -145,10 +144,10 @@ public sealed class PublicBuilderApiTests
 
         var catalog = await app.CreateClient().GetFromJsonAsync<BuilderCatalogResponse>("/api/builder/catalog");
 
-        catalog!.Packages.Should().Contain(x => x.PackageId == "Elsa.ServerOnly");
-        catalog.Packages.Should().Contain(x => x.PackageId == "Elsa.Mixed");
-        catalog.Packages.Should().Contain(x => x.PackageId == "Elsa.StudioOnly");
-        catalog.Packages.Single(x => x.PackageId == "Elsa.Mixed").Versions.Single().Features.Select(x => x.FeatureId).Should().BeEquivalentTo("server", "studio");
+        Assert.Contains(catalog!.Packages, x => x.PackageId == "Elsa.ServerOnly");
+        Assert.Contains(catalog.Packages, x => x.PackageId == "Elsa.Mixed");
+        Assert.Contains(catalog.Packages, x => x.PackageId == "Elsa.StudioOnly");
+        Assert.Equal(new[] { "server", "studio" }.Order(), catalog.Packages.Single(x => x.PackageId == "Elsa.Mixed").Versions.Single().Features.Select(x => x.FeatureId).Order());
     }
 
     [Fact]
@@ -161,7 +160,7 @@ public sealed class PublicBuilderApiTests
             elsaVersion = "1.0.0"
         });
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Theory]
@@ -180,10 +179,10 @@ public sealed class PublicBuilderApiTests
             }
         });
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<BuilderResolveResponse>();
-        body!.Compatible.Should().BeFalse();
-        body.Findings.Should().ContainSingle(x => x.Code == "package.invalidSelection");
+        Assert.False(body!.Compatible);
+        Assert.Single(body.Findings, x => x.Code == "package.invalidSelection");
     }
 
     [Fact]
@@ -220,7 +219,7 @@ public sealed class PublicBuilderApiTests
         });
 
         var body = await result.Content.ReadFromJsonAsync<BuilderResolveResponse>();
-        body!.Compatible.Should().BeTrue();
+        Assert.True(body!.Compatible);
     }
 
     [Fact]
@@ -267,7 +266,7 @@ public sealed class PublicBuilderApiTests
         });
 
         var body = await result.Content.ReadFromJsonAsync<BuilderResolveResponse>();
-        body!.Compatible.Should().BeTrue();
+        Assert.True(body!.Compatible);
     }
 
     [Fact]
@@ -296,9 +295,12 @@ public sealed class PublicBuilderApiTests
         });
 
         var body = await result.Content.ReadFromJsonAsync<BuilderResolveResponse>();
-        body!.Compatible.Should().BeFalse();
-        body.Findings.Should().ContainSingle(x => x.Code == "package.missing");
-        body.Findings.Select(x => x.Code).Should().NotContain(["package.invalid", "package.notApproved", "package.suspicious"]);
+        Assert.False(body!.Compatible);
+        Assert.Single(body.Findings, x => x.Code == "package.missing");
+        var findingCodes = body.Findings.Select(x => x.Code);
+        Assert.DoesNotContain("package.invalid", findingCodes);
+        Assert.DoesNotContain("package.notApproved", findingCodes);
+        Assert.DoesNotContain("package.suspicious", findingCodes);
     }
 
     [Fact]
@@ -354,8 +356,8 @@ public sealed class PublicBuilderApiTests
         });
 
         var body = await response.Content.ReadFromJsonAsync<BuilderResolveResponse>();
-        body!.Compatible.Should().BeFalse();
-        body.Findings.Should().Contain(x => x.Code == "feature.packageDependency");
-        body.Findings.Should().Contain(x => x.Code == "feature.conflict");
+        Assert.False(body!.Compatible);
+        Assert.Contains(body.Findings, x => x.Code == "feature.packageDependency");
+        Assert.Contains(body.Findings, x => x.Code == "feature.conflict");
     }
 }

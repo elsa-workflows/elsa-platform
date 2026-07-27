@@ -3,7 +3,6 @@ using ValenceControl.Deployment.Abstractions.Artifacts;
 using ValenceControl.Deployment.Artifacts;
 using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
-using FluentAssertions;
 using Xunit;
 
 namespace ValenceControl.Deployment.Core.Tests;
@@ -27,9 +26,9 @@ public sealed class DeploymentDeployabilityServiceTests
 
         var result = await fixture.Service.EvaluateAsync(_workspaceId, _revisionId, fixture.Request);
 
-        result.Status.Should().Be(DeploymentDeployabilityStatus.Deployable);
-        result.Blockers.Should().BeEmpty();
-        result.Artifacts.Single().RequiredCapabilities.Should().ContainSingle(ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe));
+        Assert.Equal(DeploymentDeployabilityStatus.Deployable, result.Status);
+        Assert.Empty(result.Blockers);
+        Assert.Single(result.Artifacts.Single().RequiredCapabilities, ArtifactApplyCapability.For(ArtifactTypeIds.ElsaLoomRecipe));
     }
 
     [Fact]
@@ -42,9 +41,11 @@ public sealed class DeploymentDeployabilityServiceTests
 
         var result = await fixture.Service.EvaluateAsync(_workspaceId, _revisionId, fixture.Request);
 
-        result.Status.Should().Be(DeploymentDeployabilityStatus.Blocked);
-        result.Blockers.Select(x => x.Id).Should().Contain(["artifact.capability.missing", "engine.capabilities.missing", "engine.capabilities.stale"]);
-        result.Blockers.Should().OnlyContain(x => !string.IsNullOrWhiteSpace(x.Remediation));
+        Assert.Equal(DeploymentDeployabilityStatus.Blocked, result.Status);
+        Assert.All(
+            new[] { "artifact.capability.missing", "engine.capabilities.missing", "engine.capabilities.stale" },
+            id => Assert.Contains(id, result.Blockers.Select(x => x.Id)));
+        Assert.All(result.Blockers, x => Assert.True(!string.IsNullOrWhiteSpace(x.Remediation)));
     }
 
     [Fact]
@@ -66,9 +67,11 @@ public sealed class DeploymentDeployabilityServiceTests
 
         var result = await fixture.Service.EvaluateAsync(_workspaceId, _revisionId, fixture.Request);
 
-        result.Status.Should().Be(DeploymentDeployabilityStatus.Blocked);
-        result.Blockers.Select(x => x.Id).Should().Contain(["artifact.archived", "artifact.type.unsupported", "artifact.inspection.invalid", "artifact.payload.unavailable"]);
-        result.Blockers.Should().OnlyContain(x => !string.IsNullOrWhiteSpace(x.Remediation));
+        Assert.Equal(DeploymentDeployabilityStatus.Blocked, result.Status);
+        Assert.All(
+            new[] { "artifact.archived", "artifact.type.unsupported", "artifact.inspection.invalid", "artifact.payload.unavailable" },
+            id => Assert.Contains(id, result.Blockers.Select(x => x.Id)));
+        Assert.All(result.Blockers, x => Assert.True(!string.IsNullOrWhiteSpace(x.Remediation)));
     }
 
     [Fact]
@@ -81,8 +84,8 @@ public sealed class DeploymentDeployabilityServiceTests
 
         var result = await fixture.Service.EvaluateAsync(_workspaceId, _revisionId, fixture.Request);
 
-        result.Status.Should().Be(DeploymentDeployabilityStatus.Blocked);
-        result.Blockers.Should().ContainSingle(x => x.Id == "artifact.schema.unsupported");
+        Assert.Equal(DeploymentDeployabilityStatus.Blocked, result.Status);
+        Assert.Single(result.Blockers, x => x.Id == "artifact.schema.unsupported");
     }
 
     [Fact]
@@ -103,9 +106,9 @@ public sealed class DeploymentDeployabilityServiceTests
         var result = await fixture.Service.EvaluateAsync(_workspaceId, _revisionId, fixture.Request);
         stopwatch.Stop();
 
-        result.Status.Should().Be(DeploymentDeployabilityStatus.Deployable);
-        result.Artifacts.Should().HaveCount(10);
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
+        Assert.Equal(DeploymentDeployabilityStatus.Deployable, result.Status);
+        Assert.Equal(10, result.Artifacts.Count());
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1));
     }
 
     private sealed class DeployabilityFixture

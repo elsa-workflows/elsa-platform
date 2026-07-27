@@ -1,6 +1,5 @@
 using System.Text;
 using ValenceControl.Healing.GitHub;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.GitHub.Tests;
 
@@ -18,8 +17,9 @@ public sealed class GitHubWebhookProcessorTests
         }
         """));
 
-        observation.Should().BeOfType<GitHubPullRequestObservation>().Which.Should().Match<GitHubPullRequestObservation>(x =>
-            x.Number == 12 && x.IsMerged && x.MergeRevision == new string('c', 40));
+        var pullRequest = Assert.IsType<GitHubPullRequestObservation>(observation);
+        Assert.True(
+            pullRequest.Number == 12 && pullRequest.IsMerged && pullRequest.MergeRevision == new string('c', 40));
     }
 
     [Fact]
@@ -32,7 +32,7 @@ public sealed class GitHubWebhookProcessorTests
         }
         """));
 
-        observation.Should().BeNull();
+        Assert.Null(observation);
     }
 
     [Theory]
@@ -42,8 +42,8 @@ public sealed class GitHubWebhookProcessorTests
     {
         var json = IssueComment(body);
 
-        _processor.Parse("issue_comment", Body(json)).Should().BeOfType<GitHubIssueCommandObservation>()
-            .Which.Command.Should().Be(expected);
+        var command = Assert.IsType<GitHubIssueCommandObservation>(_processor.Parse("issue_comment", Body(json)));
+        Assert.Equal(expected, command.Command);
     }
 
     [Theory]
@@ -54,7 +54,7 @@ public sealed class GitHubWebhookProcessorTests
     {
         var json = IssueComment(body);
 
-        _processor.Parse("issue_comment", Body(json)).Should().BeNull();
+        Assert.Null(_processor.Parse("issue_comment", Body(json)));
     }
 
     private static byte[] Body(string json) => Encoding.UTF8.GetBytes(json);

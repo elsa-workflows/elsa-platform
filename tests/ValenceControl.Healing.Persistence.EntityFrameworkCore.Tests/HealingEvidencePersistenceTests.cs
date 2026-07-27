@@ -1,6 +1,5 @@
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Core.Repairs;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 
 namespace ValenceControl.Healing.Persistence.EntityFrameworkCore.Tests;
@@ -25,11 +24,10 @@ public sealed class HealingEvidencePersistenceTests
         bundle.CanonicalJson = "{\"mutated\":true}";
         var mutation = () => fixture.Db.SaveChangesAsync();
 
-        accepted.Should().BeTrue();
-        replay.Should().BeFalse();
-        crossWorkspace.Should().BeNull();
-        await mutation.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*append-only*");
+        Assert.True(accepted);
+        Assert.False(replay);
+        Assert.Null(crossWorkspace);
+        Assert.Contains("append-only", (await Assert.ThrowsAsync<InvalidOperationException>(mutation)).Message);
     }
 
     [Fact]
@@ -99,9 +97,9 @@ public sealed class HealingEvidencePersistenceTests
             incident.Id,
             new HashSet<EvidenceField> { EvidenceField.ExceptionType, EvidenceField.OperationName }));
 
-        snapshot.Values.Should().ContainKey(EvidenceField.ExceptionType).WhoseValue.Should().Be("System.InvalidOperationException");
-        snapshot.Values.Should().ContainKey(EvidenceField.OperationName).WhoseValue.Should().Be("workflow.execute");
-        snapshot.Values.Should().NotContainKey(EvidenceField.TraceCorrelation);
+        Assert.Equal("System.InvalidOperationException", snapshot.Values[EvidenceField.ExceptionType]);
+        Assert.Equal("workflow.execute", snapshot.Values[EvidenceField.OperationName]);
+        Assert.DoesNotContain(EvidenceField.TraceCorrelation, snapshot.Values);
     }
 
     private static HealingIncident CreateIncident(Guid workspaceId, Guid applicationId) => new()

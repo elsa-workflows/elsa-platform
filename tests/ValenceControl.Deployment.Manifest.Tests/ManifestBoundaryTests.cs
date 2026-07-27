@@ -1,5 +1,4 @@
 using System.Xml.Linq;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Manifest.Tests;
 
@@ -57,8 +56,8 @@ public class ManifestBoundaryTests
             .Cast<string>()
             .ToArray();
 
-        references.Should().Contain(reference => reference.Contains("ValenceControl.Deployment.Abstractions", StringComparison.Ordinal));
-        references.Should().NotContain(reference =>
+        Assert.Contains(references, reference => reference.Contains("ValenceControl.Deployment.Abstractions", StringComparison.Ordinal));
+        Assert.DoesNotContain(references, reference =>
             _forbiddenReferenceFragments.Any(fragment => reference.Contains(fragment, StringComparison.OrdinalIgnoreCase)));
     }
 
@@ -72,14 +71,13 @@ public class ManifestBoundaryTests
         var packageReferences = references.Where(reference => !reference.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)).ToArray();
         var allowedPackageReferences = new[]
         {
-            "FluentAssertions",
             "Microsoft.NET.Test.Sdk",
             "xunit",
             "xunit.runner.visualstudio"
         };
 
-        packageReferences.Should().OnlyContain(reference => allowedPackageReferences.Contains(reference));
-        references.Should().NotContain(reference =>
+        Assert.All(packageReferences, reference => Assert.True(allowedPackageReferences.Contains(reference)));
+        Assert.DoesNotContain(references, reference =>
             _forbiddenReferenceFragments.Any(fragment => reference.Contains(fragment, StringComparison.OrdinalIgnoreCase)));
     }
 
@@ -96,7 +94,7 @@ public class ManifestBoundaryTests
                 .Select(file => File.ReadAllText(file.FullName)));
 
         foreach (var phrase in _forbiddenSourcePhrases)
-            sourceText.Contains(phrase, StringComparison.OrdinalIgnoreCase).Should().BeFalse($"manifest parsing must not depend on {phrase}");
+            Assert.False(sourceText.Contains(phrase, StringComparison.OrdinalIgnoreCase), $"manifest parsing must not depend on {phrase}");
     }
 
     private static IReadOnlyCollection<string> ReferencesFrom(FileInfo projectFile)

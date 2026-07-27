@@ -1,6 +1,5 @@
 using System.IO.Compression;
 using ValenceControl.PackageCatalog.Sources.NuGet;
-using FluentAssertions;
 
 namespace ValenceControl.PackageCatalog.Sources.NuGet.Tests;
 
@@ -25,7 +24,7 @@ public sealed class PackageArchiveManifestReaderSafetyTests
         stream.Position = 0;
         var result = await new PackageArchiveManifestReader().ReadAsync(stream);
 
-        result.Exists.Should().BeTrue();
-        result.ManifestJson.Should().Be("{}");
+        Assert.True(result.Exists);
+        Assert.Equal("{}", result.ManifestJson);
     }
 }

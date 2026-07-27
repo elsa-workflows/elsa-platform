@@ -1,6 +1,5 @@
 using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
-using FluentAssertions;
 using Xunit;
 
 namespace ValenceControl.Deployment.Core.Tests;
@@ -24,10 +23,10 @@ public sealed class ConfirmationServiceTests
         var first = await service.ConsumeConfirmationAsync(_workspaceId, confirmation.Id, _accountId, ConfirmationActionType.Deploy, _targetId.ToString("D"));
         var replay = await service.ConsumeConfirmationAsync(_workspaceId, confirmation.Id, _accountId, ConfirmationActionType.Deploy, _targetId.ToString("D"));
 
-        first.Succeeded.Should().BeTrue();
-        first.Confirmation!.UsedAt.Should().Be(_clock.GetUtcNow());
-        replay.Succeeded.Should().BeFalse();
-        replay.Validation.Id.Should().Be("deployment.confirmation.used");
+        Assert.True(first.Succeeded);
+        Assert.Equal(_clock.GetUtcNow(), first.Confirmation!.UsedAt);
+        Assert.False(replay.Succeeded);
+        Assert.Equal("deployment.confirmation.used", replay.Validation.Id);
     }
 
     [Fact]
@@ -40,9 +39,9 @@ public sealed class ConfirmationServiceTests
 
         var result = await service.ConsumeConfirmationAsync(_workspaceId, confirmation.Id, Guid.NewGuid(), ConfirmationActionType.Deploy, _targetId.ToString("D"));
 
-        result.Succeeded.Should().BeFalse();
-        result.Validation.Id.Should().Be("deployment.confirmation.account");
-        _store.Confirmations[confirmation.Id].UsedAt.Should().BeNull();
+        Assert.False(result.Succeeded);
+        Assert.Equal("deployment.confirmation.account", result.Validation.Id);
+        Assert.Null(_store.Confirmations[confirmation.Id].UsedAt);
     }
 
     [Fact]
@@ -56,9 +55,9 @@ public sealed class ConfirmationServiceTests
 
         var result = await service.ConsumeConfirmationAsync(_workspaceId, confirmation.Id, _accountId, ConfirmationActionType.Rollback, _targetId.ToString("D"));
 
-        result.Succeeded.Should().BeFalse();
-        result.Validation.Id.Should().Be("deployment.confirmation.expired");
-        _store.Confirmations[confirmation.Id].UsedAt.Should().BeNull();
+        Assert.False(result.Succeeded);
+        Assert.Equal("deployment.confirmation.expired", result.Validation.Id);
+        Assert.Null(_store.Confirmations[confirmation.Id].UsedAt);
     }
 
     [Fact]
@@ -72,9 +71,9 @@ public sealed class ConfirmationServiceTests
         var actionMismatch = await service.ConsumeConfirmationAsync(_workspaceId, confirmation.Id, _accountId, ConfirmationActionType.Rollback, _targetId.ToString("D"));
         var targetMismatch = await service.ConsumeConfirmationAsync(_workspaceId, confirmation.Id, _accountId, ConfirmationActionType.Deploy, Guid.NewGuid().ToString("D"));
 
-        actionMismatch.Validation.Id.Should().Be("deployment.confirmation.target");
-        targetMismatch.Validation.Id.Should().Be("deployment.confirmation.target");
-        _store.Confirmations[confirmation.Id].UsedAt.Should().BeNull();
+        Assert.Equal("deployment.confirmation.target", actionMismatch.Validation.Id);
+        Assert.Equal("deployment.confirmation.target", targetMismatch.Validation.Id);
+        Assert.Null(_store.Confirmations[confirmation.Id].UsedAt);
     }
 
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider

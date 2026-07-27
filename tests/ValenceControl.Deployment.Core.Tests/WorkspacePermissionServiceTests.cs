@@ -1,5 +1,4 @@
 using ValenceControl.Deployment.Core.Workspace;
-using FluentAssertions;
 using Xunit;
 
 namespace ValenceControl.Deployment.Core.Tests;
@@ -17,8 +16,8 @@ public sealed class WorkspacePermissionServiceTests
 
         var effective = await service.BootstrapOwnerPermissionsAsync(_workspaceId, _accountId);
 
-        effective.Permissions.Should().BeEquivalentTo(WorkspaceDeploymentPermissions.All);
-        _store.Grants.Should().HaveCount(WorkspaceDeploymentPermissions.All.Count);
+        Assert.Equivalent(WorkspaceDeploymentPermissions.All, effective.Permissions);
+        Assert.Equal(WorkspaceDeploymentPermissions.All.Count, _store.Grants.Count());
     }
 
     [Fact]
@@ -32,8 +31,8 @@ public sealed class WorkspacePermissionServiceTests
 
         var effective = await service.BootstrapOwnerPermissionsAsync(_workspaceId, _accountId);
 
-        effective.Has(WorkspaceDeploymentPermissions.Read).Should().BeFalse();
-        _store.Grants.Count(x => x.Permission == WorkspaceDeploymentPermissions.Read).Should().Be(1);
+        Assert.False(effective.Has(WorkspaceDeploymentPermissions.Read));
+        Assert.Equal(1, _store.Grants.Count(x => x.Permission == WorkspaceDeploymentPermissions.Read));
     }
 
     [Fact]
@@ -45,8 +44,8 @@ public sealed class WorkspacePermissionServiceTests
 
         var effective = await service.GetEffectivePermissionsAsync(_workspaceId, _accountId);
 
-        effective.Has(WorkspaceDeploymentPermissions.Read).Should().BeTrue();
-        effective.Has(WorkspaceDeploymentPermissions.ManageSetup).Should().BeFalse();
+        Assert.True(effective.Has(WorkspaceDeploymentPermissions.Read));
+        Assert.False(effective.Has(WorkspaceDeploymentPermissions.ManageSetup));
     }
 
     [Fact]
@@ -57,8 +56,8 @@ public sealed class WorkspacePermissionServiceTests
 
         var effective = await service.BootstrapOwnerPermissionsAsync(_workspaceId, _accountId);
 
-        effective.Permissions.Should().BeEquivalentTo(WorkspaceDeploymentPermissions.All.Append("healing.read"));
-        effective.Has("healing.configure").Should().BeFalse();
+        Assert.Equivalent(WorkspaceDeploymentPermissions.All.Append("healing.read"), effective.Permissions);
+        Assert.False(effective.Has("healing.configure"));
     }
 
     [Fact]
@@ -68,7 +67,7 @@ public sealed class WorkspacePermissionServiceTests
 
         await service.GrantAsync(_workspaceId, new GrantWorkspacePermissionRequest(_accountId, "healing.configure", null));
 
-        (await service.GetEffectivePermissionsAsync(_workspaceId, _accountId)).Has("healing.configure").Should().BeTrue();
+        Assert.True((await service.GetEffectivePermissionsAsync(_workspaceId, _accountId)).Has("healing.configure"));
     }
 
     [Fact]
@@ -87,7 +86,7 @@ public sealed class WorkspacePermissionServiceTests
 
         var effective = await service.GetEffectivePermissionsAsync(_workspaceId, _accountId);
 
-        effective.Has("healing.read").Should().BeFalse();
+        Assert.False(effective.Has("healing.read"));
     }
 
     [Fact]
@@ -97,8 +96,9 @@ public sealed class WorkspacePermissionServiceTests
 
         var act = () => service.RequireAsync(_workspaceId, _accountId, "healing.configure");
 
-        await act.Should().ThrowAsync<UnauthorizedAccessException>()
-            .WithMessage("*healing.configure*");
+        var exception = await Assert.ThrowsAsync<UnauthorizedAccessException>(act);
+
+        Assert.Contains("healing.configure", exception.Message);
     }
 
     [Fact]
@@ -111,8 +111,9 @@ public sealed class WorkspacePermissionServiceTests
             _workspaceId,
             new GrantWorkspacePermissionRequest(_accountId, "healing.configure", Guid.NewGuid()));
 
-        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*not a member*");
-        _store.Grants.Should().BeEmpty();
+        var exception = await Assert.ThrowsAsync<ArgumentException>(act);
+        Assert.Contains("not a member", exception.Message);
+        Assert.Empty(_store.Grants);
     }
 
     [Fact]
@@ -125,10 +126,10 @@ public sealed class WorkspacePermissionServiceTests
         var first = await service.RevokeAsync(_workspaceId, new RevokeWorkspacePermissionRequest(_accountId, "healing.read", actorId));
         var replay = await service.RevokeAsync(_workspaceId, new RevokeWorkspacePermissionRequest(_accountId, "healing.read", actorId));
 
-        first.Changed.Should().BeTrue();
-        first.Grants.Should().ContainSingle(x => x.RevokedByAccountId == actorId);
-        replay.Changed.Should().BeFalse();
-        _store.Grants.Should().ContainSingle();
+        Assert.True(first.Changed);
+        Assert.Single(first.Grants, x => x.RevokedByAccountId == actorId);
+        Assert.False(replay.Changed);
+        Assert.Single(_store.Grants);
     }
 
     [Fact]
@@ -145,9 +146,9 @@ public sealed class WorkspacePermissionServiceTests
         var beforeProvisioning = await service.GetEffectivePermissionsAsync(_workspaceId, _accountId);
         var reprovisioned = await service.BootstrapOwnerPermissionsAsync(_workspaceId, _accountId);
 
-        beforeProvisioning.Permissions.Should().BeEmpty();
-        reprovisioned.Permissions.Should().BeEquivalentTo(WorkspaceDeploymentPermissions.All);
-        _store.Grants.Should().HaveCount(previousGrantCount * 2);
+        Assert.Empty(beforeProvisioning.Permissions);
+        Assert.Equivalent(WorkspaceDeploymentPermissions.All, reprovisioned.Permissions);
+        Assert.Equal(previousGrantCount * 2, _store.Grants.Count());
     }
 
     private static TestPermissionContribution Contribution() =>

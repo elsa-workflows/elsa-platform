@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Text.Json;
 using ValenceControl.Healing.ComponentManifest;
 using ValenceControl.Healing.ComponentManifest.Generator.MSBuild;
-using FluentAssertions;
 using Microsoft.Build.Framework;
 
 namespace ValenceControl.Healing.ComponentManifest.Generator.MSBuild.Tests;
@@ -19,22 +18,22 @@ public sealed class GenerateHealingComponentManifestTaskTests
 
         var result = task.Execute();
 
-        result.Should().BeTrue(string.Join(Environment.NewLine, engine.Errors.Select(x => x.Message)));
+        Assert.True(result, string.Join(Environment.NewLine, engine.Errors.Select(x => x.Message)));
         var json = File.ReadAllText(fixture.OutputPath);
         var manifest = ComponentManifestSerializer.Deserialize(json);
-        manifest.Components.Should().Contain(x => x.Key == "application:Acme.WorkflowHost:2.4.1");
-        manifest.Components.Should().NotContain(x => x.Key == "nuget:Build.Tools:9.9.9", "build-only tooling is not part of the runtime component graph");
+        Assert.Contains(manifest.Components, x => x.Key == "application:Acme.WorkflowHost:2.4.1");
+        Assert.DoesNotContain(manifest.Components, x => x.Key == "nuget:Build.Tools:9.9.9");
         var alpha = manifest.Components.Single(x => x.Key == "nuget:Acme.Alpha:1.2.3");
-        alpha.DirectDependency.Should().BeTrue();
-        alpha.RepositoryUrl.Should().Be("https://github.com/acme/alpha");
-        alpha.RepositoryCommit.Should().Be(new string('b', 40));
-        alpha.Dependencies.Should().Equal("nuget:Acme.Beta:4.5.6");
-        alpha.Assemblies.Should().ContainSingle(x => x.RelativePath == "lib/net10.0/Acme.Alpha.dll");
-        alpha.ContentHash.Should().MatchRegex("^sha256:[0-9a-f]{64}$");
-        alpha.Assemblies[0].ContentHash.Should().MatchRegex("^sha256:[0-9a-f]{64}$");
-        json.Should().NotContain(fixture.Root);
-        json.Should().NotContain(".nuget/packages");
-        json.Should().NotContain("token-value");
+        Assert.True(alpha.DirectDependency);
+        Assert.Equal("https://github.com/acme/alpha", alpha.RepositoryUrl);
+        Assert.Equal(new string('b', 40), alpha.RepositoryCommit);
+        Assert.Equal(["nuget:Acme.Beta:4.5.6"], alpha.Dependencies);
+        Assert.Single(alpha.Assemblies, x => x.RelativePath == "lib/net10.0/Acme.Alpha.dll");
+        Assert.Matches("^sha256:[0-9a-f]{64}$", alpha.ContentHash);
+        Assert.Matches("^sha256:[0-9a-f]{64}$", alpha.Assemblies[0].ContentHash);
+        Assert.DoesNotContain(fixture.Root, json);
+        Assert.DoesNotContain(".nuget/packages", json);
+        Assert.DoesNotContain("token-value", json);
     }
 
     [Fact]
@@ -45,9 +44,9 @@ public sealed class GenerateHealingComponentManifestTaskTests
 
         var result = fixture.CreateTask(engine).Execute();
 
-        result.Should().BeFalse();
-        engine.Errors.Should().Contain(x => x.Message != null && x.Message.Contains("unsafe", StringComparison.OrdinalIgnoreCase));
-        File.Exists(fixture.OutputPath).Should().BeFalse();
+        Assert.False(result);
+        Assert.Contains(engine.Errors, x => x.Message != null && x.Message.Contains("unsafe", StringComparison.OrdinalIgnoreCase));
+        Assert.False(File.Exists(fixture.OutputPath));
     }
 
     [Fact]
@@ -58,10 +57,9 @@ public sealed class GenerateHealingComponentManifestTaskTests
 
         var result = fixture.CreateTask(engine).Execute();
 
-        result.Should().BeTrue(string.Join(Environment.NewLine, engine.Errors.Select(x => x.Message)));
+        Assert.True(result, string.Join(Environment.NewLine, engine.Errors.Select(x => x.Message)));
         var manifest = ComponentManifestSerializer.Deserialize(File.ReadAllText(fixture.OutputPath));
-        manifest.Components.Single(x => x.Key == "nuget:Acme.Alpha:1.2.3").ContentHash
-            .Should().MatchRegex("^sha256:[0-9a-f]{64}$");
+        Assert.Matches("^sha256:[0-9a-f]{64}$", manifest.Components.Single(x => x.Key == "nuget:Acme.Alpha:1.2.3").ContentHash);
     }
 
     [Fact]
@@ -69,14 +67,15 @@ public sealed class GenerateHealingComponentManifestTaskTests
     {
         using var retainedArchive = AssetsFixture.Create();
         using var extractedOnly = AssetsFixture.Create(omitPackageArchives: true);
-        retainedArchive.CreateTask(new CapturingBuildEngine()).Execute().Should().BeTrue();
-        extractedOnly.CreateTask(new CapturingBuildEngine()).Execute().Should().BeTrue();
+        Assert.True(retainedArchive.CreateTask(new CapturingBuildEngine()).Execute());
+        Assert.True(extractedOnly.CreateTask(new CapturingBuildEngine()).Execute());
 
         var retainedManifest = ComponentManifestSerializer.Deserialize(File.ReadAllText(retainedArchive.OutputPath));
         var extractedManifest = ComponentManifestSerializer.Deserialize(File.ReadAllText(extractedOnly.OutputPath));
 
-        retainedManifest.Components.Single(x => x.Key == "nuget:Acme.Alpha:1.2.3").ContentHash.Should().Be(
-            extractedManifest.Components.Single(x => x.Key == "nuget:Acme.Alpha:1.2.3").ContentHash);
+        Assert.Equal(
+            extractedManifest.Components.Single(x => x.Key == "nuget:Acme.Alpha:1.2.3").ContentHash,
+            retainedManifest.Components.Single(x => x.Key == "nuget:Acme.Alpha:1.2.3").ContentHash);
     }
 
     [Fact]
@@ -88,9 +87,9 @@ public sealed class GenerateHealingComponentManifestTaskTests
 
         var result = fixture.CreateTask(engine).Execute();
 
-        result.Should().BeFalse();
-        engine.Errors.Should().Contain(x => x.Message != null && x.Message.Contains("unsafe", StringComparison.OrdinalIgnoreCase));
-        File.Exists(fixture.OutputPath).Should().BeFalse();
+        Assert.False(result);
+        Assert.Contains(engine.Errors, x => x.Message != null && x.Message.Contains("unsafe", StringComparison.OrdinalIgnoreCase));
+        Assert.False(File.Exists(fixture.OutputPath));
     }
 
     [Fact]
@@ -101,9 +100,9 @@ public sealed class GenerateHealingComponentManifestTaskTests
 
         var result = fixture.CreateTask(engine).Execute();
 
-        result.Should().BeFalse();
-        engine.Errors.Should().Contain(x => x.Message != null && x.Message.Contains("manifest.repository-commit.invalid", StringComparison.Ordinal));
-        File.Exists(fixture.OutputPath).Should().BeFalse();
+        Assert.False(result);
+        Assert.Contains(engine.Errors, x => x.Message != null && x.Message.Contains("manifest.repository-commit.invalid", StringComparison.Ordinal));
+        Assert.False(File.Exists(fixture.OutputPath));
     }
 
     [Fact]
@@ -114,9 +113,9 @@ public sealed class GenerateHealingComponentManifestTaskTests
 
         var result = fixture.CreateTask(engine).Execute();
 
-        result.Should().BeFalse();
-        engine.Errors.Should().Contain(x => x.Message != null && x.Message.Contains("linux-x64", StringComparison.Ordinal));
-        File.Exists(fixture.OutputPath).Should().BeFalse();
+        Assert.False(result);
+        Assert.Contains(engine.Errors, x => x.Message != null && x.Message.Contains("linux-x64", StringComparison.Ordinal));
+        Assert.False(File.Exists(fixture.OutputPath));
     }
 
     [Fact]
@@ -128,14 +127,14 @@ public sealed class GenerateHealingComponentManifestTaskTests
         var project = File.ReadAllText(projectPath);
         var targets = File.ReadAllText(targetPath);
 
-        project.Should().Contain("PackagePath=\"tasks/\"");
-        project.Should().Contain("PackagePath=\"build/\"");
-        project.Should().Contain("PackagePath=\"buildTransitive/\"");
-        targets.Should().Contain("GenerateHealingComponentManifestTask");
-        targets.Should().Contain("ProjectAssetsFile=\"$(ProjectAssetsFile)\"");
-        targets.Should().Contain("DependsOnTargets=\"ResolvePackageAssets\"");
-        targets.Should().Contain("Delete Files=\"$(ValenceControlHealingComponentManifestOutputPath)\"");
-        targets.Should().Contain("AfterTargets=\"Clean\"");
+        Assert.Contains("PackagePath=\"tasks/\"", project);
+        Assert.Contains("PackagePath=\"build/\"", project);
+        Assert.Contains("PackagePath=\"buildTransitive/\"", project);
+        Assert.Contains("GenerateHealingComponentManifestTask", targets);
+        Assert.Contains("ProjectAssetsFile=\"$(ProjectAssetsFile)\"", targets);
+        Assert.Contains("DependsOnTargets=\"ResolvePackageAssets\"", targets);
+        Assert.Contains("Delete Files=\"$(ValenceControlHealingComponentManifestOutputPath)\"", targets);
+        Assert.Contains("AfterTargets=\"Clean\"", targets);
     }
 
     [Fact]
@@ -180,11 +179,11 @@ public sealed class GenerateHealingComponentManifestTaskTests
                 "-p:ValenceControlHealingSourceRevision=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "-p:ValenceControlHealingManifestCreatedAt=2026-07-16T00:00:00Z");
             var manifest = Path.Combine(consumer, "bin", "Release", "net10.0", "valence-control-healing-component-manifest.json");
-            File.Exists(manifest).Should().BeTrue();
+            Assert.True(File.Exists(manifest));
 
             RunDotNet(consumer, "clean", "Consumer.csproj", "-c", "Release");
 
-            File.Exists(manifest).Should().BeFalse();
+            Assert.False(File.Exists(manifest));
         }
         finally
         {
@@ -219,7 +218,7 @@ public sealed class GenerateHealingComponentManifestTaskTests
         var standardError = process.StandardError.ReadToEndAsync();
         process.WaitForExit();
         var output = standardOutput.GetAwaiter().GetResult() + standardError.GetAwaiter().GetResult();
-        process.ExitCode.Should().Be(0, output);
+        Assert.True(process.ExitCode == 0, output);
     }
 
     private sealed class AssetsFixture : IDisposable

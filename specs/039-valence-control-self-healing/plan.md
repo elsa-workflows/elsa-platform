@@ -21,7 +21,7 @@ The implementation is split across two coordinated repositories:
 
 **Storage**: Healing-owned `HealingDbContext` and SQLite/SQL Server migrations, using the same configured physical database where desired but a separate migration history; Foundation telemetry storage remains an observability concern and is not the Healing queue
 
-**Testing**: xUnit, FluentAssertions, ASP.NET Core `WebApplicationFactory`, EF Core SQLite integration tests, Vitest, React Testing Library, deterministic fake GitHub/inference/deployment adapters
+**Testing**: xUnit and its built-in assertions, ASP.NET Core `WebApplicationFactory`, EF Core SQLite integration tests, Vitest, React Testing Library, deterministic fake GitHub/inference/deployment adapters
 
 **Target platform**: Linux-hosted Valence Control control plane; .NET and ASP.NET Core monitored applications; GitHub-hosted repositories and GitHub Actions runners
 

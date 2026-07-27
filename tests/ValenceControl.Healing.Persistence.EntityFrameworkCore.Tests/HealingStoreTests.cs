@@ -8,7 +8,6 @@ using ValenceControl.Healing.Core.Ownership;
 using ValenceControl.Healing.Core.Providers;
 using ValenceControl.Healing.Core.Repairs;
 using ValenceControl.Healing.Core.Security;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using ComponentManifestModel = ValenceControl.Healing.Core.ComponentManifest;
 
@@ -55,17 +54,16 @@ public sealed class HealingStoreTests
                 ValenceControl.Healing.Abstractions.HealingPermissions.RetryRepair
             }));
 
-        decision.Executed.Should().BeTrue();
-        (await fixture.Db.HealingIncidents.AsNoTracking().SingleAsync(x => x.Id == incident.Id))
-            .Status.Should().Be(HealingIncidentStatus.ReadyForRepair);
+        Assert.True(decision.Executed);
+        Assert.Equal(HealingIncidentStatus.ReadyForRepair, (await fixture.Db.HealingIncidents.AsNoTracking().SingleAsync(x => x.Id == incident.Id)).Status);
         var completedCommand = await fixture.Db.HumanCommands.AsNoTracking().SingleAsync(x => x.Id == command.Id);
-        completedCommand.CompletedAt.Should().Be(now);
+        Assert.Equal(now, completedCommand.CompletedAt);
         using var permissionSnapshot = JsonDocument.Parse(completedCommand.ProviderPermissionSnapshotJson);
-        permissionSnapshot.RootElement.GetProperty("EvaluatedAt").GetDateTimeOffset().Should().Be(now);
+        Assert.Equal(now, permissionSnapshot.RootElement.GetProperty("EvaluatedAt").GetDateTimeOffset());
         var auditEvent = await fixture.Db.Set<HealingAuditEvent>().AsNoTracking()
             .SingleAsync(x => x.AggregateType == "human-command" && x.AggregateId == command.Id);
-        auditEvent.EventType.Should().Be("human-command-executed");
-        auditEvent.ActorId.Should().Be(actorId.ToString("D"));
+        Assert.Equal("human-command-executed", auditEvent.EventType);
+        Assert.Equal(actorId.ToString("D"), auditEvent.ActorId);
     }
 
     [Fact]
@@ -98,9 +96,9 @@ public sealed class HealingStoreTests
         second.UpdatedAt = now.AddMinutes(3);
         var authorized = await store.SaveProviderConnectionAsync(second);
 
-        authorized.Status.Should().Be(ProviderConnectionStatus.Active);
-        authorized.RepositoryProviderId.Should().Be("repo-42");
-        (await store.ListProviderConnectionsAsync(workspaceId)).Should().HaveCount(2);
+        Assert.Equal(ProviderConnectionStatus.Active, authorized.Status);
+        Assert.Equal("repo-42", authorized.RepositoryProviderId);
+        Assert.Equal(2, (await store.ListProviderConnectionsAsync(workspaceId)).Count());
     }
 
     [Fact]
@@ -134,15 +132,16 @@ public sealed class HealingStoreTests
             ComponentManifestTrustState.Revoked, "owner", "workspace-owner-verification", DateTimeOffset.UtcNow);
         var trusted = await store.ListManifestsAsync(workspaceId, applicationId, trustedOnly: true);
 
-        accepted.IsReplay.Should().BeFalse();
-        conflicting.IsConsistentReplay.Should().BeFalse();
-        crossWorkspace.Should().BeNull();
-        crossWorkspaceTransition.Should().BeFalse();
-        verified.Should().BeTrue();
-        staleTransition.Should().BeFalse();
-        trusted.Should().ContainSingle().Which.Id.Should().Be(manifest.Id);
-        trusted.Single().Entries.Single().Assemblies.Select(x => x.RelativePath).Should().BeEquivalentTo(
-            "lib/net10.0/Component.dll", "lib/net10.0/Component.Contracts.dll");
+        Assert.False(accepted.IsReplay);
+        Assert.False(conflicting.IsConsistentReplay);
+        Assert.Null(crossWorkspace);
+        Assert.False(crossWorkspaceTransition);
+        Assert.True(verified);
+        Assert.False(staleTransition);
+        Assert.Equal(manifest.Id, Assert.Single(trusted).Id);
+        Assert.Equal(
+            new[] { "lib/net10.0/Component.dll", "lib/net10.0/Component.Contracts.dll" }.Order(),
+            trusted.Single().Entries.Single().Assemblies.Select(x => x.RelativePath).Order());
     }
 
     [Fact]
@@ -169,14 +168,14 @@ public sealed class HealingStoreTests
         var otherWorkspace = await store.ExecuteInTransactionAsync(cancellationToken => store.RegisterManifestAsync(
             CreateManifest(Guid.NewGuid(), applicationId, revisionId, "digest-a", "component-a"), key, payloadHash, cancellationToken));
 
-        accepted.IsReplay.Should().BeFalse();
-        replay.IsReplay.Should().BeTrue();
-        replay.Value.Id.Should().Be(accepted.Value.Id);
-        conflict.FailureReasonCode.Should().Be(HealingOwnershipReasonCodes.IdempotencyConflict);
-        otherApplication.FailureReasonCode.Should().BeNull();
-        otherRevision.FailureReasonCode.Should().BeNull();
-        otherWorkspace.FailureReasonCode.Should().BeNull();
-        (await fixture.Db.ComponentManifestRegistrations.CountAsync()).Should().Be(4);
+        Assert.False(accepted.IsReplay);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(accepted.Value.Id, replay.Value.Id);
+        Assert.Equal(HealingOwnershipReasonCodes.IdempotencyConflict, conflict.FailureReasonCode);
+        Assert.Null(otherApplication.FailureReasonCode);
+        Assert.Null(otherRevision.FailureReasonCode);
+        Assert.Null(otherWorkspace.FailureReasonCode);
+        Assert.Equal(4, (await fixture.Db.ComponentManifestRegistrations.CountAsync()));
     }
 
     [Fact]
@@ -194,8 +193,8 @@ public sealed class HealingStoreTests
             throw new InvalidOperationException("simulated-audit-failure");
         }).AsTask();
 
-        await operation.Should().ThrowAsync<InvalidOperationException>();
-        (await store.GetConfigurationAsync(workspaceId, applicationId)).Should().BeNull();
+        await Assert.ThrowsAsync<InvalidOperationException>(operation);
+        Assert.Null((await store.GetConfigurationAsync(workspaceId, applicationId)));
     }
 
     [Fact]
@@ -234,8 +233,8 @@ public sealed class HealingStoreTests
         stale.Name = "stale";
         var staleWrite = () => store.SaveBindingAsync(stale).AsTask();
 
-        updated.Version.Should().NotEqual(stale.Version);
-        await staleWrite.Should().ThrowAsync<DbUpdateConcurrencyException>();
+        Assert.NotEqual(stale.Version, updated.Version);
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(staleWrite);
     }
 
     [Fact]
@@ -249,10 +248,10 @@ public sealed class HealingStoreTests
         var replay = await store.AppendInboxAsync(CreateInboxItem("occurrence-1", "hash-a"));
         var conflict = () => store.AppendInboxAsync(CreateInboxItem("occurrence-1", "hash-b")).AsTask();
 
-        accepted.IsReplay.Should().BeFalse();
-        replay.IsReplay.Should().BeTrue();
-        replay.Value.Id.Should().Be(accepted.Value.Id);
-        await conflict.Should().ThrowAsync<HealingIdempotencyConflictException>();
+        Assert.False(accepted.IsReplay);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(accepted.Value.Id, replay.Value.Id);
+        await Assert.ThrowsAsync<HealingIdempotencyConflictException>(conflict);
     }
 
     [Fact]
@@ -269,10 +268,10 @@ public sealed class HealingStoreTests
         var completed = await store.CompleteInboxAsync(lease.Value.Id, lease.LeaseToken, now, HealingInboxStatus.Completed, "accepted", null);
         var terminalLease = await store.TryLeaseNextInboxAsync("worker-2", now.AddHours(1), TimeSpan.FromMinutes(5));
 
-        competingLease.Should().BeNull();
-        wrongToken.Should().BeFalse();
-        completed.Should().BeTrue();
-        terminalLease.Should().BeNull();
+        Assert.Null(competingLease);
+        Assert.False(wrongToken);
+        Assert.True(completed);
+        Assert.Null(terminalLease);
     }
 
     [Fact]
@@ -292,7 +291,7 @@ public sealed class HealingStoreTests
             "accepted",
             null);
 
-        completed.Should().BeFalse();
+        Assert.False(completed);
     }
 
     [Fact]
@@ -330,9 +329,9 @@ public sealed class HealingStoreTests
             null,
             null);
 
-        accepted.IsReplay.Should().BeFalse();
-        replay.IsReplay.Should().BeTrue();
-        staleCompletion.Should().BeFalse();
+        Assert.False(accepted.IsReplay);
+        Assert.True(replay.IsReplay);
+        Assert.False(staleCompletion);
     }
 
     [Fact]
@@ -363,9 +362,9 @@ public sealed class HealingStoreTests
         var dispatchResult = await store.AppendProviderOperationAsync(dispatch);
         var publishResult = await store.AppendProviderOperationAsync(publish);
 
-        dispatchResult.IsReplay.Should().BeFalse();
-        publishResult.IsReplay.Should().BeFalse();
-        (await fixture.Db.ProviderOperations.CountAsync()).Should().Be(2);
+        Assert.False(dispatchResult.IsReplay);
+        Assert.False(publishResult.IsReplay);
+        Assert.Equal(2, (await fixture.Db.ProviderOperations.CountAsync()));
     }
 
     [Fact]
@@ -393,7 +392,7 @@ public sealed class HealingStoreTests
         await fixture.Db.SaveChangesAsync();
         await store.AppendAsync(operation);
         var lease = await store.TryLeaseNextAsync("provider-worker", now, TimeSpan.FromMinutes(5));
-        lease.Should().NotBeNull();
+        Assert.NotNull(lease);
         var claimed = lease!;
 
         await store.FinishAsync(
@@ -409,10 +408,10 @@ public sealed class HealingStoreTests
             null).AsTask();
         var retryLease = await store.TryLeaseNextAsync("provider-worker", now.AddMinutes(2), TimeSpan.FromMinutes(5));
 
-        pending.Status.Should().Be(ProviderOperationStatus.Pending);
-        pending.NextAttemptAt.Should().Be(now.AddMinutes(2));
-        retryLease.Should().NotBeNull();
-        await lostLease.Should().ThrowAsync<DbUpdateConcurrencyException>();
+        Assert.Equal(ProviderOperationStatus.Pending, pending.Status);
+        Assert.Equal(now.AddMinutes(2), pending.NextAttemptAt);
+        Assert.NotNull(retryLease);
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(lostLease);
     }
 
     [Fact]
@@ -478,16 +477,15 @@ public sealed class HealingStoreTests
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, RepairAttemptStatus.Failed));
         var capped = await store.TryCreateAttemptAsync(NewAttempt(), 2, HealingBudgetOptions.MaximumConcurrency);
 
-        first.Outcome.Should().Be(RepairAttemptStoreOutcome.Created);
-        first.Attempt.AttemptNumber.Should().Be(1);
-        second.Outcome.Should().Be(RepairAttemptStoreOutcome.Created);
-        second.Attempt!.AttemptNumber.Should().Be(2);
-        capped.Outcome.Should().Be(RepairAttemptStoreOutcome.AttemptLimitReached);
-        leased.Should().BeTrue();
-        wrongHeartbeat.Should().BeFalse();
-        recorded.Should().BeTrue();
-        (await store.FindAttemptAsync(workspaceId, first.Attempt.Id))!.RepairClassification
-            .Should().Be(RepairClassification.Reproduced);
+        Assert.Equal(RepairAttemptStoreOutcome.Created, first.Outcome);
+        Assert.Equal(1, first.Attempt.AttemptNumber);
+        Assert.Equal(RepairAttemptStoreOutcome.Created, second.Outcome);
+        Assert.Equal(2, second.Attempt!.AttemptNumber);
+        Assert.Equal(RepairAttemptStoreOutcome.AttemptLimitReached, capped.Outcome);
+        Assert.True(leased);
+        Assert.False(wrongHeartbeat);
+        Assert.True(recorded);
+        Assert.Equal(RepairClassification.Reproduced, (await store.FindAttemptAsync(workspaceId, first.Attempt.Id))!.RepairClassification);
     }
 
     [Fact]
@@ -512,10 +510,9 @@ public sealed class HealingStoreTests
         stale.Version = staleVersion;
         var staleWrite = () => store.UpsertConfigurationAsync(stale).AsTask();
 
-        persisted!.Environments.Should().ContainSingle()
-            .Which.EnvironmentId.Should().Be(secondEnvironmentId);
-        persisted.Environments.Single().RepairEnabled.Should().BeTrue();
-        await staleWrite.Should().ThrowAsync<DbUpdateConcurrencyException>();
+        Assert.Equal(secondEnvironmentId, Assert.Single(persisted!.Environments).EnvironmentId);
+        Assert.True(persisted.Environments.Single().RepairEnabled);
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(staleWrite);
     }
 
     [Fact]
@@ -539,8 +536,8 @@ public sealed class HealingStoreTests
         replay.RepairEnabled = true;
         var conflict = () => store.UpsertConfigurationAsync(replay).AsTask();
 
-        result.Id.Should().Be(accepted.Id);
-        await conflict.Should().ThrowAsync<DbUpdateConcurrencyException>();
+        Assert.Equal(accepted.Id, result.Id);
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(conflict);
     }
 
     [Fact]
@@ -564,8 +561,8 @@ public sealed class HealingStoreTests
         replay.Outcome = VerificationOutcome.Healed;
         var conflict = () => store.UpsertVerificationAsync(replay).AsTask();
 
-        result.Id.Should().Be(accepted.Id);
-        await conflict.Should().ThrowAsync<DbUpdateConcurrencyException>();
+        Assert.Equal(accepted.Id, result.Id);
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(conflict);
     }
 
     [Fact]
@@ -583,14 +580,14 @@ public sealed class HealingStoreTests
 
         var conflict = () => store.AppendManifestAsync(conflicting).AsTask();
 
-        replay.IsReplay.Should().BeTrue();
-        await conflict.Should().ThrowAsync<HealingIdempotencyConflictException>();
+        Assert.True(replay.IsReplay);
+        await Assert.ThrowsAsync<HealingIdempotencyConflictException>(conflict);
         var addedGraphEntries = fixture.Db.ChangeTracker.Entries()
             .Where(x => x.State == EntityState.Added &&
                         (x.Entity == conflicting ||
                          x.Entity is ComponentManifestEntry entry && conflicting.Entries.Contains(entry)))
             .ToList();
-        addedGraphEntries.Should().BeEmpty();
+        Assert.Empty(addedGraphEntries);
         await fixture.Db.SaveChangesAsync();
     }
 
@@ -620,8 +617,8 @@ public sealed class HealingStoreTests
         update.Version = staleVersion;
         var stale = () => store.UpsertWorkspaceConfigurationAsync(update).AsTask();
 
-        (await store.GetWorkspaceConfigurationAsync(workspaceId))!.WorkspaceKillSwitch.Should().BeTrue();
-        await stale.Should().ThrowAsync<DbUpdateConcurrencyException>();
+        Assert.True((await store.GetWorkspaceConfigurationAsync(workspaceId))!.WorkspaceKillSwitch);
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(stale);
     }
 
     [Fact]
@@ -652,7 +649,7 @@ public sealed class HealingStoreTests
                 .OrderBy(x => x.Sequence)
                 .Select(x => x.Sequence)
                 .ToListAsync();
-            sequences.Should().Equal(1, 2, 3, 4, 5, 6, 7, 8);
+            Assert.Equal(new long[] { 1, 2, 3, 4, 5, 6, 7, 8 }, sequences);
         }
         finally
         {

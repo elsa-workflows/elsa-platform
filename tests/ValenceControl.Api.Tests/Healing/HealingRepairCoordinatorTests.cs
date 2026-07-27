@@ -7,7 +7,6 @@ using ValenceControl.Healing.Core.Operations;
 using ValenceControl.Healing.Core.Providers;
 using ValenceControl.Healing.Core.Repairs;
 using ValenceControl.Healing.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -28,12 +27,12 @@ public sealed class HealingRepairCoordinatorTests
         await using var verify = database.CreateContext();
         var operation = await verify.ProviderOperations.SingleAsync();
         var request = JsonSerializer.Deserialize<RepairWorkItemUpsertRequest>(operation.PayloadJson);
-        first.Should().Be(HealingRepairCoordinatorStatus.WorkItemQueued);
-        replay.Should().Be(HealingRepairCoordinatorStatus.Idle);
-        operation.Kind.Should().Be(ProviderOperationKind.UpsertWorkItem);
-        request.Should().NotBeNull();
-        request!.ProtocolVersion.Should().Be(HealingContractVersions.ProviderProtocol);
-        request.IdempotencyKey.Should().StartWith($"work-item:{database.Ids.ProjectionId:N}:");
+        Assert.Equal(HealingRepairCoordinatorStatus.WorkItemQueued, first);
+        Assert.Equal(HealingRepairCoordinatorStatus.Idle, replay);
+        Assert.Equal(ProviderOperationKind.UpsertWorkItem, operation.Kind);
+        Assert.NotNull(request);
+        Assert.Equal(HealingContractVersions.ProviderProtocol, request!.ProtocolVersion);
+        Assert.StartsWith($"work-item:{database.Ids.ProjectionId:N}:", request.IdempotencyKey);
     }
 
     [Fact]
@@ -49,16 +48,16 @@ public sealed class HealingRepairCoordinatorTests
         var attempt = await verify.RepairAttempts.SingleAsync();
         var dispatch = await verify.ProviderOperations.SingleAsync(x => x.Kind == ProviderOperationKind.DispatchWorkflow);
         var request = JsonSerializer.Deserialize<RepairWorkflowDispatchRequest>(dispatch.PayloadJson);
-        results.Count(x => x == HealingRepairCoordinatorStatus.RepairQueued).Should().Be(1);
-        attempt.NonceHash.Should().MatchRegex("^[0-9a-f]{64}$");
-        request.Should().NotBeNull();
-        request!.OneTimeNonce.Should().StartWith("dp:");
+        Assert.Equal(1, results.Count(x => x == HealingRepairCoordinatorStatus.RepairQueued));
+        Assert.Matches("^[0-9a-f]{64}$", attempt.NonceHash);
+        Assert.NotNull(request);
+        Assert.StartsWith("dp:", request!.OneTimeNonce);
         var rawNonce = database.UnprotectDispatchNonce(request.OneTimeNonce);
-        rawNonce.Should().MatchRegex("^[A-Za-z0-9_-]{43}$");
-        rawNonce.Should().NotBe(attempt.NonceHash);
-        request.OneTimeNonce.Should().NotContain(attempt.NonceHash);
-        dispatch.PayloadJson.Should().NotContain(rawNonce);
-        dispatch.PayloadJson.Should().NotContain(attempt.NonceHash);
+        Assert.Matches("^[A-Za-z0-9_-]{43}$", rawNonce);
+        Assert.NotEqual(attempt.NonceHash, rawNonce);
+        Assert.DoesNotContain(attempt.NonceHash, request.OneTimeNonce);
+        Assert.DoesNotContain(rawNonce, dispatch.PayloadJson);
+        Assert.DoesNotContain(attempt.NonceHash, dispatch.PayloadJson);
     }
 
     [Fact]
@@ -74,12 +73,12 @@ public sealed class HealingRepairCoordinatorTests
         await using var verify = database.CreateContext();
         var attempts = await verify.RepairAttempts.OrderBy(x => x.AttemptNumber).ToArrayAsync();
         var incident = await verify.HealingIncidents.SingleAsync();
-        retry.Should().Be(HealingRepairCoordinatorStatus.RepairQueued);
-        capped.Should().Be(HealingRepairCoordinatorStatus.Idle);
-        attempts.Should().HaveCount(2);
-        attempts.Should().OnlyContain(x => x.Status == RepairAttemptStatus.Failed);
-        incident.Status.Should().Be(HealingIncidentStatus.NeedsHuman);
-        incident.NeedsHumanReason.Should().Be(NeedsHumanReason.AttemptLimitReached);
+        Assert.Equal(HealingRepairCoordinatorStatus.RepairQueued, retry);
+        Assert.Equal(HealingRepairCoordinatorStatus.Idle, capped);
+        Assert.Equal(2, attempts.Count());
+        Assert.All(attempts, x => Assert.Equal(RepairAttemptStatus.Failed, x.Status));
+        Assert.Equal(HealingIncidentStatus.NeedsHuman, incident.Status);
+        Assert.Equal(NeedsHumanReason.AttemptLimitReached, incident.NeedsHumanReason);
     }
 
     [Fact]
@@ -93,10 +92,10 @@ public sealed class HealingRepairCoordinatorTests
 
         await using var verify = database.CreateContext();
         var incident = await verify.HealingIncidents.SingleAsync();
-        result.Should().Be(HealingRepairCoordinatorStatus.Idle);
-        (await verify.RepairAttempts.CountAsync()).Should().Be(1);
-        incident.Status.Should().Be(HealingIncidentStatus.NeedsHuman);
-        incident.NeedsHumanReason.Should().Be(NeedsHumanReason.AttemptLimitReached);
+        Assert.Equal(HealingRepairCoordinatorStatus.Idle, result);
+        Assert.Equal(1, (await verify.RepairAttempts.CountAsync()));
+        Assert.Equal(HealingIncidentStatus.NeedsHuman, incident.Status);
+        Assert.Equal(NeedsHumanReason.AttemptLimitReached, incident.NeedsHumanReason);
     }
 
     [Fact]
@@ -109,11 +108,12 @@ public sealed class HealingRepairCoordinatorTests
         var result = await database.RunCoordinatorAsync();
 
         await using var verify = database.CreateContext();
-        result.Should().Be(HealingRepairCoordinatorStatus.Idle);
-        (await verify.RepairAttempts.CountAsync()).Should().Be(1);
-        (await verify.ProviderOperations.AnyAsync(x => x.Kind == ProviderOperationKind.DispatchWorkflow)).Should().BeFalse();
-        (await verify.HealingIncidents.SingleAsync(x => x.Id == database.Ids.IncidentId)).Status
-            .Should().Be(HealingIncidentStatus.ReadyForRepair);
+        Assert.Equal(HealingRepairCoordinatorStatus.Idle, result);
+        Assert.Equal(1, (await verify.RepairAttempts.CountAsync()));
+        Assert.False((await verify.ProviderOperations.AnyAsync(x => x.Kind == ProviderOperationKind.DispatchWorkflow)));
+        Assert.Equal(
+            HealingIncidentStatus.ReadyForRepair,
+            (await verify.HealingIncidents.SingleAsync(x => x.Id == database.Ids.IncidentId)).Status);
     }
 
     [Fact]
@@ -128,11 +128,11 @@ public sealed class HealingRepairCoordinatorTests
         await using var verify = database.CreateContext();
         var publication = await verify.ProviderOperations.SingleAsync(x => x.Kind == ProviderOperationKind.PublishPullRequest);
         var attempt = await verify.RepairAttempts.SingleAsync();
-        first.Should().Be(HealingRepairCoordinatorStatus.PublicationQueued);
-        replay.Should().Be(HealingRepairCoordinatorStatus.Idle);
-        attempt.Status.Should().Be(RepairAttemptStatus.Publishing);
-        publication.IdempotencyKey.Should().StartWith($"publish:{attempt.Id:N}:");
-        (await verify.PolicyEvaluations.CountAsync()).Should().Be(2);
+        Assert.Equal(HealingRepairCoordinatorStatus.PublicationQueued, first);
+        Assert.Equal(HealingRepairCoordinatorStatus.Idle, replay);
+        Assert.Equal(RepairAttemptStatus.Publishing, attempt.Status);
+        Assert.StartsWith($"publish:{attempt.Id:N}:", publication.IdempotencyKey);
+        Assert.Equal(2, (await verify.PolicyEvaluations.CountAsync()));
     }
 
     [Fact]
@@ -146,12 +146,12 @@ public sealed class HealingRepairCoordinatorTests
         await using var verify = database.CreateContext();
         var attempt = await verify.RepairAttempts.SingleAsync();
         var incident = await verify.HealingIncidents.SingleAsync();
-        result.Should().Be(HealingRepairCoordinatorStatus.Idle);
-        attempt.Status.Should().Be(RepairAttemptStatus.Stopped);
-        attempt.OutcomeCode.Should().Be("evidence-policy-blocked");
-        incident.Status.Should().Be(HealingIncidentStatus.NeedsHuman);
-        incident.NeedsHumanReason.Should().Be(NeedsHumanReason.PolicyBlocked);
-        (await verify.ProviderOperations.AnyAsync(x => x.Kind == ProviderOperationKind.PublishPullRequest)).Should().BeFalse();
+        Assert.Equal(HealingRepairCoordinatorStatus.Idle, result);
+        Assert.Equal(RepairAttemptStatus.Stopped, attempt.Status);
+        Assert.Equal("evidence-policy-blocked", attempt.OutcomeCode);
+        Assert.Equal(HealingIncidentStatus.NeedsHuman, incident.Status);
+        Assert.Equal(NeedsHumanReason.PolicyBlocked, incident.NeedsHumanReason);
+        Assert.False((await verify.ProviderOperations.AnyAsync(x => x.Kind == ProviderOperationKind.PublishPullRequest)));
     }
 
     [Fact]
@@ -167,13 +167,13 @@ public sealed class HealingRepairCoordinatorTests
         var attempt = await verify.RepairAttempts.SingleAsync();
         var incident = await verify.HealingIncidents.SingleAsync();
         var evaluation = await verify.PolicyEvaluations.SingleAsync(x => x.PolicyKind == PolicyKind.Evidence);
-        result.Should().Be(HealingRepairCoordinatorStatus.Idle);
-        attempt.Status.Should().Be(RepairAttemptStatus.Stopped);
-        attempt.OutcomeCode.Should().Be("evidence-policy-blocked");
-        incident.Status.Should().Be(HealingIncidentStatus.NeedsHuman);
-        evaluation.Decision.Should().Be(PolicyDecision.Deny);
-        evaluation.GateResultsJson.Should().Contain("evidence-fields-invalid");
-        (await verify.ProviderOperations.AnyAsync(x => x.Kind == ProviderOperationKind.PublishPullRequest)).Should().BeFalse();
+        Assert.Equal(HealingRepairCoordinatorStatus.Idle, result);
+        Assert.Equal(RepairAttemptStatus.Stopped, attempt.Status);
+        Assert.Equal("evidence-policy-blocked", attempt.OutcomeCode);
+        Assert.Equal(HealingIncidentStatus.NeedsHuman, incident.Status);
+        Assert.Equal(PolicyDecision.Deny, evaluation.Decision);
+        Assert.Contains("evidence-fields-invalid", evaluation.GateResultsJson);
+        Assert.False((await verify.ProviderOperations.AnyAsync(x => x.Kind == ProviderOperationKind.PublishPullRequest)));
     }
 
     [Fact]
@@ -216,9 +216,9 @@ public sealed class HealingRepairCoordinatorTests
 
         var outcome = await handler.ExecuteAsync(operation);
 
-        outcome.Disposition.Should().Be(HealingOperationDisposition.DeadLettered);
-        outcome.OutcomeCode.Should().Be("healing-authority-revoked");
-        provider.UpsertCalls.Should().Be(0);
+        Assert.Equal(HealingOperationDisposition.DeadLettered, outcome.Disposition);
+        Assert.Equal("healing-authority-revoked", outcome.OutcomeCode);
+        Assert.Equal(0, provider.UpsertCalls);
     }
 
     private sealed class CoordinatorDatabase : IAsyncDisposable

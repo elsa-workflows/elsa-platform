@@ -5,7 +5,6 @@ using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using ValenceControl.RuntimeBuilder.Abstractions;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -26,8 +25,8 @@ public sealed class WorkspaceAuthorizationTests
         var list = await reader.GetAsync($"/api/workspaces/{workspaceId}/sources");
         var create = await reader.PostControlJsonAsync($"/api/workspaces/{workspaceId}/sources", SourceRequest());
 
-        list.StatusCode.Should().Be(HttpStatusCode.OK);
-        create.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, create.StatusCode);
     }
 
     [Fact]
@@ -43,8 +42,8 @@ public sealed class WorkspaceAuthorizationTests
         var list = await reader.GetAsync($"/api/workspaces/{workspaceId}/runtime-configurations");
         var create = await reader.PostControlJsonAsync($"/api/workspaces/{workspaceId}/runtime-configurations", RuntimeConfigurationRequest());
 
-        list.StatusCode.Should().Be(HttpStatusCode.OK);
-        create.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, create.StatusCode);
     }
 
     [Fact]
@@ -61,8 +60,8 @@ public sealed class WorkspaceAuthorizationTests
         await SetRoleAsync(app, workspaceId, "member", WorkspaceRole.Reader);
         var readerResponse = await member.PostControlJsonAsync($"/api/workspaces/{workspaceId}/runtime-configurations", RuntimeConfigurationRequest("After downgrade"));
 
-        sourceAdminResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        readerResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.OK, sourceAdminResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, readerResponse.StatusCode);
     }
 
     private static async Task<Guid> GetWorkspaceIdAsync(HttpClient client) =>

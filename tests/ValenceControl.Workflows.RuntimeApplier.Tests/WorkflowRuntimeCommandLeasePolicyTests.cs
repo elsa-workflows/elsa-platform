@@ -1,5 +1,4 @@
 using ValenceControl.Workflows.RuntimeApplier;
-using FluentAssertions;
 
 namespace ValenceControl.Workflows.RuntimeApplier.Tests;
 
@@ -40,12 +39,12 @@ public sealed class WorkflowRuntimeCommandLeasePolicyTests
 
         var evaluation = _leasePolicy.Evaluate(lease, Now.AddSeconds(31));
 
-        lease.CommandId.Should().Be(CommandId);
-        lease.LeaseToken.Should().Be("lease-1");
-        evaluation.State.Should().Be(WorkflowRuntimeCommandLeaseState.Active);
-        evaluation.CanContinueLocalApply.Should().BeTrue();
-        evaluation.CanReportToControl.Should().BeTrue();
-        evaluation.ShouldHeartbeat.Should().BeTrue();
+        Assert.Equal(CommandId, lease.CommandId);
+        Assert.Equal("lease-1", lease.LeaseToken);
+        Assert.Equal(WorkflowRuntimeCommandLeaseState.Active, evaluation.State);
+        Assert.True(evaluation.CanContinueLocalApply);
+        Assert.True(evaluation.CanReportToControl);
+        Assert.True(evaluation.ShouldHeartbeat);
     }
 
     [Fact]
@@ -55,10 +54,10 @@ public sealed class WorkflowRuntimeCommandLeasePolicyTests
 
         var evaluation = _leasePolicy.Evaluate(lease, Now.AddMinutes(4).AddSeconds(50));
 
-        evaluation.State.Should().Be(WorkflowRuntimeCommandLeaseState.Expiring);
-        evaluation.TimeRemaining.Should().Be(TimeSpan.FromSeconds(10));
-        evaluation.CanContinueLocalApply.Should().BeFalse();
-        evaluation.CanReportToControl.Should().BeTrue();
+        Assert.Equal(WorkflowRuntimeCommandLeaseState.Expiring, evaluation.State);
+        Assert.Equal(TimeSpan.FromSeconds(10), evaluation.TimeRemaining);
+        Assert.False(evaluation.CanContinueLocalApply);
+        Assert.True(evaluation.CanReportToControl);
     }
 
     [Fact]
@@ -68,10 +67,10 @@ public sealed class WorkflowRuntimeCommandLeasePolicyTests
 
         var evaluation = _leasePolicy.Evaluate(lease, Now.AddMinutes(5));
 
-        evaluation.State.Should().Be(WorkflowRuntimeCommandLeaseState.Expired);
-        evaluation.CanContinueLocalApply.Should().BeFalse();
-        evaluation.CanReportToControl.Should().BeFalse();
-        evaluation.ShouldHeartbeat.Should().BeFalse();
+        Assert.Equal(WorkflowRuntimeCommandLeaseState.Expired, evaluation.State);
+        Assert.False(evaluation.CanContinueLocalApply);
+        Assert.False(evaluation.CanReportToControl);
+        Assert.False(evaluation.ShouldHeartbeat);
     }
 
     [Fact]
@@ -82,8 +81,8 @@ public sealed class WorkflowRuntimeCommandLeasePolicyTests
         var refreshed = _leasePolicy.Refresh(lease, Command(Now.AddMinutes(5), heartbeatAt: Now.AddSeconds(40)));
         var evaluation = _leasePolicy.Evaluate(refreshed, Now.AddSeconds(45));
 
-        refreshed.LastHeartbeatAt.Should().Be(Now.AddSeconds(40));
-        evaluation.ShouldHeartbeat.Should().BeFalse();
+        Assert.Equal(Now.AddSeconds(40), refreshed.LastHeartbeatAt);
+        Assert.False(evaluation.ShouldHeartbeat);
     }
 
     [Fact]
@@ -91,8 +90,9 @@ public sealed class WorkflowRuntimeCommandLeasePolicyTests
     {
         var act = () => _leasePolicy.Create(new WorkflowRuntimeCommandClaim(Command(leaseExpiresAt: null, heartbeatAt: Now), "lease-1"));
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Runtime command claim did not include a lease expiration.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+
+        Assert.Equal("Runtime command claim did not include a lease expiration.", exception.Message);
     }
 
     [Fact]
@@ -100,8 +100,9 @@ public sealed class WorkflowRuntimeCommandLeasePolicyTests
     {
         var act = () => _leasePolicy.Create(new WorkflowRuntimeCommandClaim(Command(Now.AddMinutes(5), heartbeatAt: Now), " "));
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Runtime command claim did not include a lease token.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+
+        Assert.Equal("Runtime command claim did not include a lease token.", exception.Message);
     }
 
     [Theory]
@@ -120,8 +121,8 @@ public sealed class WorkflowRuntimeCommandLeasePolicyTests
             },
             "lease-1"));
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage(message);
+        var exception = Assert.Throws<InvalidOperationException>(act);
+        Assert.Equal(message, exception.Message);
     }
 
     [Fact]
@@ -136,8 +137,9 @@ public sealed class WorkflowRuntimeCommandLeasePolicyTests
                 Status = WorkflowRuntimeCommandStatus.Completed
             });
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Runtime command lease cannot be refreshed from an unleased command.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+
+        Assert.Equal("Runtime command lease cannot be refreshed from an unleased command.", exception.Message);
     }
 
     [Fact]
@@ -152,17 +154,19 @@ public sealed class WorkflowRuntimeCommandLeasePolicyTests
                 WorkerId = "worker-b"
             });
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Runtime command lease cannot be refreshed from a different worker.");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+
+        Assert.Equal("Runtime command lease cannot be refreshed from a different worker.", exception.Message);
     }
 
     [Fact]
     public void Retry_policy_uses_bounded_exponential_backoff()
     {
-        _retryPolicy.Decide(WorkflowRuntimeCommandClientStatus.RetryableError, retryAttempt: 0)
-            .Should().Be(new WorkflowRuntimeCommandRetryDecision(WorkflowRuntimeCommandRetryAction.Retry, TimeSpan.FromSeconds(1), "Control returned a retryable runtime command error."));
-        _retryPolicy.Decide(WorkflowRuntimeCommandClientStatus.RetryableError, retryAttempt: 1).Delay.Should().Be(TimeSpan.FromSeconds(2));
-        _retryPolicy.Decide(WorkflowRuntimeCommandClientStatus.RetryableError, retryAttempt: 3).Action.Should().Be(WorkflowRuntimeCommandRetryAction.SkipCommand);
+        Assert.Equal(
+            new WorkflowRuntimeCommandRetryDecision(WorkflowRuntimeCommandRetryAction.Retry, TimeSpan.FromSeconds(1), "Control returned a retryable runtime command error."),
+            _retryPolicy.Decide(WorkflowRuntimeCommandClientStatus.RetryableError, retryAttempt: 0));
+        Assert.Equal(TimeSpan.FromSeconds(2), _retryPolicy.Decide(WorkflowRuntimeCommandClientStatus.RetryableError, retryAttempt: 1).Delay);
+        Assert.Equal(WorkflowRuntimeCommandRetryAction.SkipCommand, _retryPolicy.Decide(WorkflowRuntimeCommandClientStatus.RetryableError, retryAttempt: 3).Action);
     }
 
     [Theory]
@@ -172,8 +176,8 @@ public sealed class WorkflowRuntimeCommandLeasePolicyTests
     {
         var decision = _retryPolicy.Decide(status, retryAttempt: 0);
 
-        decision.Action.Should().Be(WorkflowRuntimeCommandRetryAction.SkipCommand);
-        decision.Delay.Should().Be(TimeSpan.Zero);
+        Assert.Equal(WorkflowRuntimeCommandRetryAction.SkipCommand, decision.Action);
+        Assert.Equal(TimeSpan.Zero, decision.Delay);
     }
 
     [Theory]
@@ -182,7 +186,7 @@ public sealed class WorkflowRuntimeCommandLeasePolicyTests
     [InlineData(WorkflowRuntimeCommandClientStatus.Unknown)]
     public void Retry_policy_stops_worker_on_non_recoverable_status(WorkflowRuntimeCommandClientStatus status)
     {
-        _retryPolicy.Decide(status, retryAttempt: 0).Action.Should().Be(WorkflowRuntimeCommandRetryAction.StopWorker);
+        Assert.Equal(WorkflowRuntimeCommandRetryAction.StopWorker, _retryPolicy.Decide(status, retryAttempt: 0).Action);
     }
 
     private static WorkflowRuntimeCommand Command(DateTimeOffset? leaseExpiresAt, DateTimeOffset? heartbeatAt) =>

@@ -1,5 +1,4 @@
 using System.Xml.Linq;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Engine.Tests;
 
@@ -16,9 +15,10 @@ public class DeploymentEngineBoundaryTests
         var references = document.Descendants("ProjectReference")
             .Select(x => x.Attribute("Include")?.Value)
             .Where(x => x is not null)
+            .Cast<string>()
             .ToArray();
 
-        references.Should().Equal(@"..\ValenceControl.Deployment.Abstractions\ValenceControl.Deployment.Abstractions.csproj");
+        Assert.Equal([@"..\ValenceControl.Deployment.Abstractions\ValenceControl.Deployment.Abstractions.csproj"], references);
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public class DeploymentEngineBoundaryTests
         var source = string.Join(Environment.NewLine, Directory.GetFiles(EngineSource, "*.cs", SearchOption.AllDirectories).Select(File.ReadAllText));
 
         foreach (var namespaceFragment in forbidden)
-            source.Should().NotContain(namespaceFragment);
+            Assert.DoesNotContain(namespaceFragment, source);
     }
 
     private static string FindRepositoryRoot()

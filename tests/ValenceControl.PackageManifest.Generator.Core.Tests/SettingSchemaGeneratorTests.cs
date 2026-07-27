@@ -1,7 +1,6 @@
 using ValenceControl.PackageManifest.Generator.Core.SchemaGeneration;
 using ValenceControl.PackageManifest.Generator.Core.AssemblyInspection;
 using ValenceControl.PackageManifest.Generator.Core.Validation;
-using FluentAssertions;
 using System.Diagnostics;
 
 namespace ValenceControl.PackageManifest.Generator.Core.Tests;
@@ -23,8 +22,8 @@ public sealed class SettingSchemaGeneratorTests
     {
         var schema = new SettingSchemaGenerator().Generate(type, true, new Dictionary<string, object?>());
 
-        schema.JsonType.Should().Be(expectedJsonType);
-        schema.Diagnostics.Should().BeEmpty();
+        Assert.Equal(expectedJsonType, schema.JsonType);
+        Assert.Empty(schema.Diagnostics);
     }
 
     public static TheoryData<Type> DelegateShapedTypes => new()
@@ -41,7 +40,7 @@ public sealed class SettingSchemaGeneratorTests
     [MemberData(nameof(DelegateShapedTypes))]
     public void IsDelegateOrContainsDelegate_identifies_delegate_shapes(Type type)
     {
-        TypeMetadataHelpers.IsDelegateOrContainsDelegate(type).Should().BeTrue();
+        Assert.True(TypeMetadataHelpers.IsDelegateOrContainsDelegate(type));
     }
 
     public static TheoryData<Type> NonDelegateSettingTypes => new()
@@ -56,7 +55,7 @@ public sealed class SettingSchemaGeneratorTests
     [MemberData(nameof(NonDelegateSettingTypes))]
     public void IsDelegateOrContainsDelegate_ignores_non_delegate_shapes(Type type)
     {
-        TypeMetadataHelpers.IsDelegateOrContainsDelegate(type).Should().BeFalse();
+        Assert.False(TypeMetadataHelpers.IsDelegateOrContainsDelegate(type));
     }
 
     [Fact]
@@ -73,6 +72,6 @@ public sealed class SettingSchemaGeneratorTests
             TypeMetadataHelpers.IsDelegateOrContainsDelegate(type);
         stopwatch.Stop();
 
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(100));
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromMilliseconds(100));
     }
 }

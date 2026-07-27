@@ -1,6 +1,5 @@
 using ValenceControl.Deployment.Abstractions.Diagnostics;
 using ValenceControl.Deployment.Abstractions.Resources;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Abstractions.Tests;
 
@@ -18,11 +17,11 @@ public class DiagnosticContractTests
             _workflow,
             new Dictionary<string, string> { ["path"] = "workflows/order-approval.json" });
 
-        diagnostic.Code.Should().Be("workflow.invalid");
-        diagnostic.Severity.Should().Be(DeploymentDiagnosticSeverity.Error);
-        diagnostic.Message.Should().Be("Workflow definition is invalid.");
-        diagnostic.ResourceId.Should().Be(_workflow);
-        diagnostic.Details.Should().ContainKey("path");
+        Assert.Equal("workflow.invalid", diagnostic.Code);
+        Assert.Equal(DeploymentDiagnosticSeverity.Error, diagnostic.Severity);
+        Assert.Equal("Workflow definition is invalid.", diagnostic.Message);
+        Assert.Equal(_workflow, diagnostic.ResourceId);
+        Assert.Contains("path", diagnostic.Details);
     }
 
     [Theory]
@@ -32,6 +31,6 @@ public class DiagnosticContractTests
     {
         var act = () => new DeploymentDiagnostic(code, DeploymentDiagnosticSeverity.Error, message);
 
-        act.Should().Throw<ArgumentException>();
+        Assert.Throws<ArgumentException>(act);
     }
 }

@@ -1,7 +1,6 @@
 using System.IO.Compression;
 using System.Xml.Linq;
 using ValenceControl.PackageManifest.Generator.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifest.Generator.IntegrationTests;
 
@@ -13,7 +12,7 @@ public sealed class MultiTargetingPackageInspectionTests
         using var package = CreatePackage(("elsa-package.json", "{}"), ("lib/net10.0/Sample.dll", ""));
 
         NuGetPackageInspector.AssertSingleEntry(package.PackagePath, "elsa-package.json");
-        NuGetPackageInspector.FindEntries(package.PackagePath, "elsa-package.json").Should().ContainSingle();
+        Assert.Single(NuGetPackageInspector.FindEntries(package.PackagePath, "elsa-package.json"));
     }
 
     [Fact]
@@ -23,7 +22,7 @@ public sealed class MultiTargetingPackageInspectionTests
 
         var action = () => NuGetPackageInspector.AssertSingleEntry(package.PackagePath, "elsa-package.json");
 
-        action.Should().Throw<InvalidOperationException>();
+        Assert.Throws<InvalidOperationException>(action);
     }
 
     [Fact]
@@ -44,8 +43,8 @@ public sealed class MultiTargetingPackageInspectionTests
             .Where(x => x.Contains("TargetFrameworks", StringComparison.Ordinal))
             .ToArray();
 
-        canonicalAssignments.Should().HaveCount(2);
-        canonicalAssignments.Should().OnlyContain(x => x.Contains(".Trim()", StringComparison.Ordinal));
+        Assert.Equal(2, canonicalAssignments.Count());
+        Assert.All(canonicalAssignments, x => x.Contains(".Trim()", StringComparison.Ordinal));
     }
 
     private static TempPackage CreatePackage(params (string EntryName, string Content)[] entries)

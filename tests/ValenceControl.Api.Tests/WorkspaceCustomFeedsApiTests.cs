@@ -9,7 +9,6 @@ using ValenceControl.Api.Workspace;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,14 +24,14 @@ public sealed class WorkspaceCustomFeedsApiTests
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = WorkspaceClient(app);
 
-        var first = await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
-        var second = await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
+        var first = (await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!;
+        var second = (await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!;
 
-        first!.Account.Id.Should().NotBeEmpty();
-        first.Account.Email.Should().Be("ada@example.test");
-        first.Workspaces.Should().ContainSingle(x => x.Role == WorkspaceRole.Owner);
-        second!.Account.Id.Should().Be(first.Account.Id);
-        second.Workspaces.Single().Id.Should().Be(first.Workspaces.Single().Id);
+        Assert.NotEqual(Guid.Empty, first.Account.Id);
+        Assert.Equal("ada@example.test", first.Account.Email);
+        Assert.Single(first.Workspaces, x => x.Role == WorkspaceRole.Owner);
+        Assert.Equal(first.Account.Id, second.Account.Id);
+        Assert.Equal(first.Workspaces.Single().Id, second.Workspaces.Single().Id);
     }
 
     [Fact]
@@ -44,9 +43,9 @@ public sealed class WorkspaceCustomFeedsApiTests
         var responses = await Task.WhenAll(Enumerable.Range(0, 6)
             .Select(_ => WorkspaceClient(app).GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces")));
 
-        responses.Count(x => x is null).Should().Be(0);
-        responses.Select(x => x!.Account.Id).Distinct().Should().ContainSingle();
-        responses.Select(x => x!.Workspaces.Single().Id).Distinct().Should().ContainSingle();
+        Assert.Equal(0, responses.Count(x => x is null));
+        Assert.Single(responses.Select(x => x!.Account.Id).Distinct());
+        Assert.Single(responses.Select(x => x!.Workspaces.Single().Id).Distinct());
     }
 
     [Fact]
@@ -57,7 +56,7 @@ public sealed class WorkspaceCustomFeedsApiTests
 
         var response = await app.CreateClient().GetAsync("/api/me/workspaces");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -70,7 +69,7 @@ public sealed class WorkspaceCustomFeedsApiTests
 
         var response = await client.GetAsync("/api/me/workspaces");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -82,23 +81,23 @@ public sealed class WorkspaceCustomFeedsApiTests
         var workspaceId = (await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Workspaces.Single().Id;
 
         var denied = await client.PostControlJsonAsync($"/api/workspaces/{workspaceId}/sources", CreateSourceRequest("Company Feed", "https://nuget.example.test/v3/index.json"));
-        denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
 
         var admin = AdminClient(app);
         var entitlement = await admin.PutControlJsonAsync($"/api/admin/workspaces/{workspaceId}/entitlements", new WorkspaceEntitlementRequest(true, 1, 500, 20, 25, false));
-        entitlement.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, entitlement.StatusCode);
 
         var credentialUrl = await client.PostControlJsonAsync($"/api/workspaces/{workspaceId}/sources", CreateSourceRequest("Company Feed", "https://nuget.example.test/v3/index.json?token=secret"));
-        credentialUrl.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, credentialUrl.StatusCode);
 
         var created = await client.PostControlJsonAsync($"/api/workspaces/{workspaceId}/sources", CreateSourceRequest("Company Feed", "https://nuget.example.test/v3/index.json"));
-        created.StatusCode.Should().Be(HttpStatusCode.OK);
-        var source = await created.Content.ReadControlJsonAsync<WorkspaceSourceResponse>();
-        source!.Ownership.Should().Be(PackageSourceVisibility.Workspace);
-        source.Url.Should().Be("https://nuget.example.test/v3/index.json");
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        var source = (await created.Content.ReadControlJsonAsync<WorkspaceSourceResponse>())!;
+        Assert.Equal(PackageSourceVisibility.Workspace, source.Ownership);
+        Assert.Equal("https://nuget.example.test/v3/index.json", source.Url);
 
         var overLimit = await client.PostControlJsonAsync($"/api/workspaces/{workspaceId}/sources", CreateSourceRequest("Second Feed", "https://nuget2.example.test/v3/index.json"));
-        overLimit.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, overLimit.StatusCode);
     }
 
     [Fact]
@@ -111,7 +110,7 @@ public sealed class WorkspaceCustomFeedsApiTests
             $"/api/admin/workspaces/{Guid.NewGuid()}/entitlements",
             new WorkspaceEntitlementRequest(true, 1, 500, 20, 25, false));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -127,8 +126,8 @@ public sealed class WorkspaceCustomFeedsApiTests
             WorkspaceClient(app).PostControlJsonAsync($"/api/workspaces/{workspaceId}/sources", CreateSourceRequest("First Feed", "https://one.example.test/v3/index.json")),
             WorkspaceClient(app).PostControlJsonAsync($"/api/workspaces/{workspaceId}/sources", CreateSourceRequest("Second Feed", "https://two.example.test/v3/index.json")));
 
-        responses.Count(x => x.StatusCode == HttpStatusCode.OK).Should().Be(1);
-        responses.Count(x => x.StatusCode == HttpStatusCode.Forbidden).Should().Be(1);
+        Assert.Equal(1, responses.Count(x => x.StatusCode == HttpStatusCode.OK));
+        Assert.Equal(1, responses.Count(x => x.StatusCode == HttpStatusCode.Forbidden));
     }
 
     [Fact]
@@ -140,17 +139,16 @@ public sealed class WorkspaceCustomFeedsApiTests
         var workspaceId = (await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Workspaces.Single().Id;
         var admin = AdminClient(app);
 
-        (await admin.PutControlJsonAsync($"/api/admin/workspaces/{workspaceId}/entitlements", new WorkspaceEntitlementRequest(true, 1, 500, 20, 25, false)))
-            .StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, (await admin.PutControlJsonAsync($"/api/admin/workspaces/{workspaceId}/entitlements", new WorkspaceEntitlementRequest(true, 1, 500, 20, 25, false))).StatusCode);
         var replacement = await admin.PutControlJsonAsync($"/api/admin/workspaces/{workspaceId}/entitlements", new WorkspaceEntitlementRequest(false, 3, 750, 10, 5, true));
 
-        replacement.StatusCode.Should().Be(HttpStatusCode.OK);
-        var body = await replacement.Content.ReadControlJsonAsync<WorkspaceEntitlementResponse>();
-        body!.CanCreateCustomSources.Should().BeFalse();
-        body.MaxSources.Should().Be(3);
+        Assert.Equal(HttpStatusCode.OK, replacement.StatusCode);
+        var body = (await replacement.Content.ReadControlJsonAsync<WorkspaceEntitlementResponse>())!;
+        Assert.False(body.CanCreateCustomSources);
+        Assert.Equal(3, body.MaxSources);
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-        db.WorkspaceEntitlementSnapshots.Count(x => x.WorkspaceId == workspaceId).Should().Be(1);
+        Assert.Equal(1, db.WorkspaceEntitlementSnapshots.Count(x => x.WorkspaceId == workspaceId));
     }
 
     [Fact]
@@ -168,43 +166,43 @@ public sealed class WorkspaceCustomFeedsApiTests
         var workspaceId = (await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Workspaces.Single().Id;
         await AdminClient(app).PutControlJsonAsync($"/api/admin/workspaces/{workspaceId}/entitlements", new WorkspaceEntitlementRequest(true, 2, 500, 20, 25, false));
         var created = await client.PostControlJsonAsync($"/api/workspaces/{workspaceId}/sources", CreateSourceRequest("Private Feed", "https://private.example.test/v3/index.json"));
-        var source = await created.Content.ReadControlJsonAsync<WorkspaceSourceResponse>();
-        await AddPackageAsync(app, source!.Id, "Elsa.Private");
+        var source = (await created.Content.ReadControlJsonAsync<WorkspaceSourceResponse>())!;
+        await AddPackageAsync(app, source.Id, "Elsa.Private");
 
-        var publicSources = await app.CreateClient().GetControlJsonAsync<IReadOnlyList<PublicSourceResponse>>("/api/sources");
-        publicSources.Should().ContainSingle(x => x.Name == "Test NuGet");
-        publicSources.Should().NotContain(x => x.Id == source.Id);
+        var publicSources = (await app.CreateClient().GetControlJsonAsync<IReadOnlyList<PublicSourceResponse>>("/api/sources"))!;
+        Assert.Single(publicSources, x => x.Name == "Test NuGet");
+        Assert.DoesNotContain(publicSources, x => x.Id == source.Id);
 
-        var workspaceSources = await client.GetControlJsonAsync<IReadOnlyList<WorkspaceSourceResponse>>($"/api/workspaces/{workspaceId}/sources");
-        workspaceSources.Should().Contain(x => x.Id == source.Id && x.Ownership == PackageSourceVisibility.Workspace);
+        var workspaceSources = (await client.GetControlJsonAsync<IReadOnlyList<WorkspaceSourceResponse>>($"/api/workspaces/{workspaceId}/sources"))!;
+        Assert.Contains(workspaceSources, x => x.Id == source.Id && x.Ownership == PackageSourceVisibility.Workspace);
 
-        var publicPackages = await app.CreateClient().GetControlJsonAsync<IReadOnlyList<PublicPackageResponse>>($"/api/packages?sourceIds={source.Id}");
-        publicPackages.Should().BeEmpty();
+        var publicPackages = (await app.CreateClient().GetControlJsonAsync<IReadOnlyList<PublicPackageResponse>>($"/api/packages?sourceIds={source.Id}"))!;
+        Assert.Empty(publicPackages);
 
-        var workspacePackages = await client.GetControlJsonAsync<IReadOnlyList<PublicPackageResponse>>($"/api/workspaces/{workspaceId}/packages?sourceIds={source.Id}");
-        workspacePackages.Should().ContainSingle(x => x.PackageId == "Elsa.Private");
+        var workspacePackages = (await client.GetControlJsonAsync<IReadOnlyList<PublicPackageResponse>>($"/api/workspaces/{workspaceId}/packages?sourceIds={source.Id}"))!;
+        Assert.Single(workspacePackages, x => x.PackageId == "Elsa.Private");
 
-        var workspaceBuilderCatalog = await client.GetControlJsonAsync<BuilderCatalogResponse>($"/api/workspaces/{workspaceId}/builder/catalog?sourceIds={source.Id}");
-        workspaceBuilderCatalog!.Packages.Should().ContainSingle(x => x.PackageId == "Elsa.Private");
+        var workspaceBuilderCatalog = (await client.GetControlJsonAsync<BuilderCatalogResponse>($"/api/workspaces/{workspaceId}/builder/catalog?sourceIds={source.Id}"))!;
+        Assert.Single(workspaceBuilderCatalog.Packages, x => x.PackageId == "Elsa.Private");
 
         var publicCompatibility = await app.CreateClient().PostControlJsonAsync("/api/compatibility/check", new CompatibilityCheckApiRequest(
             null,
             null,
             [new SelectedPackageVersionApiRequest(source.Id, "Elsa.Private", "1.0.0")],
             []));
-        var publicCompatibilityBody = await publicCompatibility.Content.ReadControlJsonAsync<CompatibilityCheckApiResponse>();
-        publicCompatibilityBody!.Findings.Should().ContainSingle(x => x.Code == "package.missing");
+        var publicCompatibilityBody = (await publicCompatibility.Content.ReadControlJsonAsync<CompatibilityCheckApiResponse>())!;
+        Assert.Single(publicCompatibilityBody.Findings, x => x.Code == "package.missing");
 
         var workspaceCompatibility = await client.PostControlJsonAsync($"/api/workspaces/{workspaceId}/compatibility/check", new CompatibilityCheckApiRequest(
             null,
             null,
             [new SelectedPackageVersionApiRequest(source.Id, "Elsa.Private", "1.0.0")],
             []));
-        var workspaceCompatibilityBody = await workspaceCompatibility.Content.ReadControlJsonAsync<CompatibilityCheckApiResponse>();
-        workspaceCompatibilityBody!.Compatible.Should().BeTrue();
+        var workspaceCompatibilityBody = (await workspaceCompatibility.Content.ReadControlJsonAsync<CompatibilityCheckApiResponse>())!;
+        Assert.True(workspaceCompatibilityBody.Compatible);
 
         var anonymousDetail = await app.CreateClient().GetAsync($"/api/sources/{source.Id}/packages/Elsa.Private");
-        anonymousDetail.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.NotFound, anonymousDetail.StatusCode);
     }
 
     [Fact]
@@ -217,10 +215,10 @@ public sealed class WorkspaceCustomFeedsApiTests
 
         var response = await WorkspaceClient(app, "other-user").GetAsync($"/api/workspaces/{workspaceId}/sources");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        var problem = await response.Content.ReadControlJsonAsync<ProblemDetails>();
-        problem!.Title.Should().Be("Access to this workspace is not allowed.");
-        problem.Status.Should().Be((int)HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var problem = (await response.Content.ReadControlJsonAsync<ProblemDetails>())!;
+        Assert.Equal("Access to this workspace is not allowed.", problem.Title);
+        Assert.Equal((int)HttpStatusCode.Forbidden, problem.Status);
     }
 
     private static WorkspaceSourceRequest CreateSourceRequest(string name, string url) =>
@@ -248,7 +246,7 @@ public sealed class WorkspaceCustomFeedsApiTests
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         var source = await db.PackageSources.FindAsync(sourceId);
-        source.Should().NotBeNull();
+        Assert.NotNull(source);
         var package = new Package
         {
             PackageId = packageId,

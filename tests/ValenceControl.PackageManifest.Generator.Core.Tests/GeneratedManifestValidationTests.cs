@@ -1,5 +1,4 @@
 using ValenceControl.PackageManifest.Generator.Core.Validation;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifest.Generator.Core.Tests;
 
@@ -15,6 +14,6 @@ public sealed class GeneratedManifestValidationTests
             category: GenerationDiagnosticCategory.ManifestValidation,
             canMapValidationSeverity: true);
 
-        new ValidationSeverityPolicy("Error", false).ShouldFail(diagnostics).Should().BeTrue();
+        Assert.True(new ValidationSeverityPolicy("Error", false).ShouldFail(diagnostics));
     }
 }

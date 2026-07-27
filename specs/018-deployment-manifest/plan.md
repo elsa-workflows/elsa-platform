@@ -12,7 +12,7 @@ Add `ValenceControl.Deployment.Manifest` as the next Phase 1 deployment package.
 
 **Language/Version**: C# on .NET 10 using repository-wide `Directory.Build.props`.
 
-**Primary Dependencies**: `ValenceControl.Deployment.Abstractions`, `System.Text.Json`, YamlDotNet for YAML parsing, xUnit and FluentAssertions for tests.
+**Primary Dependencies**: `ValenceControl.Deployment.Abstractions`, `System.Text.Json`, YamlDotNet for YAML parsing, xUnit and its built-in assertions for tests.
 
 **Storage**: N/A. Manifest parsing is in-memory only.
 

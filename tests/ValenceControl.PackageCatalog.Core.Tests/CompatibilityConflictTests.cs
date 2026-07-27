@@ -2,7 +2,6 @@ using ValenceControl.PackageCatalog.Abstractions.Compatibility;
 using ValenceControl.PackageCatalog.Core.Compatibility;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.PackageCatalog.Core.Tests;
 
@@ -28,7 +27,7 @@ public sealed class CompatibilityConflictTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Email"), Selection(source, "Elsa.Sms")], []));
 
-        result.Findings.Should().ContainSingle(x => x.Code == "package.conflict");
+        Assert.Single(result.Findings, x => x.Code == "package.conflict");
     }
 
     [Fact]
@@ -51,7 +50,7 @@ public sealed class CompatibilityConflictTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Email"), Selection(source, "Elsa.Sms")], []));
 
-        result.Findings.Should().NotContain(x => x.Code == "package.conflict");
+        Assert.DoesNotContain(result.Findings, x => x.Code == "package.conflict");
     }
 
     [Fact]
@@ -91,7 +90,7 @@ public sealed class CompatibilityConflictTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(source, "Elsa.Email"), Selection(source, "Elsa.Sms")], ["email", "sms"]));
 
-        result.Findings.Should().NotContain(x => x.Code == "feature.conflict");
+        Assert.DoesNotContain(result.Findings, x => x.Code == "feature.conflict");
     }
 
     [Fact]
@@ -115,7 +114,7 @@ public sealed class CompatibilityConflictTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(sourceA, "Elsa.Email", "1.0.0"), Selection(sourceB, "Elsa.Email", "2.0.0")], []));
 
-        result.Findings.Should().ContainSingle(x => x.Code == "package.conflict");
+        Assert.Single(result.Findings, x => x.Code == "package.conflict");
     }
 
     [Fact]
@@ -156,7 +155,7 @@ public sealed class CompatibilityConflictTests
 
         var result = await service.CheckAsync(new CompatibilityCheckRequest(null, null, [Selection(sourceA, "Elsa.Email"), Selection(sourceB, "Elsa.Sms")], ["email", "sms"]));
 
-        result.Findings.Should().ContainSingle(x => x.Code == "feature.conflict");
+        Assert.Single(result.Findings, x => x.Code == "feature.conflict");
     }
 
     private static SelectedPackageVersion Selection(PackageSource source, string packageId, string version = "1.0.0") =>

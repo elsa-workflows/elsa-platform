@@ -12,11 +12,11 @@ Promote the existing deployment secret-store metadata into a focused engine cred
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `ValenceControl.Deployment.Core` workspace services, React Router, TanStack Query, Vitest, xUnit, and FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `ValenceControl.Deployment.Core` workspace services, React Router, TanStack Query, Vitest, xUnit and its built-in assertions.
 
 **Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Existing deployment secret-store and credential-reference tables are extended in place. Local encrypted credential values are stored only as protected ciphertext metadata, while external providers store only safe locators.
 
-**Testing**: Focused xUnit/FluentAssertions tests for deployment API and persistence; Vitest tests for console deployment setup and secret-store flows; `npm run typecheck`; `git diff --check`; browser verification where console flow behavior cannot be proven by component tests alone.
+**Testing**: Focused deployment API and persistence tests using xUnit's built-in assertions; Vitest tests for console deployment setup and secret-store flows; `npm run typecheck`; `git diff --check`; browser verification where console flow behavior cannot be proven by component tests alone.
 
 **Target platform**: Valence Control API and hosted admin console.
 

@@ -9,7 +9,7 @@ Introduce a narrow managed hosting control plane for provisioning, lifecycle, UR
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 LTS for API/Core/Persistence.
-**Primary Dependencies**: ASP.NET Core minimal APIs, EF Core, deployment adapter ports, health polling, background jobs, xUnit, FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, EF Core, deployment adapter ports, health polling, background jobs, xUnit and its built-in assertions.
 **Storage**: Managed environment, instance, resource, and event records in existing relational database.
 **Testing**: Core service tests, API tests, adapter fakes.
 **Target platform**: Existing ASP.NET Core modular monolith.

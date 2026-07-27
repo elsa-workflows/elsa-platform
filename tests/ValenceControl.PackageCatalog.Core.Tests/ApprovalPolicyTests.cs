@@ -1,7 +1,6 @@
 using ValenceControl.PackageCatalog.Core.Approvals;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.PackageCatalog.Core.Tests;
 
@@ -15,8 +14,8 @@ public sealed class ApprovalPolicyTests
         var source = PublicCatalogSeedData.CreatePackageSource();
         source.ApprovalPolicy = PackageSourceApprovalPolicy.AutoApprove;
 
-        _policy.GetInitialPackageApproved(source).Should().BeTrue();
-        _policy.GetInitialVersionStatus(source).Should().Be(PackageApprovalStatus.Approved);
+        Assert.True(_policy.GetInitialPackageApproved(source));
+        Assert.Equal(PackageApprovalStatus.Approved, _policy.GetInitialVersionStatus(source));
     }
 
     [Fact]
@@ -25,7 +24,7 @@ public sealed class ApprovalPolicyTests
         var source = PublicCatalogSeedData.CreatePackageSource();
         source.ApprovalPolicy = PackageSourceApprovalPolicy.Manual;
 
-        _policy.GetInitialPackageApproved(source).Should().BeFalse();
-        _policy.GetInitialVersionStatus(source).Should().Be(PackageApprovalStatus.Pending);
+        Assert.False(_policy.GetInitialPackageApproved(source));
+        Assert.Equal(PackageApprovalStatus.Pending, _policy.GetInitialVersionStatus(source));
     }
 }

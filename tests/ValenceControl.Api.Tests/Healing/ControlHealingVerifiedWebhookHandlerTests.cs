@@ -8,7 +8,6 @@ using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Core.Ownership;
 using ValenceControl.Healing.GitHub;
 using ValenceControl.Healing.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -37,18 +36,18 @@ public sealed class ControlHealingVerifiedWebhookHandlerTests
         var accepted = await handler.ProcessAsync(request);
         var replay = await handler.ProcessAsync(request);
 
-        accepted.Should().Be(new HealingVerifiedWebhookReceipt("delivery-1", false, "check-unbound"));
-        replay.Should().Be(new HealingVerifiedWebhookReceipt("delivery-1", true, "check-unbound"));
+        Assert.Equal(new HealingVerifiedWebhookReceipt("delivery-1", false, "check-unbound"), accepted);
+        Assert.Equal(new HealingVerifiedWebhookReceipt("delivery-1", true, "check-unbound"), replay);
         var deliveries = await database.Context.ProviderWebhookDeliveries.AsNoTracking()
             .OrderBy(x => x.WorkspaceId)
             .ToArrayAsync();
-        deliveries.Should().HaveCount(2);
-        deliveries.Select(x => x.WorkspaceId).Should().BeEquivalentTo([firstWorkspace, secondWorkspace]);
-        deliveries.Should().OnlyContain(x =>
+        Assert.Equal(2, deliveries.Count());
+        Assert.Equivalent(new[] { firstWorkspace, secondWorkspace }, deliveries.Select(x => x.WorkspaceId));
+        Assert.All(deliveries, x => Assert.True(
             x.ProviderDeliveryId == "delivery-1" &&
             x.RepositoryProviderId == "987" &&
             x.Status == ProviderWebhookDeliveryStatus.Completed &&
-            x.OutcomeCode == "check-unbound");
+            x.OutcomeCode == "check-unbound"));
     }
 
     [Fact]
@@ -64,14 +63,14 @@ public sealed class ControlHealingVerifiedWebhookHandlerTests
             .Add(secondWorkspace, "secret://second", SharedSecret);
         var handler = database.CreateHandler(resolver);
         var request = Request("delivery-partial", SharedSecret);
-        (await handler.ProcessAsync(request)).IsReplay.Should().BeFalse();
+        Assert.False((await handler.ProcessAsync(request)).IsReplay);
         database.AddConnection(secondWorkspace, "secret://second");
         await database.Context.SaveChangesAsync();
 
         var receipt = await handler.ProcessAsync(request);
 
-        receipt.IsReplay.Should().BeFalse("a newly accepted workspace delivery must retain the endpoint's 202 semantics");
-        (await database.Context.ProviderWebhookDeliveries.CountAsync()).Should().Be(2);
+        Assert.False(receipt.IsReplay);
+        Assert.Equal(2, (await database.Context.ProviderWebhookDeliveries.CountAsync()));
     }
 
     [Fact]
@@ -90,9 +89,9 @@ public sealed class ControlHealingVerifiedWebhookHandlerTests
 
         var receipt = await handler.ProcessAsync(Request("delivery-2", SharedSecret));
 
-        receipt.Should().Be(new HealingVerifiedWebhookReceipt("delivery-2", false, "check-unbound"));
+        Assert.Equal(new HealingVerifiedWebhookReceipt("delivery-2", false, "check-unbound"), receipt);
         var delivery = await database.Context.ProviderWebhookDeliveries.AsNoTracking().SingleAsync();
-        delivery.WorkspaceId.Should().Be(firstWorkspace);
+        Assert.Equal(firstWorkspace, delivery.WorkspaceId);
     }
 
     [Fact]
@@ -111,9 +110,9 @@ public sealed class ControlHealingVerifiedWebhookHandlerTests
 
         var receipt = await handler.ProcessAsync(Request("delivery-3", SharedSecret));
 
-        receipt.Should().Be(new HealingVerifiedWebhookReceipt("delivery-3", false, "check-unbound"));
+        Assert.Equal(new HealingVerifiedWebhookReceipt("delivery-3", false, "check-unbound"), receipt);
         var delivery = await database.Context.ProviderWebhookDeliveries.AsNoTracking().SingleAsync();
-        delivery.WorkspaceId.Should().Be(firstWorkspace);
+        Assert.Equal(firstWorkspace, delivery.WorkspaceId);
     }
 
     [Fact]
@@ -131,9 +130,9 @@ public sealed class ControlHealingVerifiedWebhookHandlerTests
 
         var receipt = await handler.ProcessAsync(Request("delivery-missing", SharedSecret));
 
-        receipt.Should().Be(new HealingVerifiedWebhookReceipt("delivery-missing", false, "check-unbound"));
+        Assert.Equal(new HealingVerifiedWebhookReceipt("delivery-missing", false, "check-unbound"), receipt);
         var delivery = await database.Context.ProviderWebhookDeliveries.AsNoTracking().SingleAsync();
-        delivery.WorkspaceId.Should().Be(verifiedWorkspace);
+        Assert.Equal(verifiedWorkspace, delivery.WorkspaceId);
     }
 
     [Fact]
@@ -152,9 +151,9 @@ public sealed class ControlHealingVerifiedWebhookHandlerTests
 
         var receipt = await handler.ProcessAsync(Request("delivery-resolution-failure", SharedSecret));
 
-        receipt.Should().Be(new HealingVerifiedWebhookReceipt("delivery-resolution-failure", false, "check-unbound"));
+        Assert.Equal(new HealingVerifiedWebhookReceipt("delivery-resolution-failure", false, "check-unbound"), receipt);
         var delivery = await database.Context.ProviderWebhookDeliveries.AsNoTracking().SingleAsync();
-        delivery.WorkspaceId.Should().Be(verifiedWorkspace);
+        Assert.Equal(verifiedWorkspace, delivery.WorkspaceId);
     }
 
     [Fact]
@@ -173,7 +172,7 @@ public sealed class ControlHealingVerifiedWebhookHandlerTests
         Func<Task> act = async () => await handler.ProcessAsync(Request("delivery-4", SharedSecret));
 
         await AssertRejectedAsync(act);
-        (await database.Context.ProviderWebhookDeliveries.CountAsync()).Should().Be(0);
+        Assert.Equal(0, (await database.Context.ProviderWebhookDeliveries.CountAsync()));
     }
 
     [Fact]
@@ -194,9 +193,9 @@ public sealed class ControlHealingVerifiedWebhookHandlerTests
 
         var receipt = await handler.ProcessAsync(Request("delivery-ambiguous", SharedSecret));
 
-        receipt.Should().Be(new HealingVerifiedWebhookReceipt("delivery-ambiguous", false, "check-unbound"));
+        Assert.Equal(new HealingVerifiedWebhookReceipt("delivery-ambiguous", false, "check-unbound"), receipt);
         var delivery = await database.Context.ProviderWebhookDeliveries.AsNoTracking().SingleAsync();
-        delivery.WorkspaceId.Should().Be(verifiedWorkspace);
+        Assert.Equal(verifiedWorkspace, delivery.WorkspaceId);
     }
 
     [Fact]
@@ -216,36 +215,36 @@ public sealed class ControlHealingVerifiedWebhookHandlerTests
         var request = Request("delivery-processing-failure", SharedSecret);
 
         var firstAttempt = () => handler.ProcessAsync(request).AsTask();
-        await firstAttempt.Should().ThrowAsync<InvalidOperationException>();
+        await Assert.ThrowsAsync<InvalidOperationException>(firstAttempt);
 
         var afterFailure = await database.Context.ProviderWebhookDeliveries.AsNoTracking()
             .OrderBy(x => x.WorkspaceId)
             .ToArrayAsync();
-        afterFailure.Should().HaveCount(2);
-        afterFailure[0].WorkspaceId.Should().Be(failingWorkspace);
-        afterFailure[0].Status.Should().Be(ProviderWebhookDeliveryStatus.Failed);
-        afterFailure[0].OutcomeCode.Should().Be("processing-failed");
-        afterFailure[1].WorkspaceId.Should().Be(succeedingWorkspace);
-        afterFailure[1].Status.Should().Be(ProviderWebhookDeliveryStatus.Completed,
-            "a prior workspace processor failure must not starve later verified tenants");
+        Assert.Equal(2, afterFailure.Count());
+        Assert.Equal(failingWorkspace, afterFailure[0].WorkspaceId);
+        Assert.Equal(ProviderWebhookDeliveryStatus.Failed, afterFailure[0].Status);
+        Assert.Equal("processing-failed", afterFailure[0].OutcomeCode);
+        Assert.Equal(succeedingWorkspace, afterFailure[1].WorkspaceId);
+        Assert.Equal(ProviderWebhookDeliveryStatus.Completed, afterFailure[1].Status);
 
         var retried = await handler.ProcessAsync(request);
 
-        retried.Should().Be(new HealingVerifiedWebhookReceipt(
-            "delivery-processing-failure", true, "check-unbound"));
+        Assert.Equal(
+            new HealingVerifiedWebhookReceipt("delivery-processing-failure", true, "check-unbound"),
+            retried);
         var completed = await database.Context.ProviderWebhookDeliveries.AsNoTracking().ToArrayAsync();
-        completed.Should().OnlyContain(x =>
-            x.Status == ProviderWebhookDeliveryStatus.Completed && x.OutcomeCode == "check-unbound");
-        processorRunner.CallsByWorkspace[failingWorkspace].Should().Be(2);
-        processorRunner.CallsByWorkspace[succeedingWorkspace].Should().Be(2,
-            "completed delivery replay is idempotently resolved by the durable processor");
+        Assert.All(completed, x => Assert.True(
+            x.Status == ProviderWebhookDeliveryStatus.Completed && x.OutcomeCode == "check-unbound"));
+        Assert.Equal(2, processorRunner.CallsByWorkspace[failingWorkspace]);
+        Assert.Equal(2, processorRunner.CallsByWorkspace[succeedingWorkspace]);
     }
 
-    private static async Task AssertRejectedAsync(Func<Task> act) =>
-        (await act.Should().ThrowAsync<HealingWorkflowRequestException>())
-        .Which.Should().Match<HealingWorkflowRequestException>(x =>
-            x.StatusCode == HttpStatusCode.Unauthorized &&
-            x.ReasonCode == "healing.webhook.verification-failed");
+    private static async Task AssertRejectedAsync(Func<Task> act)
+    {
+        var exception = await Assert.ThrowsAsync<HealingWorkflowRequestException>(act);
+        Assert.Equal(HttpStatusCode.Unauthorized, exception.StatusCode);
+        Assert.Equal("healing.webhook.verification-failed", exception.ReasonCode);
+    }
 
     private static HealingVerifiedWebhookRequest Request(string deliveryId, string secret)
     {

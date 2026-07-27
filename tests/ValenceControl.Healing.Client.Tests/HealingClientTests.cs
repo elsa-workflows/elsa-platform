@@ -4,7 +4,6 @@ using System.Text;
 using System.Text.Json;
 using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.Client;
-using FluentAssertions;
 using Microsoft.Extensions.Options;
 
 namespace ValenceControl.Healing.Client.Tests;
@@ -27,12 +26,12 @@ public sealed class HealingClientTests
 
         activity.EnrichForHealing(context);
 
-        activity.GetTagItem(HealingSignalAttributes.ProfileVersion).Should().Be(HealingContractVersions.SignalProfile);
-        activity.GetTagItem(HealingSignalAttributes.ApplicationId).Should().Be(applicationId.ToString("D"));
-        activity.GetTagItem(HealingSignalAttributes.EnvironmentId).Should().Be(environmentId.ToString("D"));
-        activity.GetTagItem(HealingSignalAttributes.OperationName).Should().Be("orders.load");
-        activity.GetTagItem(HealingSignalAttributes.ComponentKey).Should().Be("package:Acme.Orders");
-        activity.TagObjects.Select(x => x.Key).Should().NotContain(x =>
+        Assert.Equal(HealingContractVersions.SignalProfile, activity.GetTagItem(HealingSignalAttributes.ProfileVersion));
+        Assert.Equal(applicationId.ToString("D"), activity.GetTagItem(HealingSignalAttributes.ApplicationId));
+        Assert.Equal(environmentId.ToString("D"), activity.GetTagItem(HealingSignalAttributes.EnvironmentId));
+        Assert.Equal("orders.load", activity.GetTagItem(HealingSignalAttributes.OperationName));
+        Assert.Equal("package:Acme.Orders", activity.GetTagItem(HealingSignalAttributes.ComponentKey));
+        Assert.DoesNotContain(activity.TagObjects.Select(x => x.Key), x =>
             x.Contains("repository", StringComparison.OrdinalIgnoreCase) ||
             x.Contains("workflow", StringComparison.OrdinalIgnoreCase) && x != HealingSignalAttributes.WorkflowDefinitionId ||
             x.Contains("credential", StringComparison.OrdinalIgnoreCase));
@@ -51,12 +50,13 @@ public sealed class HealingClientTests
 
         var result = await client.ReportIncidentAsync(Request(), "occurrence-42");
 
-        result.Should().Be(accepted);
-        handler.Path.Should().Be(
-            $"/api/workspaces/{options.Value.WorkspaceId:D}/healing/applications/{options.Value.ApplicationId:D}/environments/{options.Value.EnvironmentId:D}/incidents");
-        handler.IdempotencyKey.Should().Be("occurrence-42");
-        handler.Body.Should().Contain("\"profileVersion\":\"1.0\"");
-        handler.Body!.Contains("repository", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
+        Assert.Equal(accepted, result);
+        Assert.Equal(
+            $"/api/workspaces/{options.Value.WorkspaceId:D}/healing/applications/{options.Value.ApplicationId:D}/environments/{options.Value.EnvironmentId:D}/incidents",
+            handler.Path);
+        Assert.Equal("occurrence-42", handler.IdempotencyKey);
+        Assert.Contains("\"profileVersion\":\"1.0\"", handler.Body);
+        Assert.False(handler.Body!.Contains("repository", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -68,8 +68,8 @@ public sealed class HealingClientTests
 
         var act = () => client.ReportIncidentAsync(request).AsTask();
 
-        await act.Should().ThrowAsync<ArgumentException>();
-        handler.CallCount.Should().Be(0);
+        await Assert.ThrowsAsync<ArgumentException>(act);
+        Assert.Equal(0, handler.CallCount);
     }
 
     [Fact]
@@ -87,10 +87,10 @@ public sealed class HealingClientTests
 
         var act = () => client.ReportIncidentAsync(Request()).AsTask();
 
-        var exception = await act.Should().ThrowAsync<HealingClientException>();
-        exception.Which.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        exception.Which.ReasonCode.Should().Be("healing.intake.denied");
-        exception.Which.Message.Should().NotContain(secret);
+        var exception = await Assert.ThrowsAsync<HealingClientException>(act);
+        Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);
+        Assert.Equal("healing.intake.denied", exception.ReasonCode);
+        Assert.DoesNotContain(secret, exception.Message);
     }
 
     [Theory]
@@ -106,9 +106,9 @@ public sealed class HealingClientTests
 
         var act = () => client.ReportIncidentAsync(Request()).AsTask();
 
-        var exception = await act.Should().ThrowAsync<HealingClientException>();
-        exception.Which.StatusCode.Should().Be(statusCode);
-        exception.Which.ReasonCode.Should().Be("healing.client.response-too-large");
+        var exception = await Assert.ThrowsAsync<HealingClientException>(act);
+        Assert.Equal(statusCode, exception.StatusCode);
+        Assert.Equal("healing.client.response-too-large", exception.ReasonCode);
     }
 
     private static ExplicitHealingIncidentRequest Request() => new(

@@ -4,7 +4,6 @@ using ValenceControl.Api.Authentication;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -32,14 +31,14 @@ public sealed class AdminApprovalApiTests
         var packageResponse = await client.PostAsync("/api/admin/packages/Elsa.Email/approve", null);
         var versionResponse = await client.PostControlJsonAsync("/api/admin/packages/Elsa.Email/versions/1.0.0/approve", new ApprovalRequest(null, token));
 
-        packageResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        versionResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        Assert.Equal(HttpStatusCode.NoContent, packageResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, versionResponse.StatusCode);
 
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         var storedPackage = await db.Packages.Include(x => x.Versions).SingleAsync();
-        storedPackage.Approved.Should().BeTrue();
-        storedPackage.Versions[0].ApprovalStatus.Should().Be(PackageApprovalStatus.Approved);
+        Assert.True(storedPackage.Approved);
+        Assert.Equal(PackageApprovalStatus.Approved, storedPackage.Versions[0].ApprovalStatus);
     }
 
     [Fact]
@@ -59,7 +58,7 @@ public sealed class AdminApprovalApiTests
 
         var response = await client.PostControlJsonAsync("/api/admin/packages/Elsa.Email/versions/1.0.0/reject", new ApprovalRequest(" ", null));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -79,7 +78,7 @@ public sealed class AdminApprovalApiTests
 
         var response = await client.PostAsync("/api/admin/packages/Elsa.Email/versions/1.0.0/approve", null);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -99,6 +98,6 @@ public sealed class AdminApprovalApiTests
 
         var response = await client.PostControlJsonAsync("/api/admin/packages/Elsa.Email/versions/1.0.0/approve", new ApprovalRequest("Reviewed", "stale"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 }

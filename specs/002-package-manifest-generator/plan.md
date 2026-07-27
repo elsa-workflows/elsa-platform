@@ -27,7 +27,7 @@ deterministic builds.
 **Primary Dependencies**: MSBuild task APIs, System.Reflection.Metadata,
 MetadataLoadContext where useful for metadata-only inspection, System.Xml.Linq,
 System.Text.Json, JsonSchema.Net, ValenceControl.PackageManifests, NuGet.Versioning,
-xUnit, FluentAssertions.
+xUnit and its built-in assertions.
 
 **Storage**: File artifacts only. Inputs are compiled assemblies, XML
 documentation files, project/NuGet metadata, referenced assembly metadata, and

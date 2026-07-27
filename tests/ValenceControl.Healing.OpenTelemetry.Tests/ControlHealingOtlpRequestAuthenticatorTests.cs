@@ -1,7 +1,6 @@
 using Elsa.Diagnostics.OpenTelemetry.Core.Models;
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Core.OpenTelemetry;
-using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 
 namespace ValenceControl.Healing.OpenTelemetry.Tests;
@@ -15,16 +14,16 @@ public sealed class ControlHealingOtlpRequestAuthenticatorTests
 
         var result = await AuthenticateAsync(fixture.Authenticator, fixture.Credential.Token);
 
-        result.Accepted.Should().BeTrue();
-        result.Context.IsAuthenticated.Should().BeTrue();
-        result.Context.SourceIdentity.Should().Be($"control-otel-source:{fixture.Source.Id:D}");
-        result.Context.Claims.Should().BeEquivalentTo(new Dictionary<string, string>
+        Assert.True(result.Accepted);
+        Assert.True(result.Context.IsAuthenticated);
+        Assert.Equal($"control-otel-source:{fixture.Source.Id:D}", result.Context.SourceIdentity);
+        Assert.Equivalent(new Dictionary<string, string>
         {
             [HealingTelemetryScopeClaims.WorkspaceId] = fixture.Source.WorkspaceId.ToString("D"),
             [HealingTelemetryScopeClaims.ApplicationId] = fixture.Source.ApplicationId.ToString("D"),
             [HealingTelemetryScopeClaims.EnvironmentId] = fixture.Source.EnvironmentId.ToString("D")
-        });
-        result.Context.Metadata["valence.control.telemetry-source.credential-version"].Should().Be("1");
+        }, result.Context.Claims);
+        Assert.Equal("1", result.Context.Metadata["valence.control.telemetry-source.credential-version"]);
     }
 
     [Fact]
@@ -40,8 +39,8 @@ public sealed class ControlHealingOtlpRequestAuthenticatorTests
         fixture.Source.Status = HealingTelemetrySourceStatus.Revoked;
         var revokedResult = await AuthenticateAsync(fixture.Authenticator, fixture.Credential.Token);
 
-        new[] { malformedResult, unknownResult, wrongResult, revokedResult }.Should().OnlyContain(result =>
-            !result.Accepted && ReferenceEquals(result.Context, OpenTelemetryIngestionContext.Untrusted));
+        Assert.All(new[] { malformedResult, unknownResult, wrongResult, revokedResult }, result =>
+            Assert.True(!result.Accepted && ReferenceEquals(result.Context, OpenTelemetryIngestionContext.Untrusted)));
     }
 
     [Fact]
@@ -57,12 +56,11 @@ public sealed class ControlHealingOtlpRequestAuthenticatorTests
         var previousResult = await AuthenticateAsync(fixture.Authenticator, fixture.Credential.Token);
         var rotatedResult = await AuthenticateAsync(fixture.Authenticator, rotated.Token);
 
-        previousResult.Accepted.Should().BeFalse();
-        rotatedResult.Accepted.Should().BeTrue();
-        rotatedResult.Context.SourceIdentity.Should().Be($"control-otel-source:{fixture.Source.Id:D}");
-        rotatedResult.Context.Metadata["valence.control.telemetry-source.credential-version"].Should().Be("2");
-        rotatedResult.Context.Claims[HealingTelemetryScopeClaims.WorkspaceId]
-            .Should().Be(fixture.Source.WorkspaceId.ToString("D"));
+        Assert.False(previousResult.Accepted);
+        Assert.True(rotatedResult.Accepted);
+        Assert.Equal($"control-otel-source:{fixture.Source.Id:D}", rotatedResult.Context.SourceIdentity);
+        Assert.Equal("2", rotatedResult.Context.Metadata["valence.control.telemetry-source.credential-version"]);
+        Assert.Equal(fixture.Source.WorkspaceId.ToString("D"), rotatedResult.Context.Claims[HealingTelemetryScopeClaims.WorkspaceId]);
     }
 
     [Fact]
@@ -72,12 +70,14 @@ public sealed class ControlHealingOtlpRequestAuthenticatorTests
         var first = tokens.Issue(Guid.NewGuid());
         var second = tokens.Issue(Guid.NewGuid());
 
-        tokens.TryParse(first.Token, out _, out var secret).Should().BeTrue();
-        secret.Should().HaveCount(32);
-        first.Salt.Should().HaveCount(32).And.NotEqual(second.Salt);
-        first.Hash.Should().HaveCount(32).And.NotEqual(second.Hash);
-        tokens.Verify(secret, first.Salt, first.Hash).Should().BeTrue();
-        tokens.Verify(secret, second.Salt, first.Hash).Should().BeFalse();
+        Assert.True(tokens.TryParse(first.Token, out _, out var secret));
+        Assert.Equal(32, secret.Count());
+        Assert.Equal(32, first.Salt.Count());
+        Assert.NotEqual(first.Salt, second.Salt);
+        Assert.Equal(32, first.Hash.Count());
+        Assert.NotEqual(first.Hash, second.Hash);
+        Assert.True(tokens.Verify(secret, first.Salt, first.Hash));
+        Assert.False(tokens.Verify(secret, second.Salt, first.Hash));
     }
 
     private static async Task<Elsa.Diagnostics.OpenTelemetry.Ingestion.OtlpRequestAuthenticationResult> AuthenticateAsync(

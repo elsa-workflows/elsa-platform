@@ -1,6 +1,5 @@
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Core.Sources;
-using FluentAssertions;
 
 namespace ValenceControl.PackageCatalog.Core.Tests;
 
@@ -16,7 +15,7 @@ public sealed class PackageSourceValidationTests
 
         var result = _validator.Validate(source);
 
-        result.IsValid.Should().BeFalse();
+        Assert.False(result.IsValid);
     }
 
     [Fact]
@@ -27,7 +26,7 @@ public sealed class PackageSourceValidationTests
 
         var result = _validator.Validate(source);
 
-        result.IsValid.Should().BeFalse();
+        Assert.False(result.IsValid);
     }
 
     [Fact]
@@ -38,7 +37,7 @@ public sealed class PackageSourceValidationTests
 
         var result = _validator.Validate(source);
 
-        result.IsValid.Should().BeFalse();
+        Assert.False(result.IsValid);
     }
 
     [Fact]
@@ -49,8 +48,8 @@ public sealed class PackageSourceValidationTests
         var manual = ValidSource();
         manual.ApprovalPolicy = PackageSourceApprovalPolicy.Manual;
 
-        _validator.Validate(autoApprove).IsValid.Should().BeTrue();
-        _validator.Validate(manual).IsValid.Should().BeTrue();
+        Assert.True(_validator.Validate(autoApprove).IsValid);
+        Assert.True(_validator.Validate(manual).IsValid);
     }
 
     [Fact]
@@ -61,8 +60,8 @@ public sealed class PackageSourceValidationTests
 
         var result = _validator.Validate(source);
 
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.Contains("Polling interval", StringComparison.Ordinal));
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => x.Contains("Polling interval", StringComparison.Ordinal));
     }
 
     private static PackageSource ValidSource() => new()

@@ -12,7 +12,7 @@ Make desired-state revision creation derive additional record editors from envir
 
 **Language/Version**: C# on .NET 10 for deployment core/API; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace authorization and deployment permission grants, `ValenceControl.Deployment.Core` tier capability services, EF-backed deployment store projections, React Router, TanStack Query, Vitest, xUnit, FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace authorization and deployment permission grants, `ValenceControl.Deployment.Core` tier capability services, EF-backed deployment store projections, React Router, TanStack Query, Vitest, xUnit and its built-in assertions.
 
 **Storage**: No new persistence. Requirement metadata is computed from existing environment tier capabilities and stable platform requirement definitions.
 

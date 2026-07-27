@@ -9,7 +9,7 @@ Add a backend planner that turns builder intent into resolved runtime state and 
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 LTS for API/Core.
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing catalog queries, compatibility service, runtime image catalog, infrastructure provider catalog, xUnit, FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing catalog queries, compatibility service, runtime image catalog, infrastructure provider catalog, xUnit and its built-in assertions.
 **Storage**: No new durable storage for first planner slice.
 **Testing**: Core planner tests and API integration tests.
 **Target platform**: Existing ASP.NET Core modular monolith.

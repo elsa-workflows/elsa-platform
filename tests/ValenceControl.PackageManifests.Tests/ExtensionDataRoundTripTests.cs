@@ -1,6 +1,5 @@
 using System.Text.Json;
 using ValenceControl.PackageManifests;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifests.Tests;
 
@@ -37,9 +36,9 @@ public sealed class ExtensionDataRoundTripTests
         var manifest = JsonSerializer.Deserialize<ElsaPackageManifest>(json, ManifestJsonSerializerOptions.Default)!;
         var roundTrip = JsonSerializer.Deserialize<ElsaPackageManifest>(JsonSerializer.Serialize(manifest, ManifestJsonSerializerOptions.Default), ManifestJsonSerializerOptions.Default)!;
 
-        roundTrip.ExtensionData.Should().ContainKey("x-root");
-        roundTrip.Package.ExtensionData.Should().ContainKey("x-package");
-        roundTrip.Features[0].ExtensionData.Should().ContainKey("x-feature");
-        roundTrip.Features[0].Settings[0].ExtensionData.Should().ContainKey("x-setting");
+        Assert.Contains("x-root", roundTrip.ExtensionData.Keys);
+        Assert.Contains("x-package", roundTrip.Package.ExtensionData.Keys);
+        Assert.Contains("x-feature", roundTrip.Features[0].ExtensionData.Keys);
+        Assert.Contains("x-setting", roundTrip.Features[0].Settings[0].ExtensionData.Keys);
     }
 }

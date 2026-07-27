@@ -1,7 +1,6 @@
 using System.Text.Json;
 using ValenceControl.PackageManifests;
 using ValenceControl.PackageManifests.Compatibility;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifests.Tests;
 
@@ -21,8 +20,8 @@ public sealed class ManifestSerializationTests
 
         var manifest = JsonSerializer.Deserialize<ElsaPackageManifest>(json, ManifestJsonSerializerOptions.Default);
 
-        manifest.Should().NotBeNull();
-        manifest!.ExtensionData.Should().ContainKey("x-vendor");
+        Assert.NotNull(manifest);
+        Assert.Contains("x-vendor", manifest!.ExtensionData.Keys);
     }
 
     [Fact]
@@ -48,7 +47,9 @@ public sealed class ManifestSerializationTests
         var json = JsonSerializer.Serialize(manifest, ManifestJsonSerializerOptions.Default);
         var roundTripped = JsonSerializer.Deserialize<ElsaPackageManifest>(json, ManifestJsonSerializerOptions.Default);
 
-        roundTripped!.Compatibility!.RuntimeKinds.Should().BeEquivalentTo(ElsaRuntimeKinds.Server, "acme.custom-host");
-        roundTripped.Features[0].Compatibility!.RuntimeKinds.Should().BeEquivalentTo(ElsaRuntimeKinds.Studio);
+        Assert.Equal(new[] { ElsaRuntimeKinds.Server, "acme.custom-host" }.Order(), roundTripped!.Compatibility!.RuntimeKinds.Order());
+
+        Assert.Equal(new[] { ElsaRuntimeKinds.Studio }.Order(), roundTripped.Features[0].Compatibility!.RuntimeKinds.Order());
+
     }
 }

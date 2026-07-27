@@ -11,7 +11,6 @@ using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.OpenTelemetry;
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -29,7 +28,7 @@ public sealed class WorkspaceHealingTelemetrySourceApiTests
             SourcesUri(app, app.EnvironmentId),
             new { name = "Orders collector" });
         var source = await sourceResponse.Content.ReadFromJsonAsync<HealingTelemetrySourceCredentialResponse>();
-        sourceResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, sourceResponse.StatusCode);
 
         var otlp = app.Factory.CreateClient();
         using var acceptedRequest = OtlpLogsRequest(
@@ -38,17 +37,17 @@ public sealed class WorkspaceHealingTelemetrySourceApiTests
             app.EnvironmentId,
             occurrenceId: "otlp-occurrence-1");
         var accepted = await otlp.SendAsync(acceptedRequest);
-        accepted.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
 
         await using (var scope = app.Factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<HealingDbContext>();
             var item = await db.HealingSignalInboxItems.AsNoTracking().SingleAsync();
-            item.WorkspaceId.Should().Be(app.WorkspaceId);
-            item.ApplicationId.Should().Be(app.ApplicationId);
-            item.EnvironmentId.Should().Be(app.EnvironmentId);
-            item.IdempotencyKey.Should().Be("otlp-occurrence-1");
-            item.Status.Should().Be(HealingInboxStatus.Pending);
+            Assert.Equal(app.WorkspaceId, item.WorkspaceId);
+            Assert.Equal(app.ApplicationId, item.ApplicationId);
+            Assert.Equal(app.EnvironmentId, item.EnvironmentId);
+            Assert.Equal("otlp-occurrence-1", item.IdempotencyKey);
+            Assert.Equal(HealingInboxStatus.Pending, item.Status);
         }
 
         using var invalidRequest = OtlpLogsRequest(
@@ -56,18 +55,18 @@ public sealed class WorkspaceHealingTelemetrySourceApiTests
             app.ApplicationId,
             app.EnvironmentId,
             occurrenceId: "invalid-token");
-        (await otlp.SendAsync(invalidRequest)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await otlp.SendAsync(invalidRequest)).StatusCode);
 
         using var forgedRequest = OtlpLogsRequest(
             source.Token,
             Guid.NewGuid(),
             app.EnvironmentId,
             occurrenceId: "forged-scope");
-        (await otlp.SendAsync(forgedRequest)).StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, (await otlp.SendAsync(forgedRequest)).StatusCode);
 
         await using var verificationScope = app.Factory.Services.CreateAsyncScope();
         var verificationDb = verificationScope.ServiceProvider.GetRequiredService<HealingDbContext>();
-        (await verificationDb.HealingSignalInboxItems.AsNoTracking().CountAsync()).Should().Be(1);
+        Assert.Equal(1, (await verificationDb.HealingSignalInboxItems.AsNoTracking().CountAsync()));
     }
 
     [Fact]
@@ -92,10 +91,10 @@ public sealed class WorkspaceHealingTelemetrySourceApiTests
             occurrenceId: "must-not-ack");
         var response = await app.Factory.CreateClient().SendAsync(request);
 
-        response.IsSuccessStatusCode.Should().BeFalse();
+        Assert.False(response.IsSuccessStatusCode);
         await using var scope = app.Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HealingDbContext>();
-        (await db.HealingSignalInboxItems.AsNoTracking().CountAsync()).Should().Be(0);
+        Assert.Equal(0, (await db.HealingSignalInboxItems.AsNoTracking().CountAsync()));
     }
 
     [Fact]
@@ -106,46 +105,49 @@ public sealed class WorkspaceHealingTelemetrySourceApiTests
 
         var create = await app.Owner.PostControlJsonAsync(sourceBaseUri, new { name = "Orders production" });
         var created = await create.Content.ReadFromJsonAsync<HealingTelemetrySourceCredentialResponse>();
-        create.StatusCode.Should().Be(HttpStatusCode.Created);
-        created.Should().NotBeNull();
-        created!.Token.Should().StartWith("elsa_otlp_v1.");
-        created.HeaderName.Should().Be(HealingTelemetrySourceTokenService.HeaderName);
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        Assert.NotNull(created);
+        Assert.StartsWith("elsa_otlp_v1.", created!.Token);
+        Assert.Equal(HealingTelemetrySourceTokenService.HeaderName, created.HeaderName);
 
         var activeAuthentication = await AuthenticateAsync(app.Factory, created.Token);
-        activeAuthentication.Accepted.Should().BeTrue();
-        activeAuthentication.Context.Claims[HealingTelemetryScopeClaims.WorkspaceId].Should().Be(app.WorkspaceId.ToString("D"));
-        activeAuthentication.Context.Claims[HealingTelemetryScopeClaims.ApplicationId].Should().Be(app.ApplicationId.ToString("D"));
-        activeAuthentication.Context.Claims[HealingTelemetryScopeClaims.EnvironmentId].Should().Be(app.EnvironmentId.ToString("D"));
+        Assert.True(activeAuthentication.Accepted);
+        Assert.Equal(app.WorkspaceId.ToString("D"), activeAuthentication.Context.Claims[HealingTelemetryScopeClaims.WorkspaceId]);
+        Assert.Equal(app.ApplicationId.ToString("D"), activeAuthentication.Context.Claims[HealingTelemetryScopeClaims.ApplicationId]);
+        Assert.Equal(app.EnvironmentId.ToString("D"), activeAuthentication.Context.Claims[HealingTelemetryScopeClaims.EnvironmentId]);
 
         var list = await app.Owner.GetAsync(sourceBaseUri);
         var listJson = await list.Content.ReadAsStringAsync();
-        list.StatusCode.Should().Be(HttpStatusCode.OK);
-        listJson.Should().NotContain(created.Token);
-        listJson.ToLowerInvariant().Should().NotContain("credentialhash").And.NotContain("credentialsalt");
-        JsonDocument.Parse(listJson).RootElement.GetArrayLength().Should().Be(1);
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.DoesNotContain(created.Token, listJson);
+        Assert.DoesNotContain("credentialhash", listJson.ToLowerInvariant());
+        Assert.DoesNotContain("credentialsalt", listJson.ToLowerInvariant());
+        Assert.Equal(1, JsonDocument.Parse(listJson).RootElement.GetArrayLength());
 
         var crossEnvironmentRotate = await app.Owner.PostAsync(
             $"{SourcesUri(app, app.OtherEnvironmentId)}/{created.Source.Id:D}/rotate", null);
-        crossEnvironmentRotate.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.NotFound, crossEnvironmentRotate.StatusCode);
 
         var rotate = await app.Owner.PostAsync($"{sourceBaseUri}/{created.Source.Id:D}/rotate", null);
         var rotated = await rotate.Content.ReadFromJsonAsync<HealingTelemetrySourceCredentialResponse>();
-        rotate.StatusCode.Should().Be(HttpStatusCode.OK);
-        rotated.Should().NotBeNull();
-        rotated!.Token.Should().NotBe(created.Token);
-        rotated.Source.CredentialVersion.Should().Be(2);
-        (await AuthenticateAsync(app.Factory, created.Token)).Accepted.Should().BeFalse();
-        (await AuthenticateAsync(app.Factory, rotated.Token)).Accepted.Should().BeTrue();
+        Assert.Equal(HttpStatusCode.OK, rotate.StatusCode);
+        Assert.NotNull(rotated);
+        Assert.NotEqual(created.Token, rotated!.Token);
+        Assert.Equal(2, rotated.Source.CredentialVersion);
+        Assert.False((await AuthenticateAsync(app.Factory, created.Token)).Accepted);
+        Assert.True((await AuthenticateAsync(app.Factory, rotated.Token)).Accepted);
 
         var revoke = await app.Owner.PostAsync($"{sourceBaseUri}/{created.Source.Id:D}/revoke", null);
         var revoked = await revoke.Content.ReadFromJsonAsync<HealingTelemetrySourceResponse>();
-        revoke.StatusCode.Should().Be(HttpStatusCode.OK);
-        revoked!.Status.Should().Be("Revoked");
-        (await AuthenticateAsync(app.Factory, rotated.Token)).Accepted.Should().BeFalse();
+        Assert.Equal(HttpStatusCode.OK, revoke.StatusCode);
+        Assert.Equal("Revoked", revoked!.Status);
+        Assert.False((await AuthenticateAsync(app.Factory, rotated.Token)).Accepted);
 
         var afterLifecycle = await app.Owner.GetStringAsync(sourceBaseUri);
-        afterLifecycle.Should().NotContain(created.Token).And.NotContain(rotated.Token);
-        afterLifecycle.ToLowerInvariant().Should().NotContain("credentialhash").And.NotContain("credentialsalt");
+        Assert.DoesNotContain(created.Token, afterLifecycle);
+        Assert.DoesNotContain(rotated.Token, afterLifecycle);
+        Assert.DoesNotContain("credentialhash", afterLifecycle.ToLowerInvariant());
+        Assert.DoesNotContain("credentialsalt", afterLifecycle.ToLowerInvariant());
 
         await using var auditScope = app.Factory.Services.CreateAsyncScope();
         var db = auditScope.ServiceProvider.GetRequiredService<HealingDbContext>();
@@ -153,10 +155,12 @@ public sealed class WorkspaceHealingTelemetrySourceApiTests
             .Where(x => x.AggregateId == created.Source.Id)
             .OrderBy(x => x.Sequence)
             .ToListAsync();
-        auditEvents.Select(x => x.EventType).Should().Equal(
-            "telemetry-source-created", "telemetry-source-rotated", "telemetry-source-revoked");
-        string.Join(' ', auditEvents.Select(x => x.SafeDetailJson)).Should()
-            .NotContain(created.Token).And.NotContain(rotated.Token);
+        Assert.Equal(
+            new[] { "telemetry-source-created", "telemetry-source-rotated", "telemetry-source-revoked" },
+            auditEvents.Select(x => x.EventType));
+        var safeDetails = string.Join(' ', auditEvents.Select(x => x.SafeDetailJson));
+        Assert.DoesNotContain(created.Token, safeDetails);
+        Assert.DoesNotContain(rotated.Token, safeDetails);
     }
 
     private static async Task<OtlpRequestAuthenticationResult> AuthenticateAsync(

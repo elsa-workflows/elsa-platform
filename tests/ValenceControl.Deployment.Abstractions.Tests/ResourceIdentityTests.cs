@@ -1,6 +1,5 @@
 using ValenceControl.Deployment.Abstractions.Artifacts;
 using ValenceControl.Deployment.Abstractions.Resources;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Abstractions.Tests;
 
@@ -12,10 +11,10 @@ public class ResourceIdentityTests
     [Fact]
     public void ResourceIdentityNormalizesRequiredParts()
     {
-        _workflow.Type.Should().Be("workflowDefinition");
-        _workflow.LogicalId.Should().Be("order-approval");
-        _workflow.Scope.Should().Be("sales");
-        _workflow.ToString().Should().Be("sales:workflowDefinition/order-approval");
+        Assert.Equal("workflowDefinition", _workflow.Type);
+        Assert.Equal("order-approval", _workflow.LogicalId);
+        Assert.Equal("sales", _workflow.Scope);
+        Assert.Equal("sales:workflowDefinition/order-approval", _workflow.ToString());
     }
 
     [Theory]
@@ -25,7 +24,7 @@ public class ResourceIdentityTests
     {
         var act = () => new DeploymentResourceId(type, logicalId);
 
-        act.Should().Throw<ArgumentException>();
+        Assert.Throws<ArgumentException>(() => _ = act());
     }
 
     [Fact]
@@ -37,9 +36,9 @@ public class ResourceIdentityTests
             desiredStateHash: new ArtifactDigest("sha256", "abc"),
             dependencies: [_variable]);
 
-        resource.Deletion.Should().Be(DeploymentDeletionBehavior.Retain);
-        resource.Dependencies.Should().ContainSingle().Which.Should().Be(_variable);
-        resource.DesiredStateHash.Should().Be(new ArtifactDigest("sha256", "abc"));
+        Assert.Equal(DeploymentDeletionBehavior.Retain, resource.Deletion);
+        Assert.Equal(_variable, Assert.Single(resource.Dependencies));
+        Assert.Equal(new ArtifactDigest("sha256", "abc"), resource.DesiredStateHash);
     }
 
     [Fact]
@@ -47,8 +46,8 @@ public class ResourceIdentityTests
     {
         var state = new DeploymentResourceState(_variable, new ArtifactDigest("sha256", "def"), version: "current");
 
-        state.Id.Should().Be(_variable);
-        state.StateHash.Should().Be(new ArtifactDigest("sha256", "def"));
-        state.Version.Should().Be("current");
+        Assert.Equal(_variable, state.Id);
+        Assert.Equal(new ArtifactDigest("sha256", "def"), state.StateHash);
+        Assert.Equal("current", state.Version);
     }
 }

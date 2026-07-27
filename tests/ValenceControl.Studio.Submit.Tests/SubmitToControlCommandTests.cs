@@ -1,5 +1,4 @@
 using ValenceControl.Studio.Submit;
-using FluentAssertions;
 
 namespace ValenceControl.Studio.Submit.Tests;
 
@@ -20,10 +19,10 @@ public sealed class SubmitToControlCommandTests
 
         var result = await command.ExecuteAsync(Snapshot());
 
-        result.Status.Should().Be(StudioSubmitStatus.Submitted);
-        result.Succeeded.Should().BeTrue();
-        client.Package.Should().NotBeNull();
-        client.Package!.Envelope.ArtifactTypeId.Should().Be("elsa.loom.recipe");
+        Assert.Equal(StudioSubmitStatus.Submitted, result.Status);
+        Assert.True(result.Succeeded);
+        Assert.NotNull(client.Package);
+        Assert.Equal("elsa.loom.recipe", client.Package!.Envelope.ArtifactTypeId);
     }
 
     [Fact]
@@ -34,8 +33,8 @@ public sealed class SubmitToControlCommandTests
 
         var result = await command.ExecuteAsync(Snapshot());
 
-        result.Status.Should().Be(StudioSubmitStatus.Duplicate);
-        result.Succeeded.Should().BeTrue();
+        Assert.Equal(StudioSubmitStatus.Duplicate, result.Status);
+        Assert.True(result.Succeeded);
     }
 
     [Fact]
@@ -43,8 +42,8 @@ public sealed class SubmitToControlCommandTests
     {
         var result = new StudioSubmitResult(default, "uninitialized");
 
-        result.Status.Should().Be(StudioSubmitStatus.Unknown);
-        result.Succeeded.Should().BeFalse();
+        Assert.Equal(StudioSubmitStatus.Unknown, result.Status);
+        Assert.False(result.Succeeded);
     }
 
     [Fact]
@@ -55,9 +54,9 @@ public sealed class SubmitToControlCommandTests
 
         var result = await command.ExecuteAsync(Snapshot(labels: new Dictionary<string, string> { ["token"] = "abc" }));
 
-        result.Status.Should().Be(StudioSubmitStatus.ValidationFailed);
-        result.Message.Should().Contain("[redacted]");
-        client.Package.Should().BeNull();
+        Assert.Equal(StudioSubmitStatus.ValidationFailed, result.Status);
+        Assert.Contains("[redacted]", result.Message);
+        Assert.Null(client.Package);
     }
 
     [Fact]
@@ -68,8 +67,8 @@ public sealed class SubmitToControlCommandTests
 
         var result = await command.ExecuteAsync(Snapshot());
 
-        result.Status.Should().Be(StudioSubmitStatus.Unavailable);
-        result.Message.Should().Contain("[redacted]");
+        Assert.Equal(StudioSubmitStatus.Unavailable, result.Status);
+        Assert.Contains("[redacted]", result.Message);
     }
 
     private static WorkflowSubmissionSnapshot Snapshot(IReadOnlyDictionary<string, string>? labels = null) =>

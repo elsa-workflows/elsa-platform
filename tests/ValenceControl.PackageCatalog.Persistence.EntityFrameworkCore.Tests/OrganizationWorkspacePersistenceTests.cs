@@ -1,6 +1,5 @@
 using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -28,12 +27,12 @@ public sealed class OrganizationWorkspacePersistenceTests
         await using (var db = CreateDbContext(connection))
         {
             var workspace = await db.Workspaces.SingleAsync(x => x.Id == workspaceId);
-            workspace.OrganizationId.Should().Be(workspaceId);
-            (await db.Organizations.CountAsync(x => x.Id == workspaceId)).Should().Be(1);
-            (await db.OrganizationMemberships.CountAsync(x =>
+            Assert.Equal(workspaceId, workspace.OrganizationId);
+            Assert.Equal(1, (await db.Organizations.CountAsync(x => x.Id == workspaceId)));
+            Assert.Equal(1, await db.OrganizationMemberships.CountAsync(x =>
                 x.OrganizationId == workspaceId &&
                 x.AccountId == accountId &&
-                x.Role == OrganizationRole.Owner)).Should().Be(1);
+                x.Role == OrganizationRole.Owner));
         }
     }
 

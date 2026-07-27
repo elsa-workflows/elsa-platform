@@ -1,7 +1,6 @@
 using ValenceControl.Healing.Core.Verification;
 using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.Core.Security;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.Core.Tests.Verification;
 
@@ -16,9 +15,9 @@ public sealed class HealingVerificationServiceTests
 
         await fixture.Service.ObserveDeploymentAsync(fixture.Observation(Now));
 
-        fixture.Scope.EnvironmentImpact.VerificationStatus.Should().Be(VerificationOutcome.DeployedUnverified);
-        fixture.Scope.Incident.Status.Should().Be(HealingIncidentStatus.Verifying);
-        fixture.Store.Scopes.Single().Verification!.RelevantOperationSuccessCount.Should().Be(0);
+        Assert.Equal(VerificationOutcome.DeployedUnverified, fixture.Scope.EnvironmentImpact.VerificationStatus);
+        Assert.Equal(HealingIncidentStatus.Verifying, fixture.Scope.Incident.Status);
+        Assert.Equal(0, fixture.Store.Scopes.Single().Verification!.RelevantOperationSuccessCount);
     }
 
     [Fact]
@@ -27,19 +26,19 @@ public sealed class HealingVerificationServiceTests
         var fixture = Fixture.Create();
         await fixture.Service.ObserveDeploymentAsync(fixture.Observation(Now.AddMinutes(-5)));
 
-        (await fixture.Service.RecordEpisodePositiveOperationAsync(
+        Assert.False(await fixture.Service.RecordEpisodePositiveOperationAsync(
             fixture.Scope.Incident.WorkspaceId, fixture.Scope.Episode.Id, fixture.Scope.EnvironmentImpact.EnvironmentId,
-            fixture.Scope.RepairedRevision, Now.AddMinutes(-6))).Should().BeFalse("it predates deployment");
-        (await fixture.Service.RecordEpisodePositiveOperationAsync(
+            fixture.Scope.RepairedRevision, Now.AddMinutes(-6)));
+        Assert.False(await fixture.Service.RecordEpisodePositiveOperationAsync(
             fixture.Scope.Incident.WorkspaceId, fixture.Scope.Episode.Id, fixture.Scope.EnvironmentImpact.EnvironmentId,
-            fixture.Scope.RepairedRevision, Now.AddMinutes(1))).Should().BeFalse("future success cannot satisfy a gate");
-        fixture.Store.Scopes.Single().Verification!.RelevantOperationSuccessCount.Should().Be(0);
+            fixture.Scope.RepairedRevision, Now.AddMinutes(1)));
+        Assert.Equal(0, fixture.Store.Scopes.Single().Verification!.RelevantOperationSuccessCount);
 
         var expired = Fixture.Create(verificationWindow: TimeSpan.FromHours(1));
         await expired.Service.ObserveDeploymentAsync(expired.Observation(Now.AddHours(-2)));
-        (await expired.Service.RecordEpisodePositiveOperationAsync(
+        Assert.False(await expired.Service.RecordEpisodePositiveOperationAsync(
             expired.Scope.Incident.WorkspaceId, expired.Scope.Episode.Id, expired.Scope.EnvironmentImpact.EnvironmentId,
-            expired.Scope.RepairedRevision, Now.AddMinutes(-30))).Should().BeFalse("it is after the verification window");
+            expired.Scope.RepairedRevision, Now.AddMinutes(-30)));
     }
 
     [Fact]
@@ -49,14 +48,14 @@ public sealed class HealingVerificationServiceTests
         await fixture.Service.ObserveDeploymentAsync(fixture.Observation(Now.AddMinutes(-5)));
         var observedAt = Now.AddMinutes(-1);
 
-        (await fixture.Service.RecordEpisodePositiveOperationAsync(
+        Assert.True(await fixture.Service.RecordEpisodePositiveOperationAsync(
             fixture.Scope.Incident.WorkspaceId, fixture.Scope.Episode.Id, fixture.Scope.EnvironmentImpact.EnvironmentId,
-            fixture.Scope.RepairedRevision, observedAt)).Should().BeTrue();
-        (await fixture.Service.RecordEpisodePositiveOperationAsync(
+            fixture.Scope.RepairedRevision, observedAt));
+        Assert.True(await fixture.Service.RecordEpisodePositiveOperationAsync(
             fixture.Scope.Incident.WorkspaceId, fixture.Scope.Episode.Id, fixture.Scope.EnvironmentImpact.EnvironmentId,
-            fixture.Scope.RepairedRevision, observedAt)).Should().BeTrue();
+            fixture.Scope.RepairedRevision, observedAt));
 
-        fixture.Store.Scopes.Single().Verification!.RelevantOperationSuccessCount.Should().Be(1);
+        Assert.Equal(1, fixture.Store.Scopes.Single().Verification!.RelevantOperationSuccessCount);
     }
 
     [Theory]
@@ -85,7 +84,7 @@ public sealed class HealingVerificationServiceTests
 
         var action = () => service.AppendAsync(request).AsTask();
 
-        await action.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(action);
     }
 
     [Fact]
@@ -112,8 +111,8 @@ public sealed class HealingVerificationServiceTests
 
         var action = () => service.AppendAsync(request).AsTask();
 
-        await action.Should().ThrowAsync<ArgumentException>();
-        fixture.Store.DeploymentAppendCount.Should().Be(0);
+        await Assert.ThrowsAsync<ArgumentException>(action);
+        Assert.Equal(0, fixture.Store.DeploymentAppendCount);
     }
 
     [Fact]
@@ -122,13 +121,13 @@ public sealed class HealingVerificationServiceTests
         var fixture = Fixture.Create(verificationWindow: TimeSpan.FromMinutes(10));
         await fixture.Service.ObserveDeploymentAsync(fixture.Observation(Now.AddMinutes(-11)));
 
-        (await fixture.Service.RecordEpisodePositiveOperationAsync(
+        Assert.True(await fixture.Service.RecordEpisodePositiveOperationAsync(
             fixture.Scope.Incident.WorkspaceId, fixture.Scope.Episode.Id, fixture.Scope.EnvironmentImpact.EnvironmentId,
-            fixture.Scope.RepairedRevision, Now.AddMinutes(-2))).Should().BeTrue();
+            fixture.Scope.RepairedRevision, Now.AddMinutes(-2)));
 
-        fixture.Scope.EnvironmentImpact.VerificationStatus.Should().Be(VerificationOutcome.Healed);
-        fixture.Scope.Incident.Status.Should().Be(HealingIncidentStatus.Healed);
-        fixture.Scope.Episode.Outcome.Should().Be(IncidentEpisodeOutcome.Healed);
+        Assert.Equal(VerificationOutcome.Healed, fixture.Scope.EnvironmentImpact.VerificationStatus);
+        Assert.Equal(HealingIncidentStatus.Healed, fixture.Scope.Incident.Status);
+        Assert.Equal(IncidentEpisodeOutcome.Healed, fixture.Scope.Episode.Outcome);
     }
 
     [Fact]
@@ -139,14 +138,14 @@ public sealed class HealingVerificationServiceTests
             await fixture.Service.ObserveDeploymentAsync(fixture.Observation(Now.AddMinutes(-11), scope.EnvironmentImpact.EnvironmentId));
         var first = fixture.Store.Scopes[0];
 
-        (await fixture.Service.RecordEpisodePositiveOperationAsync(
+        Assert.True(await fixture.Service.RecordEpisodePositiveOperationAsync(
             first.Incident.WorkspaceId, first.Episode.Id, first.EnvironmentImpact.EnvironmentId,
-            first.RepairedRevision, Now.AddMinutes(-1))).Should().BeTrue();
+            first.RepairedRevision, Now.AddMinutes(-1)));
 
-        first.EnvironmentImpact.VerificationStatus.Should().Be(VerificationOutcome.Healed);
-        fixture.Store.Scopes[1].EnvironmentImpact.VerificationStatus.Should().Be(VerificationOutcome.DeployedUnverified);
-        first.Incident.Status.Should().Be(HealingIncidentStatus.Verifying);
-        first.Episode.Outcome.Should().Be(IncidentEpisodeOutcome.Active);
+        Assert.Equal(VerificationOutcome.Healed, first.EnvironmentImpact.VerificationStatus);
+        Assert.Equal(VerificationOutcome.DeployedUnverified, fixture.Store.Scopes[1].EnvironmentImpact.VerificationStatus);
+        Assert.Equal(HealingIncidentStatus.Verifying, first.Incident.Status);
+        Assert.Equal(IncidentEpisodeOutcome.Active, first.Episode.Outcome);
     }
 
     [Fact]
@@ -160,12 +159,12 @@ public sealed class HealingVerificationServiceTests
         var failed = await fixture.Service.RecordRecurrenceAsync(occurrence);
         var replay = await fixture.Service.RecordRecurrenceAsync(occurrence);
 
-        failed.Should().NotBeNull();
-        replay.Should().NotBeNull();
-        fixture.Store.Scopes.Single().Verification!.RecurrenceCount.Should().Be(1);
-        fixture.Scope.EnvironmentImpact.VerificationStatus.Should().Be(VerificationOutcome.FailedVerification);
-        fixture.Scope.Incident.Status.Should().Be(HealingIncidentStatus.FailedVerification);
-        fixture.Scope.Incident.NeedsHumanReason.Should().Be(NeedsHumanReason.VerificationFailed);
+        Assert.NotNull(failed);
+        Assert.NotNull(replay);
+        Assert.Equal(1, fixture.Store.Scopes.Single().Verification!.RecurrenceCount);
+        Assert.Equal(VerificationOutcome.FailedVerification, fixture.Scope.EnvironmentImpact.VerificationStatus);
+        Assert.Equal(HealingIncidentStatus.FailedVerification, fixture.Scope.Incident.Status);
+        Assert.Equal(NeedsHumanReason.VerificationFailed, fixture.Scope.Incident.NeedsHumanReason);
     }
 
     [Fact]
@@ -188,10 +187,11 @@ public sealed class HealingVerificationServiceTests
         fixture.Time.UtcNow = Now.AddMinutes(1);
         await service.RecordRecurrenceAsync(occurrence);
 
-        fixture.Store.TransactionCount.Should().Be(transactionsBeforeRecurrence + 2);
-        auditStore.Events.Should().ContainSingle(x => x.EventType == "verification-failed");
-        signalSink.Signals.Should().HaveCount(2).And.OnlyContain(x =>
-            x.SupportingOccurrenceId == occurrence.Id && x.DetectedAt == Now);
+        Assert.Equal(transactionsBeforeRecurrence + 2, fixture.Store.TransactionCount);
+        Assert.Single(auditStore.Events, x => x.EventType == "verification-failed");
+        Assert.Equal(2, signalSink.Signals.Count);
+        Assert.All(signalSink.Signals, x =>
+            Assert.True(x.SupportingOccurrenceId == occurrence.Id && x.DetectedAt == Now));
     }
 
     [Fact]
@@ -203,9 +203,9 @@ public sealed class HealingVerificationServiceTests
         await fixture.Service.ObserveDeploymentAsync(fixture.Observation(Now, revision: "newer-revision"));
         await fixture.Service.ObserveDeploymentAsync(fixture.Observation(Now.AddMinutes(-2)));
 
-        fixture.Scope.EnvironmentImpact.VerificationStatus.Should().Be(VerificationOutcome.Superseded);
-        fixture.Scope.EnvironmentImpact.CurrentDeployedRevision.Should().Be("newer-revision");
-        fixture.Scope.Incident.Status.Should().Be(HealingIncidentStatus.Superseded);
+        Assert.Equal(VerificationOutcome.Superseded, fixture.Scope.EnvironmentImpact.VerificationStatus);
+        Assert.Equal("newer-revision", fixture.Scope.EnvironmentImpact.CurrentDeployedRevision);
+        Assert.Equal(HealingIncidentStatus.Superseded, fixture.Scope.Incident.Status);
     }
 
     [Fact]
@@ -219,30 +219,31 @@ public sealed class HealingVerificationServiceTests
             new HealingAuditService(auditStore, fixture.Time));
         await service.ObserveDeploymentAsync(fixture.Observation(Now));
 
-        (await service.WaiveAsync(
+        Assert.True(await service.WaiveAsync(
             fixture.Scope.Incident.WorkspaceId,
             fixture.Scope.Episode.Id,
             fixture.Scope.EnvironmentImpact.EnvironmentId,
             fixture.Scope.RepairedRevision,
             "workspace-owner",
             "first-maintenance-window",
-            Now.AddHours(1))).Should().BeTrue();
+            Now.AddHours(1)));
         fixture.Time.UtcNow = Now.AddHours(2);
-        (await service.ExpireWaiverAsync(fixture.Store.Scopes.Single(), fixture.Time.UtcNow)).Should().BeTrue();
-        (await service.WaiveAsync(
+        Assert.True(await service.ExpireWaiverAsync(fixture.Store.Scopes.Single(), fixture.Time.UtcNow));
+        Assert.True(await service.WaiveAsync(
             fixture.Scope.Incident.WorkspaceId,
             fixture.Scope.Episode.Id,
             fixture.Scope.EnvironmentImpact.EnvironmentId,
             fixture.Scope.RepairedRevision,
             "workspace-owner",
             "renewed-maintenance-window",
-            fixture.Time.UtcNow.AddHours(1))).Should().BeTrue();
+            fixture.Time.UtcNow.AddHours(1)));
 
-        auditStore.Events.Select(x => x.EventType).Should().Equal(
-            "verification-waived",
-            "verification-waiver-expired",
-            "verification-waived");
-        auditStore.Events.Select(x => x.CorrelationId).Should().OnlyHaveUniqueItems();
+        Assert.Equal(
+            new[] { "verification-waived", "verification-waiver-expired", "verification-waived" },
+            auditStore.Events.Select(x => x.EventType));
+        Assert.Equal(
+            auditStore.Events.Count,
+            auditStore.Events.Select(x => x.CorrelationId).Distinct().Count());
     }
 
     [Fact]
@@ -250,37 +251,37 @@ public sealed class HealingVerificationServiceTests
     {
         var fixture = Fixture.Create(verificationWindow: TimeSpan.FromMinutes(10));
         await fixture.Service.ObserveDeploymentAsync(fixture.Observation(Now.AddHours(-2)));
-        (await fixture.Service.WaiveAsync(
+        Assert.True(await fixture.Service.WaiveAsync(
             fixture.Scope.Incident.WorkspaceId,
             fixture.Scope.Episode.Id,
             fixture.Scope.EnvironmentImpact.EnvironmentId,
             fixture.Scope.RepairedRevision,
             "workspace-owner",
             "temporary-risk-acceptance",
-            Now.AddMinutes(5))).Should().BeTrue();
+            Now.AddMinutes(5)));
 
         fixture.Time.UtcNow = Now.AddMinutes(6);
         var expiredAt = fixture.Time.UtcNow;
-        (await fixture.Service.ExpireWaiverAsync(fixture.Store.Scopes.Single(), expiredAt)).Should().BeTrue();
+        Assert.True(await fixture.Service.ExpireWaiverAsync(fixture.Store.Scopes.Single(), expiredAt));
 
         var verification = fixture.Store.Scopes.Single().Verification!;
-        verification.Outcome.Should().Be(VerificationOutcome.DeployedUnverified);
-        verification.WindowStartedAt.Should().Be(expiredAt);
-        verification.WindowEndsAt.Should().Be(expiredAt.AddMinutes(10));
-        verification.RelevantOperationSuccessCount.Should().Be(0);
+        Assert.Equal(VerificationOutcome.DeployedUnverified, verification.Outcome);
+        Assert.Equal(expiredAt, verification.WindowStartedAt);
+        Assert.Equal(expiredAt.AddMinutes(10), verification.WindowEndsAt);
+        Assert.Equal(0, verification.RelevantOperationSuccessCount);
 
         fixture.Time.UtcNow = expiredAt.AddMinutes(1);
-        (await fixture.Service.RecordEpisodePositiveOperationAsync(
+        Assert.True(await fixture.Service.RecordEpisodePositiveOperationAsync(
             fixture.Scope.Incident.WorkspaceId,
             fixture.Scope.Episode.Id,
             fixture.Scope.EnvironmentImpact.EnvironmentId,
             fixture.Scope.RepairedRevision,
-            fixture.Time.UtcNow)).Should().BeTrue();
-        verification.Outcome.Should().Be(VerificationOutcome.DeployedUnverified);
+            fixture.Time.UtcNow));
+        Assert.Equal(VerificationOutcome.DeployedUnverified, verification.Outcome);
 
         fixture.Time.UtcNow = expiredAt.AddMinutes(10);
-        (await fixture.Service.EvaluateDueAsync(fixture.Store.Scopes.Single(), fixture.Time.UtcNow)).Should().BeTrue();
-        verification.Outcome.Should().Be(VerificationOutcome.Healed);
+        Assert.True(await fixture.Service.EvaluateDueAsync(fixture.Store.Scopes.Single(), fixture.Time.UtcNow));
+        Assert.Equal(VerificationOutcome.Healed, verification.Outcome);
     }
 
     private sealed record Fixture(

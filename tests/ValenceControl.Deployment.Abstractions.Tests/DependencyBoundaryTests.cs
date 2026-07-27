@@ -1,5 +1,4 @@
 using System.Xml.Linq;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Abstractions.Tests;
 
@@ -52,7 +51,7 @@ public class DependencyBoundaryTests
             .Cast<string>()
             .ToArray();
 
-        references.Should().NotContain(reference =>
+        Assert.DoesNotContain(references, reference =>
             _forbiddenReferenceFragments.Any(fragment => reference.Contains(fragment, StringComparison.OrdinalIgnoreCase)));
     }
 
@@ -69,7 +68,7 @@ public class DependencyBoundaryTests
                 .Select(file => File.ReadAllText(file.FullName)));
 
         foreach (var phrase in _forbiddenSourcePhrases)
-            sourceText.Contains(phrase, StringComparison.OrdinalIgnoreCase).Should().BeFalse();
+            Assert.False(sourceText.Contains(phrase, StringComparison.OrdinalIgnoreCase));
     }
 
     private static DirectoryInfo FindRepoRoot()

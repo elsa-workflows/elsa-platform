@@ -1,5 +1,4 @@
 using ValenceControl.PackageManifest.Generator.Core.Generation;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifest.Generator.Core.Tests;
 
@@ -22,11 +21,11 @@ public sealed class ProjectPackageMetadataTests
             "net10.0",
             "net10.0;net9.0");
 
-        metadata.PackageId.Should().Be("Elsa.Sample");
-        metadata.Version.Should().Be("2.0.0");
-        metadata.Authors.Should().Equal("Ada", "Zed");
-        metadata.PackageTags.Should().Equal("elsa", "workflow");
-        metadata.TargetFrameworks.Should().Equal("net10.0", "net9.0");
+        Assert.Equal("Elsa.Sample", metadata.PackageId);
+        Assert.Equal("2.0.0", metadata.Version);
+        Assert.Equal(["Ada", "Zed"], metadata.Authors);
+        Assert.Equal(["elsa", "workflow"], metadata.PackageTags);
+        Assert.Equal(["net10.0", "net9.0"], metadata.TargetFrameworks);
     }
 
     [Theory]
@@ -37,6 +36,6 @@ public sealed class ProjectPackageMetadataTests
     [InlineData("Other.Package", "Other.Package")]
     public void Package_display_name_omits_elsa_namespace_prefix(string packageId, string displayName)
     {
-        NamingHelpers.ToPackageDisplayName(packageId).Should().Be(displayName);
+        Assert.Equal(displayName, NamingHelpers.ToPackageDisplayName(packageId));
     }
 }

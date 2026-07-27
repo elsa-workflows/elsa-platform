@@ -1,6 +1,5 @@
 using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.Agent;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.Agent.Tests;
 
@@ -15,24 +14,23 @@ public sealed class RepairAgentGatewayTests
 
         var result = await gateway.AnalyzeAsync(request);
 
-        provider.Request.Should().NotBeNull();
-        provider.Request!.AttemptId.Should().Be(request.AttemptId);
-        provider.Request.Evidence.CanonicalJson.Should().Be(request.Evidence.CanonicalJson);
-        provider.Request.Evidence.OmittedFields.Should().Contain("exception.message");
-        typeof(RepairAgentInferenceRequest).Assembly.GetTypes()
+        Assert.NotNull(provider.Request);
+        Assert.Equal(request.AttemptId, provider.Request!.AttemptId);
+        Assert.Equal(request.Evidence.CanonicalJson, provider.Request.Evidence.CanonicalJson);
+        Assert.Contains("exception.message", provider.Request.Evidence.OmittedFields);
+        Assert.DoesNotContain(typeof(RepairAgentInferenceRequest).Assembly.GetTypes()
             .Where(x => x.Namespace == typeof(RepairAgentInferenceRequest).Namespace &&
                         x.Name.StartsWith("RepairAgentInference", StringComparison.Ordinal))
             .SelectMany(x => x.GetProperties())
-            .Select(x => x.Name)
-            .Should().NotContain(x =>
+            .Select(x => x.Name), x =>
             x.Contains("credential", StringComparison.OrdinalIgnoreCase) ||
             x.Contains("token", StringComparison.OrdinalIgnoreCase) ||
             x.Contains("installation", StringComparison.OrdinalIgnoreCase));
-        result.AttemptId.Should().Be(request.AttemptId);
-        result.Reproduction.WasAttempted.Should().BeTrue();
-        result.Reproduction.WasReproduced.Should().BeTrue();
-        result.Confidence.Should().Be(0.96m);
-        result.PatchDigest.Should().StartWith("sha256:");
+        Assert.Equal(request.AttemptId, result.AttemptId);
+        Assert.True(result.Reproduction.WasAttempted);
+        Assert.True(result.Reproduction.WasReproduced);
+        Assert.Equal(0.96m, result.Confidence);
+        Assert.StartsWith("sha256:", result.PatchDigest);
     }
 
     [Theory]
@@ -56,7 +54,7 @@ public sealed class RepairAgentGatewayTests
 
         var act = () => gateway.AnalyzeAsync(Request()).AsTask();
 
-        await act.Should().ThrowAsync<RepairAgentProtocolException>();
+        await Assert.ThrowsAsync<RepairAgentProtocolException>(act);
     }
 
     [Fact]
@@ -73,10 +71,10 @@ public sealed class RepairAgentGatewayTests
 
         var result = await gateway.AnalyzeAsync(Request());
 
-        result.Classification.Should().Be(RepairAgentClassifications.InferredHighConfidence);
-        result.Reproduction.WasAttempted.Should().BeTrue();
-        result.Reproduction.WasReproduced.Should().BeFalse();
-        result.Reproduction.Classification.Should().Be(RepairReproductionStatuses.NotReproduced);
+        Assert.Equal(RepairAgentClassifications.InferredHighConfidence, result.Classification);
+        Assert.True(result.Reproduction.WasAttempted);
+        Assert.False(result.Reproduction.WasReproduced);
+        Assert.Equal(RepairReproductionStatuses.NotReproduced, result.Reproduction.Classification);
     }
 
     [Fact]
@@ -98,9 +96,9 @@ public sealed class RepairAgentGatewayTests
         };
 
         foreach (var invalid in new[] { expired, oversized, mismatched })
-            await FluentActions.Awaiting(() => gateway.AnalyzeAsync(invalid).AsTask()).Should().ThrowAsync<RepairAgentProtocolException>();
+            await Assert.ThrowsAsync<RepairAgentProtocolException>(() => gateway.AnalyzeAsync(invalid).AsTask());
 
-        provider.CallCount.Should().Be(0);
+        Assert.Equal(0, provider.CallCount);
     }
 
     [Fact]
@@ -112,7 +110,7 @@ public sealed class RepairAgentGatewayTests
 
         var act = () => gateway.AnalyzeAsync(Request()).AsTask();
 
-        await act.Should().ThrowAsync<RepairAgentProtocolException>();
+        await Assert.ThrowsAsync<RepairAgentProtocolException>(act);
     }
 
     private static RepairAgentRequest Request()

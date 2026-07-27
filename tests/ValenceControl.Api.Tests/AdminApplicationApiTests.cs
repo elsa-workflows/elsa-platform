@@ -2,7 +2,6 @@ using System.Net;
 using System.Reflection;
 using ValenceControl.Api.Admin.Application;
 using ValenceControl.Api.Authentication;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 
 namespace ValenceControl.Api.Tests;
@@ -16,7 +15,7 @@ public sealed class AdminApplicationApiTests
 
         var response = await app.CreateClient().GetAsync("/api/admin/application");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -28,9 +27,9 @@ public sealed class AdminApplicationApiTests
 
         var info = await client.GetControlJsonAsync<AdminApplicationResponse>("/api/admin/application");
 
-        info.Should().NotBeNull();
-        info!.Name.Should().Be("ValenceControl.Api");
-        info.BuildNumber.Should().Be(ExpectedBuildNumber());
+        Assert.NotNull(info);
+        Assert.Equal("ValenceControl.Api", info!.Name);
+        Assert.Equal(ExpectedBuildNumber(), info.BuildNumber);
     }
 
     [Fact]
@@ -49,8 +48,8 @@ public sealed class AdminApplicationApiTests
 
         var info = await client.GetControlJsonAsync<AdminApplicationResponse>("/api/admin/application");
 
-        info.Should().NotBeNull();
-        info!.BuildNumber.Should().Be("12345");
+        Assert.NotNull(info);
+        Assert.Equal("12345", info!.BuildNumber);
     }
 
     private static string ExpectedBuildNumber()

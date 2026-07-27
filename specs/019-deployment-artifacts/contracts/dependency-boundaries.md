@@ -16,7 +16,7 @@ Test projects may reference:
 - `ValenceControl.Deployment.Abstractions`
 - `ValenceControl.Deployment.Manifest`
 - xUnit
-- FluentAssertions
+- xUnit's built-in assertions
 
 ## Forbidden Dependencies
 

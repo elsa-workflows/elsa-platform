@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.GitHub.Tests;
 
@@ -19,10 +18,9 @@ public sealed class GitHubWebhookVerifierTests
 
         var result = await verifier.VerifyAsync(Request(Body, Signature(Body), "delivery-1"));
 
-        result.Succeeded.Should().BeTrue();
-        result.Webhook.Should().Match<VerifiedGitHubWebhook>(x =>
-            x.InstallationId == "42" && x.RepositoryId == "987" && x.Action == "completed");
-        store.Count.Should().Be(1);
+        Assert.True(result.Succeeded);
+        Assert.True(result.Webhook is { InstallationId: "42", RepositoryId: "987", Action: "completed" });
+        Assert.Equal(1, store.Count);
     }
 
     [Fact]
@@ -31,12 +29,12 @@ public sealed class GitHubWebhookVerifierTests
         var verifier = new GitHubWebhookVerifier(new ReplayStore());
         var request = Request(Body, Signature(Body), "delivery-1");
 
-        (await verifier.VerifyAsync(request)).Succeeded.Should().BeTrue();
+        Assert.True((await verifier.VerifyAsync(request)).Succeeded);
         var replay = await verifier.VerifyAsync(request);
 
-        replay.Succeeded.Should().BeTrue();
-        replay.IsReplay.Should().BeTrue();
-        replay.ReasonCode.Should().Be(GitHubSecurityReasonCodes.WebhookReplay);
+        Assert.True(replay.Succeeded);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(GitHubSecurityReasonCodes.WebhookReplay, replay.ReasonCode);
     }
 
     [Fact]
@@ -48,12 +46,12 @@ public sealed class GitHubWebhookVerifierTests
             {"action":"completed","installation":{"id":42},"repository":{"id":987,"full_name":"acme/app"},"changed":true}
             """);
 
-        (await verifier.VerifyAsync(first)).Succeeded.Should().BeTrue();
+        Assert.True((await verifier.VerifyAsync(first)).Succeeded);
         var conflict = await verifier.VerifyAsync(Request(changedBody, Signature(changedBody), "delivery-1"));
 
-        conflict.Succeeded.Should().BeFalse();
-        conflict.IsReplay.Should().BeFalse();
-        conflict.ReasonCode.Should().Be(GitHubSecurityReasonCodes.WebhookReplay);
+        Assert.False(conflict.Succeeded);
+        Assert.False(conflict.IsReplay);
+        Assert.Equal(GitHubSecurityReasonCodes.WebhookReplay, conflict.ReasonCode);
     }
 
     [Theory]
@@ -80,8 +78,8 @@ public sealed class GitHubWebhookVerifierTests
 
         var result = await new GitHubWebhookVerifier(store).VerifyAsync(request);
 
-        result.ReasonCode.Should().Be(GitHubSecurityReasonCodes.WebhookInvalid);
-        store.Count.Should().Be(0);
+        Assert.Equal(GitHubSecurityReasonCodes.WebhookInvalid, result.ReasonCode);
+        Assert.Equal(0, store.Count);
     }
 
     private static GitHubWebhookVerificationRequest Request(byte[] body, string signature, string delivery) => new(

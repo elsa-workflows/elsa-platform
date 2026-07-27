@@ -3,7 +3,6 @@ using ValenceControl.Deployment.Abstractions.Diagnostics;
 using ValenceControl.Deployment.Abstractions.Plans;
 using ValenceControl.Deployment.Abstractions.Resources;
 using ValenceControl.Deployment.Abstractions.Targets;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Abstractions.Tests;
 
@@ -25,11 +24,11 @@ public class PlanContractTests
 
         var plan = new DeploymentPlan("plan-1", _artifact, _target, [change], [diagnostic]);
 
-        plan.Id.Should().Be("plan-1");
-        plan.Artifact.Should().Be(_artifact);
-        plan.Target.Should().Be(_target);
-        plan.Changes.Should().ContainSingle().Which.Should().Be(change);
-        plan.Diagnostics.Should().ContainSingle().Which.Should().Be(diagnostic);
+        Assert.Equal("plan-1", plan.Id);
+        Assert.Equal(_artifact, plan.Artifact);
+        Assert.Equal(_target, plan.Target);
+        Assert.Equal(change, Assert.Single(plan.Changes));
+        Assert.Equal(diagnostic, Assert.Single(plan.Diagnostics));
     }
 
     [Theory]
@@ -45,7 +44,7 @@ public class PlanContractTests
     {
         var change = new DeploymentChange(_workflow, action);
 
-        change.Action.Should().Be(action);
-        change.Status.Should().Be(DeploymentChangeStatus.Pending);
+        Assert.Equal(action, change.Action);
+        Assert.Equal(DeploymentChangeStatus.Pending, change.Status);
     }
 }

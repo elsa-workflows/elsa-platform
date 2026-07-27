@@ -2,7 +2,6 @@ using System.Net.Http.Json;
 using ValenceControl.Api.Public.Compatibility;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -38,8 +37,8 @@ public sealed class PublicCompatibilityApiTests
             []));
         var result = await response.Content.ReadFromJsonAsync<CompatibilityCheckApiResponse>();
 
-        result!.Compatible.Should().BeFalse();
-        result.Findings.Should().ContainSingle(x => x.Code == "compatibility.elsa");
+        Assert.False(result!.Compatible);
+        Assert.Single(result.Findings, x => x.Code == "compatibility.elsa");
     }
 
     [Fact]
@@ -65,8 +64,11 @@ public sealed class PublicCompatibilityApiTests
             []));
         var result = await response.Content.ReadFromJsonAsync<CompatibilityCheckApiResponse>();
 
-        result!.Compatible.Should().BeFalse();
-        result.Findings.Should().ContainSingle(x => x.Code == "package.missing");
-        result.Findings.Select(x => x.Code).Should().NotContain(["package.invalid", "package.notApproved", "package.suspicious"]);
+        Assert.False(result!.Compatible);
+        Assert.Single(result.Findings, x => x.Code == "package.missing");
+        var findingCodes = result.Findings.Select(x => x.Code);
+        Assert.DoesNotContain("package.invalid", findingCodes);
+        Assert.DoesNotContain("package.notApproved", findingCodes);
+        Assert.DoesNotContain("package.suspicious", findingCodes);
     }
 }

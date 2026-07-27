@@ -5,7 +5,6 @@ using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -31,14 +30,16 @@ public sealed class DeploymentDeployabilityEndpointTests
             new WorkspaceDeployabilityRequestDto(seeded.Environment.Id, seeded.BlockedEngine.Id, DeploymentRunMode.Apply));
         var blocked = await blockedResponse.Content.ReadControlJsonAsync<DeploymentDeployabilityResult>();
 
-        compatibleResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        compatible!.Status.Should().Be(DeploymentDeployabilityStatus.Deployable);
-        compatible.CanDeploy.Should().BeTrue();
-        compatible.Artifacts.Should().ContainSingle(x => x.ArtifactRecordId == seeded.Artifact.Id);
-        blockedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        blocked!.Status.Should().Be(DeploymentDeployabilityStatus.Blocked);
-        blocked.CanDeploy.Should().BeFalse();
-        blocked.Blockers.Select(x => x.Id).Should().Contain(["artifact.capability.missing", "engine.capabilities.missing"]);
+        Assert.Equal(HttpStatusCode.OK, compatibleResponse.StatusCode);
+        Assert.Equal(DeploymentDeployabilityStatus.Deployable, compatible!.Status);
+        Assert.True(compatible.CanDeploy);
+        Assert.Single(compatible.Artifacts, x => x.ArtifactRecordId == seeded.Artifact.Id);
+        Assert.Equal(HttpStatusCode.OK, blockedResponse.StatusCode);
+        Assert.Equal(DeploymentDeployabilityStatus.Blocked, blocked!.Status);
+        Assert.False(blocked.CanDeploy);
+        var blockerIds = blocked.Blockers.Select(x => x.Id);
+        Assert.Contains("artifact.capability.missing", blockerIds);
+        Assert.Contains("engine.capabilities.missing", blockerIds);
     }
 
     private static async Task<SeededDeployabilityRevision> SeedDeployabilityRevisionAsync(

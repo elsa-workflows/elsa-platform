@@ -2,7 +2,6 @@ using System.Text;
 using ValenceControl.Deployment.Abstractions.Artifacts;
 using ValenceControl.Deployment.Artifacts;
 using ValenceControl.Workflows.RuntimeApplier;
-using FluentAssertions;
 
 namespace ValenceControl.Workflows.RuntimeApplier.Tests;
 
@@ -37,15 +36,15 @@ public sealed class WorkflowArtifactCommandProcessorTests
 
         var result = await processor.ProcessAsync(Claim(envelope));
 
-        result.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Completed);
-        result.RuntimeReference.Should().Be("elsa://workflows/payment-retry");
-        result.ObservedDigest.Should().Be(envelope.ContentDigest);
-        store.Definitions.Should().ContainSingle(x => x.WorkflowDefinitionId == "payment-retry");
-        commands.ProgressReports.Should().Contain(x => x.Status == "validating" && x.PercentComplete == 10);
-        commands.ProgressReports.Should().Contain(x => x.Status == "applying" && x.PercentComplete == 60);
-        commands.Completed.Should().ContainSingle(x => x.RuntimeReference == "elsa://workflows/payment-retry" && x.ObservedDigest == envelope.ContentDigest);
-        commands.Rejected.Should().BeEmpty();
-        commands.Failed.Should().BeEmpty();
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.Completed, result.Status);
+        Assert.Equal("elsa://workflows/payment-retry", result.RuntimeReference);
+        Assert.Equal(envelope.ContentDigest, result.ObservedDigest);
+        Assert.Single(store.Definitions, x => x.WorkflowDefinitionId == "payment-retry");
+        Assert.Contains(commands.ProgressReports, x => x.Status == "validating" && x.PercentComplete == 10);
+        Assert.Contains(commands.ProgressReports, x => x.Status == "applying" && x.PercentComplete == 60);
+        Assert.Single(commands.Completed, x => x.RuntimeReference == "elsa://workflows/payment-retry" && x.ObservedDigest == envelope.ContentDigest);
+        Assert.Empty(commands.Rejected);
+        Assert.Empty(commands.Failed);
     }
 
     [Fact]
@@ -60,10 +59,10 @@ public sealed class WorkflowArtifactCommandProcessorTests
         var first = await processor.ProcessAsync(Claim(envelope));
         var second = await processor.ProcessAsync(Claim(envelope));
 
-        first.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Completed);
-        second.Status.Should().Be(WorkflowArtifactCommandProcessStatus.AlreadyApplied);
-        inner.ApplyCount.Should().Be(1);
-        commands.Completed.Should().HaveCount(2);
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.Completed, first.Status);
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.AlreadyApplied, second.Status);
+        Assert.Equal(1, inner.ApplyCount);
+        Assert.Equal(2, commands.Completed.Count());
     }
 
     [Fact]
@@ -76,11 +75,11 @@ public sealed class WorkflowArtifactCommandProcessorTests
 
         var result = await processor.ProcessAsync(Claim(envelope));
 
-        result.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Rejected);
-        result.Diagnostics.Should().ContainSingle(x => x.Code == "workflow-artifact.digest-mismatch");
-        inner.ApplyCount.Should().Be(0);
-        commands.Rejected.Should().ContainSingle();
-        commands.Completed.Should().BeEmpty();
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.Rejected, result.Status);
+        Assert.Single(result.Diagnostics, x => x.Code == "workflow-artifact.digest-mismatch");
+        Assert.Equal(0, inner.ApplyCount);
+        Assert.Single(commands.Rejected);
+        Assert.Empty(commands.Completed);
     }
 
     [Fact]
@@ -93,11 +92,11 @@ public sealed class WorkflowArtifactCommandProcessorTests
 
         var result = await processor.ProcessAsync(Claim(envelope));
 
-        result.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Rejected);
-        result.Diagnostics.Should().ContainSingle(x => x.Code == "workflow-artifact.local-validation-failed");
-        result.Diagnostics.Single().Message.Should().NotContain("super-secret");
-        commands.Rejected.Should().ContainSingle();
-        commands.Rejected.Single().Single().Message.Should().NotContain("password");
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.Rejected, result.Status);
+        Assert.Single(result.Diagnostics, x => x.Code == "workflow-artifact.local-validation-failed");
+        Assert.DoesNotContain("super-secret", result.Diagnostics.Single().Message);
+        Assert.Single(commands.Rejected);
+        Assert.DoesNotContain("password", commands.Rejected.Single().Single().Message);
     }
 
     [Fact]
@@ -114,10 +113,10 @@ public sealed class WorkflowArtifactCommandProcessorTests
 
         var result = await processor.ProcessAsync(Claim(envelope));
 
-        result.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Rejected);
-        result.Diagnostics.Single().Message.Should().NotContain("password");
-        result.Diagnostics.Single().Message.Should().Contain("[redacted]");
-        commands.Rejected.Single().Single().Message.Should().NotContain("password");
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.Rejected, result.Status);
+        Assert.DoesNotContain("password", result.Diagnostics.Single().Message);
+        Assert.Contains("[redacted]", result.Diagnostics.Single().Message);
+        Assert.DoesNotContain("password", commands.Rejected.Single().Single().Message);
     }
 
     [Fact]
@@ -130,10 +129,10 @@ public sealed class WorkflowArtifactCommandProcessorTests
 
         var result = await processor.ProcessAsync(Claim(envelope));
 
-        result.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Failed);
-        result.Diagnostics.Single().Message.Should().NotContain("Bearer");
-        commands.Failed.Should().ContainSingle();
-        commands.Failed.Single().Single().Message.Should().Contain("[redacted]");
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.Failed, result.Status);
+        Assert.DoesNotContain("Bearer", result.Diagnostics.Single().Message);
+        Assert.Single(commands.Failed);
+        Assert.Contains("[redacted]", commands.Failed.Single().Single().Message);
     }
 
     [Fact]
@@ -147,12 +146,12 @@ public sealed class WorkflowArtifactCommandProcessorTests
 
         var result = await processor.ProcessAsync(Claim(envelope));
 
-        result.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Completed);
-        result.RuntimeReference.Should().Be("elsa://workflows/payment-retry");
-        store.Definitions.Should().ContainSingle(x =>
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.Completed, result.Status);
+        Assert.Equal("elsa://workflows/payment-retry", result.RuntimeReference);
+        Assert.Single(store.Definitions, x =>
             x.WorkflowDefinitionId == "payment-retry"
             && x.WorkflowDefinitionJson.Contains("\"version\":42", StringComparison.Ordinal));
-        commands.Completed.Should().ContainSingle(x => x.RuntimeReference == "elsa://workflows/payment-retry");
+        Assert.Single(commands.Completed, x => x.RuntimeReference == "elsa://workflows/payment-retry");
     }
 
     [Fact]
@@ -165,9 +164,9 @@ public sealed class WorkflowArtifactCommandProcessorTests
 
         var result = await processor.ProcessAsync(Claim(envelope));
 
-        result.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Rejected);
-        result.Diagnostics.Should().ContainSingle(x => x.Code == "workflow-artifact.local-validation-failed");
-        commands.Rejected.Should().ContainSingle();
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.Rejected, result.Status);
+        Assert.Single(result.Diagnostics, x => x.Code == "workflow-artifact.local-validation-failed");
+        Assert.Single(commands.Rejected);
     }
 
     [Fact]
@@ -181,10 +180,10 @@ public sealed class WorkflowArtifactCommandProcessorTests
 
         var result = await processor.ProcessAsync(Claim(envelope));
 
-        result.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Completed);
-        result.RuntimeReference.Should().Be("elsa://workflows/payment-retry");
-        store.Definitions.Select(x => x.WorkflowDefinitionId).Should().BeEquivalentTo(["payment-retry", "payment-refund"]);
-        result.Diagnostics.Should().Contain(x =>
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.Completed, result.Status);
+        Assert.Equal("elsa://workflows/payment-retry", result.RuntimeReference);
+        Assert.Equivalent(new[] { "payment-retry", "payment-refund" }, store.Definitions.Select(x => x.WorkflowDefinitionId));
+        Assert.Contains(result.Diagnostics, x =>
             x.Code == "workflow-artifact.applied-multiple"
             && x.Message.Contains("elsa://workflows/payment-retry", StringComparison.Ordinal)
             && x.Message.Contains("elsa://workflows/payment-refund", StringComparison.Ordinal));
@@ -201,9 +200,9 @@ public sealed class WorkflowArtifactCommandProcessorTests
 
         var result = await processor.ProcessAsync(Claim(envelope));
 
-        result.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Rejected);
-        store.Definitions.Should().BeEmpty();
-        commands.Rejected.Should().ContainSingle();
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.Rejected, result.Status);
+        Assert.Empty(store.Definitions);
+        Assert.Single(commands.Rejected);
     }
 
     [Fact]
@@ -217,10 +216,10 @@ public sealed class WorkflowArtifactCommandProcessorTests
 
         var result = await processor.ProcessAsync(Claim(envelope));
 
-        result.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Rejected);
-        result.Diagnostics.Should().ContainSingle(x => x.Code == "workflow-artifact.local-validation-failed");
-        store.Definitions.Should().BeEmpty();
-        commands.Rejected.Should().ContainSingle();
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.Rejected, result.Status);
+        Assert.Single(result.Diagnostics, x => x.Code == "workflow-artifact.local-validation-failed");
+        Assert.Empty(store.Definitions);
+        Assert.Single(commands.Rejected);
     }
 
     [Fact]
@@ -234,9 +233,9 @@ public sealed class WorkflowArtifactCommandProcessorTests
 
         var result = await processor.ProcessAsync(Claim(envelope));
 
-        result.Status.Should().Be(WorkflowArtifactCommandProcessStatus.Rejected);
-        result.Diagnostics.Should().ContainSingle(x => x.Code == "workflow-artifact.local-validation-failed");
-        store.Definitions.Should().BeEmpty();
+        Assert.Equal(WorkflowArtifactCommandProcessStatus.Rejected, result.Status);
+        Assert.Single(result.Diagnostics, x => x.Code == "workflow-artifact.local-validation-failed");
+        Assert.Empty(store.Definitions);
     }
 
     private WorkflowArtifactCommandProcessor Processor(

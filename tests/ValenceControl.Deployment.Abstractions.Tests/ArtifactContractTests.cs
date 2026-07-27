@@ -3,7 +3,6 @@ using ValenceControl.Deployment.Abstractions.Artifacts;
 using ValenceControl.Deployment.Abstractions.Diagnostics;
 using ValenceControl.Deployment.Abstractions.Resources;
 using ValenceControl.Deployment.Abstractions.Targets;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Abstractions.Tests;
 
@@ -18,14 +17,14 @@ public class ArtifactContractTests
         var missingAlgorithm = () => new ArtifactDigest("", "content");
         var missingValue = () => new ArtifactDigest("sha256", " ");
 
-        missingAlgorithm.Should().Throw<ArgumentException>();
-        missingValue.Should().Throw<ArgumentException>();
+        Assert.Throws<ArgumentException>(() => _ = missingAlgorithm());
+        Assert.Throws<ArgumentException>(() => _ = missingValue());
     }
 
     [Fact]
     public void ArtifactDigestFormatsAlgorithmAndValue()
     {
-        _manifestDigest.ToString().Should().Be("sha256:manifest");
+        Assert.Equal("sha256:manifest", _manifestDigest.ToString());
     }
 
     [Fact]
@@ -33,7 +32,7 @@ public class ArtifactContractTests
     {
         var json = JsonSerializer.Serialize(_manifestDigest);
 
-        JsonSerializer.Deserialize<ArtifactDigest>(json).Should().Be(_manifestDigest);
+        Assert.Equal(_manifestDigest, JsonSerializer.Deserialize<ArtifactDigest>(json));
     }
 
     [Fact]
@@ -46,11 +45,11 @@ public class ArtifactContractTests
             _contentDigest,
             version: "2026.05.20.1");
 
-        identity.Id.Should().Be("sales-staging");
-        identity.Version.Should().Be("2026.05.20.1");
-        identity.SchemaVersion.Should().Be("valence-control/v1alpha1");
-        identity.ManifestDigest.Should().Be(_manifestDigest);
-        identity.ContentDigest.Should().Be(_contentDigest);
+        Assert.Equal("sales-staging", identity.Id);
+        Assert.Equal("2026.05.20.1", identity.Version);
+        Assert.Equal("valence-control/v1alpha1", identity.SchemaVersion);
+        Assert.Equal(_manifestDigest, identity.ManifestDigest);
+        Assert.Equal(_contentDigest, identity.ContentDigest);
     }
 
     [Fact]
@@ -61,10 +60,10 @@ public class ArtifactContractTests
 
         var metadata = new DeploymentArtifactMetadata(identity, localTimestamp, builder: "cli", source: "abc123");
 
-        metadata.Identity.Should().Be(identity);
-        metadata.BuiltAt.Offset.Should().Be(TimeSpan.Zero);
-        metadata.Builder.Should().Be("cli");
-        metadata.Source.Should().Be("abc123");
+        Assert.Equal(identity, metadata.Identity);
+        Assert.Equal(TimeSpan.Zero, metadata.BuiltAt.Offset);
+        Assert.Equal("cli", metadata.Builder);
+        Assert.Equal("abc123", metadata.Source);
     }
 
     [Fact]
@@ -81,14 +80,14 @@ public class ArtifactContractTests
         AssertReadOnly(state.Metadata);
         AssertReadOnly(diagnostic.Details);
         AssertReadOnly(target.Properties);
-        new DeploymentArtifactMetadata(identity, DateTimeOffset.UtcNow).Properties.Should().BeEmpty();
+        Assert.Empty(new DeploymentArtifactMetadata(identity, DateTimeOffset.UtcNow).Properties);
     }
 
     private static void AssertReadOnly(IReadOnlyDictionary<string, string> values)
     {
         var mutate = () => ((IDictionary<string, string>)values).Add("leaked", "true");
 
-        mutate.Should().Throw<NotSupportedException>();
-        values.Should().BeEmpty();
+        Assert.Throws<NotSupportedException>(mutate);
+        Assert.Empty(values);
     }
 }

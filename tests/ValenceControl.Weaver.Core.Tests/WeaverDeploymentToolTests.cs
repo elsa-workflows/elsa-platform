@@ -1,6 +1,5 @@
 using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Weaver.Core.Tools;
-using FluentAssertions;
 
 namespace ValenceControl.Weaver.Core.Tests;
 
@@ -43,11 +42,11 @@ public sealed class WeaverDeploymentToolTests
 
         var summary = _tools.SummarizeCockpit(cockpit);
 
-        summary.ApplicationCount.Should().Be(1);
-        summary.EnvironmentCount.Should().Be(1);
-        summary.EngineCount.Should().Be(1);
-        summary.BlockedEnvironments.Should().ContainSingle(x => x.EnvironmentName == "Production");
-        summary.UnhealthyEngines.Should().ContainSingle(x => x.EngineName == "claims-prod" && x.Health == "Unreachable");
-        summary.Drift.Should().ContainSingle(x => x.Area == "RuntimeConfiguration");
+        Assert.Equal(1, summary.ApplicationCount);
+        Assert.Equal(1, summary.EnvironmentCount);
+        Assert.Equal(1, summary.EngineCount);
+        Assert.Single(summary.BlockedEnvironments, x => x.EnvironmentName == "Production");
+        Assert.Single(summary.UnhealthyEngines, x => x.EngineName == "claims-prod" && x.Health == "Unreachable");
+        Assert.Single(summary.Drift, x => x.Area == "RuntimeConfiguration");
     }
 }

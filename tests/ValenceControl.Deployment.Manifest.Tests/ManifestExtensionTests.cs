@@ -2,7 +2,6 @@ using System.Text.Json.Nodes;
 using ValenceControl.Deployment.Abstractions.Artifacts;
 using ValenceControl.Deployment.Abstractions.Diagnostics;
 using ValenceControl.Deployment.Abstractions.Resources;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Manifest.Tests;
 
@@ -26,7 +25,7 @@ public class ManifestExtensionTests
 
         var normalized = _normalizer.Normalize(manifest);
 
-        normalized.Diagnostics.Should().ContainSingle(x =>
+        Assert.Single(normalized.Diagnostics, x =>
             x.Code == ManifestDiagnosticCodes.ResourceUnsupported && x.Severity == DeploymentDiagnosticSeverity.Error);
     }
 
@@ -46,8 +45,8 @@ public class ManifestExtensionTests
 
         var normalized = _normalizer.Normalize(manifest, registry);
 
-        normalized.Diagnostics.Should().BeEmpty();
-        normalized.Resources.Should().ContainSingle().Which.Id.Should().Be(new DeploymentResourceId("dashboard", "sales"));
+        Assert.Empty(normalized.Diagnostics);
+        Assert.Equal(new DeploymentResourceId("dashboard", "sales"), Assert.Single(normalized.Resources).Id);
     }
 
     [Fact]
@@ -66,8 +65,8 @@ public class ManifestExtensionTests
 
         var normalized = _normalizer.Normalize(manifest, registry);
 
-        normalized.Diagnostics.Should().BeEmpty();
-        normalized.Resources.Should().ContainSingle().Which.Id.Should().Be(new DeploymentResourceId("dashboard", "sales"));
+        Assert.Empty(normalized.Diagnostics);
+        Assert.Equal(new DeploymentResourceId("dashboard", "sales"), Assert.Single(normalized.Resources).Id);
     }
 
     [Fact]
@@ -87,11 +86,10 @@ public class ManifestExtensionTests
 
         var normalized = _normalizer.Normalize(manifest, registry);
 
-        mapper.DiagnosticsWereMutable.Should().BeFalse();
-        normalized.Diagnostics.Select(x => x.Code).Should().Contain([
-            ManifestDiagnosticCodes.MetadataNameRequired,
-            "dashboard.invalid"
-        ]);
+        Assert.False(mapper.DiagnosticsWereMutable);
+        var diagnosticCodes = normalized.Diagnostics.Select(x => x.Code);
+        Assert.Contains(ManifestDiagnosticCodes.MetadataNameRequired, diagnosticCodes);
+        Assert.Contains("dashboard.invalid", diagnosticCodes);
     }
 
     [Fact]
@@ -115,8 +113,8 @@ public class ManifestExtensionTests
             DeploymentDiagnosticSeverity.Error,
             "Late dashboard diagnostic."));
 
-        normalized.Diagnostics.Should().BeEmpty();
-        mapper.Context.Diagnostics.Should().Contain(x => x.Code == "dashboard.late");
+        Assert.Empty(normalized.Diagnostics);
+        Assert.Contains(mapper.Context.Diagnostics, x => x.Code == "dashboard.late");
     }
 
     [Fact]
@@ -126,8 +124,8 @@ public class ManifestExtensionTests
 
         var addDuplicate = () => registry.Add(new DashboardMapper());
 
-        addDuplicate.Should().Throw<InvalidOperationException>()
-            .WithMessage("A manifest resource mapper for section 'dashboards' is already registered.");
+        var exception = Assert.Throws<InvalidOperationException>(addDuplicate);
+        Assert.Equal("A manifest resource mapper for section 'dashboards' is already registered.", exception.Message);
     }
 
     [Fact]
@@ -146,11 +144,11 @@ public class ManifestExtensionTests
 
         var normalize = () => _normalizer.Normalize(manifest, registry);
 
-        var normalized = normalize.Should().NotThrow().Subject;
-        normalized.Diagnostics.Should().ContainSingle(x =>
+        var normalized = normalize();
+        Assert.Single(normalized.Diagnostics, x =>
             x.Code == ManifestDiagnosticCodes.ResourceMapperFailed &&
             x.Details.Contains(new KeyValuePair<string, string>("section", "dashboards")));
-        normalized.Resources.Should().BeEmpty();
+        Assert.Empty(normalized.Resources);
     }
 
     [Fact]
@@ -169,10 +167,10 @@ public class ManifestExtensionTests
 
         var normalized = _normalizer.Normalize(manifest, registry);
 
-        normalized.Diagnostics.Select(x => x.Code).Should().Equal(
-            "dashboard.prethrow",
-            ManifestDiagnosticCodes.ResourceMapperFailed);
-        normalized.Resources.Should().BeEmpty();
+        Assert.Equal(
+            ["dashboard.prethrow", ManifestDiagnosticCodes.ResourceMapperFailed],
+            normalized.Diagnostics.Select(x => x.Code));
+        Assert.Empty(normalized.Resources);
     }
 
     [Fact]
@@ -191,8 +189,8 @@ public class ManifestExtensionTests
 
         var normalized = _normalizer.Normalize(manifest, registry);
 
-        normalized.Diagnostics.Should().ContainSingle(x => x.Code == ManifestDiagnosticCodes.ResourceMapperFailed);
-        normalized.Resources.Should().BeEmpty();
+        Assert.Single(normalized.Diagnostics, x => x.Code == ManifestDiagnosticCodes.ResourceMapperFailed);
+        Assert.Empty(normalized.Resources);
     }
 
     [Fact]
@@ -228,13 +226,15 @@ public class ManifestExtensionTests
 
         var normalized = _normalizer.Normalize(manifest);
 
-        manifest.Metadata.Labels.Should().Contain("team", "sales").And.Contain("tier", "customer");
-        manifest.Metadata.Annotations.Should().Contain("sourceCommit", "abc123").And.Contain("deploymentReason", "smoke-test");
-        normalized.Resources.Should().Contain(resource =>
+        Assert.Contains(new KeyValuePair<string, string>("team", "sales"), manifest.Metadata.Labels);
+        Assert.Contains(new KeyValuePair<string, string>("tier", "customer"), manifest.Metadata.Labels);
+        Assert.Contains(new KeyValuePair<string, string>("sourceCommit", "abc123"), manifest.Metadata.Annotations);
+        Assert.Contains(new KeyValuePair<string, string>("deploymentReason", "smoke-test"), manifest.Metadata.Annotations);
+        Assert.Contains(normalized.Resources, resource =>
             resource.Id == new DeploymentResourceId(DeploymentManifestConstants.WorkflowDefinitionResourceType, "order-approval") &&
             resource.Metadata.Contains(new KeyValuePair<string, string>("owner", "approvals")) &&
             resource.Metadata.Contains(new KeyValuePair<string, string>("runtime", "serverless")));
-        normalized.Resources.Should().Contain(resource =>
+        Assert.Contains(normalized.Resources, resource =>
             resource.Id == new DeploymentResourceId(DeploymentManifestConstants.VariableResourceType, "orderTimeout", "sales") &&
             resource.Metadata.Contains(new KeyValuePair<string, string>("unit", "seconds")));
     }

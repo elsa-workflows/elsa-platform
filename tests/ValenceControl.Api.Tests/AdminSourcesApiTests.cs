@@ -6,7 +6,6 @@ using ValenceControl.Api.Authentication;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Core.Sync;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ValenceControl.Api.Tests;
@@ -20,7 +19,7 @@ public sealed class AdminSourcesApiTests
 
         var response = await app.CreateClient().GetAsync("/api/admin/sources");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -40,11 +39,12 @@ public sealed class AdminSourcesApiTests
             PackageSourceApprovalPolicy.Manual,
             PackageSourceVersionDiscoveryPolicy.LatestPreview));
 
-        create.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
 
         var sources = await client.GetControlJsonAsync<List<AdminSourceResponse>>("/api/admin/sources");
 
-        sources.Should().ContainSingle(x =>
+        Assert.NotNull(sources);
+        Assert.Single(sources!, x =>
             x.Name == "NuGet" &&
             x.IncludePatterns.Contains("Elsa.*") &&
             x.ExcludePatterns.Contains("Elsa.Experimental.*") &&
@@ -75,10 +75,10 @@ public sealed class AdminSourcesApiTests
         var body = await response.Content.ReadAsStringAsync();
         using var json = JsonDocument.Parse(body);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        json.RootElement.GetProperty("approvalPolicy").GetString().Should().Be("AutoApprove");
-        json.RootElement.GetProperty("versionDiscoveryPolicy").GetString().Should().Be("LatestPreview");
-        json.RootElement.GetProperty("type").GetString().Should().Be("NuGetFeed");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("AutoApprove", json.RootElement.GetProperty("approvalPolicy").GetString());
+        Assert.Equal("LatestPreview", json.RootElement.GetProperty("versionDiscoveryPolicy").GetString());
+        Assert.Equal("NuGetFeed", json.RootElement.GetProperty("type").GetString());
     }
 
     [Fact]
@@ -105,13 +105,15 @@ public sealed class AdminSourcesApiTests
 
         var sources = await client.GetControlJsonAsync<List<AdminSourceResponse>>("/api/admin/sources");
 
-        var source = sources.Should().ContainSingle().Subject;
-        source.Status.Should().Be(PackageSourceStatus.Warning);
-        source.LastSuccessfulSyncAt.Should().BeCloseTo(lastSuccessfulSync, TimeSpan.FromSeconds(1));
-        source.LastSyncError.Should().Be("Elsa.Email 1.0.0: download failed");
-        source.PackageCount.Should().Be(1);
-        source.PollingInterval.Should().Be("PT30M");
-        source.VersionDiscoveryPolicy.Should().Be(PackageSourceVersionDiscoveryPolicy.LatestStable);
+        Assert.NotNull(sources);
+        var source = Assert.Single(sources!);
+        Assert.Equal(PackageSourceStatus.Warning, source.Status);
+        Assert.NotNull(source.LastSuccessfulSyncAt);
+        Assert.InRange(source.LastSuccessfulSyncAt.Value, lastSuccessfulSync - TimeSpan.FromSeconds(1), lastSuccessfulSync + TimeSpan.FromSeconds(1));
+        Assert.Equal("Elsa.Email 1.0.0: download failed", source.LastSyncError);
+        Assert.Equal(1, source.PackageCount);
+        Assert.Equal("PT30M", source.PollingInterval);
+        Assert.Equal(PackageSourceVersionDiscoveryPolicy.LatestStable, source.VersionDiscoveryPolicy);
     }
 
     [Fact]
@@ -134,7 +136,8 @@ public sealed class AdminSourcesApiTests
 
         var sources = await client.GetControlJsonAsync<List<AdminSourceResponse>>("/api/admin/sources");
 
-        sources.Should().ContainSingle().Subject.IsSyncing.Should().BeTrue();
+        Assert.NotNull(sources);
+        Assert.True(Assert.Single(sources!).IsSyncing);
     }
 
     [Fact]
@@ -156,8 +159,8 @@ public sealed class AdminSourcesApiTests
         var sources = await client.GetControlJsonAsync<List<AdminSourceResponse>>("/api/admin/sources");
         var getDeleted = await client.GetAsync($"/api/admin/sources/{deletedSourceId}");
 
-        sources.Should().BeEmpty();
-        getDeleted.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Empty(sources!);
+        Assert.Equal(HttpStatusCode.NotFound, getDeleted.StatusCode);
     }
 
     [Fact]
@@ -176,6 +179,6 @@ public sealed class AdminSourcesApiTests
             [],
             PackageSourceApprovalPolicy.Manual));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 }

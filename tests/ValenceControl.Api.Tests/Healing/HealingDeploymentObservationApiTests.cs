@@ -10,7 +10,6 @@ using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Persistence.EntityFrameworkCore;
 using ValenceControl.PackageCatalog.Core.Accounts;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -33,18 +32,18 @@ public sealed class HealingDeploymentObservationApiTests
         var second = await replay.Content.ReadFromJsonAsync<JsonElement>();
         var conflict = await SendAsync(app.Owner, uri, request with { Revision = "different-sha" }, "delivery-key-42");
 
-        accepted.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        replay.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        second.GetProperty("observationId").GetGuid().Should().Be(first.GetProperty("observationId").GetGuid());
-        second.GetProperty("isReplay").GetBoolean().Should().BeTrue();
-        conflict.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, replay.StatusCode);
+        Assert.Equal(first.GetProperty("observationId").GetGuid(), second.GetProperty("observationId").GetGuid());
+        Assert.True(second.GetProperty("isReplay").GetBoolean());
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
 
         await using var scope = app.Factory.Services.CreateAsyncScope();
         var observations = await scope.ServiceProvider.GetRequiredService<HealingDbContext>()
             .DeploymentObservations.AsNoTracking().ToArrayAsync();
-        observations.Should().ContainSingle();
-        observations[0].Source.Should().Be(DeploymentObservationSource.ExternalDelivery);
-        observations[0].TrustIdentity.Should().StartWith("control-account:");
+        Assert.Single(observations);
+        Assert.Equal(DeploymentObservationSource.ExternalDelivery, observations[0].Source);
+        Assert.StartsWith("control-account:", observations[0].TrustIdentity);
     }
 
     [Fact]
@@ -69,12 +68,12 @@ public sealed class HealingDeploymentObservationApiTests
         var accepted = await sink.AppendAsync(request);
         var replay = await sink.AppendAsync(request);
 
-        accepted.IsReplay.Should().BeFalse();
-        replay.IsReplay.Should().BeTrue();
-        replay.ObservationId.Should().Be(accepted.ObservationId);
+        Assert.False(accepted.IsReplay);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(accepted.ObservationId, replay.ObservationId);
         var observation = await scope.ServiceProvider.GetRequiredService<HealingDbContext>()
             .DeploymentObservations.AsNoTracking().SingleAsync();
-        observation.Source.Should().Be(DeploymentObservationSource.ControlDeployment);
+        Assert.Equal(DeploymentObservationSource.ControlDeployment, observation.Source);
     }
 
     [Fact]
@@ -88,17 +87,23 @@ public sealed class HealingDeploymentObservationApiTests
         var reporterId = await app.Factory.AddWorkspaceMemberAsync(app.WorkspaceId, reporterSubject, WorkspaceRole.Reader);
         var reporter = app.Factory.CreateTrustedWorkspaceClient(reporterSubject);
 
-        (await outsider.PostAsJsonAsync(ObservationUri(app), request)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        (await app.Owner.PostAsJsonAsync(ObservationUri(app), request)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, (await outsider.PostAsJsonAsync(ObservationUri(app), request)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await app.Owner.PostAsJsonAsync(ObservationUri(app), request)).StatusCode);
         await app.Factory.GrantWorkspaceDeploymentPermissionAsync(app.WorkspaceId, reporterId, HealingPermissions.Configure);
-        (await SendAsync(reporter, ObservationUri(app), request, "configure-is-not-report"))
-            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await SendAsync(reporter, ObservationUri(app), request, "configure-is-not-report")).StatusCode);
         await app.Factory.GrantWorkspaceDeploymentPermissionAsync(app.WorkspaceId, reporterId, HealingPermissions.ReportDeployment);
-        (await SendAsync(reporter, ObservationUri(app), request, "narrow-deployment-report"))
-            .StatusCode.Should().Be(HttpStatusCode.Accepted);
-        (await SendAsync(app.Owner,
-            $"/api/workspaces/{app.WorkspaceId:D}/healing/applications/{app.ApplicationId:D}/environments/{Guid.NewGuid():D}/deployment-observations",
-            request, "missing-environment")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(
+            HttpStatusCode.Accepted,
+            (await SendAsync(reporter, ObservationUri(app), request, "narrow-deployment-report")).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await SendAsync(
+                app.Owner,
+                $"/api/workspaces/{app.WorkspaceId:D}/healing/applications/{app.ApplicationId:D}/environments/{Guid.NewGuid():D}/deployment-observations",
+                request,
+                "missing-environment")).StatusCode);
     }
 
     private static async Task<HttpResponseMessage> SendAsync(HttpClient client, string uri, object body, string idempotencyKey)

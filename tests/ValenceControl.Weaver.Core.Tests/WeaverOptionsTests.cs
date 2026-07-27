@@ -1,5 +1,4 @@
 using ValenceControl.Weaver.Core.Configuration;
-using FluentAssertions;
 
 namespace ValenceControl.Weaver.Core.Tests;
 
@@ -12,8 +11,8 @@ public sealed class WeaverOptionsTests
 
         var available = options.IsAvailable(out var reason);
 
-        available.Should().BeFalse();
-        reason.Should().Be("Weaver is disabled.");
+        Assert.False(available);
+        Assert.Equal("Weaver is disabled.", reason);
     }
 
     [Fact]
@@ -23,8 +22,8 @@ public sealed class WeaverOptionsTests
 
         var available = options.IsAvailable(out var reason);
 
-        available.Should().BeFalse();
-        reason.Should().Be("Weaver BYOK provider requires an API key environment variable.");
+        Assert.False(available);
+        Assert.Equal("Weaver BYOK provider requires an API key environment variable.", reason);
     }
 
     [Fact]
@@ -34,7 +33,7 @@ public sealed class WeaverOptionsTests
 
         var available = options.IsAvailable(out var reason);
 
-        available.Should().BeTrue();
-        reason.Should().BeNull();
+        Assert.True(available);
+        Assert.Null(reason);
     }
 }

@@ -3,7 +3,6 @@ using ValenceControl.Api.Workspace;
 using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.PackageCatalog.Core.Accounts;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -35,10 +34,10 @@ public sealed class WorkspaceDeploymentEngineHealthTests
         var created = await response.Content.ReadControlJsonAsync<WorkspaceWorkflowEngine>();
         var cockpit = await owner.GetControlJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
-        created!.Health.Should().Be(DeploymentHealth.Healthy);
-        created.LastVerificationAt.Should().NotBeNull();
-        cockpit!.Engines.Should().ContainSingle(x =>
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(DeploymentHealth.Healthy, created!.Health);
+        Assert.NotNull(created.LastVerificationAt);
+        Assert.Single(cockpit!.Engines, x =>
             x.Name == "claims-prod"
             && x.Health == DeploymentHealth.Healthy
             && x.Endpoint.Version == "Elsa 4.2.0"
@@ -70,10 +69,10 @@ public sealed class WorkspaceDeploymentEngineHealthTests
         var updated = await response.Content.ReadControlJsonAsync<WorkspaceWorkflowEngine>();
         var cockpit = await owner.GetControlJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        updated!.Health.Should().Be(DeploymentHealth.Healthy);
-        updated.LastVerificationAt.Should().NotBeNull();
-        cockpit!.Engines.Should().ContainSingle(x =>
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(DeploymentHealth.Healthy, updated!.Health);
+        Assert.NotNull(updated.LastVerificationAt);
+        Assert.Single(cockpit!.Engines, x =>
             x.Id == engine.Id.ToString("D")
             && x.Name == "claims-prod-updated"
             && x.Health == DeploymentHealth.Healthy
@@ -104,10 +103,10 @@ public sealed class WorkspaceDeploymentEngineHealthTests
         var result = await response.Content.ReadControlJsonAsync<EngineHealthResult>();
         var cockpit = await owner.GetControlJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        result!.Health.Should().Be(DeploymentHealth.Healthy);
-        result.Version.Should().Be("Elsa 4.1.0");
-        cockpit!.Engines.Should().ContainSingle(x =>
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(DeploymentHealth.Healthy, result!.Health);
+        Assert.Equal("Elsa 4.1.0", result.Version);
+        Assert.Single(cockpit!.Engines, x =>
             x.Id == engine.Id.ToString("D")
             && x.Health == DeploymentHealth.Healthy
             && x.VerificationMessage == "Endpoint responded successfully.");
@@ -135,7 +134,7 @@ public sealed class WorkspaceDeploymentEngineHealthTests
         var response = await app.CreateTrustedWorkspaceClient("health-reader")
             .PostAsync($"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}/verify", null);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -159,8 +158,8 @@ public sealed class WorkspaceDeploymentEngineHealthTests
         var accepted = await owner.PostControlJsonAsync($"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}/heartbeat", request);
         var stale = await owner.PostControlJsonAsync($"/api/workspaces/{workspaceId}/deployments/engines/{engine.Id}/heartbeat", request);
 
-        accepted.StatusCode.Should().Be(HttpStatusCode.OK);
-        stale.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
     }
 
     [Fact]
@@ -185,7 +184,7 @@ public sealed class WorkspaceDeploymentEngineHealthTests
                 null,
                 "Heartbeat accepted."));
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     private static async Task<WorkspaceWorkflowEngine> SeedEngineAsync(ControlApiTestApplication app, Guid workspaceId)

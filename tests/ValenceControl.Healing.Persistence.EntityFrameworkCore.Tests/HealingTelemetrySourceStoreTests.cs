@@ -1,5 +1,4 @@
 using ValenceControl.Healing.Core;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 
 namespace ValenceControl.Healing.Persistence.EntityFrameworkCore.Tests;
@@ -38,13 +37,13 @@ public sealed class HealingTelemetrySourceStoreTests
                 identity.WorkspaceId, identity.ApplicationId, identity.EnvironmentId, identity.Id, staleView.Version,
                 Enumerable.Repeat((byte)9, 32).ToArray(), Enumerable.Repeat((byte)10, 32).ToArray(), DateTimeOffset.UtcNow).AsTask();
 
-            accepted.Should().NotBeNull();
-            await staleRotation.Should().ThrowAsync<DbUpdateConcurrencyException>();
+            Assert.NotNull(accepted);
+            await Assert.ThrowsAsync<DbUpdateConcurrencyException>(staleRotation);
             await using var verificationContext = new HealingDbContext(options);
             var persisted = await verificationContext.HealingTelemetrySources.AsNoTracking().SingleAsync();
-            persisted.CredentialVersion.Should().Be(2);
-            persisted.CredentialSalt.Should().OnlyContain(value => value == 7);
-            persisted.CredentialHash.Should().OnlyContain(value => value == 8);
+            Assert.Equal(2, persisted.CredentialVersion);
+            Assert.All(persisted.CredentialSalt, item => Assert.True(item == 7));
+            Assert.All(persisted.CredentialHash, item => Assert.True(item == 8));
         }
         finally
         {
@@ -85,19 +84,19 @@ public sealed class HealingTelemetrySourceStoreTests
             source.CreatedAt.AddMinutes(3));
         var authenticationLookup = await store.GetActiveTelemetrySourceForAuthenticationAsync(source.Id);
 
-        created.Version.Should().NotBeEmpty();
-        crossWorkspace.Should().BeNull();
-        crossApplication.Should().BeNull();
-        crossEnvironment.Should().BeNull();
-        rotated.Should().NotBeNull();
-        rotated.CredentialVersion.Should().Be(2);
-        rotated.CredentialSalt.Should().OnlyContain(value => value == 3);
-        rotated.CredentialHash.Should().OnlyContain(value => value == 4);
-        rotated.RotatedAt.Should().Be(source.CreatedAt.AddMinutes(1));
-        wrongScopeRotation.Should().BeNull();
-        revoked!.Status.Should().Be(HealingTelemetrySourceStatus.Revoked);
-        revoked.RevokedAt.Should().Be(source.CreatedAt.AddMinutes(3));
-        authenticationLookup.Should().BeNull();
+        Assert.NotEmpty(created.Version);
+        Assert.Null(crossWorkspace);
+        Assert.Null(crossApplication);
+        Assert.Null(crossEnvironment);
+        Assert.NotNull(rotated);
+        Assert.Equal(2, rotated.CredentialVersion);
+        Assert.All(rotated.CredentialSalt, item => Assert.True(item == 3));
+        Assert.All(rotated.CredentialHash, item => Assert.True(item == 4));
+        Assert.Equal(source.CreatedAt.AddMinutes(1), rotated.RotatedAt);
+        Assert.Null(wrongScopeRotation);
+        Assert.Equal(HealingTelemetrySourceStatus.Revoked, revoked!.Status);
+        Assert.Equal(source.CreatedAt.AddMinutes(3), revoked.RevokedAt);
+        Assert.Null(authenticationLookup);
     }
 
     private static HealingTelemetrySource CreateSource() => new()

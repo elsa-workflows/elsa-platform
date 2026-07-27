@@ -11,7 +11,6 @@ using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Persistence.EntityFrameworkCore;
 using ValenceControl.PackageCatalog.Core.Accounts;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -34,21 +33,21 @@ public sealed class HealingIntakeApiTests
         var replay = await app.Owner.PostControlJsonAsync(uri, request);
         var second = await replay.Content.ReadFromJsonAsync<JsonElement>();
 
-        accepted.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        replay.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        first.GetProperty("isReplay").GetBoolean().Should().BeFalse();
-        second.GetProperty("isReplay").GetBoolean().Should().BeTrue();
-        second.GetProperty("inboxId").GetGuid().Should().Be(first.GetProperty("inboxId").GetGuid());
+        Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, replay.StatusCode);
+        Assert.False(first.GetProperty("isReplay").GetBoolean());
+        Assert.True(second.GetProperty("isReplay").GetBoolean());
+        Assert.Equal(first.GetProperty("inboxId").GetGuid(), second.GetProperty("inboxId").GetGuid());
 
         await using var scope = app.Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HealingDbContext>();
         var item = await db.HealingSignalInboxItems.SingleAsync();
         var persisted = JsonSerializer.Deserialize<HealingSignal>(item.RedactedEnvelopeJson, ControlApiTestApplication.JsonOptions);
-        item.WorkspaceId.Should().Be(app.WorkspaceId);
-        item.ApplicationId.Should().Be(app.ApplicationId);
-        item.EnvironmentId.Should().Be(app.EnvironmentId);
-        persisted!.ApplicationId.Should().Be(app.ApplicationId);
-        persisted.EnvironmentId.Should().Be(app.EnvironmentId);
+        Assert.Equal(app.WorkspaceId, item.WorkspaceId);
+        Assert.Equal(app.ApplicationId, item.ApplicationId);
+        Assert.Equal(app.EnvironmentId, item.EnvironmentId);
+        Assert.Equal(app.ApplicationId, persisted!.ApplicationId);
+        Assert.Equal(app.EnvironmentId, persisted.EnvironmentId);
     }
 
     [Fact]
@@ -57,8 +56,9 @@ public sealed class HealingIntakeApiTests
         await using var app = await CreateApplicationAsync("healing-explicit-validation");
         var occurrenceId = $"explicit-{Guid.NewGuid():N}";
         var uri = ApplicationUri(app, "/incidents");
-        (await app.Owner.PostControlJsonAsync(uri, Signal(app.ApplicationId, app.EnvironmentId, occurrenceId)))
-            .StatusCode.Should().Be(HttpStatusCode.Accepted);
+        Assert.Equal(
+            HttpStatusCode.Accepted,
+            (await app.Owner.PostControlJsonAsync(uri, Signal(app.ApplicationId, app.EnvironmentId, occurrenceId))).StatusCode);
 
         var conflict = await app.Owner.PostControlJsonAsync(
             uri,
@@ -70,9 +70,9 @@ public sealed class HealingIntakeApiTests
             $"/api/workspaces/{app.WorkspaceId:D}/healing/applications/{app.ApplicationId:D}/environments/{Guid.NewGuid():D}/incidents",
             Signal(app.ApplicationId, app.EnvironmentId, $"missing-{Guid.NewGuid():N}"));
 
-        conflict.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        unsupported.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        missingEnvironment.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, unsupported.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, missingEnvironment.StatusCode);
     }
 
     [Fact]
@@ -89,13 +89,13 @@ public sealed class HealingIntakeApiTests
             $"{baseUri}/logs/search",
             new OpenTelemetryLogFilter { Severity = "error", Take = 20 });
 
-        configuration.StatusCode.Should().Be(HttpStatusCode.OK);
-        logs.StatusCode.Should().Be(HttpStatusCode.OK);
-        query.Scopes.Should().OnlyContain(scope =>
+        Assert.Equal(HttpStatusCode.OK, configuration.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, logs.StatusCode);
+        Assert.All(query.Scopes, scope => Assert.True(
             scope.WorkspaceId == app.WorkspaceId &&
             scope.ApplicationId == app.ApplicationId &&
-            scope.EnvironmentId == app.EnvironmentId);
-        query.LogFilters.Should().ContainSingle().Which.Severity.Should().Be("error");
+            scope.EnvironmentId == app.EnvironmentId));
+        Assert.Equal("error", Assert.Single(query.LogFilters).Severity);
     }
 
     [Fact]
@@ -110,22 +110,26 @@ public sealed class HealingIntakeApiTests
         var incidentUri = ApplicationUri(app, "/incidents");
         var telemetryUri = ApplicationUri(app, "/opentelemetry/logs/search");
 
-        (await reader.PostControlJsonAsync(incidentUri, Signal(app.ApplicationId, app.EnvironmentId, "denied")))
-            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        (await reader.PostControlJsonAsync(telemetryUri, new OpenTelemetryLogFilter())).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await reader.PostControlJsonAsync(incidentUri, Signal(app.ApplicationId, app.EnvironmentId, "denied"))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await reader.PostControlJsonAsync(telemetryUri, new OpenTelemetryLogFilter())).StatusCode);
 
         await app.Factory.GrantWorkspaceDeploymentPermissionAsync(app.WorkspaceId, accountId, HealingPermissions.Read);
-        (await reader.PostControlJsonAsync(telemetryUri, new OpenTelemetryLogFilter())).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await reader.PostControlJsonAsync(incidentUri, Signal(app.ApplicationId, app.EnvironmentId, "still-denied")))
-            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.OK, (await reader.PostControlJsonAsync(telemetryUri, new OpenTelemetryLogFilter())).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await reader.PostControlJsonAsync(incidentUri, Signal(app.ApplicationId, app.EnvironmentId, "still-denied"))).StatusCode);
 
         await app.Factory.GrantWorkspaceDeploymentPermissionAsync(app.WorkspaceId, accountId, HealingPermissions.Configure);
-        (await reader.PostControlJsonAsync(incidentUri, Signal(app.ApplicationId, app.EnvironmentId, "configure-still-denied")))
-            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await reader.PostControlJsonAsync(incidentUri, Signal(app.ApplicationId, app.EnvironmentId, "configure-still-denied"))).StatusCode);
 
         await app.Factory.GrantWorkspaceDeploymentPermissionAsync(app.WorkspaceId, accountId, HealingPermissions.ReportIncident);
-        (await reader.PostControlJsonAsync(incidentUri, Signal(app.ApplicationId, app.EnvironmentId, "allowed")))
-            .StatusCode.Should().Be(HttpStatusCode.Accepted);
+        Assert.Equal(
+            HttpStatusCode.Accepted,
+            (await reader.PostControlJsonAsync(incidentUri, Signal(app.ApplicationId, app.EnvironmentId, "allowed"))).StatusCode);
     }
 
     private static HealingSignal Signal(Guid applicationId, Guid environmentId, string occurrenceId) => new(

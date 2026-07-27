@@ -2,7 +2,6 @@ using ValenceControl.RuntimeBuilder.Abstractions;
 using ValenceControl.RuntimeBuilder.Core.Builder;
 using ValenceControl.RuntimeBuilder.Core.Builder.Renderers;
 using ValenceControl.RuntimeBuilder.DeploymentTemplates;
-using FluentAssertions;
 
 namespace ValenceControl.RuntimeBuilder.Core.Tests;
 
@@ -14,7 +13,7 @@ public sealed class DeploymentTemplateTargetTests
         var registry = Registry();
         var files = registry.Render(null, Context(), []);
 
-        files.Should().ContainSingle(x => x.Path == "docker-compose.yml");
+        Assert.Single(files, x => x.Path == "docker-compose.yml");
     }
 
     [Fact]
@@ -22,8 +21,8 @@ public sealed class DeploymentTemplateTargetTests
     {
         var files = new AzureContainerAppsTemplateRenderer().Render(Context(), []);
 
-        files.Should().ContainSingle(x => x.Path == "azure-container-app.bicep");
-        files.Single().Contents.Should().Contain("Microsoft.App/containerApps");
+        Assert.Single(files, x => x.Path == "azure-container-app.bicep");
+        Assert.Contains("Microsoft.App/containerApps", files.Single().Contents);
     }
 
     [Fact]
@@ -31,8 +30,8 @@ public sealed class DeploymentTemplateTargetTests
     {
         var files = new KubernetesHelmTemplateRenderer().Render(Context(), []);
 
-        files.Select(x => x.Path).Should().BeEquivalentTo("helm/Chart.yaml", "helm/values.yaml", "helm/templates/deployment.yaml");
-        files.Single(x => x.Path == "helm/values.yaml").Contents.Should().Contain("elsaworkflows/elsa-pro-combined");
+        Assert.Equivalent(new[] { "helm/Chart.yaml", "helm/values.yaml", "helm/templates/deployment.yaml" }, files.Select(x => x.Path));
+        Assert.Contains("elsaworkflows/elsa-pro-combined", files.Single(x => x.Path == "helm/values.yaml").Contents);
     }
 
     [Fact]
@@ -42,8 +41,8 @@ public sealed class DeploymentTemplateTargetTests
 
         var files = Registry().Render("terraform", Context(), findings);
 
-        files.Should().BeEmpty();
-        findings.Should().ContainSingle(x => x.Code == "deploymentTarget.unsupported");
+        Assert.Empty(files);
+        Assert.Single(findings, x => x.Code == "deploymentTarget.unsupported");
     }
 
     private static DeploymentTemplateRegistry Registry() =>

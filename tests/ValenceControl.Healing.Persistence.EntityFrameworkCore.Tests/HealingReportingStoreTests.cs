@@ -1,6 +1,5 @@
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Core.Reporting;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.Persistence.EntityFrameworkCore.Tests;
 
@@ -33,13 +32,12 @@ public sealed class HealingReportingStoreTests
         var source = await new HealingReportingStore(fixture.Db).LoadOverviewAsync(
             new(workspaceId, applicationId, From: now.AddDays(-1), To: now));
 
-        source.OpenIncidents.Should().Be(35);
-        source.IncidentStates.Should().ContainSingle()
-            .Which.Should().Be(new HealingNamedCount(nameof(HealingIncidentStatus.ObservationOnly), 35));
-        source.Repairability.Should().Be(new HealingRepairability(0, 35));
-        source.RecentIncidents.Should().HaveCount(20);
-        source.RecentIncidents.Select(x => x.LastSeenAt).Should().BeInDescendingOrder();
-        source.Usage.Attempts.Should().Be(0);
+        Assert.Equal(35, source.OpenIncidents);
+        Assert.Equal(new HealingNamedCount(nameof(HealingIncidentStatus.ObservationOnly), 35), Assert.Single(source.IncidentStates));
+        Assert.Equal(new HealingRepairability(0, 35), source.Repairability);
+        Assert.Equal(20, source.RecentIncidents.Count());
+        Assert.Equal(source.RecentIncidents.Select(x => x.LastSeenAt).OrderDescending(), source.RecentIncidents.Select(x => x.LastSeenAt));
+        Assert.Equal(0, source.Usage.Attempts);
     }
 
     [Fact]
@@ -95,9 +93,9 @@ public sealed class HealingReportingStoreTests
                 : null;
         } while (cursor is not null);
 
-        observed.Should().HaveCount(200);
-        observed.Select(x => x.Id).Should().OnlyHaveUniqueItems();
-        observed.Select(x => x.Sequence).Should().BeInDescendingOrder();
-        observed[0].Sequence.Should().Be(40);
+        Assert.Equal(200, observed.Count());
+        Assert.Equal(observed.Select(x => x.Id).Distinct().Count(), observed.Select(x => x.Id).Count());
+        Assert.Equal(observed.Select(x => x.Sequence).OrderDescending(), observed.Select(x => x.Sequence));
+        Assert.Equal(40, observed[0].Sequence);
     }
 }

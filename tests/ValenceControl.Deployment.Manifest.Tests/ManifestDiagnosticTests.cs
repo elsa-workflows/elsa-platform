@@ -1,5 +1,4 @@
 using ValenceControl.Deployment.Abstractions.Diagnostics;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Manifest.Tests;
 
@@ -15,7 +14,7 @@ public class ManifestDiagnosticTests
 
         var result = _normalizer.Normalize(manifest);
 
-        result.Diagnostics.Should().ContainSingle(x =>
+        Assert.Single(result.Diagnostics, x =>
             x.Code == ManifestDiagnosticCodes.ApiVersionUnsupported && x.Severity == DeploymentDiagnosticSeverity.Error);
     }
 
@@ -26,7 +25,7 @@ public class ManifestDiagnosticTests
 
         var result = _normalizer.Normalize(manifest);
 
-        result.Diagnostics.Should().ContainSingle(x =>
+        Assert.Single(result.Diagnostics, x =>
             x.Code == ManifestDiagnosticCodes.KindUnsupported && x.Severity == DeploymentDiagnosticSeverity.Error);
     }
 
@@ -43,12 +42,11 @@ public class ManifestDiagnosticTests
 
         var normalized = _normalizer.Normalize(manifest);
 
-        normalized.Diagnostics.Select(x => x.Code).Should().Contain([
-            ManifestDiagnosticCodes.ApiVersionRequired,
-            ManifestDiagnosticCodes.KindRequired,
-            ManifestDiagnosticCodes.MetadataNameRequired,
-            ManifestDiagnosticCodes.ResourceIdentityRequired
-        ]);
+        var diagnosticCodes = normalized.Diagnostics.Select(x => x.Code);
+        Assert.Contains(ManifestDiagnosticCodes.ApiVersionRequired, diagnosticCodes);
+        Assert.Contains(ManifestDiagnosticCodes.KindRequired, diagnosticCodes);
+        Assert.Contains(ManifestDiagnosticCodes.MetadataNameRequired, diagnosticCodes);
+        Assert.Contains(ManifestDiagnosticCodes.ResourceIdentityRequired, diagnosticCodes);
     }
 
     [Fact]
@@ -63,8 +61,8 @@ public class ManifestDiagnosticTests
 
         var normalize = () => _normalizer.Normalize(manifest);
 
-        var normalized = normalize.Should().NotThrow().Subject;
-        normalized.Diagnostics.Should().ContainSingle(x => x.Code == ManifestDiagnosticCodes.MetadataNameRequired);
+        var normalized = normalize();
+        Assert.Single(normalized.Diagnostics, x => x.Code == ManifestDiagnosticCodes.MetadataNameRequired);
     }
 
     [Theory]
@@ -87,9 +85,9 @@ public class ManifestDiagnosticTests
 
         var normalize = () => _normalizer.Normalize(manifest);
 
-        var normalized = normalize.Should().NotThrow().Subject;
-        normalized.Diagnostics.Should().ContainSingle(x => x.Code == ManifestDiagnosticCodes.ResourceIdentityRequired);
-        normalized.Resources.Should().BeEmpty();
+        var normalized = normalize();
+        Assert.Single(normalized.Diagnostics, x => x.Code == ManifestDiagnosticCodes.ResourceIdentityRequired);
+        Assert.Empty(normalized.Resources);
     }
 
     [Fact]
@@ -108,8 +106,8 @@ public class ManifestDiagnosticTests
 
         var normalized = _normalizer.Normalize(manifest);
 
-        normalized.Diagnostics.Should().ContainSingle(x => x.Code == ManifestDiagnosticCodes.ResourceDuplicate);
-        normalized.Resources.Should().ContainSingle();
+        Assert.Single(normalized.Diagnostics, x => x.Code == ManifestDiagnosticCodes.ResourceDuplicate);
+        Assert.Single(normalized.Resources);
     }
 
     [Theory]
@@ -132,12 +130,12 @@ public class ManifestDiagnosticTests
 
         var normalized = _normalizer.Normalize(manifest);
 
-        normalized.Diagnostics.Should().ContainSingle(x =>
+        Assert.Single(normalized.Diagnostics, x =>
             x.Code == ManifestDiagnosticCodes.ResourceDependencyInvalid &&
             x.ResourceId.HasValue &&
             x.ResourceId.Value.Type == DeploymentManifestConstants.WorkflowDefinitionResourceType &&
             x.ResourceId.Value.LogicalId == "order-approval");
-        normalized.Resources.Should().ContainSingle().Which.Dependencies.Should().BeEmpty();
+        Assert.Empty(Assert.Single(normalized.Resources).Dependencies);
     }
 
     [Fact]
@@ -158,13 +156,13 @@ public class ManifestDiagnosticTests
 
         var normalize = () => _normalizer.Normalize(manifest);
 
-        var normalized = normalize.Should().NotThrow().Subject;
-        normalized.Diagnostics.Should().ContainSingle(x =>
+        var normalized = normalize();
+        Assert.Single(normalized.Diagnostics, x =>
             x.Code == ManifestDiagnosticCodes.ResourceDependencyInvalid &&
             x.ResourceId.HasValue &&
             x.ResourceId.Value.Type == DeploymentManifestConstants.WorkflowDefinitionResourceType &&
             x.ResourceId.Value.LogicalId == "order-approval");
-        normalized.Resources.Should().ContainSingle().Which.Dependencies.Should().BeEmpty();
+        Assert.Empty(Assert.Single(normalized.Resources).Dependencies);
     }
 
     [Theory]
@@ -189,8 +187,8 @@ public class ManifestDiagnosticTests
 
         var normalized = _normalizer.Normalize(manifest);
 
-        normalized.Diagnostics.Should().ContainSingle(x => x.Code == ManifestDiagnosticCodes.ResourcePathInvalid);
-        normalized.Resources.Should().BeEmpty();
+        Assert.Single(normalized.Diagnostics, x => x.Code == ManifestDiagnosticCodes.ResourcePathInvalid);
+        Assert.Empty(normalized.Resources);
     }
 
     [Fact]
@@ -208,8 +206,8 @@ public class ManifestDiagnosticTests
 
         var normalized = _normalizer.Normalize(manifest);
 
-        normalized.Diagnostics.Should().ContainSingle(x => x.Code == ManifestDiagnosticCodes.ResourcePathRequired);
-        normalized.Resources.Should().BeEmpty();
+        Assert.Single(normalized.Diagnostics, x => x.Code == ManifestDiagnosticCodes.ResourcePathRequired);
+        Assert.Empty(normalized.Resources);
     }
 
     [Theory]
@@ -219,9 +217,9 @@ public class ManifestDiagnosticTests
     {
         var read = () => _reader.Read(text, format);
 
-        var result = read.Should().NotThrow().Subject;
-        result.Manifest.Should().BeNull();
-        result.Diagnostics.Should().ContainSingle(x =>
+        var result = read();
+        Assert.Null(result.Manifest);
+        Assert.Single(result.Diagnostics, x =>
             x.Code == ManifestDiagnosticCodes.Parse && x.Severity == DeploymentDiagnosticSeverity.Error);
     }
 }

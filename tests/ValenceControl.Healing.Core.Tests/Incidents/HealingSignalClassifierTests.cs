@@ -1,6 +1,5 @@
 using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.Core.Incidents;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.Core.Tests.Incidents;
 
@@ -22,14 +21,13 @@ public sealed class HealingSignalClassifierTests
         });
         var otherResource = _normalizer.Normalize(signal with { ResourceIdentity = "service:checkout:blue" });
 
-        first.Succeeded.Should().BeTrue();
+        Assert.True(first.Succeeded);
         var normalized = first.Signal!;
-        normalized.OccurredAt.Offset.Should().Be(TimeSpan.Zero);
-        normalized.ServiceName.Should().Be("checkout-api");
-        normalized.Frames.Should().ContainSingle().Which.Should().Be(
-            new NormalizedHealingFrame("Acme.Checkout", "Acme.Checkout.OrderHandler", "HandleAsync"));
-        retry.Signal!.OccurrenceKey.Should().Be(normalized.OccurrenceKey);
-        otherResource.Signal!.OccurrenceKey.Should().NotBe(normalized.OccurrenceKey);
+        Assert.Equal(TimeSpan.Zero, normalized.OccurredAt.Offset);
+        Assert.Equal("checkout-api", normalized.ServiceName);
+        Assert.Equal(new NormalizedHealingFrame("Acme.Checkout", "Acme.Checkout.OrderHandler", "HandleAsync"), Assert.Single(normalized.Frames));
+        Assert.Equal(normalized.OccurrenceKey, retry.Signal!.OccurrenceKey);
+        Assert.NotEqual(normalized.OccurrenceKey, otherResource.Signal!.OccurrenceKey);
     }
 
     [Fact]
@@ -47,8 +45,8 @@ public sealed class HealingSignalClassifierTests
         }).Signal!;
         var otherApplication = _normalizer.Normalize(signal with { ApplicationId = Guid.NewGuid() }).Signal!;
 
-        replay.OccurrenceKey.Should().Be(first.OccurrenceKey);
-        otherApplication.OccurrenceKey.Should().NotBe(first.OccurrenceKey);
+        Assert.Equal(first.OccurrenceKey, replay.OccurrenceKey);
+        Assert.NotEqual(first.OccurrenceKey, otherApplication.OccurrenceKey);
     }
 
     [Theory]
@@ -59,9 +57,9 @@ public sealed class HealingSignalClassifierTests
     {
         var result = _normalizer.Normalize(Signal() with { ProfileVersion = version, ServiceName = serviceName });
 
-        result.Succeeded.Should().BeFalse();
-        result.Signal.Should().BeNull();
-        result.ReasonCodes.Should().Contain(expectedReason);
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Signal);
+        Assert.Contains(expectedReason, result.ReasonCodes);
     }
 
     [Fact]
@@ -69,8 +67,8 @@ public sealed class HealingSignalClassifierTests
     {
         var result = _normalizer.Normalize(Signal() with { Evidence = null! });
 
-        result.Succeeded.Should().BeFalse();
-        result.ReasonCodes.Should().Contain(HealingSignalNormalizationReasonCodes.EvidenceRequired);
+        Assert.False(result.Succeeded);
+        Assert.Contains(HealingSignalNormalizationReasonCodes.EvidenceRequired, result.ReasonCodes);
     }
 
     [Theory]
@@ -87,9 +85,9 @@ public sealed class HealingSignalClassifierTests
 
         var result = _classifier.Classify(normalized);
 
-        result.IsEligible.Should().BeTrue();
-        result.Classification.Should().Be(classification);
-        result.ReasonCode.Should().Be(HealingSignalClassificationReasonCodes.EligibleFailureClass);
+        Assert.True(result.IsEligible);
+        Assert.Equal(classification, result.Classification);
+        Assert.Equal(HealingSignalClassificationReasonCodes.EligibleFailureClass, result.ReasonCode);
     }
 
     [Theory]
@@ -105,8 +103,8 @@ public sealed class HealingSignalClassifierTests
 
         var result = _classifier.Classify(normalized);
 
-        result.IsEligible.Should().BeFalse();
-        result.Classification.Should().BeNull();
+        Assert.False(result.IsEligible);
+        Assert.Null(result.Classification);
     }
 
     [Fact]
@@ -120,8 +118,8 @@ public sealed class HealingSignalClassifierTests
 
         var result = _classifier.Classify(normalized);
 
-        result.IsEligible.Should().BeFalse();
-        result.ReasonCode.Should().Be(HealingSignalClassificationReasonCodes.RetryInProgress);
+        Assert.False(result.IsEligible);
+        Assert.Equal(HealingSignalClassificationReasonCodes.RetryInProgress, result.ReasonCode);
     }
 
     [Fact]
@@ -134,11 +132,11 @@ public sealed class HealingSignalClassifierTests
         var authorized = _classifier.Classify(normalized,
             new HealingClassificationOverride(HealingFailureClasses.UnhandledRequest, IsAuthorized: true));
 
-        unauthorized.IsEligible.Should().BeFalse();
-        unauthorized.ReasonCode.Should().Be(HealingSignalClassificationReasonCodes.UnauthorizedOverrideIgnored);
-        authorized.IsEligible.Should().BeTrue();
-        authorized.Classification.Should().Be(IncidentClassification.UnhandledRequest);
-        authorized.ReasonCode.Should().Be(HealingSignalClassificationReasonCodes.AuthorizedOverride);
+        Assert.False(unauthorized.IsEligible);
+        Assert.Equal(HealingSignalClassificationReasonCodes.UnauthorizedOverrideIgnored, unauthorized.ReasonCode);
+        Assert.True(authorized.IsEligible);
+        Assert.Equal(IncidentClassification.UnhandledRequest, authorized.Classification);
+        Assert.Equal(HealingSignalClassificationReasonCodes.AuthorizedOverride, authorized.ReasonCode);
     }
 
     [Fact]
@@ -163,10 +161,10 @@ public sealed class HealingSignalClassifierTests
         var second = _fingerprints.Compute(volatileVariant, ["package:Acme.Checkout"], "github:acme/checkout");
         var otherRepository = _fingerprints.Compute(original, ["package:Acme.Checkout"], "github:acme/orders");
 
-        first.Version.Should().Be(HealingFingerprintService.CurrentVersion);
-        first.Value.Should().StartWith("sha256:");
-        second.Should().Be(first);
-        otherRepository.Value.Should().NotBe(first.Value);
+        Assert.Equal(HealingFingerprintService.CurrentVersion, first.Version);
+        Assert.StartsWith("sha256:", first.Value);
+        Assert.Equal(first, second);
+        Assert.NotEqual(first.Value, otherRepository.Value);
     }
 
     [Fact]
@@ -183,10 +181,10 @@ public sealed class HealingSignalClassifierTests
 
         var result = _normalizer.Normalize(signal);
 
-        result.Succeeded.Should().BeTrue();
-        result.Signal!.Frames.Should().Equal(
-            new NormalizedHealingFrame(null, "Acme.Checkout.OrderHandler", "HandleAsync"),
-            new NormalizedHealingFrame(null, "Acme.Api.Controllers.OrderController", "Post"));
+        Assert.True(result.Succeeded);
+        Assert.Equal(
+            [new NormalizedHealingFrame(null, "Acme.Checkout.OrderHandler", "HandleAsync"), new NormalizedHealingFrame(null, "Acme.Api.Controllers.OrderController", "Post")],
+            result.Signal!.Frames);
     }
 
     [Fact]
@@ -202,13 +200,10 @@ public sealed class HealingSignalClassifierTests
             Exception = signal.Exception with { Message = new string('x', 5_000), Frames = frames }
         }).Signal!;
 
-        normalized.Source.Exception.Message.Should().HaveLength(4_096);
-        normalized.Frames.Should().HaveCount(64);
-        normalized.Source.Evidence.IsTruncated.Should().BeTrue();
-        normalized.Source.Evidence.OmittedFields.Should().Contain([
-            "exception.message:truncated",
-            "exception.frames:truncated"
-        ]);
+        Assert.Equal(4_096, Assert.IsType<string>(normalized.Source.Exception.Message).Length);
+        Assert.Equal(64, normalized.Frames.Count());
+        Assert.True(normalized.Source.Evidence.IsTruncated);
+        Assert.All(["exception.message:truncated", "exception.frames:truncated"], value => Assert.Contains(value, normalized.Source.Evidence.OmittedFields));
     }
 
     private static HealingSignal Signal() => new(

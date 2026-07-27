@@ -12,7 +12,7 @@ Add a durable deployment command contract and runtime sync API that separates de
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console where command state appears in deployment history.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `ValenceControl.Deployment.Core` deployment run services, `ValenceControl.Deployment.Artifacts` envelope metadata, xUnit, FluentAssertions, React Router, TanStack Query, and Vitest.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `ValenceControl.Deployment.Core` deployment run services, `ValenceControl.Deployment.Artifacts` envelope metadata, xUnit and its built-in assertions, React Router, TanStack Query, and Vitest.
 
 **Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Command tables store command metadata, lease/attempt state, progress, safe diagnostics, artifact/revision references, and runtime result references only.
 

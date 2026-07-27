@@ -4,7 +4,6 @@ using ValenceControl.Api.Authentication;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Core.Sync;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -36,9 +35,9 @@ public sealed class AdminValidationApiTests
         var results = await client.GetControlJsonAsync<AdminValidationFindingsResponse>(
             "/api/admin/packages/Elsa.Email/versions/1.0.0/validation");
 
-        results.Should().NotBeNull();
-        results!.PackageId.Should().Be("Elsa.Email");
-        results.Findings.Should().ContainSingle(x => x.Severity == "Error" && x.Message == "bad" && x.BlocksPublicVisibility);
+        Assert.NotNull(results);
+        Assert.Equal("Elsa.Email", results!.PackageId);
+        Assert.Single(results.Findings, x => x.Severity == "Error" && x.Message == "bad" && x.BlocksPublicVisibility);
     }
 
     [Fact]
@@ -68,8 +67,8 @@ public sealed class AdminValidationApiTests
         var results = await client.GetControlJsonAsync<AdminValidationFindingsResponse>(
             "/api/admin/packages/elsa.email/versions/1.0.0/validation");
 
-        results.Should().NotBeNull();
-        results!.Findings.Should().ContainSingle(x =>
+        Assert.NotNull(results);
+        Assert.Single(results!.Findings, x =>
             x.Severity == "Warning"
             && x.Code == null
             && x.Path == null
@@ -96,8 +95,8 @@ public sealed class AdminValidationApiTests
         var results = await client.GetControlJsonAsync<AdminValidationFindingsResponse>(
             "/api/admin/packages/Elsa.Email/versions/1.0.0/validation");
 
-        results.Should().NotBeNull();
-        results!.Findings.Should().BeEmpty();
+        Assert.NotNull(results);
+        Assert.Empty(results!.Findings);
     }
 
     [Fact]
@@ -117,6 +116,6 @@ public sealed class AdminValidationApiTests
 
         var response = await client.GetAsync("/api/admin/packages/Elsa.Email/versions/9.9.9/validation");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 }

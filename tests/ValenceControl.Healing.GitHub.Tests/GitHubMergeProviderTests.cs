@@ -4,7 +4,6 @@ using System.Text;
 using System.Text.Json;
 using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.Core;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.GitHub.Tests;
 
@@ -75,29 +74,29 @@ public sealed class GitHubMergeProviderTests
         var passing = await provider.GetMergeSnapshotAsync(Repository(authorization), "17");
         var spoofedApp = await provider.GetMergeSnapshotAsync(Repository(authorization), "17");
 
-        pending.HeadRevision.Should().Be(new string('a', 40));
-        pending.IsOpen.Should().BeTrue();
-        pending.IsDraft.Should().BeFalse();
-        pending.BaseRevision.Should().Be(new string('b', 40));
-        pending.RequiredChecks.Should().Equal("ci/test", "security");
-        pending.Checks.Single(x => x.Name == "ci/test").State.Should().Be("in_progress");
-        pending.IsBranchProtectionSatisfied.Should().BeFalse();
-        passing.Checks.Should().OnlyContain(x => x.State == "success");
-        passing.IsBranchProtectionSatisfied.Should().BeTrue();
-        spoofedApp.IsBranchProtectionSatisfied.Should().BeFalse("a same-name check from another GitHub App is not authoritative");
-        checkRefreshes.Should().Be(3, "each policy evaluation needs a fresh provider observation");
+        Assert.Equal(new string('a', 40), pending.HeadRevision);
+        Assert.True(pending.IsOpen);
+        Assert.False(pending.IsDraft);
+        Assert.Equal(new string('b', 40), pending.BaseRevision);
+        Assert.Equal(["ci/test", "security"], pending.RequiredChecks);
+        Assert.Equal("in_progress", pending.Checks.Single(x => x.Name == "ci/test").State);
+        Assert.False(pending.IsBranchProtectionSatisfied);
+        Assert.All(passing.Checks, x => Assert.Equal("success", x.State));
+        Assert.True(passing.IsBranchProtectionSatisfied);
+        Assert.False(spoofedApp.IsBranchProtectionSatisfied);
+        Assert.Equal(3, checkRefreshes);
 
-        tokenRequests.Should().HaveCount(9);
-        PermissionNames(tokenRequests[0]).Should().BeEquivalentTo("pull_requests", "metadata");
-        PermissionNames(tokenRequests[1]).Should().BeEquivalentTo("administration", "metadata");
-        PermissionNames(tokenRequests[2]).Should().BeEquivalentTo("checks", "statuses", "metadata");
+        Assert.Equal(9, tokenRequests.Count());
+        Assert.Equivalent(new[] { "pull_requests", "metadata" }, PermissionNames(tokenRequests[0]));
+        Assert.Equivalent(new[] { "administration", "metadata" }, PermissionNames(tokenRequests[1]));
+        Assert.Equivalent(new[] { "checks", "statuses", "metadata" }, PermissionNames(tokenRequests[2]));
         foreach (var refresh in tokenRequests.Chunk(3))
         {
-            PermissionNames(refresh[0]).Should().BeEquivalentTo("pull_requests", "metadata");
-            PermissionNames(refresh[1]).Should().BeEquivalentTo("administration", "metadata");
-            PermissionNames(refresh[2]).Should().BeEquivalentTo("checks", "statuses", "metadata");
+            Assert.Equivalent(new[] { "pull_requests", "metadata" }, PermissionNames(refresh[0]));
+            Assert.Equivalent(new[] { "administration", "metadata" }, PermissionNames(refresh[1]));
+            Assert.Equivalent(new[] { "checks", "statuses", "metadata" }, PermissionNames(refresh[2]));
         }
-        tokenRequests.SelectMany(x => PermissionNames(x)).Should().NotContain("contents");
+        Assert.DoesNotContain("contents", tokenRequests.SelectMany(x => PermissionNames(x)));
     }
 
     [Fact]
@@ -123,16 +122,16 @@ public sealed class GitHubMergeProviderTests
         var first = await provider.RequestMergeAsync(request);
         var replay = await provider.RequestMergeAsync(request);
 
-        first.IsReplay.Should().BeFalse();
-        first.ProviderCorrelationId.Should().Be("provider-request-1");
-        replay.Should().Be(first with { IsReplay = true });
-        requests.Should().HaveCount(2);
+        Assert.False(first.IsReplay);
+        Assert.Equal("provider-request-1", first.ProviderCorrelationId);
+        Assert.Equal(first with { IsReplay = true }, replay);
+        Assert.Equal(2, requests.Count());
         using var tokenRequest = JsonDocument.Parse(requests[0].Body);
-        PermissionNames(tokenRequest.RootElement).Should().BeEquivalentTo("contents", "metadata");
-        tokenRequest.RootElement.GetProperty("permissions").GetProperty("contents").GetString().Should().Be("write");
+        Assert.Equivalent(new[] { "contents", "metadata" }, PermissionNames(tokenRequest.RootElement));
+        Assert.Equal("write", tokenRequest.RootElement.GetProperty("permissions").GetProperty("contents").GetString());
         using var mergeRequest = JsonDocument.Parse(requests[1].Body);
-        mergeRequest.RootElement.GetProperty("sha").GetString().Should().Be(new string('a', 40));
-        mergeRequest.RootElement.GetProperty("merge_method").GetString().Should().Be("squash");
+        Assert.Equal(new string('a', 40), mergeRequest.RootElement.GetProperty("sha").GetString());
+        Assert.Equal("squash", mergeRequest.RootElement.GetProperty("merge_method").GetString());
     }
 
     [Fact]
@@ -150,9 +149,9 @@ public sealed class GitHubMergeProviderTests
 
         var act = () => provider.RequestMergeAsync(request).AsTask();
 
-        await act.Should().ThrowAsync<GitHubSecurityException>()
-            .Where(x => x.ReasonCode == GitHubSecurityReasonCodes.InvalidRequest);
-        handler.Count.Should().Be(0);
+        var exception = await Assert.ThrowsAsync<GitHubSecurityException>(act);
+        Assert.Equal(GitHubSecurityReasonCodes.InvalidRequest, exception.ReasonCode);
+        Assert.Equal(0, handler.Count);
     }
 
     private static GitHubMergeProvider Provider(

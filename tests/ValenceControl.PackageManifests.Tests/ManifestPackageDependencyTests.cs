@@ -1,4 +1,3 @@
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifests.Tests;
 
@@ -9,7 +8,7 @@ public sealed class ManifestPackageDependencyTests
     {
         var references = typeof(ElsaPackageManifest).Assembly.GetReferencedAssemblies().Select(x => x.Name).ToList();
 
-        references.Where(name => name is not null && name.StartsWith("ValenceControl.PackageCatalog", StringComparison.Ordinal)).Should().BeEmpty();
-        references.Where(name => name is not null && name.Contains("Nuplane", StringComparison.OrdinalIgnoreCase)).Should().BeEmpty();
+        Assert.DoesNotContain(references, name => name is not null && name.StartsWith("ValenceControl.PackageCatalog", StringComparison.Ordinal));
+        Assert.DoesNotContain(references, name => name is not null && name.Contains("Nuplane", StringComparison.OrdinalIgnoreCase));
     }
 }

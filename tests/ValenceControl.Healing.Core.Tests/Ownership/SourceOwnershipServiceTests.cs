@@ -6,7 +6,6 @@ using ValenceControl.Healing.Core.Configuration;
 using ValenceControl.Healing.Core.Manifests;
 using ValenceControl.Healing.Core.Ownership;
 using ValenceControl.Healing.Core.Security;
-using FluentAssertions;
 using ComponentManifestEntity = ValenceControl.Healing.Core.ComponentManifest;
 
 namespace ValenceControl.Healing.Core.Tests.Ownership;
@@ -29,24 +28,24 @@ public sealed class SourceOwnershipServiceTests
         var effective = await service.GetEffectiveAsync(_workspaceId, _applicationId, environmentId);
         var denied = await service.SaveAsync(configuration, Owner(applicationId: Guid.NewGuid()));
 
-        saved.Succeeded.Should().BeTrue();
-        store.WorkspaceConfiguration.Should().BeEquivalentTo(new
+        Assert.True(saved.Succeeded);
+        Assert.Equivalent(new
         {
             WorkspaceId = _workspaceId,
             WorkspaceKillSwitch = false,
             CreatedAt = _now,
             UpdatedAt = _now
-        });
-        effective.Should().BeEquivalentTo(new EffectiveHealingConfiguration(
+        }, store.WorkspaceConfiguration);
+        Assert.Equivalent(new EffectiveHealingConfiguration(
             DiscoveryEnabled: false,
             RepairEnabled: true,
             AutomaticMergeEnabled: false,
             OccurrenceThreshold: 7,
             DebounceWindow: TimeSpan.FromMinutes(3),
             ApplicationKillSwitch: false,
-            EnvironmentKillSwitch: false));
-        denied.Succeeded.Should().BeFalse();
-        denied.ReasonCode.Should().Be(HealingOwnershipReasonCodes.Unauthorized);
+            EnvironmentKillSwitch: false), effective);
+        Assert.False(denied.Succeeded);
+        Assert.Equal(HealingOwnershipReasonCodes.Unauthorized, denied.ReasonCode);
     }
 
     [Fact]
@@ -60,8 +59,8 @@ public sealed class SourceOwnershipServiceTests
         var denied = await service.SaveAsync(configuration, Owner(permissions: new[] { HealingPermissions.Configure }.ToFrozenSet(StringComparer.Ordinal)));
         var allowed = await service.SaveAsync(configuration, Owner());
 
-        denied.ReasonCode.Should().Be(HealingOwnershipReasonCodes.AutomaticMergePermissionRequired);
-        allowed.Succeeded.Should().BeTrue();
+        Assert.Equal(HealingOwnershipReasonCodes.AutomaticMergePermissionRequired, denied.ReasonCode);
+        Assert.True(allowed.Succeeded);
     }
 
     [Fact]
@@ -83,9 +82,9 @@ public sealed class SourceOwnershipServiceTests
             request,
             Owner());
 
-        denied.ReasonCode.Should().Be(HealingOwnershipReasonCodes.AutomaticMergePermissionRequired);
-        allowed.Succeeded.Should().BeTrue();
-        allowed.Value!.MergePolicy.AutomaticMergeEnabled.Should().BeTrue();
+        Assert.Equal(HealingOwnershipReasonCodes.AutomaticMergePermissionRequired, denied.ReasonCode);
+        Assert.True(allowed.Succeeded);
+        Assert.True(allowed.Value!.MergePolicy.AutomaticMergeEnabled);
     }
 
     [Fact]
@@ -104,10 +103,10 @@ public sealed class SourceOwnershipServiceTests
         var revalidated = await service.ValidateProviderAsync(
             _workspaceId, _applicationId, provider.Id, provider.Version, Owner());
 
-        direct.ReasonCode.Should().Be(HealingOwnershipReasonCodes.InvalidBindingTransition);
-        revalidated.Succeeded.Should().BeTrue();
-        revalidated.Value!.Status.Should().Be(ProviderConnectionStatus.Active);
-        validator.CallCount.Should().Be(1);
+        Assert.Equal(HealingOwnershipReasonCodes.InvalidBindingTransition, direct.ReasonCode);
+        Assert.True(revalidated.Succeeded);
+        Assert.Equal(ProviderConnectionStatus.Active, revalidated.Value!.Status);
+        Assert.Equal(1, validator.CallCount);
     }
 
     [Fact]
@@ -117,7 +116,7 @@ public sealed class SourceOwnershipServiceTests
         var service = new HealingConfigurationService(store, Audit(store), TimeProvider(_now));
         var configuration = Configuration();
         configuration.AutomaticMergeEnabled = true;
-        (await service.SaveAsync(configuration, Owner())).Succeeded.Should().BeTrue();
+        Assert.True((await service.SaveAsync(configuration, Owner())).Succeeded);
         configuration.InferenceBudget++;
 
         var updated = await service.SaveAsync(
@@ -127,17 +126,18 @@ public sealed class SourceOwnershipServiceTests
             _workspaceId,
             _applicationId,
             Owner(permissions: new[] { HealingPermissions.Configure }.ToFrozenSet(StringComparer.Ordinal)));
-        stopped.Succeeded.Should().BeTrue();
-        stopped.Value!.ApplicationKillSwitch.Should().BeTrue();
+        Assert.True(stopped.Succeeded);
+        Assert.True(stopped.Value!.ApplicationKillSwitch);
         var resumed = await service.ResumeAsync(
             _workspaceId,
             _applicationId,
             Owner(permissions: new[] { HealingPermissions.Configure }.ToFrozenSet(StringComparer.Ordinal)));
 
-        updated.Succeeded.Should().BeTrue();
-        resumed.Succeeded.Should().BeTrue();
-        resumed.Value!.ApplicationKillSwitch.Should().BeFalse();
-        store.AuditEvents.Select(x => x.EventType).Should().Contain(["emergency-stop-activated", "emergency-stop-cleared"]);
+        Assert.True(updated.Succeeded);
+        Assert.True(resumed.Succeeded);
+        Assert.False(resumed.Value!.ApplicationKillSwitch);
+        Assert.Contains("emergency-stop-activated", store.AuditEvents.Select(x => x.EventType));
+        Assert.Contains("emergency-stop-cleared", store.AuditEvents.Select(x => x.EventType));
     }
 
     [Fact]
@@ -159,8 +159,8 @@ public sealed class SourceOwnershipServiceTests
             var configuration = Configuration();
             mutate(configuration);
             var result = await service.SaveAsync(configuration, Owner());
-            result.Succeeded.Should().BeFalse();
-            result.ReasonCode.Should().Be(HealingOwnershipReasonCodes.InvalidConfiguration);
+            Assert.False(result.Succeeded);
+            Assert.Equal(HealingOwnershipReasonCodes.InvalidConfiguration, result.ReasonCode);
         }
     }
 
@@ -181,16 +181,17 @@ public sealed class SourceOwnershipServiceTests
             _workspaceId, _applicationId, manifest.Id, Owner());
         var revoked = await service.RevokeAsync(_workspaceId, _applicationId, manifest.Id, Owner());
 
-        registered.Succeeded.Should().BeTrue();
-        replay.IsReplay.Should().BeTrue();
-        conflict.ReasonCode.Should().Be(HealingOwnershipReasonCodes.ImmutableRevisionConflict);
-        deniedTrust.ReasonCode.Should().Be(HealingOwnershipReasonCodes.OwnerApprovalRequired);
-        verified.Succeeded.Should().BeTrue();
-        verified.Value!.VerificationMethod.Should().Be("workspace-owner-verification");
-        ComponentManifestService.IsAutomationAuthoritative(verified.Value).Should().BeFalse();
-        revoked.Succeeded.Should().BeTrue();
-        (await store.GetManifestAsync(_workspaceId, _applicationId, manifest.Id, default))!.TrustState
-            .Should().Be(ComponentManifestTrustState.Revoked);
+        Assert.True(registered.Succeeded);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(HealingOwnershipReasonCodes.ImmutableRevisionConflict, conflict.ReasonCode);
+        Assert.Equal(HealingOwnershipReasonCodes.OwnerApprovalRequired, deniedTrust.ReasonCode);
+        Assert.True(verified.Succeeded);
+        Assert.Equal("workspace-owner-verification", verified.Value!.VerificationMethod);
+        Assert.False(ComponentManifestService.IsAutomationAuthoritative(verified.Value));
+        Assert.True(revoked.Succeeded);
+        Assert.Equal(
+            ComponentManifestTrustState.Revoked,
+            (await store.GetManifestAsync(_workspaceId, _applicationId, manifest.Id, default))!.TrustState);
     }
 
     [Fact]
@@ -204,13 +205,13 @@ public sealed class SourceOwnershipServiceTests
         var replay = await service.RegisterAsync(CloneManifest(manifest), "delivery-42", "sha256:payload-a", Owner());
         var conflict = await service.RegisterAsync(CloneManifest(manifest), "delivery-42", "sha256:payload-b", Owner());
 
-        registered.Succeeded.Should().BeTrue();
-        registered.IsReplay.Should().BeFalse();
-        replay.Succeeded.Should().BeTrue();
-        replay.IsReplay.Should().BeTrue();
-        replay.Manifest!.Id.Should().Be(registered.Manifest!.Id);
-        conflict.Succeeded.Should().BeFalse();
-        conflict.ReasonCode.Should().Be(HealingOwnershipReasonCodes.IdempotencyConflict);
+        Assert.True(registered.Succeeded);
+        Assert.False(registered.IsReplay);
+        Assert.True(replay.Succeeded);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(registered.Manifest!.Id, replay.Manifest!.Id);
+        Assert.False(conflict.Succeeded);
+        Assert.Equal(HealingOwnershipReasonCodes.IdempotencyConflict, conflict.ReasonCode);
     }
 
     [Fact]
@@ -231,18 +232,18 @@ public sealed class SourceOwnershipServiceTests
 
         var result = await service.RegisterAsync(manifest, Owner());
 
-        result.Succeeded.Should().BeTrue();
-        result.Manifest!.SchemaVersion.Should().Be("1.0");
-        result.Manifest.SourceRevision.Should().Be(new string('a', 40));
-        result.Manifest.BuildId.Should().Be("build-1");
-        result.Manifest.CreatedAt.Should().Be(_now);
-        result.Manifest.ManifestDigest.Should().NotBe($"sha256:{new string('f', 64)}");
-        var component = result.Manifest.Entries.Should().ContainSingle().Subject;
-        component.PackageId.Should().Be("Acme.Workflows");
-        component.AssemblyName.Should().BeNull();
-        component.RepositoryUrl.Should().Be("https://github.com/acme/workflows");
-        SourceOwnershipService.Matches(Binding(SourceSelectorKind.Package, "Evil.Package"), component).Should().BeFalse();
-        SourceOwnershipService.Matches(Binding(SourceSelectorKind.Assembly, "Evil.Assembly"), component).Should().BeFalse();
+        Assert.True(result.Succeeded);
+        Assert.Equal("1.0", result.Manifest!.SchemaVersion);
+        Assert.Equal(new string('a', 40), result.Manifest.SourceRevision);
+        Assert.Equal("build-1", result.Manifest.BuildId);
+        Assert.Equal(_now, result.Manifest.CreatedAt);
+        Assert.NotEqual($"sha256:{new string('f', 64)}", result.Manifest.ManifestDigest);
+        var component = Assert.Single(result.Manifest.Entries);
+        Assert.Equal("Acme.Workflows", component.PackageId);
+        Assert.Null(component.AssemblyName);
+        Assert.Equal("https://github.com/acme/workflows", component.RepositoryUrl);
+        Assert.False(SourceOwnershipService.Matches(Binding(SourceSelectorKind.Package, "Evil.Package"), component));
+        Assert.False(SourceOwnershipService.Matches(Binding(SourceSelectorKind.Assembly, "Evil.Assembly"), component));
     }
 
     [Fact]
@@ -251,14 +252,14 @@ public sealed class SourceOwnershipServiceTests
         var store = new FakeOwnershipStore();
         var service = new ComponentManifestService(store, Audit(store), TimeProvider(_now));
         var manifest = Manifest();
-        (await service.RegisterAsync(manifest, Owner())).Succeeded.Should().BeTrue();
+        Assert.True((await service.RegisterAsync(manifest, Owner())).Succeeded);
 
         var result = await service.VerifyAsync(
             _workspaceId, _applicationId, manifest.Id,
             ManifestTrustMethod.ControlManagedBuildAttestation, Owner());
 
-        result.ReasonCode.Should().Be(HealingOwnershipReasonCodes.TrustedAttestationRequired);
-        store.Manifests.Single().TrustState.Should().Be(ComponentManifestTrustState.Unverified);
+        Assert.Equal(HealingOwnershipReasonCodes.TrustedAttestationRequired, result.ReasonCode);
+        Assert.Equal(ComponentManifestTrustState.Unverified, store.Manifests.Single().TrustState);
     }
 
     [Fact]
@@ -268,17 +269,19 @@ public sealed class SourceOwnershipServiceTests
         var authority = new FakeAttestationAuthority();
         var service = new ComponentManifestService(store, Audit(store), TimeProvider(_now), authority);
         var manifest = Manifest();
-        (await service.RegisterAsync(manifest, Owner())).Succeeded.Should().BeTrue();
-        (await service.VerifyByOwnerAsync(_workspaceId, _applicationId, manifest.Id, Owner()))
-            .Value!.VerificationMethod.Should().Be("workspace-owner-verification");
+        Assert.True((await service.RegisterAsync(manifest, Owner())).Succeeded);
+        Assert.Equal(
+            "workspace-owner-verification",
+            (await service.VerifyByOwnerAsync(_workspaceId, _applicationId, manifest.Id, Owner()))
+                .Value!.VerificationMethod);
 
         var evidence = new ComponentManifestAttestationEvidence(manifest.ManifestDigest, "build-1");
         var result = await service.VerifyAttestedAsync(_workspaceId, _applicationId, manifest.Id, evidence);
 
-        result.Succeeded.Should().BeTrue();
-        result.Value!.VerificationMethod.Should().Be("control-managed-build-attestation");
-        ComponentManifestService.IsAutomationAuthoritative(result.Value).Should().BeTrue();
-        authority.Request.Should().BeEquivalentTo(new ComponentManifestAttestationRequest(
+        Assert.True(result.Succeeded);
+        Assert.Equal("control-managed-build-attestation", result.Value!.VerificationMethod);
+        Assert.True(ComponentManifestService.IsAutomationAuthoritative(result.Value));
+        Assert.Equivalent(new ComponentManifestAttestationRequest(
             _workspaceId,
             _applicationId,
             manifest.RevisionId,
@@ -287,10 +290,10 @@ public sealed class SourceOwnershipServiceTests
             "build-1",
             _now,
             manifest.ManifestDigest,
-            manifest.CanonicalJson));
-        authority.Evidence.Should().Be(evidence);
-        store.AuditEvents.Last().ActorType.Should().Be(HealingActorTypes.Control);
-        store.AuditEvents.Last().ActorId.Should().Be("build-attestor");
+            manifest.CanonicalJson), authority.Request);
+        Assert.Equal(evidence, authority.Evidence);
+        Assert.Equal(HealingActorTypes.Control, store.AuditEvents.Last().ActorType);
+        Assert.Equal("build-attestor", store.AuditEvents.Last().ActorId);
     }
 
     [Fact]
@@ -308,7 +311,7 @@ public sealed class SourceOwnershipServiceTests
         };
         var service = new ComponentManifestService(store, Audit(store), TimeProvider(_now), authority);
         var manifest = Manifest();
-        (await service.RegisterAsync(manifest, Owner())).Succeeded.Should().BeTrue();
+        Assert.True((await service.RegisterAsync(manifest, Owner())).Succeeded);
 
         var result = await service.VerifyAttestedAsync(
             _workspaceId,
@@ -316,8 +319,8 @@ public sealed class SourceOwnershipServiceTests
             manifest.Id,
             new ComponentManifestAttestationEvidence(manifest.ManifestDigest, "build-1"));
 
-        result.ReasonCode.Should().Be(HealingOwnershipReasonCodes.AttestationRejected);
-        store.Manifests.Single().TrustState.Should().Be(ComponentManifestTrustState.Unverified);
+        Assert.Equal(HealingOwnershipReasonCodes.AttestationRejected, result.ReasonCode);
+        Assert.Equal(ComponentManifestTrustState.Unverified, store.Manifests.Single().TrustState);
     }
 
     [Fact]
@@ -334,9 +337,9 @@ public sealed class SourceOwnershipServiceTests
         var resolution = await service.ResolveAsync(
             _workspaceId, _applicationId, store.Manifests.Single().Entries.Single(), Owner());
 
-        resolution.Status.Should().Be(SourceOwnershipResolutionStatus.ManifestNotTrusted);
-        (await new ComponentManifestService(store, Audit(store), TimeProvider(_now)).ListAsync(
-            _workspaceId, _applicationId, Owner())).Should().ContainSingle();
+        Assert.Equal(SourceOwnershipResolutionStatus.ManifestNotTrusted, resolution.Status);
+        Assert.Single(await new ComponentManifestService(store, Audit(store), TimeProvider(_now)).ListAsync(
+            _workspaceId, _applicationId, Owner()));
     }
 
     [Fact]
@@ -348,9 +351,9 @@ public sealed class SourceOwnershipServiceTests
 
         var result = await service.RegisterAsync(manifest, Owner());
 
-        result.Succeeded.Should().BeTrue();
-        result.Manifest!.Entries.Single().Assemblies.Should().BeEmpty();
-        result.Manifest.Entries.Single().RelativePath.Should().BeNull();
+        Assert.True(result.Succeeded);
+        Assert.Empty(result.Manifest!.Entries.Single().Assemblies);
+        Assert.Null(result.Manifest.Entries.Single().RelativePath);
     }
 
     [Fact]
@@ -364,10 +367,11 @@ public sealed class SourceOwnershipServiceTests
         var resolution = await service.ResolveAsync(
             _workspaceId, _applicationId, manifest.Entries.Single(), Owner());
 
-        suggestions.Should().ContainSingle().Which.Should().BeEquivalentTo(
-            new SourceOwnershipSuggestion("https://github.com/acme/workflows", [manifest.Entries.Single().Id], false));
-        resolution.Status.Should().Be(SourceOwnershipResolutionStatus.Unauthorized);
-        resolution.SelectedBinding.Should().BeNull();
+        Assert.Equivalent(
+            new SourceOwnershipSuggestion("https://github.com/acme/workflows", [manifest.Entries.Single().Id], false),
+            Assert.Single(suggestions));
+        Assert.Equal(SourceOwnershipResolutionStatus.Unauthorized, resolution.Status);
+        Assert.Null(resolution.SelectedBinding);
     }
 
     [Fact]
@@ -380,9 +384,9 @@ public sealed class SourceOwnershipServiceTests
             Name = "Acme.Special", PackageId = "Acme.Special", AssemblyName = "Acme.Special"
         };
 
-        SourceOwnershipService.Matches(Binding(SourceSelectorKind.ComponentKey, "*"), component).Should().BeFalse();
-        SourceOwnershipService.Matches(Binding(SourceSelectorKind.Package, "*"), component).Should().BeFalse();
-        component.KindName.Should().Be("future-kind");
+        Assert.False(SourceOwnershipService.Matches(Binding(SourceSelectorKind.ComponentKey, "*"), component));
+        Assert.False(SourceOwnershipService.Matches(Binding(SourceSelectorKind.Package, "*"), component));
+        Assert.Equal("future-kind", component.KindName);
     }
 
     [Fact]
@@ -391,8 +395,8 @@ public sealed class SourceOwnershipServiceTests
         var component = Manifest().Entries.Single();
         component.AssemblyName = null;
 
-        SourceOwnershipService.Matches(
-            Binding(SourceSelectorKind.Assembly, "Acme.Workflows.Contracts"), component).Should().BeTrue();
+        Assert.True(SourceOwnershipService.Matches(
+            Binding(SourceSelectorKind.Assembly, "Acme.Workflows.Contracts"), component));
     }
 
     [Fact]
@@ -406,14 +410,14 @@ public sealed class SourceOwnershipServiceTests
         TrustBinding(store, packageBinding);
         TrustBinding(store, assemblyBinding);
 
-        (await service.ActivateAsync(packageBinding, Owner())).Succeeded.Should().BeTrue();
-        (await service.ActivateAsync(assemblyBinding, Owner())).Succeeded.Should().BeTrue();
+        Assert.True((await service.ActivateAsync(packageBinding, Owner())).Succeeded);
+        Assert.True((await service.ActivateAsync(assemblyBinding, Owner())).Succeeded);
         var resolution = await service.ResolveAsync(
             _workspaceId, _applicationId, store.Manifests.Single().Entries.Single(), Owner());
 
-        resolution.Status.Should().Be(SourceOwnershipResolutionStatus.Selected);
-        resolution.SelectedBinding!.Id.Should().Be(packageBinding.Id);
-        resolution.MatchingBindings.Select(x => x.Id).Should().Equal(packageBinding.Id, assemblyBinding.Id);
+        Assert.Equal(SourceOwnershipResolutionStatus.Selected, resolution.Status);
+        Assert.Equal(packageBinding.Id, resolution.SelectedBinding!.Id);
+        Assert.Equal(new[] { packageBinding.Id, assemblyBinding.Id }, resolution.MatchingBindings.Select(x => x.Id));
     }
 
     [Fact]
@@ -435,9 +439,9 @@ public sealed class SourceOwnershipServiceTests
         var resolution = await service.ResolveAsync(
             _workspaceId, _applicationId, store.Manifests.Single().Entries.Single(), Owner());
 
-        resolution.Status.Should().Be(SourceOwnershipResolutionStatus.Ambiguous);
-        resolution.SelectedBinding.Should().BeNull();
-        resolution.ReasonCodes.Should().ContainSingle(HealingOwnershipReasonCodes.AmbiguousAuthority);
+        Assert.Equal(SourceOwnershipResolutionStatus.Ambiguous, resolution.Status);
+        Assert.Null(resolution.SelectedBinding);
+        Assert.Equal(HealingOwnershipReasonCodes.AmbiguousAuthority, Assert.Single(resolution.ReasonCodes));
     }
 
     [Fact]
@@ -448,15 +452,15 @@ public sealed class SourceOwnershipServiceTests
         var binding = Binding(SourceSelectorKind.Package, "Acme.*", authority: authority);
         TrustBinding(store, binding);
         var service = new SourceOwnershipService(store, Audit(store), TimeProvider(_now));
-        (await service.ActivateAsync(binding, Owner())).Succeeded.Should().BeTrue();
+        Assert.True((await service.ActivateAsync(binding, Owner())).Succeeded);
         authority.Status = ProviderConnectionStatus.Revoked;
 
         var resolution = await service.ResolveAsync(
             _workspaceId, _applicationId, store.Manifests.Single().Entries.Single(), Owner());
 
-        resolution.Status.Should().Be(SourceOwnershipResolutionStatus.Unauthorized);
-        resolution.SelectedBinding.Should().BeNull();
-        resolution.ReasonCodes.Should().Contain(HealingOwnershipReasonCodes.ProviderNotAuthorized);
+        Assert.Equal(SourceOwnershipResolutionStatus.Unauthorized, resolution.Status);
+        Assert.Null(resolution.SelectedBinding);
+        Assert.Contains(HealingOwnershipReasonCodes.ProviderNotAuthorized, resolution.ReasonCodes);
     }
 
     [Fact]
@@ -467,7 +471,7 @@ public sealed class SourceOwnershipServiceTests
         var binding = Binding(SourceSelectorKind.Package, "Acme.*", authority: authority);
         TrustBinding(store, binding);
         var service = new SourceOwnershipService(store, Audit(store), TimeProvider(_now));
-        (await service.ActivateAsync(binding, Owner())).Succeeded.Should().BeTrue();
+        Assert.True((await service.ActivateAsync(binding, Owner())).Succeeded);
         var reader = new HealingAuthorization(
             _workspaceId,
             _applicationId,
@@ -478,8 +482,8 @@ public sealed class SourceOwnershipServiceTests
         var resolution = await service.ResolveAsync(
             _workspaceId, _applicationId, store.Manifests.Single().Entries.Single(), reader);
 
-        resolution.Status.Should().Be(SourceOwnershipResolutionStatus.Selected);
-        resolution.SelectedBinding!.Id.Should().Be(binding.Id);
+        Assert.Equal(SourceOwnershipResolutionStatus.Selected, resolution.Status);
+        Assert.Equal(binding.Id, resolution.SelectedBinding!.Id);
     }
 
     [Fact]
@@ -490,7 +494,7 @@ public sealed class SourceOwnershipServiceTests
         var binding = Binding(SourceSelectorKind.Package, "Acme.*", authority: authority);
         TrustBinding(store, binding);
         var service = new SourceOwnershipService(store, Audit(store), TimeProvider(_now));
-        (await service.ActivateAsync(binding, Owner())).Succeeded.Should().BeTrue();
+        Assert.True((await service.ActivateAsync(binding, Owner())).Succeeded);
         var persisted = store.Manifests.Single().Entries.Single();
         var forged = new ValenceControl.Healing.Core.ComponentManifestEntry
         {
@@ -515,9 +519,9 @@ public sealed class SourceOwnershipServiceTests
         var forgedResolution = await service.ResolveAsync(_workspaceId, _applicationId, forged, Owner());
         var wrongEntryResolution = await service.ResolveAsync(_workspaceId, _applicationId, wrongEntry, Owner());
 
-        forgedResolution.Status.Should().Be(SourceOwnershipResolutionStatus.Selected);
-        forgedResolution.SelectedBinding!.Id.Should().Be(binding.Id);
-        wrongEntryResolution.Status.Should().Be(SourceOwnershipResolutionStatus.ManifestNotTrusted);
+        Assert.Equal(SourceOwnershipResolutionStatus.Selected, forgedResolution.Status);
+        Assert.Equal(binding.Id, forgedResolution.SelectedBinding!.Id);
+        Assert.Equal(SourceOwnershipResolutionStatus.ManifestNotTrusted, wrongEntryResolution.Status);
     }
 
     [Fact]
@@ -538,11 +542,11 @@ public sealed class SourceOwnershipServiceTests
         store.PathPolicies.Clear();
         var missingPolicy = await service.ActivateAsync(binding, Owner());
 
-        notOwner.ReasonCode.Should().Be(HealingOwnershipReasonCodes.OwnerApprovalRequired);
-        revokedProvider.ReasonCode.Should().Be(HealingOwnershipReasonCodes.ProviderNotAuthorized);
-        wrongRepository.ReasonCode.Should().Be(HealingOwnershipReasonCodes.ProviderRepositoryMismatch);
-        missingPolicy.ReasonCode.Should().Be(HealingOwnershipReasonCodes.PolicyNotTrusted);
-        binding.Status.Should().Be(SourceOwnershipBindingStatus.Draft);
+        Assert.Equal(HealingOwnershipReasonCodes.OwnerApprovalRequired, notOwner.ReasonCode);
+        Assert.Equal(HealingOwnershipReasonCodes.ProviderNotAuthorized, revokedProvider.ReasonCode);
+        Assert.Equal(HealingOwnershipReasonCodes.ProviderRepositoryMismatch, wrongRepository.ReasonCode);
+        Assert.Equal(HealingOwnershipReasonCodes.PolicyNotTrusted, missingPolicy.ReasonCode);
+        Assert.Equal(SourceOwnershipBindingStatus.Draft, binding.Status);
     }
 
     [Fact]
@@ -560,8 +564,8 @@ public sealed class SourceOwnershipServiceTests
 
         var result = await service.ActivateAsync(candidate, Owner());
 
-        result.ReasonCode.Should().Be(HealingOwnershipReasonCodes.AmbiguousAuthority);
-        candidate.Status.Should().Be(SourceOwnershipBindingStatus.Draft);
+        Assert.Equal(HealingOwnershipReasonCodes.AmbiguousAuthority, result.ReasonCode);
+        Assert.Equal(SourceOwnershipBindingStatus.Draft, candidate.Status);
     }
 
     [Fact]
@@ -574,16 +578,16 @@ public sealed class SourceOwnershipServiceTests
         TrustBinding(store, binding);
 
         var draft = await service.SaveDraftAsync(binding, Owner(isOwner: false));
-        draft.Value!.Status.Should().Be(SourceOwnershipBindingStatus.Draft);
+        Assert.Equal(SourceOwnershipBindingStatus.Draft, draft.Value!.Status);
         var active = await service.ActivateAsync(binding, Owner());
-        active.Succeeded.Should().BeTrue();
+        Assert.True(active.Succeeded);
         var suspended = await service.SuspendAsync(_workspaceId, _applicationId, binding.Id, Owner());
-        suspended.Value!.Status.Should().Be(SourceOwnershipBindingStatus.Suspended);
+        Assert.Equal(SourceOwnershipBindingStatus.Suspended, suspended.Value!.Status);
         var revoked = await service.RevokeAsync(_workspaceId, _applicationId, binding.Id, Owner());
-        revoked.Value!.Status.Should().Be(SourceOwnershipBindingStatus.Revoked);
+        Assert.Equal(SourceOwnershipBindingStatus.Revoked, revoked.Value!.Status);
         var reactivate = await service.ActivateAsync(binding, Owner());
 
-        reactivate.ReasonCode.Should().Be(HealingOwnershipReasonCodes.InvalidConfiguration);
+        Assert.Equal(HealingOwnershipReasonCodes.InvalidConfiguration, reactivate.ReasonCode);
     }
 
     [Fact]
@@ -598,13 +602,13 @@ public sealed class SourceOwnershipServiceTests
         await service.ActivateAsync(binding, Owner());
         await service.ResolveAsync(_workspaceId, _applicationId, store.Manifests.Single().Entries.Single(), Owner());
 
-        store.AuditEvents.Should().ContainSingle();
+        Assert.Single(store.AuditEvents);
         foreach (var auditEvent in store.AuditEvents)
         {
             var details = JsonSerializer.Deserialize<Dictionary<string, string?>>(auditEvent.SafeDetailJson)!;
-            details.Keys.Should().OnlyContain(key =>
-                key == "status" || key == "gateReason" || key == "repositoryOwner" || key == "repositoryName");
-            auditEvent.WorkspaceId.Should().Be(_workspaceId);
+            Assert.All(details.Keys, key =>
+                Assert.True(key == "status" || key == "gateReason" || key == "repositoryOwner" || key == "repositoryName"));
+            Assert.Equal(_workspaceId, auditEvent.WorkspaceId);
         }
     }
 

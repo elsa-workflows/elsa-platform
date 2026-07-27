@@ -26,7 +26,7 @@ actions scoped to package versions.
 
 **Storage**: Existing relational catalog database. No new durable entity is required; the feature reads existing `Packages`, `PackageVersions`, `PackageSources`, validation result records, feature records, and feature setting records.
 
-**Testing**: xUnit, FluentAssertions, ASP.NET Core WebApplicationFactory integration tests, EF Core query/persistence tests where projection behavior needs coverage, Vitest/Testing Library for console behavior, and Playwright console E2E for route-level smoke coverage.
+**Testing**: xUnit and its built-in assertions, ASP.NET Core WebApplicationFactory integration tests, EF Core query/persistence tests where projection behavior needs coverage, Vitest/Testing Library for console behavior, and Playwright console E2E for route-level smoke coverage.
 
 **Target platform**: ASP.NET Core API container deployed to Azure App Service with the built React console served by the API host.
 

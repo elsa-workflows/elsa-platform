@@ -1,7 +1,6 @@
 using ValenceControl.Api.Workspace;
 using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -18,18 +17,18 @@ public sealed class WorkspaceProvisioningTests
 
         var context = await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
 
-        context!.Account.Id.Should().NotBeEmpty();
-        context.Workspaces.Should().ContainSingle(x => x.Role == WorkspaceRole.Owner && x.Kind == WorkspaceKind.Personal);
-        context.Organizations.Should().ContainSingle(x => x.Role == OrganizationRole.Owner);
-        context.Workspaces.Single().OrganizationId.Should().Be(context.Organizations.Single().Id);
+        Assert.NotEqual(Guid.Empty, context!.Account.Id);
+        Assert.Single(context.Workspaces, x => x.Role == WorkspaceRole.Owner && x.Kind == WorkspaceKind.Personal);
+        Assert.Single(context.Organizations, x => x.Role == OrganizationRole.Owner);
+        Assert.Equal(context.Organizations.Single().Id, context.Workspaces.Single().OrganizationId);
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-        db.Accounts.Should().ContainSingle();
-        db.ExternalIdentities.Should().ContainSingle(x => x.Subject == "first-user");
-        db.Organizations.Should().ContainSingle();
-        db.OrganizationMemberships.Should().ContainSingle(x => x.Role == OrganizationRole.Owner);
-        db.Workspaces.Should().ContainSingle();
-        db.WorkspaceMemberships.Should().ContainSingle(x => x.Role == WorkspaceRole.Owner);
+        Assert.Single(db.Accounts);
+        Assert.Single(db.ExternalIdentities, x => x.Subject == "first-user");
+        Assert.Single(db.Organizations);
+        Assert.Single(db.OrganizationMemberships, x => x.Role == OrganizationRole.Owner);
+        Assert.Single(db.Workspaces);
+        Assert.Single(db.WorkspaceMemberships, x => x.Role == WorkspaceRole.Owner);
     }
 
     [Fact]
@@ -42,16 +41,16 @@ public sealed class WorkspaceProvisioningTests
         var first = await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
         var second = await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
 
-        second!.Account.Id.Should().Be(first!.Account.Id);
-        second.Workspaces.Single().Id.Should().Be(first.Workspaces.Single().Id);
+        Assert.Equal(first!.Account.Id, second!.Account.Id);
+        Assert.Equal(first.Workspaces.Single().Id, second.Workspaces.Single().Id);
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-        db.Accounts.Should().ContainSingle();
-        db.ExternalIdentities.Should().ContainSingle();
-        db.Organizations.Should().ContainSingle();
-        db.OrganizationMemberships.Should().ContainSingle();
-        db.Workspaces.Should().ContainSingle();
-        db.WorkspaceMemberships.Should().ContainSingle();
+        Assert.Single(db.Accounts);
+        Assert.Single(db.ExternalIdentities);
+        Assert.Single(db.Organizations);
+        Assert.Single(db.OrganizationMemberships);
+        Assert.Single(db.Workspaces);
+        Assert.Single(db.WorkspaceMemberships);
     }
 
     [Fact]
@@ -63,8 +62,8 @@ public sealed class WorkspaceProvisioningTests
 
         var context = await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/organizations");
 
-        context!.Organizations.Should().ContainSingle(x => x.Role == OrganizationRole.Owner);
-        context.Workspaces.Should().ContainSingle(x => x.OrganizationId == context.Organizations.Single().Id);
+        Assert.Single(context!.Organizations, x => x.Role == OrganizationRole.Owner);
+        Assert.Single(context.Workspaces, x => x.OrganizationId == context.Organizations.Single().Id);
     }
 
     [Fact]
@@ -77,16 +76,16 @@ public sealed class WorkspaceProvisioningTests
             .Select(_ => app.CreateControlIdentityClient(subject: "concurrent-user")
                 .GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces")));
 
-        responses.Select(x => x!.Account.Id).Distinct().Should().ContainSingle();
-        responses.Select(x => x!.Workspaces.Single().Id).Distinct().Should().ContainSingle();
+        Assert.Single(responses.Select(x => x!.Account.Id).Distinct());
+        Assert.Single(responses.Select(x => x!.Workspaces.Single().Id).Distinct());
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-        db.Accounts.Should().ContainSingle();
-        db.ExternalIdentities.Should().ContainSingle();
-        db.Organizations.Should().ContainSingle();
-        db.OrganizationMemberships.Should().ContainSingle();
-        db.Workspaces.Should().ContainSingle();
-        db.WorkspaceMemberships.Should().ContainSingle();
+        Assert.Single(db.Accounts);
+        Assert.Single(db.ExternalIdentities);
+        Assert.Single(db.Organizations);
+        Assert.Single(db.OrganizationMemberships);
+        Assert.Single(db.Workspaces);
+        Assert.Single(db.WorkspaceMemberships);
     }
 
     [Fact]
@@ -101,9 +100,13 @@ public sealed class WorkspaceProvisioningTests
 
         var context = await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
 
-        context!.Workspaces.Select(x => x.Name).Should().Contain(["Ada Lovelace", "Shared Workspace"]);
-        context.Workspaces.Select(x => x.Name).Should().NotContain("Deleted Workspace");
-        context.Organizations.Select(x => x.Name).Should().Contain(["Ada Lovelace", "Shared Workspace"]);
+        var workspaceNames = context!.Workspaces.Select(x => x.Name);
+        Assert.Contains("Ada Lovelace", workspaceNames);
+        Assert.Contains("Shared Workspace", workspaceNames);
+        Assert.DoesNotContain("Deleted Workspace", context.Workspaces.Select(x => x.Name));
+        var organizationNames = context.Organizations.Select(x => x.Name);
+        Assert.Contains("Ada Lovelace", organizationNames);
+        Assert.Contains("Shared Workspace", organizationNames);
     }
 
     [Fact]
@@ -117,7 +120,7 @@ public sealed class WorkspaceProvisioningTests
 
         var context = await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
 
-        context!.Workspaces.Select(x => x.Name).Should().NotContain("Hidden Workspace");
+        Assert.DoesNotContain("Hidden Workspace", context!.Workspaces.Select(x => x.Name));
     }
 
     private static async Task AddWorkspaceAsync(ControlApiTestApplication app, Guid accountId, string name, bool softDeleted, bool addOrganizationMembership = true)

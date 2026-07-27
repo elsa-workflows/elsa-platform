@@ -1,5 +1,4 @@
 using System.Xml.Linq;
-using FluentAssertions;
 
 namespace ValenceControl.PackageCatalog.Abstractions.Tests;
 
@@ -28,7 +27,7 @@ public sealed class DeploymentBoundaryTests
             .Where(reference => ForbiddenProjectReferences.Any(forbidden => reference.Contains(forbidden, StringComparison.OrdinalIgnoreCase)))
             .ToList();
 
-        forbiddenReferences.Should().BeEmpty();
+        Assert.Empty(forbiddenReferences);
     }
 
     private static IEnumerable<string> ReadProjectReferences(string projectFile)

@@ -3,7 +3,6 @@ using System.Security.Cryptography;
 using System.Text;
 using ValenceControl.Api.Healing;
 using ValenceControl.Healing.Abstractions;
-using FluentAssertions;
 using Microsoft.Extensions.Options;
 
 namespace ValenceControl.Api.Tests.Healing;
@@ -25,7 +24,7 @@ public sealed class HealingVerificationFailureDeliveryTests
         options.Endpoint = endpoint is null ? null : new Uri(endpoint, UriKind.RelativeOrAbsolute);
         options.SharedSecret = new string('s', secretLength);
 
-        options.IsValid().Should().BeFalse();
+        Assert.False(options.IsValid());
     }
 
     [Theory]
@@ -41,11 +40,11 @@ public sealed class HealingVerificationFailureDeliveryTests
             new FixedTimeProvider(),
             Options.Create(EnabledOptions()));
 
-        (await service.RunOnceAsync("deployment-consumer")).Should().BeTrue();
+        Assert.True((await service.RunOnceAsync("deployment-consumer")));
 
-        outbox.Delivered.Should().Be(accepted);
-        outbox.Released.Should().Be(!accepted);
-        outbox.OutcomeCode.Should().Be(accepted ? null : "deployment-system-rejected-signal");
+        Assert.Equal(accepted, outbox.Delivered);
+        Assert.Equal(!accepted, outbox.Released);
+        Assert.Equal(accepted ? null : "deployment-system-rejected-signal", outbox.OutcomeCode);
     }
 
     [Fact]
@@ -60,12 +59,12 @@ public sealed class HealingVerificationFailureDeliveryTests
 
         var dispatch = async () => await service.RunOnceAsync("deployment-consumer");
 
-        await dispatch.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*requires exactly one registered consumer*");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(dispatch);
+        Assert.Contains("requires exactly one registered consumer", exception.Message);
 
-        outbox.LeaseRequests.Should().Be(0);
-        outbox.Delivered.Should().BeFalse();
-        outbox.Released.Should().BeFalse();
+        Assert.Equal(0, outbox.LeaseRequests);
+        Assert.False(outbox.Delivered);
+        Assert.False(outbox.Released);
     }
 
     [Fact]
@@ -80,10 +79,10 @@ public sealed class HealingVerificationFailureDeliveryTests
             new FixedTimeProvider(),
             Options.Create(options));
 
-        (await service.RunBatchAsync("deployment-consumer")).Should().Be(3);
+        Assert.Equal(3, (await service.RunBatchAsync("deployment-consumer")));
 
-        outbox.LeaseRequests.Should().Be(3);
-        outbox.DeliveredCount.Should().Be(3);
+        Assert.Equal(3, outbox.LeaseRequests);
+        Assert.Equal(3, outbox.DeliveredCount);
     }
 
     [Fact]
@@ -97,17 +96,17 @@ public sealed class HealingVerificationFailureDeliveryTests
             new FixedTimeProvider(),
             Options.Create(options));
 
-        (await consumer.ConsumeAsync(lease)).Should().BeTrue();
+        Assert.True((await consumer.ConsumeAsync(lease)));
 
-        handler.Headers["Idempotency-Key"].Should().ContainSingle(lease.DeliveryId.ToString("N"));
-        handler.Headers["X-Valence-Control-Event"].Should().ContainSingle("repair-verification-failed");
+        Assert.Equal(lease.DeliveryId.ToString("N"), Assert.Single(handler.Headers["Idempotency-Key"]));
+        Assert.Equal("repair-verification-failed", Assert.Single(handler.Headers["X-Valence-Control-Event"]));
         var timestamp = Now.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var payload = handler.Payload.Should().NotBeNull().And.Subject;
+        Assert.NotNull(handler.Payload);
+        var payload = handler.Payload!;
         var expected = Convert.ToHexStringLower(HMACSHA256.HashData(
             Encoding.UTF8.GetBytes(options.SharedSecret),
             Encoding.UTF8.GetBytes($"{timestamp}.{payload}")));
-        handler.Headers["X-Valence-Control-Signature"]
-            .Should().ContainSingle($"sha256={expected}");
+        Assert.Equal($"sha256={expected}", Assert.Single(handler.Headers["X-Valence-Control-Signature"]));
     }
 
     private static HealingVerificationFailureDeliveryOptions EnabledOptions() => new()

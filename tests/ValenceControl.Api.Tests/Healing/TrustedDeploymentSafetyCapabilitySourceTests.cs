@@ -4,7 +4,6 @@ using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Core.Repairs;
 using ValenceControl.Healing.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -26,9 +25,9 @@ public sealed class TrustedDeploymentSafetyCapabilitySourceTests
         var snapshot = await fixture.Source.GetAsync(
             fixture.WorkspaceId, fixture.ApplicationId, fixture.EpisodeId);
 
-        snapshot.State.Should().Be(RepairPolicyObservationState.Satisfied);
-        snapshot.ReasonCode.Should().Be("trusted-deployment-rollback-available");
-        snapshot.Digest.Should().MatchRegex("^[0-9a-f]{64}$");
+        Assert.Equal(RepairPolicyObservationState.Satisfied, snapshot.State);
+        Assert.Equal("trusted-deployment-rollback-available", snapshot.ReasonCode);
+        Assert.Matches("^[0-9a-f]{64}$", snapshot.Digest);
     }
 
     [Theory]
@@ -49,8 +48,8 @@ public sealed class TrustedDeploymentSafetyCapabilitySourceTests
         var snapshot = await fixture.Source.GetAsync(
             fixture.WorkspaceId, fixture.ApplicationId, fixture.EpisodeId);
 
-        snapshot.State.Should().Be(expectedState);
-        snapshot.ReasonCode.Should().Be(expectedReason);
+        Assert.Equal(expectedState, snapshot.State);
+        Assert.Equal(expectedReason, snapshot.ReasonCode);
     }
 
     [Fact]
@@ -70,10 +69,10 @@ public sealed class TrustedDeploymentSafetyCapabilitySourceTests
         var ambiguousEnvironment = await fixture.Source.GetAsync(
             fixture.WorkspaceId, fixture.ApplicationId, fixture.EpisodeId);
 
-        missingApplication.State.Should().Be(RepairPolicyObservationState.Missing);
-        missingApplication.ReasonCode.Should().Be("trusted-deployment-application-missing");
-        ambiguousEnvironment.State.Should().Be(RepairPolicyObservationState.Ambiguous);
-        ambiguousEnvironment.ReasonCode.Should().Be("trusted-deployment-environment-ambiguous");
+        Assert.Equal(RepairPolicyObservationState.Missing, missingApplication.State);
+        Assert.Equal("trusted-deployment-application-missing", missingApplication.ReasonCode);
+        Assert.Equal(RepairPolicyObservationState.Ambiguous, ambiguousEnvironment.State);
+        Assert.Equal("trusted-deployment-environment-ambiguous", ambiguousEnvironment.ReasonCode);
     }
 
     [Fact]
@@ -90,7 +89,7 @@ public sealed class TrustedDeploymentSafetyCapabilitySourceTests
         var snapshot = await fixture.Source.GetAsync(
             fixture.WorkspaceId, fixture.ApplicationId, fixture.EpisodeId);
 
-        snapshot.State.Should().Be(RepairPolicyObservationState.Satisfied);
+        Assert.Equal(RepairPolicyObservationState.Satisfied, snapshot.State);
     }
 
     [Fact]
@@ -101,8 +100,8 @@ public sealed class TrustedDeploymentSafetyCapabilitySourceTests
         var snapshot = await fixture.Source.GetAsync(
             fixture.WorkspaceId, fixture.ApplicationId, fixture.EpisodeId);
 
-        snapshot.State.Should().Be(RepairPolicyObservationState.Missing);
-        snapshot.ReasonCode.Should().Be("affected-environment-missing");
+        Assert.Equal(RepairPolicyObservationState.Missing, snapshot.State);
+        Assert.Equal("affected-environment-missing", snapshot.ReasonCode);
     }
 
     private static DeploymentCockpit Cockpit(Guid applicationId, params EnvironmentSummary[] environments) =>

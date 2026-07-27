@@ -1,6 +1,5 @@
 using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.Core;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
@@ -42,10 +41,10 @@ public sealed class HealingVerificationOutboxTests
 
             var receipts = await Task.WhenAll(AppendAsync(), AppendAsync());
 
-            receipts.Select(x => x.DeliveryId).Distinct().Should().ContainSingle();
-            receipts.Count(x => x.IsReplay).Should().Be(1);
+            Assert.Single(receipts.Select(x => x.DeliveryId).Distinct());
+            Assert.Equal(1, receipts.Count(x => x.IsReplay));
             await using var verify = new HealingDbContext(options);
-            (await verify.RepairVerificationFailureOutbox.CountAsync()).Should().Be(1);
+            Assert.Equal(1, (await verify.RepairVerificationFailureOutbox.CountAsync()));
         }
         finally
         {
@@ -77,27 +76,23 @@ public sealed class HealingVerificationOutboxTests
         var replay = await outbox.AppendAsync(signal);
         var firstLease = await outbox.TryLeaseNextAsync("deployment-system", now, TimeSpan.FromMinutes(1));
 
-        replay.Should().Be(new RepairVerificationFailedSignalAppendReceipt(appended.DeliveryId, true, now));
-        firstLease.Should().NotBeNull();
-        firstLease!.Signal.Should().Be(signal);
-        firstLease.AttemptCount.Should().Be(1);
-        (await outbox.ReleaseAsync(firstLease.DeliveryId, firstLease.LeaseToken, now, now.AddMinutes(1), "delivery-unavailable"))
-            .Should().BeTrue();
-        (await outbox.TryLeaseNextAsync("deployment-system", now.AddSeconds(30), TimeSpan.FromMinutes(1)))
-            .Should().BeNull();
+        Assert.Equal(new RepairVerificationFailedSignalAppendReceipt(appended.DeliveryId, true, now), replay);
+        Assert.NotNull(firstLease);
+        Assert.Equal(signal, firstLease!.Signal);
+        Assert.Equal(1, firstLease.AttemptCount);
+        Assert.True(await outbox.ReleaseAsync(firstLease.DeliveryId, firstLease.LeaseToken, now, now.AddMinutes(1), "delivery-unavailable"));
+        Assert.Null(await outbox.TryLeaseNextAsync("deployment-system", now.AddSeconds(30), TimeSpan.FromMinutes(1)));
 
         var retryLease = await outbox.TryLeaseNextAsync("deployment-system", now.AddMinutes(1), TimeSpan.FromMinutes(1));
-        retryLease.Should().NotBeNull();
-        retryLease!.AttemptCount.Should().Be(2);
-        (await outbox.MarkDeliveredAsync(retryLease.DeliveryId, retryLease.LeaseToken, now.AddMinutes(1)))
-            .Should().BeTrue();
-        (await outbox.TryLeaseNextAsync("deployment-system", now.AddMinutes(2), TimeSpan.FromMinutes(1)))
-            .Should().BeNull();
+        Assert.NotNull(retryLease);
+        Assert.Equal(2, retryLease!.AttemptCount);
+        Assert.True(await outbox.MarkDeliveredAsync(retryLease.DeliveryId, retryLease.LeaseToken, now.AddMinutes(1)));
+        Assert.Null(await outbox.TryLeaseNextAsync("deployment-system", now.AddMinutes(2), TimeSpan.FromMinutes(1)));
 
         var persisted = await fixture.Db.RepairVerificationFailureOutbox.AsNoTracking().SingleAsync();
-        persisted.Status.Should().Be(RepairVerificationFailureDeliveryStatus.Delivered);
-        persisted.DeliveredAt.Should().Be(now.AddMinutes(1));
-        persisted.OutcomeCode.Should().Be("delivery-unavailable");
+        Assert.Equal(RepairVerificationFailureDeliveryStatus.Delivered, persisted.Status);
+        Assert.Equal(now.AddMinutes(1), persisted.DeliveredAt);
+        Assert.Equal("delivery-unavailable", persisted.OutcomeCode);
     }
 
     [Fact]
@@ -122,14 +117,13 @@ public sealed class HealingVerificationOutboxTests
         var appended = await outbox.AppendAsync(signal);
         var replay = await outbox.AppendAsync(signal with { DetectedAt = detectedAt.AddMinutes(5) });
 
-        replay.Should().Be(new RepairVerificationFailedSignalAppendReceipt(
+        Assert.Equal(new RepairVerificationFailedSignalAppendReceipt(
             appended.DeliveryId,
             true,
-            detectedAt));
+            detectedAt), replay);
         var persisted = await fixture.Db.RepairVerificationFailureOutbox.AsNoTracking().SingleAsync();
-        persisted.CreatedAt.Should().Be(detectedAt);
-        JsonSerializer.Deserialize<RepairVerificationFailedSignal>(persisted.PayloadJson)!
-            .DetectedAt.Should().Be(detectedAt);
+        Assert.Equal(detectedAt, persisted.CreatedAt);
+        Assert.Equal(detectedAt, JsonSerializer.Deserialize<RepairVerificationFailedSignal>(persisted.PayloadJson)!.DetectedAt);
     }
 
     private static async Task<SeededIds> SeedAsync(HealingDbContext db, DateTimeOffset now)

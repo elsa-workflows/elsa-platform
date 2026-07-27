@@ -2,7 +2,6 @@ using System.Net;
 using ValenceControl.Deployment.Abstractions.Artifacts;
 using ValenceControl.Deployment.Artifacts;
 using ValenceControl.Workflows.RuntimeApplier;
-using FluentAssertions;
 
 namespace ValenceControl.Workflows.RuntimeApplier.Tests;
 
@@ -30,13 +29,13 @@ public sealed class WorkflowArtifactControlEnvelopeClientTests
 
         var envelope = await client.GetEnvelopeAsync(CommandArtifact());
 
-        handler.RequestUri.Should().Be(new Uri($"https://control.example.test/api/workspaces/{WorkspaceId:D}/artifacts/{ArtifactRecordId:D}"));
-        envelope.ArtifactId.Should().Be("elsa.workflow-definition:payment-retry");
-        envelope.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
-        envelope.ContentDigest.Should().Be(Digest);
-        envelope.PayloadReference.Provider.Should().Be("producer-managed");
-        envelope.PayloadReference.ReferenceDigest.Should().Be(Digest);
-        envelope.CompatibilityHints.Should().ContainSingle(x => x.RequiredArtifactType == ArtifactTypeIds.ElsaWorkflowDefinition);
+        Assert.Equal(new Uri($"https://control.example.test/api/workspaces/{WorkspaceId:D}/artifacts/{ArtifactRecordId:D}"), handler.RequestUri);
+        Assert.Equal("elsa.workflow-definition:payment-retry", envelope.ArtifactId);
+        Assert.Equal(ArtifactTypeIds.ElsaWorkflowDefinition, envelope.ArtifactTypeId);
+        Assert.Equal(Digest, envelope.ContentDigest);
+        Assert.Equal("producer-managed", envelope.PayloadReference.Provider);
+        Assert.Equal(Digest, envelope.PayloadReference.ReferenceDigest);
+        Assert.Single(envelope.CompatibilityHints, x => x.RequiredArtifactType == ArtifactTypeIds.ElsaWorkflowDefinition);
     }
 
     [Fact]
@@ -47,8 +46,9 @@ public sealed class WorkflowArtifactControlEnvelopeClientTests
 
         var act = () => client.GetEnvelopeAsync(CommandArtifact() with { ContentDigest = new ArtifactDigest("sha256", new string('b', 64)) });
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Runtime command artifact digest does not match the artifact record.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Runtime command artifact digest does not match the artifact record.", exception.Message);
     }
 
     [Fact]
@@ -59,8 +59,9 @@ public sealed class WorkflowArtifactControlEnvelopeClientTests
 
         var act = () => client.GetEnvelopeAsync(CommandArtifact());
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Control artifact response does not include an artifact type.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Control artifact response does not include an artifact type.", exception.Message);
     }
 
     [Fact]
@@ -71,8 +72,9 @@ public sealed class WorkflowArtifactControlEnvelopeClientTests
 
         var act = () => client.GetEnvelopeAsync(CommandArtifact());
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Control artifact response workspace does not match the configured runtime workspace.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Control artifact response workspace does not match the configured runtime workspace.", exception.Message);
     }
 
     [Fact]
@@ -83,8 +85,9 @@ public sealed class WorkflowArtifactControlEnvelopeClientTests
 
         var act = () => client.GetEnvelopeAsync(CommandArtifact());
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*[redacted]*");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Contains("[redacted]", exception.Message);
     }
 
     private static WorkflowRuntimeCommandArtifactReference CommandArtifact() =>

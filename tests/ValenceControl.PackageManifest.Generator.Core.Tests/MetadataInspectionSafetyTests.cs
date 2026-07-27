@@ -2,7 +2,6 @@ using System.Text.Json;
 using ValenceControl.PackageManifest.Generator.Core.Generation;
 using ValenceControl.PackageManifest.Generator.Core.Validation;
 using ValenceControl.PackageManifest.Generator.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifest.Generator.Core.Tests;
 
@@ -13,7 +12,7 @@ public sealed class MetadataInspectionSafetyTests
     {
         await using var project = new SampleProjectBuilder().WithSource(TripwireFeatureFixtures.Source);
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
 
         var diagnostics = new GenerationDiagnostics();
         var artifact = new ManifestGenerator().Generate(
@@ -22,10 +21,10 @@ public sealed class MetadataInspectionSafetyTests
             new AssemblyInspectionInput(project.AssemblyPath, project.XmlDocumentationPath, "net10.0", [], true),
             diagnostics);
 
-        diagnostics.Items.Where(x => x.Severity == GenerationDiagnosticSeverity.Error).Should().BeEmpty();
+        Assert.DoesNotContain(diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Error);
         using var document = JsonDocument.Parse(artifact.ManifestJson);
         var settings = document.RootElement.GetProperty("features")[0].GetProperty("settings").EnumerateArray().Select(x => x.GetProperty("name").GetString());
-        settings.Should().Equal("SafeSetting");
+        Assert.Equal("SafeSetting", Assert.Single(settings));
     }
 
     [Fact]
@@ -53,7 +52,7 @@ public sealed class DelegateTripwireFeature : IShellFeature
 }
 """);
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
 
         var diagnostics = new GenerationDiagnostics();
         var artifact = new ManifestGenerator().Generate(
@@ -62,9 +61,9 @@ public sealed class DelegateTripwireFeature : IShellFeature
             new AssemblyInspectionInput(project.AssemblyPath, project.XmlDocumentationPath, "net10.0", [], true),
             diagnostics);
 
-        diagnostics.Items.Where(x => x.Severity == GenerationDiagnosticSeverity.Error).Should().BeEmpty();
+        Assert.DoesNotContain(diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Error);
         using var document = JsonDocument.Parse(artifact.ManifestJson);
         var settings = document.RootElement.GetProperty("features")[0].GetProperty("settings").EnumerateArray().Select(x => x.GetProperty("name").GetString());
-        settings.Should().Equal("SafeSetting");
+        Assert.Equal("SafeSetting", Assert.Single(settings));
     }
 }

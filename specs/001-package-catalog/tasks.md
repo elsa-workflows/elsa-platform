@@ -31,7 +31,7 @@
 - [X] T011 Create NuGet packaging test project in `tests/ValenceControl.PackageCatalog.Sources.NuGet.Tests/ValenceControl.PackageCatalog.Sources.NuGet.Tests.csproj`
 - [X] T012 Create shared test helper project in `tests/ValenceControl.PackageCatalog.Testing/ValenceControl.PackageCatalog.Testing.csproj`
 - [X] T013 Configure nullable reference types, implicit usings, analyzers, and deterministic builds in `Directory.Build.props`
-- [X] T014 Add solution-wide package version management for ASP.NET Core, EF Core SQLite, NuGet.Protocol, JSON Schema validation, xUnit, FluentAssertions, and WebApplicationFactory in `Directory.Packages.props`
+- [X] T014 Add solution-wide package version management for ASP.NET Core, EF Core SQLite, NuGet.Protocol, JSON Schema validation, xUnit, and WebApplicationFactory in `Directory.Packages.props`
 
 ## Phase 2: Foundational
 

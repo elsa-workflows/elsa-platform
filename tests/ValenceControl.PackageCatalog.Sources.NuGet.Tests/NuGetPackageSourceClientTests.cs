@@ -1,7 +1,6 @@
 using ValenceControl.PackageCatalog.Core.Packaging;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Core.Sources;
-using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NuGet.Versioning;
 using System.Net;
@@ -28,11 +27,11 @@ public sealed class NuGetPackageSourceClientTests
 
         var versions = await client.FindPackageVersionsAsync(source);
 
-        versions.Should().BeEquivalentTo([
+        Assert.Equal([
             new DiscoveredPackageVersion("Elsa.Email", "1.0.0"),
             new DiscoveredPackageVersion("Elsa.Workflows", "2.0.0")
-        ]);
-        feed.SearchQueries.Should().Contain("Elsa.");
+        ], versions);
+        Assert.Contains("Elsa.", feed.SearchQueries);
     }
 
     [Fact]
@@ -47,8 +46,8 @@ public sealed class NuGetPackageSourceClientTests
 
         var act = () => client.FindPackageVersionsAsync(source);
 
-        await act.Should().ThrowAsync<NotSupportedException>()
-            .WithMessage("*Leading wildcard-only sources are not crawled.*");
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(act);
+        Assert.Contains("Leading wildcard-only sources are not crawled", exception.Message);
     }
 
     [Fact]
@@ -64,8 +63,8 @@ public sealed class NuGetPackageSourceClientTests
 
         var act = () => client.FindPackageVersionsAsync(source);
 
-        await act.Should().ThrowAsync<NotSupportedException>()
-            .WithMessage("*advertises a NuGet search service*");
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(act);
+        Assert.Contains("advertises a NuGet search service", exception.Message);
     }
 
     private sealed class LoopbackNuGetFeed : IAsyncDisposable
@@ -226,7 +225,7 @@ public sealed class NuGetPackageSourceClientTests
             "3.7.0-preview.4512",
             "2.9.0");
 
-        selected.Should().ContainSingle().Which.Should().Be("3.0.2");
+        Assert.Equal("3.0.2", Assert.Single(selected));
     }
 
     [Fact]
@@ -244,8 +243,8 @@ public sealed class NuGetPackageSourceClientTests
                 [NuGetVersion.Parse("3.7.0-preview.4511"), NuGetVersion.Parse("3.7.0-preview.4512")],
                 logger);
 
-        selected.Should().BeEmpty();
-        logger.Messages.Should().ContainSingle(message =>
+        Assert.Empty(selected);
+        Assert.Single(logger.Messages, message =>
             message.Level == LogLevel.Warning &&
             message.Text.Contains("only prerelease versions", StringComparison.Ordinal) &&
             message.Text.Contains("LatestStable", StringComparison.Ordinal));
@@ -260,7 +259,7 @@ public sealed class NuGetPackageSourceClientTests
             "3.7.0-preview.4512",
             "2.9.0");
 
-        selected.Should().ContainSingle().Which.Should().Be("3.7.0-preview.4512");
+        Assert.Equal("3.7.0-preview.4512", Assert.Single(selected));
     }
 
     [Fact]
@@ -275,7 +274,7 @@ public sealed class NuGetPackageSourceClientTests
             "4.1.0-PREVIEW.3",
             "4.1.0-rc.1");
 
-        selected.Should().ContainSingle().Which.Should().Be("4.1.0-PREVIEW.3");
+        Assert.Equal("4.1.0-PREVIEW.3", Assert.Single(selected));
     }
 
     [Fact]
@@ -287,7 +286,7 @@ public sealed class NuGetPackageSourceClientTests
             "4.1.0-alpha.1",
             "4.1.0-rc.1");
 
-        selected.Should().BeEmpty();
+        Assert.Empty(selected);
     }
 
     [Fact]
@@ -299,7 +298,7 @@ public sealed class NuGetPackageSourceClientTests
             "2.0.0-preview.1",
             "2.0.0");
 
-        selected.Should().Equal("1.0.0", "2.0.0-preview.1", "2.0.0");
+        Assert.Equal(["1.0.0", "2.0.0-preview.1", "2.0.0"], selected);
     }
 
     private static IReadOnlyList<string> Select(PackageSourceVersionDiscoveryPolicy policy, params string[] versions) =>

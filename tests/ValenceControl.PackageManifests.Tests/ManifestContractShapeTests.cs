@@ -5,7 +5,6 @@ using ValenceControl.PackageManifests.Documentation;
 using ValenceControl.PackageManifests.Infrastructure;
 using ValenceControl.PackageManifests.Licensing;
 using ValenceControl.PackageManifests.Validation;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifests.Tests;
 
@@ -28,6 +27,6 @@ public sealed class ManifestContractShapeTests
             typeof(ManifestValidationResult)
         };
 
-        types.Should().OnlyContain(type => type.IsPublic || type.GetTypeInfo().IsNestedPublic);
+        Assert.All(types, type => Assert.True(type.IsPublic || type.GetTypeInfo().IsNestedPublic));
     }
 }

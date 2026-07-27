@@ -2,7 +2,6 @@ using System.Net;
 using ValenceControl.Api.Admin.Sources;
 using ValenceControl.Api.Authentication;
 using ValenceControl.PackageCatalog.Core.Packages;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -22,14 +21,14 @@ public sealed class AdminSourceMutationApiTests
         var updatedResponse = await client.PutControlJsonAsync($"/api/admin/sources/{created!.Id}", Request("Internal NuGet"));
         var updated = await updatedResponse.Content.ReadControlJsonAsync<AdminSourceResponse>();
 
-        updatedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        updated!.Name.Should().Be("Internal NuGet");
+        Assert.Equal(HttpStatusCode.OK, updatedResponse.StatusCode);
+        Assert.Equal("Internal NuGet", updated!.Name);
 
         var delete = await client.DeleteAsync($"/api/admin/sources/{created.Id}");
 
-        delete.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        (await client.GetControlJsonAsync<List<AdminSourceResponse>>("/api/admin/sources")).Should().BeEmpty();
-        (await client.GetAsync($"/api/admin/sources/{created.Id}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+        Assert.Empty((await client.GetControlJsonAsync<List<AdminSourceResponse>>("/api/admin/sources"))!);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/admin/sources/{created.Id}")).StatusCode);
     }
 
     private static AdminSourceRequest Request(string name) =>

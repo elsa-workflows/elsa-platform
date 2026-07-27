@@ -1,5 +1,4 @@
 using ValenceControl.Deployment.Core.Cockpit;
-using FluentAssertions;
 using Xunit;
 
 namespace ValenceControl.Deployment.Core.Tests;
@@ -13,17 +12,17 @@ public sealed class DeploymentCockpitServiceTests
 
         var cockpit = await service.GetCockpitAsync(Guid.Parse("00000000-0000-0000-0000-000000000010"));
 
-        cockpit.Applications.Should().ContainSingle(x => x.Id == "claims-ops");
-        cockpit.Applications.SelectMany(x => x.Environments).Should().Contain(x =>
+        Assert.Single(cockpit.Applications, x => x.Id == "claims-ops");
+        Assert.Contains(cockpit.Applications.SelectMany(x => x.Environments), x =>
             x.Id == "claims-prod"
             && x.Health == DeploymentHealth.Unreachable
             && x.DeploymentStatus == DeploymentStatus.Blocked);
-        cockpit.Engines.Should().Contain(x =>
+        Assert.Contains(cockpit.Engines, x =>
             x.Id == "stage-engine"
             && x.Endpoint.Version == "Elsa 4.0.0"
             && x.CredentialReference.Provider == "Azure Key Vault"
             && x.CredentialReference.Reference == "kv://acme-control/stage/elsa-api");
-        cockpit.Engines.Select(x => x.CredentialReference.Reference).Should().NotContain(reference =>
+        Assert.DoesNotContain(cockpit.Engines.Select(x => x.CredentialReference.Reference), reference =>
             reference.Contains("password", StringComparison.OrdinalIgnoreCase)
             || reference.Contains("token", StringComparison.OrdinalIgnoreCase));
     }
@@ -37,9 +36,9 @@ public sealed class DeploymentCockpitServiceTests
             .Comparisons
             .Single(x => x.SourceEnvironmentId == "claims-stage" && x.TargetEnvironmentId == "claims-prod");
 
-        comparison.Diff.Should().Contain(x => x.Category == DiffCategory.SecretReferences);
-        comparison.Diff.Should().Contain(x => x.Category == DiffCategory.EngineBindings);
-        comparison.Validations.Should().Contain(x => x.Severity == ValidationSeverity.Blocker);
-        comparison.RollbackRevision.Should().Be(39);
+        Assert.Contains(comparison.Diff, x => x.Category == DiffCategory.SecretReferences);
+        Assert.Contains(comparison.Diff, x => x.Category == DiffCategory.EngineBindings);
+        Assert.Contains(comparison.Validations, x => x.Severity == ValidationSeverity.Blocker);
+        Assert.Equal(39, comparison.RollbackRevision);
     }
 }

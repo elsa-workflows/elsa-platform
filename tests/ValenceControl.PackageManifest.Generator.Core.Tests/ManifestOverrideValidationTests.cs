@@ -1,7 +1,6 @@
 using ValenceControl.PackageManifest.Generator.Core.Generation;
 using ValenceControl.PackageManifest.Generator.Core.Overrides;
 using ValenceControl.PackageManifest.Generator.Core.Validation;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifest.Generator.Core.Tests;
 
@@ -19,7 +18,7 @@ public sealed class ManifestOverrideValidationTests
 
         new ManifestOverrideValidator().Validate(manifestOverride, metadata, diagnostics);
 
-        diagnostics.Items.Should().Contain(x => x.Code == "EPMGEN_OVERRIDE_FEATURE_ID");
+        Assert.Contains(diagnostics.Items, x => x.Code == "EPMGEN_OVERRIDE_FEATURE_ID");
     }
 
     [Fact]
@@ -31,6 +30,6 @@ public sealed class ManifestOverrideValidationTests
             "Override JSON is invalid.",
             category: GenerationDiagnosticCategory.InvalidInput);
 
-        new ValidationSeverityPolicy("Warning", false).ShouldFail(diagnostics).Should().BeTrue();
+        Assert.True(new ValidationSeverityPolicy("Warning", false).ShouldFail(diagnostics));
     }
 }

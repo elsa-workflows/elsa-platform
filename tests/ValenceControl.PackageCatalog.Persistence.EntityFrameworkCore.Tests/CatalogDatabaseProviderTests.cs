@@ -1,5 +1,4 @@
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -22,9 +21,9 @@ public sealed class CatalogDatabaseProviderTests
 
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
 
-        db.Database.ProviderName.Should().Be("Microsoft.EntityFrameworkCore.Sqlite");
-        db.GetService<IMigrationsAssembly>().Assembly.GetName().Name
-            .Should().Be(CatalogDatabaseServiceCollectionExtensions.SqliteMigrationsAssembly);
+        Assert.Equal("Microsoft.EntityFrameworkCore.Sqlite", db.Database.ProviderName);
+        Assert.Equal(CatalogDatabaseServiceCollectionExtensions.SqliteMigrationsAssembly,
+            db.GetService<IMigrationsAssembly>().Assembly.GetName().Name);
     }
 
     [Fact]
@@ -41,14 +40,14 @@ public sealed class CatalogDatabaseProviderTests
 
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
 
-        db.Database.ProviderName.Should().Be("Microsoft.EntityFrameworkCore.SqlServer");
-        db.GetService<IMigrationsAssembly>().Assembly.GetName().Name
-            .Should().Be(CatalogDatabaseServiceCollectionExtensions.SqlServerMigrationsAssembly);
+        Assert.Equal("Microsoft.EntityFrameworkCore.SqlServer", db.Database.ProviderName);
+        Assert.Equal(CatalogDatabaseServiceCollectionExtensions.SqlServerMigrationsAssembly,
+            db.GetService<IMigrationsAssembly>().Assembly.GetName().Name);
         var connectionString = new SqlConnectionStringBuilder(db.Database.GetConnectionString());
 
-        connectionString.ConnectTimeout.Should().Be(120);
-        connectionString.ConnectRetryCount.Should().Be(3);
-        connectionString.ConnectRetryInterval.Should().Be(10);
+        Assert.Equal(120, connectionString.ConnectTimeout);
+        Assert.Equal(3, connectionString.ConnectRetryCount);
+        Assert.Equal(10, connectionString.ConnectRetryInterval);
     }
 
     [Fact]
@@ -69,9 +68,9 @@ public sealed class CatalogDatabaseProviderTests
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         var connectionString = new SqlConnectionStringBuilder(db.Database.GetConnectionString());
 
-        connectionString.ConnectTimeout.Should().Be(25);
-        connectionString.ConnectRetryCount.Should().Be(1);
-        connectionString.ConnectRetryInterval.Should().Be(2);
+        Assert.Equal(25, connectionString.ConnectTimeout);
+        Assert.Equal(1, connectionString.ConnectRetryCount);
+        Assert.Equal(2, connectionString.ConnectRetryInterval);
     }
 
     [Fact]
@@ -92,9 +91,9 @@ public sealed class CatalogDatabaseProviderTests
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         var connectionString = new SqlConnectionStringBuilder(db.Database.GetConnectionString());
 
-        connectionString.ConnectTimeout.Should().Be(45);
-        connectionString.ConnectRetryCount.Should().Be(2);
-        connectionString.ConnectRetryInterval.Should().Be(7);
+        Assert.Equal(45, connectionString.ConnectTimeout);
+        Assert.Equal(2, connectionString.ConnectRetryCount);
+        Assert.Equal(7, connectionString.ConnectRetryInterval);
     }
 
     [Fact]
@@ -112,7 +111,7 @@ public sealed class CatalogDatabaseProviderTests
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         var connectionString = new SqlConnectionStringBuilder(db.Database.GetConnectionString());
 
-        connectionString.ConnectTimeout.Should().Be(25);
+        Assert.Equal(25, connectionString.ConnectTimeout);
     }
 
     [Fact]
@@ -130,7 +129,7 @@ public sealed class CatalogDatabaseProviderTests
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         var connectionString = new SqlConnectionStringBuilder(db.Database.GetConnectionString());
 
-        connectionString.ConnectRetryCount.Should().Be(3);
+        Assert.Equal(3, connectionString.ConnectRetryCount);
     }
 
     [Fact]
@@ -148,10 +147,10 @@ public sealed class CatalogDatabaseProviderTests
         using var scope = provider.CreateScope();
 
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-        var strategy = db.Database.CreateExecutionStrategy().Should().BeOfType<SqlServerRetryingExecutionStrategy>().Subject;
+        var strategy = Assert.IsType<SqlServerRetryingExecutionStrategy>(db.Database.CreateExecutionStrategy());
 
-        strategy.MaxRetryCount.Should().Be(4);
-        strategy.MaxRetryDelay.Should().Be(TimeSpan.FromSeconds(12));
+        Assert.Equal(4, strategy.MaxRetryCount);
+        Assert.Equal(TimeSpan.FromSeconds(12), strategy.MaxRetryDelay);
     }
 
     [Theory]
@@ -171,8 +170,9 @@ public sealed class CatalogDatabaseProviderTests
 
         var act = () => scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*ConnectRetryIntervalSeconds*between 1 and 60*");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+        Assert.Contains("ConnectRetryIntervalSeconds", exception.Message);
+        Assert.Contains("between 1 and 60", exception.Message);
     }
 
     [Theory]
@@ -192,8 +192,9 @@ public sealed class CatalogDatabaseProviderTests
 
         var act = () => scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*ConnectRetryCount*between 0 and 255*");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+        Assert.Contains("ConnectRetryCount", exception.Message);
+        Assert.Contains("between 0 and 255", exception.Message);
     }
 
     [Fact]
@@ -209,8 +210,9 @@ public sealed class CatalogDatabaseProviderTests
 
         var act = () => scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*ConnectionStrings:Catalog*SqlServer*");
+        var exception = Assert.Throws<InvalidOperationException>(act);
+        Assert.Contains("ConnectionStrings:Catalog", exception.Message);
+        Assert.Contains("SqlServer", exception.Message);
     }
 
     private static ServiceProvider BuildProvider(IReadOnlyDictionary<string, string?> settings)

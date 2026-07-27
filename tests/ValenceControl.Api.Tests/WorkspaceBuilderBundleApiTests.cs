@@ -6,7 +6,6 @@ using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -24,9 +23,9 @@ public sealed class WorkspaceBuilderBundleApiTests
 
         var response = await client.PostControlJsonAsync($"/api/workspaces/{workspaceId}/builder/bundle", MinimalRequest());
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadControlJsonAsync<BuilderBundleResponse>();
-        body!.Files.Should().Contain(x => x.Path == "docker-compose.yml");
+        Assert.Contains(body!.Files, x => x.Path == "docker-compose.yml");
     }
 
     [Fact]
@@ -40,8 +39,8 @@ public sealed class WorkspaceBuilderBundleApiTests
         var anonymous = await app.CreateClient().PostControlJsonAsync($"/api/workspaces/{workspaceId}/builder/bundle", MinimalRequest());
         var nonMember = await WorkspaceClient(app, "user-456").PostControlJsonAsync($"/api/workspaces/{workspaceId}/builder/bundle", MinimalRequest());
 
-        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        nonMember.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, nonMember.StatusCode);
     }
 
     [Fact]
@@ -62,11 +61,11 @@ public sealed class WorkspaceBuilderBundleApiTests
             [],
             new BuilderBundleLocalPackagesRequest(false, "packages")));
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadControlJsonAsync<BuilderBundleResponse>();
-        body!.Files.Should().BeEmpty();
-        body.Findings.Should().Contain(x => x.Code == "package.missing");
-        body.Findings.Select(x => x.Message).Should().NotContain(message => message.Contains("https://private.example.test", StringComparison.Ordinal));
+        Assert.Empty(body!.Files);
+        Assert.Contains(body.Findings, x => x.Code == "package.missing");
+        Assert.DoesNotContain(body.Findings.Select(x => x.Message), message => message.Contains("https://private.example.test", StringComparison.Ordinal));
     }
 
     private static BuilderBundleRequest MinimalRequest() =>

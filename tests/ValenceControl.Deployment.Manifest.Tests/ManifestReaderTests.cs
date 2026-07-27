@@ -1,6 +1,5 @@
 using System.Globalization;
 using ValenceControl.Deployment.Abstractions.Diagnostics;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Manifest.Tests;
 
@@ -13,13 +12,13 @@ public class ManifestReaderTests
     {
         var result = _reader.Read(SampleYaml, ManifestFormat.Yaml);
 
-        result.Diagnostics.Should().BeEmpty();
-        result.Manifest.Should().NotBeNull();
-        result.Manifest!.ApiVersion.Should().Be(DeploymentManifestConstants.ApiVersion);
-        result.Manifest.Kind.Should().Be(DeploymentManifestConstants.Kind);
-        result.Manifest.Metadata.Name.Should().Be("sales-staging");
-        result.Manifest.Resources.Workflows.Should().ContainSingle().Which.Id.Should().Be("order-approval");
-        result.Manifest.Resources.Variables.Should().ContainSingle().Which.Key.Should().Be("orderTimeout");
+        Assert.Empty(result.Diagnostics);
+        Assert.NotNull(result.Manifest);
+        Assert.Equal(DeploymentManifestConstants.ApiVersion, result.Manifest!.ApiVersion);
+        Assert.Equal(DeploymentManifestConstants.Kind, result.Manifest.Kind);
+        Assert.Equal("sales-staging", result.Manifest.Metadata.Name);
+        Assert.Equal("order-approval", Assert.Single(result.Manifest.Resources.Workflows).Id);
+        Assert.Equal("orderTimeout", Assert.Single(result.Manifest.Resources.Variables).Key);
     }
 
     [Fact]
@@ -27,10 +26,10 @@ public class ManifestReaderTests
     {
         var result = _reader.Read(SampleJson, ManifestFormat.Json);
 
-        result.Diagnostics.Should().BeEmpty();
-        result.Manifest.Should().NotBeNull();
-        result.Manifest!.Metadata.Name.Should().Be("sales-staging");
-        result.Manifest.Resources.Packages.Should().ContainSingle().Which.Id.Should().Be("Acme.Sales");
+        Assert.Empty(result.Diagnostics);
+        Assert.NotNull(result.Manifest);
+        Assert.Equal("sales-staging", result.Manifest!.Metadata.Name);
+        Assert.Equal("Acme.Sales", Assert.Single(result.Manifest.Resources.Packages).Id);
     }
 
     [Fact]
@@ -38,8 +37,8 @@ public class ManifestReaderTests
     {
         var result = _reader.Read("apiVersion: [", ManifestFormat.Yaml);
 
-        result.Manifest.Should().BeNull();
-        result.Diagnostics.Should().ContainSingle(x =>
+        Assert.Null(result.Manifest);
+        Assert.Single(result.Diagnostics, x =>
             x.Code == ManifestDiagnosticCodes.Parse && x.Severity == DeploymentDiagnosticSeverity.Error);
     }
 
@@ -50,9 +49,9 @@ public class ManifestReaderTests
     {
         var read = () => _reader.Read(text, format);
 
-        var result = read.Should().NotThrow().Subject;
-        result.Manifest.Should().BeNull();
-        result.Diagnostics.Should().ContainSingle(x =>
+        var result = read();
+        Assert.Null(result.Manifest);
+        Assert.Single(result.Diagnostics, x =>
             x.Code == ManifestDiagnosticCodes.Parse &&
             x.Message == "Manifest 'resources' must be an object, not null.");
     }
@@ -74,8 +73,8 @@ public class ManifestReaderTests
             resources: {}
             """, ManifestFormat.Yaml);
 
-        result.Manifest.Should().BeNull();
-        result.Diagnostics.Should().ContainSingle(x =>
+        Assert.Null(result.Manifest);
+        Assert.Single(result.Diagnostics, x =>
             x.Code == ManifestDiagnosticCodes.Parse &&
             x.Message == "Manifest YAML must contain exactly one document.");
     }
@@ -106,9 +105,9 @@ public class ManifestReaderTests
     {
         var result = _reader.Read(text, format);
 
-        result.Diagnostics.Should().BeEmpty();
-        result.Manifest!.Metadata.Labels.Should().BeEmpty();
-        result.Manifest.Metadata.Annotations.Should().BeEmpty();
+        Assert.Empty(result.Diagnostics);
+        Assert.Empty(result.Manifest!.Metadata.Labels);
+        Assert.Empty(result.Manifest.Metadata.Annotations);
     }
 
     [Fact]
@@ -128,8 +127,8 @@ public class ManifestReaderTests
             }
             """, ManifestFormat.Json);
 
-        result.Manifest!.Resources.Variables[0].Value!.ToJsonString().Should().Be("\"0001\"");
-        result.Manifest.Resources.Variables[1].Value!.ToJsonString().Should().Be("\"true\"");
+        Assert.Equal("\"0001\"", result.Manifest!.Resources.Variables[0].Value!.ToJsonString());
+        Assert.Equal("\"true\"", result.Manifest.Resources.Variables[1].Value!.ToJsonString());
     }
 
     [Fact]
@@ -148,8 +147,8 @@ public class ManifestReaderTests
                   value: "true"
             """, ManifestFormat.Yaml);
 
-        result.Manifest!.Resources.Variables[0].Value!.ToJsonString().Should().Be("\"0001\"");
-        result.Manifest.Resources.Variables[1].Value!.ToJsonString().Should().Be("\"true\"");
+        Assert.Equal("\"0001\"", result.Manifest!.Resources.Variables[0].Value!.ToJsonString());
+        Assert.Equal("\"true\"", result.Manifest.Resources.Variables[1].Value!.ToJsonString());
     }
 
     [Theory]
@@ -170,7 +169,7 @@ public class ManifestReaderTests
                   value: {value}
             """, ManifestFormat.Yaml);
 
-        result.Manifest!.Resources.Variables[0].Value.Should().BeNull();
+        Assert.Null(result.Manifest!.Resources.Variables[0].Value);
     }
 
     [Fact]
@@ -194,8 +193,8 @@ public class ManifestReaderTests
                       value: 1.5
                 """, ManifestFormat.Yaml);
 
-            result.Diagnostics.Should().BeEmpty();
-            result.Manifest!.Resources.Variables[0].Value!.ToJsonString().Should().Be("1.5");
+            Assert.Empty(result.Diagnostics);
+            Assert.Equal("1.5", result.Manifest!.Resources.Variables[0].Value!.ToJsonString());
         }
         finally
         {
@@ -218,7 +217,7 @@ public class ManifestReaderTests
                   value: 1,000
             """, ManifestFormat.Yaml);
 
-        result.Manifest!.Resources.Variables[0].Value!.ToJsonString().Should().Be("\"1,000\"");
+        Assert.Equal("\"1,000\"", result.Manifest!.Resources.Variables[0].Value!.ToJsonString());
     }
 
     [Fact]
@@ -235,7 +234,7 @@ public class ManifestReaderTests
                   value: 1e5
             """, ManifestFormat.Yaml);
 
-        result.Manifest!.Resources.Variables[0].Value!.ToJsonString().Should().Be("100000");
+        Assert.Equal("100000", result.Manifest!.Resources.Variables[0].Value!.ToJsonString());
     }
 
     [Fact]
@@ -247,8 +246,8 @@ public class ManifestReaderTests
             metadata: {}
             """, ManifestFormat.Yaml);
 
-        result.Diagnostics.Should().BeEmpty();
-        result.Manifest.Should().NotBeNull();
+        Assert.Empty(result.Diagnostics);
+        Assert.NotNull(result.Manifest);
     }
 
     public const string SampleYaml = """

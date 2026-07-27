@@ -1,6 +1,5 @@
 using System.Net.Http.Json;
 using ValenceControl.Api.Public.Builder;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -14,12 +13,12 @@ public sealed class RuntimeImageApiTests
 
         var catalog = await app.CreateClient().GetFromJsonAsync<BuilderCatalogResponse>("/api/builder/catalog", ControlApiTestApplication.JsonOptions);
 
-        catalog.Should().NotBeNull();
-        catalog!.Images.Select(x => x.Slug).Should().BeEquivalentTo("elsa-pro-server", "elsa-pro-studio", "elsa-pro-combined");
-        var combined = catalog.Images.Should().ContainSingle(x => x.Slug == "elsa-pro-combined").Subject;
-        combined.Image.Should().Be("elsaworkflows/elsa-pro-combined");
-        combined.DefaultTag.Should().Be("latest");
-        combined.DeploymentHints.SupportsDockerCompose.Should().BeTrue();
-        combined.EnvVars.Should().Contain(x => x.Name == "ASPNETCORE_ENVIRONMENT");
+        Assert.NotNull(catalog);
+        Assert.Equal(new[] { "elsa-pro-server", "elsa-pro-studio", "elsa-pro-combined" }.Order(), catalog!.Images.Select(x => x.Slug).Order());
+        var combined = Assert.Single(catalog.Images, x => x.Slug == "elsa-pro-combined");
+        Assert.Equal("elsaworkflows/elsa-pro-combined", combined.Image);
+        Assert.Equal("latest", combined.DefaultTag);
+        Assert.True(combined.DeploymentHints.SupportsDockerCompose);
+        Assert.Contains(combined.EnvVars, x => x.Name == "ASPNETCORE_ENVIRONMENT");
     }
 }

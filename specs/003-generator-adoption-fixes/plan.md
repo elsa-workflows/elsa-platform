@@ -31,7 +31,7 @@ deterministic builds.
 
 **Primary Dependencies**: Existing MSBuild task APIs, System.Reflection metadata
 inspection, System.Text.Json, ValenceControl.PackageManifests validation, xUnit,
-FluentAssertions, and existing generator test helpers.
+xUnit's built-in assertions, and existing generator test helpers.
 
 **Storage**: File artifacts only. Inputs are compiled assemblies, XML docs,
 project/NuGet metadata, references, and optional override files. Outputs are

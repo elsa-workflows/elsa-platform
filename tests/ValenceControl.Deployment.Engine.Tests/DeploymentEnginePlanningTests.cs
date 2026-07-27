@@ -4,7 +4,6 @@ using ValenceControl.Deployment.Abstractions.Diagnostics;
 using ValenceControl.Deployment.Abstractions.History;
 using ValenceControl.Deployment.Abstractions.Plans;
 using ValenceControl.Deployment.Abstractions.Resources;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Engine.Tests;
 
@@ -26,9 +25,9 @@ public class DeploymentEnginePlanningTests
 
         var plan = await engine.DiffAsync(new TestArtifactReader(create, update, noOp), _target);
 
-        plan.Changes.Should().Contain(change => change.ResourceId == create.Id && change.Action == DeploymentChangeAction.Create);
-        plan.Changes.Should().Contain(change => change.ResourceId == update.Id && change.Action == DeploymentChangeAction.Update);
-        plan.Changes.Should().Contain(change => change.ResourceId == noOp.Id && change.Action == DeploymentChangeAction.NoOp);
+        Assert.Contains(plan.Changes, change => change.ResourceId == create.Id && change.Action == DeploymentChangeAction.Create);
+        Assert.Contains(plan.Changes, change => change.ResourceId == update.Id && change.Action == DeploymentChangeAction.Update);
+        Assert.Contains(plan.Changes, change => change.ResourceId == noOp.Id && change.Action == DeploymentChangeAction.NoOp);
     }
 
     [Fact]
@@ -41,9 +40,9 @@ public class DeploymentEnginePlanningTests
         var blocked = await engine.DiffAsync(new TestArtifactReader(resource), _target);
         var allowed = await engine.DiffAsync(new TestArtifactReader(resource), _target, new DeploymentExecutionContext(prune: true));
 
-        blocked.Changes.Should().ContainSingle().Which.Status.Should().Be(DeploymentChangeStatus.Blocked);
-        blocked.Changes.Single().Diagnostics.Should().ContainSingle(x => x.Code == DeploymentEngineDiagnosticCodes.PruneDisabled);
-        allowed.Changes.Should().ContainSingle().Which.Status.Should().Be(DeploymentChangeStatus.Ready);
+        Assert.Equal(DeploymentChangeStatus.Blocked, Assert.Single(blocked.Changes).Status);
+        Assert.Single(blocked.Changes.Single().Diagnostics, x => x.Code == DeploymentEngineDiagnosticCodes.PruneDisabled);
+        Assert.Equal(DeploymentChangeStatus.Ready, Assert.Single(allowed.Changes).Status);
     }
 
     [Fact]
@@ -60,7 +59,7 @@ public class DeploymentEnginePlanningTests
 
         var plan = await engine.DiffAsync(new TestArtifactReader(resource), _target);
 
-        plan.Changes.Should().ContainSingle().Which.Diagnostics.Should().Contain(diagnostic);
+        Assert.Contains(diagnostic, Assert.Single(plan.Changes).Diagnostics);
     }
 
     [Fact]
@@ -72,7 +71,7 @@ public class DeploymentEnginePlanningTests
 
         var plan = await engine.DiffAsync(new TestArtifactReader(second, first), _target);
 
-        plan.Changes.Select(x => x.ResourceId.LogicalId).Should().Equal("a", "b");
+        Assert.Equal(["a", "b"], plan.Changes.Select(x => x.ResourceId.LogicalId));
     }
 
     [Fact]
@@ -89,10 +88,10 @@ public class DeploymentEnginePlanningTests
         _handler.DiffException = new InvalidOperationException("Diff exploded.");
         var diffPlan = await readEngine.DiffAsync(new TestArtifactReader(diffFailure), _target);
 
-        readPlan.Diagnostics.Should().ContainSingle(x =>
+        Assert.Single(readPlan.Diagnostics, x =>
             x.Code == DeploymentEngineDiagnosticCodes.ReadFailed &&
             x.ResourceId == readFailure.Id);
-        diffPlan.Diagnostics.Should().ContainSingle(x =>
+        Assert.Single(diffPlan.Diagnostics, x =>
             x.Code == DeploymentEngineDiagnosticCodes.DiffFailed &&
             x.ResourceId == diffFailure.Id);
     }
@@ -106,12 +105,12 @@ public class DeploymentEnginePlanningTests
         var plan = await engine.DiffAsync(new TestArtifactReader(resource), _target);
         var result = await engine.ApplyAsync(plan, _target);
 
-        plan.Diagnostics.Should().ContainSingle(x =>
+        Assert.Single(plan.Diagnostics, x =>
             x.Code == DeploymentEngineDiagnosticCodes.HandlerMissing &&
             x.ResourceId == resource.Id);
-        plan.Changes.Should().ContainSingle().Which.Status.Should().Be(DeploymentChangeStatus.Blocked);
-        result.Status.Should().Be(DeploymentStatus.Failed);
-        _handler.ApplyChanges.Should().BeEmpty();
+        Assert.Equal(DeploymentChangeStatus.Blocked, Assert.Single(plan.Changes).Status);
+        Assert.Equal(DeploymentStatus.Failed, result.Status);
+        Assert.Empty(_handler.ApplyChanges);
     }
 
     [Fact]
@@ -125,8 +124,8 @@ public class DeploymentEnginePlanningTests
 
         var plan = await engine.DiffAsync(artifact, _target);
 
-        plan.Artifact.Should().Be(DeploymentEngineTestFixtures.Artifact);
-        plan.Diagnostics.Should().ContainSingle(x => x.Code == DeploymentEngineDiagnosticCodes.ArtifactInvalid);
+        Assert.Equal(DeploymentEngineTestFixtures.Artifact, plan.Artifact);
+        Assert.Single(plan.Diagnostics, x => x.Code == DeploymentEngineDiagnosticCodes.ArtifactInvalid);
     }
 
     [Fact]
@@ -139,10 +138,10 @@ public class DeploymentEnginePlanningTests
         var result = await engine.DryRunAsync(plan, _target);
         var history = await _history.FindAsync(result.DeploymentId);
 
-        result.Status.Should().Be(DeploymentStatus.DryRunCompleted);
-        _handler.DryRunChanges.Should().ContainSingle();
-        _handler.ApplyChanges.Should().BeEmpty();
-        history.Should().BeNull();
+        Assert.Equal(DeploymentStatus.DryRunCompleted, result.Status);
+        Assert.Single(_handler.DryRunChanges);
+        Assert.Empty(_handler.ApplyChanges);
+        Assert.Null(history);
     }
 
     [Fact]
@@ -156,10 +155,10 @@ public class DeploymentEnginePlanningTests
 
         var result = await engine.DryRunAsync(plan, _target);
 
-        result.Status.Should().Be(DeploymentStatus.ValidationFailed);
-        result.ResourceResults.Should().ContainSingle().Which.Status.Should().Be(DeploymentChangeStatus.Skipped);
-        _handler.DryRunChanges.Should().BeEmpty();
-        _handler.ApplyChanges.Should().BeEmpty();
+        Assert.Equal(DeploymentStatus.ValidationFailed, result.Status);
+        Assert.Equal(DeploymentChangeStatus.Skipped, Assert.Single(result.ResourceResults).Status);
+        Assert.Empty(_handler.DryRunChanges);
+        Assert.Empty(_handler.ApplyChanges);
     }
 
     [Fact]
@@ -172,9 +171,9 @@ public class DeploymentEnginePlanningTests
 
         var result = await engine.DryRunAsync(plan, _target);
 
-        result.Status.Should().Be(DeploymentStatus.NoOp);
-        result.ResourceResults.Should().ContainSingle().Which.Status.Should().Be(DeploymentChangeStatus.Skipped);
-        _handler.DryRunChanges.Should().BeEmpty();
+        Assert.Equal(DeploymentStatus.NoOp, result.Status);
+        Assert.Equal(DeploymentChangeStatus.Skipped, Assert.Single(result.ResourceResults).Status);
+        Assert.Empty(_handler.DryRunChanges);
     }
 
     [Fact]
@@ -187,8 +186,8 @@ public class DeploymentEnginePlanningTests
 
         var result = await engine.DryRunAsync(plan, _target);
 
-        result.Status.Should().Be(DeploymentStatus.ValidationFailed);
-        result.Diagnostics.Should().ContainSingle(x =>
+        Assert.Equal(DeploymentStatus.ValidationFailed, result.Status);
+        Assert.Single(result.Diagnostics, x =>
             x.Code == DeploymentEngineDiagnosticCodes.DryRunFailed &&
             x.ResourceId == resource.Id);
     }

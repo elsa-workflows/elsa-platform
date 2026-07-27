@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using System.Security.Claims;
 using ValenceControl.Api.Admin.Sources;
 using ValenceControl.Api.Authentication;
-using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
@@ -29,9 +28,9 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Headers.Location.Should().BeNull();
-        (await response.Content.ReadAsStringAsync()).Should().Contain("/api/auth/login?returnUrl=%2Fadmin%2Foverview");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(response.Headers.Location);
+        Assert.Contains("/api/auth/login?returnUrl=%2Fadmin%2Foverview", (await response.Content.ReadAsStringAsync()));
     }
 
     [Fact]
@@ -44,8 +43,8 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        response.Headers.Location!.OriginalString.Should().Be("/admin/");
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/admin/", response.Headers.Location!.OriginalString);
     }
 
     [Fact]
@@ -58,9 +57,9 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Headers.Location.Should().BeNull();
-        (await response.Content.ReadAsStringAsync()).Should().Contain("/api/auth/login?returnUrl=%2Fadmin%2Foverview");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(response.Headers.Location);
+        Assert.Contains("/api/auth/login?returnUrl=%2Fadmin%2Foverview", (await response.Content.ReadAsStringAsync()));
     }
 
     [Fact]
@@ -70,7 +69,7 @@ public sealed class AdminDashboardAuthenticationTests
         var response = await app.CreateClient(new() { AllowAutoRedirect = false })
             .GetAsync("/admin/assets/index.js");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -85,8 +84,8 @@ public sealed class AdminDashboardAuthenticationTests
         var response = await app.CreateClient(new() { AllowAutoRedirect = false })
             .GetAsync("/admin/overview?tab=workspaces");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await response.Content.ReadAsStringAsync()).Should().Be("/admin/overview?tab=workspaces");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("/admin/overview?tab=workspaces", (await response.Content.ReadAsStringAsync()));
     }
 
     [Fact]
@@ -96,8 +95,8 @@ public sealed class AdminDashboardAuthenticationTests
         var response = await app.CreateClient(new() { AllowAutoRedirect = false })
             .GetAsync($"{AdminDashboardAuthenticationDefaults.LoginPath}?returnUrl=/admin/sources");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        response.Headers.Location.Should().Be($"{CustomerAuthenticationDefaults.LoginPath}?returnUrl=%2Fadmin%2Fsources");
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal($"{CustomerAuthenticationDefaults.LoginPath}?returnUrl=%2Fadmin%2Fsources", response.Headers.Location!.OriginalString);
     }
 
     [Fact]
@@ -107,8 +106,8 @@ public sealed class AdminDashboardAuthenticationTests
         var response = await app.CreateClient(new() { AllowAutoRedirect = false })
             .GetAsync($"{AdminDashboardAuthenticationDefaults.LoginPath}?returnUrl=https://evil.example/admin");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        response.Headers.Location.Should().Be($"{CustomerAuthenticationDefaults.LoginPath}?returnUrl={Uri.EscapeDataString(AdminDashboardAuthenticationDefaults.DefaultReturnPath)}");
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal($"{CustomerAuthenticationDefaults.LoginPath}?returnUrl={Uri.EscapeDataString(AdminDashboardAuthenticationDefaults.DefaultReturnPath)}", response.Headers.Location!.OriginalString);
     }
 
     [Fact]
@@ -118,8 +117,8 @@ public sealed class AdminDashboardAuthenticationTests
         var response = await app.CreateClient(new() { AllowAutoRedirect = false })
             .GetAsync($"{AdminDashboardAuthenticationDefaults.LoginPath}?returnUrl={AdminDashboardAuthenticationDefaults.LogoutPath}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        response.Headers.Location.Should().Be($"{CustomerAuthenticationDefaults.LoginPath}?returnUrl={Uri.EscapeDataString(AdminDashboardAuthenticationDefaults.DefaultReturnPath)}");
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal($"{CustomerAuthenticationDefaults.LoginPath}?returnUrl={Uri.EscapeDataString(AdminDashboardAuthenticationDefaults.DefaultReturnPath)}", response.Headers.Location!.OriginalString);
     }
 
     [Fact]
@@ -129,8 +128,8 @@ public sealed class AdminDashboardAuthenticationTests
         var response = await app.CreateClient(new() { AllowAutoRedirect = false })
             .PostAsync(AdminDashboardAuthenticationDefaults.LogoutPath, content: null);
 
-        response.StatusCode.Should().Be(HttpStatusCode.TemporaryRedirect);
-        response.Headers.Location.Should().Be($"{CustomerAuthenticationDefaults.LogoutPath}?returnUrl={Uri.EscapeDataString(AdminDashboardAuthenticationDefaults.DefaultReturnPath)}");
+        Assert.Equal(HttpStatusCode.TemporaryRedirect, response.StatusCode);
+        Assert.Equal($"{CustomerAuthenticationDefaults.LogoutPath}?returnUrl={Uri.EscapeDataString(AdminDashboardAuthenticationDefaults.DefaultReturnPath)}", response.Headers.Location!.OriginalString);
     }
 
     [Fact]
@@ -143,7 +142,7 @@ public sealed class AdminDashboardAuthenticationTests
 
         var sources = await client.GetControlJsonAsync<List<AdminSourceResponse>>("/api/admin/sources");
 
-        sources.Should().NotBeNull();
+        Assert.NotNull(sources);
     }
 
     [Fact]
@@ -156,7 +155,7 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.GetAsync("/api/admin/sources");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
@@ -169,7 +168,7 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.GetAsync("/api/admin/sources");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -185,7 +184,7 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.GetAsync("/api/admin/sources");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
@@ -199,7 +198,7 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -213,7 +212,7 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -228,7 +227,7 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -240,7 +239,7 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.PostAsync("/api/admin/sync/packages/Elsa.Workflows", null);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -254,7 +253,7 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -270,7 +269,7 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -287,7 +286,7 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -305,7 +304,7 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -319,7 +318,7 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -328,7 +327,7 @@ public sealed class AdminDashboardAuthenticationTests
         await using var app = new ControlApiTestApplication();
         var response = await app.CreateClient().GetAsync("/health");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     private static void AddControlSessionCookie(ControlApiTestApplication app, HttpClient client, params Claim[] additionalClaims)

@@ -2,7 +2,6 @@ using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 
 namespace ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
@@ -54,12 +53,12 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
         _db.ChangeTracker.Clear();
         var cockpit = await _store.GetCockpitAsync(_workspaceId);
 
-        cockpit.Applications.Should().ContainSingle(x => x.Id == application.Id.ToString("D"));
-        cockpit.Applications.Single().Environments.Should().ContainSingle(x =>
+        Assert.Single(cockpit.Applications, x => x.Id == application.Id.ToString("D"));
+        Assert.Single(cockpit.Applications.Single().Environments, x =>
             x.Id == environment.Id.ToString("D")
             && x.DesiredRevision.Revision == revision.RevisionNumber
             && x.DeploymentStatus == DeploymentStatus.Blocked);
-        cockpit.Engines.Should().ContainSingle(x =>
+        Assert.Single(cockpit.Engines, x =>
             x.Name == "claims-prod"
             && x.CredentialReference.Reference == "kv://claims/prod/elsa-api"
             && x.CredentialReference.VerificationStatus == CredentialVerificationStatus.Unverified);
@@ -91,8 +90,8 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
         _db.ChangeTracker.Clear();
         var cockpit = await _store.GetCockpitAsync(_workspaceId);
 
-        reassigned.TierId.Should().Be(uat.Id);
-        cockpit.Applications.Single().Environments.Should().ContainSingle(x =>
+        Assert.Equal(uat.Id, reassigned.TierId);
+        Assert.Single(cockpit.Applications.Single().Environments, x =>
             x.Id == environment.Id.ToString("D")
             && x.TierName == "UAT"
             && x.TierStatus == DeploymentTierStatus.Archived.ToString()
@@ -137,21 +136,21 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
         var usage = await _store.ListCredentialReferenceUsageAsync(_workspaceId, reference.Id);
         var cockpit = await _store.GetCockpitAsync(_workspaceId);
 
-        stores.Should().ContainSingle(x => x.Id == store.Id && x.Provider == "Azure Key Vault" && x.Type == DeploymentSecretStoreType.AzureKeyVault);
-        references.Should().ContainSingle(x =>
+        Assert.Single(stores, x => x.Id == store.Id && x.Provider == "Azure Key Vault" && x.Type == DeploymentSecretStoreType.AzureKeyVault);
+        Assert.Single(references, x =>
             x.Id == reference.Id
             && x.SecretStoreId == store.Id
             && x.SecretStoreType == DeploymentSecretStoreType.AzureKeyVault
             && x.UsageCount == 1);
-        usage.Should().ContainSingle(x =>
+        Assert.Single(usage, x =>
             x.EngineId == engine.Id
             && x.EngineName == "claims-test"
             && x.ApplicationName == "Claims"
             && x.EnvironmentName == "Test");
-        engine.CredentialProvider.Should().Be("Azure Key Vault");
-        engine.CredentialReference.Should().Be("kv://claims/test/elsa-api");
-        engine.CredentialReferenceId.Should().Be(reference.Id);
-        cockpit.Engines.Should().ContainSingle(x => x.CredentialReference.Reference == "kv://claims/test/elsa-api");
+        Assert.Equal("Azure Key Vault", engine.CredentialProvider);
+        Assert.Equal("kv://claims/test/elsa-api", engine.CredentialReference);
+        Assert.Equal(reference.Id, engine.CredentialReferenceId);
+        Assert.Single(cockpit.Engines, x => x.CredentialReference.Reference == "kv://claims/test/elsa-api");
     }
 
     [Fact]
@@ -196,21 +195,21 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
         var stores = await _store.ListSecretStoresAsync(_workspaceId);
         var references = await _store.ListCredentialReferencesAsync(_workspaceId);
         var secret = await _store.GetCredentialSecretAsync(_workspaceId, reference.Id);
-        stores.Should().ContainSingle(x =>
+        Assert.Single(stores, x =>
             x.Id == store.Id
             && x.Type == DeploymentSecretStoreType.LocalEncryptedDatabase
             && x.Provider == "Local encrypted database");
-        references.Should().ContainSingle(x => x.Id == reference.Id && x.HasProtectedSecret && x.UsageCount == 0);
-        secret.Should().BeEquivalentTo(new WorkspaceDeploymentCredentialSecret(
+        Assert.Single(references, x => x.Id == reference.Id && x.HasProtectedSecret && x.UsageCount == 0);
+        Assert.Equal(new WorkspaceDeploymentCredentialSecret(
             reference.Id,
             DeploymentSecretStoreStatus.Active,
             DeploymentSecretStoreStatus.Active,
             DeploymentSecretStoreType.LocalEncryptedDatabase,
-            "protected:v1"));
-        engine.CredentialAssignmentStatus.Should().Be(EngineCredentialAssignmentStatus.Deferred);
-        engine.CredentialProvider.Should().BeEmpty();
-        engine.CredentialReference.Should().BeEmpty();
-        engine.CredentialReferenceId.Should().BeNull();
+            "protected:v1"), secret);
+        Assert.Equal(EngineCredentialAssignmentStatus.Deferred, engine.CredentialAssignmentStatus);
+        Assert.Empty(engine.CredentialProvider);
+        Assert.Empty(engine.CredentialReference);
+        Assert.Null(engine.CredentialReferenceId);
     }
 
     [Fact]
@@ -243,9 +242,10 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
                 null,
                 reference.Id));
 
-        activeReferences.Should().BeEmpty();
-        allReferences.Should().ContainSingle(x => x.Id == reference.Id && x.Status == DeploymentSecretStoreStatus.Archived);
-        await register.Should().ThrowAsync<InvalidOperationException>().WithMessage("Archived deployment credential references cannot be assigned to engines.");
+        Assert.Empty(activeReferences);
+        Assert.Single(allReferences, x => x.Id == reference.Id && x.Status == DeploymentSecretStoreStatus.Archived);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(register);
+        Assert.Equal("Archived deployment credential references cannot be assigned to engines.", exception.Message);
     }
 
     [Fact]
@@ -272,10 +272,10 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
         var allStores = await _store.ListSecretStoresAsync(_workspaceId, includeArchived: true);
         var allReferences = await _store.ListCredentialReferencesAsync(_workspaceId, includeArchived: true);
 
-        allStores.Should().HaveCount(2);
-        allStores.Should().OnlyContain(x => x.Status == DeploymentSecretStoreStatus.Archived);
-        allReferences.Should().HaveCount(2);
-        allReferences.Should().OnlyContain(x => x.Status == DeploymentSecretStoreStatus.Archived);
+        Assert.Equal(2, allStores.Count());
+        Assert.All(allStores, x => Assert.Equal(DeploymentSecretStoreStatus.Archived, x.Status));
+        Assert.Equal(2, allReferences.Count());
+        Assert.All(allReferences, x => Assert.Equal(DeploymentSecretStoreStatus.Archived, x.Status));
     }
 
     [Fact]
@@ -284,7 +284,7 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
         await _store.GrantPermissionAsync(_workspaceId, new GrantWorkspacePermissionRequest(_accountId, WorkspaceDeploymentPermissions.Read, null));
         var grants = await _store.GetPermissionGrantsAsync(_workspaceId, _accountId);
 
-        grants.Should().ContainSingle(x => x.Permission == WorkspaceDeploymentPermissions.Read && x.RevokedAt == null);
+        Assert.Single(grants, x => x.Permission == WorkspaceDeploymentPermissions.Read && x.RevokedAt == null);
     }
 
     [Fact]
@@ -306,16 +306,19 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
             new RevokeWorkspacePermissionRequest(_accountId, WorkspaceDeploymentPermissions.Read, actorId));
         var audit = await _store.ListPermissionAuditRecordsAsync(_workspaceId, _accountId);
 
-        replay.Id.Should().Be(first.Id);
-        revoked.Changed.Should().BeTrue();
-        revoked.Grants.Should().ContainSingle(x => x.Id == first.Id && x.RevokedByAccountId == actorId);
-        revokeReplay.Changed.Should().BeFalse();
-        audit.Should().HaveCount(2);
-        audit.Select(x => x.Action).Should().BeEquivalentTo([
+        Assert.Equal(first.Id, replay.Id);
+        Assert.True(revoked.Changed);
+        Assert.Single(revoked.Grants, x => x.Id == first.Id && x.RevokedByAccountId == actorId);
+        Assert.False(revokeReplay.Changed);
+        Assert.Equal(2, audit.Count());
+        Assert.Equal(new[] {
             WorkspacePermissionAuditAction.Granted,
             WorkspacePermissionAuditAction.Revoked
-        ]);
-        audit.Should().OnlyContain(x => x.GrantId == first.Id && x.ActorAccountId == actorId);
+        }.Order(), audit.Select(x => x.Action).Order());
+        Assert.All(audit, x => {
+            Assert.Equal(first.Id, x.GrantId);
+            Assert.Equal(actorId, x.ActorAccountId);
+        });
     }
 
     [Fact]
@@ -337,11 +340,13 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
             _workspaceId,
             new RevokeWorkspacePermissionRequest(_accountId, WorkspaceDeploymentPermissions.Read, _accountId));
 
-        result.Changed.Should().BeTrue();
-        result.Grants.Should().HaveCount(2).And.OnlyContain(x => x.RevokedAt.HasValue);
-        (await _store.GetPermissionGrantsAsync(_workspaceId, _accountId)).Should().NotContain(x => !x.RevokedAt.HasValue);
-        (await _store.ListPermissionAuditRecordsAsync(_workspaceId, _accountId))
-            .Should().HaveCount(2).And.OnlyContain(x => x.Action == WorkspacePermissionAuditAction.Revoked);
+        Assert.True(result.Changed);
+        Assert.Equal(2, result.Grants.Count());
+        Assert.All(result.Grants, x => Assert.True(x.RevokedAt.HasValue));
+        Assert.DoesNotContain((await _store.GetPermissionGrantsAsync(_workspaceId, _accountId)), x => !x.RevokedAt.HasValue);
+        var audit = await _store.ListPermissionAuditRecordsAsync(_workspaceId, _accountId);
+        Assert.Equal(2, audit.Count());
+        Assert.All(audit, x => Assert.Equal(WorkspacePermissionAuditAction.Revoked, x.Action));
     }
 
     [Fact]
@@ -361,7 +366,7 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
 
         var grant = await _store.GrantPermissionAsync(_workspaceId, new GrantWorkspacePermissionRequest(_accountId, WorkspaceDeploymentPermissions.Read, null));
 
-        grant.Id.Should().Be(firstGrantId);
+        Assert.Equal(firstGrantId, grant.Id);
     }
 
     [Fact]
@@ -400,7 +405,7 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
         _db.ChangeTracker.Clear();
         var cockpit = await _store.GetCockpitAsync(_workspaceId);
 
-        cockpit.Engines.Should().ContainSingle(x =>
+        Assert.Single(cockpit.Engines, x =>
             x.Id == engine.Id.ToString("D")
             && x.Health == DeploymentHealth.Healthy
             && x.Endpoint.Version == "Elsa 4.1.0"
@@ -447,9 +452,9 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
         var cockpit = await _store.GetCockpitAsync(_workspaceId);
 
         var registration = cockpit.Engines.Single(x => x.Id == engine.Id.ToString("D"));
-        registration.Controls.Should().ContainSingle(x => x.Id == "reload-configuration");
-        registration.Capabilities.Should().ContainSingle(x => x.Id == "engine.reload-configuration");
-        registration.LastHeartbeatAt.Should().Be(heartbeatAt);
+        Assert.Single(registration.Controls, x => x.Id == "reload-configuration");
+        Assert.Single(registration.Capabilities, x => x.Id == "engine.reload-configuration");
+        Assert.Equal(heartbeatAt, registration.LastHeartbeatAt);
     }
 
     [Fact]
@@ -473,11 +478,11 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
         var latest = await _store.GetLatestRevisionAsync(_workspaceId, environment.Id);
         var recordCount = await CountStructuredDesiredStateRecordsAsync();
 
-        loadedFirst!.RevisionNumber.Should().Be(1);
-        loadedFirst.DesiredStateJson.Should().Contain("\"version\":1");
-        latest!.Id.Should().Be(second.Id);
-        latest.RevisionNumber.Should().Be(2);
-        recordCount.Should().Be(2);
+        Assert.Equal(1, loadedFirst!.RevisionNumber);
+        Assert.Contains("\"version\":1", loadedFirst.DesiredStateJson);
+        Assert.Equal(second.Id, latest!.Id);
+        Assert.Equal(2, latest.RevisionNumber);
+        Assert.Equal(2, recordCount);
     }
 
     [Fact]
@@ -504,11 +509,11 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
 
         var projection = await LoadArtifactReferenceProjectionAsync();
 
-        projection.ArtifactRecordId.Should().Be(artifactRecordId);
-        projection.ArtifactId.Should().Be("workflow:payment-retry:v1");
-        projection.ArtifactTypeId.Should().Be("elsa.workflow-definition");
-        projection.ArtifactDigestAlgorithm.Should().Be("sha256");
-        projection.ArtifactDigest.Should().Be("digest-v1");
+        Assert.Equal(artifactRecordId, projection.ArtifactRecordId);
+        Assert.Equal("workflow:payment-retry:v1", projection.ArtifactId);
+        Assert.Equal("elsa.workflow-definition", projection.ArtifactTypeId);
+        Assert.Equal("sha256", projection.ArtifactDigestAlgorithm);
+        Assert.Equal("digest-v1", projection.ArtifactDigest);
     }
 
     [Fact]
@@ -540,9 +545,9 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
         _db.ChangeTracker.Clear();
         var loaded = await _store.GetRevisionAsync(_workspaceId, revision.Id);
 
-        loaded.Should().NotBeNull();
-        loaded!.DesiredStateJson.Should().Contain("\"ArtifactReference\"");
-        loaded.DesiredStateJson.Should().Contain("workflow:payment-retry:v1");
+        Assert.NotNull(loaded);
+        Assert.Contains("\"ArtifactReference\"", loaded!.DesiredStateJson);
+        Assert.Contains("workflow:payment-retry:v1", loaded.DesiredStateJson);
     }
 
     [Fact]
@@ -583,15 +588,16 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
         var loaded = await mutationStore.GetRunAsync(_workspaceId, run.Id);
         var history = await mutationStore.GetRunHistoryAsync(_workspaceId, run.Id);
 
-        useAttempt!.Consumed.Should().BeTrue();
-        useAttempt.Confirmation.UsedAt.Should().Be(now.AddSeconds(1));
-        claimed!.Id.Should().Be(run.Id);
-        completed.Status.Should().Be(WorkspaceDeploymentRunStatus.Succeeded);
-        loaded!.Status.Should().Be(WorkspaceDeploymentRunStatus.Succeeded);
-        history.Select(x => x.Status).Should().Equal(
+        Assert.True(useAttempt!.Consumed);
+        Assert.Equal(now.AddSeconds(1), useAttempt.Confirmation.UsedAt);
+        Assert.Equal(run.Id, claimed!.Id);
+        Assert.Equal(WorkspaceDeploymentRunStatus.Succeeded, completed.Status);
+        Assert.Equal(WorkspaceDeploymentRunStatus.Succeeded, loaded!.Status);
+        Assert.Equal(new[] {
             WorkspaceDeploymentRunStatus.Queued,
             WorkspaceDeploymentRunStatus.Running,
-            WorkspaceDeploymentRunStatus.Succeeded);
+            WorkspaceDeploymentRunStatus.Succeeded
+        }, history.Select(x => x.Status));
     }
 
     [Fact]
@@ -630,8 +636,8 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
                 DateTimeOffset.UtcNow,
                 "Reload Configuration executed for claims-prod."));
 
-        execution.Status.Should().Be(RuntimeControlExecutionStatus.Succeeded);
-        (await CountRuntimeControlExecutionsAsync()).Should().Be(1);
+        Assert.Equal(RuntimeControlExecutionStatus.Succeeded, execution.Status);
+        Assert.Equal(1, (await CountRuntimeControlExecutionsAsync()));
     }
 
     [Fact]
@@ -663,11 +669,11 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
 
         var cockpit = await _store.GetCockpitAsync(_workspaceId);
 
-        cockpit.ObservabilityBindings.Should().ContainSingle(x =>
+        Assert.Single(cockpit.ObservabilityBindings, x =>
             x.Kind == ObservabilityBindingKind.Logs
             && x.Provider == "Azure Monitor"
             && x.Sample == "Imported status");
-        cockpit.DriftReport.Should().ContainSingle(x =>
+        Assert.Single(cockpit.DriftReport, x =>
             x.Area == "RuntimeConfiguration"
             && x.Desired == "Concurrency 32"
             && x.Observed == "Concurrency 16"
@@ -693,7 +699,7 @@ public sealed class DeploymentWorkspacePersistenceTests : IDisposable
             WHERE Kind = 'ArtifactReference'
             """;
         await using var reader = await command.ExecuteReaderAsync();
-        (await reader.ReadAsync()).Should().BeTrue();
+        Assert.True((await reader.ReadAsync()));
         return new ArtifactReferenceProjection(
             reader.IsDBNull(0) ? null : Guid.Parse(reader.GetString(0)),
             reader.IsDBNull(1) ? null : reader.GetString(1),

@@ -1,7 +1,6 @@
 using ValenceControl.PackageManifest.Generator.Core.Generation;
 using ValenceControl.PackageManifest.Generator.Core.Validation;
 using ValenceControl.PackageManifest.Generator.Testing;
-using FluentAssertions;
 using System.Text.Json;
 
 namespace ValenceControl.PackageManifest.Generator.Core.Tests;
@@ -13,8 +12,8 @@ public sealed class UnsupportedSettingTypeTests
     {
         var (_, diagnostics) = await GenerateAsync(CShellsFeatureFixtures.DelegateHooksFeatureSource);
 
-        diagnostics.Items.Should().NotContain(x => x.Severity == GenerationDiagnosticSeverity.Warning && x.Code == "EPMGEN_SETTING_CODE_HOOK_IGNORED");
-        diagnostics.Items.Any(x => x.Code == "EPMGEN_SETTING_TYPE_UNSUPPORTED" && x.Target is not null && x.Target.Contains("Action", StringComparison.OrdinalIgnoreCase)).Should().BeFalse();
+        Assert.DoesNotContain(diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Warning && x.Code == "EPMGEN_SETTING_CODE_HOOK_IGNORED");
+        Assert.DoesNotContain(diagnostics.Items, x => x.Code == "EPMGEN_SETTING_TYPE_UNSUPPORTED" && x.Target is not null && x.Target.Contains("Action", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -22,7 +21,7 @@ public sealed class UnsupportedSettingTypeTests
     {
         var (_, diagnostics) = await GenerateAsync(CShellsFeatureFixtures.DelegateHooksFeatureSource, "verbose");
 
-        diagnostics.Items.Should().Contain(x => x.Code == "EPMGEN_SETTING_CODE_HOOK_IGNORED" && x.Severity == GenerationDiagnosticSeverity.Info);
+        Assert.Contains(diagnostics.Items, x => x.Code == "EPMGEN_SETTING_CODE_HOOK_IGNORED" && x.Severity == GenerationDiagnosticSeverity.Info);
     }
 
     [Fact]
@@ -44,15 +43,15 @@ public sealed class DefaultAuthenticationFeature : IShellFeature
 }
 """);
 
-        diagnostics.Items.Should().Contain(x =>
+        Assert.Contains(diagnostics.Items, x =>
             x.Code == "EPMGEN_SETTING_TYPE_UNSUPPORTED" &&
             x.Severity == GenerationDiagnosticSeverity.Info &&
             x.Target == "Sample.Elsa.Package.Identity.ApiKeyProviderType");
-        diagnostics.Items.Should().NotContain(x => x.Severity == GenerationDiagnosticSeverity.Warning || x.Severity == GenerationDiagnosticSeverity.Error);
+        Assert.DoesNotContain(diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Warning || x.Severity == GenerationDiagnosticSeverity.Error);
 
         using var document = JsonDocument.Parse(artifact.ManifestJson);
         var settings = document.RootElement.GetProperty("features")[0].GetProperty("settings").EnumerateArray();
-        settings.Select(x => x.GetProperty("name").GetString()).Should().Equal("ProviderName");
+        Assert.Equal("ProviderName", Assert.Single(settings.Select(x => x.GetProperty("name").GetString())));
     }
 
     [Fact]
@@ -78,19 +77,19 @@ public sealed class ComplexOptions
 }
 """);
 
-        diagnostics.Items.Should().Contain(x => x.Code == "EPMGEN_SETTING_TYPE_UNSUPPORTED" && x.Severity == GenerationDiagnosticSeverity.Info);
-        diagnostics.Items.Should().NotContain(x => x.Severity == GenerationDiagnosticSeverity.Warning || x.Severity == GenerationDiagnosticSeverity.Error);
+        Assert.Contains(diagnostics.Items, x => x.Code == "EPMGEN_SETTING_TYPE_UNSUPPORTED" && x.Severity == GenerationDiagnosticSeverity.Info);
+        Assert.DoesNotContain(diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Warning || x.Severity == GenerationDiagnosticSeverity.Error);
 
         using var document = JsonDocument.Parse(artifact.ManifestJson);
         var settings = document.RootElement.GetProperty("features")[0].GetProperty("settings").EnumerateArray();
-        settings.Select(x => x.GetProperty("name").GetString()).Should().Equal("Name");
+        Assert.Equal("Name", Assert.Single(settings.Select(x => x.GetProperty("name").GetString())));
     }
 
     private static async Task<(GeneratedManifestArtifact Artifact, GenerationDiagnostics Diagnostics)> GenerateAsync(string source, string diagnosticsVerbosity = "concise")
     {
         await using var project = new SampleProjectBuilder().WithSource(source);
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
 
         var diagnostics = new GenerationDiagnostics();
         var artifact = new ManifestGenerator().Generate(

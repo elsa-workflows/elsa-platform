@@ -3,7 +3,6 @@ using System.Text.Json;
 using ValenceControl.Deployment.Abstractions.Artifacts;
 using ValenceControl.Deployment.Artifacts;
 using ValenceControl.Workflows.RuntimeApplier;
-using FluentAssertions;
 
 namespace ValenceControl.Workflows.RuntimeApplier.Tests;
 
@@ -35,13 +34,13 @@ public sealed class WorkflowRuntimeCommandHttpClientTests
 
         var commands = await client.PollAsync(limit: 5);
 
-        handler.RequestUri.Should().Be(new Uri($"https://control.example.test/api/workspaces/{WorkspaceId:D}/deployments/runtime/engines/{EngineId:D}/commands?limit=5"));
-        commands.Should().ContainSingle();
+        Assert.Equal(new Uri($"https://control.example.test/api/workspaces/{WorkspaceId:D}/deployments/runtime/engines/{EngineId:D}/commands?limit=5"), handler.RequestUri);
+        Assert.Single(commands);
         var command = commands.Single();
-        command.Id.Should().Be(CommandId);
-        command.Status.Should().Be(WorkflowRuntimeCommandStatus.Pending);
-        command.Artifact!.ArtifactTypeId.Should().Be(ArtifactTypeIds.ElsaWorkflowDefinition);
-        command.Artifact.ContentDigest.Should().Be(new ArtifactDigest("sha256", new string('a', 64)));
+        Assert.Equal(CommandId, command.Id);
+        Assert.Equal(WorkflowRuntimeCommandStatus.Pending, command.Status);
+        Assert.Equal(ArtifactTypeIds.ElsaWorkflowDefinition, command.Artifact!.ArtifactTypeId);
+        Assert.Equal(new ArtifactDigest("sha256", new string('a', 64)), command.Artifact.ContentDigest);
     }
 
     [Fact]
@@ -52,8 +51,9 @@ public sealed class WorkflowRuntimeCommandHttpClientTests
 
         var act = () => client.PollAsync();
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Control runtime command poll response could not be read.");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+
+        Assert.Equal("Control runtime command poll response could not be read.", exception.Message);
     }
 
     [Fact]
@@ -69,14 +69,14 @@ public sealed class WorkflowRuntimeCommandHttpClientTests
 
         var result = await client.ClaimAsync(CommandId);
 
-        result.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Succeeded);
-        result.Succeeded.Should().BeTrue();
-        result.Claim!.LeaseToken.Should().Be("lease-1");
-        result.Claim.Command.Status.Should().Be(WorkflowRuntimeCommandStatus.Claimed);
+        Assert.Equal(WorkflowRuntimeCommandClientStatus.Succeeded, result.Status);
+        Assert.True(result.Succeeded);
+        Assert.Equal("lease-1", result.Claim!.LeaseToken);
+        Assert.Equal(WorkflowRuntimeCommandStatus.Claimed, result.Claim.Command.Status);
         using var body = JsonDocument.Parse(handler.RequestBody!);
-        body.RootElement.GetProperty("engineId").GetGuid().Should().Be(EngineId);
-        body.RootElement.GetProperty("workerId").GetString().Should().Be("worker-a");
-        body.RootElement.GetProperty("leaseSeconds").GetInt32().Should().Be(120);
+        Assert.Equal(EngineId, body.RootElement.GetProperty("engineId").GetGuid());
+        Assert.Equal("worker-a", body.RootElement.GetProperty("workerId").GetString());
+        Assert.Equal(120, body.RootElement.GetProperty("leaseSeconds").GetInt32());
     }
 
     [Fact]
@@ -87,10 +87,10 @@ public sealed class WorkflowRuntimeCommandHttpClientTests
 
         var result = await client.ClaimAsync(CommandId);
 
-        result.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Conflict);
-        result.Succeeded.Should().BeFalse();
-        result.Message.Should().NotContain("Bearer");
-        result.Message.Should().Contain("[redacted]");
+        Assert.Equal(WorkflowRuntimeCommandClientStatus.Conflict, result.Status);
+        Assert.False(result.Succeeded);
+        Assert.DoesNotContain("Bearer", result.Message);
+        Assert.Contains("[redacted]", result.Message);
     }
 
     [Fact]
@@ -101,8 +101,8 @@ public sealed class WorkflowRuntimeCommandHttpClientTests
 
         var result = await client.ClaimAsync(CommandId);
 
-        result.Status.Should().Be(WorkflowRuntimeCommandClientStatus.RetryableError);
-        result.Message.Should().Be("Control claim response could not be read.");
+        Assert.Equal(WorkflowRuntimeCommandClientStatus.RetryableError, result.Status);
+        Assert.Equal("Control claim response could not be read.", result.Message);
     }
 
     [Fact]
@@ -119,8 +119,8 @@ public sealed class WorkflowRuntimeCommandHttpClientTests
 
         var command = (await client.PollAsync()).Single();
 
-        command.Action.Should().Be(WorkflowRuntimeCommandAction.Unknown);
-        command.Status.Should().Be(WorkflowRuntimeCommandStatus.Unknown);
+        Assert.Equal(WorkflowRuntimeCommandAction.Unknown, command.Action);
+        Assert.Equal(WorkflowRuntimeCommandStatus.Unknown, command.Status);
     }
 
     [Fact]
@@ -139,14 +139,14 @@ public sealed class WorkflowRuntimeCommandHttpClientTests
             "elsa://workflows/payment-retry",
             [new WorkflowArtifactDiagnostic("apply", WorkflowArtifactDiagnosticSeverity.Error, "password leaked")]);
 
-        progress.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Succeeded);
-        progress.Command!.PercentComplete.Should().Be(50);
-        complete.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Succeeded);
-        complete.Command!.RuntimeReference.Should().Be("elsa://workflows/payment-retry");
-        handler.Requests.Should().HaveCount(2);
+        Assert.Equal(WorkflowRuntimeCommandClientStatus.Succeeded, progress.Status);
+        Assert.Equal(50, progress.Command!.PercentComplete);
+        Assert.Equal(WorkflowRuntimeCommandClientStatus.Succeeded, complete.Status);
+        Assert.Equal("elsa://workflows/payment-retry", complete.Command!.RuntimeReference);
+        Assert.Equal(2, handler.Requests.Count());
         using var completeBody = JsonDocument.Parse(handler.Requests[1].Body!);
-        completeBody.RootElement.GetProperty("observedArtifactDigest").GetProperty("value").GetString().Should().Be(new string('b', 64));
-        completeBody.RootElement.GetProperty("diagnostics")[0].GetProperty("message").GetString().Should().Be("[redacted] leaked");
+        Assert.Equal(new string('b', 64), completeBody.RootElement.GetProperty("observedArtifactDigest").GetProperty("value").GetString());
+        Assert.Equal("[redacted] leaked", completeBody.RootElement.GetProperty("diagnostics")[0].GetProperty("message").GetString());
     }
 
     [Theory]
@@ -165,10 +165,10 @@ public sealed class WorkflowRuntimeCommandHttpClientTests
             ? await client.FailAsync(CommandId, "lease-1", diagnostics)
             : await client.RejectAsync(CommandId, "lease-1", diagnostics);
 
-        result.Status.Should().Be(WorkflowRuntimeCommandClientStatus.Succeeded);
-        handler.RequestUri!.AbsolutePath.Should().EndWith($"/{action}");
+        Assert.Equal(WorkflowRuntimeCommandClientStatus.Succeeded, result.Status);
+        Assert.EndsWith($"/{action}", handler.RequestUri!.AbsolutePath);
         using var body = JsonDocument.Parse(handler.RequestBody!);
-        body.RootElement.GetProperty("diagnostics")[0].GetProperty("message").GetString().Should().Be("[redacted] unavailable");
+        Assert.Equal("[redacted] unavailable", body.RootElement.GetProperty("diagnostics")[0].GetProperty("message").GetString());
     }
 
     [Fact]
@@ -179,7 +179,7 @@ public sealed class WorkflowRuntimeCommandHttpClientTests
 
         var result = await client.FailAsync(CommandId, "lease-1", []);
 
-        result.Command!.Diagnostics.Single().Message.Should().Be("[redacted] [redacted] returned");
+        Assert.Equal("[redacted] [redacted] returned", result.Command!.Diagnostics.Single().Message);
     }
 
     private static string CommandJson(

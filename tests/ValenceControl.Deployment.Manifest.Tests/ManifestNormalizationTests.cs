@@ -1,4 +1,3 @@
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Manifest.Tests;
 
@@ -14,14 +13,17 @@ public class ManifestNormalizationTests
 
         var normalized = _normalizer.Normalize(manifest);
 
-        normalized.Diagnostics.Should().BeEmpty();
-        normalized.Resources.Select(x => x.Id.Type).Should().Equal(
-            DeploymentManifestConstants.WorkflowDefinitionResourceType,
-            DeploymentManifestConstants.VariableResourceType,
-            DeploymentManifestConstants.FeatureResourceType,
-            DeploymentManifestConstants.PackageResourceType,
-            DeploymentManifestConstants.RecipeResourceType);
-        normalized.Resources.Should().OnlyContain(x => x.DesiredStateHash != null);
+        Assert.Empty(normalized.Diagnostics);
+        Assert.Equal(
+            [
+                DeploymentManifestConstants.WorkflowDefinitionResourceType,
+                DeploymentManifestConstants.VariableResourceType,
+                DeploymentManifestConstants.FeatureResourceType,
+                DeploymentManifestConstants.PackageResourceType,
+                DeploymentManifestConstants.RecipeResourceType
+            ],
+            normalized.Resources.Select(x => x.Id.Type));
+        Assert.All(normalized.Resources, x => Assert.NotNull(x.DesiredStateHash));
     }
 
     [Theory]
@@ -43,9 +45,9 @@ public class ManifestNormalizationTests
 
         var normalize = () => _normalizer.Normalize(manifest);
 
-        var normalized = normalize.Should().NotThrow().Subject;
-        normalized.Diagnostics.Should().BeEmpty();
-        normalized.Resources.Should().BeEmpty();
+        var normalized = normalize();
+        Assert.Empty(normalized.Diagnostics);
+        Assert.Empty(normalized.Resources);
     }
 
     [Fact]
@@ -57,7 +59,7 @@ public class ManifestNormalizationTests
         var yaml = _normalizer.Normalize(yamlManifest);
         var json = _normalizer.Normalize(jsonManifest);
 
-        yaml.Resources.Select(x => x.DesiredStateHash).Should().Equal(json.Resources.Select(x => x.DesiredStateHash));
+        Assert.Equal(json.Resources.Select(x => x.DesiredStateHash), yaml.Resources.Select(x => x.DesiredStateHash));
     }
 
     [Fact]
@@ -97,11 +99,11 @@ public class ManifestNormalizationTests
         var first = _normalizer.Normalize(firstManifest);
         var second = _normalizer.Normalize(secondManifest);
 
-        first.Diagnostics.Should().BeEmpty();
-        second.Diagnostics.Should().BeEmpty();
-        var firstResource = first.Resources.Should().ContainSingle().Which;
-        var secondResource = second.Resources.Should().ContainSingle().Which;
-        firstResource.DesiredStateHash.Should().Be(secondResource.DesiredStateHash);
+        Assert.Empty(first.Diagnostics);
+        Assert.Empty(second.Diagnostics);
+        var firstResource = Assert.Single(first.Resources);
+        var secondResource = Assert.Single(second.Resources);
+        Assert.Equal(secondResource.DesiredStateHash, firstResource.DesiredStateHash);
     }
 
     [Fact]
@@ -133,10 +135,9 @@ public class ManifestNormalizationTests
         var yaml = _normalizer.Normalize(yamlManifest);
         var json = _normalizer.Normalize(jsonManifest);
 
-        yaml.Diagnostics.Should().BeEmpty();
-        json.Diagnostics.Should().BeEmpty();
-        yaml.Resources.Should().ContainSingle().Which.DesiredStateHash
-            .Should().Be(json.Resources.Should().ContainSingle().Which.DesiredStateHash);
+        Assert.Empty(yaml.Diagnostics);
+        Assert.Empty(json.Diagnostics);
+        Assert.Equal(Assert.Single(json.Resources).DesiredStateHash, Assert.Single(yaml.Resources).DesiredStateHash);
     }
 
     [Fact]
@@ -168,10 +169,9 @@ public class ManifestNormalizationTests
         var yaml = _normalizer.Normalize(yamlManifest);
         var json = _normalizer.Normalize(jsonManifest);
 
-        yaml.Diagnostics.Should().BeEmpty();
-        json.Diagnostics.Should().BeEmpty();
-        yaml.Resources.Should().ContainSingle().Which.DesiredStateHash
-            .Should().Be(json.Resources.Should().ContainSingle().Which.DesiredStateHash);
+        Assert.Empty(yaml.Diagnostics);
+        Assert.Empty(json.Diagnostics);
+        Assert.Equal(Assert.Single(json.Resources).DesiredStateHash, Assert.Single(yaml.Resources).DesiredStateHash);
     }
 
     [Fact]
@@ -203,10 +203,9 @@ public class ManifestNormalizationTests
         var yaml = _normalizer.Normalize(yamlManifest);
         var json = _normalizer.Normalize(jsonManifest);
 
-        yaml.Diagnostics.Should().BeEmpty();
-        json.Diagnostics.Should().BeEmpty();
-        yaml.Resources.Should().ContainSingle().Which.DesiredStateHash
-            .Should().Be(json.Resources.Should().ContainSingle().Which.DesiredStateHash);
+        Assert.Empty(yaml.Diagnostics);
+        Assert.Empty(json.Diagnostics);
+        Assert.Equal(Assert.Single(json.Resources).DesiredStateHash, Assert.Single(yaml.Resources).DesiredStateHash);
     }
 
     [Fact]
@@ -236,10 +235,9 @@ public class ManifestNormalizationTests
         var numeric = _normalizer.Normalize(numericManifest);
         var text = _normalizer.Normalize(stringManifest);
 
-        numeric.Diagnostics.Should().BeEmpty();
-        text.Diagnostics.Should().BeEmpty();
-        numeric.Resources.Should().ContainSingle().Which.DesiredStateHash
-            .Should().NotBe(text.Resources.Should().ContainSingle().Which.DesiredStateHash);
+        Assert.Empty(numeric.Diagnostics);
+        Assert.Empty(text.Diagnostics);
+        Assert.NotEqual(Assert.Single(text.Resources).DesiredStateHash, Assert.Single(numeric.Resources).DesiredStateHash);
     }
 
     [Theory]
@@ -289,8 +287,8 @@ public class ManifestNormalizationTests
 
         var normalize = () => _normalizer.Normalize(manifest);
 
-        var normalized = normalize.Should().NotThrow().Subject;
-        normalized.Diagnostics.Should().BeEmpty();
-        normalized.Resources.Should().ContainSingle();
+        var normalized = normalize();
+        Assert.Empty(normalized.Diagnostics);
+        Assert.Single(normalized.Resources);
     }
 }

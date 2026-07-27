@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using ValenceControl.Api.Authentication;
 using ValenceControl.Api.Workspace;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -20,10 +19,10 @@ public sealed class ControlIdentityTests
 
         var response = await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
 
-        response.Should().NotBeNull();
-        response!.Account.Email.Should().Be("ada@example.test");
-        response.Account.DisplayName.Should().Be("Ada Lovelace");
-        response.Workspaces.Should().ContainSingle();
+        Assert.NotNull(response);
+        Assert.Equal("ada@example.test", response!.Account.Email);
+        Assert.Equal("Ada Lovelace", response.Account.DisplayName);
+        Assert.Single(response.Workspaces);
     }
 
     [Fact]
@@ -35,7 +34,7 @@ public sealed class ControlIdentityTests
 
         var response = await client.GetAsync("/api/me/workspaces");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -50,7 +49,7 @@ public sealed class ControlIdentityTests
 
         var response = await client.GetAsync("/api/me/workspaces");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -66,7 +65,7 @@ public sealed class ControlIdentityTests
 
         var response = await client.GetAsync("/api/me/workspaces");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -78,7 +77,7 @@ public sealed class ControlIdentityTests
 
         var response = await client.GetAsync("/api/me/workspaces");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -93,7 +92,7 @@ public sealed class ControlIdentityTests
 
         var response = await client.GetAsync("/api/me/workspaces");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -108,10 +107,10 @@ public sealed class ControlIdentityTests
 
         var response = await client.GetAsync("/api/me/workspaces");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         await using var scope = app.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-        dbContext.Accounts.Should().BeEmpty();
+        Assert.Empty(dbContext.Accounts);
     }
 
     [Fact]
@@ -123,7 +122,7 @@ public sealed class ControlIdentityTests
 
         var response = await client.GetAsync("/api/me/workspaces");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -135,7 +134,7 @@ public sealed class ControlIdentityTests
 
         var response = await client.GetAsync("/api/me/workspaces");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -159,9 +158,9 @@ public sealed class ControlIdentityTests
 
         var response = await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
 
-        response.Should().NotBeNull();
-        response!.Account.DisplayName.Should().Be("Ada");
-        response.Account.Email.Should().Be("ada@contoso.test");
+        Assert.NotNull(response);
+        Assert.Equal("Ada", response!.Account.DisplayName);
+        Assert.Equal("ada@contoso.test", response.Account.Email);
     }
 
     [Fact]
@@ -175,8 +174,8 @@ public sealed class ControlIdentityTests
 
         var response = await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
 
-        response.Should().NotBeNull();
-        response!.Workspaces.Should().ContainSingle(x => x.Role == ValenceControl.PackageCatalog.Core.Accounts.WorkspaceRole.Owner);
+        Assert.NotNull(response);
+        Assert.Single(response!.Workspaces, x => x.Role == ValenceControl.PackageCatalog.Core.Accounts.WorkspaceRole.Owner);
     }
 
     [Fact]
@@ -196,10 +195,10 @@ public sealed class ControlIdentityTests
         var first = await firstClient.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
         var second = await secondClient.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
 
-        second.Should().NotBeNull();
-        second!.Account.Id.Should().Be(first!.Account.Id);
-        second.Account.DisplayName.Should().Be("Ada Byron");
-        second.Account.Email.Should().Be("ada.byron@example.test");
+        Assert.NotNull(second);
+        Assert.Equal(first!.Account.Id, second!.Account.Id);
+        Assert.Equal("Ada Byron", second.Account.DisplayName);
+        Assert.Equal("ada.byron@example.test", second.Account.Email);
     }
 
     [Fact]
@@ -211,12 +210,12 @@ public sealed class ControlIdentityTests
 
         var response = await client.GetAsync($"/api/workspaces/{Guid.NewGuid()}/sources");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         await using var scope = app.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-        dbContext.Accounts.Should().BeEmpty();
-        dbContext.Workspaces.Should().BeEmpty();
-        dbContext.ExternalIdentities.Should().BeEmpty();
+        Assert.Empty(dbContext.Accounts);
+        Assert.Empty(dbContext.Workspaces);
+        Assert.Empty(dbContext.ExternalIdentities);
     }
 
     [Fact]
@@ -244,13 +243,13 @@ public sealed class ControlIdentityTests
 
         var response = await deniedClient.GetAsync($"/api/workspaces/{workspaceId}/sources");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         await using var scope = app.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         var account = await dbContext.Accounts
             .AsNoTracking()
             .SingleAsync(x => x.ExternalIdentities.Any(identity => identity.Subject == "other-user"));
-        account.DisplayName.Should().Be("Other User");
-        account.Email.Should().Be("other@example.test");
+        Assert.Equal("Other User", account.DisplayName);
+        Assert.Equal("other@example.test", account.Email);
     }
 }

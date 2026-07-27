@@ -1,7 +1,6 @@
 using System.Net;
 using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ValenceControl.Api.Tests;
@@ -24,10 +23,10 @@ public sealed class WorkspaceDeploymentIsolationTests
         var workspaceACockpit = await workspaceAResponse.Content.ReadControlJsonAsync<DeploymentCockpit>();
         var workspaceBFromA = await workspaceAClient.GetAsync($"/api/workspaces/{workspaceBId}/deployments/cockpit");
 
-        workspaceAResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        workspaceACockpit!.Applications.Should().ContainSingle(x => x.Name == "Workspace A App");
-        workspaceACockpit.Applications.Should().NotContain(x => x.Name == "Workspace B App");
-        workspaceBFromA.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.OK, workspaceAResponse.StatusCode);
+        Assert.Single(workspaceACockpit!.Applications, x => x.Name == "Workspace A App");
+        Assert.DoesNotContain(workspaceACockpit.Applications, x => x.Name == "Workspace B App");
+        Assert.Equal(HttpStatusCode.Forbidden, workspaceBFromA.StatusCode);
     }
 
     private static async Task SeedApplicationAsync(ControlApiTestApplication app, Guid workspaceId, string name)

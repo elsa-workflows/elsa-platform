@@ -4,7 +4,6 @@ using ValenceControl.PackageManifest.Generator.Core.Generation;
 using ValenceControl.PackageManifest.Generator.Core.Overrides;
 using ValenceControl.PackageManifest.Generator.Core.Validation;
 using ValenceControl.PackageManifest.Generator.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.PackageManifest.Generator.Core.Tests;
 
@@ -62,34 +61,35 @@ public sealed class EntityFrameworkCoreFeature : IShellFeature
 """);
 
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
 
         var result = Generate(project);
-        result.diagnostics.Items.Where(x => x.Severity == GenerationDiagnosticSeverity.Error).Should().BeEmpty();
+        Assert.DoesNotContain(result.diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Error);
 
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
         var feature = document.RootElement.GetProperty("features")[0];
-        feature.GetProperty("id").GetString().Should().Be("Sample.Elsa.Package.EntityFrameworkCore");
-        feature.GetProperty("displayName").GetString().Should().Be("Entity Framework Core Persistence");
-        feature.GetProperty("description").GetString().Should().Be("Adds EF Core persistence.");
-        feature.GetProperty("category").GetString().Should().Be("Persistence");
-        feature.GetProperty("categories").EnumerateArray().Select(x => x.GetString()).Should().Equal("Persistence", "Data");
+        Assert.Equal("Sample.Elsa.Package.EntityFrameworkCore", feature.GetProperty("id").GetString());
+        Assert.Equal("Entity Framework Core Persistence", feature.GetProperty("displayName").GetString());
+        Assert.Equal("Adds EF Core persistence.", feature.GetProperty("description").GetString());
+        Assert.Equal("Persistence", feature.GetProperty("category").GetString());
+        Assert.Equal(["Persistence", "Data"], feature.GetProperty("categories").EnumerateArray().Select(x => x.GetString()));
 
         var settings = feature.GetProperty("settings").EnumerateArray().ToDictionary(x => x.GetProperty("name").GetString()!);
-        settings.Keys.Should().BeEquivalentTo("BatchSize", "Code", "OptionalBatchSize", "Provider", "Ratio", "RequiredName", "SupportedItems", "SupportedMap");
-        settings["Provider"].GetProperty("jsonType").GetString().Should().Be("string");
-        settings["Provider"].GetProperty("defaultValue").GetString().Should().Be("Sqlite");
-        settings["BatchSize"].GetProperty("validation").GetProperty("minimum").GetDecimal().Should().Be(1);
-        settings["BatchSize"].GetProperty("validation").GetProperty("maximum").GetDecimal().Should().Be(100);
-        settings["Code"].GetProperty("validation").GetProperty("minLength").GetInt32().Should().Be(5);
-        settings["Code"].GetProperty("validation").GetProperty("maxLength").GetInt32().Should().Be(100);
-        settings["RequiredName"].GetProperty("required").GetBoolean().Should().BeTrue();
-        settings["SupportedItems"].GetProperty("jsonType").GetString().Should().Be("array");
-        settings["SupportedMap"].GetProperty("jsonType").GetString().Should().Be("object");
-        settings["Ratio"].GetProperty("defaultValue").GetDecimal().Should().Be(3.14m);
-        settings["OptionalBatchSize"].GetProperty("jsonType").GetString().Should().Be("integer");
-        settings["OptionalBatchSize"].GetProperty("extensions").GetProperty("nullable").GetBoolean().Should().BeTrue();
-        settings["OptionalBatchSize"].GetProperty("defaultValue").GetInt32().Should().Be(42);
+        Assert.Equal(new[] { "BatchSize", "Code", "OptionalBatchSize", "Provider", "Ratio", "RequiredName", "SupportedItems", "SupportedMap" }.Order(), settings.Keys.Order());
+
+        Assert.Equal("string", settings["Provider"].GetProperty("jsonType").GetString());
+        Assert.Equal("Sqlite", settings["Provider"].GetProperty("defaultValue").GetString());
+        Assert.Equal(1, settings["BatchSize"].GetProperty("validation").GetProperty("minimum").GetDecimal());
+        Assert.Equal(100, settings["BatchSize"].GetProperty("validation").GetProperty("maximum").GetDecimal());
+        Assert.Equal(5, settings["Code"].GetProperty("validation").GetProperty("minLength").GetInt32());
+        Assert.Equal(100, settings["Code"].GetProperty("validation").GetProperty("maxLength").GetInt32());
+        Assert.True(settings["RequiredName"].GetProperty("required").GetBoolean());
+        Assert.Equal("array", settings["SupportedItems"].GetProperty("jsonType").GetString());
+        Assert.Equal("object", settings["SupportedMap"].GetProperty("jsonType").GetString());
+        Assert.Equal(3.14m, settings["Ratio"].GetProperty("defaultValue").GetDecimal());
+        Assert.Equal("integer", settings["OptionalBatchSize"].GetProperty("jsonType").GetString());
+        Assert.True(settings["OptionalBatchSize"].GetProperty("extensions").GetProperty("nullable").GetBoolean());
+        Assert.Equal(42, settings["OptionalBatchSize"].GetProperty("defaultValue").GetInt32());
     }
 
     [Fact]
@@ -115,16 +115,16 @@ public sealed class ComplexOptions
 """);
 
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
 
         var result = Generate(project);
 
-        result.diagnostics.Items.Should().Contain(x => x.Code == "EPMGEN_SETTING_TYPE_UNSUPPORTED" && x.Severity == GenerationDiagnosticSeverity.Info);
-        result.diagnostics.Items.Should().NotContain(x => x.Severity == GenerationDiagnosticSeverity.Warning || x.Severity == GenerationDiagnosticSeverity.Error);
+        Assert.Contains(result.diagnostics.Items, x => x.Code == "EPMGEN_SETTING_TYPE_UNSUPPORTED" && x.Severity == GenerationDiagnosticSeverity.Info);
+        Assert.DoesNotContain(result.diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Warning || x.Severity == GenerationDiagnosticSeverity.Error);
 
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
         var settings = document.RootElement.GetProperty("features")[0].GetProperty("settings").EnumerateArray();
-        settings.Should().BeEmpty();
+        Assert.Empty(settings);
     }
 
     [Fact]
@@ -143,12 +143,12 @@ public sealed class CSharpFeature : IShellFeature
 """);
 
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
 
         var result = Generate(project, packageId: "Elsa.Expressions.CSharp", title: "Elsa.Expressions.CSharp");
 
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
-        document.RootElement.GetProperty("displayName").GetString().Should().Be("Expressions.CSharp");
+        Assert.Equal("Expressions.CSharp", document.RootElement.GetProperty("displayName").GetString());
     }
 
     [Fact]
@@ -175,28 +175,27 @@ public enum StorageProvider
 """);
 
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
 
         var result = Generate(project);
-        result.diagnostics.Items.Where(x => x.Severity == GenerationDiagnosticSeverity.Error).Should().BeEmpty();
+        Assert.DoesNotContain(result.diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Error);
 
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
         var setting = document.RootElement
             .GetProperty("features")[0]
             .GetProperty("settings")[0];
 
-        setting.GetProperty("validation").GetProperty("enum").EnumerateArray().Select(x => x.GetString()).Should()
-            .Equal("Postgres", "SqlServer", "Sqlite");
-        setting.GetProperty("extensions").TryGetProperty("enumValues", out _).Should().BeFalse();
+        Assert.Equal(new[] { "Postgres", "SqlServer", "Sqlite" }, setting.GetProperty("validation").GetProperty("enum").EnumerateArray().Select(x => x.GetString()));
+        Assert.False(setting.GetProperty("extensions").TryGetProperty("enumValues", out _));
 
         var ui = setting.GetProperty("ui");
-        ui.GetProperty("hint").GetString().Should().Be("select-list");
+        Assert.Equal("select-list", ui.GetProperty("hint").GetString());
         var options = ui.GetProperty("options");
-        options.GetProperty("source").GetString().Should().Be("static");
-        options.GetProperty("items").EnumerateArray()
-            .Select(x => (Value: x.GetProperty("value").GetString(), Label: x.GetProperty("label").GetString()))
-            .Should()
-            .Equal(("Postgres", "Postgres"), ("SqlServer", "Sql Server"), ("Sqlite", "Sqlite"));
+        Assert.Equal("static", options.GetProperty("source").GetString());
+        Assert.Equal(
+            new[] { ("Postgres", "Postgres"), ("SqlServer", "Sql Server"), ("Sqlite", "Sqlite") },
+            options.GetProperty("items").EnumerateArray()
+                .Select(x => (x.GetProperty("value").GetString()!, x.GetProperty("label").GetString()!)));
     }
 
     [Fact]
@@ -225,21 +224,20 @@ public enum StorageProvider
 """);
 
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
 
         var result = Generate(project);
-        result.diagnostics.Items.Where(x => x.Severity == GenerationDiagnosticSeverity.Error).Should().BeEmpty();
+        Assert.DoesNotContain(result.diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Error);
 
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
         var setting = document.RootElement
             .GetProperty("features")[0]
             .GetProperty("settings")[0];
 
-        setting.GetProperty("validation").GetProperty("enum").EnumerateArray().Select(x => x.GetString()).Should()
-            .Equal("Postgres", "SqlServer", "Sqlite");
+        Assert.Equal(new[] { "Postgres", "SqlServer", "Sqlite" }, setting.GetProperty("validation").GetProperty("enum").EnumerateArray().Select(x => x.GetString()));
         var ui = setting.GetProperty("ui");
-        ui.GetProperty("hint").GetString().Should().Be("text");
-        ui.TryGetProperty("options", out _).Should().BeFalse();
+        Assert.Equal("text", ui.GetProperty("hint").GetString());
+        Assert.False(ui.TryGetProperty("options", out _));
     }
 
     [Fact]
@@ -270,10 +268,10 @@ public sealed class SearchFeature : IShellFeature
 """);
 
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
 
         var result = Generate(project);
-        result.diagnostics.Items.Where(x => x.Severity == GenerationDiagnosticSeverity.Error).Should().BeEmpty();
+        Assert.DoesNotContain(result.diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Error);
 
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
         var settings = document.RootElement.GetProperty("features")[0]
@@ -282,25 +280,23 @@ public sealed class SearchFeature : IShellFeature
             .ToDictionary(x => x.GetProperty("name").GetString()!);
 
         var modeOptions = settings["Mode"].GetProperty("ui").GetProperty("options");
-        modeOptions.GetProperty("source").GetString().Should().Be("static");
-        modeOptions.GetProperty("items").EnumerateArray()
-            .Select(x => x.GetProperty("value").GetString())
-            .Should()
-            .Equal("advanced", "simple");
+        Assert.Equal("static", modeOptions.GetProperty("source").GetString());
+        Assert.Equal(new[] { "advanced", "simple" }, modeOptions.GetProperty("items").EnumerateArray()
+            .Select(x => x.GetProperty("value").GetString()));
 
         var providerOptions = settings["PackageSource"].GetProperty("ui").GetProperty("options");
-        providerOptions.GetProperty("source").GetString().Should().Be("provider");
-        providerOptions.GetProperty("provider").GetString().Should().Be("valence.control.catalog.package-source-options");
-        providerOptions.GetProperty("dependsOn").EnumerateArray().Select(x => x.GetString()).Should().Equal("TenantId", "WorkspaceId");
-        providerOptions.GetProperty("parameters").GetProperty("kind").GetString().Should().Be("nuget-source");
+        Assert.Equal("provider", providerOptions.GetProperty("source").GetString());
+        Assert.Equal("valence.control.catalog.package-source-options", providerOptions.GetProperty("provider").GetString());
+        Assert.Equal(["TenantId", "WorkspaceId"], providerOptions.GetProperty("dependsOn").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal("nuget-source", providerOptions.GetProperty("parameters").GetProperty("kind").GetString());
 
         var inferredProviderUI = settings["PackageType"].GetProperty("ui");
-        inferredProviderUI.GetProperty("hint").GetString().Should().Be("select-list");
+        Assert.Equal("select-list", inferredProviderUI.GetProperty("hint").GetString());
         var inferredProviderOptions = inferredProviderUI.GetProperty("options");
-        inferredProviderOptions.GetProperty("source").GetString().Should().Be("provider");
-        inferredProviderOptions.GetProperty("provider").GetString().Should().Be("valence.control.catalog.package-type-options");
-        inferredProviderOptions.TryGetProperty("dependsOn", out _).Should().BeFalse();
-        inferredProviderOptions.TryGetProperty("parameters", out _).Should().BeFalse();
+        Assert.Equal("provider", inferredProviderOptions.GetProperty("source").GetString());
+        Assert.Equal("valence.control.catalog.package-type-options", inferredProviderOptions.GetProperty("provider").GetString());
+        Assert.False(inferredProviderOptions.TryGetProperty("dependsOn", out _));
+        Assert.False(inferredProviderOptions.TryGetProperty("parameters", out _));
     }
 
     [Fact]
@@ -322,22 +318,22 @@ public sealed class SearchFeature : IShellFeature
 """);
 
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
 
         var result = Generate(project);
-        result.diagnostics.Items.Where(x => x.Severity == GenerationDiagnosticSeverity.Error).Should().BeEmpty();
+        Assert.DoesNotContain(result.diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Error);
 
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
         var ui = document.RootElement.GetProperty("features")[0]
             .GetProperty("settings")[0]
             .GetProperty("ui");
 
-        ui.GetProperty("hint").GetString().Should().Be("select-list");
+        Assert.Equal("select-list", ui.GetProperty("hint").GetString());
         var options = ui.GetProperty("options");
-        options.GetProperty("source").GetString().Should().Be("provider");
-        options.GetProperty("provider").GetString().Should().Be("valence.control.catalog.package-source-options");
-        options.TryGetProperty("dependsOn", out _).Should().BeFalse();
-        options.TryGetProperty("parameters", out _).Should().BeFalse();
+        Assert.Equal("provider", options.GetProperty("source").GetString());
+        Assert.Equal("valence.control.catalog.package-source-options", options.GetProperty("provider").GetString());
+        Assert.False(options.TryGetProperty("dependsOn", out _));
+        Assert.False(options.TryGetProperty("parameters", out _));
     }
 
     [Fact]
@@ -357,7 +353,7 @@ public sealed class SearchFeature : IShellFeature
 """);
 
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
         var overridePath = Path.Combine(project.ProjectDirectory, "elsa-package.overrides.json");
         await File.WriteAllTextAsync(overridePath, """
 {
@@ -384,7 +380,7 @@ public sealed class SearchFeature : IShellFeature
 """);
 
         var result = Generate(project, overridePath);
-        result.diagnostics.Items.Where(x => x.Severity == GenerationDiagnosticSeverity.Error).Should().BeEmpty();
+        Assert.DoesNotContain(result.diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Error);
 
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
         var ui = document.RootElement
@@ -392,12 +388,12 @@ public sealed class SearchFeature : IShellFeature
             .GetProperty("settings")[0]
             .GetProperty("ui");
 
-        ui.GetProperty("hint").GetString().Should().Be("select-list");
+        Assert.Equal("select-list", ui.GetProperty("hint").GetString());
         var options = ui.GetProperty("options");
-        options.GetProperty("source").GetString().Should().Be("provider");
-        options.GetProperty("provider").GetString().Should().Be("valence.control.catalog.package-source-options");
-        options.GetProperty("dependsOn").EnumerateArray().Select(x => x.GetString()).Should().Equal("TenantId");
-        options.GetProperty("parameters").GetProperty("kind").GetString().Should().Be("nuget-source");
+        Assert.Equal("provider", options.GetProperty("source").GetString());
+        Assert.Equal("valence.control.catalog.package-source-options", options.GetProperty("provider").GetString());
+        Assert.Equal("TenantId", Assert.Single(options.GetProperty("dependsOn").EnumerateArray().Select(x => x.GetString())));
+        Assert.Equal("nuget-source", options.GetProperty("parameters").GetProperty("kind").GetString());
     }
 
     [Fact]
@@ -420,7 +416,7 @@ public sealed class SearchFeature : IShellFeature
 """);
 
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
         var overridePath = Path.Combine(project.ProjectDirectory, "elsa-package.overrides.json");
         await File.WriteAllTextAsync(overridePath, """
 {
@@ -445,7 +441,7 @@ public sealed class SearchFeature : IShellFeature
 """);
 
         var result = Generate(project, overridePath);
-        result.diagnostics.Items.Where(x => x.Severity == GenerationDiagnosticSeverity.Error).Should().BeEmpty();
+        Assert.DoesNotContain(result.diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Error);
 
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
         var options = document.RootElement
@@ -454,11 +450,9 @@ public sealed class SearchFeature : IShellFeature
             .GetProperty("ui")
             .GetProperty("options");
 
-        options.GetProperty("source").GetString().Should().Be("static");
-        options.GetProperty("items").EnumerateArray()
-            .Select(x => x.GetProperty("value").GetString())
-            .Should()
-            .Equal("advanced");
+        Assert.Equal("static", options.GetProperty("source").GetString());
+        Assert.Equal(new[] { "advanced" }, options.GetProperty("items").EnumerateArray()
+            .Select(x => x.GetProperty("value").GetString()));
     }
 
     [Fact]
@@ -485,7 +479,7 @@ public enum StorageProvider
 """);
 
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
         var overridePath = Path.Combine(project.ProjectDirectory, "elsa-package.overrides.json");
         await File.WriteAllTextAsync(overridePath, """
 {
@@ -504,18 +498,17 @@ public enum StorageProvider
 """);
 
         var result = Generate(project, overridePath);
-        result.diagnostics.Items.Where(x => x.Severity == GenerationDiagnosticSeverity.Error).Should().BeEmpty();
+        Assert.DoesNotContain(result.diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Error);
 
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
         var setting = document.RootElement
             .GetProperty("features")[0]
             .GetProperty("settings")[0];
 
-        setting.GetProperty("validation").GetProperty("enum").EnumerateArray().Select(x => x.GetString()).Should()
-            .Equal("Postgres", "SqlServer", "Sqlite");
+        Assert.Equal(new[] { "Postgres", "SqlServer", "Sqlite" }, setting.GetProperty("validation").GetProperty("enum").EnumerateArray().Select(x => x.GetString()));
         var ui = setting.GetProperty("ui");
-        ui.GetProperty("hint").GetString().Should().Be("text");
-        ui.TryGetProperty("options", out _).Should().BeFalse();
+        Assert.Equal("text", ui.GetProperty("hint").GetString());
+        Assert.False(ui.TryGetProperty("options", out _));
     }
 
     [Fact]
@@ -535,7 +528,7 @@ public sealed class RabbitMqFeature : IShellFeature
 """);
 
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
         var overridePath = Path.Combine(project.ProjectDirectory, "elsa-package.overrides.json");
         await File.WriteAllTextAsync(overridePath, """
 {
@@ -557,17 +550,18 @@ public sealed class RabbitMqFeature : IShellFeature
 """);
 
         var result = Generate(project, overridePath);
-        result.diagnostics.Items.Where(x => x.Severity == GenerationDiagnosticSeverity.Error).Should().BeEmpty();
+        Assert.DoesNotContain(result.diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Error);
 
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
         var requirement = document.RootElement
             .GetProperty("features")[0]
             .GetProperty("infrastructure")[0];
 
-        requirement.GetProperty("id").GetString().Should().Be("message-broker");
-        requirement.GetProperty("kind").GetString().Should().Be("message-broker");
-        requirement.GetProperty("providers").EnumerateArray().Select(x => x.GetString()).Should().BeEquivalentTo("rabbitmq", "azure-service-bus");
-        requirement.GetProperty("configurationKeys").EnumerateArray().Select(x => x.GetString()).Should().Contain("RabbitMq:ConnectionString");
+        Assert.Equal("message-broker", requirement.GetProperty("id").GetString());
+        Assert.Equal("message-broker", requirement.GetProperty("kind").GetString());
+        Assert.Equal(new[] { "rabbitmq", "azure-service-bus" }.Order(), requirement.GetProperty("providers").EnumerateArray().Select(x => x.GetString()).Order());
+
+        Assert.Contains("RabbitMq:ConnectionString", requirement.GetProperty("configurationKeys").EnumerateArray().Select(x => x.GetString()));
     }
 
     [Fact]
@@ -596,24 +590,26 @@ public sealed class PostgresFeature : IShellFeature
 """);
 
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
 
         var result = Generate(project);
-        result.diagnostics.Items.Where(x => x.Severity == GenerationDiagnosticSeverity.Error).Should().BeEmpty();
+        Assert.DoesNotContain(result.diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Error);
 
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
         var requirement = document.RootElement
             .GetProperty("features")[0]
             .GetProperty("infrastructure")[0];
 
-        requirement.GetProperty("id").GetString().Should().Be("database");
-        requirement.GetProperty("kind").GetString().Should().Be("database");
-        requirement.GetProperty("optional").GetBoolean().Should().BeTrue();
-        requirement.GetProperty("reason").GetString().Should().Be("Stores workflow instances.");
-        requirement.GetProperty("capabilities").EnumerateArray().Select(x => x.GetString()).Should().BeEquivalentTo("transactions", "json");
-        requirement.GetProperty("providers").EnumerateArray().Select(x => x.GetString()).Should().BeEquivalentTo("postgres", "sql-server");
-        requirement.GetProperty("configurationKeys").EnumerateArray().Select(x => x.GetString()).Should().Contain("Postgres:ConnectionString");
-        requirement.GetProperty("extensions").GetProperty("tier").GetString().Should().Be("stateful");
+        Assert.Equal("database", requirement.GetProperty("id").GetString());
+        Assert.Equal("database", requirement.GetProperty("kind").GetString());
+        Assert.True(requirement.GetProperty("optional").GetBoolean());
+        Assert.Equal("Stores workflow instances.", requirement.GetProperty("reason").GetString());
+        Assert.Equal(new[] { "transactions", "json" }.Order(), requirement.GetProperty("capabilities").EnumerateArray().Select(x => x.GetString()).Order());
+
+        Assert.Equal(new[] { "postgres", "sql-server" }.Order(), requirement.GetProperty("providers").EnumerateArray().Select(x => x.GetString()).Order());
+
+        Assert.Contains("Postgres:ConnectionString", requirement.GetProperty("configurationKeys").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal("stateful", requirement.GetProperty("extensions").GetProperty("tier").GetString());
     }
 
     [Fact]
@@ -641,7 +637,7 @@ public sealed class MessagingFeature : IShellFeature
 """);
 
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
         var overridePath = Path.Combine(project.ProjectDirectory, "elsa-package.overrides.json");
         await File.WriteAllTextAsync(overridePath, """
 {
@@ -669,7 +665,7 @@ public sealed class MessagingFeature : IShellFeature
 """);
 
         var result = Generate(project, overridePath);
-        result.diagnostics.Items.Where(x => x.Severity == GenerationDiagnosticSeverity.Error).Should().BeEmpty();
+        Assert.DoesNotContain(result.diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Error);
 
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
         var requirements = document.RootElement
@@ -678,15 +674,17 @@ public sealed class MessagingFeature : IShellFeature
             .EnumerateArray()
             .ToDictionary(x => x.GetProperty("id").GetString()!);
 
-        requirements.Keys.Should().BeEquivalentTo("broker", "cache");
-        requirements["broker"].GetProperty("reason").GetString().Should().Be("Override source reason.");
-        requirements["broker"].GetProperty("capabilities").EnumerateArray().Select(x => x.GetString()).Should().Contain("queues");
-        requirements["broker"].GetProperty("providers").EnumerateArray().Select(x => x.GetString()).Should().BeEquivalentTo("rabbitmq", "azure-service-bus");
-        requirements["broker"].GetProperty("configurationKeys").EnumerateArray().Select(x => x.GetString()).Should().Contain("Messaging:Broker");
-        requirements["broker"].GetProperty("extensions").GetProperty("source").GetString().Should().Be("override");
-        requirements["broker"].GetProperty("extensions").GetProperty("owner").GetString().Should().Be("control");
-        requirements["cache"].GetProperty("optional").GetBoolean().Should().BeTrue();
-        requirements["cache"].GetProperty("providers").EnumerateArray().Select(x => x.GetString()).Should().Contain("redis");
+        Assert.Equal(new[] { "broker", "cache" }.Order(), requirements.Keys.Order());
+
+        Assert.Equal("Override source reason.", requirements["broker"].GetProperty("reason").GetString());
+        Assert.Contains("queues", requirements["broker"].GetProperty("capabilities").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal(new[] { "rabbitmq", "azure-service-bus" }.Order(), requirements["broker"].GetProperty("providers").EnumerateArray().Select(x => x.GetString()).Order());
+
+        Assert.Contains("Messaging:Broker", requirements["broker"].GetProperty("configurationKeys").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal("override", requirements["broker"].GetProperty("extensions").GetProperty("source").GetString());
+        Assert.Equal("control", requirements["broker"].GetProperty("extensions").GetProperty("owner").GetString());
+        Assert.True(requirements["cache"].GetProperty("optional").GetBoolean());
+        Assert.Contains("redis", requirements["cache"].GetProperty("providers").EnumerateArray().Select(x => x.GetString()));
     }
 
     [Fact]
@@ -734,8 +732,9 @@ public sealed class MessagingFeature : IShellFeature
 
         var result = new ManifestMetadataMerger().ApplyOverrides([feature], manifestOverride);
 
-        result[0].Infrastructure[0].Kind.Should().Be("message-broker");
-        result[0].Infrastructure[0].Providers.Should().BeEquivalentTo("rabbitmq", "azure-service-bus");
+        Assert.Equal("message-broker", result[0].Infrastructure[0].Kind);
+        Assert.Equal(new[] { "rabbitmq", "azure-service-bus" }.Order(), result[0].Infrastructure[0].Providers.Order());
+
     }
 
     [Fact]
@@ -753,7 +752,7 @@ public sealed class StudioWidgetFeature : IShellFeature
 }
 """);
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.StandardOutput + build.StandardError);
+        Assert.Equal(0, build.ExitCode);
         var overridePath = Path.Combine(project.ProjectDirectory, "elsa-package.overrides.json");
         await File.WriteAllTextAsync(overridePath, """
 {
@@ -776,8 +775,9 @@ public sealed class StudioWidgetFeature : IShellFeature
         var result = Generate(project, overridePath);
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
 
-        document.RootElement.GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().BeEquivalentTo("elsa.server", "elsa.studio");
-        document.RootElement.GetProperty("features")[0].GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().Equal("elsa.studio");
+        Assert.Equal(new[] { "elsa.server", "elsa.studio" }.Order(), document.RootElement.GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Order());
+
+        Assert.Equal("elsa.studio", Assert.Single(document.RootElement.GetProperty("features")[0].GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString())));
     }
 
     [Fact]
@@ -800,13 +800,14 @@ public sealed class StudioWidgetFeature : IShellFeature
 }
 """);
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.StandardOutput + build.StandardError);
+        Assert.Equal(0, build.ExitCode);
 
         var result = Generate(project);
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
 
-        document.RootElement.GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().BeEquivalentTo("elsa.server", "acme.custom-host");
-        document.RootElement.GetProperty("features")[0].GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().Equal("elsa.studio");
+        Assert.Equal(new[] { "elsa.server", "acme.custom-host" }.Order(), document.RootElement.GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Order());
+
+        Assert.Equal("elsa.studio", Assert.Single(document.RootElement.GetProperty("features")[0].GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString())));
     }
 
     [Fact]
@@ -828,7 +829,7 @@ public sealed class StudioWidgetFeature : IShellFeature
 }
 """);
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.StandardOutput + build.StandardError);
+        Assert.Equal(0, build.ExitCode);
         var overridePath = Path.Combine(project.ProjectDirectory, "elsa-package.overrides.json");
         await File.WriteAllTextAsync(overridePath, """
 {
@@ -851,8 +852,8 @@ public sealed class StudioWidgetFeature : IShellFeature
         var result = Generate(project, overridePath);
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
 
-        document.RootElement.GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().Equal("elsa.studio");
-        document.RootElement.GetProperty("features")[0].GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString()).Should().Equal("elsa.server");
+        Assert.Equal("elsa.studio", Assert.Single(document.RootElement.GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString())));
+        Assert.Equal("elsa.server", Assert.Single(document.RootElement.GetProperty("features")[0].GetProperty("compatibility").GetProperty("runtimeKinds").EnumerateArray().Select(x => x.GetString())));
     }
 
     [Fact]
@@ -876,10 +877,10 @@ public sealed class JavaScriptFeature : IShellFeature
 """);
 
         var build = await project.BuildAsync();
-        build.ExitCode.Should().Be(0, build.CombinedOutput);
+        Assert.Equal(0, build.ExitCode);
 
         var result = Generate(project);
-        result.diagnostics.Items.Where(x => x.Severity == GenerationDiagnosticSeverity.Error).Should().BeEmpty();
+        Assert.DoesNotContain(result.diagnostics.Items, x => x.Severity == GenerationDiagnosticSeverity.Error);
 
         using var document = JsonDocument.Parse(result.artifact.ManifestJson);
         var javaScriptFeature = document.RootElement.GetProperty("features")
@@ -890,8 +891,8 @@ public sealed class JavaScriptFeature : IShellFeature
 
         // The dependency references the bare CShells feature name that the runtime resolver keys on,
         // not the package-qualified feature id.
-        dependency.GetProperty("featureId").GetString().Should().Be("JintEngine");
-        dependency.TryGetProperty("packageId", out _).Should().BeFalse();
+        Assert.Equal("JintEngine", dependency.GetProperty("featureId").GetString());
+        Assert.False(dependency.TryGetProperty("packageId", out _));
     }
 
     private static (GeneratedManifestArtifact artifact, GenerationDiagnostics diagnostics) Generate(

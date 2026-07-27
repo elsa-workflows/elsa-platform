@@ -3,7 +3,6 @@ using ValenceControl.Api.Authentication;
 using ValenceControl.Api.Public.Builder;
 using ValenceControl.Api.Workspace;
 using ValenceControl.RuntimeBuilder.Abstractions;
-using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace ValenceControl.Api.Tests;
@@ -23,10 +22,10 @@ public sealed class WorkspaceRuntimeConfigurationApiTests
         var list = await client.GetControlJsonAsync<IReadOnlyList<WorkspaceRuntimeConfigurationResponse>>($"/api/workspaces/{workspaceId}/runtime-configurations");
         var fetched = await client.GetControlJsonAsync<WorkspaceRuntimeConfigurationResponse>($"/api/workspaces/{workspaceId}/runtime-configurations/{created!.Id}");
 
-        create.StatusCode.Should().Be(HttpStatusCode.OK);
-        created.Name.Should().Be("Production");
-        list.Should().ContainSingle(x => x.Id == created.Id);
-        fetched!.Intent.Image.Slug.Should().Be("elsa-pro-combined");
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        Assert.Equal("Production", created.Name);
+        Assert.Single(list!, x => x.Id == created.Id);
+        Assert.Equal("elsa-pro-combined", fetched!.Intent.Image.Slug);
     }
 
     [Fact]
@@ -45,12 +44,12 @@ public sealed class WorkspaceRuntimeConfigurationApiTests
         var delete = await client.DeleteAsync($"/api/workspaces/{workspaceId}/runtime-configurations/{created.Id}");
         var getDeleted = await client.GetAsync($"/api/workspaces/{workspaceId}/runtime-configurations/{created.Id}");
 
-        update.StatusCode.Should().Be(HttpStatusCode.OK);
-        updated!.Name.Should().Be("Staging");
-        cloneResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        clone!.Name.Should().Be("Staging Copy");
-        delete.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        getDeleted.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.OK, update.StatusCode);
+        Assert.Equal("Staging", updated!.Name);
+        Assert.Equal(HttpStatusCode.OK, cloneResponse.StatusCode);
+        Assert.Equal("Staging Copy", clone!.Name);
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, getDeleted.StatusCode);
     }
 
     [Fact]
@@ -68,11 +67,11 @@ public sealed class WorkspaceRuntimeConfigurationApiTests
         var bundleResponse = await client.PostAsync($"/api/workspaces/{workspaceId}/runtime-configurations/{created.Id}/bundle", null);
         var bundle = await bundleResponse.Content.ReadControlJsonAsync<BuilderBundleResponse>();
 
-        versionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        version!.VersionNumber.Should().Be(1);
-        versions.Should().ContainSingle(x => x.Id == version.Id);
-        bundleResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        bundle!.Files.Should().Contain(x => x.Path == "docker-compose.yml");
+        Assert.Equal(HttpStatusCode.OK, versionResponse.StatusCode);
+        Assert.Equal(1, version!.VersionNumber);
+        Assert.Single(versions!, x => x.Id == version.Id);
+        Assert.Equal(HttpStatusCode.OK, bundleResponse.StatusCode);
+        Assert.Contains(bundle!.Files, x => x.Path == "docker-compose.yml");
     }
 
     [Fact]
@@ -86,14 +85,14 @@ public sealed class WorkspaceRuntimeConfigurationApiTests
         var anonymous = await app.CreateClient().GetAsync($"/api/workspaces/{workspaceId}/runtime-configurations");
         var nonMember = await WorkspaceClient(app, "other").GetAsync($"/api/workspaces/{workspaceId}/runtime-configurations");
 
-        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        nonMember.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, nonMember.StatusCode);
     }
 
     private static async Task<WorkspaceRuntimeConfigurationResponse> CreateAsync(HttpClient client, Guid workspaceId, string name)
     {
         var response = await client.PostControlJsonAsync($"/api/workspaces/{workspaceId}/runtime-configurations", Request(name));
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return (await response.Content.ReadControlJsonAsync<WorkspaceRuntimeConfigurationResponse>())!;
     }
 

@@ -1,4 +1,3 @@
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Artifacts.Tests;
 
@@ -9,7 +8,7 @@ public class ArtifactPathValidationTests
     [InlineData("recipes\\init.yaml", "recipes/init.yaml")]
     public void NormalizesValidRelativePath(string path, string expected)
     {
-        DeploymentArtifactPathValidator.NormalizeRelativePath(path).Should().Be(expected);
+        Assert.Equal(expected, DeploymentArtifactPathValidator.NormalizeRelativePath(path));
     }
 
     [Theory]
@@ -21,6 +20,6 @@ public class ArtifactPathValidationTests
     [InlineData("workflows/./order.json")]
     public void RejectsInvalidRelativePath(string path)
     {
-        DeploymentArtifactPathValidator.NormalizeRelativePath(path).Should().BeNull();
+        Assert.Null(DeploymentArtifactPathValidator.NormalizeRelativePath(path));
     }
 }

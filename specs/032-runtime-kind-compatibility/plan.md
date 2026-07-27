@@ -12,7 +12,7 @@ Add runtime-kind compatibility metadata to package manifests and catalog project
 
 **Language/Version**: C# on .NET 10 for manifest/catalog/API/runtime-builder code; TypeScript/React for console consumers where filtering or display surfaces are affected.
 
-**Primary Dependencies**: `ValenceControl.PackageManifests`, `ValenceControl.PackageCatalog.Core`, EF Core catalog persistence, ASP.NET Core minimal APIs, existing Runtime Builder catalog services, React Router/TanStack Query console code, xUnit, FluentAssertions, Vitest where console model behavior changes.
+**Primary Dependencies**: `ValenceControl.PackageManifests`, `ValenceControl.PackageCatalog.Core`, EF Core catalog persistence, ASP.NET Core minimal APIs, existing Runtime Builder catalog services, React Router/TanStack Query console code, xUnit and its built-in assertions, Vitest where console model behavior changes.
 
 **Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`. Runtime kind declarations are safe metadata stored with package-version and feature compatibility records or equivalent serialized projections; no secrets or executable runtime data are stored.
 

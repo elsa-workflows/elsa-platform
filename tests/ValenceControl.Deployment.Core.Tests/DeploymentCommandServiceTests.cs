@@ -1,5 +1,4 @@
 using ValenceControl.Deployment.Core.Workspace;
-using FluentAssertions;
 using Xunit;
 
 namespace ValenceControl.Deployment.Core.Tests;
@@ -24,7 +23,7 @@ public sealed class DeploymentCommandServiceTests
     {
         await _service.PollPendingCommandsAsync(_workspaceId, _engineId, 1000);
 
-        _store.LastPollLimit.Should().Be(100);
+        Assert.Equal(100, _store.LastPollLimit);
     }
 
     [Fact]
@@ -39,9 +38,9 @@ public sealed class DeploymentCommandServiceTests
             _commandId,
             new ClaimDeploymentCommandRequest(_engineId, "runtime-2", TimeSpan.FromMinutes(5)));
 
-        claim.LeaseToken.Should().NotBeNullOrWhiteSpace();
-        claim.Command.Status.Should().Be(DeploymentCommandStatus.Claimed);
-        await duplicate.Should().ThrowAsync<InvalidOperationException>();
+        Assert.False(string.IsNullOrWhiteSpace(claim.LeaseToken));
+        Assert.Equal(DeploymentCommandStatus.Claimed, claim.Command.Status);
+        await Assert.ThrowsAsync<InvalidOperationException>(duplicate);
     }
 
     [Fact]
@@ -57,7 +56,7 @@ public sealed class DeploymentCommandServiceTests
             _commandId,
             new DeploymentCommandProgressRequest(claim.LeaseToken, "applying", 50, "Using bearer token secret-value"));
 
-        command.ProgressMessage.Should().Be("Using [redacted] [redacted] [redacted]-value");
+        Assert.Equal("Using [redacted] [redacted] [redacted]-value", command.ProgressMessage);
     }
 
     [Fact]
@@ -73,8 +72,8 @@ public sealed class DeploymentCommandServiceTests
             _commandId,
             new DeploymentCommandHeartbeatRequest(claim.LeaseToken, "runtime-1"));
 
-        command.HeartbeatAt.Should().Be(_clock.GetUtcNow());
-        command.WorkerId.Should().Be("runtime-1");
+        Assert.Equal(_clock.GetUtcNow(), command.HeartbeatAt);
+        Assert.Equal("runtime-1", command.WorkerId);
     }
 
     [Fact]
@@ -89,8 +88,8 @@ public sealed class DeploymentCommandServiceTests
         var first = await _service.CompleteAsync(_workspaceId, _commandId, request);
         var second = await _service.CompleteAsync(_workspaceId, _commandId, request with { LeaseToken = "duplicate-delivery" });
 
-        first.Status.Should().Be(DeploymentCommandStatus.Completed);
-        second.Status.Should().Be(DeploymentCommandStatus.Completed);
+        Assert.Equal(DeploymentCommandStatus.Completed, first.Status);
+        Assert.Equal(DeploymentCommandStatus.Completed, second.Status);
     }
 
     [Fact]
@@ -121,10 +120,10 @@ public sealed class DeploymentCommandServiceTests
                 rejectClaim.LeaseToken,
                 [new DeploymentCommandDiagnostic("unsupported", DeploymentCommandDiagnosticSeverity.Warning, "private key unavailable")]));
 
-        failed.Status.Should().Be(DeploymentCommandStatus.Failed);
-        failed.Diagnostics.Single().Message.Should().Be("[redacted] [redacted] leaked");
-        rejected.Status.Should().Be(DeploymentCommandStatus.Rejected);
-        rejected.Diagnostics.Single().Message.Should().Be("[redacted] unavailable");
+        Assert.Equal(DeploymentCommandStatus.Failed, failed.Status);
+        Assert.Equal("[redacted] [redacted] leaked", failed.Diagnostics.Single().Message);
+        Assert.Equal(DeploymentCommandStatus.Rejected, rejected.Status);
+        Assert.Equal("[redacted] unavailable", rejected.Diagnostics.Single().Message);
     }
 
     [Fact]
@@ -154,9 +153,11 @@ public sealed class DeploymentCommandServiceTests
         var wrongLease = () => _service.ValidateRuntimeArtifactDownloadAsync(_workspaceId, _commandId, artifactRecordId, "wrong", "runtime-1");
         var wrongWorker = () => _service.ValidateRuntimeArtifactDownloadAsync(_workspaceId, _commandId, artifactRecordId, claim.LeaseToken, "runtime-2");
 
-        artifact.ArtifactRecordId.Should().Be(artifactRecordId);
-        await wrongLease.Should().ThrowAsync<InvalidOperationException>().WithMessage("Command lease token is invalid.");
-        await wrongWorker.Should().ThrowAsync<InvalidOperationException>().WithMessage("Command lease is owned by another worker.");
+        Assert.Equal(artifactRecordId, artifact.ArtifactRecordId);
+        var wrongLeaseException = await Assert.ThrowsAsync<InvalidOperationException>(wrongLease);
+        var wrongWorkerException = await Assert.ThrowsAsync<InvalidOperationException>(wrongWorker);
+        Assert.Equal("Command lease token is invalid.", wrongLeaseException.Message);
+        Assert.Equal("Command lease is owned by another worker.", wrongWorkerException.Message);
     }
 
     [Fact]
@@ -205,11 +206,11 @@ public sealed class DeploymentCommandServiceTests
                     DeploymentCommandArtifactStatus.Failed,
                     Diagnostics: [new DeploymentCommandDiagnostic("failed", DeploymentCommandDiagnosticSeverity.Error, "password leaked")])]));
 
-        progress.Artifacts!.Single().Status.Should().Be(DeploymentCommandArtifactStatus.Applying);
-        progress.Artifacts!.Single().Diagnostics!.Single().Message.Should().Be("[redacted] [redacted] observed");
-        failed.Status.Should().Be(DeploymentCommandStatus.Failed);
-        failed.Artifacts!.Single().Status.Should().Be(DeploymentCommandArtifactStatus.Failed);
-        failed.Artifacts!.Single().Diagnostics!.Single().Message.Should().Be("[redacted] leaked");
+        Assert.Equal(DeploymentCommandArtifactStatus.Applying, progress.Artifacts!.Single().Status);
+        Assert.Equal("[redacted] [redacted] observed", progress.Artifacts!.Single().Diagnostics!.Single().Message);
+        Assert.Equal(DeploymentCommandStatus.Failed, failed.Status);
+        Assert.Equal(DeploymentCommandArtifactStatus.Failed, failed.Artifacts!.Single().Status);
+        Assert.Equal("[redacted] leaked", failed.Artifacts!.Single().Diagnostics!.Single().Message);
     }
 
     [Fact]
@@ -219,8 +220,8 @@ public sealed class DeploymentCommandServiceTests
 
         var recovered = await _service.RecoverStaleCommandsAsync(TimeSpan.FromMinutes(10));
 
-        recovered.Should().Be(2);
-        _store.LastStaleAfter.Should().Be(TimeSpan.FromMinutes(10));
+        Assert.Equal(2, recovered);
+        Assert.Equal(TimeSpan.FromMinutes(10), _store.LastStaleAfter);
     }
 
     [Fact]
@@ -228,11 +229,11 @@ public sealed class DeploymentCommandServiceTests
     {
         var notification = await _service.CreateWebhookNotificationAsync(_workspaceId, _engineId, _commandId);
 
-        notification.SafePayloadJson.Should().Contain(_workspaceId.ToString("D"));
-        notification.SafePayloadJson.Should().Contain(_engineId.ToString("D"));
-        notification.SafePayloadJson.Should().Contain(_commandId.ToString("D"));
-        notification.SafePayloadJson.Should().NotContain("lease");
-        notification.SafePayloadJson.Should().NotContain("secret");
+        Assert.Contains(_workspaceId.ToString("D"), notification.SafePayloadJson);
+        Assert.Contains(_engineId.ToString("D"), notification.SafePayloadJson);
+        Assert.Contains(_commandId.ToString("D"), notification.SafePayloadJson);
+        Assert.DoesNotContain("lease", notification.SafePayloadJson);
+        Assert.DoesNotContain("secret", notification.SafePayloadJson);
     }
 
     [Fact]
@@ -249,12 +250,12 @@ public sealed class DeploymentCommandServiceTests
 
         var processed = await dispatcher.DispatchPendingAsync();
 
-        processed.Should().Be(1);
-        sender.Requests.Should().ContainSingle();
+        Assert.Equal(1, processed);
+        Assert.Single(sender.Requests);
         // The base URL identifies the external Elsa runtime API, not this product.
-        sender.Requests.Single().Endpoint.Should().Be(new Uri("https://runtime.example.test/elsa/control/webhooks/commands"));
-        sender.Requests.Single().Target.SafePayloadJson.Should().Contain("command-available");
-        _store.WebhookStatuses[notificationId].Should().Be(WebhookNotificationStatus.Sent);
+        Assert.Equal(new Uri("https://runtime.example.test/elsa/control/webhooks/commands"), sender.Requests.Single().Endpoint);
+        Assert.Contains("command-available", sender.Requests.Single().Target.SafePayloadJson);
+        Assert.Equal(WebhookNotificationStatus.Sent, _store.WebhookStatuses[notificationId]);
     }
 
     [Fact]
@@ -271,9 +272,9 @@ public sealed class DeploymentCommandServiceTests
 
         var processed = await dispatcher.DispatchPendingAsync();
 
-        processed.Should().Be(1);
-        sender.Requests.Should().BeEmpty();
-        _store.WebhookStatuses[notificationId].Should().Be(WebhookNotificationStatus.Skipped);
+        Assert.Equal(1, processed);
+        Assert.Empty(sender.Requests);
+        Assert.Equal(WebhookNotificationStatus.Skipped, _store.WebhookStatuses[notificationId]);
     }
 
     [Fact]
@@ -290,7 +291,7 @@ public sealed class DeploymentCommandServiceTests
 
         await dispatcher.DispatchPendingAsync();
 
-        _store.WebhookStatuses[notificationId].Should().Be(WebhookNotificationStatus.Failed);
+        Assert.Equal(WebhookNotificationStatus.Failed, _store.WebhookStatuses[notificationId]);
     }
 
     private DeploymentWebhookNotificationDispatchTarget WebhookTarget(Guid notificationId, string? engineBaseUrl) =>

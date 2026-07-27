@@ -10,7 +10,6 @@ using Elsa.Diagnostics.OpenTelemetry.Services;
 using ValenceControl.Healing.Abstractions;
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.OpenTelemetry;
-using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -38,23 +37,23 @@ public sealed class FoundationPackageIntegrationTests
         var handling = handler.HandleAsync(context, OtlpSignal.Logs);
         var contributedItem = await appender.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        handling.IsCompleted.Should().BeFalse("the Foundation handler must await the durable contributor before acknowledging OTLP");
-        contributedItem.RedactedEnvelopeJson.Should().NotContain("must-never-enter-healing");
+        Assert.False(handling.IsCompleted);
+        Assert.DoesNotContain("must-never-enter-healing", contributedItem.RedactedEnvelopeJson);
         var contributedSignal = JsonSerializer.Deserialize<HealingSignal>(contributedItem.RedactedEnvelopeJson);
-        contributedSignal.Should().NotBeNull();
-        contributedSignal!.Exception.Message.Should().Be("Order lookup failed [Redacted]");
-        contributedSignal.Evidence.IsRedacted.Should().BeTrue();
+        Assert.NotNull(contributedSignal);
+        Assert.Equal("Order lookup failed [Redacted]", contributedSignal!.Exception.Message);
+        Assert.True(contributedSignal.Evidence.IsRedacted);
 
         appender.Commit.TrySetResult();
         await handling.WaitAsync(TimeSpan.FromSeconds(5));
 
-        context.Response.StatusCode.Should().Be((int)HttpStatusCode.OK);
-        appender.DurableItems.Should().ContainSingle().Which.Should().BeSameAs(contributedItem);
-        contributedItem.WorkspaceId.Should().Be(WorkspaceId);
-        contributedItem.ApplicationId.Should().Be(ApplicationId);
-        contributedItem.EnvironmentId.Should().Be(EnvironmentId);
-        contributedItem.IdempotencyKey.Should().Be("package-integration-occurrence");
-        contributedItem.Status.Should().Be(HealingInboxStatus.Pending);
+        Assert.Equal((int)HttpStatusCode.OK, context.Response.StatusCode);
+        Assert.Same(contributedItem, Assert.Single(appender.DurableItems));
+        Assert.Equal(WorkspaceId, contributedItem.WorkspaceId);
+        Assert.Equal(ApplicationId, contributedItem.ApplicationId);
+        Assert.Equal(EnvironmentId, contributedItem.EnvironmentId);
+        Assert.Equal("package-integration-occurrence", contributedItem.IdempotencyKey);
+        Assert.Equal(HealingInboxStatus.Pending, contributedItem.Status);
     }
 
     [Fact]
@@ -72,8 +71,9 @@ public sealed class FoundationPackageIntegrationTests
 
         var act = () => handling;
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("durable inbox unavailable");
-        appender.DurableItems.Should().BeEmpty();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+        Assert.Equal("durable inbox unavailable", exception.Message);
+        Assert.Empty(appender.DurableItems);
     }
 
     private static ServiceProvider CreateServices(IHealingSignalInboxAppender appender)
@@ -106,9 +106,7 @@ public sealed class FoundationPackageIntegrationTests
     private static void AssertPublishedPackage(Assembly assembly)
     {
         var version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-        version.Should().StartWith(
-            $"{PublishedPackageVersion}+",
-            $"T111 must execute the published {PublishedPackageVersion} package rather than a local Foundation artifact");
+        Assert.StartsWith($"{PublishedPackageVersion}+", version);
     }
 
     private static byte[] OtlpExceptionLogPayload()

@@ -4,7 +4,6 @@ using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Core.Sources;
 using ValenceControl.PackageCatalog.Core.Sync;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using ValenceControl.PackageCatalog.Testing;
 using ValenceControl.PackageManifests.Validation;
 using Microsoft.EntityFrameworkCore;
@@ -34,7 +33,7 @@ public sealed class SyncPersistenceTests
 
         var stored = await db.SyncRuns.Include(x => x.Items).SingleAsync();
 
-        stored.Items.Should().ContainSingle(x => x.Error == "No manifest");
+        Assert.Single(stored.Items, x => x.Error == "No manifest");
     }
 
     [Fact]
@@ -54,7 +53,7 @@ public sealed class SyncPersistenceTests
         db.PackageSources.Add(PublicCatalogSeedData.CreatePackageSource());
         await db.SaveChangesAsync();
 
-        (await db.PackageSources.CountAsync()).Should().Be(1);
+        Assert.Equal(1, (await db.PackageSources.CountAsync()));
     }
 
     [Fact]
@@ -78,9 +77,9 @@ public sealed class SyncPersistenceTests
 
         var runs = await new SyncRunStore(db).ListAsync();
 
-        runs.Should().HaveCount(100);
-        runs[0].Id.Should().Be(newest.Id);
-        runs.Should().NotContain(x => x.StartedAt == oldest);
+        Assert.Equal(100, runs.Count());
+        Assert.Equal(newest.Id, runs[0].Id);
+        Assert.DoesNotContain(runs, x => x.StartedAt == oldest);
     }
 
     [Fact]
@@ -120,8 +119,8 @@ public sealed class SyncPersistenceTests
 
         var run = await service.SyncAllAsync();
 
-        run.Status.Should().Be(SyncRunStatus.Completed);
-        (await db.SyncRunItems.CountAsync()).Should().Be(1);
+        Assert.Equal(SyncRunStatus.Completed, run.Status);
+        Assert.Equal(1, (await db.SyncRunItems.CountAsync()));
     }
 
     [Fact]
@@ -144,10 +143,12 @@ public sealed class SyncPersistenceTests
 
         var packages = await new PublicCatalogQueries(db).ListPackagesAsync([]);
 
-        var projectedVersion = packages.Should().ContainSingle().Subject.Versions.Should().ContainSingle().Subject;
-        projectedVersion.RuntimeKinds.Should().BeEquivalentTo("elsa.server", "acme.custom-host");
-        projectedVersion.Features.Single(x => x.FeatureId == "server").RuntimeKinds.Should().BeEquivalentTo("elsa.server", "acme.custom-host");
-        projectedVersion.Features.Single(x => x.FeatureId == "studio").RuntimeKinds.Should().Equal("elsa.studio");
+        var projectedVersion = Assert.Single(Assert.Single(packages).Versions);
+        Assert.Equal(new[] { "elsa.server", "acme.custom-host" }.Order(), projectedVersion.RuntimeKinds.Order());
+
+        Assert.Equal(new[] { "elsa.server", "acme.custom-host" }.Order(), projectedVersion.Features.Single(x => x.FeatureId == "server").RuntimeKinds.Order());
+
+        Assert.Equal("elsa.studio", Assert.Single(projectedVersion.Features.Single(x => x.FeatureId == "studio").RuntimeKinds));
     }
 
     [Fact]
@@ -182,7 +183,7 @@ public sealed class SyncPersistenceTests
 
         await service.SyncAllAsync();
 
-        (await db.PackageSources.SingleAsync()).LastSyncedAt.Should().NotBeNull();
+        Assert.NotNull((await db.PackageSources.SingleAsync()).LastSyncedAt);
     }
 
     [Fact]
@@ -222,15 +223,15 @@ public sealed class SyncPersistenceTests
 
         var result = await new SyncRunStore(db).DeleteAsync(run.Id);
 
-        result.DeletedRunCount.Should().Be(1);
-        result.DeletedItemCount.Should().Be(1);
-        (await db.SyncRuns.CountAsync()).Should().Be(0);
-        (await db.SyncRunItems.CountAsync()).Should().Be(0);
-        (await db.PackageSources.CountAsync()).Should().Be(1);
-        (await db.Packages.CountAsync()).Should().Be(1);
-        (await db.PackageVersions.CountAsync()).Should().Be(1);
-        (await db.ManifestValidationResults.CountAsync()).Should().Be(1);
-        (await db.ApprovalRecords.CountAsync()).Should().Be(1);
+        Assert.Equal(1, result.DeletedRunCount);
+        Assert.Equal(1, result.DeletedItemCount);
+        Assert.Equal(0, (await db.SyncRuns.CountAsync()));
+        Assert.Equal(0, (await db.SyncRunItems.CountAsync()));
+        Assert.Equal(1, (await db.PackageSources.CountAsync()));
+        Assert.Equal(1, (await db.Packages.CountAsync()));
+        Assert.Equal(1, (await db.PackageVersions.CountAsync()));
+        Assert.Equal(1, (await db.ManifestValidationResults.CountAsync()));
+        Assert.Equal(1, (await db.ApprovalRecords.CountAsync()));
     }
 
     [Fact]
@@ -249,13 +250,14 @@ public sealed class SyncPersistenceTests
         var preview = await new SyncRunStore(db).PreviewDeleteBeforeAsync(cutoff, [SyncRunStatus.Completed, SyncRunStatus.CompletedWithErrors, SyncRunStatus.Failed]);
         var result = await new SyncRunStore(db).DeleteBeforeAsync(cutoff, [SyncRunStatus.Completed, SyncRunStatus.CompletedWithErrors, SyncRunStatus.Failed]);
 
-        preview.EligibleRunCount.Should().Be(2);
-        preview.EligibleItemCount.Should().Be(3);
-        preview.ExcludedRunCount.Should().Be(1);
-        result.DeletedRunCount.Should().Be(2);
-        result.DeletedItemCount.Should().Be(3);
-        result.ExcludedRunCount.Should().Be(1);
-        (await db.SyncRuns.Select(x => x.Id).ToListAsync()).Should().BeEquivalentTo([recent.Id, running.Id, recentRunning.Id]);
+        Assert.Equal(2, preview.EligibleRunCount);
+        Assert.Equal(3, preview.EligibleItemCount);
+        Assert.Equal(1, preview.ExcludedRunCount);
+        Assert.Equal(2, result.DeletedRunCount);
+        Assert.Equal(3, result.DeletedItemCount);
+        Assert.Equal(1, result.ExcludedRunCount);
+        Assert.Equal(new[] { recent.Id, running.Id, recentRunning.Id }.Order(), (await db.SyncRuns.Select(x => x.Id).ToListAsync()).Order());
+
     }
 
     [Fact]
@@ -272,8 +274,8 @@ public sealed class SyncPersistenceTests
 
         var result = await new SyncRunStore(db).DeleteBeforeAsync(cutoff, [SyncRunStatus.Completed, SyncRunStatus.CompletedWithErrors, SyncRunStatus.Failed]);
 
-        result.DeletedRunCount.Should().Be(1000);
-        (await db.SyncRuns.CountAsync()).Should().Be(1);
+        Assert.Equal(1000, result.DeletedRunCount);
+        Assert.Equal(1, (await db.SyncRuns.CountAsync()));
     }
 
     private static async Task<CatalogDbContext> CreateOpenDbContextAsync()

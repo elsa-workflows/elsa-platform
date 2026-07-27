@@ -3,7 +3,6 @@ using ValenceControl.Api.Workspace;
 using ValenceControl.Deployment.Core.Cockpit;
 using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.PackageCatalog.Core.Accounts;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -22,11 +21,11 @@ public sealed class WorkspaceDeploymentTierApiTests
         var capabilities = await capabilitiesResponse.Content.ReadControlJsonAsync<WorkspaceDeploymentTierCapabilitiesResponse>();
         var tiers = await tiersResponse.Content.ReadControlJsonAsync<WorkspaceDeploymentTiersResponse>();
 
-        capabilitiesResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        capabilities!.Capabilities.Should().Contain(x => x.Id == DeploymentTierCapabilities.ProductionLike);
-        tiersResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        tiers!.Tiers.Should().HaveCount(4);
-        tiers.Tiers.Should().Contain(x => x.Name == EnvironmentTier.Production.ToString() && x.IsDefault);
+        Assert.Equal(HttpStatusCode.OK, capabilitiesResponse.StatusCode);
+        Assert.Contains(capabilities!.Capabilities, x => x.Id == DeploymentTierCapabilities.ProductionLike);
+        Assert.Equal(HttpStatusCode.OK, tiersResponse.StatusCode);
+        Assert.Equal(4, tiers!.Tiers.Count());
+        Assert.Contains(tiers.Tiers, x => x.Name == EnvironmentTier.Production.ToString() && x.IsDefault);
     }
 
     [Fact]
@@ -61,13 +60,13 @@ public sealed class WorkspaceDeploymentTierApiTests
         var restoreResponse = await owner.PostAsync($"/api/workspaces/{workspaceId}/deployments/tiers/{created.Id}/restore", null);
         var restored = await restoreResponse.Content.ReadControlJsonAsync<WorkspaceDeploymentTier>();
 
-        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        impactResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        archiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        restoreResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        restored!.Status.Should().Be(DeploymentTierStatus.Active);
-        restored.Capabilities.Should().Contain(DeploymentTierCapabilities.SecretVerificationRequired);
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, impactResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, archiveResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, restoreResponse.StatusCode);
+        Assert.Equal(DeploymentTierStatus.Active, restored!.Status);
+        Assert.Contains(DeploymentTierCapabilities.SecretVerificationRequired, restored.Capabilities);
     }
 
     [Fact]
@@ -86,9 +85,9 @@ public sealed class WorkspaceDeploymentTierApiTests
         var duplicate = await owner.PostControlJsonAsync($"/api/workspaces/{workspaceId}/deployments/tiers", request);
         var denied = await reader.PostControlJsonAsync($"/api/workspaces/{workspaceId}/deployments/tiers", request);
 
-        created.StatusCode.Should().Be(HttpStatusCode.Created);
-        duplicate.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
     }
 
     [Fact]
@@ -110,9 +109,9 @@ public sealed class WorkspaceDeploymentTierApiTests
         var environment = await environmentResponse.Content.ReadControlJsonAsync<WorkspaceDeploymentEnvironment>();
         var cockpit = await owner.GetControlJsonAsync<DeploymentCockpit>($"/api/workspaces/{workspaceId}/deployments/cockpit");
 
-        environmentResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        environment!.TierId.Should().Be(tier.Id);
-        cockpit!.Applications.Single().Environments.Should().ContainSingle(x =>
+        Assert.Equal(HttpStatusCode.Created, environmentResponse.StatusCode);
+        Assert.Equal(tier.Id, environment!.TierId);
+        Assert.Single(cockpit!.Applications.Single().Environments, x =>
             x.Name == "Prod EU"
             && x.TierName == "Production EU"
             && x.TierCapabilities != null
@@ -137,7 +136,7 @@ public sealed class WorkspaceDeploymentTierApiTests
             $"/api/workspaces/{workspaceId}/deployments/applications/{application!.Id}/environments",
             new WorkspaceDeploymentEnvironmentRequest("Cert", EnvironmentTier.Stage, tier.Id));
 
-        environmentResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Assert.Equal(HttpStatusCode.Conflict, environmentResponse.StatusCode);
     }
 
     [Fact]
@@ -159,10 +158,10 @@ public sealed class WorkspaceDeploymentTierApiTests
         var tiers = await owner.GetControlJsonAsync<WorkspaceDeploymentTiersResponse>($"/api/workspaces/{workspaceId}/deployments/tiers");
         var production = tiers!.Tiers.Single(x => x.Name == EnvironmentTier.Production.ToString());
 
-        environmentResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        environment!.TierId.Should().Be(production.Id);
-        environment.TierDefinition!.Name.Should().Be(EnvironmentTier.Production.ToString());
-        environment.TierDefinition.Capabilities.Should().Contain(DeploymentTierCapabilities.ProductionLike);
+        Assert.Equal(HttpStatusCode.Created, environmentResponse.StatusCode);
+        Assert.Equal(production.Id, environment!.TierId);
+        Assert.Equal(EnvironmentTier.Production.ToString(), environment.TierDefinition!.Name);
+        Assert.Contains(DeploymentTierCapabilities.ProductionLike, environment.TierDefinition.Capabilities);
     }
 
     [Fact]
@@ -188,10 +187,10 @@ public sealed class WorkspaceDeploymentTierApiTests
             new WorkspacePromotionPreviewRequestDto(sourceEnvironment.Id, targetEnvironment.Id, revision.Id, engine.Id));
         var preview = await previewResponse.Content.ReadControlJsonAsync<PromotionComparison>();
 
-        previewResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        preview!.Validations.Should().Contain(x => x.Id == "deployment.tier.source.unsupported");
-        preview.Validations.Should().Contain(x => x.Id == "deployment.tier.target.unsupported");
-        preview.Validations.Should().Contain(x => x.Id == "deployment.tier.production-like");
+        Assert.Equal(HttpStatusCode.OK, previewResponse.StatusCode);
+        Assert.Contains(preview!.Validations, x => x.Id == "deployment.tier.source.unsupported");
+        Assert.Contains(preview.Validations, x => x.Id == "deployment.tier.target.unsupported");
+        Assert.Contains(preview.Validations, x => x.Id == "deployment.tier.production-like");
     }
 
     private static async Task<WorkspaceDeploymentTier> CreateTierAsync(HttpClient client, Guid workspaceId, string name, params string[] capabilities)
@@ -199,7 +198,7 @@ public sealed class WorkspaceDeploymentTierApiTests
         var response = await client.PostControlJsonAsync(
             $"/api/workspaces/{workspaceId}/deployments/tiers",
             new WorkspaceDeploymentTierRequest(name, null, 90, capabilities));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadControlJsonAsync<WorkspaceDeploymentTier>())!;
     }
 
@@ -214,7 +213,7 @@ public sealed class WorkspaceDeploymentTierApiTests
         var response = await client.PostControlJsonAsync(
             $"/api/workspaces/{workspaceId}/deployments/applications/{applicationId}/environments",
             new WorkspaceDeploymentEnvironmentRequest(name, legacyTier, tierId));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadControlJsonAsync<WorkspaceDeploymentEnvironment>())!;
     }
 
@@ -231,7 +230,7 @@ public sealed class WorkspaceDeploymentTierApiTests
                 [],
                 [],
                 null));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadControlJsonAsync<WorkspaceWorkflowEngine>())!;
     }
 
@@ -240,7 +239,7 @@ public sealed class WorkspaceDeploymentTierApiTests
         var response = await client.PostControlJsonAsync(
             $"/api/workspaces/{workspaceId}/deployments/applications/{applicationId}/environments/{environmentId}/revisions",
             new WorkspaceDesiredStateRevisionRequest("Candidate", null, []));
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadControlJsonAsync<WorkspaceDesiredStateRevision>())!;
     }
 }

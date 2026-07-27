@@ -1,7 +1,6 @@
 using System.Net;
 using ValenceControl.Api.Authentication;
 using Microsoft.AspNetCore.Mvc.Testing;
-using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 
 namespace ValenceControl.Api.Tests;
@@ -14,7 +13,7 @@ public sealed class AdminApiAuthenticationTests
         await using var app = new ControlApiTestApplication();
         var response = await app.CreateClient().GetAsync("/health");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
@@ -33,6 +32,6 @@ public sealed class AdminApiAuthenticationTests
 
         var response = await client.GetAsync("/api/admin/sources");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 }

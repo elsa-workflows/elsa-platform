@@ -14,7 +14,7 @@ Promote the existing account/workspace foundation into the platform tenant model
 
 **Language/Version**: C# on .NET 10.
 
-**Primary Dependencies**: ASP.NET Core authentication/authorization, ASP.NET Core cookies, JWT bearer validation, OIDC authorization-code/PKCE or backend-for-frontend session support, provider-neutral Valence Control identity adapters, React console auth state integration, EF Core, existing `ValenceControl.PackageCatalog.*` account/workspace services, xUnit, Vitest, Playwright, and FluentAssertions for tests.
+**Primary Dependencies**: ASP.NET Core authentication/authorization, ASP.NET Core cookies, JWT bearer validation, OIDC authorization-code/PKCE or backend-for-frontend session support, provider-neutral Valence Control identity adapters, React console auth state integration, EF Core, existing `ValenceControl.PackageCatalog.*` account/workspace services, xUnit, its built-in assertions, Vitest, and Playwright for tests.
 
 **Storage**: Existing catalog EF Core stores and migrations for accounts, external identities, workspaces, memberships, entitlements, and workspace-owned resources.
 

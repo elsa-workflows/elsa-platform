@@ -12,11 +12,11 @@ Add a protected Runtime Builder bundle-generation capability to the existing Cat
 
 **Language/Version**: C# on .NET 10 LTS for API/Core; existing TypeScript/React console remains out of scope.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs and authorization, dedicated builder-client API-key authentication/authorization, existing workspace identity adapter, existing compatibility checks, System.Text.Json, existing catalog query services, xUnit, FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs and authorization, dedicated builder-client API-key authentication/authorization, existing workspace identity adapter, existing compatibility checks, System.Text.Json, existing catalog query services, xUnit and its built-in assertions.
 
 **Storage**: No new durable storage for generated files. Existing relational catalog database remains the source for package/source/version visibility. Optional non-secret generation diagnostics are logged or emitted through existing diagnostics patterns only.
 
-**Testing**: xUnit and FluentAssertions for core bundle-generation services; ASP.NET Core WebApplicationFactory integration tests for public/trusted and workspace bundle endpoints; fixture-based migration comparison tests for representative builder states.
+**Testing**: xUnit and its built-in assertions for core bundle-generation services; ASP.NET Core WebApplicationFactory integration tests for public/trusted and workspace bundle endpoints; fixture-based migration comparison tests for representative builder states.
 
 **Target platform**: Existing ASP.NET Core Catalog API deployed as the modular monolith.
 

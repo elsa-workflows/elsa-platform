@@ -1,7 +1,6 @@
 using System.Net;
 using ValenceControl.Api.Authentication;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ValenceControl.Api.Tests;
@@ -17,7 +16,7 @@ public sealed class OperatorAuthorizationTests
 
         var response = await customer.GetAsync("/api/admin/sources");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -30,7 +29,7 @@ public sealed class OperatorAuthorizationTests
 
         var response = await admin.GetAsync("/api/admin/sources");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
@@ -43,11 +42,11 @@ public sealed class OperatorAuthorizationTests
 
         var response = await admin.GetAsync("/api/me/workspaces");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-        db.Accounts.Should().BeEmpty();
-        db.Workspaces.Should().BeEmpty();
-        db.ExternalIdentities.Should().BeEmpty();
+        Assert.Empty(db.Accounts);
+        Assert.Empty(db.Workspaces);
+        Assert.Empty(db.ExternalIdentities);
     }
 }

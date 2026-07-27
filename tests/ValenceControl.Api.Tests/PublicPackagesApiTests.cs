@@ -4,7 +4,6 @@ using ValenceControl.Api.Public.Packages;
 using ValenceControl.Api.Public.Sources;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -29,9 +28,9 @@ public sealed class PublicPackagesApiTests
 
         var packages = await app.CreateClient().GetFromJsonAsync<List<PublicPackageResponse>>("/api/packages");
 
-        packages.Should().ContainSingle(x => x.PackageId == "Elsa.Email");
-        packages.Should().ContainSingle(x => x.PackageId == "Elsa.Email" && x.DisplayName == "Email");
-        packages.Should().NotContain(x => x.PackageId == "Elsa.Rejected");
+        Assert.Single(packages!, x => x.PackageId == "Elsa.Email");
+        Assert.Single(packages!, x => x.PackageId == "Elsa.Email" && x.DisplayName == "Email");
+        Assert.DoesNotContain(packages!, x => x.PackageId == "Elsa.Rejected");
     }
 
     [Fact]
@@ -51,9 +50,9 @@ public sealed class PublicPackagesApiTests
 
         var sources = await app.CreateClient().GetFromJsonAsync<List<PublicSourceResponse>>("/api/sources");
 
-        var source = sources.Should().ContainSingle().Subject;
-        source.Url.Should().Be("https://example.test/v3/index.json");
-        source.PackageCount.Should().Be(1);
+        var source = Assert.Single(sources!);
+        Assert.Equal("https://example.test/v3/index.json", source.Url);
+        Assert.Equal(1, source.PackageCount);
     }
 
     [Fact]
@@ -77,8 +76,8 @@ public sealed class PublicPackagesApiTests
 
         var sources = await app.CreateClient().GetFromJsonAsync<List<PublicSourceResponse>>("/api/sources");
 
-        sources.Should().ContainSingle(x => x.Name == "Public");
-        sources.Should().NotContain(x => x.Name == "Internal");
+        Assert.Single(sources!, x => x.Name == "Public");
+        Assert.DoesNotContain(sources!, x => x.Name == "Internal");
     }
 
     [Fact]
@@ -103,8 +102,8 @@ public sealed class PublicPackagesApiTests
 
         var packages = await app.CreateClient().GetFromJsonAsync<List<PublicPackageResponse>>($"/api/packages?sourceIds={selectedSourceId}");
 
-        packages.Should().ContainSingle(x => x.PackageId == "Elsa.Selected");
-        packages.Should().NotContain(x => x.PackageId == "Elsa.Hidden");
+        Assert.Single(packages!, x => x.PackageId == "Elsa.Selected");
+        Assert.DoesNotContain(packages!, x => x.PackageId == "Elsa.Hidden");
     }
 
     [Fact]
@@ -126,8 +125,8 @@ public sealed class PublicPackagesApiTests
         var packages = await app.CreateClient().GetFromJsonAsync<List<PublicPackageResponse>>($"/api/packages?sourceIds={sourceId}");
         var details = await app.CreateClient().GetAsync($"/api/sources/{sourceId}/packages/Elsa.Email");
 
-        packages.Should().BeEmpty();
-        details.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Empty(packages!);
+        Assert.Equal(HttpStatusCode.NotFound, details.StatusCode);
     }
 
     [Fact]
@@ -157,10 +156,10 @@ public sealed class PublicPackagesApiTests
         var selected = await app.CreateClient().GetFromJsonAsync<PublicPackageResponse>($"/api/sources/{selectedSourceId}/packages/Elsa.Email");
         var other = await app.CreateClient().GetFromJsonAsync<PublicPackageResponse>($"/api/sources/{otherSourceId}/packages/Elsa.Email");
 
-        selected!.Source.Id.Should().Be(selectedSourceId);
-        selected.Versions.Should().ContainSingle(x => x.Version == "1.0.0");
-        other!.Source.Id.Should().Be(otherSourceId);
-        other.Versions.Should().ContainSingle(x => x.Version == "2.0.0");
+        Assert.Equal(selectedSourceId, selected!.Source.Id);
+        Assert.Single(selected.Versions, x => x.Version == "1.0.0");
+        Assert.Equal(otherSourceId, other!.Source.Id);
+        Assert.Single(other.Versions, x => x.Version == "2.0.0");
     }
 
     [Fact]
@@ -185,7 +184,7 @@ public sealed class PublicPackagesApiTests
 
         var package = await app.CreateClient().GetFromJsonAsync<PublicPackageResponse>($"/api/sources/{sourceId}/packages/Elsa.Email");
 
-        package!.Versions.Should().ContainSingle(x => x.Version == "1.0.0");
+        Assert.Single(package!.Versions, x => x.Version == "1.0.0");
     }
 
     [Fact]
@@ -205,7 +204,7 @@ public sealed class PublicPackagesApiTests
 
         var response = await app.CreateClient().GetAsync($"/api/sources/{sourceId}/packages/Elsa.Email");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -227,7 +226,7 @@ public sealed class PublicPackagesApiTests
 
         var package = await app.CreateClient().GetFromJsonAsync<PublicPackageResponse>($"/api/sources/{sourceId}/packages/Elsa.Email");
 
-        package!.Versions[0].Features[0].Settings[0].DefaultValue.Should().BeNull();
+        Assert.Null(package!.Versions[0].Features[0].Settings[0].DefaultValue);
     }
 
     [Fact]
@@ -256,9 +255,9 @@ public sealed class PublicPackagesApiTests
 
         var package = await app.CreateClient().GetFromJsonAsync<PublicPackageResponse>($"/api/sources/{sourceId}/packages/Elsa.Mixed");
 
-        package!.RuntimeKinds.Should().BeEquivalentTo("elsa.server", "acme.custom-host");
-        package.Versions[0].RuntimeKinds.Should().BeEquivalentTo("elsa.server", "acme.custom-host");
-        package.Versions[0].Features.Single(x => x.FeatureId == "server").RuntimeKinds.Should().BeEquivalentTo("elsa.server", "acme.custom-host");
-        package.Versions[0].Features.Single(x => x.FeatureId == "studio").RuntimeKinds.Should().Equal("elsa.studio");
+        Assert.Equivalent(new[] { "elsa.server", "acme.custom-host" }, package!.RuntimeKinds);
+        Assert.Equivalent(new[] { "elsa.server", "acme.custom-host" }, package.Versions[0].RuntimeKinds);
+        Assert.Equivalent(new[] { "elsa.server", "acme.custom-host" }, package.Versions[0].Features.Single(x => x.FeatureId == "server").RuntimeKinds);
+        Assert.Equal(new[] { "elsa.studio" }, package.Versions[0].Features.Single(x => x.FeatureId == "studio").RuntimeKinds);
     }
 }

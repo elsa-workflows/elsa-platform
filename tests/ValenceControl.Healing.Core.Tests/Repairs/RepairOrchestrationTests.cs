@@ -1,6 +1,5 @@
 using ValenceControl.Healing.Core;
 using ValenceControl.Healing.Core.Repairs;
-using FluentAssertions;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -27,19 +26,19 @@ public sealed class RepairOrchestrationTests
 
         var result = await service.CreateDefaultAsync(request);
 
-        result.Succeeded.Should().BeTrue();
-        result.Bundle!.Tier.Should().Be(EvidenceTier.DefaultRedacted);
-        result.Bundle.CanonicalJson.Should().Contain("System.InvalidOperationException");
-        result.Bundle.CanonicalJson.Should().Contain("workflow.execute");
-        result.Bundle.CanonicalJson.Should().Contain("Acme.Activities.SendEmail.Execute");
-        result.Bundle.CanonicalJson.Should().NotContain("Authorization");
-        result.Bundle.CanonicalJson.Should().NotContain("top-secret");
-        result.Bundle.CanonicalJson.Should().NotContain("0123456789abcdef");
-        result.Bundle.OmissionsJson.Should().Contain("safeAttributes");
-        result.Bundle.OmissionsJson.Should().Contain("traceCorrelation");
-        result.Bundle.SizeBytes.Should().BeGreaterThan(0).And.BeLessThanOrEqualTo(HealingEvidenceService.MaximumBundleBytes);
-        result.Bundle.Digest.Should().MatchRegex("^[a-f0-9]{64}$");
-        store.Bundles.Should().ContainSingle();
+        Assert.True(result.Succeeded);
+        Assert.Equal(EvidenceTier.DefaultRedacted, result.Bundle!.Tier);
+        Assert.Contains("System.InvalidOperationException", result.Bundle.CanonicalJson);
+        Assert.Contains("workflow.execute", result.Bundle.CanonicalJson);
+        Assert.Contains("Acme.Activities.SendEmail.Execute", result.Bundle.CanonicalJson);
+        Assert.DoesNotContain("Authorization", result.Bundle.CanonicalJson);
+        Assert.DoesNotContain("top-secret", result.Bundle.CanonicalJson);
+        Assert.DoesNotContain("0123456789abcdef", result.Bundle.CanonicalJson);
+        Assert.Contains("safeAttributes", result.Bundle.OmissionsJson);
+        Assert.Contains("traceCorrelation", result.Bundle.OmissionsJson);
+        Assert.InRange(result.Bundle.SizeBytes, 1, HealingEvidenceService.MaximumBundleBytes);
+        Assert.Matches("^[a-f0-9]{64}$", result.Bundle.Digest);
+        Assert.Single(store.Bundles);
     }
 
     [Fact]
@@ -67,12 +66,12 @@ public sealed class RepairOrchestrationTests
 
         var result = await service.ElevateAsync(request);
 
-        result.Succeeded.Should().BeFalse();
-        result.ReasonCode.Should().Be("not-authorized");
-        store.Bundles.Should().ContainSingle();
-        baseline.CanonicalJson.Should().Be(originalJson);
-        store.Decisions.Should().ContainSingle().Which.Should().Match<EvidenceAccessDecision>(x =>
-            !x.Authorized && x.ReleasedBundleId == null && x.RequestedTier == EvidenceTier.Elevated);
+        Assert.False(result.Succeeded);
+        Assert.Equal("not-authorized", result.ReasonCode);
+        Assert.Single(store.Bundles);
+        Assert.Equal(originalJson, baseline.CanonicalJson);
+        var decision = Assert.Single(store.Decisions);
+        Assert.True(!decision.Authorized && decision.ReleasedBundleId == null && decision.RequestedTier == EvidenceTier.Elevated);
     }
 
     [Fact]
@@ -100,17 +99,17 @@ public sealed class RepairOrchestrationTests
             "reproduce-concurrency-failure",
             new HashSet<EvidenceField> { EvidenceField.TraceCorrelation }));
 
-        result.Succeeded.Should().BeTrue();
-        result.Bundle!.Id.Should().NotBe(baseline.Id);
-        result.Bundle.Tier.Should().Be(EvidenceTier.Elevated);
-        result.Bundle.CanonicalJson.Should().Contain("trace-123");
-        result.Bundle.ExpiresAt.Should().Be(Now.AddHours(1));
-        baseline.Tier.Should().Be(EvidenceTier.DefaultRedacted);
-        baseline.Digest.Should().Be(originalDigest);
-        store.ElevatedTarget.Should().Be((targetAttemptId, baseline.Id));
-        store.Bundles.Should().HaveCount(2);
-        store.Decisions.Should().ContainSingle().Which.Should().Match<EvidenceAccessDecision>(x =>
-            x.Authorized && x.ReleasedBundleId == result.Bundle.Id && x.ApprovedBy == "security-reviewer");
+        Assert.True(result.Succeeded);
+        Assert.NotEqual(baseline.Id, result.Bundle!.Id);
+        Assert.Equal(EvidenceTier.Elevated, result.Bundle.Tier);
+        Assert.Contains("trace-123", result.Bundle.CanonicalJson);
+        Assert.Equal(Now.AddHours(1), result.Bundle.ExpiresAt);
+        Assert.Equal(EvidenceTier.DefaultRedacted, baseline.Tier);
+        Assert.Equal(originalDigest, baseline.Digest);
+        Assert.Equal((targetAttemptId, baseline.Id), store.ElevatedTarget);
+        Assert.Equal(2, store.Bundles.Count);
+        var decision = Assert.Single(store.Decisions);
+        Assert.True(decision.Authorized && decision.ReleasedBundleId == result.Bundle.Id && decision.ApprovedBy == "security-reviewer");
     }
 
     [Fact]
@@ -135,10 +134,10 @@ public sealed class RepairOrchestrationTests
             "request-raw-body",
             new HashSet<EvidenceField> { EvidenceField.ExceptionType }));
 
-        result.Succeeded.Should().BeFalse();
-        result.ReasonCode.Should().Be("field-not-elevatable");
-        store.Bundles.Should().ContainSingle();
-        store.Decisions.Should().ContainSingle().Which.Authorized.Should().BeFalse();
+        Assert.False(result.Succeeded);
+        Assert.Equal("field-not-elevatable", result.ReasonCode);
+        Assert.Single(store.Bundles);
+        Assert.False(Assert.Single(store.Decisions).Authorized);
     }
 
     [Fact]
@@ -149,15 +148,17 @@ public sealed class RepairOrchestrationTests
         var results = await Task.WhenAll(Enumerable.Range(0, 12)
             .Select(_ => service.CreateAttemptAsync(request).AsTask()));
 
-        results.Count(x => x.Outcome == RepairAttemptCreationOutcome.Created).Should().Be(2);
-        results.Count(x => x.Outcome == RepairAttemptCreationOutcome.AttemptLimitReached).Should().Be(10);
-        store.Attempts.Select(x => x.AttemptNumber).Should().BeEquivalentTo([1, 2]);
-        store.Attempts.Should().OnlyContain(x => x.EvidenceBundleId == evidence.Id);
-        results.Where(x => x.Succeeded).Should().AllSatisfy(x =>
+        Assert.Equal(2, results.Count(x => x.Outcome == RepairAttemptCreationOutcome.Created));
+        Assert.Equal(10, results.Count(x => x.Outcome == RepairAttemptCreationOutcome.AttemptLimitReached));
+        Assert.Equivalent(new[] { 1, 2 }, store.Attempts.Select(x => x.AttemptNumber));
+        Assert.All(store.Attempts, x => Assert.Equal(evidence.Id, x.EvidenceBundleId));
+        foreach (var x in results.Where(x => x.Succeeded))
         {
-            x.OneTimeNonce.Should().NotBeNull().And.HaveLength(43);
-            x.Attempt!.NonceHash.Should().NotBe(x.OneTimeNonce).And.HaveLength(64);
-        });
+            Assert.NotNull(x.OneTimeNonce);
+            Assert.Equal(43, x.OneTimeNonce.Length);
+            Assert.NotEqual(x.OneTimeNonce, x.Attempt!.NonceHash);
+            Assert.Equal(64, x.Attempt.NonceHash.Length);
+        }
     }
 
     [Theory]
@@ -172,11 +173,11 @@ public sealed class RepairOrchestrationTests
 
         var result = await service.CreateAttemptAsync(request);
 
-        result.Outcome.Should().Be(expectedOutcome);
-        result.ReasonCode.Should().Be(reasonCode);
-        result.Attempt.Should().BeNull();
-        result.OneTimeNonce.Should().BeNull();
-        store.Attempts.Should().BeEmpty();
+        Assert.Equal(expectedOutcome, result.Outcome);
+        Assert.Equal(reasonCode, result.ReasonCode);
+        Assert.Null(result.Attempt);
+        Assert.Null(result.OneTimeNonce);
+        Assert.Empty(store.Attempts);
     }
 
     [Fact]
@@ -204,14 +205,14 @@ public sealed class RepairOrchestrationTests
             lease.LeaseToken!,
             TimeSpan.FromMinutes(5));
 
-        lease.Succeeded.Should().BeTrue();
-        lease.LeaseToken.Should().NotBeNullOrWhiteSpace();
-        store.Attempts.Single().LeaseToken.Should().NotBe(lease.LeaseToken);
-        store.Attempts.Single().LeaseToken.Should().HaveLength(64);
-        wrongHeartbeat.ReasonCode.Should().Be("lease-lost");
-        heartbeat.Succeeded.Should().BeTrue();
-        heartbeat.ExpiresAt.Should().Be(Now.AddMinutes(5));
-        expiredHeartbeat.ReasonCode.Should().Be("lease-lost");
+        Assert.True(lease.Succeeded);
+        Assert.False(string.IsNullOrWhiteSpace(lease.LeaseToken));
+        Assert.NotEqual(lease.LeaseToken, store.Attempts.Single().LeaseToken);
+        Assert.Equal(64, store.Attempts.Single().LeaseToken!.Length);
+        Assert.Equal("lease-lost", wrongHeartbeat.ReasonCode);
+        Assert.True(heartbeat.Succeeded);
+        Assert.Equal(Now.AddMinutes(5), heartbeat.ExpiresAt);
+        Assert.Equal("lease-lost", expiredHeartbeat.ReasonCode);
     }
 
     [Theory]
@@ -243,12 +244,12 @@ public sealed class RepairOrchestrationTests
             reasonCode,
             new string('a', 64)));
 
-        result.Succeeded.Should().BeTrue();
-        result.Classification.Should().Be(expected);
-        result.ReproductionAttempted.Should().Be(expectedAttempted);
-        result.Reproduced.Should().Be(expectedReproduced);
-        store.ReproductionJson[attempt.Id].Should().Contain($"\"reproductionAttempted\":{expectedAttempted.ToString().ToLowerInvariant()}");
-        store.ReproductionJson[attempt.Id].Should().Contain($"\"reproduced\":{expectedReproduced.ToString().ToLowerInvariant()}");
+        Assert.True(result.Succeeded);
+        Assert.Equal(expected, result.Classification);
+        Assert.Equal(expectedAttempted, result.ReproductionAttempted);
+        Assert.Equal(expectedReproduced, result.Reproduced);
+        Assert.Contains($"\"reproductionAttempted\":{expectedAttempted.ToString().ToLowerInvariant()}", store.ReproductionJson[attempt.Id]);
+        Assert.Contains($"\"reproduced\":{expectedReproduced.ToString().ToLowerInvariant()}", store.ReproductionJson[attempt.Id]);
     }
 
     [Fact]
@@ -268,7 +269,8 @@ public sealed class RepairOrchestrationTests
 
         var act = () => service.RecordReproductionAsync(submission).AsTask();
 
-        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*explicit bounded reason*");
+        var exception = await Assert.ThrowsAsync<ArgumentException>(act);
+        Assert.Matches(".*explicit bounded reason.*", exception.Message);
     }
 
     private static (RepairOrchestrationService Service, InMemoryRepairStore Store, EvidenceBundle Evidence, CreateRepairAttemptRequest Request)

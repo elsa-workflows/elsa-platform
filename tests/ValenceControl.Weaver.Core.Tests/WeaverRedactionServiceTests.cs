@@ -1,5 +1,4 @@
 using ValenceControl.Weaver.Core.Safety;
-using FluentAssertions;
 
 namespace ValenceControl.Weaver.Core.Tests;
 
@@ -16,11 +15,11 @@ public sealed class WeaverRedactionServiceTests
     {
         var result = _redaction.Redact(input);
 
-        result.Redacted.Should().BeTrue();
-        result.Value.Should().Contain("[REDACTED]");
-        result.Value.Should().NotContain("abc123");
-        result.Value.Should().NotContain("ghp_123456");
-        result.Value.Should().NotContain("abc.def.ghi");
+        Assert.True(result.Redacted);
+        Assert.Contains("[REDACTED]", result.Value);
+        Assert.DoesNotContain("abc123", result.Value);
+        Assert.DoesNotContain("ghp_123456", result.Value);
+        Assert.DoesNotContain("abc.def.ghi", result.Value);
     }
 
     [Fact]
@@ -28,7 +27,7 @@ public sealed class WeaverRedactionServiceTests
     {
         var result = _redaction.Redact("Environment Dev has one healthy engine.");
 
-        result.Redacted.Should().BeFalse();
-        result.Value.Should().Be("Environment Dev has one healthy engine.");
+        Assert.False(result.Redacted);
+        Assert.Equal("Environment Dev has one healthy engine.", result.Value);
     }
 }

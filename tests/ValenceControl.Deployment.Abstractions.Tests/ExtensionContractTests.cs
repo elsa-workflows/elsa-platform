@@ -4,7 +4,6 @@ using ValenceControl.Deployment.Abstractions.History;
 using ValenceControl.Deployment.Abstractions.Plans;
 using ValenceControl.Deployment.Abstractions.Resources;
 using ValenceControl.Deployment.Abstractions.Targets;
-using FluentAssertions;
 
 namespace ValenceControl.Deployment.Abstractions.Tests;
 
@@ -29,11 +28,11 @@ public class ExtensionContractTests
         var dryRun = await handler.DryRunAsync(change, _resource, target);
         var apply = await handler.ApplyAsync(change, _resource, target);
 
-        handler.ResourceType.Should().Be("variable");
-        diagnostics.Should().BeEmpty();
-        change.Action.Should().Be(DeploymentChangeAction.NoOp);
-        dryRun.Status.Should().Be(DeploymentChangeStatus.Completed);
-        apply.Status.Should().Be(DeploymentChangeStatus.Completed);
+        Assert.Equal("variable", handler.ResourceType);
+        Assert.Empty(diagnostics);
+        Assert.Equal(DeploymentChangeAction.NoOp, change.Action);
+        Assert.Equal(DeploymentChangeStatus.Completed, dryRun.Status);
+        Assert.Equal(DeploymentChangeStatus.Completed, apply.Status);
     }
 
     [Fact]
@@ -49,9 +48,9 @@ public class ExtensionContractTests
         var resources = await artifact.ReadResourcesAsync();
         await using var content = await artifact.OpenReadAsync("manifest.yaml");
 
-        readMetadata.Should().Be(metadata);
-        resources.Should().ContainSingle().Which.Should().Be(_resource);
-        content.Length.Should().BeGreaterThan(0);
+        Assert.Equal(metadata, readMetadata);
+        Assert.Equal(_resource, Assert.Single(resources));
+        Assert.True(content.Length > 0);
     }
 
     [Fact]
@@ -68,7 +67,7 @@ public class ExtensionContractTests
         await history.RecordAsync(record);
 
         var stored = await history.FindAsync(result.DeploymentId);
-        stored.Should().Be(record);
+        Assert.Equal(record, stored);
     }
 
     private sealed class SampleTarget(DeploymentTargetDescriptor descriptor) : IDeploymentTarget

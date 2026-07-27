@@ -3,7 +3,6 @@ using ValenceControl.Api.Admin.Packages;
 using ValenceControl.Api.Authentication;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Testing;
-using FluentAssertions;
 
 namespace ValenceControl.Api.Tests;
 
@@ -26,13 +25,15 @@ public sealed class AdminPackagesApiTests
 
         var packages = await client.GetControlJsonAsync<List<AdminPackageListResponse>>("/api/admin/packages");
 
-        packages.Should().ContainSingle(x => x.PackageId == "Elsa.Email" && !x.Approved);
-        var package = packages.Single(x => x.PackageId == "Elsa.Email");
-        package.SourceId.Should().NotBeEmpty();
-        package.ApprovalStatus.Should().Be(PackageApprovalStatus.Approved);
-        package.ValidationStatus.Should().Be(ValidationStatus.Valid);
-        package.FeaturesCount.Should().Be(0);
-        package.UpdatedAt.Should().NotBe(default);
+        Assert.NotNull(packages);
+        Assert.Single(packages!, x => x.PackageId == "Elsa.Email" && !x.Approved);
+        var package = packages!.Single(x => x.PackageId == "Elsa.Email");
+        Assert.NotNull(package.SourceId);
+        Assert.NotEqual(Guid.Empty, package.SourceId.Value);
+        Assert.Equal(PackageApprovalStatus.Approved, package.ApprovalStatus);
+        Assert.Equal(ValidationStatus.Valid, package.ValidationStatus);
+        Assert.Equal(0, package.FeaturesCount);
+        Assert.NotEqual(default, package.UpdatedAt);
     }
 
     [Fact]
@@ -58,10 +59,10 @@ public sealed class AdminPackagesApiTests
 
         var packages = await client.GetControlJsonAsync<List<AdminPackageListResponse>>("/api/admin/packages");
 
-        packages.Should().NotBeNull();
+        Assert.NotNull(packages);
         var package = packages!.Single(x => x.PackageId == "Elsa.Email");
-        package.ApprovalStatus.Should().Be(PackageApprovalStatus.Approved);
-        package.ValidationStatus.Should().Be(ValidationStatus.Valid);
+        Assert.Equal(PackageApprovalStatus.Approved, package.ApprovalStatus);
+        Assert.Equal(ValidationStatus.Valid, package.ValidationStatus);
     }
 
     [Fact]
@@ -80,16 +81,16 @@ public sealed class AdminPackagesApiTests
 
         var package = await client.GetControlJsonAsync<AdminPackageResponse>("/api/admin/packages/elsa.persistence.postgresql");
 
-        package.Should().NotBeNull();
-        package!.PackageId.Should().Be("Elsa.Persistence.PostgreSql");
-        package.Source.Should().NotBeNull();
-        package.Source!.Name.Should().Be("Test NuGet");
-        package.LatestVersion.Should().Be("1.0.2");
-        package.ApprovalStatus.Should().Be(PackageApprovalStatus.Pending);
-        package.ValidationStatus.Should().Be(ValidationStatus.Valid);
-        package.Versions.Should().ContainSingle(x => x.Version == "1.0.2" && x.VersionStateToken.Length > 0);
-        package.Versions.Single(x => x.Version == "1.0.2").VisibilityReasons.Should().Contain(x => x.Code == "VersionPendingApproval");
-        package.Versions.Single(x => x.Version == "1.0.2").VisibilityReasons.Should().Contain(x => x.Code == "PackagePendingApproval");
+        Assert.NotNull(package);
+        Assert.Equal("Elsa.Persistence.PostgreSql", package!.PackageId);
+        Assert.NotNull(package.Source);
+        Assert.Equal("Test NuGet", package.Source!.Name);
+        Assert.Equal("1.0.2", package.LatestVersion);
+        Assert.Equal(PackageApprovalStatus.Pending, package.ApprovalStatus);
+        Assert.Equal(ValidationStatus.Valid, package.ValidationStatus);
+        Assert.Single(package.Versions, x => x.Version == "1.0.2" && x.VersionStateToken.Length > 0);
+        Assert.Contains(package.Versions.Single(x => x.Version == "1.0.2").VisibilityReasons, x => x.Code == "VersionPendingApproval");
+        Assert.Contains(package.Versions.Single(x => x.Version == "1.0.2").VisibilityReasons, x => x.Code == "PackagePendingApproval");
     }
 
     [Fact]
@@ -108,11 +109,11 @@ public sealed class AdminPackagesApiTests
 
         var package = await client.GetControlJsonAsync<AdminPackageResponse>("/api/admin/packages/Elsa.Empty");
 
-        package.Should().NotBeNull();
-        package!.PackageId.Should().Be("Elsa.Empty");
-        package.Versions.Should().BeEmpty();
-        package.FeaturesCount.Should().Be(0);
-        package.ValidationStatus.Should().Be(ValidationStatus.NotValidated);
+        Assert.NotNull(package);
+        Assert.Equal("Elsa.Empty", package!.PackageId);
+        Assert.Empty(package.Versions);
+        Assert.Equal(0, package.FeaturesCount);
+        Assert.Equal(ValidationStatus.NotValidated, package.ValidationStatus);
     }
 
     [Fact]
@@ -125,7 +126,7 @@ public sealed class AdminPackagesApiTests
 
         var response = await client.GetAsync("/api/admin/packages/Elsa.Missing");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
@@ -150,15 +151,15 @@ public sealed class AdminPackagesApiTests
         var package = await client.GetControlJsonAsync<AdminPackageResponse>("/api/admin/packages/Elsa.Email");
 
         var version = package!.Versions.Single();
-        version.Manifest.Available.Should().BeTrue();
-        version.Manifest.ManifestHash.Should().Be("sha256:email");
-        version.Manifest.ManifestJson.Should().BeEmpty();
-        version.Compatibility.TargetFrameworks.Should().ContainSingle("net10.0");
-        version.Features.Should().ContainSingle();
+        Assert.True(version.Manifest.Available);
+        Assert.Equal("sha256:email", version.Manifest.ManifestHash);
+        Assert.Empty(version.Manifest.ManifestJson);
+        Assert.Single(version.Compatibility.TargetFrameworks, "net10.0");
+        Assert.Single(version.Features);
         var feature = version.Features.Single();
-        feature.Settings.Should().ContainSingle(x => x.Name == "smtpHost" && x.Required);
-        feature.DependenciesJson.Should().Contain("Elsa.Core");
-        feature.InfrastructureJson.Should().Contain("SmtpServer");
+        Assert.Single(feature.Settings, x => x.Name == "smtpHost" && x.Required);
+        Assert.Contains("Elsa.Core", feature.DependenciesJson);
+        Assert.Contains("SmtpServer", feature.InfrastructureJson);
     }
 
     [Fact]
@@ -178,9 +179,9 @@ public sealed class AdminPackagesApiTests
 
         var manifest = await client.GetControlJsonAsync<AdminVersionManifestResponse>("/api/admin/packages/Elsa.Email/versions/1.0.0/manifest");
 
-        manifest.Should().NotBeNull();
-        manifest!.PackageId.Should().Be("Elsa.Email");
-        manifest.ManifestHash.Should().Be("sha256:manifest");
-        manifest.ManifestJson.Should().Contain("Elsa.Email");
+        Assert.NotNull(manifest);
+        Assert.Equal("Elsa.Email", manifest!.PackageId);
+        Assert.Equal("sha256:manifest", manifest.ManifestHash);
+        Assert.Contains("Elsa.Email", manifest.ManifestJson);
     }
 }

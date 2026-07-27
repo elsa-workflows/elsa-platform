@@ -1,6 +1,5 @@
 using ValenceControl.Healing.Core.Configuration;
 using ValenceControl.Healing.Core.Operations;
-using FluentAssertions;
 using Microsoft.Extensions.Options;
 
 namespace ValenceControl.Healing.Core.Tests;
@@ -17,9 +16,9 @@ public sealed class HealingOperationWorkerTests
 
         var result = await worker.RunOnceAsync();
 
-        result.Status.Should().Be(HealingWorkerRunStatus.Idle);
-        result.RecoveredLeaseCount.Should().Be(2);
-        store.Calls.Should().Equal("recover", "lease");
+        Assert.Equal(HealingWorkerRunStatus.Idle, result.Status);
+        Assert.Equal(2, result.RecoveredLeaseCount);
+        Assert.Equal(["recover", "lease"], store.Calls);
     }
 
     [Fact]
@@ -31,10 +30,10 @@ public sealed class HealingOperationWorkerTests
 
         var result = await worker.RunOnceAsync();
 
-        result.Should().Be(new HealingWorkerRunResult(HealingWorkerRunStatus.Completed, 0, lease.OperationId, "ok"));
-        store.FinishedLease.Should().BeSameAs(lease);
-        store.FinishedOutcome.Should().Be(HealingOperationOutcome.Completed("ok"));
-        store.NextAttemptAt.Should().BeNull();
+        Assert.Equal(new HealingWorkerRunResult(HealingWorkerRunStatus.Completed, 0, lease.OperationId, "ok"), result);
+        Assert.Same(lease, store.FinishedLease);
+        Assert.Equal(HealingOperationOutcome.Completed("ok"), store.FinishedOutcome);
+        Assert.Null(store.NextAttemptAt);
     }
 
     [Fact]
@@ -48,9 +47,9 @@ public sealed class HealingOperationWorkerTests
 
         var result = await worker.RunOnceAsync();
 
-        result.Status.Should().Be(HealingWorkerRunStatus.DeadLettered);
-        store.FinishedOutcome!.OutcomeCode.Should().Be("attempt-limit-reached");
-        store.FinishedOutcome.SafeDetail.Should().NotContain("credential-value");
+        Assert.Equal(HealingWorkerRunStatus.DeadLettered, result.Status);
+        Assert.Equal("attempt-limit-reached", store.FinishedOutcome!.OutcomeCode);
+        Assert.DoesNotContain("credential-value", store.FinishedOutcome.SafeDetail);
     }
 
     [Fact]
@@ -69,9 +68,9 @@ public sealed class HealingOperationWorkerTests
 
         var result = await worker.RunOnceAsync();
 
-        result.Status.Should().Be(HealingWorkerRunStatus.RetryScheduled);
-        store.FinishedOutcome!.OutcomeCode.Should().Be("operation-lease-deadline");
-        store.NextAttemptAt.Should().Be(Now.Add(options.RetryDelay));
+        Assert.Equal(HealingWorkerRunStatus.RetryScheduled, result.Status);
+        Assert.Equal("operation-lease-deadline", store.FinishedOutcome!.OutcomeCode);
+        Assert.Equal(Now.Add(options.RetryDelay), store.NextAttemptAt);
     }
 
     [Fact]
@@ -88,7 +87,7 @@ public sealed class HealingOperationWorkerTests
 
         await worker.RunContinuouslyAsync(cancellation.Token);
 
-        store.RecoverCallCount.Should().Be(2);
+        Assert.Equal(2, store.RecoverCallCount);
     }
 
     [Fact]
@@ -103,11 +102,11 @@ public sealed class HealingOperationWorkerTests
             "worker-1",
             new FixedTimeProvider(Now));
 
-        (await worker.RunOnceAsync()).Status.Should().Be(HealingWorkerRunStatus.Idle);
+        Assert.Equal(HealingWorkerRunStatus.Idle, (await worker.RunOnceAsync()).Status);
         monitor.CurrentValue = new HealingOptions { ControlKillSwitch = true };
-        (await worker.RunOnceAsync()).Status.Should().Be(HealingWorkerRunStatus.Paused);
+        Assert.Equal(HealingWorkerRunStatus.Paused, (await worker.RunOnceAsync()).Status);
 
-        store.LeaseCallCount.Should().Be(1);
+        Assert.Equal(1, store.LeaseCallCount);
     }
 
     private static HealingOperationWorker<TestOperation> CreateWorker(

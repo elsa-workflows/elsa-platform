@@ -3,7 +3,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ValenceControl.Healing.Abstractions;
-using FluentAssertions;
 
 namespace ValenceControl.Healing.GitHub.Tests;
 
@@ -36,14 +35,15 @@ public sealed class GitHubRepairProviderTests
         var first = await provider.UpsertWorkItemAsync(request);
         var replay = await provider.UpsertWorkItemAsync(request);
 
-        replay.Should().Be(first);
-        requests.Should().HaveCount(3);
+        Assert.Equal(first, replay);
+        Assert.Equal(3, requests.Count());
         using var tokenRequest = JsonDocument.Parse(requests[0].Body!);
         var permissions = tokenRequest.RootElement.GetProperty("permissions");
-        permissions.GetProperty("issues").GetString().Should().Be("write");
-        permissions.GetProperty("metadata").GetString().Should().Be("read");
-        permissions.EnumerateObject().Select(x => x.Name).Should().BeEquivalentTo("issues", "metadata");
-        requests[2].Body.Should().Contain("valence-control-healing:incident:").And.NotContain("@here");
+        Assert.Equal("write", permissions.GetProperty("issues").GetString());
+        Assert.Equal("read", permissions.GetProperty("metadata").GetString());
+        Assert.Equivalent(new[] { "issues", "metadata" }, permissions.EnumerateObject().Select(x => x.Name));
+        Assert.Contains("valence-control-healing:incident:", requests[2].Body);
+        Assert.DoesNotContain("@here", requests[2].Body);
     }
 
     [Fact]
@@ -67,15 +67,14 @@ public sealed class GitHubRepairProviderTests
         var first = await provider.DispatchWorkflowAsync(request);
         var replay = await provider.DispatchWorkflowAsync(request);
 
-        first.IsReplay.Should().BeFalse();
-        replay.IsReplay.Should().BeTrue();
-        requests.Should().HaveCount(2);
+        Assert.False(first.IsReplay);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(2, requests.Count());
         using var tokenRequest = JsonDocument.Parse(requests[0].Body);
-        tokenRequest.RootElement.GetProperty("permissions").EnumerateObject().Select(x => x.Name)
-            .Should().BeEquivalentTo("actions", "metadata");
+        Assert.Equivalent(new[] { "actions", "metadata" }, tokenRequest.RootElement.GetProperty("permissions").EnumerateObject().Select(x => x.Name));
         using var dispatch = JsonDocument.Parse(requests[1].Body);
-        dispatch.RootElement.GetProperty("ref").GetString().Should().Be("healing-workflow-v1");
-        dispatch.RootElement.GetProperty("inputs").TryGetProperty("attempt_nonce", out _).Should().BeTrue();
+        Assert.Equal("healing-workflow-v1", dispatch.RootElement.GetProperty("ref").GetString());
+        Assert.True(dispatch.RootElement.GetProperty("inputs").TryGetProperty("attempt_nonce", out _));
     }
 
     [Fact]
@@ -90,9 +89,9 @@ public sealed class GitHubRepairProviderTests
         var act = () => provider.DispatchWorkflowAsync(Dispatch(
             authorization, ".github/workflows/other.yml", new string('b', 40), "dispatch:2")).AsTask();
 
-        await act.Should().ThrowAsync<GitHubSecurityException>()
-            .Where(x => x.ReasonCode == GitHubSecurityReasonCodes.WorkflowNotAuthorized);
-        handler.Count.Should().Be(0);
+        var exception = await Assert.ThrowsAsync<GitHubSecurityException>(act);
+        Assert.Equal(GitHubSecurityReasonCodes.WorkflowNotAuthorized, exception.ReasonCode);
+        Assert.Equal(0, handler.Count);
     }
 
     private static RepairWorkflowDispatchRequest Dispatch(

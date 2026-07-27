@@ -16,7 +16,7 @@ Add `ValenceControl.Deployment.Artifacts` as the next Phase 1 deployment package
 
 **Storage**: Local folder and ZIP artifact IO only. No database, object storage, registry, or remote transport.
 
-**Testing**: xUnit and FluentAssertions in `tests/ValenceControl.Deployment.Artifacts.Tests`, plus full solution `dotnet test`.
+**Testing**: xUnit and its built-in assertions in `tests/ValenceControl.Deployment.Artifacts.Tests`, plus full solution `dotnet test`.
 
 **Target platform**: Cross-platform .NET library consumed by future engine, CLI, API, GitOps, and operator slices.
 
