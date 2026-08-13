@@ -11,7 +11,7 @@ The deployment must be reproducible without depending on an existing `azd` envir
 - Azure Resource Group per environment.
 - Azure Container Registry for the platform API image.
 - Linux Azure App Service Plan.
-- Linux Web App running the Valence Control API image built from `src/ValenceControl.Api/Dockerfile`.
+- Linux Web App running the Valence Control API image built from `src/Hosting/ValenceControl.Api/Dockerfile`.
 - Azure SQL logical server and catalog database.
 - Application Insights and Log Analytics for runtime telemetry.
 - System-assigned Web App identity with `AcrPull` on the registry.

@@ -9,8 +9,8 @@ Regenerate it after dependency changes:
 
 ```bash
 dotnet restore ValenceControl.sln
-npm ci --prefix src/ValenceControl.Console
-npm ci --prefix tests/ValenceControl.Console.E2E
+npm ci --prefix src/Hosting/ValenceControl.Console
+npm ci --prefix tests/Hosting/ValenceControl.Console.E2E
 node scripts/generate-third-party-inventory.mjs
 ```
 

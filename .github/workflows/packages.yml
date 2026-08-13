@@ -69,8 +69,8 @@ jobs:
           mkdir -p ./artifacts
 
           projects=(
-            "src/ValenceControl.PackageManifests/ValenceControl.PackageManifests.csproj"
-            "src/ValenceControl.PackageManifest.Generator/ValenceControl.PackageManifest.Generator.csproj"
+            "src/PackageManifests/ValenceControl.PackageManifests/ValenceControl.PackageManifests.csproj"
+            "src/PackageManifests/ValenceControl.PackageManifest.Generator/ValenceControl.PackageManifest.Generator.csproj"
           )
 
           for proj in "${projects[@]}"; do

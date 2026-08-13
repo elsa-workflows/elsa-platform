@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\..\PackageCatalog\ValenceControl.PackageCatalog.Abstractions\ValenceControl.PackageCatalog.Abstractions.csproj" />
+    <ProjectReference Include="..\..\PackageManifests\ValenceControl.PackageManifests\ValenceControl.PackageManifests.csproj" />
+    <ProjectReference Include="..\..\PackageCatalog\ValenceControl.PackageCatalog.Core\ValenceControl.PackageCatalog.Core.csproj" />
+    <ProjectReference Include="..\..\PackageCatalog\ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore\ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\..\PackageCatalog\ValenceControl.PackageCatalog.Persistence.SqliteMigrations\ValenceControl.PackageCatalog.Persistence.SqliteMigrations.csproj" />
+    <ProjectReference Include="..\..\PackageCatalog\ValenceControl.PackageCatalog.Persistence.SqlServerMigrations\ValenceControl.PackageCatalog.Persistence.SqlServerMigrations.csproj" />
+    <ProjectReference Include="..\..\PackageCatalog\ValenceControl.PackageCatalog.Sources.NuGet\ValenceControl.PackageCatalog.Sources.NuGet.csproj" />
+    <ProjectReference Include="..\ValenceControl.ServiceDefaults\ValenceControl.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\..\Deployment\ValenceControl.Deployment.Core\ValenceControl.Deployment.Core.csproj" />
+    <ProjectReference Include="..\..\Deployment\ValenceControl.Deployment.Artifacts\ValenceControl.Deployment.Artifacts.csproj" />
+    <ProjectReference Include="..\..\RuntimeBuilder\ValenceControl.RuntimeBuilder.Abstractions\ValenceControl.RuntimeBuilder.Abstractions.csproj" />
+    <ProjectReference Include="..\..\RuntimeBuilder\ValenceControl.RuntimeBuilder.Core\ValenceControl.RuntimeBuilder.Core.csproj" />
+    <ProjectReference Include="..\..\RuntimeBuilder\ValenceControl.RuntimeBuilder.DeploymentTemplates\ValenceControl.RuntimeBuilder.DeploymentTemplates.csproj" />
+    <ProjectReference Include="..\..\Weaver\ValenceControl.Weaver.Core\ValenceControl.Weaver.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ConsoleLogStreaming.AspNetCore" />
+    <PackageReference Include="JetBrains.Annotations" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.OpenApi" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
+  </ItemGroup>
+</Project>

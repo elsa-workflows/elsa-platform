@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\ValenceControl.PackageCatalog.Core\ValenceControl.PackageCatalog.Core.csproj" />
+    <ProjectReference Include="..\..\PackageManifests\ValenceControl.PackageManifests\ValenceControl.PackageManifests.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="NuGet.Protocol" />
+  </ItemGroup>
+</Project>

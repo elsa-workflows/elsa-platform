@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\PackageManifests\ValenceControl.PackageManifests\ValenceControl.PackageManifests.csproj" />
+    <ProjectReference Include="..\..\..\src\PackageCatalog\ValenceControl.PackageCatalog.Core\ValenceControl.PackageCatalog.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\RuntimeBuilder\ValenceControl.RuntimeBuilder.Abstractions\ValenceControl.RuntimeBuilder.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Fixtures\BuilderBundles\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -33,8 +33,8 @@ release that supports the current client-rendered architecture.
 Run these checks whenever dependency lockfiles change:
 
 ```bash
-npm audit --prefix src/ValenceControl.Console
-npm audit --prefix tests/ValenceControl.Console.E2E
+npm audit --prefix src/Hosting/ValenceControl.Console
+npm audit --prefix tests/Hosting/ValenceControl.Console.E2E
 dotnet list ValenceControl.sln package --vulnerable --include-transitive
 ```
 

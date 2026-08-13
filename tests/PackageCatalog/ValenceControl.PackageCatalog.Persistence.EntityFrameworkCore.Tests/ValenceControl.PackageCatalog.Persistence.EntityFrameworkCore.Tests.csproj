@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\PackageCatalog\ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore\ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\..\..\src\PackageCatalog\ValenceControl.PackageCatalog.Persistence.SqliteMigrations\ValenceControl.PackageCatalog.Persistence.SqliteMigrations.csproj" />
+    <ProjectReference Include="..\..\..\src\PackageCatalog\ValenceControl.PackageCatalog.Persistence.SqlServerMigrations\ValenceControl.PackageCatalog.Persistence.SqlServerMigrations.csproj" />
+    <ProjectReference Include="..\..\..\src\RuntimeBuilder\ValenceControl.RuntimeBuilder.Core\ValenceControl.RuntimeBuilder.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Weaver\ValenceControl.Weaver.Core\ValenceControl.Weaver.Core.csproj" />
+    <ProjectReference Include="..\ValenceControl.PackageCatalog.Testing\ValenceControl.PackageCatalog.Testing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>

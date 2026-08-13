@@ -47,13 +47,13 @@ under `/admin`, push it to ACR, and update the existing App Service site
 container:
 
 ```bash
-docker build --file src/ValenceControl.Api/Dockerfile --tag <acr>/<repo>:<sha> .
+docker build --file src/Hosting/ValenceControl.Api/Dockerfile --tag <acr>/<repo>:<sha> .
 docker push <acr>/<repo>:<sha>
 az webapp sitecontainers update ...
 ```
 
-The Dockerfile uses a Node build stage for `src/ValenceControl.Console` and copies
-the Vite `dist` output into `src/ValenceControl.Api/wwwroot/admin` before
+The Dockerfile uses a Node build stage for `src/Hosting/ValenceControl.Console` and copies
+the Vite `dist` output into `src/Hosting/ValenceControl.Api/wwwroot/admin` before
 `dotnet publish`. ASP.NET Core serves `/admin` as the console SPA and keeps the
 admin API endpoints under `/api/admin`.
 

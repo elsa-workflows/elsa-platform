@@ -112,7 +112,7 @@ dotnet build ValenceControl.sln
 Run the API directly:
 
 ```bash
-dotnet run --project src/ValenceControl.Api
+dotnet run --project src/Hosting/ValenceControl.Api
 ```
 
 The API exposes `/health`, OpenAPI metadata, public catalog endpoints, workspace endpoints, and the admin console route under `/admin`. In development it uses SQLite by default with the connection string from `appsettings.Development.json`.
@@ -136,8 +136,8 @@ For a browser sign-in flow, start the local Keycloak realm, API, and console dev
 ```bash
 docker compose -f docker-compose.identity.yml up
 dotnet dev-certs https --trust
-ASPNETCORE_ENVIRONMENT=Keycloak dotnet run --project src/ValenceControl.Api --launch-profile https
-cd src/ValenceControl.Console && npm install && npm run dev
+ASPNETCORE_ENVIRONMENT=Keycloak dotnet run --project src/Hosting/ValenceControl.Api --launch-profile https
+cd src/Hosting/ValenceControl.Console && npm install && npm run dev
 ```
 
 Then open the console and use a workspace-only view such as Runtime Builder:
@@ -160,7 +160,7 @@ The local Keycloak admin console is available at `http://127.0.0.1:8080` with `a
 Run the Aspire host:
 
 ```bash
-dotnet run --project src/ValenceControl.AppHost
+dotnet run --project src/Hosting/ValenceControl.AppHost
 ```
 
 In local Aspire runs, the dashboard starts Keycloak, the API, and the Vite-based
@@ -181,12 +181,12 @@ serves the built console assets from the API container under `/admin`.
 Run the console during frontend development:
 
 ```bash
-cd src/ValenceControl.Console
+cd src/Hosting/ValenceControl.Console
 npm install
 npm run dev
 ```
 
-The console dev server proxies relative `/api` requests to `http://localhost:5220` by default. Override `CATALOG_API_PROXY_TARGET` in `src/ValenceControl.Console/.env` when the API is running elsewhere.
+The console dev server proxies relative `/api` requests to `http://localhost:5220` by default. Override `CATALOG_API_PROXY_TARGET` in `src/Hosting/ValenceControl.Console/.env` when the API is running elsewhere.
 
 ## Verification
 
@@ -199,7 +199,7 @@ dotnet test ValenceControl.sln
 Run console checks:
 
 ```bash
-cd src/ValenceControl.Console
+cd src/Hosting/ValenceControl.Console
 npm test
 npm run typecheck
 npm run build
@@ -208,7 +208,7 @@ npm run build
 Run console end-to-end smoke tests:
 
 ```bash
-cd tests/ValenceControl.Console.E2E
+cd tests/Hosting/ValenceControl.Console.E2E
 npm install
 npm run e2e
 ```
@@ -223,7 +223,7 @@ Runtime package authors add the manifest generator as a private build dependency
 
 During build or pack, the generator discovers public CShells feature classes, extracts deploy-time settings, applies XML documentation and optional source-only hints, validates the manifest contract, and includes one root `elsa-package.json` in the produced NuGet package. It intentionally ignores application-code hooks and unsupported CLR-only configuration shapes so manifests stay deploy-time focused and safe to inspect.
 
-See [src/ValenceControl.PackageManifest.Generator/README.md](src/ValenceControl.PackageManifest.Generator/README.md) and [src/ValenceControl.PackageManifests/README.md](src/ValenceControl.PackageManifests/README.md) for the package-authoring details.
+See [src/PackageManifests/ValenceControl.PackageManifest.Generator/README.md](src/PackageManifests/ValenceControl.PackageManifest.Generator/README.md) and [src/PackageManifests/ValenceControl.PackageManifests/README.md](src/PackageManifests/ValenceControl.PackageManifests/README.md) for the package-authoring details.
 
 ## Runtime And Deployment Flow
 
@@ -267,16 +267,14 @@ Several of these pieces are already implemented as contracts and services; other
 
 ## Documentation
 
-- [Package manifest contract](src/ValenceControl.PackageManifests/README.md)
-- [Manifest generator](src/ValenceControl.PackageManifest.Generator/README.md)
-- [Valence Control console](src/ValenceControl.Console/README.md)
+- [Package manifest contract](src/PackageManifests/ValenceControl.PackageManifests/README.md)
+- [Manifest generator](src/PackageManifests/ValenceControl.PackageManifest.Generator/README.md)
+- [Valence Control console](src/Hosting/ValenceControl.Console/README.md)
 - [Active identity and workspace tenancy plan](specs/021-identity-tenancy/plan.md)
 - [Artifact-driven deployment execution plan](docs/valence-control-artifact-deployment-execution-plan.md)
 - [Valence Control artifact workflow E2E smoke](docs/valence-control-artifact-workflow-e2e-smoke.md)
 - [Spec Kit feature history](specs/)
 - [Valence Control integration packaging and host configuration](docs/valence-control-integration-packaging.md)
 - [Runtime transport trust policy](docs/runtime-transport-trust-policy.md)
-- [Valence Control Healing setup and operations](docs/healing/getting-started.md)
-- [Valence Control Healing security and incident response](docs/healing/security.md)
 
 Implementation work is tracked through Spec Kit under `specs/`. Start with the current plan for active branch context before making architectural changes.

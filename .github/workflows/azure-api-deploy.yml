@@ -63,7 +63,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: src/ValenceControl.Console/package-lock.json
+          cache-dependency-path: src/Hosting/ValenceControl.Console/package-lock.json
 
       - name: Check deployment configuration
         id: deployment-config
@@ -116,13 +116,13 @@ jobs:
         run: dotnet restore ValenceControl.sln
 
       - name: Build AppHost
-        run: dotnet build src/ValenceControl.AppHost/ValenceControl.AppHost.csproj --configuration Release --no-restore
+        run: dotnet build src/Hosting/ValenceControl.AppHost/ValenceControl.AppHost.csproj --configuration Release --no-restore
 
       - name: Test API
-        run: dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --configuration Release --no-restore --verbosity normal
+        run: dotnet test tests/Hosting/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --configuration Release --no-restore --verbosity normal
 
       - name: Build and test console
-        working-directory: src/ValenceControl.Console
+        working-directory: src/Hosting/ValenceControl.Console
         run: |
           npm ci
           npm test
@@ -154,7 +154,7 @@ jobs:
             acr_name="${AZURE_CONTAINER_REGISTRY_ENDPOINT%%.azurecr.io}"
 
             az acr login --name "$acr_name"
-            docker build --file src/ValenceControl.Api/Dockerfile --tag "$image" .
+            docker build --file src/Hosting/ValenceControl.Api/Dockerfile --tag "$image" .
             docker push "$image"
 
             az webapp config appsettings set \

@@ -1,7 +1,7 @@
 name: valence-control
 services:
   api:
-    project: src/ValenceControl.AppHost/ValenceControl.AppHost.csproj
+    project: src/Hosting/ValenceControl.AppHost/ValenceControl.AppHost.csproj
     # For Aspire AppHost deployments, azd discovers the real Azure target from
     # AppHost.cs. AddAzureAppServiceEnvironment keeps this deployment on App Service.
     host: containerapp
