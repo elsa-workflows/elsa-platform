@@ -12,7 +12,7 @@
 
 **Purpose**: Confirm existing revision and tier capability structures.
 
-- [x] T001 Review current revision creation, tier capability, and validation code in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`, `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierModels.cs`, and `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentValidationService.cs`
+- [x] T001 Review current revision creation, tier capability, and validation code in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`, `src/ValenceControl.Deployment.Core/Workspace/DeploymentTierModels.cs`, and `src/ValenceControl.Deployment.Core/Workspace/DeploymentValidationService.cs`
 - [x] T002 Update Spec Kit context in `AGENTS.md` to point at `specs/034-dynamic-desired-state-requirements/plan.md`
 
 ---
@@ -21,12 +21,12 @@
 
 **Purpose**: Add shared requirement metadata before story-specific UI behavior.
 
-- [x] T003 Add desired-state requirement models in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`
-- [x] T004 Add requirement catalog/service logic in `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentTierService.cs` or a nearby workspace service file
-- [x] T005 Add workspace API response contract in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentContracts.cs`
-- [x] T006 Add environment desired-state requirements endpoint in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [x] T007 Add console models and API client in `src/Elsa.Platform.Console/src/features/deployments/deploymentModels.ts` and `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts`
-- [x] T008 Add query key support in `src/Elsa.Platform.Console/src/lib/query/queryClient.tsx`
+- [x] T003 Add desired-state requirement models in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`
+- [x] T004 Add requirement catalog/service logic in `src/ValenceControl.Deployment.Core/Workspace/DeploymentTierService.cs` or a nearby workspace service file
+- [x] T005 Add workspace API response contract in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentContracts.cs`
+- [x] T006 Add environment desired-state requirements endpoint in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [x] T007 Add console models and API client in `src/ValenceControl.Console/src/features/deployments/deploymentModels.ts` and `src/ValenceControl.Console/src/features/deployments/deploymentApi.ts`
+- [x] T008 Add query key support in `src/ValenceControl.Console/src/lib/query/queryClient.tsx`
 
 ---
 
@@ -38,14 +38,14 @@
 
 ### Tests for User Story 1
 
-- [x] T009 [P] [US1] Add API test for an environment without observability requirements in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentApiTests.cs`
-- [x] T010 [P] [US1] Add console test that Dev new revision page hides observability in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [x] T009 [P] [US1] Add API test for an environment without observability requirements in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
+- [x] T010 [P] [US1] Add console test that Dev new revision page hides observability in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 1
 
-- [x] T011 [US1] Load requirement metadata in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [x] T012 [US1] Replace the always-visible observability checkbox with a requirements section in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [x] T013 [US1] Submit only artifact records when no requirement or contextual request enables observability in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [x] T011 [US1] Load requirement metadata in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [x] T012 [US1] Replace the always-visible observability checkbox with a requirements section in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [x] T013 [US1] Submit only artifact records when no requirement or contextual request enables observability in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
 
 ---
 
@@ -57,13 +57,13 @@
 
 ### Tests for User Story 2
 
-- [x] T014 [P] [US2] Add API test for an observability-required environment in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentApiTests.cs`
-- [x] T015 [P] [US2] Add console test that Production new revision page requires and submits observability in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [x] T014 [P] [US2] Add API test for an observability-required environment in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
+- [x] T015 [P] [US2] Add console test that Production new revision page requires and submits observability in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 2
 
-- [x] T016 [US2] Mark current-tier observability as required in form copy and validation in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [x] T017 [US2] Update revision flow side-panel copy to reflect dynamic requirements in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [x] T016 [US2] Mark current-tier observability as required in form copy and validation in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [x] T017 [US2] Update revision flow side-panel copy to reflect dynamic requirements in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
 
 ---
 
@@ -75,12 +75,12 @@
 
 ### Tests for User Story 3
 
-- [x] T018 [P] [US3] Add console test for contextual observability query behavior in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [x] T018 [P] [US3] Add console test for contextual observability query behavior in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 3
 
-- [x] T019 [US3] Support `includeRequirement=observability-binding` in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [x] T020 [US3] Update validation action links to use the new contextual requirement query in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [x] T019 [US3] Support `includeRequirement=observability-binding` in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [x] T020 [US3] Update validation action links to use the new contextual requirement query in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
 
 ---
 

@@ -13,7 +13,7 @@ Fields:
 - `DisplayName`: optional latest display name.
 - `Email`: optional latest email.
 - `AuthenticationMethod`: customer token, browser login session, or trusted backend adapter.
-- `Provider`: configured platform identity provider adapter that produced the context.
+- `Provider`: configured Valence Control identity provider adapter that produced the context.
 
 Validation:
 
@@ -22,7 +22,7 @@ Validation:
 - Email and display name are profile metadata only and never form account identity.
 - Browser-supplied account IDs, workspace IDs, roles, or entitlements are ignored as authority.
 
-## PlatformIdentityProvider
+## ControlIdentityProvider
 
 Represents a configured identity adapter such as Generic OIDC/JWT, Microsoft Entra, Auth0, Keycloak, trusted backend, or custom integration.
 

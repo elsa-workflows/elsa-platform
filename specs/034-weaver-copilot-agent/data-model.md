@@ -6,7 +6,7 @@ Represents one workspace-scoped assistant session.
 
 Fields:
 
-- `Id`: Platform session identifier.
+- `Id`: Valence Control session identifier.
 - `WorkspaceId`: Workspace scope.
 - `OrganizationId`: Organization/customer tenant scope when available.
 - `AccountId`: Account that started the session.

@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Create the platform deployment command contract and runtime sync API so external runtime integrations can pull deployment work from Elsa Platform, claim commands with a lease, report progress, complete, fail, or reject work, and avoid duplicate apply. Runtime pull/sync is the default transport, webhook-triggered fetch is a notification accelerator, and direct push remains an explicit opt-in. Existing queued deployment runs remain the console-facing source of truth."
+**Input**: User description: "Create the platform deployment command contract and runtime sync API so external runtime integrations can pull deployment work from Valence Control, claim commands with a lease, report progress, complete, fail, or reject work, and avoid duplicate apply. Runtime pull/sync is the default transport, webhook-triggered fetch is a notification accelerator, and direct push remains an explicit opt-in. Existing queued deployment runs remain the console-facing source of truth."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -80,7 +80,7 @@ The platform can notify a runtime that work is available, but the runtime must f
 - Runtime completion references a different command, run, lease token, artifact digest, or engine than the claim.
 - Command payload references an unsupported artifact type or stale artifact digest.
 - Command diagnostics contain raw payload content, tokens, connection strings, or secret values.
-- Platform API restarts while commands are pending, claimed, or completing.
+- Valence Control API restarts while commands are pending, claimed, or completing.
 - Webhook notification is delayed, duplicated, lost, or delivered before the runtime has connectivity.
 - Direct push is configured for a runtime that also polls; idempotency still prevents duplicate apply.
 - A deployment run is cancelled or recovery-required while a runtime attempts to complete the command.
@@ -116,7 +116,7 @@ The platform can notify a runtime that work is available, but the runtime must f
 - **Command Progress Event**: Safe runtime-reported milestone that is also projected into deployment run history.
 - **Command Result**: Final validation/apply outcome including observed digest, runtime reference, safe diagnostics, and completion status.
 - **Runtime Sync Worker**: Runtime-side integration process that polls, claims, applies, and reports command state.
-- **Webhook Notification**: Non-authoritative command-available trigger that tells a runtime to fetch commands from Platform.
+- **Webhook Notification**: Non-authoritative command-available trigger that tells a runtime to fetch commands from Valence Control.
 - **Idempotency Key**: Stable command key used by runtime and platform to prevent duplicate apply for the same deployment intent.
 
 ## Success Criteria *(mandatory)*

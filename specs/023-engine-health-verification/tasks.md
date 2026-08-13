@@ -20,8 +20,8 @@
 
 - [x] T001 [P] Add engine health API contract examples in `specs/023-engine-health-verification/contracts/engine-health-api.md`
 - [x] T002 [P] Add console verification UX contract examples in `specs/023-engine-health-verification/contracts/console-engine-health-ux.md`
-- [x] T003 [P] Add engine health core test fixture helpers in `tests/Elsa.Platform.Deployment.Core.Tests/WorkspaceDeploymentTestFixtures.cs`
-- [x] T004 [P] Add engine health API test helpers in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentTestFixtures.cs`
+- [x] T003 [P] Add engine health core test fixture helpers in `tests/ValenceControl.Deployment.Core.Tests/WorkspaceDeploymentTestFixtures.cs`
+- [x] T004 [P] Add engine health API test helpers in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentTestFixtures.cs`
 
 ---
 
@@ -31,14 +31,14 @@
 
 **Checkpoint**: Engine health metadata can be represented, stored, projected into cockpit data, and migrated.
 
-- [x] T005 Define engine health request/result models in `src/Elsa.Platform.Deployment.Core/Workspace/EngineHealthModels.cs`
-- [x] T006 Extend workflow engine cockpit metadata with verification fields in `src/Elsa.Platform.Deployment.Core/Cockpit/DeploymentCockpitModels.cs`
-- [x] T007 Extend workspace engine models and store contracts in `src/Elsa.Platform.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs` and `src/Elsa.Platform.Deployment.Core/Workspace/IWorkspaceDeploymentStore.cs`
-- [x] T008 Add engine health service skeleton and health classification in `src/Elsa.Platform.Deployment.Core/Workspace/EngineHealthService.cs`
-- [x] T009 Add EF engine verification fields and optional event entity in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`
-- [x] T010 Add EF mappings for engine verification metadata in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
-- [x] T011 Implement engine health persistence methods and cockpit projection in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [x] T012 Add SQLite and SQL Server migrations for engine verification metadata in `src/Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/Migrations/` and `src/Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
+- [x] T005 Define engine health request/result models in `src/ValenceControl.Deployment.Core/Workspace/EngineHealthModels.cs`
+- [x] T006 Extend workflow engine cockpit metadata with verification fields in `src/ValenceControl.Deployment.Core/Cockpit/DeploymentCockpitModels.cs`
+- [x] T007 Extend workspace engine models and store contracts in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs` and `src/ValenceControl.Deployment.Core/Workspace/IWorkspaceDeploymentStore.cs`
+- [x] T008 Add engine health service skeleton and health classification in `src/ValenceControl.Deployment.Core/Workspace/EngineHealthService.cs`
+- [x] T009 Add EF engine verification fields and optional event entity in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`
+- [x] T010 Add EF mappings for engine verification metadata in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
+- [x] T011 Implement engine health persistence methods and cockpit projection in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T012 Add SQLite and SQL Server migrations for engine verification metadata in `src/ValenceControl.PackageCatalog.Persistence.SqliteMigrations/Migrations/` and `src/ValenceControl.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
 
 ---
 
@@ -50,17 +50,17 @@
 
 ### Tests for User Story 1
 
-- [x] T013 [P] [US1] Add core verification classification tests in `tests/Elsa.Platform.Deployment.Core.Tests/EngineHealthServiceTests.cs`
-- [x] T014 [P] [US1] Add persistence round-trip tests for manual verification metadata in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
-- [x] T015 [P] [US1] Add manual verification API permission and success/failure tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentEngineHealthTests.cs`
-- [x] T016 [P] [US1] Add console manual verification tests in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [x] T013 [P] [US1] Add core verification classification tests in `tests/ValenceControl.Deployment.Core.Tests/EngineHealthServiceTests.cs`
+- [x] T014 [P] [US1] Add persistence round-trip tests for manual verification metadata in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
+- [x] T015 [P] [US1] Add manual verification API permission and success/failure tests in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentEngineHealthTests.cs`
+- [x] T016 [P] [US1] Add console manual verification tests in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 1
 
-- [x] T017 [US1] Implement manual verification service behavior in `src/Elsa.Platform.Deployment.Core/Workspace/EngineHealthService.cs`
-- [x] T018 [US1] Add manual verification endpoint and response contract in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs` and `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentContracts.cs`
-- [x] T019 [US1] Add manual verification API client and models in `src/Elsa.Platform.Console/src/features/deployments/deploymentApi.ts` and `src/Elsa.Platform.Console/src/features/deployments/deploymentModels.ts`
-- [x] T020 [US1] Add Verify action, pending state, safe diagnostics, and cockpit refresh in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
+- [x] T017 [US1] Implement manual verification service behavior in `src/ValenceControl.Deployment.Core/Workspace/EngineHealthService.cs`
+- [x] T018 [US1] Add manual verification endpoint and response contract in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs` and `src/ValenceControl.Api/Workspace/WorkspaceDeploymentContracts.cs`
+- [x] T019 [US1] Add manual verification API client and models in `src/ValenceControl.Console/src/features/deployments/deploymentApi.ts` and `src/ValenceControl.Console/src/features/deployments/deploymentModels.ts`
+- [x] T020 [US1] Add Verify action, pending state, safe diagnostics, and cockpit refresh in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
 - [x] T021 [US1] Run focused US1 checks documented in `specs/023-engine-health-verification/quickstart.md`
 
 **Checkpoint**: Manual verification is independently functional through API and console.
@@ -75,15 +75,15 @@
 
 ### Tests for User Story 2
 
-- [x] T022 [P] [US2] Add heartbeat freshness and capability preservation tests in `tests/Elsa.Platform.Deployment.Core.Tests/EngineHealthServiceTests.cs`
-- [x] T023 [P] [US2] Add heartbeat persistence tests in `tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
-- [x] T024 [P] [US2] Add heartbeat API authorization, stale update, and cross-workspace tests in `tests/Elsa.Platform.Api.Tests/WorkspaceDeploymentEngineHealthTests.cs`
+- [x] T022 [P] [US2] Add heartbeat freshness and capability preservation tests in `tests/ValenceControl.Deployment.Core.Tests/EngineHealthServiceTests.cs`
+- [x] T023 [P] [US2] Add heartbeat persistence tests in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
+- [x] T024 [P] [US2] Add heartbeat API authorization, stale update, and cross-workspace tests in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentEngineHealthTests.cs`
 
 ### Implementation for User Story 2
 
-- [x] T025 [US2] Implement heartbeat update behavior in `src/Elsa.Platform.Deployment.Core/Workspace/EngineHealthService.cs`
-- [x] T026 [US2] Implement capability preservation and optional capability update persistence in `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [x] T027 [US2] Add heartbeat endpoint and request contract in `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs` and `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentContracts.cs`
+- [x] T025 [US2] Implement heartbeat update behavior in `src/ValenceControl.Deployment.Core/Workspace/EngineHealthService.cs`
+- [x] T026 [US2] Implement capability preservation and optional capability update persistence in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T027 [US2] Add heartbeat endpoint and request contract in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs` and `src/ValenceControl.Api/Workspace/WorkspaceDeploymentContracts.cs`
 - [x] T028 [US2] Run focused US2 checks documented in `specs/023-engine-health-verification/quickstart.md`
 
 **Checkpoint**: Heartbeats are independently functional and stale/cross-workspace updates fail closed.
@@ -98,14 +98,14 @@
 
 ### Tests for User Story 3
 
-- [x] T029 [P] [US3] Add console state coverage for healthy, degraded, unreachable, and permission-blocked verification states in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx`
-- [x] T030 [P] [US3] Add runtime control health-gate tests in `tests/Elsa.Platform.Deployment.Core.Tests/RuntimeControlServiceTests.cs`
+- [x] T029 [P] [US3] Add console state coverage for healthy, degraded, unreachable, and permission-blocked verification states in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [x] T030 [P] [US3] Add runtime control health-gate tests in `tests/ValenceControl.Deployment.Core.Tests/RuntimeControlServiceTests.cs`
 
 ### Implementation for User Story 3
 
-- [x] T031 [US3] Render last verification, heartbeat freshness, and safe diagnostics in `src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx`
-- [x] T032 [US3] Update runtime controls messaging for unreachable/unverified engines in `src/Elsa.Platform.Console/src/features/deployments/RuntimeControlsPanel.tsx`
-- [x] T033 [US3] Ensure server-side runtime control health gates use verification metadata in `src/Elsa.Platform.Deployment.Core/Workspace/RuntimeControlService.cs`
+- [x] T031 [US3] Render last verification, heartbeat freshness, and safe diagnostics in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [x] T032 [US3] Update runtime controls messaging for unreachable/unverified engines in `src/ValenceControl.Console/src/features/deployments/RuntimeControlsPanel.tsx`
+- [x] T033 [US3] Ensure server-side runtime control health gates use verification metadata in `src/ValenceControl.Deployment.Core/Workspace/RuntimeControlService.cs`
 - [x] T034 [US3] Run focused US3 checks documented in `specs/023-engine-health-verification/quickstart.md`
 
 **Checkpoint**: Console health states are independently understandable and runtime controls fail closed.
@@ -119,12 +119,12 @@
 - [x] T035 [P] Update quickstart results and known limitations in `specs/023-engine-health-verification/quickstart.md`
 - [x] T036 [P] Update final API contract examples in `specs/023-engine-health-verification/contracts/engine-health-api.md`
 - [x] T037 [P] Update final console UX contract examples in `specs/023-engine-health-verification/contracts/console-engine-health-ux.md`
-- [x] T038 Review secret redaction, workspace permission checks, stale heartbeat handling, cross-workspace rejection, and runtime-control health gates across `src/Elsa.Platform.Deployment.Core/Workspace/`, `src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [x] T039 Run `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter EngineHealth` and record result in `specs/023-engine-health-verification/quickstart.md`
-- [x] T040 Run `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspacePersistenceTests` and record result in `specs/023-engine-health-verification/quickstart.md`
-- [x] T041 Run `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceDeploymentEngineHealth` and record result in `specs/023-engine-health-verification/quickstart.md`
-- [x] T042 Run `cd src/Elsa.Platform.Console && npm test -- --run deployments` and record result in `specs/023-engine-health-verification/quickstart.md`
-- [x] T043 Run `cd src/Elsa.Platform.Console && npm run typecheck` and record result in `specs/023-engine-health-verification/quickstart.md`
+- [x] T038 Review secret redaction, workspace permission checks, stale heartbeat handling, cross-workspace rejection, and runtime-control health gates across `src/ValenceControl.Deployment.Core/Workspace/`, `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [x] T039 Run `dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj --filter EngineHealth` and record result in `specs/023-engine-health-verification/quickstart.md`
+- [x] T040 Run `dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspacePersistenceTests` and record result in `specs/023-engine-health-verification/quickstart.md`
+- [x] T041 Run `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter WorkspaceDeploymentEngineHealth` and record result in `specs/023-engine-health-verification/quickstart.md`
+- [x] T042 Run `cd src/ValenceControl.Console && npm test -- --run deployments` and record result in `specs/023-engine-health-verification/quickstart.md`
+- [x] T043 Run `cd src/ValenceControl.Console && npm run typecheck` and record result in `specs/023-engine-health-verification/quickstart.md`
 - [x] T044 Run `git diff --check` and record result in `specs/023-engine-health-verification/quickstart.md`
 
 ---

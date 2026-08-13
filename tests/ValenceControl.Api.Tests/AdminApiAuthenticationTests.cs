@@ -1,0 +1,37 @@
+using System.Net;
+using ValenceControl.Api.Authentication;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
+
+namespace ValenceControl.Api.Tests;
+
+public sealed class AdminApiAuthenticationTests
+{
+    [Fact]
+    public async Task Health_endpoint_is_public()
+    {
+        await using var app = new ControlApiTestApplication();
+        var response = await app.CreateClient().GetAsync("/health");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Admin_api_rejects_known_development_key_when_api_key_is_not_configured()
+    {
+        await using var app = new ControlApiTestApplication().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [ApiKeyAuthenticationDefaults.ConfigurationKey] = ""
+                }));
+        });
+        var client = app.CreateClient();
+        client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, "local-dev-key");
+
+        var response = await client.GetAsync("/api/admin/sources");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+}

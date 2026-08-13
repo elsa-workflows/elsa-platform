@@ -2,29 +2,29 @@
 
 ## Allowed Dependencies
 
-`Elsa.Platform.Deployment.Artifacts` may reference:
+`ValenceControl.Deployment.Artifacts` may reference:
 
-- `Elsa.Platform.Deployment.Abstractions`
-- `Elsa.Platform.Deployment.Manifest`
+- `ValenceControl.Deployment.Abstractions`
+- `ValenceControl.Deployment.Manifest`
 - .NET base class libraries
 - `System.Text.Json`
 - `System.IO.Compression`
 
 Test projects may reference:
 
-- `Elsa.Platform.Deployment.Artifacts`
-- `Elsa.Platform.Deployment.Abstractions`
-- `Elsa.Platform.Deployment.Manifest`
+- `ValenceControl.Deployment.Artifacts`
+- `ValenceControl.Deployment.Abstractions`
+- `ValenceControl.Deployment.Manifest`
 - xUnit
-- FluentAssertions
+- xUnit's built-in assertions
 
 ## Forbidden Dependencies
 
 The artifact package must not reference:
 
-- `Elsa.Platform.Deployment.Engine`
-- `Elsa.Platform.Deployment.Cli`
-- `Elsa.Platform.Deployment.Api`
+- `ValenceControl.Deployment.Engine`
+- `ValenceControl.Deployment.Cli`
+- `ValenceControl.Deployment.Api`
 - Package Catalog implementation, persistence, API, or source packages
 - Runtime Builder implementation or API packages
 - ASP.NET hosting packages

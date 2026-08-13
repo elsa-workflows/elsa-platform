@@ -18,10 +18,10 @@
 
 **Purpose**: Prepare shared test helpers and inspect existing generator wiring without changing behavior.
 
-- [X] T001 Verify current generator projects and tests build with `dotnet test tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/Elsa.Platform.PackageManifest.Generator.Core.Tests.csproj` and `dotnet test tests/Elsa.Platform.PackageManifest.Generator.MSBuild.Tests/Elsa.Platform.PackageManifest.Generator.MSBuild.Tests.csproj`
-- [X] T002 [P] Add multi-target project configuration support to `tests/Elsa.Platform.PackageManifest.Generator.Testing/SampleProjectBuilder.cs`
-- [X] T003 [P] Add package path and package entry assertion helpers to `tests/Elsa.Platform.PackageManifest.Generator.Testing/NuGetPackageInspector.cs`
-- [X] T004 [P] Add reusable delegate-shaped shell-feature fixture source snippets to `tests/Elsa.Platform.PackageManifest.Generator.Testing/CShellsFeatureFixtures.cs`
+- [X] T001 Verify current generator projects and tests build with `dotnet test tests/ValenceControl.PackageManifest.Generator.Core.Tests/ValenceControl.PackageManifest.Generator.Core.Tests.csproj` and `dotnet test tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests.csproj`
+- [X] T002 [P] Add multi-target project configuration support to `tests/ValenceControl.PackageManifest.Generator.Testing/SampleProjectBuilder.cs`
+- [X] T003 [P] Add package path and package entry assertion helpers to `tests/ValenceControl.PackageManifest.Generator.Testing/NuGetPackageInspector.cs`
+- [X] T004 [P] Add reusable delegate-shaped shell-feature fixture source snippets to `tests/ValenceControl.PackageManifest.Generator.Testing/CShellsFeatureFixtures.cs`
 
 ---
 
@@ -31,11 +31,11 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [X] T005 Extend generator diagnostic metadata with category/fatal/mappable-validation information in `src/Elsa.Platform.PackageManifest.Generator.Core/Validation/GenerationDiagnostics.cs`
-- [X] T006 Update diagnostic formatting to preserve stable messages for new diagnostic metadata in `src/Elsa.Platform.PackageManifest.Generator.Core/Validation/GenerationDiagnosticFormatter.cs`
-- [X] T007 Add delegate/container type-shape inspection helpers in `src/Elsa.Platform.PackageManifest.Generator.Core/AssemblyInspection/TypeMetadataHelpers.cs`
-- [X] T008 Add unit tests for delegate/container type-shape helpers in `tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/SettingSchemaGeneratorTests.cs`
-- [X] T009 Run `dotnet test tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/Elsa.Platform.PackageManifest.Generator.Core.Tests.csproj --filter SettingSchemaGeneratorTests`
+- [X] T005 Extend generator diagnostic metadata with category/fatal/mappable-validation information in `src/ValenceControl.PackageManifest.Generator.Core/Validation/GenerationDiagnostics.cs`
+- [X] T006 Update diagnostic formatting to preserve stable messages for new diagnostic metadata in `src/ValenceControl.PackageManifest.Generator.Core/Validation/GenerationDiagnosticFormatter.cs`
+- [X] T007 Add delegate/container type-shape inspection helpers in `src/ValenceControl.PackageManifest.Generator.Core/AssemblyInspection/TypeMetadataHelpers.cs`
+- [X] T008 Add unit tests for delegate/container type-shape helpers in `tests/ValenceControl.PackageManifest.Generator.Core.Tests/SettingSchemaGeneratorTests.cs`
+- [X] T009 Run `dotnet test tests/ValenceControl.PackageManifest.Generator.Core.Tests/ValenceControl.PackageManifest.Generator.Core.Tests.csproj --filter SettingSchemaGeneratorTests`
 
 **Checkpoint**: Shared diagnostic metadata and delegate type-shape detection are ready.
 
@@ -49,19 +49,19 @@
 
 ### Tests for User Story 1
 
-- [X] T010 [US1] Add integration test for multi-target pack root manifest inclusion in `tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/MultiTargetingPackageInspectionTests.cs`
-- [X] T011 [US1] Add integration test for direct `dotnet pack` without prior explicit build in `tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/MultiTargetingPackageInspectionTests.cs`
-- [X] T012 [US1] Add integration test for custom `ElsaPackageManifestPackagePath` one-entry behavior in `tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/MultiTargetingPackageInspectionTests.cs`
-- [X] T013 [P] [US1] Add integration test proving the first declared target framework is canonical for equivalent surfaces in `tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/MultiTargetingManifestTests.cs`
-- [X] T014 [P] [US1] Add integration test for divergent target-framework surface diagnostics and configured severity behavior in `tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/MultiTargetingManifestTests.cs`
+- [X] T010 [US1] Add integration test for multi-target pack root manifest inclusion in `tests/ValenceControl.PackageManifest.Generator.IntegrationTests/MultiTargetingPackageInspectionTests.cs`
+- [X] T011 [US1] Add integration test for direct `dotnet pack` without prior explicit build in `tests/ValenceControl.PackageManifest.Generator.IntegrationTests/MultiTargetingPackageInspectionTests.cs`
+- [X] T012 [US1] Add integration test for custom `ElsaPackageManifestPackagePath` one-entry behavior in `tests/ValenceControl.PackageManifest.Generator.IntegrationTests/MultiTargetingPackageInspectionTests.cs`
+- [X] T013 [P] [US1] Add integration test proving the first declared target framework is canonical for equivalent surfaces in `tests/ValenceControl.PackageManifest.Generator.IntegrationTests/MultiTargetingManifestTests.cs`
+- [X] T014 [P] [US1] Add integration test for divergent target-framework surface diagnostics and configured severity behavior in `tests/ValenceControl.PackageManifest.Generator.IntegrationTests/MultiTargetingManifestTests.cs`
 
 ### Implementation for User Story 1
 
-- [X] T015 [US1] Wire canonical first-target-framework package inclusion without consumer targets in `src/Elsa.Platform.PackageManifest.Generator/build/Elsa.Platform.PackageManifest.Generator.targets`
-- [X] T016 [US1] Update multi-target canonical selection to preserve first declared target framework ordering in `src/Elsa.Platform.PackageManifest.Generator.Core/Generation/MultiTargetManifestCoordinator.cs`
-- [X] T017 [US1] Ensure package inclusion diagnostics report canonical manifest source and package path in `src/Elsa.Platform.PackageManifest.Generator/build/Elsa.Platform.PackageManifest.Generator.targets`
-- [X] T018 [US1] Wire divergent target-framework surface diagnostics through configured severity policy in `src/Elsa.Platform.PackageManifest.Generator.Core/Generation/MultiTargetManifestCoordinator.cs`
-- [X] T019 [US1] Run `dotnet test tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/Elsa.Platform.PackageManifest.Generator.IntegrationTests.csproj --filter MultiTargeting`
+- [X] T015 [US1] Wire canonical first-target-framework package inclusion without consumer targets in `src/ValenceControl.PackageManifest.Generator/build/ValenceControl.PackageManifest.Generator.targets`
+- [X] T016 [US1] Update multi-target canonical selection to preserve first declared target framework ordering in `src/ValenceControl.PackageManifest.Generator.Core/Generation/MultiTargetManifestCoordinator.cs`
+- [X] T017 [US1] Ensure package inclusion diagnostics report canonical manifest source and package path in `src/ValenceControl.PackageManifest.Generator/build/ValenceControl.PackageManifest.Generator.targets`
+- [X] T018 [US1] Wire divergent target-framework surface diagnostics through configured severity policy in `src/ValenceControl.PackageManifest.Generator.Core/Generation/MultiTargetManifestCoordinator.cs`
+- [X] T019 [US1] Run `dotnet test tests/ValenceControl.PackageManifest.Generator.IntegrationTests/ValenceControl.PackageManifest.Generator.IntegrationTests.csproj --filter MultiTargeting`
 
 **Checkpoint**: User Story 1 is independently functional and demoable with `dotnet pack`.
 
@@ -75,20 +75,20 @@
 
 ### Tests for User Story 2
 
-- [X] T020 [US2] Add core test for direct `Action<T>` and `Func<IServiceProvider,T>` hook exclusion in `tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/SettingDiscoveryTests.cs`
-- [X] T021 [US2] Add core test for `Action<IServiceProvider,HttpClient>` hook exclusion in `tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/SettingDiscoveryTests.cs`
-- [X] T022 [US2] Add core test for delegate-valued dictionary/list hook exclusion in `tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/SettingDiscoveryTests.cs`
-- [X] T023 [US2] Add no-code-execution safety test for ignored delegates, factories, constructors, and property getters in `tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/MetadataInspectionSafetyTests.cs`
-- [X] T024 [US2] Add core test that ignored delegate hooks do not emit warning diagnostics in `tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/UnsupportedSettingTypeTests.cs`
-- [X] T025 [US2] Add core test that ignored delegate hooks can emit low-importance or verbose diagnostics when verbose diagnostics are enabled in `tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/UnsupportedSettingTypeTests.cs`
-- [X] T026 [US2] Add core regression test that non-delegate complex object settings are omitted with low-importance diagnostics in `tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/UnsupportedSettingTypeTests.cs`
+- [X] T020 [US2] Add core test for direct `Action<T>` and `Func<IServiceProvider,T>` hook exclusion in `tests/ValenceControl.PackageManifest.Generator.Core.Tests/SettingDiscoveryTests.cs`
+- [X] T021 [US2] Add core test for `Action<IServiceProvider,HttpClient>` hook exclusion in `tests/ValenceControl.PackageManifest.Generator.Core.Tests/SettingDiscoveryTests.cs`
+- [X] T022 [US2] Add core test for delegate-valued dictionary/list hook exclusion in `tests/ValenceControl.PackageManifest.Generator.Core.Tests/SettingDiscoveryTests.cs`
+- [X] T023 [US2] Add no-code-execution safety test for ignored delegates, factories, constructors, and property getters in `tests/ValenceControl.PackageManifest.Generator.Core.Tests/MetadataInspectionSafetyTests.cs`
+- [X] T024 [US2] Add core test that ignored delegate hooks do not emit warning diagnostics in `tests/ValenceControl.PackageManifest.Generator.Core.Tests/UnsupportedSettingTypeTests.cs`
+- [X] T025 [US2] Add core test that ignored delegate hooks can emit low-importance or verbose diagnostics when verbose diagnostics are enabled in `tests/ValenceControl.PackageManifest.Generator.Core.Tests/UnsupportedSettingTypeTests.cs`
+- [X] T026 [US2] Add core regression test that non-delegate complex object settings are omitted with low-importance diagnostics in `tests/ValenceControl.PackageManifest.Generator.Core.Tests/UnsupportedSettingTypeTests.cs`
 
 ### Implementation for User Story 2
 
-- [X] T027 [US2] Filter delegate-shaped direct and nested container properties before schema generation in `src/Elsa.Platform.PackageManifest.Generator.Core/Generation/SettingDiscoveryService.cs`
-- [X] T028 [US2] Omit non-delegate unsupported setting candidates before manifest generation in `src/Elsa.Platform.PackageManifest.Generator.Core/Generation/SettingDiscoveryService.cs`
-- [X] T029 [US2] Add verbose-only ignored code hook diagnostics in `src/Elsa.Platform.PackageManifest.Generator.Core/Validation/GenerationDiagnostics.cs`
-- [X] T030 [US2] Run `dotnet test tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/Elsa.Platform.PackageManifest.Generator.Core.Tests.csproj --filter \"SettingDiscoveryTests|UnsupportedSettingTypeTests|MetadataInspectionSafetyTests\"`
+- [X] T027 [US2] Filter delegate-shaped direct and nested container properties before schema generation in `src/ValenceControl.PackageManifest.Generator.Core/Generation/SettingDiscoveryService.cs`
+- [X] T028 [US2] Omit non-delegate unsupported setting candidates before manifest generation in `src/ValenceControl.PackageManifest.Generator.Core/Generation/SettingDiscoveryService.cs`
+- [X] T029 [US2] Add verbose-only ignored code hook diagnostics in `src/ValenceControl.PackageManifest.Generator.Core/Validation/GenerationDiagnostics.cs`
+- [X] T030 [US2] Run `dotnet test tests/ValenceControl.PackageManifest.Generator.Core.Tests/ValenceControl.PackageManifest.Generator.Core.Tests.csproj --filter \"SettingDiscoveryTests|UnsupportedSettingTypeTests|MetadataInspectionSafetyTests\"`
 
 **Checkpoint**: User Story 2 is independently functional and normal deploy-time settings still appear.
 
@@ -102,17 +102,17 @@
 
 ### Tests for User Story 3
 
-- [X] T031 [US3] Add MSBuild task test where warning severity plus fail-on-warnings false returns success after mapped validation warnings in `tests/Elsa.Platform.PackageManifest.Generator.MSBuild.Tests/GenerateElsaPackageManifestTaskDiagnosticTests.cs`
-- [X] T032 [US3] Add MSBuild task test where warning severity plus fail-on-warnings true returns failure after mapped validation warnings in `tests/Elsa.Platform.PackageManifest.Generator.MSBuild.Tests/GenerateElsaPackageManifestTaskDiagnosticTests.cs`
-- [X] T033 [P] [US3] Add validation policy unit tests for post-mapping failure behavior in `tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/GenerationDiagnosticSeverityTests.cs`
-- [X] T034 [P] [US3] Add task-level regression test proving warning-only execution succeeds instead of creating an `MSB4181` precursor in `tests/Elsa.Platform.PackageManifest.Generator.MSBuild.Tests/GenerateElsaPackageManifestTaskDiagnosticTests.cs`
+- [X] T031 [US3] Add MSBuild task test where warning severity plus fail-on-warnings false returns success after mapped validation warnings in `tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests/GenerateElsaPackageManifestTaskDiagnosticTests.cs`
+- [X] T032 [US3] Add MSBuild task test where warning severity plus fail-on-warnings true returns failure after mapped validation warnings in `tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests/GenerateElsaPackageManifestTaskDiagnosticTests.cs`
+- [X] T033 [P] [US3] Add validation policy unit tests for post-mapping failure behavior in `tests/ValenceControl.PackageManifest.Generator.Core.Tests/GenerationDiagnosticSeverityTests.cs`
+- [X] T034 [P] [US3] Add task-level regression test proving warning-only execution succeeds instead of creating an `MSB4181` precursor in `tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests/GenerateElsaPackageManifestTaskDiagnosticTests.cs`
 
 ### Implementation for User Story 3
 
-- [X] T035 [US3] Update validation severity policy to fail based on mapped diagnostics plus fatal diagnostics in `src/Elsa.Platform.PackageManifest.Generator.Core/Validation/ValidationSeverityPolicy.cs`
-- [X] T036 [US3] Update MSBuild task result logic to avoid returning false after logging warnings only in `src/Elsa.Platform.PackageManifest.Generator.MSBuild/GenerateElsaPackageManifestTask.cs`
-- [X] T037 [US3] Ensure manifest validation findings are marked mappable before policy evaluation in `src/Elsa.Platform.PackageManifest.Generator.Core/Generation/ManifestGenerator.cs`
-- [X] T038 [US3] Run `dotnet test tests/Elsa.Platform.PackageManifest.Generator.MSBuild.Tests/Elsa.Platform.PackageManifest.Generator.MSBuild.Tests.csproj --filter GenerateElsaPackageManifestTaskDiagnosticTests`
+- [X] T035 [US3] Update validation severity policy to fail based on mapped diagnostics plus fatal diagnostics in `src/ValenceControl.PackageManifest.Generator.Core/Validation/ValidationSeverityPolicy.cs`
+- [X] T036 [US3] Update MSBuild task result logic to avoid returning false after logging warnings only in `src/ValenceControl.PackageManifest.Generator.MSBuild/GenerateElsaPackageManifestTask.cs`
+- [X] T037 [US3] Ensure manifest validation findings are marked mappable before policy evaluation in `src/ValenceControl.PackageManifest.Generator.Core/Generation/ManifestGenerator.cs`
+- [X] T038 [US3] Run `dotnet test tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests.csproj --filter GenerateElsaPackageManifestTaskDiagnosticTests`
 
 **Checkpoint**: User Story 3 is independently functional and fixes the warning-severity task return regression.
 
@@ -126,17 +126,17 @@
 
 ### Tests for User Story 4
 
-- [X] T039 [P] [US4] Add core test proving default policy fails required manifest validation errors in `tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/GeneratedManifestValidationTests.cs`
-- [X] T040 [P] [US4] Add core test proving warning severity does not downgrade invalid override input failures in `tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/ManifestOverrideValidationTests.cs`
-- [X] T041 [P] [US4] Add MSBuild task test proving infrastructure failures fail under warning severity in `tests/Elsa.Platform.PackageManifest.Generator.MSBuild.Tests/GenerateElsaPackageManifestTaskDiagnosticTests.cs`
-- [X] T042 [P] [US4] Add integration test proving non-delegate unsupported settings do not fail under default policy in `tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/ValidationSeverityBuildTests.cs`
+- [X] T039 [P] [US4] Add core test proving default policy fails required manifest validation errors in `tests/ValenceControl.PackageManifest.Generator.Core.Tests/GeneratedManifestValidationTests.cs`
+- [X] T040 [P] [US4] Add core test proving warning severity does not downgrade invalid override input failures in `tests/ValenceControl.PackageManifest.Generator.Core.Tests/ManifestOverrideValidationTests.cs`
+- [X] T041 [P] [US4] Add MSBuild task test proving infrastructure failures fail under warning severity in `tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests/GenerateElsaPackageManifestTaskDiagnosticTests.cs`
+- [X] T042 [P] [US4] Add integration test proving non-delegate unsupported settings do not fail under default policy in `tests/ValenceControl.PackageManifest.Generator.IntegrationTests/ValidationSeverityBuildTests.cs`
 
 ### Implementation for User Story 4
 
-- [X] T043 [US4] Mark override parsing and invalid input diagnostics as fatal in `src/Elsa.Platform.PackageManifest.Generator.Core/Overrides/ManifestOverrideReader.cs`
-- [X] T044 [US4] Mark infrastructure exceptions as fatal before logging in `src/Elsa.Platform.PackageManifest.Generator.MSBuild/GenerateElsaPackageManifestTask.cs`
-- [X] T045 [US4] Preserve default required schema error behavior in `src/Elsa.Platform.PackageManifest.Generator.Core/Validation/GeneratedManifestValidator.cs`
-- [X] T046 [US4] Run `dotnet test tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/Elsa.Platform.PackageManifest.Generator.Core.Tests.csproj --filter \"GeneratedManifestValidationTests|ManifestOverrideValidationTests\"`
+- [X] T043 [US4] Mark override parsing and invalid input diagnostics as fatal in `src/ValenceControl.PackageManifest.Generator.Core/Overrides/ManifestOverrideReader.cs`
+- [X] T044 [US4] Mark infrastructure exceptions as fatal before logging in `src/ValenceControl.PackageManifest.Generator.MSBuild/GenerateElsaPackageManifestTask.cs`
+- [X] T045 [US4] Preserve default required schema error behavior in `src/ValenceControl.PackageManifest.Generator.Core/Validation/GeneratedManifestValidator.cs`
+- [X] T046 [US4] Run `dotnet test tests/ValenceControl.PackageManifest.Generator.Core.Tests/ValenceControl.PackageManifest.Generator.Core.Tests.csproj --filter \"GeneratedManifestValidationTests|ManifestOverrideValidationTests\"`
 
 **Checkpoint**: User Story 4 preserves manifest quality gates while allowing warning-based adoption.
 
@@ -146,13 +146,13 @@
 
 **Purpose**: Documentation, cleanup, and full verification across all stories.
 
-- [X] T047 [P] Update package README adoption guidance in `src/Elsa.Platform.PackageManifest.Generator/README.md`
+- [X] T047 [P] Update package README adoption guidance in `src/ValenceControl.PackageManifest.Generator/README.md`
 - [X] T048 [P] Update generator MSBuild/package layout docs in `specs/002-package-manifest-generator/contracts/msbuild-contract.md`
 - [X] T049 [P] Update package layout docs for canonical first-target-framework behavior in `specs/002-package-manifest-generator/contracts/package-layout.md`
-- [X] T050 Add lightweight type-shape performance regression coverage for representative modules in `tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/SettingSchemaGeneratorTests.cs`
-- [X] T051 Refactor duplicated diagnostic policy setup in `tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/GenerationDiagnosticSeverityTests.cs`
+- [X] T050 Add lightweight type-shape performance regression coverage for representative modules in `tests/ValenceControl.PackageManifest.Generator.Core.Tests/SettingSchemaGeneratorTests.cs`
+- [X] T051 Refactor duplicated diagnostic policy setup in `tests/ValenceControl.PackageManifest.Generator.Core.Tests/GenerationDiagnosticSeverityTests.cs`
 - [X] T052 Run quickstart validation commands from `specs/003-generator-adoption-fixes/quickstart.md`
-- [X] T053 Run full regression suite with `dotnet test Elsa.Platform.sln`
+- [X] T053 Run full regression suite with `dotnet test ValenceControl.sln`
 - [X] T054 Review new abstractions and dependencies against constitution simplicity rules in `specs/003-generator-adoption-fixes/plan.md`
 
 ---
@@ -161,14 +161,14 @@
 
 **Purpose**: Align the generator adoption policy with real CShells modules that expose unsupported non-delegate CLR-only properties such as provider `System.Type` references.
 
-- [X] T055 [US2] Add core regression coverage for `System.Type` setting omission in `tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/UnsupportedSettingTypeTests.cs`
-- [X] T056 [US2] Add MSBuild task regression coverage proving omitted unsupported settings do not warn or fail when fail-on-warnings is enabled in `tests/Elsa.Platform.PackageManifest.Generator.MSBuild.Tests/GenerateElsaPackageManifestTaskDiagnosticTests.cs`
+- [X] T055 [US2] Add core regression coverage for `System.Type` setting omission in `tests/ValenceControl.PackageManifest.Generator.Core.Tests/UnsupportedSettingTypeTests.cs`
+- [X] T056 [US2] Add MSBuild task regression coverage proving omitted unsupported settings do not warn or fail when fail-on-warnings is enabled in `tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests/GenerateElsaPackageManifestTaskDiagnosticTests.cs`
 - [X] T057 [US2] Update setting discovery, diagnostic policy, data model, and research contracts in `specs/003-generator-adoption-fixes/`
 - [X] T058 [US2] Update project workflow guidance in `AGENTS.md` to require Spec Kit alignment for major features and follow-up adjustments
-- [X] T059 [US2] Run `dotnet test tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/Elsa.Platform.PackageManifest.Generator.Core.Tests.csproj --filter "UnsupportedSettingTypeTests|FeatureDiscoveryTests"`
-- [X] T060 [US2] Run `dotnet test tests/Elsa.Platform.PackageManifest.Generator.MSBuild.Tests/Elsa.Platform.PackageManifest.Generator.MSBuild.Tests.csproj --filter GenerateElsaPackageManifestTaskDiagnosticTests`
-- [X] T061 [US2] Run `dotnet test tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/Elsa.Platform.PackageManifest.Generator.IntegrationTests.csproj --filter ValidationSeverityBuildTests`
-- [X] T062 [US2] Run `dotnet test tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/Elsa.Platform.PackageManifest.Generator.Core.Tests.csproj`
+- [X] T059 [US2] Run `dotnet test tests/ValenceControl.PackageManifest.Generator.Core.Tests/ValenceControl.PackageManifest.Generator.Core.Tests.csproj --filter "UnsupportedSettingTypeTests|FeatureDiscoveryTests"`
+- [X] T060 [US2] Run `dotnet test tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests.csproj --filter GenerateElsaPackageManifestTaskDiagnosticTests`
+- [X] T061 [US2] Run `dotnet test tests/ValenceControl.PackageManifest.Generator.IntegrationTests/ValenceControl.PackageManifest.Generator.IntegrationTests.csproj --filter ValidationSeverityBuildTests`
+- [X] T062 [US2] Run `dotnet test tests/ValenceControl.PackageManifest.Generator.Core.Tests/ValenceControl.PackageManifest.Generator.Core.Tests.csproj`
 
 ---
 
@@ -176,15 +176,15 @@
 
 **Purpose**: Fix CI pipelines that build successfully and then run `dotnet pack --no-build`, where pack-time reference resolution may be incomplete and manifest generation should not rerun when the build already produced the manifest.
 
-- [X] T063 [US1] Add package-shaped generator fixture support with local targets/task assets and external CShells reference assembly coverage in `tests/Elsa.Platform.PackageManifest.Generator.Testing/SampleProjectBuilder.cs`
-- [X] T064 [US1] Add regression test for `dotnet build --configuration Release` followed by `dotnet pack --configuration Release --no-build` in `tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/PackTargetBehaviorTests.cs`
-- [X] T065 [US1] Add regression test for clean `dotnet pack` generating and including the manifest in `tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/PackTargetBehaviorTests.cs`
-- [X] T066 [US1] Add regression test for clear missing-manifest failure during `dotnet pack --no-build` in `tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/PackTargetBehaviorTests.cs`
-- [X] T067 [US1] Preserve multi-target one-root-manifest coverage in `tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/PackTargetBehaviorTests.cs`
-- [X] T068 [US1] Update package target flow in `src/Elsa.Platform.PackageManifest.Generator/build/Elsa.Platform.PackageManifest.Generator.targets` so no-build pack reads the existing manifest instead of depending on generation.
+- [X] T063 [US1] Add package-shaped generator fixture support with local targets/task assets and external CShells reference assembly coverage in `tests/ValenceControl.PackageManifest.Generator.Testing/SampleProjectBuilder.cs`
+- [X] T064 [US1] Add regression test for `dotnet build --configuration Release` followed by `dotnet pack --configuration Release --no-build` in `tests/ValenceControl.PackageManifest.Generator.IntegrationTests/PackTargetBehaviorTests.cs`
+- [X] T065 [US1] Add regression test for clean `dotnet pack` generating and including the manifest in `tests/ValenceControl.PackageManifest.Generator.IntegrationTests/PackTargetBehaviorTests.cs`
+- [X] T066 [US1] Add regression test for clear missing-manifest failure during `dotnet pack --no-build` in `tests/ValenceControl.PackageManifest.Generator.IntegrationTests/PackTargetBehaviorTests.cs`
+- [X] T067 [US1] Preserve multi-target one-root-manifest coverage in `tests/ValenceControl.PackageManifest.Generator.IntegrationTests/PackTargetBehaviorTests.cs`
+- [X] T068 [US1] Update package target flow in `src/ValenceControl.PackageManifest.Generator/build/ValenceControl.PackageManifest.Generator.targets` so no-build pack reads the existing manifest instead of depending on generation.
 - [X] T069 [US1] Update package inclusion contracts, quickstart, and README docs for build-then-pack no-build behavior.
-- [X] T070 [US1] Run `dotnet test tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/Elsa.Platform.PackageManifest.Generator.IntegrationTests.csproj --filter PackTargetBehaviorTests`
-- [X] T071 [US1] Run `dotnet test tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/Elsa.Platform.PackageManifest.Generator.IntegrationTests.csproj`
+- [X] T070 [US1] Run `dotnet test tests/ValenceControl.PackageManifest.Generator.IntegrationTests/ValenceControl.PackageManifest.Generator.IntegrationTests.csproj --filter PackTargetBehaviorTests`
+- [X] T071 [US1] Run `dotnet test tests/ValenceControl.PackageManifest.Generator.IntegrationTests/ValenceControl.PackageManifest.Generator.IntegrationTests.csproj`
 
 ---
 
@@ -218,16 +218,16 @@
 ## Parallel Example: User Story 2
 
 ```bash
-Task: "Add core test for direct Action<T> and Func<IServiceProvider,T> hook exclusion in tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/SettingDiscoveryTests.cs"
-Task: "Add core test that ignored delegate hooks do not emit warning diagnostics in tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/UnsupportedSettingTypeTests.cs"
+Task: "Add core test for direct Action<T> and Func<IServiceProvider,T> hook exclusion in tests/ValenceControl.PackageManifest.Generator.Core.Tests/SettingDiscoveryTests.cs"
+Task: "Add core test that ignored delegate hooks do not emit warning diagnostics in tests/ValenceControl.PackageManifest.Generator.Core.Tests/UnsupportedSettingTypeTests.cs"
 ```
 
 ## Parallel Example: User Story 3
 
 ```bash
-Task: "Add MSBuild task test where warning severity plus fail-on-warnings false returns success after mapped validation warnings in tests/Elsa.Platform.PackageManifest.Generator.MSBuild.Tests/GenerateElsaPackageManifestTaskDiagnosticTests.cs"
-Task: "Add validation policy unit tests for post-mapping failure behavior in tests/Elsa.Platform.PackageManifest.Generator.Core.Tests/GenerationDiagnosticSeverityTests.cs"
-Task: "Add integration test proving warning-only builds do not emit MSB4181 in tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/ValidationSeverityBuildTests.cs"
+Task: "Add MSBuild task test where warning severity plus fail-on-warnings false returns success after mapped validation warnings in tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests/GenerateElsaPackageManifestTaskDiagnosticTests.cs"
+Task: "Add validation policy unit tests for post-mapping failure behavior in tests/ValenceControl.PackageManifest.Generator.Core.Tests/GenerationDiagnosticSeverityTests.cs"
+Task: "Add integration test proving warning-only builds do not emit MSB4181 in tests/ValenceControl.PackageManifest.Generator.IntegrationTests/ValidationSeverityBuildTests.cs"
 ```
 
 ## Implementation Strategy
@@ -236,7 +236,7 @@ Task: "Add integration test proving warning-only builds do not emit MSB4181 in t
 
 1. Complete Phase 1 and Phase 2.
 2. Complete Phase 3 for multi-target package inclusion.
-3. Validate with `dotnet test tests/Elsa.Platform.PackageManifest.Generator.IntegrationTests/Elsa.Platform.PackageManifest.Generator.IntegrationTests.csproj --filter MultiTargeting`.
+3. Validate with `dotnet test tests/ValenceControl.PackageManifest.Generator.IntegrationTests/ValenceControl.PackageManifest.Generator.IntegrationTests.csproj --filter MultiTargeting`.
 4. Inspect a produced `.nupkg` and confirm exactly one root `elsa-package.json`.
 
 ### Adoption-Hardening Sequence

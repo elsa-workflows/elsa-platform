@@ -2,28 +2,28 @@
 
 ## Allowed Dependencies
 
-`Elsa.Platform.Deployment.Abstractions` may depend on:
+`ValenceControl.Deployment.Abstractions` may depend on:
 
 - .NET base class library.
 
 The test project may depend on:
 
-- `Elsa.Platform.Deployment.Abstractions`.
+- `ValenceControl.Deployment.Abstractions`.
 - xUnit.
-- FluentAssertions.
+- xUnit's built-in assertions.
 - Microsoft.NET.Test.Sdk.
 
 ## Forbidden Dependencies
 
-`Elsa.Platform.Deployment.Abstractions` must not reference:
+`ValenceControl.Deployment.Abstractions` must not reference:
 
-- `Elsa.Platform.Api`
-- `Elsa.Platform.PackageCatalog.Core`
-- `Elsa.Platform.Console`
-- `Elsa.Platform.PackageCatalog.Persistence.*`
-- `Elsa.Platform.PackageCatalog.Sources.*`
-- `Elsa.Platform.RuntimeBuilder.Core`
-- `Elsa.Platform.RuntimeBuilder.DeploymentTemplates`
+- `ValenceControl.Api`
+- `ValenceControl.PackageCatalog.Core`
+- `ValenceControl.Console`
+- `ValenceControl.PackageCatalog.Persistence.*`
+- `ValenceControl.PackageCatalog.Sources.*`
+- `ValenceControl.RuntimeBuilder.Core`
+- `ValenceControl.RuntimeBuilder.DeploymentTemplates`
 - ASP.NET hosting packages
 - Entity Framework packages
 - migration projects
@@ -50,7 +50,7 @@ These words may appear in tests or docs only when asserting that they are exclud
 
 The feature must include automated tests that:
 
-- Inspect project references for `Elsa.Platform.Deployment.Abstractions`.
+- Inspect project references for `ValenceControl.Deployment.Abstractions`.
 - Assert no forbidden project/package references are present.
 - Search public source files for forbidden runtime-state vocabulary.
 - Compile sample implementations of extension contracts without adding infrastructure dependencies.

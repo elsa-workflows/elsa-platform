@@ -32,9 +32,9 @@ Expected result: The user can complete engine registration without guessing prov
 ## Validation Commands
 
 ```bash
-dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --no-restore
-dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --no-restore --filter DeploymentWorkspace
-cd src/Elsa.Platform.Console && npm run typecheck
-cd src/Elsa.Platform.Console && npm test -- DeploymentsPage
+dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --no-restore
+dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --no-restore --filter DeploymentWorkspace
+cd src/ValenceControl.Console && npm run typecheck
+cd src/ValenceControl.Console && npm test -- DeploymentsPage
 git diff --check
 ```

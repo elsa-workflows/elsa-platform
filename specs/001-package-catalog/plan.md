@@ -1,4 +1,4 @@
-# Implementation Plan: Elsa Package Catalog
+# Implementation Plan: Valence Control Package Catalog
 
 **Branch**: `001-package-catalog` | **Date**: 2026-05-14 | **Spec**: [spec.md](./spec.md)
 
@@ -6,8 +6,8 @@
 
 ## Summary
 
-Build Elsa Package Catalog as an ASP.NET Core modular monolith plus a shared
-`Elsa.Platform.PackageManifests` contract package. The catalog indexes explicitly
+Build Valence Control Package Catalog as an ASP.NET Core modular monolith plus a shared
+`ValenceControl.PackageManifests` contract package. The catalog indexes explicitly
 configured NuGet feeds, extracts versioned `elsa-package.json` manifests without
 loading package assemblies, validates and stores manifests with immutable
 package-version records, separates validation from approval and listing, and
@@ -24,7 +24,7 @@ neutral so PostgreSQL can be introduced later without changing domain concepts.
 
 **Language/Version**: C# on .NET 10 LTS, supported until November 14, 2028.
 
-**Primary Dependencies**: ASP.NET Core, Entity Framework Core, SQLite provider, NuGet.Protocol, System.Text.Json, .NET JSON Schema validation package, OpenAPI tooling, xUnit, FluentAssertions, Microsoft.AspNetCore.Mvc.Testing.
+**Primary Dependencies**: ASP.NET Core, Entity Framework Core, SQLite provider, NuGet.Protocol, System.Text.Json, .NET JSON Schema validation package, OpenAPI tooling, xUnit and its built-in assertions, Microsoft.AspNetCore.Mvc.Testing.
 
 **Storage**: SQLite for initial durable storage, with EF Core mappings and domain model designed for later PostgreSQL support.
 
@@ -32,7 +32,7 @@ neutral so PostgreSQL can be introduced later without changing domain concepts.
 using ASP.NET Core test host, SQLite-backed persistence tests, and controlled
 NuGet package/archive fixtures.
 
-**Target Platform**: Cross-platform server application intended for container or
+**Target platform**: Cross-platform server application intended for container or
 service hosting. Local development runs on macOS/Linux/Windows with the .NET SDK.
 
 **Project Type**: Web service plus shared library package in one solution.
@@ -57,10 +57,10 @@ deployment bundle generation remain out of scope.
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 - **Manifest-first**: PASS. Package metadata flows through explicit
-  `elsa-package.json` manifests and the `Elsa.Platform.PackageManifests` contract.
+  `elsa-package.json` manifests and the `ValenceControl.PackageManifests` contract.
 - **No arbitrary code execution**: PASS. NuGet packages are handled as archives;
   only package files, nuspec metadata, and manifest JSON are inspected.
-- **Stable contracts**: PASS. `Elsa.Platform.PackageManifests` is a dependency-light wire
+- **Stable contracts**: PASS. `ValenceControl.PackageManifests` is a dependency-light wire
   contract package separate from catalog persistence and runtime internals.
 - **Schema evolution**: PASS. Versioned JSON Schema resources, extension metadata
   preservation, unsupported-version validation failures, and breaking-change
@@ -105,13 +105,13 @@ specs/001-package-catalog/
 
 ```text
 src/
-├── Elsa.Platform.PackageManifests/
+├── ValenceControl.PackageManifests/
 │   ├── Compatibility/
 │   ├── Documentation/
 │   ├── Licensing/
 │   ├── Schemas/
 │   └── Validation/
-├── Elsa.Platform.PackageCatalog.Core/
+├── ValenceControl.PackageCatalog.Core/
 │   ├── Approvals/
 │   ├── Compatibility/
 │   ├── Manifests/
@@ -119,33 +119,33 @@ src/
 │   ├── Sources/
 │   ├── Sync/
 │   └── Validation/
-├── Elsa.Platform.Api/
+├── ValenceControl.Api/
 │   ├── Admin/
 │   ├── Public/
 │   ├── Authentication/
 │   └── Program.cs
-├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
+├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
 │   ├── Migrations/
 │   ├── Models/
 │   └── CatalogDbContext.cs
-└── Elsa.Platform.PackageCatalog.Sources.NuGet/
+└── ValenceControl.PackageCatalog.Sources.NuGet/
     ├── PackageArchiveManifestReader.cs
     ├── NuGetPackageSourceClient.cs
     └── NuGetSyncPackageDownloader.cs
 
 tests/
-├── Elsa.Platform.PackageManifests.Tests/
-├── Elsa.Platform.PackageCatalog.Core.Tests/
-├── Elsa.Platform.Api.Tests/
-├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
-├── Elsa.Platform.PackageCatalog.Sources.NuGet.Tests/
-└── Elsa.Platform.PackageCatalog.Testing/
+├── ValenceControl.PackageManifests.Tests/
+├── ValenceControl.PackageCatalog.Core.Tests/
+├── ValenceControl.Api.Tests/
+├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+├── ValenceControl.PackageCatalog.Sources.NuGet.Tests/
+└── ValenceControl.PackageCatalog.Testing/
 ```
 
-**Structure Decision**: Use an onion-style modular monolith. `Elsa.Platform.PackageCatalog.Core`
-is the inner catalog model and workflow layer. `Elsa.Platform.Api` is the delivery
-edge. `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore` and
-`Elsa.Platform.PackageCatalog.Sources.NuGet` are outer adapters. The shared manifest package
+**Structure Decision**: Use an onion-style modular monolith. `ValenceControl.PackageCatalog.Core`
+is the inner catalog model and workflow layer. `ValenceControl.Api` is the delivery
+edge. `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore` and
+`ValenceControl.PackageCatalog.Sources.NuGet` are outer adapters. The shared manifest package
 remains independent.
 
 ## Complexity Tracking

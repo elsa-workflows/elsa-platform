@@ -12,10 +12,10 @@
 
 **Purpose**: Add the deployment foundation project skeletons to the solution.
 
-- [x] T001 Create deployment abstractions project in `src/Elsa.Platform.Deployment.Abstractions/Elsa.Platform.Deployment.Abstractions.csproj`
-- [x] T002 Create deployment abstractions test project in `tests/Elsa.Platform.Deployment.Abstractions.Tests/Elsa.Platform.Deployment.Abstractions.Tests.csproj`
-- [x] T003 Add deployment abstractions source and test projects to `Elsa.Platform.sln`
-- [x] T004 Create source folders in `src/Elsa.Platform.Deployment.Abstractions/Artifacts`, `Diagnostics`, `History`, `Plans`, `Resources`, and `Targets`
+- [x] T001 Create deployment abstractions project in `src/ValenceControl.Deployment.Abstractions/ValenceControl.Deployment.Abstractions.csproj`
+- [x] T002 Create deployment abstractions test project in `tests/ValenceControl.Deployment.Abstractions.Tests/ValenceControl.Deployment.Abstractions.Tests.csproj`
+- [x] T003 Add deployment abstractions source and test projects to `ValenceControl.sln`
+- [x] T004 Create source folders in `src/ValenceControl.Deployment.Abstractions/Artifacts`, `Diagnostics`, `History`, `Plans`, `Resources`, and `Targets`
 
 **Checkpoint**: Empty project skeletons restore and build.
 
@@ -25,12 +25,12 @@
 
 **Purpose**: Establish shared enums and primitive value types used by every user story.
 
-- [x] T005 [P] Create deployment diagnostic severity and status enums in `src/Elsa.Platform.Deployment.Abstractions/Diagnostics/DeploymentDiagnosticSeverity.cs`
-- [x] T006 [P] Create deployment operation mode enum in `src/Elsa.Platform.Deployment.Abstractions/DeploymentOperationMode.cs`
-- [x] T007 [P] Create deployment status enum in `src/Elsa.Platform.Deployment.Abstractions/DeploymentStatus.cs`
-- [x] T008 [P] Create deployment change action and status enums in `src/Elsa.Platform.Deployment.Abstractions/Plans/DeploymentChangeAction.cs` and `src/Elsa.Platform.Deployment.Abstractions/Plans/DeploymentChangeStatus.cs`
-- [x] T009 [P] Create deletion behavior enum in `src/Elsa.Platform.Deployment.Abstractions/Resources/DeploymentDeletionBehavior.cs`
-- [x] T010 [P] Create digest value object in `src/Elsa.Platform.Deployment.Abstractions/Artifacts/ArtifactDigest.cs`
+- [x] T005 [P] Create deployment diagnostic severity and status enums in `src/ValenceControl.Deployment.Abstractions/Diagnostics/DeploymentDiagnosticSeverity.cs`
+- [x] T006 [P] Create deployment operation mode enum in `src/ValenceControl.Deployment.Abstractions/DeploymentOperationMode.cs`
+- [x] T007 [P] Create deployment status enum in `src/ValenceControl.Deployment.Abstractions/DeploymentStatus.cs`
+- [x] T008 [P] Create deployment change action and status enums in `src/ValenceControl.Deployment.Abstractions/Plans/DeploymentChangeAction.cs` and `src/ValenceControl.Deployment.Abstractions/Plans/DeploymentChangeStatus.cs`
+- [x] T009 [P] Create deletion behavior enum in `src/ValenceControl.Deployment.Abstractions/Resources/DeploymentDeletionBehavior.cs`
+- [x] T010 [P] Create digest value object in `src/ValenceControl.Deployment.Abstractions/Artifacts/ArtifactDigest.cs`
 
 **Checkpoint**: Shared primitives compile before higher-level contracts are added.
 
@@ -44,27 +44,27 @@
 
 ### Tests
 
-- [x] T011 [P] [US1] Add resource identity tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/ResourceIdentityTests.cs`
-- [x] T012 [P] [US1] Add artifact contract tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/ArtifactContractTests.cs`
-- [x] T013 [P] [US1] Add diagnostic contract tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/DiagnosticContractTests.cs`
-- [x] T014 [P] [US1] Add plan contract tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/PlanContractTests.cs`
-- [x] T015 [P] [US1] Add history contract tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/HistoryContractTests.cs`
+- [x] T011 [P] [US1] Add resource identity tests in `tests/ValenceControl.Deployment.Abstractions.Tests/ResourceIdentityTests.cs`
+- [x] T012 [P] [US1] Add artifact contract tests in `tests/ValenceControl.Deployment.Abstractions.Tests/ArtifactContractTests.cs`
+- [x] T013 [P] [US1] Add diagnostic contract tests in `tests/ValenceControl.Deployment.Abstractions.Tests/DiagnosticContractTests.cs`
+- [x] T014 [P] [US1] Add plan contract tests in `tests/ValenceControl.Deployment.Abstractions.Tests/PlanContractTests.cs`
+- [x] T015 [P] [US1] Add history contract tests in `tests/ValenceControl.Deployment.Abstractions.Tests/HistoryContractTests.cs`
 
 ### Implementation
 
-- [x] T016 [US1] Implement resource identity and resource contracts in `src/Elsa.Platform.Deployment.Abstractions/Resources/DeploymentResourceId.cs` and `src/Elsa.Platform.Deployment.Abstractions/Resources/DeploymentResource.cs`
-- [x] T017 [US1] Implement artifact identity and metadata contracts in `src/Elsa.Platform.Deployment.Abstractions/Artifacts/DeploymentArtifactIdentity.cs` and `src/Elsa.Platform.Deployment.Abstractions/Artifacts/DeploymentArtifactMetadata.cs`
-- [x] T018 [US1] Implement target descriptor contract in `src/Elsa.Platform.Deployment.Abstractions/Targets/DeploymentTargetDescriptor.cs`
-- [x] T019 [US1] Implement diagnostic contract in `src/Elsa.Platform.Deployment.Abstractions/Diagnostics/DeploymentDiagnostic.cs`
-- [x] T020 [US1] Implement plan and change contracts in `src/Elsa.Platform.Deployment.Abstractions/Plans/DeploymentPlan.cs` and `src/Elsa.Platform.Deployment.Abstractions/Plans/DeploymentChange.cs`
-- [x] T021 [US1] Implement result and resource operation result contracts in `src/Elsa.Platform.Deployment.Abstractions/DeploymentResult.cs` and `src/Elsa.Platform.Deployment.Abstractions/DeploymentResourceResult.cs`
-- [x] T022 [US1] Implement history record and actor contracts in `src/Elsa.Platform.Deployment.Abstractions/History/DeploymentHistoryRecord.cs` and `src/Elsa.Platform.Deployment.Abstractions/History/DeploymentActor.cs`
+- [x] T016 [US1] Implement resource identity and resource contracts in `src/ValenceControl.Deployment.Abstractions/Resources/DeploymentResourceId.cs` and `src/ValenceControl.Deployment.Abstractions/Resources/DeploymentResource.cs`
+- [x] T017 [US1] Implement artifact identity and metadata contracts in `src/ValenceControl.Deployment.Abstractions/Artifacts/DeploymentArtifactIdentity.cs` and `src/ValenceControl.Deployment.Abstractions/Artifacts/DeploymentArtifactMetadata.cs`
+- [x] T018 [US1] Implement target descriptor contract in `src/ValenceControl.Deployment.Abstractions/Targets/DeploymentTargetDescriptor.cs`
+- [x] T019 [US1] Implement diagnostic contract in `src/ValenceControl.Deployment.Abstractions/Diagnostics/DeploymentDiagnostic.cs`
+- [x] T020 [US1] Implement plan and change contracts in `src/ValenceControl.Deployment.Abstractions/Plans/DeploymentPlan.cs` and `src/ValenceControl.Deployment.Abstractions/Plans/DeploymentChange.cs`
+- [x] T021 [US1] Implement result and resource operation result contracts in `src/ValenceControl.Deployment.Abstractions/DeploymentResult.cs` and `src/ValenceControl.Deployment.Abstractions/DeploymentResourceResult.cs`
+- [x] T022 [US1] Implement history record and actor contracts in `src/ValenceControl.Deployment.Abstractions/History/DeploymentHistoryRecord.cs` and `src/ValenceControl.Deployment.Abstractions/History/DeploymentActor.cs`
 
 **Checkpoint**: Core contract tests pass.
 
 ---
 
-## Phase 4: User Story 2 - Enforce Platform Boundaries (Priority: P2)
+## Phase 4: User Story 2 - Enforce Valence Control Boundaries (Priority: P2)
 
 **Goal**: Prove deployment foundation contracts do not depend on forbidden implementation packages or model runtime execution state.
 
@@ -72,12 +72,12 @@
 
 ### Tests
 
-- [x] T023 [P] [US2] Add dependency boundary tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/DependencyBoundaryTests.cs`
+- [x] T023 [P] [US2] Add dependency boundary tests in `tests/ValenceControl.Deployment.Abstractions.Tests/DependencyBoundaryTests.cs`
 
 ### Implementation
 
-- [x] T024 [US2] Verify deployment abstractions project has no forbidden project references in `src/Elsa.Platform.Deployment.Abstractions/Elsa.Platform.Deployment.Abstractions.csproj`
-- [x] T025 [US2] Keep forbidden runtime-state vocabulary out of public source files under `src/Elsa.Platform.Deployment.Abstractions/`
+- [x] T024 [US2] Verify deployment abstractions project has no forbidden project references in `src/ValenceControl.Deployment.Abstractions/ValenceControl.Deployment.Abstractions.csproj`
+- [x] T025 [US2] Keep forbidden runtime-state vocabulary out of public source files under `src/ValenceControl.Deployment.Abstractions/`
 
 **Checkpoint**: Boundary tests pass.
 
@@ -91,16 +91,16 @@
 
 ### Tests
 
-- [x] T026 [P] [US3] Add sample extension implementation tests in `tests/Elsa.Platform.Deployment.Abstractions.Tests/ExtensionContractTests.cs`
+- [x] T026 [P] [US3] Add sample extension implementation tests in `tests/ValenceControl.Deployment.Abstractions.Tests/ExtensionContractTests.cs`
 
 ### Implementation
 
-- [x] T027 [US3] Implement resource handler and state reader contracts in `src/Elsa.Platform.Deployment.Abstractions/Resources/IResourceHandler.cs` and `src/Elsa.Platform.Deployment.Abstractions/Resources/IResourceStateReader.cs`
-- [x] T028 [US3] Implement resource validator contract in `src/Elsa.Platform.Deployment.Abstractions/Resources/IResourceValidator.cs`
-- [x] T029 [US3] Implement artifact reader and writer contracts in `src/Elsa.Platform.Deployment.Abstractions/Artifacts/IArtifactReader.cs` and `src/Elsa.Platform.Deployment.Abstractions/Artifacts/IArtifactWriter.cs`
-- [x] T030 [US3] Implement deployment target contract in `src/Elsa.Platform.Deployment.Abstractions/Targets/IDeploymentTarget.cs`
-- [x] T031 [US3] Implement history store contract in `src/Elsa.Platform.Deployment.Abstractions/History/IDeploymentHistoryStore.cs`
-- [x] T032 [US3] Implement deployment engine entry point contract in `src/Elsa.Platform.Deployment.Abstractions/IDeploymentEngine.cs`
+- [x] T027 [US3] Implement resource handler and state reader contracts in `src/ValenceControl.Deployment.Abstractions/Resources/IResourceHandler.cs` and `src/ValenceControl.Deployment.Abstractions/Resources/IResourceStateReader.cs`
+- [x] T028 [US3] Implement resource validator contract in `src/ValenceControl.Deployment.Abstractions/Resources/IResourceValidator.cs`
+- [x] T029 [US3] Implement artifact reader and writer contracts in `src/ValenceControl.Deployment.Abstractions/Artifacts/IArtifactReader.cs` and `src/ValenceControl.Deployment.Abstractions/Artifacts/IArtifactWriter.cs`
+- [x] T030 [US3] Implement deployment target contract in `src/ValenceControl.Deployment.Abstractions/Targets/IDeploymentTarget.cs`
+- [x] T031 [US3] Implement history store contract in `src/ValenceControl.Deployment.Abstractions/History/IDeploymentHistoryStore.cs`
+- [x] T032 [US3] Implement deployment engine entry point contract in `src/ValenceControl.Deployment.Abstractions/IDeploymentEngine.cs`
 
 **Checkpoint**: Extension contract tests pass.
 
@@ -108,10 +108,10 @@
 
 ## Final Phase: Polish And Verification
 
-- [x] T033 Update deployment roadmap slice status in `docs/deployment-platform-phased-strategy.md`
+- [x] T033 Update deployment roadmap slice status in `docs/valence-control-deployment-phased-strategy.md`
 - [x] T034 Update quickstart verification notes in `specs/017-deployment-contracts/quickstart.md`
-- [x] T035 Run focused deployment abstractions tests with `dotnet test tests/Elsa.Platform.Deployment.Abstractions.Tests/Elsa.Platform.Deployment.Abstractions.Tests.csproj`
-- [x] T036 Run full solution tests with `dotnet test Elsa.Platform.sln`
+- [x] T035 Run focused deployment abstractions tests with `dotnet test tests/ValenceControl.Deployment.Abstractions.Tests/ValenceControl.Deployment.Abstractions.Tests.csproj`
+- [x] T036 Run full solution tests with `dotnet test ValenceControl.sln`
 - [x] T037 Run `git diff --check`
 - [x] T038 Confirm `tasks.md` checkboxes and blocker notes reflect actual progress
 

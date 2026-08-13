@@ -6,19 +6,19 @@
 
 ## Summary
 
-Create the first deployable Phase 1 foundation for Elsa Deployment Platform by adding dependency-light deployment abstractions, tests, and documentation. This slice establishes the shared language for deployable resources, artifact identity, targets, plans, changes, diagnostics, results, history, and extension contracts. It deliberately stops before manifest parsing, artifact folder/ZIP IO, reconciliation execution, CLI commands, hosted API endpoints, and runtime-specific handlers.
+Create the first deployable Phase 1 foundation for Valence Control by adding dependency-light deployment abstractions, tests, and documentation. This slice establishes the shared language for deployable resources, artifact identity, targets, plans, changes, diagnostics, results, history, and extension contracts. It deliberately stops before manifest parsing, artifact folder/ZIP IO, reconciliation execution, CLI commands, hosted API endpoints, and runtime-specific handlers.
 
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 using the repository-wide `Directory.Build.props` target.
 
-**Primary Dependencies**: Base class library only for `Elsa.Platform.Deployment.Abstractions`; xUnit and FluentAssertions for tests.
+**Primary Dependencies**: Base class library only for `ValenceControl.Deployment.Abstractions`; xUnit and its built-in assertions for tests.
 
 **Storage**: N/A for this slice. History is represented by contracts only; no persistence provider is implemented.
 
-**Testing**: `dotnet test` with focused tests under `tests/Elsa.Platform.Deployment.Abstractions.Tests/` plus full solution verification.
+**Testing**: `dotnet test` with focused tests under `tests/ValenceControl.Deployment.Abstractions.Tests/` plus full solution verification.
 
-**Target Platform**: Cross-platform .NET library contracts intended for CLI, API, engine, operator, and third-party extension packages.
+**Target platform**: Cross-platform .NET library contracts intended for CLI, API, engine, operator, and third-party extension packages.
 
 **Project Type**: Multi-project .NET platform repository; this slice adds one class library and one test project.
 
@@ -59,7 +59,7 @@ specs/017-deployment-contracts/
 
 ```text
 src/
-  Elsa.Platform.Deployment.Abstractions/
+  ValenceControl.Deployment.Abstractions/
     Artifacts/
     Diagnostics/
     History/
@@ -68,7 +68,7 @@ src/
     Targets/
 
 tests/
-  Elsa.Platform.Deployment.Abstractions.Tests/
+  ValenceControl.Deployment.Abstractions.Tests/
     ArtifactContractTests.cs
     DependencyBoundaryTests.cs
     DiagnosticContractTests.cs
@@ -78,7 +78,7 @@ tests/
     ResourceIdentityTests.cs
 ```
 
-**Structure Decision**: Add only `Elsa.Platform.Deployment.Abstractions` in this slice. The roadmap packages `Manifest`, `Artifacts`, `Engine`, `Cli`, and `Api` remain deferred so their designs can be shaped by the tested foundation contracts.
+**Structure Decision**: Add only `ValenceControl.Deployment.Abstractions` in this slice. The roadmap packages `Manifest`, `Artifacts`, `Engine`, `Cli`, and `Api` remain deferred so their designs can be shaped by the tested foundation contracts.
 
 ## Phase Plan
 
@@ -98,7 +98,7 @@ Exit gate:
 
 Outcome:
 
-- `Elsa.Platform.Deployment.Abstractions` and test project exist in the solution.
+- `ValenceControl.Deployment.Abstractions` and test project exist in the solution.
 - Namespace and folder structure match the roadmap.
 
 Exit gate:

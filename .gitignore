@@ -13,6 +13,7 @@
 .azure/
 .DS_Store
 Thumbs.db
+.vscode/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
@@ -27,6 +28,8 @@ obj/
 node_modules/
 dist/
 build/
+!src/ValenceControl.Healing.ComponentManifest.Generator.MSBuild/build/
+!src/ValenceControl.Healing.ComponentManifest.Generator.MSBuild/build/*.targets
 coverage/
 playwright-report/
 test-results/
@@ -107,8 +110,8 @@ project.fragment.lock.json
 artifacts/
 .artifacts/
 src/Elsa.Catalog.AppHost/artifacts/
-!src/Elsa.Platform.Deployment.Abstractions/Artifacts/
-!src/Elsa.Platform.Deployment.Abstractions/Artifacts/**
+!src/ValenceControl.Deployment.Abstractions/Artifacts/
+!src/ValenceControl.Deployment.Abstractions/Artifacts/**
 
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt
@@ -175,10 +178,10 @@ ipch/
 !tests/Elsa.Catalog.AdminUi.E2E/**
 tests/Elsa.Catalog.AdminUi.E2E/node_modules/
 tests/Elsa.Catalog.AdminUi.E2E/test-results/
-!tests/Elsa.Platform.Console.E2E/
-!tests/Elsa.Platform.Console.E2E/**
-tests/Elsa.Platform.Console.E2E/node_modules/
-tests/Elsa.Platform.Console.E2E/test-results/
+!tests/ValenceControl.Console.E2E/
+!tests/ValenceControl.Console.E2E/**
+tests/ValenceControl.Console.E2E/node_modules/
+tests/ValenceControl.Console.E2E/test-results/
 
 # TFS 2012 Local Workspace
 $tf/
@@ -463,4 +466,4 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
-src/Elsa.Platform.Api/.data-protection-keys/
+src/ValenceControl.Api/.data-protection-keys/

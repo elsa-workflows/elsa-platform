@@ -6,7 +6,7 @@
 
 ## Summary
 
-Harden `Elsa.Platform.PackageManifest.Generator` for broad Elsa Core module adoption by
+Harden `ValenceControl.PackageManifest.Generator` for broad Elsa Core module adoption by
 fixing three build-package behaviors discovered during preview rollout: warning
 severity must not make the MSBuild task return failure when only warnings are
 logged, delegate-shaped shell-feature properties must be treated as
@@ -30,8 +30,8 @@ cases.
 deterministic builds.
 
 **Primary Dependencies**: Existing MSBuild task APIs, System.Reflection metadata
-inspection, System.Text.Json, Elsa.Platform.PackageManifests validation, xUnit,
-FluentAssertions, and existing generator test helpers.
+inspection, System.Text.Json, ValenceControl.PackageManifests validation, xUnit,
+xUnit's built-in assertions, and existing generator test helpers.
 
 **Storage**: File artifacts only. Inputs are compiled assemblies, XML docs,
 project/NuGet metadata, references, and optional override files. Outputs are
@@ -40,7 +40,7 @@ intermediate manifests and NuGet package entries.
 **Testing**: `dotnet test` with core unit tests, MSBuild task policy tests, and
 integration/package inspection tests using sample projects.
 
-**Target Platform**: Cross-platform .NET SDK builds on macOS, Linux, Windows,
+**Target platform**: Cross-platform .NET SDK builds on macOS, Linux, Windows,
 and CI. Consumers are Elsa shell-feature class library package projects.
 
 **Project Type**: Build-time NuGet package and MSBuild task hardening inside the
@@ -72,7 +72,7 @@ contract.
 - **No arbitrary code execution**: PASS. Delegate filtering and setting
   discovery remain metadata-only; no constructors, getters, factories, or
   callbacks are invoked.
-- **Stable contracts**: PASS. No `Elsa.Platform.PackageManifests` wire-contract change is
+- **Stable contracts**: PASS. No `ValenceControl.PackageManifests` wire-contract change is
   planned.
 - **Schema evolution**: PASS. No schema version change is needed because the
   feature excludes non-configurable code hooks rather than adding new manifest
@@ -117,11 +117,11 @@ specs/003-generator-adoption-fixes/
 
 ```text
 src/
-├── Elsa.Platform.PackageManifest.Generator/
+├── ValenceControl.PackageManifest.Generator/
 │   └── build/
-│       ├── Elsa.Platform.PackageManifest.Generator.props
-│       └── Elsa.Platform.PackageManifest.Generator.targets
-├── Elsa.Platform.PackageManifest.Generator.Core/
+│       ├── ValenceControl.PackageManifest.Generator.props
+│       └── ValenceControl.PackageManifest.Generator.targets
+├── ValenceControl.PackageManifest.Generator.Core/
 │   ├── AssemblyInspection/
 │   ├── Generation/
 │   │   ├── ManifestGenerator.cs
@@ -132,15 +132,15 @@ src/
 │   └── Validation/
 │       ├── GenerationDiagnostics.cs
 │       └── ValidationSeverityPolicy.cs
-└── Elsa.Platform.PackageManifest.Generator.MSBuild/
+└── ValenceControl.PackageManifest.Generator.MSBuild/
     ├── GenerateElsaPackageManifestTask.cs
     └── Packaging/
 
 tests/
-├── Elsa.Platform.PackageManifest.Generator.Core.Tests/
-├── Elsa.Platform.PackageManifest.Generator.MSBuild.Tests/
-├── Elsa.Platform.PackageManifest.Generator.IntegrationTests/
-└── Elsa.Platform.PackageManifest.Generator.Testing/
+├── ValenceControl.PackageManifest.Generator.Core.Tests/
+├── ValenceControl.PackageManifest.Generator.MSBuild.Tests/
+├── ValenceControl.PackageManifest.Generator.IntegrationTests/
+└── ValenceControl.PackageManifest.Generator.Testing/
 ```
 
 **Structure Decision**: Extend the existing generator core/MSBuild/package

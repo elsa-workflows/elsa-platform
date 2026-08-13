@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Improve `Elsa.Platform.PackageManifest.Generator` adoption by Elsa Core shell-feature modules by fixing warning severity task failures, excluding delegate/service-factory configuration hooks from deploy-time settings, and ensuring multi-targeted packages include exactly one root `elsa-package.json` without consumer-side targets."
+**Input**: User description: "Improve `ValenceControl.PackageManifest.Generator` adoption by Elsa Core shell-feature modules by fixing warning severity task failures, excluding delegate/service-factory configuration hooks from deploy-time settings, and ensuring multi-targeted packages include exactly one root `elsa-package.json` without consumer-side targets."
 
 ## Clarifications
 
@@ -33,7 +33,7 @@ An Elsa Core module maintainer adds a private reference to the preview generator
 
 **Acceptance Scenarios**:
 
-1. **Given** a multi-targeted module project references `Elsa.Platform.PackageManifest.Generator` with private assets, **When** the maintainer runs a normal build, **Then** the build succeeds and creates a manifest for the discovered shell features.
+1. **Given** a multi-targeted module project references `ValenceControl.PackageManifest.Generator` with private assets, **When** the maintainer runs a normal build, **Then** the build succeeds and creates a manifest for the discovered shell features.
 2. **Given** the same project has no custom manifest packaging targets, **When** the maintainer packs the project, **Then** the package contains exactly one `elsa-package.json` at the package root.
 3. **Given** a project targets one or many frameworks, **When** the package is created, **Then** duplicate root manifests are not produced and equivalent multi-target surfaces use the first declared target framework as the canonical package manifest source.
 

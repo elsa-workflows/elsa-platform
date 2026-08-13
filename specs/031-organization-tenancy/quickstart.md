@@ -9,19 +9,19 @@ Verify that Organization is the customer tenant boundary, Workspace remains the 
 1. Run focused account/organization core tests:
 
    ```bash
-   dotnet test tests/Elsa.Platform.PackageCatalog.Core.Tests/Elsa.Platform.PackageCatalog.Core.Tests.csproj --filter Organization
+   dotnet test tests/ValenceControl.PackageCatalog.Core.Tests/ValenceControl.PackageCatalog.Core.Tests.csproj --filter Organization
    ```
 
 2. Run focused EF persistence tests:
 
    ```bash
-   dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter Organization
+   dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter Organization
    ```
 
 3. Run focused API tests:
 
    ```bash
-   dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter Organization
+   dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter Organization
    ```
 
 4. Verify the migration preserves workspace IDs:
@@ -43,7 +43,7 @@ Verify that Organization is the customer tenant boundary, Workspace remains the 
 1. Run organization/workspace context tests:
 
    ```bash
-   cd src/Elsa.Platform.Console
+   cd src/ValenceControl.Console
    npm test -- AppShell
    ```
 

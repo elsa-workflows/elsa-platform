@@ -2,7 +2,7 @@
 
 ## Public Package
 
-`Elsa.Platform.Deployment.Engine`
+`ValenceControl.Deployment.Engine`
 
 ## Primary Service
 

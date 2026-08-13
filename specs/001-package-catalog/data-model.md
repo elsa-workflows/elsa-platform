@@ -1,4 +1,4 @@
-# Data Model: Elsa Package Catalog
+# Data Model: Valence Control Package Catalog
 
 ## Overview
 

@@ -2,7 +2,7 @@
 
 ## EnvironmentManifest
 
-- `ApiVersion`: must be `platform.elsa.io/v1alpha1`.
+- `ApiVersion`: must be `valence-control/v1alpha1`.
 - `Kind`: must be `EnvironmentManifest`.
 - `Metadata`: `ManifestMetadata`.
 - `Resources`: `ManifestResources`.

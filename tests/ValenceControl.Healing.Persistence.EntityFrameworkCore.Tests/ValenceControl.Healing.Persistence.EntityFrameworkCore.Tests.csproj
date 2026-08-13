@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ValenceControl.Healing.Persistence.EntityFrameworkCore\ValenceControl.Healing.Persistence.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\..\src\ValenceControl.Healing.Persistence.SqliteMigrations\ValenceControl.Healing.Persistence.SqliteMigrations.csproj" />
+    <ProjectReference Include="..\..\src\ValenceControl.Healing.Persistence.SqlServerMigrations\ValenceControl.Healing.Persistence.SqlServerMigrations.csproj" />
+  </ItemGroup>
+  <ItemGroup><Using Include="Xunit" /></ItemGroup>
+</Project>

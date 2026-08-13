@@ -11,7 +11,7 @@ Accepted
 The repository contains two parallel deployment "worlds" that both claim to model
 desired-state reconciliation, and they do not meet anywhere in production.
 
-**World 1 — `src/Elsa.Platform.Deployment.Engine` (the typed reconciler).**
+**World 1 — `src/ValenceControl.Deployment.Engine` (the typed reconciler).**
 A clean, host-agnostic reconciler: `IDeploymentEngine` with a
 `Validate → Read → Diff → DryRun → Apply` pipeline, a per-resource-type
 `IResourceHandler` extension point, an ordered `ResourceHandlerRegistry`, typed
@@ -20,12 +20,12 @@ models, structured diagnostic codes (`DeploymentEngineDiagnosticCodes`), and an
 `IDeploymentHistoryStore`. It is genuinely open/closed and well tested (27 tests).
 It is also entirely stranded:
 
-- The `Elsa.Platform.Deployment.Engine` project is referenced **only** by
-  `tests/Elsa.Platform.Deployment.Engine.Tests`.
+- The `ValenceControl.Deployment.Engine` project is referenced **only** by
+  `tests/ValenceControl.Deployment.Engine.Tests`.
 - `IResourceHandler` and `IDeploymentTarget` have **zero** production
   implementations.
 - `IResourceValidator` and `IResourceStateReader`
-  (`src/Elsa.Platform.Deployment.Abstractions/Resources/`) have **zero**
+  (`src/ValenceControl.Deployment.Abstractions/Resources/`) have **zero**
   implementations anywhere — they are dead abstractions the engine itself does
   not consume (the engine folds validate/read into `IResourceHandler`).
 
@@ -195,39 +195,39 @@ is retained for the typed model + validate/diff core only.
 
 1. **Land the typed desired-state reader (no behavior change).**
    Add a single `records[]` → `IReadOnlyList<DeploymentResource>` reader in
-   `Elsa.Platform.Deployment.Core` reusing the Abstractions model. Cover it with
+   `ValenceControl.Deployment.Core` reusing the Abstractions model. Cover it with
    tests mirroring the existing `ParseRecords` / `ParseArtifactReferences` cases.
    Nothing consumes it yet.
-   *Files:* new reader in `src/Elsa.Platform.Deployment.Core/Workspace/`;
-   `src/Elsa.Platform.Deployment.Abstractions/Resources/*`.
+   *Files:* new reader in `src/ValenceControl.Deployment.Core/Workspace/`;
+   `src/ValenceControl.Deployment.Abstractions/Resources/*`.
 
 2. **Route `DeploymentDeployabilityService` through the typed reader.**
    Replace its private `ParseArtifactReferences` `JsonDocument` walk with the
    shared reader; keep outputs identical. Delete the duplicate parser.
-   *Files:* `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentDeployabilityService.cs`.
+   *Files:* `src/ValenceControl.Deployment.Core/Workspace/DeploymentDeployabilityService.cs`.
 
 3. **Route `DeploymentValidationService` through the typed reader** and replace
    payload **string-equality** diff with a typed per-kind diff built on
    `DeploymentChange` / `DeploymentChangeAction`. Snapshot-test old vs. new diff
    output to prove intended semantic differences only.
-   *Files:* `src/Elsa.Platform.Deployment.Core/Workspace/DeploymentValidationService.cs`;
-   `src/Elsa.Platform.Deployment.Abstractions/Plans/*`.
+   *Files:* `src/ValenceControl.Deployment.Core/Workspace/DeploymentValidationService.cs`;
+   `src/ValenceControl.Deployment.Abstractions/Plans/*`.
 
 4. **Replace substring blocker classification with typed diagnostics.**
    Carry scope/category on the diagnostic (extend `DeploymentDiagnostic` /
    `DeploymentEngineDiagnosticCodes`) and delete `ScopeFor`'s `Contains` chain.
    *Files:* `DeploymentDeployabilityService.cs`;
-   `src/Elsa.Platform.Deployment.Abstractions/Diagnostics/*`;
-   `src/Elsa.Platform.Deployment.Engine/DeploymentEngineDiagnosticCodes.cs`.
+   `src/ValenceControl.Deployment.Abstractions/Diagnostics/*`;
+   `src/ValenceControl.Deployment.Engine/DeploymentEngineDiagnosticCodes.cs`.
 
 5. **Introduce the analytical core as a referenced library.**
    Have `Deployment.Core` reference the engine's validate/diff core (or lift it
    into `Deployment.Core`), so the live services call one shared
    `Validate`+`Diff` implementation. Repoint the 27 engine tests at the shared
    core. **Do not** wire `ApplyAsync`.
-   *Files:* `src/Elsa.Platform.Deployment.Engine/*.csproj` references;
-   `src/Elsa.Platform.Deployment.Core/*.csproj`;
-   `tests/Elsa.Platform.Deployment.Engine.Tests/*`.
+   *Files:* `src/ValenceControl.Deployment.Engine/*.csproj` references;
+   `src/ValenceControl.Deployment.Core/*.csproj`;
+   `tests/ValenceControl.Deployment.Engine.Tests/*`.
 
 6. **Delete dead in-process-execution abstractions.**
    Remove `IResourceValidator` and `IResourceStateReader`. Narrow/split
@@ -235,10 +235,10 @@ is retained for the typed model + validate/diff core only.
    current-state input; move any `Read`/`Apply`/`IDeploymentTarget` remnants
    behind a clearly-labelled optional in-process adapter the platform does not
    implement (or delete them if no near-term consumer exists).
-   *Files:* `src/Elsa.Platform.Deployment.Abstractions/Resources/IResourceValidator.cs`,
+   *Files:* `src/ValenceControl.Deployment.Abstractions/Resources/IResourceValidator.cs`,
    `IResourceStateReader.cs`, `IResourceHandler.cs`;
-   `src/Elsa.Platform.Deployment.Abstractions/Targets/*`;
-   `src/Elsa.Platform.Deployment.Engine/DeploymentEngine.cs` (drop/relocate the
+   `src/ValenceControl.Deployment.Abstractions/Targets/*`;
+   `src/ValenceControl.Deployment.Engine/DeploymentEngine.cs` (drop/relocate the
    Read/Apply methods from the platform-facing contract).
 
 7. **Implement spec 037 `ConfigurationBinding` as the first production
@@ -246,7 +246,7 @@ is retained for the typed model + validate/diff core only.
    Its required-value / type / secret-reference-resolvability / conformance checks
    run through the shared typed core at the revision-creation, promotion, and
    deploy gates — no new JSON walk.
-   *Files:* new handler in `src/Elsa.Platform.Deployment.Core/`;
+   *Files:* new handler in `src/ValenceControl.Deployment.Core/`;
    gate call sites in `DeploymentValidationService` / `DeploymentRunService` /
    `WorkspaceDeploymentEndpoints`; `specs/037-configuration-shapes/`.
 

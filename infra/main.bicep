@@ -10,7 +10,7 @@ param location string = resourceGroup().location
 @description('Optional globally unique prefix. Leave empty to derive names from the environment and resource group.')
 param namePrefix string = ''
 
-@description('Container image to run, for example myacr.azurecr.io/elsa-platform/api:tag. Leave empty for the default repository in the provisioned ACR.')
+@description('Container image to run, for example myacr.azurecr.io/valence-control/api:tag. Leave empty for the default repository in the provisioned ACR.')
 param containerImage string = ''
 
 @secure()
@@ -22,7 +22,7 @@ param adminApiKey string
 param builderClientApiKey string = ''
 
 @description('SQL administrator login name.')
-param sqlAdministratorLogin string = 'elsaadmin'
+param sqlAdministratorLogin string = 'valenceadmin'
 
 @secure()
 @description('SQL administrator password.')
@@ -72,14 +72,14 @@ param keycloakContainerImage string = 'quay.io/keycloak/keycloak:26.0'
 @description('Keycloak container startup command.')
 param keycloakStartCommand string = 'start --hostname-strict=false'
 
-@description('Keycloak realm used by Elsa Platform.')
-param keycloakRealm string = 'elsa-platform'
+@description('Keycloak realm used by Valence Control.')
+param keycloakRealm string = 'valence-control'
 
-@description('Keycloak OIDC client ID used by the Elsa Platform API.')
-param keycloakClientId string = 'elsa-platform-console'
+@description('Keycloak OIDC client ID used by the Valence Control API.')
+param keycloakClientId string = 'valence-control-console'
 
 @secure()
-@description('Keycloak OIDC confidential client secret used by the Elsa Platform API. Must match the Keycloak client.')
+@description('Keycloak OIDC confidential client secret used by the Valence Control API. Must match the Keycloak client.')
 param keycloakClientSecret string = ''
 
 @description('Keycloak bootstrap admin username. Used by Keycloak only when the server initializes an empty database.')
@@ -108,9 +108,9 @@ param additionalAppSettings object = {}
 @description('Tags applied to all resources.')
 param tags object = {}
 
-var normalizedPrefix = empty(namePrefix) ? 'elsa-${environmentName}' : namePrefix
+var normalizedPrefix = empty(namePrefix) ? 'valence-control-${environmentName}' : namePrefix
 var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id, environmentName)
-var registryNamePrefix = empty(namePrefix) ? 'elsa${environmentName}' : replace(namePrefix, '-', '')
+var registryNamePrefix = empty(namePrefix) ? 'valencecontrol${environmentName}' : replace(namePrefix, '-', '')
 var registryName = take(toLower('${registryNamePrefix}${uniqueSuffix}'), 50)
 var appServicePlanName = '${normalizedPrefix}-plan-${uniqueSuffix}'
 var webAppName = take('${normalizedPrefix}-api-${uniqueSuffix}', 60)
@@ -122,26 +122,26 @@ var keycloakWebAppName = take('${normalizedPrefix}-identity-${uniqueSuffix}', 60
 var keycloakPlanName = '${normalizedPrefix}-identity-plan-${uniqueSuffix}'
 var keycloakPostgresName = take(toLower('${normalizedPrefix}-identity-pg-${uniqueSuffix}'), 63)
 var keycloakDatabaseName = 'keycloak'
-var defaultImage = '${registryName}.azurecr.io/elsa-platform/api:latest'
+var defaultImage = '${registryName}.azurecr.io/valence-control/api:latest'
 var effectiveContainerImage = empty(containerImage) ? defaultImage : containerImage
 var keycloakDefaultHostName = 'https://${keycloakWebAppName}.azurewebsites.net'
 var keycloakAuthority = '${keycloakDefaultHostName}/realms/${keycloakRealm}'
 
 var keycloakApiSettings = deployKeycloak ? {
-  Authentication__PlatformIdentity__Provider: 'Keycloak'
-  Authentication__PlatformIdentity__Authority: keycloakAuthority
-  Authentication__PlatformIdentity__Issuer: keycloakAuthority
-  Authentication__PlatformIdentity__Audience: keycloakClientId
-  Authentication__PlatformIdentity__ClientId: keycloakClientId
-  Authentication__PlatformIdentity__ClientSecret: keycloakClientSecret
-  Authentication__PlatformIdentity__RequireHttpsMetadata: 'true'
-  Authentication__PlatformIdentity__Scopes__0: 'openid'
-  Authentication__PlatformIdentity__Scopes__1: 'profile'
-  Authentication__PlatformIdentity__Scopes__2: 'email'
-  Authentication__PlatformIdentity__Claims__Subject: 'sub'
-  Authentication__PlatformIdentity__Claims__DisplayName__0: 'name'
-  Authentication__PlatformIdentity__Claims__DisplayName__1: 'preferred_username'
-  Authentication__PlatformIdentity__Claims__Email__0: 'email'
+  Authentication__ControlIdentity__Provider: 'Keycloak'
+  Authentication__ControlIdentity__Authority: keycloakAuthority
+  Authentication__ControlIdentity__Issuer: keycloakAuthority
+  Authentication__ControlIdentity__Audience: keycloakClientId
+  Authentication__ControlIdentity__ClientId: keycloakClientId
+  Authentication__ControlIdentity__ClientSecret: keycloakClientSecret
+  Authentication__ControlIdentity__RequireHttpsMetadata: 'true'
+  Authentication__ControlIdentity__Scopes__0: 'openid'
+  Authentication__ControlIdentity__Scopes__1: 'profile'
+  Authentication__ControlIdentity__Scopes__2: 'email'
+  Authentication__ControlIdentity__Claims__Subject: 'sub'
+  Authentication__ControlIdentity__Claims__DisplayName__0: 'name'
+  Authentication__ControlIdentity__Claims__DisplayName__1: 'preferred_username'
+  Authentication__ControlIdentity__Claims__Email__0: 'email'
 } : {}
 
 module observability 'modules/observability.bicep' = {
@@ -207,8 +207,8 @@ module keycloak 'modules/keycloak-webapp.bicep' = if (deployKeycloak) {
   }
 }
 
-module web 'modules/platform-api-webapp.bicep' = {
-  name: 'platform-api-webapp'
+module web 'modules/control-api-webapp.bicep' = {
+  name: 'control-api-webapp'
   params: {
     additionalAppSettings: union(keycloakApiSettings, additionalAppSettings)
     adminApiKey: adminApiKey
@@ -242,7 +242,7 @@ resource webAppAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 output containerRegistryLoginServer string = containerRegistry.properties.loginServer
 output containerRegistryName string = containerRegistry.name
 output defaultContainerImage string = defaultImage
-output platformApiUrl string = web.outputs.defaultHostName
+output controlApiUrl string = web.outputs.defaultHostName
 output keycloakUrl string = deployKeycloak ? keycloakDefaultHostName : ''
 output keycloakAuthority string = deployKeycloak ? keycloakAuthority : ''
 output keycloakRealm string = deployKeycloak ? keycloakRealm : ''

@@ -8,7 +8,7 @@
 
 Replace the fixed deployment environment tier enum with workspace-owned tier definitions that have user-defined labels and platform-defined coded capabilities. The first slice keeps current deployment behavior intact by seeding equivalent default tiers, migrating existing Dev/Test/Stage/Production environment assignments to tier definitions, and exposing tier name plus capability semantics to the cockpit, environment setup, promotion preview, and deployment safeguards.
 
-Deployment Core owns the tier domain model and capability semantics. The existing catalog EF persistence adapter stores workspace-owned tier definitions and assignments. The Platform API exposes authorized tier-management and environment-assignment routes. The console adds tier management for workspace admins and switches deployment environment setup/editing from fixed enum choices to active workspace tiers.
+Deployment Core owns the tier domain model and capability semantics. The existing catalog EF persistence adapter stores workspace-owned tier definitions and assignments. The Valence Control API exposes authorized tier-management and environment-assignment routes. The console adds tier management for workspace admins and switches deployment environment setup/editing from fixed enum choices to active workspace tiers.
 
 > **Forward compatibility note**: `specs/031-organization-tenancy` adds Organization above Workspace. This plan remains scoped to workspace-owned tier definitions and does not introduce organization-shared tier catalogs.
 
@@ -16,13 +16,13 @@ Deployment Core owns the tier domain model and capability semantics. The existin
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `Elsa.Platform.Deployment.Core` workspace services, React Router, TanStack Query, Vitest, Playwright where needed, xUnit, and FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `ValenceControl.Deployment.Core` workspace services, React Router, TanStack Query, Vitest, Playwright where needed, xUnit and its built-in assertions.
 
-**Storage**: Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Deployment tier tables store workspace-owned tier definitions, capability assignments, environment references, and safe audit metadata only.
+**Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Deployment tier tables store workspace-owned tier definitions, capability assignments, environment references, and safe audit metadata only.
 
 **Testing**: Focused `dotnet test` for Deployment.Core, PackageCatalog persistence, and API tests; console `vitest` and typecheck for deployment tier management and environment setup; `git diff --check`.
 
-**Target Platform**: ASP.NET Core Platform API and React console served from the platform host.
+**Target platform**: ASP.NET Core Valence Control API and React console served from the platform host.
 
 **Project Type**: Modular monolith web service with React console and EF-backed workspace persistence.
 
@@ -35,7 +35,7 @@ Deployment Core owns the tier domain model and capability semantics. The existin
 ## Constitution Check
 
 - **Control Plane First**: Pass. The feature models deployment control-plane metadata and policy semantics only; it does not reconcile workflow instances, bookmarks, queues, logs, or transient runtime state.
-- **Bounded Subsystems**: Pass. `Elsa.Platform.Deployment.Core` owns deployment tier contracts and semantics. API, EF persistence, migrations, and console remain adapters. Deployment does not depend on catalog persistence internals.
+- **Bounded Subsystems**: Pass. `ValenceControl.Deployment.Core` owns deployment tier contracts and semantics. API, EF persistence, migrations, and console remain adapters. Deployment does not depend on catalog persistence internals.
 - **Contract Stability**: Pass. Workspace tier API and console contracts are documented under `contracts/` before implementation. The fixed enum is migrated through explicit compatibility behavior.
 - **Safety By Design**: Pass. Tier data contains safe metadata and coded capability IDs only. Tier-aware safeguards fail closed when tier assignment, capability lookup, permission, or workspace isolation checks fail.
 - **Incremental Verifiability**: Pass. Default seeding, tier management, environment assignment, cockpit projection, semantic capability use, migration, and console flows can be tested independently.
@@ -63,7 +63,7 @@ specs/025-custom-deployment-tiers/
 
 ```text
 src/
-  Elsa.Platform.Deployment.Core/
+  ValenceControl.Deployment.Core/
     Cockpit/
       DeploymentCockpitModels.cs
     Workspace/
@@ -74,23 +74,23 @@ src/
       WorkspaceDeploymentService.cs
       DeploymentValidationService.cs
 
-  Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
+  ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
     DeploymentWorkspaceStore.cs
     Models/DeploymentWorkspaceEntities.cs
     Models/CatalogModelConfiguration.cs
 
-  Elsa.Platform.PackageCatalog.Persistence.SqliteMigrations/
+  ValenceControl.PackageCatalog.Persistence.SqliteMigrations/
     Migrations/
 
-  Elsa.Platform.PackageCatalog.Persistence.SqlServerMigrations/
+  ValenceControl.PackageCatalog.Persistence.SqlServerMigrations/
     Migrations/
 
-  Elsa.Platform.Api/
+  ValenceControl.Api/
     Workspace/
       WorkspaceDeploymentContracts.cs
       WorkspaceDeploymentEndpoints.cs
 
-  Elsa.Platform.Console/
+  ValenceControl.Console/
     src/
       features/deployments/
         deploymentApi.ts
@@ -103,26 +103,26 @@ src/
 
 ```text
 tests/
-  Elsa.Platform.Deployment.Core.Tests/
+  ValenceControl.Deployment.Core.Tests/
     DeploymentTierServiceTests.cs
     WorkspaceDeploymentServiceTests.cs
     DeploymentValidationServiceTests.cs
 
-  Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+  ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
     DeploymentWorkspaceTierPersistenceTests.cs
     DeploymentWorkspacePersistenceTests.cs
 
-  Elsa.Platform.Api.Tests/
+  ValenceControl.Api.Tests/
     WorkspaceDeploymentTierApiTests.cs
     WorkspaceDeploymentApiTests.cs
     WorkspaceDeploymentPermissionTests.cs
     WorkspaceDeploymentIsolationTests.cs
 
-  Elsa.Platform.Console/
+  ValenceControl.Console/
     src/features/deployments/DeploymentTiersPanel.test.tsx
     src/features/deployments/DeploymentsPage.test.tsx
 
-  Elsa.Platform.Console.E2E/
+  ValenceControl.Console.E2E/
     deployments.spec.ts
 ```
 

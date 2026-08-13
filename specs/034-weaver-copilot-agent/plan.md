@@ -12,13 +12,13 @@ Turn the existing placeholder Weaver drawer into a backend-backed agentic worksp
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence and Copilot SDK integration; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: GitHub Copilot SDK for .NET, ASP.NET Core minimal APIs, existing workspace identity/authorization helpers, EF Core catalog persistence, existing deployment/core services, React Router, TanStack Query, Vitest, xUnit, FluentAssertions.
+**Primary Dependencies**: GitHub Copilot SDK for .NET, ASP.NET Core minimal APIs, existing workspace identity/authorization helpers, EF Core catalog persistence, existing deployment/core services, React Router, TanStack Query, Vitest, xUnit and its built-in assertions.
 
-**Storage**: Existing catalog relational database through `Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore`. Weaver stores safe session records, messages, tool-call summaries, immutable plans, approvals, execution summaries, and configuration metadata. Provider API keys and raw secrets are never stored.
+**Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`. Weaver stores safe session records, messages, tool-call summaries, immutable plans, approvals, execution summaries, and configuration metadata. Provider API keys and raw secrets are never stored.
 
-**Testing**: xUnit and FluentAssertions for core/API/persistence behavior; Vitest/Testing Library for console drawer behavior; focused `dotnet test`, `npm test`, `npm run typecheck`, and `git diff --check`.
+**Testing**: xUnit and its built-in assertions for core/API/persistence behavior; Vitest/Testing Library for console drawer behavior; focused `dotnet test`, `npm test`, `npm run typecheck`, and `git diff --check`.
 
-**Target Platform**: Elsa Platform API/catalog host and React console. Hosted production deployments must be able to disable Weaver or run it with BYOK provider configuration.
+**Target platform**: Valence Control API/catalog host and React console. Hosted production deployments must be able to disable Weaver or run it with BYOK provider configuration.
 
 **Project Type**: Modular monolith web service plus hosted console.
 
@@ -64,34 +64,34 @@ specs/034-weaver-copilot-agent/
 
 ```text
 src/
-├── Elsa.Platform.Api/
+├── ValenceControl.Api/
 │   └── Workspace/
 │       ├── WorkspaceWeaverContracts.cs
 │       └── WorkspaceWeaverEndpoints.cs
-├── Elsa.Platform.Weaver.Core/
+├── ValenceControl.Weaver.Core/
 │   ├── Configuration/
 │   ├── Runtime/
 │   ├── Sessions/
 │   ├── Tools/
 │   └── Plans/
-├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
+├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
 │   └── Models/
-└── Elsa.Platform.Console/
+└── ValenceControl.Console/
     └── src/
         ├── app/
         └── features/weaver/
 
 tests/
-├── Elsa.Platform.Api.Tests/
-├── Elsa.Platform.Weaver.Core.Tests/
-├── Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
-└── Elsa.Platform.Console/
+├── ValenceControl.Api.Tests/
+├── ValenceControl.Weaver.Core.Tests/
+├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+└── ValenceControl.Console/
 ```
 
-**Structure Decision**: Add `Elsa.Platform.Weaver.Core` for agent/session/tool logic so API endpoints remain thin and persistence stays behind store abstractions. Store EF entities in existing catalog persistence because workspace-owned operational metadata already lives there. Add console code under `features/weaver` and replace the placeholder drawer in `AppShell.tsx` with the feature component.
+**Structure Decision**: Add `ValenceControl.Weaver.Core` for agent/session/tool logic so API endpoints remain thin and persistence stays behind store abstractions. Store EF entities in existing catalog persistence because workspace-owned operational metadata already lives there. Add console code under `features/weaver` and replace the placeholder drawer in `AppShell.tsx` with the feature component.
 
 ## Complexity Tracking
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| New core project | Weaver needs a bounded subsystem for runtime/tool/plan logic independent of API and persistence | Putting agent logic in `Elsa.Platform.Api` would couple transport, runtime orchestration, and domain policies |
+| New core project | Weaver needs a bounded subsystem for runtime/tool/plan logic independent of API and persistence | Putting agent logic in `ValenceControl.Api` would couple transport, runtime orchestration, and domain policies |

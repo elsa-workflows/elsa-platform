@@ -44,7 +44,7 @@ A workspace member with deployment setup permission selects one of the workspace
 
 ---
 
-### User Story 3 - Preserve Stable Platform Semantics (Priority: P3)
+### User Story 3 - Preserve Stable Valence Control Semantics (Priority: P3)
 
 The platform uses coded tier capabilities to make consistent decisions about deployment risk, promotion eligibility, required confirmation, rollback availability, validation expectations, and observability expectations without depending on tier names.
 

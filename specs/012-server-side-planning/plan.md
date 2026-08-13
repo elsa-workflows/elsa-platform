@@ -9,10 +9,10 @@ Add a backend planner that turns builder intent into resolved runtime state and 
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 LTS for API/Core.
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing catalog queries, compatibility service, runtime image catalog, infrastructure provider catalog, xUnit, FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing catalog queries, compatibility service, runtime image catalog, infrastructure provider catalog, xUnit and its built-in assertions.
 **Storage**: No new durable storage for first planner slice.
 **Testing**: Core planner tests and API integration tests.
-**Target Platform**: Existing ASP.NET Core modular monolith.
+**Target platform**: Existing ASP.NET Core modular monolith.
 **Project Type**: Web service with core planning service.
 **Performance Goals**: Planner uses indexed catalog data only and returns representative plans under 1 second locally.
 **Constraints**: No natural-language planning, no client-side authority, no live deployment.
@@ -35,11 +35,11 @@ Add a backend planner that turns builder intent into resolved runtime state and 
 ## Project Structure
 
 ```text
-src/Elsa.Platform.PackageCatalog.Core/Builder/Planner/
-src/Elsa.Platform.Api/Public/Builder/
-src/Elsa.Platform.Api/Workspace/
-tests/Elsa.Platform.PackageCatalog.Core.Tests/
-tests/Elsa.Platform.Api.Tests/
+src/ValenceControl.PackageCatalog.Core/Builder/Planner/
+src/ValenceControl.Api/Public/Builder/
+src/ValenceControl.Api/Workspace/
+tests/ValenceControl.PackageCatalog.Core.Tests/
+tests/ValenceControl.Api.Tests/
 ```
 
 ## Complexity Tracking

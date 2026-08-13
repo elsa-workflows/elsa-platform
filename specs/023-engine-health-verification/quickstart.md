@@ -6,7 +6,7 @@ Verify that workspace-owned workflow engine registrations can move from unreacha
 
 ## API Smoke Scenario
 
-1. Start the Platform API with customer workspace identity enabled.
+1. Start the Valence Control API with customer workspace identity enabled.
 2. Sign in as a customer workspace owner.
 3. Create a workflow application, environment, and engine registration.
 4. Confirm the engine starts as `Unreachable` with no heartbeat.
@@ -43,21 +43,21 @@ Verify that workspace-owned workflow engine registrations can move from unreacha
 ## Verification Commands
 
 ```sh
-dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter EngineHealth
-dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspacePersistenceTests
-dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceDeploymentEngineHealth
-cd src/Elsa.Platform.Console && npm test -- --run deployments
-cd src/Elsa.Platform.Console && npm run typecheck
+dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj --filter EngineHealth
+dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspacePersistenceTests
+dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter WorkspaceDeploymentEngineHealth
+cd src/ValenceControl.Console && npm test -- --run deployments
+cd src/ValenceControl.Console && npm run typecheck
 git diff --check
 ```
 
 ## Verification Results
 
-- `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter EngineHealth`: passed, 3 tests.
-- `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspacePersistenceTests`: passed, 10 tests.
-- `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter WorkspaceDeploymentEngineHealth`: passed, 4 tests.
-- `cd src/Elsa.Platform.Console && npm test -- --run deployments`: passed, 22 tests.
-- `cd src/Elsa.Platform.Console && npm run typecheck`: passed.
+- `dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj --filter EngineHealth`: passed, 3 tests.
+- `dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspacePersistenceTests`: passed, 10 tests.
+- `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter WorkspaceDeploymentEngineHealth`: passed, 4 tests.
+- `cd src/ValenceControl.Console && npm test -- --run deployments`: passed, 22 tests.
+- `cd src/ValenceControl.Console && npm run typecheck`: passed.
 - `git diff --check`: passed.
 
 ## Known Scope Boundaries

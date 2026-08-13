@@ -6,19 +6,19 @@
 
 ## Summary
 
-Add `Elsa.Platform.Deployment.Manifest` as the next Phase 1 deployment package. The package parses `platform.elsa.io/v1alpha1` `EnvironmentManifest` documents from YAML and JSON text, validates the supported shape, and normalizes workflow, variable, feature, package, and recipe entries into `DeploymentResource` values from `Elsa.Platform.Deployment.Abstractions`. This slice stops before artifact IO, deployment planning, dry-run, apply, CLI, API, runtime adapters, overlays, and secret handling.
+Add `ValenceControl.Deployment.Manifest` as the next Phase 1 deployment package. The package parses `valence-control/v1alpha1` `EnvironmentManifest` documents from YAML and JSON text, validates the supported shape, and normalizes workflow, variable, feature, package, and recipe entries into `DeploymentResource` values from `ValenceControl.Deployment.Abstractions`. This slice stops before artifact IO, deployment planning, dry-run, apply, CLI, API, runtime adapters, overlays, and secret handling.
 
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 using repository-wide `Directory.Build.props`.
 
-**Primary Dependencies**: `Elsa.Platform.Deployment.Abstractions`, `System.Text.Json`, YamlDotNet for YAML parsing, xUnit and FluentAssertions for tests.
+**Primary Dependencies**: `ValenceControl.Deployment.Abstractions`, `System.Text.Json`, YamlDotNet for YAML parsing, xUnit and its built-in assertions for tests.
 
 **Storage**: N/A. Manifest parsing is in-memory only.
 
-**Testing**: `dotnet test` for `tests/Elsa.Platform.Deployment.Manifest.Tests/` plus full solution verification.
+**Testing**: `dotnet test` for `tests/ValenceControl.Deployment.Manifest.Tests/` plus full solution verification.
 
-**Target Platform**: Cross-platform .NET library consumed by future artifact, engine, CLI, API, and operator packages.
+**Target platform**: Cross-platform .NET library consumed by future artifact, engine, CLI, API, and operator packages.
 
 **Project Type**: Multi-project .NET repository; this slice adds one source library and one test project.
 
@@ -59,7 +59,7 @@ specs/018-deployment-manifest/
 
 ```text
 src/
-  Elsa.Platform.Deployment.Manifest/
+  ValenceControl.Deployment.Manifest/
     EnvironmentManifest.cs
     ManifestMetadata.cs
     ManifestResourceEntries.cs
@@ -72,7 +72,7 @@ src/
     IManifestResourceMapper.cs
 
 tests/
-  Elsa.Platform.Deployment.Manifest.Tests/
+  ValenceControl.Deployment.Manifest.Tests/
     ManifestReaderTests.cs
     ManifestNormalizationTests.cs
     ManifestDiagnosticTests.cs
@@ -80,7 +80,7 @@ tests/
     ManifestBoundaryTests.cs
 ```
 
-**Structure Decision**: Keep parsing and normalization in `Elsa.Platform.Deployment.Manifest`. Artifact layout/checksum behavior belongs in `Elsa.Platform.Deployment.Artifacts`, and reconciliation belongs in `Elsa.Platform.Deployment.Engine`.
+**Structure Decision**: Keep parsing and normalization in `ValenceControl.Deployment.Manifest`. Artifact layout/checksum behavior belongs in `ValenceControl.Deployment.Artifacts`, and reconciliation belongs in `ValenceControl.Deployment.Engine`.
 
 ## Phase Plan
 

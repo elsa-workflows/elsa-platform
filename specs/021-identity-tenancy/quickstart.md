@@ -1,9 +1,9 @@
 # Quickstart: Identity And Workspace Tenancy
 
-## Local Platform Identity Smoke Test
+## Local Valence Control Identity Smoke Test
 
-1. Configure `Authentication:PlatformIdentity` with `Provider = GenericOidc` and a local test issuer/audience/signing key.
-2. Start the Platform API.
+1. Configure `Authentication:ControlIdentity` with `Provider = GenericOidc` and a local test issuer/audience/signing key.
+2. Start the Valence Control API.
 3. Call `GET /api/me/workspaces` with a valid trusted identity.
 4. Confirm the response contains one account and one personal workspace.
 5. Call the same endpoint again with the same issuer and subject.
@@ -13,7 +13,7 @@ Expected result: first sign-in provisions customer context exactly once, and rep
 
 ## Provider Integration Smoke Test
 
-1. Configure `Authentication:PlatformIdentity:Provider` for `MicrosoftEntra`, `Auth0`, `Keycloak`, or `Custom`.
+1. Configure `Authentication:ControlIdentity:Provider` for `MicrosoftEntra`, `Auth0`, `Keycloak`, or `Custom`.
 2. Configure authority, audience, issuer, client ID, redirect URI, post-logout redirect URI, scopes, and claim mappings for that provider.
 3. Open `/admin/runtime-builder` in a browser.
 4. Confirm anonymous browser navigation starts customer sign-in through `/api/auth/login`.
@@ -27,7 +27,7 @@ Expected result: provider-specific configuration changes token validation and cl
 
 ## API Bearer Token Smoke Test
 
-1. Configure `Authentication:PlatformIdentity` with trusted issuer and audience.
+1. Configure `Authentication:ControlIdentity` with trusted issuer and audience.
 2. Call `GET /api/me/workspaces` with a valid `Authorization: Bearer` token.
 3. Call a workspace read endpoint with the same bearer token.
 4. Call a workspace mutation endpoint with the same bearer token and no browser origin headers.
@@ -73,7 +73,7 @@ Expected result: operator-only work remains available, but the operator fallback
 
 ## Verification Results
 
-- `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter "FullyQualifiedName~WorkspaceProvisioningTests|FullyQualifiedName~CustomerAuthenticationTests|FullyQualifiedName~PlatformIdentityTests|FullyQualifiedName~WorkspaceIsolationTests|FullyQualifiedName~WorkspaceAuthorizationTests|FullyQualifiedName~OperatorAuthorizationTests"`: passed, 49 tests.
+- `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter "FullyQualifiedName~WorkspaceProvisioningTests|FullyQualifiedName~CustomerAuthenticationTests|FullyQualifiedName~ControlIdentityTests|FullyQualifiedName~WorkspaceIsolationTests|FullyQualifiedName~WorkspaceAuthorizationTests|FullyQualifiedName~OperatorAuthorizationTests"`: passed, 49 tests.
 
 ## Scope Notes
 

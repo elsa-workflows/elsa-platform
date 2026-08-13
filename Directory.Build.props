@@ -8,5 +8,20 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <AnalysisLevel>latest</AnalysisLevel>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <AssemblyName>$(MSBuildProjectName)</AssemblyName>
+    <RootNamespace>$(MSBuildProjectName)</RootNamespace>
+    <Product>Valence Control</Product>
+    <Title>$(MSBuildProjectName)</Title>
+    <Description>Valence Control commercial deployment-governance and operations software.</Description>
+    <Authors>Valence Works</Authors>
+    <Company>Valence Works</Company>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/valence-works/valence-control</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/valence-works/valence-control</PackageProjectUrl>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <Copyright>Copyright © 2026 Skywalker Digital B.V., trading as Valence Works. All rights reserved.</Copyright>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)LICENSE" Pack="true" PackagePath="" Link="LICENSE" />
+  </ItemGroup>
 </Project>

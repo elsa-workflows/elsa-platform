@@ -9,10 +9,10 @@ Add workspace-owned deployment targets, preview runs, and deployment run trackin
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 LTS for API/Core/Persistence.
-**Primary Dependencies**: ASP.NET Core minimal APIs, workspace identity, EF Core, secure secret storage abstraction, Azure SDK or CLI adapter behind a port, xUnit, FluentAssertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, workspace identity, EF Core, secure secret storage abstraction, Azure SDK or CLI adapter behind a port, xUnit and its built-in assertions.
 **Storage**: Existing relational catalog database extended with deployment target/run tables; encrypted secret reference storage required.
 **Testing**: Core service tests, API tests, persistence tests, adapter fakes.
-**Target Platform**: Existing ASP.NET Core modular monolith.
+**Target platform**: Existing ASP.NET Core modular monolith.
 **Project Type**: Workspace API and background-capable deployment orchestration.
 **Performance Goals**: Preview returns quickly from generated plan; live deployment is asynchronous or long-running tracked status.
 **Constraints**: One provider first, least privilege, audit logging, no managed hosting.
@@ -35,11 +35,11 @@ Add workspace-owned deployment targets, preview runs, and deployment run trackin
 ## Project Structure
 
 ```text
-src/Elsa.Platform.PackageCatalog.Core/DeploymentTargets/
-src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentTargetEndpoints.cs
-src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/
-tests/Elsa.Platform.PackageCatalog.Core.Tests/
-tests/Elsa.Platform.Api.Tests/
+src/ValenceControl.PackageCatalog.Core/DeploymentTargets/
+src/ValenceControl.Api/Workspace/WorkspaceDeploymentTargetEndpoints.cs
+src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
+tests/ValenceControl.PackageCatalog.Core.Tests/
+tests/ValenceControl.Api.Tests/
 ```
 
 ## Complexity Tracking

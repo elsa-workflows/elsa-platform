@@ -56,7 +56,7 @@ State rules:
 
 Versioned descriptor stored inside every artifact.
 
-- `LayoutVersion`: Must be `platform.elsa.io/deployment-artifact/v1alpha1`.
+- `LayoutVersion`: Must be `valence-control/deployment-artifact/v1alpha1`.
 - `ArtifactId`: Content-derived identity.
 - `CreatedAt`: Informational timestamp excluded from content identity.
 - `Manifest`: Manifest name, version, environment, labels, annotations.

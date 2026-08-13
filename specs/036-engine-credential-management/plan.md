@@ -12,13 +12,13 @@ Add a dedicated workspace-level Console surface for engine credential stores and
 
 **Language/Version**: TypeScript/React for the hosted console; existing C# on .NET 10 APIs remain the backing contract.
 
-**Primary Dependencies**: React Router, TanStack Query, existing deployment console components, existing deployment credential API client, ASP.NET Core minimal API contracts where endpoint behavior must be verified, Vitest and Testing Library for console tests, xUnit and FluentAssertions only if backend contract behavior needs adjustment.
+**Primary Dependencies**: React Router, TanStack Query, existing deployment console components, existing deployment credential API client, ASP.NET Core minimal API contracts where endpoint behavior must be verified, Vitest and Testing Library for console tests, xUnit and its built-in assertions only if backend contract behavior needs adjustment.
 
 **Storage**: Existing catalog deployment secret-store and credential-reference tables. No schema changes are expected; the feature manages existing workspace-scoped metadata and local protected credential ciphertext through existing APIs.
 
 **Testing**: Focused Vitest coverage for route/navigation, standalone credential management list/create/edit/rotate/archive/usage flows, permission states, and links from engine setup. Existing API tests are sufficient unless endpoint behavior changes; run `npm run test -- src/features/deployments/DeploymentsPage.test.tsx`, `npm run typecheck`, relevant .NET tests if API changes occur, and `git diff --check`.
 
-**Target Platform**: Elsa Platform hosted admin console backed by existing workspace deployment API.
+**Target platform**: Valence Control hosted admin console backed by existing workspace deployment API.
 
 **Project Type**: Modular monolith web/control-plane service with hosted React console.
 
@@ -63,7 +63,7 @@ specs/036-engine-credential-management/
 
 ```text
 src/
-└── Elsa.Platform.Console/
+└── ValenceControl.Console/
     └── src/
         ├── app/
         │   ├── AppShell.tsx
@@ -77,11 +77,11 @@ src/
             └── queryClient.tsx
 
 tests/
-├── Elsa.Platform.Api.Tests/
-└── Elsa.Platform.Console/
+├── ValenceControl.Api.Tests/
+└── ValenceControl.Console/
 ```
 
-**Structure Decision**: Keep the management UI inside the existing deployments console feature because the records are deployment setup metadata and share permissions, query keys, API clients, and engine assignment workflows. Avoid adding a separate secrets subsystem because runtime secrets remain outside Elsa Platform.
+**Structure Decision**: Keep the management UI inside the existing deployments console feature because the records are deployment setup metadata and share permissions, query keys, API clients, and engine assignment workflows. Avoid adding a separate secrets subsystem because runtime secrets remain outside Valence Control.
 
 ## Complexity Tracking
 

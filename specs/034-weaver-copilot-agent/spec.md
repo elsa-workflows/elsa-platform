@@ -44,7 +44,7 @@ A deployment operator asks Weaver to investigate drift, compare revisions, diagn
 
 ### User Story 3 - Approve And Execute Agent Plans (Priority: P2)
 
-A permitted user reviews a Weaver-generated plan, approves it through platform UI, and Weaver executes the approved plan through existing Elsa Platform domain services and APIs while recording audit events and progress.
+A permitted user reviews a Weaver-generated plan, approves it through platform UI, and Weaver executes the approved plan through existing Valence Control domain services and APIs while recording audit events and progress.
 
 **Why this priority**: Executing approved plans closes the loop from assistant to operational agent while preserving human authorization and platform control.
 
@@ -157,6 +157,6 @@ Administrators and auditors review Weaver sessions, prompts, tool calls, propose
 - The implementation will use the official GitHub Copilot SDK for .NET on the backend.
 - The first shippable slice may use deterministic local/fake provider behavior for tests while retaining real Copilot SDK integration points behind configuration.
 - Existing workspace identity, organization context, deployment permissions, action confirmations, deployment runs, runtime controls, audit patterns, and console layout will be reused.
-- First-party Elsa Platform data will be exposed through typed domain tools rather than generic filesystem, shell, or HTTP tools.
+- First-party Valence Control data will be exposed through typed domain tools rather than generic filesystem, shell, or HTTP tools.
 - BYOK is the preferred hosted/enterprise configuration path; GitHub Copilot-backed mode remains available when a deployment has appropriate GitHub authentication.
 - A separate full secret-store registry may still be needed for deep secret reference management; Weaver v1 must not require raw secret access.

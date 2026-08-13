@@ -11,8 +11,8 @@ validated artifact/resources -> diff plan -> dry-run -> apply -> history
 ## Expected Projects
 
 ```text
-src/Elsa.Platform.Deployment.Engine/
-tests/Elsa.Platform.Deployment.Engine.Tests/
+src/ValenceControl.Deployment.Engine/
+tests/ValenceControl.Deployment.Engine.Tests/
 ```
 
 ## Sample Flow
@@ -74,7 +74,7 @@ tests/Elsa.Platform.Deployment.Engine.Tests/
 Run focused tests:
 
 ```bash
-dotnet test tests/Elsa.Platform.Deployment.Engine.Tests/Elsa.Platform.Deployment.Engine.Tests.csproj
+dotnet test tests/ValenceControl.Deployment.Engine.Tests/ValenceControl.Deployment.Engine.Tests.csproj
 ```
 
 Run full solution tests before PR:

@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Make promotion, deployment, and rollback artifact-first by having desired-state revisions reference immutable deployable artifacts instead of embedding workflow intent directly, while keeping Platform agnostic about workflow internals."
+**Input**: User description: "Make promotion, deployment, and rollback artifact-first by having desired-state revisions reference immutable deployable artifacts instead of embedding workflow intent directly, while keeping Valence Control agnostic about workflow internals."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -20,9 +20,9 @@ A workspace operator promotes a known artifact-backed revision from one environm
 
 **Acceptance Scenarios**:
 
-1. **Given** a source environment has an artifact-backed revision, **When** the user previews promotion, **Then** Platform compares artifact identity, digest, safe metadata, and environment configuration.
-2. **Given** the user confirms promotion, **When** Platform creates the target revision, **Then** the target revision references the immutable artifact rather than copying raw workflow content.
-3. **Given** target runtime capabilities do not support the artifact type, **When** promotion is previewed, **Then** Platform blocks or warns before deployment.
+1. **Given** a source environment has an artifact-backed revision, **When** the user previews promotion, **Then** Valence Control compares artifact identity, digest, safe metadata, and environment configuration.
+2. **Given** the user confirms promotion, **When** Valence Control creates the target revision, **Then** the target revision references the immutable artifact rather than copying raw workflow content.
+3. **Given** target runtime capabilities do not support the artifact type, **When** promotion is previewed, **Then** Valence Control blocks or warns before deployment.
 
 ---
 
@@ -47,11 +47,11 @@ A workspace operator rolls back an environment to a previously successful artifa
 
 **Why this priority**: Rollback must redeploy known-good immutable artifacts instead of relying on mutable runtime state.
 
-**Independent Test**: Deploy revision A, deploy revision B, request rollback to revision A, and verify Platform queues a command for revision A's artifact identity and records rollback history.
+**Independent Test**: Deploy revision A, deploy revision B, request rollback to revision A, and verify Valence Control queues a command for revision A's artifact identity and records rollback history.
 
 **Acceptance Scenarios**:
 
-1. **Given** a previous successful deployment exists, **When** rollback is requested, **Then** Platform selects the known-good artifact-backed revision.
+1. **Given** a previous successful deployment exists, **When** rollback is requested, **Then** Valence Control selects the known-good artifact-backed revision.
 2. **Given** the artifact referenced by the rollback revision is missing or invalid, **When** rollback validation runs, **Then** rollback is blocked with safe diagnostics.
 
 ### Edge Cases
@@ -71,8 +71,8 @@ A workspace operator rolls back an environment to a previously successful artifa
 - **FR-002**: Promotion preview MUST compare artifact identity, digest, type, safe metadata, and environment-specific configuration without reading raw workflow payloads.
 - **FR-003**: Promotion MUST create target revisions that reference artifacts instead of embedding raw workflow definitions.
 - **FR-004**: Deployment command creation MUST include safe artifact references for artifact-backed revisions.
-- **FR-005**: Platform MUST validate artifact existence, workspace ownership, digest metadata, artifact type compatibility, and runtime capability hints before deployment.
-- **FR-006**: Platform MUST NOT store raw workflow definition content, payload content, credentials, tokens, connection strings, or secret values in desired-state, command, run, or history records.
+- **FR-005**: Valence Control MUST validate artifact existence, workspace ownership, digest metadata, artifact type compatibility, and runtime capability hints before deployment.
+- **FR-006**: Valence Control MUST NOT store raw workflow definition content, payload content, credentials, tokens, connection strings, or secret values in desired-state, command, run, or history records.
 - **FR-007**: Rollback MUST redeploy a known-good artifact-backed revision and preserve rollback source history.
 - **FR-008**: Tier capability safeguards MUST continue to control promotion and deployment eligibility.
 - **FR-009**: Runtime capability safeguards MUST continue to control technical artifact compatibility.

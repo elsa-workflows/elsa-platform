@@ -1,4 +1,4 @@
-# Feature Specification: Elsa Package Catalog Console UI
+# Feature Specification: Valence Control Package Catalog Console UI
 
 **Feature Branch**: `codex/004-admin-dashboard-ui`
 
@@ -6,11 +6,11 @@
 
 **Status**: Draft
 
-**Input**: User description: "Create a specification for a lightweight console UI for the Elsa Package Catalog system."
+**Input**: User description: "Create a specification for a lightweight console UI for the Valence Control Package Catalog system."
 
 ## Overview
 
-The Elsa Package Catalog Console is a lightweight operational web UI for
+The Valence Control Package Catalog Console is a lightweight operational web UI for
 administrators who manage package sources, monitor synchronization activity,
 inspect package manifests, review validation results, approve or reject packages,
 and troubleshoot indexing problems. It consumes the authenticated Catalog Admin
@@ -513,7 +513,7 @@ Product goal:
 
 Architecture requirements:
 
-- The Elsa Platform application MUST be hosted through CShells before this
+- The Valence Control application MUST be hosted through CShells before this
   feature-management UI is implemented. If the platform is not already powered by
   CShells, a prerequisite backend slice MUST migrate platform modules into
   CShell-compatible shell features.

@@ -5,7 +5,7 @@
 A package project opts in with:
 
 ```xml
-<PackageReference Include="Elsa.Platform.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
+<PackageReference Include="ValenceControl.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
 ```
 
 The generator package supplies:
@@ -58,21 +58,21 @@ Rules:
 
 ## Generator Package Layout
 
-Recommended generated `.nupkg` shape for `Elsa.Platform.PackageManifest.Generator`:
+Recommended generated `.nupkg` shape for `ValenceControl.PackageManifest.Generator`:
 
 ```text
 build/
-├── Elsa.Platform.PackageManifest.Generator.props
-└── Elsa.Platform.PackageManifest.Generator.targets
+├── ValenceControl.PackageManifest.Generator.props
+└── ValenceControl.PackageManifest.Generator.targets
 buildTransitive/
-├── Elsa.Platform.PackageManifest.Generator.props
-└── Elsa.Platform.PackageManifest.Generator.targets
+├── ValenceControl.PackageManifest.Generator.props
+└── ValenceControl.PackageManifest.Generator.targets
 tasks/
-└── Elsa.Platform.PackageManifest.Generator.MSBuild.dll
+└── ValenceControl.PackageManifest.Generator.MSBuild.dll
 contentFiles/
 └── cs/
     └── any/
-        └── Elsa.Platform.PackageManifest.Generator.Hints/
+        └── ValenceControl.PackageManifest.Generator.Hints/
             ├── ManifestSettingAttribute.cs
             ├── ManifestIgnoreAttribute.cs
             └── ManifestExtensionAttribute.cs

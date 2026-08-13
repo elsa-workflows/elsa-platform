@@ -3,7 +3,7 @@
 ## YAML Shape
 
 ```yaml
-apiVersion: platform.elsa.io/v1alpha1
+apiVersion: valence-control/v1alpha1
 kind: EnvironmentManifest
 metadata:
   name: sales-staging

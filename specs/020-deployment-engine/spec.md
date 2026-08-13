@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Implement the Phase 1 deployment engine MVP for Elsa Platform. The engine must consume normalized manifests and inspected artifacts, validate desired resources, produce dry-run plans, apply idempotent resource changes through resource handlers, and record deployment history. It must remain transport-, hosting-, and environment-agnostic, avoid workflow runtime state, and defer CLI/API/persistence/operator features to later slices."
+**Input**: User description: "Implement the Phase 1 deployment engine MVP for Valence Control. The engine must consume normalized manifests and inspected artifacts, validate desired resources, produce dry-run plans, apply idempotent resource changes through resource handlers, and record deployment history. It must remain transport-, hosting-, and environment-agnostic, avoid workflow runtime state, and defer CLI/API/persistence/operator features to later slices."
 
 ## Clarifications
 

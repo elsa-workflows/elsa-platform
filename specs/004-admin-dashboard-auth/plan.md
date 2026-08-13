@@ -18,9 +18,9 @@ Protect the deployed console from anonymous access by adding a small app-owned c
 
 **Storage**: Existing configuration secret for the admin API key; HTTP-only auth cookie for dashboard sessions; in-memory per-client failed-login throttle only. No new durable storage.
 
-**Testing**: xUnit, FluentAssertions, ASP.NET Core WebApplicationFactory integration tests.
+**Testing**: xUnit and its built-in assertions, ASP.NET Core WebApplicationFactory integration tests.
 
-**Target Platform**: ASP.NET Core API container deployed to Azure App Service.
+**Target platform**: ASP.NET Core API container deployed to Azure App Service.
 
 **Project Type**: Web service hosting REST APIs plus static console assets.
 
@@ -38,7 +38,7 @@ The plan MUST answer these gates:
 
 - **Manifest-first**: Not impacted. This feature only changes dashboard/admin API access control.
 - **No arbitrary code execution**: Not impacted. No package processing paths change.
-- **Stable contracts**: Not impacted. No `Elsa.Platform.PackageManifests` contracts change.
+- **Stable contracts**: Not impacted. No `ValenceControl.PackageManifests` contracts change.
 - **Schema evolution**: Not impacted. No manifest schema changes.
 - **Immutable versions**: Not impacted. Package-version handling is unchanged.
 - **Approval separation**: Preserved. This feature gates existing admin workflows without merging validation, approval, or listing concerns.
@@ -68,15 +68,15 @@ specs/004-admin-dashboard-auth/
 
 ```text
 src/
-├── Elsa.Platform.Api/
+├── ValenceControl.Api/
 │   ├── Authentication/
 │   ├── Admin/
 │   └── Program.cs
-└── Elsa.Platform.Console/
+└── ValenceControl.Console/
     └── src/
 
 tests/
-└── Elsa.Platform.Api.Tests/
+└── ValenceControl.Api.Tests/
     └── AdminDashboardAuthenticationTests.cs
 ```
 

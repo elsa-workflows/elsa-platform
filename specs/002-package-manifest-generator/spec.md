@@ -6,13 +6,13 @@
 
 **Status**: Draft
 
-**Input**: User description: "Create a specification for a build-time package called Elsa.Platform.PackageManifest.Generator."
+**Input**: User description: "Create a specification for a build-time package called ValenceControl.PackageManifest.Generator."
 
 ## Overview
 
 Elsa Package Manifest Generator is a build-time package referenced by class library projects that publish NuGet packages for the Elsa professional runtime ecosystem. During build and pack, it automatically produces an `elsa-package.json` manifest that describes the NuGet package, its exposed CShells features, configurable feature settings, compatibility metadata, documentation metadata, and other catalog-relevant information.
 
-The generated manifest is the distribution contract consumed later by Elsa Package Catalog, Elsa Runtime Builder, professional Elsa Docker images, and future runtime validation tools. The generator must emit manifests using the shared `Elsa.Platform.PackageManifests` wire contract package and must not define or serialize a separate manifest model.
+The generated manifest is the distribution contract consumed later by Valence Control Package Catalog, Valence Control Runtime Builder, professional Elsa Docker images, and future runtime validation tools. The generator must emit manifests using the shared `ValenceControl.PackageManifests` wire contract package and must not define or serialize a separate manifest model.
 
 The first version uses an MSBuild-integrated generator because the output is an external artifact that must be created during build or pack and included in the NuGet package. The generator inspects compiled assembly metadata, project and NuGet metadata, XML documentation files, referenced metadata needed for CShells type identification, CShells feature metadata, optional manifest-specific hints, and an optional override file. It must not execute package code or invoke feature constructors.
 
@@ -37,21 +37,21 @@ The first version uses an MSBuild-integrated generator because the output is an 
 
 - Automatically generate `elsa-package.json` during build or pack for participating package projects.
 - Include the generated manifest in the resulting NuGet package without requiring manual item configuration.
-- Reuse `Elsa.Platform.PackageManifests` as the canonical manifest contract and validation source.
+- Reuse `ValenceControl.PackageManifests` as the canonical manifest contract and validation source.
 - Discover package metadata from project and NuGet metadata wherever reliable.
 - Discover CShells feature classes exposed by the package project.
 - Discover feature settings from configurable feature properties.
 - Extract XML documentation comments for feature and setting descriptions when available.
 - Generate JSON Schema metadata for feature settings.
 - Allow CShells metadata, lightweight manifest hints, and override files for metadata that cannot be inferred safely.
-- Validate the final manifest against the versioned schema from `Elsa.Platform.PackageManifests`.
+- Validate the final manifest against the versioned schema from `ValenceControl.PackageManifests`.
 - Support multi-targeted package projects predictably.
 - Keep generation deterministic, CI-friendly, quiet by default, and safe.
 - Minimize manual manifest maintenance for package authors.
 
 ## Non-Goals
 
-- Implementing Elsa Package Catalog ingestion or APIs.
+- Implementing Valence Control Package Catalog ingestion or APIs.
 - Building the Runtime Builder UI.
 - Installing packages through Nuplane.
 - Creating or configuring professional Docker images.
@@ -60,7 +60,7 @@ The first version uses an MSBuild-integrated generator because the output is an 
 - Sigil license validation.
 - Executing feature code or evaluating runtime behavior.
 - Generating deployment bundles.
-- Replacing `Elsa.Platform.PackageManifests` with generator-owned DTOs.
+- Replacing `ValenceControl.PackageManifests` with generator-owned DTOs.
 - Requiring analyzers or Roslyn source generators in the first version.
 - Building a generalized plugin system for custom discovery.
 
@@ -70,13 +70,13 @@ The first version uses an MSBuild-integrated generator because the output is an 
 - **Runtime Builder Developer**: Relies on complete and stable manifests to render package features, settings, documentation, and compatibility information.
 - **Catalog Operator**: Expects packages to contain valid manifests that can be indexed and validated without executing package code.
 - **Build Engineer**: Needs deterministic CI behavior, clear diagnostics, and predictable failure modes.
-- **Manifest Contract Maintainer**: Evolves `Elsa.Platform.PackageManifests` and needs the generator to follow the shared wire contract without drift.
+- **Manifest Contract Maintainer**: Evolves `ValenceControl.PackageManifests` and needs the generator to follow the shared wire contract without drift.
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Generate Manifest Automatically (Priority: P1)
 
-A package author adds a private build-time reference to `Elsa.Platform.PackageManifest.Generator` and receives a generated `elsa-package.json` during build or pack.
+A package author adds a private build-time reference to `ValenceControl.PackageManifest.Generator` and receives a generated `elsa-package.json` during build or pack.
 
 **Why this priority**: Automatic generation is the core value of the package and removes manual manifest maintenance.
 
@@ -170,7 +170,7 @@ A package author multi-targets frameworks and still receives one canonical packa
 - The override file is missing, malformed, uses unknown fields, or references nonexistent features or settings.
 - Generated manifest output already exists from a previous build.
 - Package metadata such as description, repository URL, license, or readme is absent.
-- Validation schema version from `Elsa.Platform.PackageManifests` is unsupported or unavailable.
+- Validation schema version from `ValenceControl.PackageManifests` is unsupported or unavailable.
 - The package is packed without running a normal build first.
 - Concurrent builds write to separate intermediate output paths.
 
@@ -178,15 +178,15 @@ A package author multi-targets frameworks and still receives one canonical packa
 
 ### Functional Requirements
 
-- **FR-001**: The generator MUST be consumable by class library projects through a package reference named `Elsa.Platform.PackageManifest.Generator` with `PrivateAssets="all"`.
+- **FR-001**: The generator MUST be consumable by class library projects through a package reference named `ValenceControl.PackageManifest.Generator` with `PrivateAssets="all"`.
 - **FR-002**: The consuming project MUST NOT need to manually add build targets, package items, or hand-maintained manifest files for the default workflow.
 - **FR-003**: The generator MUST run automatically during build or pack when manifest generation is enabled.
 - **FR-004**: The generator MUST write the generated manifest file as `elsa-package.json`.
 - **FR-005**: The default intermediate output location MUST be under the project intermediate output path for the active configuration and target framework.
 - **FR-006**: The generated NuGet package MUST include a single canonical `elsa-package.json` at the package root by default.
 - **FR-007**: The generator MUST support disabling generation entirely through project configuration.
-- **FR-008**: The generator MUST emit manifests using the `Elsa.Platform.PackageManifests` contract and MUST NOT define an independent wire model for generated JSON.
-- **FR-009**: The generator MUST validate the final manifest against the versioned schema supplied by `Elsa.Platform.PackageManifests`.
+- **FR-008**: The generator MUST emit manifests using the `ValenceControl.PackageManifests` contract and MUST NOT define an independent wire model for generated JSON.
+- **FR-009**: The generator MUST validate the final manifest against the versioned schema supplied by `ValenceControl.PackageManifests`.
 - **FR-010**: Validation errors MUST fail the build by default.
 - **FR-011**: Missing recommended metadata SHOULD produce warnings by default rather than errors.
 - **FR-012**: Validation severity MUST be configurable so adopters can choose warning-only, error-on-validation, strict, and fail-on-warnings behavior.
@@ -255,9 +255,9 @@ A package author multi-targets frameworks and still receives one canonical packa
 - **FR-069**: CShells metadata and manifest hints MUST be lightweight metadata inputs only.
 - **FR-070**: Manifest hints MUST NOT replace or duplicate the shared manifest wire contract.
 - **FR-071**: The first version SHOULD support only the smallest useful generator-owned hint surface for setting metadata, ignore behavior, and simple extension metadata.
-- **FR-071a**: Optional generator-owned hint attributes SHOULD be provided as source-only compile assets from `Elsa.Platform.PackageManifest.Generator` so consuming packages can use hints without emitting a runtime dependency for them.
+- **FR-071a**: Optional generator-owned hint attributes SHOULD be provided as source-only compile assets from `ValenceControl.PackageManifest.Generator` so consuming packages can use hints without emitting a runtime dependency for them.
 - **FR-071b**: Attribute-based extension metadata MUST be limited to simple string key/value pairs; rich extension payloads MUST be supplied through the override file.
-- **FR-071c**: Source-only manifest hint attributes SHOULD use the namespace `Elsa.Platform.PackageManifest.Generator.Hints`.
+- **FR-071c**: Source-only manifest hint attributes SHOULD use the namespace `ValenceControl.PackageManifest.Generator.Hints`.
 - **FR-071d**: Source-only manifest hint attributes SHOULD use `UI` capitalization for UI-related members, while preserving compatibility aliases where existing consumers already used `Ui`.
 - **FR-071e**: The UI hint model MUST allow static option lists and runtime-owned dynamic options providers without executing package code during generation, catalog ingestion, or anonymous package browsing.
 - **FR-072**: The generator MUST produce clear diagnostics for discovered feature count, generated manifest path, missing XML documentation, invalid settings, unsupported property types, schema validation errors, and package inclusion.
@@ -289,7 +289,7 @@ A package author multi-targets frameworks and still receives one canonical packa
 
 ## Build Integration Design
 
-The default integration is an MSBuild task distributed by `Elsa.Platform.PackageManifest.Generator`. A separate `Elsa.Platform.PackageManifest.Generator.MSBuild` package may be used internally if it simplifies packaging, but package authors should reference only `Elsa.Platform.PackageManifest.Generator` for the standard experience.
+The default integration is an MSBuild task distributed by `ValenceControl.PackageManifest.Generator`. A separate `ValenceControl.PackageManifest.Generator.MSBuild` package may be used internally if it simplifies packaging, but package authors should reference only `ValenceControl.PackageManifest.Generator` for the standard experience.
 
 The generator runs after compilation has produced the project assembly and XML documentation, and before pack finalizes package contents. Pack must trigger generation when needed so a direct pack command produces the manifest.
 
@@ -303,10 +303,10 @@ The architecture decision for the first version is:
 
 Suggested package boundaries:
 
-- `Elsa.Platform.PackageManifest.Generator`: Public package referenced by package authors; brings in build assets, task assets, and optional source-only compile assets for manifest hints.
-- `Elsa.Platform.PackageManifest.Generator.Core`: Optional internal/shared library for generation logic if it removes meaningful duplication between task, tests, or future analyzers.
-- `Elsa.Platform.PackageManifest.Generator.MSBuild`: Optional packaging/task assembly if separating MSBuild assets keeps the public package cleaner.
-- `Elsa.Platform.PackageManifests`: Required shared contract package for manifest DTOs, schema resources, validation behavior, and serialization rules.
+- `ValenceControl.PackageManifest.Generator`: Public package referenced by package authors; brings in build assets, task assets, and optional source-only compile assets for manifest hints.
+- `ValenceControl.PackageManifest.Generator.Core`: Optional internal/shared library for generation logic if it removes meaningful duplication between task, tests, or future analyzers.
+- `ValenceControl.PackageManifest.Generator.MSBuild`: Optional packaging/task assembly if separating MSBuild assets keeps the public package cleaner.
+- `ValenceControl.PackageManifests`: Required shared contract package for manifest DTOs, schema resources, validation behavior, and serialization rules.
 
 ## Manifest Generation Flow
 
@@ -320,7 +320,7 @@ Suggested package boundaries:
 8. Extract XML documentation summaries, remarks, and examples where available.
 9. Apply CShells metadata and optional manifest hint metadata.
 10. Apply override file metadata.
-11. Build the final `Elsa.Platform.PackageManifests` contract object.
+11. Build the final `ValenceControl.PackageManifests` contract object.
 12. Validate the final manifest against the versioned schema and recommended metadata rules.
 13. Write deterministic `elsa-package.json` to the configured intermediate output path.
 14. Include the generated file once in the NuGet package at the root path.
@@ -380,7 +380,7 @@ Extraction behavior:
 
 ## CShells Metadata And Manifest Hints
 
-CShells metadata is the primary annotation source for feature discovery and feature metadata. Optional manifest hints enrich inference and reduce override-file noise, but the generated JSON still uses `Elsa.Platform.PackageManifests`.
+CShells metadata is the primary annotation source for feature discovery and feature metadata. Optional manifest hints enrich inference and reduce override-file noise, but the generated JSON still uses `ValenceControl.PackageManifests`.
 
 The generator MUST understand `CShells.Features.ShellFeatureAttribute`:
 
@@ -402,7 +402,7 @@ Potential first-version manifest hints:
 - `ManifestIgnoreAttribute`: Excludes a type or property from manifest generation.
 - `ManifestExtensionAttribute`: Supplies small extension metadata values where the contract allows extension data.
 
-Rich metadata such as long documentation, complex compatibility matrices, icon metadata, feature conflicts, required capabilities, and broad extension payloads should live in the override file unless the `Elsa.Platform.PackageManifests` contract later defines a stronger hint need.
+Rich metadata such as long documentation, complex compatibility matrices, icon metadata, feature conflicts, required capabilities, and broad extension payloads should live in the override file unless the `ValenceControl.PackageManifests` contract later defines a stronger hint need.
 
 ## Setting UI Hint Model
 
@@ -472,7 +472,7 @@ Conflict rules:
 
 ## JSON Schema Generation
 
-For each feature setting, the generator produces JSON Schema metadata consistent with `Elsa.Platform.PackageManifests`.
+For each feature setting, the generator produces JSON Schema metadata consistent with `ValenceControl.PackageManifests`.
 
 Type mapping:
 
@@ -655,7 +655,7 @@ Testing should cover generator behavior from package author and build-system per
 - **SC-002**: At least 95% of the FR-017 package metadata fields are inferred correctly from normal project and NuGet metadata in sample package projects.
 - **SC-003**: Feature discovery identifies all intentionally exposed sample CShells features assignable to `IShellFeature` and applies `ShellFeatureAttribute` metadata correctly.
 - **SC-004**: Setting discovery identifies all eligible public configurable sample settings and excludes all ignored, static, read-only, and computed-only sample properties.
-- **SC-005**: Generated manifests validate against the active `Elsa.Platform.PackageManifests` schema in all valid sample projects.
+- **SC-005**: Generated manifests validate against the active `ValenceControl.PackageManifests` schema in all valid sample projects.
 - **SC-006**: Invalid manifests fail the build by default with diagnostics that identify the affected manifest path, feature, setting, or override entry.
 - **SC-007**: Building the same sample project twice with unchanged inputs produces byte-stable or semantically equivalent normalized manifest output.
 - **SC-008**: Multi-targeted sample projects produce exactly one package-level manifest when feature surfaces match.
@@ -666,7 +666,7 @@ Testing should cover generator behavior from package author and build-system per
 
 ## Assumptions
 
-- `Elsa.Platform.PackageManifests` exists or will be created as the shared manifest contract package with versioned JSON Schema resources and validation behavior.
+- `ValenceControl.PackageManifests` exists or will be created as the shared manifest contract package with versioned JSON Schema resources and validation behavior.
 - CShells exposes `CShells.Features.IShellFeature` and `CShells.Features.ShellFeatureAttribute` as stable points for feature identification and metadata.
 - Package projects can produce XML documentation files when authors want documentation-derived descriptions.
 - Package authors are willing to use lightweight manifest hints or an override file for metadata that cannot be inferred safely.
@@ -676,8 +676,8 @@ Testing should cover generator behavior from package author and build-system per
 
 ## Acceptance Criteria
 
-1. A library project can reference `Elsa.Platform.PackageManifest.Generator` and get an `elsa-package.json` generated automatically.
-2. The generated manifest uses the `Elsa.Platform.PackageManifests` contract.
+1. A library project can reference `ValenceControl.PackageManifest.Generator` and get an `elsa-package.json` generated automatically.
+2. The generated manifest uses the `ValenceControl.PackageManifests` contract.
 3. The manifest is included in the produced NuGet package.
 4. Feature classes are discovered from the project assembly.
 5. Feature settings are discovered from feature properties.

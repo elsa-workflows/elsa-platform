@@ -2,7 +2,7 @@
 
 ## API Smoke Scenario
 
-1. Start the Platform API with workspace identity enabled.
+1. Start the Valence Control API with workspace identity enabled.
 2. Sign in as a workspace owner and create a workflow application, environment, engine, artifact, and deployable run.
 3. Confirm a pending deployment command is created for the target engine.
 4. Poll runtime commands for the target engine.
@@ -27,33 +27,33 @@
 ## Verification Commands
 
 ```sh
-dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter DeploymentCommand
-dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand
-dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter RuntimeCommand
-cd src/Elsa.Platform.Console && npm test -- --run deployments
-cd src/Elsa.Platform.Console && npm run typecheck
+dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj --filter DeploymentCommand
+dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand
+dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter RuntimeCommand
+cd src/ValenceControl.Console && npm test -- --run deployments
+cd src/ValenceControl.Console && npm run typecheck
 git diff --check
 ```
 
 ## Verification Results
 
-- 2026-05-28: `dotnet test tests/Elsa.Platform.Deployment.Core.Tests/Elsa.Platform.Deployment.Core.Tests.csproj --filter DeploymentCommand --no-restore` passed: 8 tests.
-- 2026-05-28: `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand --no-restore` passed: 5 tests.
-- 2026-05-28: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter RuntimeCommand --no-restore` passed: 3 tests.
-- 2026-05-28: `cd src/Elsa.Platform.Console && npm test -- --run deployments` passed: 22 tests.
-- 2026-05-28: `cd src/Elsa.Platform.Console && npm run typecheck` passed.
+- 2026-05-28: `dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj --filter DeploymentCommand --no-restore` passed: 8 tests.
+- 2026-05-28: `dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand --no-restore` passed: 5 tests.
+- 2026-05-28: `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter RuntimeCommand --no-restore` passed: 3 tests.
+- 2026-05-28: `cd src/ValenceControl.Console && npm test -- --run deployments` passed: 22 tests.
+- 2026-05-28: `cd src/ValenceControl.Console && npm run typecheck` passed.
 - 2026-05-28: `git diff --check` passed.
-- 2026-05-29: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter RuntimeCommand --no-restore` passed: 4 tests.
-- 2026-05-29: `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand --no-restore` passed: 15 tests.
-- 2026-05-29: `dotnet test tests/Elsa.Platform.Api.Tests/Elsa.Platform.Api.Tests.csproj --filter RuntimeCommand --no-restore` passed: 4 tests, including run-detail command summaries.
-- 2026-05-29: `dotnet test tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand --no-restore` passed: 15 tests, including cockpit history command summaries.
-- 2026-05-29: `cd src/Elsa.Platform.Console && npm test -- --run deployments` passed: 22 tests, including command summary rendering.
-- 2026-05-29: `cd src/Elsa.Platform.Console && npm run typecheck` passed.
+- 2026-05-29: `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter RuntimeCommand --no-restore` passed: 4 tests.
+- 2026-05-29: `dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand --no-restore` passed: 15 tests.
+- 2026-05-29: `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter RuntimeCommand --no-restore` passed: 4 tests, including run-detail command summaries.
+- 2026-05-29: `dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand --no-restore` passed: 15 tests, including cockpit history command summaries.
+- 2026-05-29: `cd src/ValenceControl.Console && npm test -- --run deployments` passed: 22 tests, including command summary rendering.
+- 2026-05-29: `cd src/ValenceControl.Console && npm run typecheck` passed.
 - 2026-05-29: `git diff --check` passed.
 
 ## Known Scope Boundaries
 
 - Runtime package implementation is covered by `029-workflow-artifact-runtime-applier`.
-- Studio artifact submission is covered by `027-studio-submit-to-platform`.
+- Studio artifact submission is covered by `027-studio-submit-to-valence-control`.
 - Provider-specific webhook senders, direct push providers, and runtime credential packages can follow after the core command contract.
 - Artifact-backed promotion and rollback are covered by `030-artifact-backed-promotion`.

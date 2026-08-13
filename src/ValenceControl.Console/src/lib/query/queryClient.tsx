@@ -1,0 +1,55 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 20_000,
+      refetchOnWindowFocus: false,
+      retry: 1
+    },
+    mutations: {
+      retry: 0
+    }
+  }
+});
+
+export const queryKeys = {
+  authSession: ["auth-session"] as const,
+  application: ["application"] as const,
+  sources: ["sources"] as const,
+  packages: ["packages"] as const,
+  packageDetails: (packageId: string) => ["packages", packageId] as const,
+  packageValidation: (packageId: string, version: string) => ["packages", packageId, "versions", version, "validation"] as const,
+  packageManifest: (packageId: string, version: string) => ["packages", packageId, "versions", version, "manifest"] as const,
+  syncRuns: ["sync-runs"] as const,
+  syncRun: (runId: string) => ["sync-runs", runId] as const,
+  deploymentCockpit: (workspaceId: string) => ["deployments", workspaceId, "cockpit"] as const,
+  deploymentPermissions: (workspaceId: string) => ["deployments", workspaceId, "permissions"] as const,
+  deploymentTiers: (workspaceId: string) => ["deployments", workspaceId, "tiers"] as const,
+  deploymentTierCapabilities: (workspaceId: string) => ["deployments", workspaceId, "tier-capabilities"] as const,
+  deploymentApplicationRevisions: (workspaceId: string, applicationId: string) => ["deployments", workspaceId, "applications", applicationId, "revisions"] as const,
+  deploymentRevision: (workspaceId: string, revisionId: string) => ["deployments", workspaceId, "revisions", revisionId] as const,
+  deploymentRevisionDeployability: (workspaceId: string, revisionId: string, engineId: string) => ["deployments", workspaceId, "revisions", revisionId, "deployability", engineId] as const,
+  deploymentDesiredStateRequirements: (workspaceId: string, environmentId: string) => ["deployments", workspaceId, "environments", environmentId, "desired-state-requirements"] as const,
+  deploymentSecretStores: (workspaceId: string) => ["deployments", workspaceId, "secret-stores"] as const,
+  deploymentCredentialReferences: (workspaceId: string) => ["deployments", workspaceId, "credential-references"] as const,
+  deploymentCredentialReferenceUsage: (workspaceId: string, credentialReferenceId: string) => ["deployments", workspaceId, "credential-references", credentialReferenceId, "usage"] as const,
+  artifacts: (workspaceId: string) => ["artifacts", workspaceId] as const,
+  artifactDetails: (workspaceId: string, artifactId: string) => ["artifacts", workspaceId, artifactId] as const,
+  overview: ["overview"] as const,
+  workspaceContext: ["workspace-context"] as const,
+  runtimeBuilderCatalog: (workspaceId: string) => ["runtime-builder", workspaceId, "catalog"] as const,
+  runtimeConfigurations: (workspaceId: string) => ["runtime-builder", workspaceId, "configurations"] as const,
+  runtimeConfiguration: (workspaceId: string, configurationId: string) => ["runtime-builder", workspaceId, "configurations", configurationId] as const,
+  healingConfiguration: (workspaceId: string, applicationId: string) => ["healing", workspaceId, "applications", applicationId, "configuration"] as const,
+  healingManifests: (workspaceId: string, applicationId: string) => ["healing", workspaceId, "applications", applicationId, "manifests"] as const,
+  healingBindings: (workspaceId: string, applicationId: string) => ["healing", workspaceId, "applications", applicationId, "bindings"] as const,
+  healingAuthorityCatalog: (workspaceId: string, applicationId: string) => ["healing", workspaceId, "applications", applicationId, "authority-catalog"] as const,
+  weaverConfiguration: (workspaceId: string) => ["weaver", workspaceId, "configuration"] as const,
+  weaverSession: (workspaceId: string, sessionId: string) => ["weaver", workspaceId, "sessions", sessionId] as const
+};
+
+export function QueryProvider({ children }: { children: ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}

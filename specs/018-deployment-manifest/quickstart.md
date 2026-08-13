@@ -9,19 +9,19 @@ Verify that v1alpha manifests parse and normalize independently from artifact IO
 Run focused tests:
 
 ```bash
-dotnet test tests/Elsa.Platform.Deployment.Manifest.Tests/Elsa.Platform.Deployment.Manifest.Tests.csproj
+dotnet test tests/ValenceControl.Deployment.Manifest.Tests/ValenceControl.Deployment.Manifest.Tests.csproj
 ```
 
 Run full solution tests:
 
 ```bash
-dotnet test Elsa.Platform.sln
+dotnet test ValenceControl.sln
 ```
 
 Check dependency references:
 
 ```bash
-dotnet list src/Elsa.Platform.Deployment.Manifest/Elsa.Platform.Deployment.Manifest.csproj reference
+dotnet list src/ValenceControl.Deployment.Manifest/ValenceControl.Deployment.Manifest.csproj reference
 ```
 
 Expected result:
@@ -36,17 +36,17 @@ Expected result:
 Last verified on 2026-05-20:
 
 ```text
-dotnet list src/Elsa.Platform.Deployment.Manifest/Elsa.Platform.Deployment.Manifest.csproj reference
-Project reference: ../Elsa.Platform.Deployment.Abstractions/Elsa.Platform.Deployment.Abstractions.csproj
+dotnet list src/ValenceControl.Deployment.Manifest/ValenceControl.Deployment.Manifest.csproj reference
+Project reference: ../ValenceControl.Deployment.Abstractions/ValenceControl.Deployment.Abstractions.csproj
 ```
 
 ```text
-dotnet test tests/Elsa.Platform.Deployment.Manifest.Tests/Elsa.Platform.Deployment.Manifest.Tests.csproj
+dotnet test tests/ValenceControl.Deployment.Manifest.Tests/ValenceControl.Deployment.Manifest.Tests.csproj
 Passed: 18
 ```
 
 ```text
-dotnet test Elsa.Platform.sln
+dotnet test ValenceControl.sln
 Passed all .NET test projects
 ```
 
