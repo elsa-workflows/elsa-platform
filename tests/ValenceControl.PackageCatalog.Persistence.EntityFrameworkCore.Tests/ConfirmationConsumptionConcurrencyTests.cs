@@ -29,13 +29,13 @@ public sealed class ConfirmationConsumptionConcurrencyTests
                     database.WorkspaceId,
                     database.ConfirmationId,
                     database.AccountId,
-                    ConfirmationActionType.HealingAutomaticMerge,
+                    ConfirmationActionType.Deploy,
                     database.TargetId),
                 secondService.ConsumeConfirmationAsync(
                     database.WorkspaceId,
                     database.ConfirmationId,
                     database.AccountId,
-                    ConfirmationActionType.HealingAutomaticMerge,
+                    ConfirmationActionType.Deploy,
                     database.TargetId));
 
             Assert.Single(results, x => x.Succeeded);
@@ -105,7 +105,7 @@ public sealed class ConfirmationConsumptionConcurrencyTests
 
         var confirmation = await new DeploymentWorkspaceStore(setupContext).CreateConfirmationAsync(
             workspaceId,
-            new CreateActionConfirmationRequest(ConfirmationActionType.HealingAutomaticMerge, targetId, accountId),
+            new CreateActionConfirmationRequest(ConfirmationActionType.Deploy, targetId, accountId),
             now);
 
         return new TestDatabase(path, options, now, workspaceId, accountId, targetId, confirmation.Id);

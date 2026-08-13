@@ -1,5 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <Description>Provider-neutral contracts for Valence Control self-healing.</Description>
-  </PropertyGroup>
-</Project>

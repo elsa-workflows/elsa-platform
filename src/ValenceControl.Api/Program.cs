@@ -20,13 +20,8 @@ using ValenceControl.Api.Public.Features;
 using ValenceControl.Api.Public.Packages;
 using ValenceControl.Api.Public.Sources;
 using ValenceControl.Api.Workspace;
-using ValenceControl.Api.Workspace.Healing;
-using ValenceControl.Api.Healing;
-using ValenceControl.Healing.Core.Configuration;
 using ValenceControl.PackageCatalog.Core.Accounts;
 using ValenceControl.PackageCatalog.Core.Approvals;
-using ValenceControl.RuntimeBuilder.Abstractions;
-using ValenceControl.RuntimeBuilder.Abstractions.Planner;
 using ValenceControl.RuntimeBuilder.DeploymentTemplates;
 using ValenceControl.PackageCatalog.Core.Compatibility;
 using ValenceControl.PackageCatalog.Core.Manifests;
@@ -41,7 +36,6 @@ using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using ValenceControl.PackageManifests.Validation;
 using ValenceControl.RuntimeBuilder.Core.Builder;
 using ValenceControl.RuntimeBuilder.Core.Builder.Planner;
-using ValenceControl.RuntimeBuilder.Core.Builder.Renderers;
 using ValenceControl.RuntimeBuilder.Core.RuntimeConfigurations;
 using ValenceControl.Weaver.Core.Configuration;
 using ValenceControl.Weaver.Core.Plans;
@@ -49,16 +43,15 @@ using ValenceControl.Weaver.Core.Runtime;
 using ValenceControl.Weaver.Core.Safety;
 using ValenceControl.Weaver.Core.Sessions;
 using ValenceControl.Weaver.Core.Tools;
-using Elsa.Diagnostics.OpenTelemetry.Extensions;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
+using ValenceControl.Api;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -68,7 +61,7 @@ IdentityModelEventSource.ShowPII = builder.Environment.IsDevelopment()
 builder.AddServiceDefaults();
 
 builder.Services.AddProblemDetails();
-builder.Services.AddExceptionHandler<HealingBadRequestExceptionHandler>();
+builder.Services.AddExceptionHandler<BadRequestExceptionHandler>();
 builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = true);
 builder.Services.AddOpenApi();
 builder.Services.AddMemoryCache();
@@ -164,18 +157,6 @@ builder.Services.AddBuilderClientAuthorization();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AdminApiKeyValidator>();
 builder.Services.AddSingleton<BuilderClientApiKeyValidator>();
-builder.Services.AddControlHealing(builder.Configuration, builder.Environment)
-    .AddEndpointModule<WorkspaceHealingConfigurationEndpointModule>()
-    .AddEndpointModule<WorkspaceHealingAuthorityEndpointModule>()
-    .AddEndpointModule<ControlManagedManifestAttestationEndpointModule>()
-    .AddEndpointModule<HealingIntakeEndpointModule>()
-    .AddEndpointModule<WorkspaceHealingIncidentEndpointModule>(HealingOptions.IncidentReviewEnabledConfigurationKey)
-    .AddEndpointModule<HealingVerificationEndpointModule>(HealingOptions.VerificationEnabledConfigurationKey)
-    .AddEndpointModule<HealingRepairWorkflowEndpointModule>()
-    .AddHostedWorker<HealingSignalInboxHostedService>(HealingOptions.IncidentReviewEnabledConfigurationKey)
-    .AddHostedWorker<HealingProviderOperationHostedService>()
-    .AddHostedWorker<HealingVerificationHostedService>(HealingOptions.VerificationEnabledConfigurationKey)
-    .AddHostedWorker<HealingVerificationFailureDeliveryHostedService>(HealingOptions.VerificationEnabledConfigurationKey);
 builder.Services.AddCatalogDbContext(builder.Configuration);
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
 builder.Services.AddScoped<IPublicCatalogQueries, PublicCatalogQueries>();
@@ -350,7 +331,6 @@ if (!app.Environment.IsEnvironment("Testing"))
     await using var scope = app.Services.CreateAsyncScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
     await dbContext.Database.MigrateAsync();
-    await scope.ServiceProvider.MigrateControlHealingDatabaseAsync();
 }
 
 app.UseExceptionHandler();
@@ -392,8 +372,6 @@ app.MapWorkspaceRuntimeConfigurationEndpoints();
 app.MapWorkspaceDeploymentEndpoints();
 app.MapWorkspacePermissionManagementEndpoints();
 app.MapWorkspaceArtifactEndpoints();
-app.MapOpenTelemetryOtlpReceiver();
-app.MapControlHealingEndpoints();
 app.MapWorkspaceWeaverEndpoints();
 app.MapRuntimeCommandEndpoints();
 app.MapAdminApplicationEndpoints();

@@ -3,7 +3,6 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using ValenceControl.Api.Workspace;
 using ValenceControl.Deployment.Core.Workspace;
-using ValenceControl.Healing.Abstractions;
 using ValenceControl.PackageCatalog.Core.Accounts;
 
 namespace ValenceControl.Api.Tests;
@@ -11,7 +10,7 @@ namespace ValenceControl.Api.Tests;
 public sealed class WorkspacePermissionManagementApiTests
 {
     [Fact]
-    public async Task Owner_manages_contributed_permissions_with_idempotent_audited_mutations()
+    public async Task Owner_manages_member_permissions_with_idempotent_audited_mutations()
     {
         await using var app = new ControlApiTestApplication();
         await app.SeedAsync(_ => Task.CompletedTask);
@@ -25,7 +24,7 @@ public sealed class WorkspacePermissionManagementApiTests
 
         Assert.Equal(HttpStatusCode.Forbidden, (await reader.GetAsync(grantsUri)).StatusCode);
 
-        var grantRequest = new WorkspacePermissionGrantRequest(readerId, HealingPermissions.Read);
+        var grantRequest = new WorkspacePermissionGrantRequest(readerId, WorkspaceDeploymentPermissions.Read);
         var granted = await owner.PostControlJsonAsync(grantsUri, grantRequest);
         var replayedGrant = await owner.PostControlJsonAsync(grantsUri, grantRequest);
 
@@ -33,9 +32,9 @@ public sealed class WorkspacePermissionManagementApiTests
         Assert.Equal(HttpStatusCode.OK, replayedGrant.StatusCode);
         var grants = await owner.GetFromJsonAsync<JsonElement>($"{grantsUri}?accountId={readerId:D}");
         Assert.Single(grants.GetProperty("items").EnumerateArray(),
-            x => x.GetProperty("permission").GetString() == HealingPermissions.Read && x.GetProperty("revokedAt").ValueKind == JsonValueKind.Null);
+            x => x.GetProperty("permission").GetString() == WorkspaceDeploymentPermissions.Read && x.GetProperty("revokedAt").ValueKind == JsonValueKind.Null);
 
-        var revokeRequest = new WorkspacePermissionRevokeRequest(readerId, HealingPermissions.Read);
+        var revokeRequest = new WorkspacePermissionRevokeRequest(readerId, WorkspaceDeploymentPermissions.Read);
         var revoked = await owner.PostControlJsonAsync(revocationsUri, revokeRequest);
         var replayedRevoke = await owner.PostControlJsonAsync(revocationsUri, revokeRequest);
 
@@ -51,7 +50,7 @@ public sealed class WorkspacePermissionManagementApiTests
         var outsiderContext = await outsider.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
         var outsiderGrant = await owner.PostControlJsonAsync(
             grantsUri,
-            new WorkspacePermissionGrantRequest(outsiderContext!.Account.Id, HealingPermissions.Read));
+            new WorkspacePermissionGrantRequest(outsiderContext!.Account.Id, WorkspaceDeploymentPermissions.Read));
 
         Assert.Equal(HttpStatusCode.BadRequest, outsiderGrant.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await outsider.GetAsync(grantsUri)).StatusCode);

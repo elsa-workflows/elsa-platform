@@ -13,15 +13,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ValenceControl.Api\ValenceControl.Api.csproj" />
-    <ProjectReference Include="..\..\src\ValenceControl.Healing.Abstractions\ValenceControl.Healing.Abstractions.csproj" />
-    <ProjectReference Include="..\..\src\ValenceControl.Healing.Agent\ValenceControl.Healing.Agent.csproj" />
-    <ProjectReference Include="..\..\src\ValenceControl.Healing.ComponentManifest\ValenceControl.Healing.ComponentManifest.csproj" />
-    <ProjectReference Include="..\..\src\ValenceControl.Healing.Core\ValenceControl.Healing.Core.csproj" />
-    <ProjectReference Include="..\..\src\ValenceControl.Healing.GitHub\ValenceControl.Healing.GitHub.csproj" />
-    <ProjectReference Include="..\..\src\ValenceControl.Healing.OpenTelemetry\ValenceControl.Healing.OpenTelemetry.csproj" />
-    <ProjectReference Include="..\..\src\ValenceControl.Healing.Persistence.EntityFrameworkCore\ValenceControl.Healing.Persistence.EntityFrameworkCore.csproj" />
-    <ProjectReference Include="..\..\src\ValenceControl.Healing.Persistence.SqliteMigrations\ValenceControl.Healing.Persistence.SqliteMigrations.csproj" />
-    <ProjectReference Include="..\..\src\ValenceControl.Healing.Persistence.SqlServerMigrations\ValenceControl.Healing.Persistence.SqlServerMigrations.csproj" />
     <ProjectReference Include="..\..\src\ValenceControl.PackageCatalog.Core\ValenceControl.PackageCatalog.Core.csproj" />
     <ProjectReference Include="..\..\src\ValenceControl.Studio.Submit\ValenceControl.Studio.Submit.csproj" />
     <ProjectReference Include="..\..\src\ValenceControl.Workflows.RuntimeApplier\ValenceControl.Workflows.RuntimeApplier.csproj" />

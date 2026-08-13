@@ -42,10 +42,6 @@ export const queryKeys = {
   runtimeBuilderCatalog: (workspaceId: string) => ["runtime-builder", workspaceId, "catalog"] as const,
   runtimeConfigurations: (workspaceId: string) => ["runtime-builder", workspaceId, "configurations"] as const,
   runtimeConfiguration: (workspaceId: string, configurationId: string) => ["runtime-builder", workspaceId, "configurations", configurationId] as const,
-  healingConfiguration: (workspaceId: string, applicationId: string) => ["healing", workspaceId, "applications", applicationId, "configuration"] as const,
-  healingManifests: (workspaceId: string, applicationId: string) => ["healing", workspaceId, "applications", applicationId, "manifests"] as const,
-  healingBindings: (workspaceId: string, applicationId: string) => ["healing", workspaceId, "applications", applicationId, "bindings"] as const,
-  healingAuthorityCatalog: (workspaceId: string, applicationId: string) => ["healing", workspaceId, "applications", applicationId, "authority-catalog"] as const,
   weaverConfiguration: (workspaceId: string) => ["weaver", workspaceId, "configuration"] as const,
   weaverSession: (workspaceId: string, sessionId: string) => ["weaver", workspaceId, "sessions", sessionId] as const
 };

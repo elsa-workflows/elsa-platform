@@ -128,12 +128,7 @@ public enum ConfirmationActionType
 {
     Deploy,
     Rollback,
-    RuntimeControl,
-    HealingEmergencyStop,
-    HealingEmergencyResume,
-    HealingAutomaticMerge,
-    HealingRepairStop,
-    HealingVerificationWaive
+    RuntimeControl
 }
 
 public enum WorkspaceDeploymentRunStatus

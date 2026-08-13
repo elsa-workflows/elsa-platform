@@ -11,7 +11,6 @@ import {
   DatabaseZap,
   FileClock,
   Gauge,
-  HeartPulse,
   Home,
   KeyRound,
   Layers3,
@@ -66,7 +65,6 @@ const navSections: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { to: "/admin/deployments/tiers", label: "Tiers", icon: ShieldCheck },
       { to: "/admin/deployments/credentials", label: "Engine credentials", icon: KeyRound },
-      { to: "/admin/healing", label: "Healing", icon: HeartPulse },
       { to: "/admin/console", label: "Console", icon: Terminal },
       { to: "/admin/targets", label: "Targets", icon: Cloud, disabled: true },
       { to: "/admin/runtimes", label: "Managed Runtimes", icon: Gauge, disabled: true },

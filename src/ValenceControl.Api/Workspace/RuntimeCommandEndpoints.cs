@@ -1,5 +1,4 @@
 using ValenceControl.Api.Authentication;
-using ValenceControl.Api.Workspace.Healing;
 using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.PackageCatalog.Core.Accounts;
 using Microsoft.AspNetCore.DataProtection;
@@ -155,7 +154,6 @@ public static class RuntimeCommandEndpoints
             WorkspaceDeploymentService deployments,
             IDataProtectionProvider dataProtectionProvider,
             DeploymentCommandService commands,
-            ControlDeploymentHealingObserver healingObserver,
             CancellationToken cancellationToken) =>
             await HandleCommandMutationAsync(
                 context,
@@ -176,8 +174,7 @@ public static class RuntimeCommandEndpoints
                         request.Diagnostics,
                         request.Artifacts),
                     cancellationToken),
-                cancellationToken,
-                command => healingObserver.ObserveCompletedCommandAsync(command, cancellationToken).AsTask()));
+                cancellationToken));
 
         group.MapPost("/commands/{commandId:guid}/fail", async (
             Guid workspaceId,
@@ -266,16 +263,13 @@ public static class RuntimeCommandEndpoints
         Guid workspaceId,
         Guid commandId,
         Func<DeploymentCommandService, Task<DeploymentCommand>> mutateAsync,
-        CancellationToken cancellationToken,
-        Func<DeploymentCommand, Task>? afterMutationAsync = null)
+        CancellationToken cancellationToken)
     {
         var permission = await RequireRuntimeCommandAccessAsync(context, accessResolver, permissions, deployments, dataProtectionProvider, workspaceId, null, commandId, commands, cancellationToken);
         if (permission is not null)
             return permission;
 
         var command = await mutateAsync(commands);
-        if (afterMutationAsync is not null)
-            await afterMutationAsync(command);
         return Results.Ok(RuntimeCommandDto.FromCommand(command));
     }
 

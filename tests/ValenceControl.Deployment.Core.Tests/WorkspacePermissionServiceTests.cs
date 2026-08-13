@@ -51,13 +51,13 @@ public sealed class WorkspacePermissionServiceTests
     [Fact]
     public async Task Bootstrap_owner_permissions_includes_contributed_owner_defaults()
     {
-        var contribution = new TestPermissionContribution(Set("healing.read", "healing.configure"), Set("healing.read"));
+        var contribution = new TestPermissionContribution(Set("extension.read", "extension.configure"), Set("extension.read"));
         var service = new WorkspacePermissionService(_store, [contribution]);
 
         var effective = await service.BootstrapOwnerPermissionsAsync(_workspaceId, _accountId);
 
-        Assert.Equivalent(WorkspaceDeploymentPermissions.All.Append("healing.read"), effective.Permissions);
-        Assert.False(effective.Has("healing.configure"));
+        Assert.Equivalent(WorkspaceDeploymentPermissions.All.Append("extension.read"), effective.Permissions);
+        Assert.False(effective.Has("extension.configure"));
     }
 
     [Fact]
@@ -65,9 +65,9 @@ public sealed class WorkspacePermissionServiceTests
     {
         var service = new WorkspacePermissionService(_store, [Contribution()]);
 
-        await service.GrantAsync(_workspaceId, new GrantWorkspacePermissionRequest(_accountId, "healing.configure", null));
+        await service.GrantAsync(_workspaceId, new GrantWorkspacePermissionRequest(_accountId, "extension.configure", null));
 
-        Assert.True((await service.GetEffectivePermissionsAsync(_workspaceId, _accountId)).Has("healing.configure"));
+        Assert.True((await service.GetEffectivePermissionsAsync(_workspaceId, _accountId)).Has("extension.configure"));
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public sealed class WorkspacePermissionServiceTests
             Guid.NewGuid(),
             _workspaceId,
             _accountId,
-            "healing.read",
+            "extension.read",
             null,
             DateTimeOffset.UtcNow,
             DateTimeOffset.UtcNow,
@@ -86,7 +86,7 @@ public sealed class WorkspacePermissionServiceTests
 
         var effective = await service.GetEffectivePermissionsAsync(_workspaceId, _accountId);
 
-        Assert.False(effective.Has("healing.read"));
+        Assert.False(effective.Has("extension.read"));
     }
 
     [Fact]
@@ -94,11 +94,11 @@ public sealed class WorkspacePermissionServiceTests
     {
         var service = new WorkspacePermissionService(_store, [Contribution()]);
 
-        var act = () => service.RequireAsync(_workspaceId, _accountId, "healing.configure");
+        var act = () => service.RequireAsync(_workspaceId, _accountId, "extension.configure");
 
         var exception = await Assert.ThrowsAsync<UnauthorizedAccessException>(act);
 
-        Assert.Contains("healing.configure", exception.Message);
+        Assert.Contains("extension.configure", exception.Message);
     }
 
     [Fact]
@@ -109,7 +109,7 @@ public sealed class WorkspacePermissionServiceTests
 
         var act = () => service.GrantAsync(
             _workspaceId,
-            new GrantWorkspacePermissionRequest(_accountId, "healing.configure", Guid.NewGuid()));
+            new GrantWorkspacePermissionRequest(_accountId, "extension.configure", Guid.NewGuid()));
 
         var exception = await Assert.ThrowsAsync<ArgumentException>(act);
         Assert.Contains("not a member", exception.Message);
@@ -121,10 +121,10 @@ public sealed class WorkspacePermissionServiceTests
     {
         var service = new WorkspacePermissionService(_store, [Contribution()]);
         var actorId = Guid.NewGuid();
-        await service.GrantAsync(_workspaceId, new GrantWorkspacePermissionRequest(_accountId, "healing.read", actorId));
+        await service.GrantAsync(_workspaceId, new GrantWorkspacePermissionRequest(_accountId, "extension.read", actorId));
 
-        var first = await service.RevokeAsync(_workspaceId, new RevokeWorkspacePermissionRequest(_accountId, "healing.read", actorId));
-        var replay = await service.RevokeAsync(_workspaceId, new RevokeWorkspacePermissionRequest(_accountId, "healing.read", actorId));
+        var first = await service.RevokeAsync(_workspaceId, new RevokeWorkspacePermissionRequest(_accountId, "extension.read", actorId));
+        var replay = await service.RevokeAsync(_workspaceId, new RevokeWorkspacePermissionRequest(_accountId, "extension.read", actorId));
 
         Assert.True(first.Changed);
         Assert.Single(first.Grants, x => x.RevokedByAccountId == actorId);
@@ -152,7 +152,7 @@ public sealed class WorkspacePermissionServiceTests
     }
 
     private static TestPermissionContribution Contribution() =>
-        new(Set("healing.read", "healing.configure"), Set("healing.read", "healing.configure"));
+        new(Set("extension.read", "extension.configure"), Set("extension.read", "extension.configure"));
 
     private static IReadOnlySet<string> Set(params string[] values) =>
         values.ToHashSet(StringComparer.Ordinal);
