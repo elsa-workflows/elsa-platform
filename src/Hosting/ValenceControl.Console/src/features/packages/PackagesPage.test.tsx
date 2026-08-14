@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -91,5 +91,63 @@ describe("PackagesPage", () => {
         expect.objectContaining({ method: "POST" })
       );
     });
+  });
+  it("keeps the approval filter honest when the same package is indexed from two sources", async () => {
+    // The catalog holds one entry per (packageId, source). Rendering both under the same React key
+    // used to mismatch rows against their data, leaving rows visible that the filter had excluded.
+    const pending = { ...packageFixture, sourceId: "00000000-0000-0000-0000-000000000001" };
+    const approved = {
+      ...packageFixture,
+      sourceId: "00000000-0000-0000-0000-000000000002",
+      approved: true,
+      approvalStatus: "Approved",
+      latestVersion: "0.9.0",
+      versions: [{ ...packageFixture.versions[0], version: "0.9.0", approvalStatus: "Approved", versionStateToken: "state-090-approved" }]
+    };
+
+    renderPackagesPage([pending, approved]);
+
+    // Both rows render first, then the filter narrows them: that re-render is where duplicate keys
+    // let React carry stale rows across.
+    expect(await screen.findByText("0.9.0")).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Filter packages"), "Pending");
+
+    const rows = within(screen.getByRole("table"));
+    await waitFor(() => expect(rows.queryByText("0.9.0")).not.toBeInTheDocument());
+    expect(rows.getByText("1.0.2")).toBeInTheDocument();
+    expect(rows.queryByText("Approved")).not.toBeInTheDocument();
+    expect(rows.getAllByText("Pending")).toHaveLength(1);
+  });
+
+  it("selects and clears every listed version from the header checkbox", async () => {
+    const other = {
+      ...packageFixture,
+      sourceId: "00000000-0000-0000-0000-000000000002",
+      versions: [{ ...packageFixture.versions[0], versionStateToken: "state-102-second-source" }]
+    };
+    renderPackagesPage([packageFixture, other]);
+
+    const selectAll = await screen.findByRole("checkbox", { name: "Select all packages" });
+    await userEvent.click(selectAll);
+
+    expect(await screen.findByText("2 versions selected")).toBeInTheDocument();
+
+    await userEvent.click(selectAll);
+    await waitFor(() => expect(screen.queryByText(/versions selected/)).not.toBeInTheDocument());
+  });
+
+  it("ticks only the checkbox of the source that was selected", async () => {
+    const other = {
+      ...packageFixture,
+      sourceId: "00000000-0000-0000-0000-000000000002",
+      versions: [{ ...packageFixture.versions[0], versionStateToken: "state-102-second-source" }]
+    };
+    renderPackagesPage([packageFixture, other]);
+
+    const checkboxes = await screen.findAllByRole("checkbox", { name: `Select ${packageFixture.packageId}` });
+    await userEvent.click(checkboxes[0]);
+
+    expect(await screen.findByText("1 version selected")).toBeInTheDocument();
+    expect(checkboxes[1]).not.toBeChecked();
   });
 });

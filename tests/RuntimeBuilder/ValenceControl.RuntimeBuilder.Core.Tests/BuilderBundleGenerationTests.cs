@@ -265,7 +265,7 @@ public sealed class BuilderBundleGenerationTests
     {
         var compatibility = new CompatibilityCheckService(new FakeCompatibilityQueries(compatibilityVersions), new VersionRangeEvaluator());
         var infrastructure = new InfrastructureProviderCatalog();
-        var runtimeImages = new RuntimeImageCatalog();
+        var runtimeImages = RuntimeImageFixtures.Catalog();
         return new BundleGenerationService(
             catalog,
             compatibility,

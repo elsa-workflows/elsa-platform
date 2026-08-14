@@ -294,6 +294,8 @@ builder.Services.AddSingleton<ManifestValidator>();
 builder.Services.AddSingleton<ApprovalPolicy>();
 builder.Services.AddSingleton<VersionRangeEvaluator>();
 builder.Services.AddSingleton<InfrastructureProviderCatalog>();
+builder.Services.AddOptions<RuntimeBuilderOptions>()
+    .Bind(builder.Configuration.GetSection(RuntimeBuilderOptions.SectionName));
 builder.Services.AddSingleton<RuntimeImageCatalog>();
 builder.Services.AddSingleton<RuntimeImageValidator>();
 builder.Services.AddSingleton<BundleFindingPolicy>();

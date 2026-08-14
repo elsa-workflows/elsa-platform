@@ -50,7 +50,7 @@ public sealed class DeploymentTemplateTargetTests
 
     private static BundleGenerationContext Context()
     {
-        var image = new RuntimeImageCatalog().Find("elsa-pro-combined")!;
+        var image = RuntimeImageFixtures.Catalog().Find("elsa-pro-combined")!;
         var intent = new RuntimeBuilderIntent(
             new RuntimeImageSelection(image.Slug, image.DefaultTag, image.HostPort, new Dictionary<string, string>()),
             [],

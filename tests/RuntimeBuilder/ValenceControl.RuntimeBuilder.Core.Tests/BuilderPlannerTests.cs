@@ -100,7 +100,7 @@ public sealed class BuilderPlannerTests
     private static BuilderPlannerService CreateService(IReadOnlyList<PublicPackageProjection> packages)
     {
         var queries = new FakeQueries(packages);
-        return new BuilderPlannerService(queries, new CompatibilityCheckService(queries, new VersionRangeEvaluator()), new RuntimeImageCatalog(), new InfrastructureProviderCatalog());
+        return new BuilderPlannerService(queries, new CompatibilityCheckService(queries, new VersionRangeEvaluator()), RuntimeImageFixtures.Catalog(), new InfrastructureProviderCatalog());
     }
 
     private static PublicPackageProjection Package(PublicPackageSourceProjection source, string packageId, PublicFeatureProjection feature)

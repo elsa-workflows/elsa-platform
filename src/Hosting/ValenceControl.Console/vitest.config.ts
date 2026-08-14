@@ -13,6 +13,9 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setupTests.ts"],
-    css: true
+    css: true,
+    // Must stay above the asyncUtilTimeout configured in setupTests, so a slow findBy* reports the
+    // element it was waiting for rather than an opaque test timeout.
+    testTimeout: 20_000
   }
 });

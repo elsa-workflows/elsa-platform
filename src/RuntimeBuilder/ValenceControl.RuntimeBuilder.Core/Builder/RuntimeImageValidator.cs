@@ -7,6 +7,11 @@ public sealed class RuntimeImageValidator
     public IReadOnlyList<RuntimeImageValidationFinding> Validate(IReadOnlyList<RuntimeImage> images)
     {
         var findings = new List<RuntimeImageValidationFinding>();
+        // Images are configuration-defined, so a missing or misspelled section would otherwise leave the
+        // runtime builder silently offering nothing to build.
+        if (images.Count == 0)
+            findings.Add(new("runtimeImage.emptyCatalog", $"No runtime images are configured under '{RuntimeBuilderOptions.SectionName}:{nameof(RuntimeBuilderOptions.Images)}'.", "catalog"));
+
         foreach (var group in images.GroupBy(x => x.Slug, StringComparer.OrdinalIgnoreCase).Where(x => x.Count() > 1))
             findings.Add(new("runtimeImage.duplicateSlug", $"Runtime image slug {group.Key} is duplicated.", $"image:{group.Key}"));
 

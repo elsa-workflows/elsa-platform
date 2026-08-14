@@ -1,12 +1,31 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { ApiError } from "@/lib/api/httpClient";
+
+function isUnauthorized(error: unknown) {
+  return error instanceof ApiError && error.kind === "Unauthorized";
+}
+
+/**
+ * A 401 from any request means the console session is gone or expired. Refreshing the session query
+ * is all this needs to do: RequireCustomerAuth observes it and redirects to the login route, so an
+ * expired session lands in the same place as one that was never established.
+ */
+function refreshSessionOnUnauthorized(error: unknown) {
+  if (isUnauthorized(error)) {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.authSession });
+  }
+}
 
 export const queryClient = new QueryClient({
+  queryCache: new QueryCache({ onError: refreshSessionOnUnauthorized }),
+  mutationCache: new MutationCache({ onError: refreshSessionOnUnauthorized }),
   defaultOptions: {
     queries: {
       staleTime: 20_000,
       refetchOnWindowFocus: false,
-      retry: 1
+      // Retrying an unauthenticated request only delays the redirect; it can never succeed.
+      retry: (failureCount, error) => !isUnauthorized(error) && failureCount < 1
     },
     mutations: {
       retry: 0

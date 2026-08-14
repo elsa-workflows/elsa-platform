@@ -1,11 +1,14 @@
 import { createContext, useCallback, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Navigate, useLocation } from "react-router-dom";
 import { RequestStateView } from "@/components/states/RequestStateViews";
-import { Button } from "@/components/ui";
 import { getCustomerAuthSession } from "@/lib/auth/authApi";
 import type { CustomerAuthSession } from "@/lib/auth/authModels";
 import { queryKeys } from "@/lib/query/queryClient";
+
+export const loginRoute = "/admin/login";
+export const defaultReturnUrl = "/admin/overview";
 
 type AuthContextValue = {
   session: CustomerAuthSession | undefined;
@@ -57,8 +60,14 @@ export function useAuth() {
   return value;
 }
 
+/**
+ * The single gate for every authenticated console route. An unauthenticated visitor is sent to the
+ * login route rather than shown an inline prompt, so an expired or missing session always looks the
+ * same no matter which page discovered it.
+ */
 export function RequireCustomerAuth({ children }: { children: ReactNode }) {
   const auth = useAuth();
+  const location = useLocation();
 
   if (auth.isLoading) {
     return <RequestStateView state="loading" title="Loading customer session" />;
@@ -75,30 +84,21 @@ export function RequireCustomerAuth({ children }: { children: ReactNode }) {
   }
 
   if (!auth.session.authenticated) {
-    return (
-      <section className="max-w-xl space-y-4">
-        <div className="space-y-2">
-          <h1 className="font-display text-xl font-semibold">Sign in</h1>
-          <p className="text-sm text-muted-foreground">Use your configured Valence Control identity provider to access workspace features.</p>
-        </div>
-        <Button type="button" onClick={() => auth.signIn(currentReturnUrl())}>
-          Sign in
-        </Button>
-      </section>
-    );
+    return <Navigate to={loginUrlFor(`${location.pathname}${location.search}${location.hash}`)} replace />;
   }
 
   return children;
 }
 
-function currentReturnUrl() {
-  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+export function loginUrlFor(returnUrl: string) {
+  return `${loginRoute}?returnUrl=${encodeURIComponent(safeReturnUrl(returnUrl))}`;
 }
 
-function safeReturnUrl(returnUrl: string | undefined) {
-  if (!returnUrl || returnUrl.startsWith("//")) {
-    return "/admin/runtime-builder";
+/** Keeps a caller-supplied return URL to same-origin console paths so it cannot be used to redirect away. */
+export function safeReturnUrl(returnUrl: string | null | undefined) {
+  if (!returnUrl || !returnUrl.startsWith("/") || returnUrl.startsWith("//")) {
+    return defaultReturnUrl;
   }
 
-  return returnUrl.startsWith("/") ? returnUrl : "/admin/runtime-builder";
+  return returnUrl === loginRoute || returnUrl.startsWith(`${loginRoute}?`) ? defaultReturnUrl : returnUrl;
 }

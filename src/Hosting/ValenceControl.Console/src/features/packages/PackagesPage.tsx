@@ -47,6 +47,27 @@ export function PackagesPage() {
     return sortPackages(filterPackages(packages.data ?? [], query, filter), sort);
   }, [filter, packages.data, query, sort]);
 
+  const selectableVisible = useMemo(
+    () => visiblePackages
+      .map((packageItem) => {
+        const selectable = selectableLatestVersion(packageItem);
+        return selectable ? { key: rowSelectionKey(packageItem, selectable), selectable } : null;
+      })
+      .filter((entry) => entry !== null),
+    [visiblePackages]
+  );
+  const allVisibleSelected = selectableVisible.length > 0 && selectableVisible.every((entry) => entry.key in selected);
+  const someVisibleSelected = selectableVisible.some((entry) => entry.key in selected);
+
+  function toggleAllVisible(checked: boolean) {
+    const next = { ...selected };
+    for (const entry of selectableVisible) {
+      if (checked) next[entry.key] = entry.selectable;
+      else delete next[entry.key];
+    }
+    setSelected(next);
+  }
+
   const approveSelected = useMutation({
     mutationFn: () => runBatch(selectedItems.map((item) => approvePackageVersion(item))),
     onSuccess: () => resetAfterMutation(queryClient, setSelected),
@@ -130,7 +151,19 @@ export function PackagesPage() {
           <table className="min-w-full divide-y divide-border text-sm">
             <thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground">
               <tr>
-                <th className="w-10 px-3 py-2"><span className="sr-only">Select</span></th>
+                <th className="w-10 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all packages"
+                    className="h-4 w-4 rounded border-border"
+                    checked={allVisibleSelected}
+                    disabled={selectableVisible.length === 0}
+                    ref={(element) => {
+                      if (element) element.indeterminate = someVisibleSelected && !allVisibleSelected;
+                    }}
+                    onChange={(event) => toggleAllVisible(event.target.checked)}
+                  />
+                </th>
                 <th className="px-3 py-2">Package ID</th>
                 <th className="px-3 py-2">Latest Version</th>
                 <th className="px-3 py-2">Approval</th>
@@ -144,7 +177,7 @@ export function PackagesPage() {
             <tbody className="divide-y divide-border">
               {visiblePackages.map((packageItem) => (
                 <PackageRow
-                  key={packageItem.packageId}
+                  key={rowKey(packageItem)}
                   packageItem={packageItem}
                   selected={selected}
                   onSelectionChange={setSelected}
@@ -168,7 +201,7 @@ function PackageRow({
   onSelectionChange: (value: Record<string, SelectablePackageVersion>) => void;
 }) {
   const selectable = selectableLatestVersion(packageItem);
-  const key = selectable ? selectionKey(selectable) : "";
+  const key = selectable ? rowSelectionKey(packageItem, selectable) : "";
   const approval = packageApprovalStatus(packageItem);
   const validation = packageValidationStatus(packageItem);
   const suspicious = hasSuspiciousChange(packageItem);
@@ -210,6 +243,19 @@ function PackageRow({
       <td className="px-3 py-3">{formatDateTime(packageItem.updatedAt)}</td>
     </tr>
   );
+}
+
+/**
+ * The catalog holds one package entry per (packageId, source), so packageId alone is not unique.
+ * Keying rows or selections by it alone gives React duplicate keys, which mismatches rows against
+ * their data on re-render and lets one source's selection tick another source's checkbox.
+ */
+function rowKey(packageItem: CatalogPackage) {
+  return `${packageItem.sourceId ?? "unknown-source"}::${packageItem.packageId}`;
+}
+
+function rowSelectionKey(packageItem: CatalogPackage, selectable: SelectablePackageVersion) {
+  return `${packageItem.sourceId ?? "unknown-source"}::${selectionKey(selectable)}`;
 }
 
 function filterPackages(packages: CatalogPackage[], query: string, filter: PackageFilter) {

@@ -1,4 +1,4 @@
-import { createBrowserRouter, Link, Navigate } from "react-router-dom";
+import { createBrowserRouter, Link, Navigate, Outlet, useSearchParams } from "react-router-dom";
 import { AppShell } from "@/app/AppShell";
 import { OverviewPage } from "@/app/OverviewPage";
 import { RequestStateView } from "@/components/states/RequestStateViews";
@@ -27,7 +27,7 @@ import {
 } from "@/features/deployments/DeploymentsPage";
 import { DeploymentTierCreatePage, DeploymentTierEditPage, DeploymentTiersPage } from "@/features/deployments/DeploymentTiersPage";
 import { ArtifactCreatePage, ArtifactDetailsPage, ArtifactsPage } from "@/features/artifacts/ArtifactsPage";
-import { RequireCustomerAuth, useAuth } from "@/lib/auth/AuthProvider";
+import { RequireCustomerAuth, safeReturnUrl, useAuth } from "@/lib/auth/AuthProvider";
 import { NewSourcePage, EditSourcePage } from "@/features/sources/SourceFormPage";
 import { SourceDetailsPage } from "@/features/sources/SourceDetailsPage";
 import { SourcesPage } from "@/features/sources/SourcesPage";
@@ -50,11 +50,19 @@ function PlaceholderPage({ title }: { title: string }) {
 
 export function AdminLoginPage() {
   const auth = useAuth();
+  const [searchParams] = useSearchParams();
+  const requestedReturnUrl = searchParams.get("returnUrl");
+  const returnUrl = safeReturnUrl(requestedReturnUrl);
 
   if (auth.isLoading)
     return <RequestStateView state="loading" title="Checking customer session" />;
 
   if (auth.session?.authenticated) {
+    // Arriving here with a return URL means the guard bounced a signed-out visitor and the session
+    // has since become valid, so send them on to the page they originally asked for.
+    if (requestedReturnUrl)
+      return <Navigate to={returnUrl} replace />;
+
     return (
       <EmptyState
         title="You are already signed in"
@@ -78,7 +86,7 @@ export function AdminLoginPage() {
     <EmptyState
       title="Sign in to Valence Control"
       description="Use your configured Valence Control identity provider to continue to the console."
-      action={<Button type="button" onClick={() => auth.signIn("/admin/overview")}>Continue to sign in</Button>}
+      action={<Button type="button" onClick={() => auth.signIn(returnUrl)}>Continue to sign in</Button>}
     />
   );
 }
@@ -105,52 +113,59 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/admin/overview" replace /> },
       { path: "login", element: <AdminLoginPage /> },
-      { path: "overview", element: <OverviewPage /> },
-      { path: "sources", element: <SourcesPage /> },
-      { path: "sources/new", element: <NewSourcePage /> },
-      { path: "sources/:sourceId", element: <SourceDetailsPage /> },
-      { path: "sources/:sourceId/edit", element: <EditSourcePage /> },
-      { path: "packages", element: <PackagesPage /> },
-      { path: "packages/:packageId", element: <PackageDetailsPage /> },
-      { path: "packages/:packageId/versions/:version", element: <PackageDetailsPage /> },
-      { path: "packages/:packageId/versions/:version/:section", element: <PackageDetailsPage /> },
-      { path: "sync-runs", element: <SyncRunsPage /> },
-      { path: "sync-runs/:runId", element: <SyncRunDetailsPage /> },
-      { path: "deployments", element: <RequireCustomerAuth><DeploymentsPage /></RequireCustomerAuth> },
-      { path: "deployments/new", element: <RequireCustomerAuth><NewDeploymentSetupPage /></RequireCustomerAuth> },
-      { path: "deployments/credentials", element: <RequireCustomerAuth><DeploymentCredentialsPage /></RequireCustomerAuth> },
-      { path: "deployments/credentials/stores/new", element: <RequireCustomerAuth><DeploymentCredentialStoreCreatePage /></RequireCustomerAuth> },
-      { path: "deployments/credentials/stores/:secretStoreId/edit", element: <RequireCustomerAuth><DeploymentCredentialStoreEditPage /></RequireCustomerAuth> },
-      { path: "deployments/credentials/references/new", element: <RequireCustomerAuth><DeploymentCredentialReferenceCreatePage /></RequireCustomerAuth> },
-      { path: "deployments/credentials/references/:credentialReferenceId", element: <RequireCustomerAuth><DeploymentCredentialReferencePage /></RequireCustomerAuth> },
-      { path: "deployments/credentials/references/:credentialReferenceId/edit", element: <RequireCustomerAuth><DeploymentCredentialReferenceEditPage /></RequireCustomerAuth> },
-      { path: "deployments/applications", element: <RequireCustomerAuth><DeploymentApplicationsPage /></RequireCustomerAuth> },
-      { path: "deployments/applications/:applicationId", element: <RequireCustomerAuth><DeploymentApplicationPage /></RequireCustomerAuth> },
-      { path: "deployments/applications/:applicationId/edit", element: <RequireCustomerAuth><DeploymentApplicationEditPage /></RequireCustomerAuth> },
-      { path: "deployments/applications/:applicationId/revisions", element: <RequireCustomerAuth><DeploymentApplicationRevisionsPage /></RequireCustomerAuth> },
-      { path: "deployments/applications/:applicationId/revisions/:revisionId", element: <RequireCustomerAuth><DeploymentRevisionDetailPage /></RequireCustomerAuth> },
-      { path: "deployments/applications/:applicationId/environments/new", element: <RequireCustomerAuth><DeploymentEnvironmentCreatePage /></RequireCustomerAuth> },
-      { path: "deployments/applications/:applicationId/environments/:environmentId", element: <RequireCustomerAuth><DeploymentEnvironmentPage /></RequireCustomerAuth> },
-      { path: "deployments/applications/:applicationId/environments/:environmentId/edit", element: <RequireCustomerAuth><DeploymentEnvironmentEditPage /></RequireCustomerAuth> },
-      { path: "deployments/applications/:applicationId/environments/:environmentId/revisions/new", element: <RequireCustomerAuth><DeploymentRevisionCreatePage /></RequireCustomerAuth> },
-      { path: "deployments/applications/:applicationId/environments/:environmentId/engines/new", element: <RequireCustomerAuth><DeploymentEngineRegisterPage /></RequireCustomerAuth> },
-      { path: "deployments/applications/:applicationId/environments/:environmentId/engines/:engineId", element: <RequireCustomerAuth><DeploymentEnginePage /></RequireCustomerAuth> },
-      { path: "deployments/applications/:applicationId/environments/:environmentId/engines/:engineId/edit", element: <RequireCustomerAuth><DeploymentEngineEditPage /></RequireCustomerAuth> },
-      { path: "deployments/tiers", element: <RequireCustomerAuth><DeploymentTiersPage /></RequireCustomerAuth> },
-      { path: "deployments/tiers/new", element: <RequireCustomerAuth><DeploymentTierCreatePage /></RequireCustomerAuth> },
-      { path: "deployments/tiers/:tierId/edit", element: <RequireCustomerAuth><DeploymentTierEditPage /></RequireCustomerAuth> },
-      { path: "artifacts", element: <RequireCustomerAuth><ArtifactsPage /></RequireCustomerAuth> },
-      { path: "artifacts/new", element: <RequireCustomerAuth><ArtifactCreatePage /></RequireCustomerAuth> },
-      { path: "artifacts/:artifactId", element: <RequireCustomerAuth><ArtifactDetailsPage /></RequireCustomerAuth> },
-      { path: "runtime-builder", element: <RequireCustomerAuth><RuntimeBuilderPage /></RequireCustomerAuth> },
-      { path: "runtime-builder/new", element: <RequireCustomerAuth><NewRuntimeBuilderPage /></RequireCustomerAuth> },
-      { path: "runtime-builder/:configurationId/edit", element: <RequireCustomerAuth><EditRuntimeBuilderPage /></RequireCustomerAuth> },
-      { path: "console", element: <RequireCustomerAuth><ConsoleLogsPage /></RequireCustomerAuth> },
-      { path: "targets", element: <PlaceholderPage title="Targets" /> },
-      { path: "runtimes", element: <PlaceholderPage title="Managed Runtimes" /> },
-      { path: "operations", element: <PlaceholderPage title="Runtime Operations" /> },
-      { path: "weaver/sessions/:sessionId", element: <RequireCustomerAuth><WeaverSessionPage /></RequireCustomerAuth> },
-      { path: "audit", element: <PlaceholderPage title="Audit" /> },
+      {
+        // Every console route below this layout requires a signed-in customer session. The guard
+        // lives here, once, so no page has to decide for itself what an unauthenticated visitor sees.
+        element: <RequireCustomerAuth><Outlet /></RequireCustomerAuth>,
+        children: [
+          { path: "overview", element: <OverviewPage /> },
+          { path: "sources", element: <SourcesPage /> },
+          { path: "sources/new", element: <NewSourcePage /> },
+          { path: "sources/:sourceId", element: <SourceDetailsPage /> },
+          { path: "sources/:sourceId/edit", element: <EditSourcePage /> },
+          { path: "packages", element: <PackagesPage /> },
+          { path: "packages/:packageId", element: <PackageDetailsPage /> },
+          { path: "packages/:packageId/versions/:version", element: <PackageDetailsPage /> },
+          { path: "packages/:packageId/versions/:version/:section", element: <PackageDetailsPage /> },
+          { path: "sync-runs", element: <SyncRunsPage /> },
+          { path: "sync-runs/:runId", element: <SyncRunDetailsPage /> },
+          { path: "deployments", element: <DeploymentsPage /> },
+          { path: "deployments/new", element: <NewDeploymentSetupPage /> },
+          { path: "deployments/credentials", element: <DeploymentCredentialsPage /> },
+          { path: "deployments/credentials/stores/new", element: <DeploymentCredentialStoreCreatePage /> },
+          { path: "deployments/credentials/stores/:secretStoreId/edit", element: <DeploymentCredentialStoreEditPage /> },
+          { path: "deployments/credentials/references/new", element: <DeploymentCredentialReferenceCreatePage /> },
+          { path: "deployments/credentials/references/:credentialReferenceId", element: <DeploymentCredentialReferencePage /> },
+          { path: "deployments/credentials/references/:credentialReferenceId/edit", element: <DeploymentCredentialReferenceEditPage /> },
+          { path: "deployments/applications", element: <DeploymentApplicationsPage /> },
+          { path: "deployments/applications/:applicationId", element: <DeploymentApplicationPage /> },
+          { path: "deployments/applications/:applicationId/edit", element: <DeploymentApplicationEditPage /> },
+          { path: "deployments/applications/:applicationId/revisions", element: <DeploymentApplicationRevisionsPage /> },
+          { path: "deployments/applications/:applicationId/revisions/:revisionId", element: <DeploymentRevisionDetailPage /> },
+          { path: "deployments/applications/:applicationId/environments/new", element: <DeploymentEnvironmentCreatePage /> },
+          { path: "deployments/applications/:applicationId/environments/:environmentId", element: <DeploymentEnvironmentPage /> },
+          { path: "deployments/applications/:applicationId/environments/:environmentId/edit", element: <DeploymentEnvironmentEditPage /> },
+          { path: "deployments/applications/:applicationId/environments/:environmentId/revisions/new", element: <DeploymentRevisionCreatePage /> },
+          { path: "deployments/applications/:applicationId/environments/:environmentId/engines/new", element: <DeploymentEngineRegisterPage /> },
+          { path: "deployments/applications/:applicationId/environments/:environmentId/engines/:engineId", element: <DeploymentEnginePage /> },
+          { path: "deployments/applications/:applicationId/environments/:environmentId/engines/:engineId/edit", element: <DeploymentEngineEditPage /> },
+          { path: "deployments/tiers", element: <DeploymentTiersPage /> },
+          { path: "deployments/tiers/new", element: <DeploymentTierCreatePage /> },
+          { path: "deployments/tiers/:tierId/edit", element: <DeploymentTierEditPage /> },
+          { path: "artifacts", element: <ArtifactsPage /> },
+          { path: "artifacts/new", element: <ArtifactCreatePage /> },
+          { path: "artifacts/:artifactId", element: <ArtifactDetailsPage /> },
+          { path: "runtime-builder", element: <RuntimeBuilderPage /> },
+          { path: "runtime-builder/new", element: <NewRuntimeBuilderPage /> },
+          { path: "runtime-builder/:configurationId/edit", element: <EditRuntimeBuilderPage /> },
+          { path: "console", element: <ConsoleLogsPage /> },
+          { path: "targets", element: <PlaceholderPage title="Targets" /> },
+          { path: "runtimes", element: <PlaceholderPage title="Managed Runtimes" /> },
+          { path: "operations", element: <PlaceholderPage title="Runtime Operations" /> },
+          { path: "weaver/sessions/:sessionId", element: <WeaverSessionPage /> },
+          { path: "audit", element: <PlaceholderPage title="Audit" /> }
+        ]
+      },
       { path: "*", element: <ConsoleNotFoundPage /> }
     ]
   }
