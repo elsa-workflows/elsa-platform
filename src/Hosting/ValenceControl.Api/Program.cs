@@ -152,6 +152,21 @@ builder.Services.AddOptions<JwtBearerOptions>(ControlIdentityDefaults.Scheme)
             ClockSkew = TimeSpan.FromMinutes(1)
         };
     });
+// The public Runtime Builder API is called from browsers on other origins (the Elsa Hub
+// configurator), so those origins must be allow-listed. Everything else on this host is
+// same-origin and needs no CORS.
+var builderClientOrigins = builder.Configuration
+    .GetSection(PublicBuilderCors.AllowedOriginsConfigurationKey)
+    .Get<string[]>() ?? [];
+builder.Services.AddCors(options => options.AddPolicy(PublicBuilderCors.PolicyName, policy =>
+{
+    if (builderClientOrigins.Length == 0)
+        return;
+
+    policy.WithOrigins(builderClientOrigins)
+        .WithMethods(HttpMethods.Get, HttpMethods.Post, HttpMethods.Options)
+        .WithHeaders("Content-Type", ApiKeyAuthenticationDefaults.HeaderName);
+}));
 builder.Services.AddCatalogAuthorization();
 builder.Services.AddBuilderClientAuthorization();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -336,6 +351,7 @@ if (!app.Environment.IsEnvironment("Testing"))
 }
 
 app.UseExceptionHandler();
+app.UseCors();
 app.UseAuthentication();
 app.UseAdminDashboardAuthentication();
 app.UseAdminDashboardRequestForgeryGuard();

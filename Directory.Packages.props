@@ -22,6 +22,9 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.10" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.10" />
+    <!-- Pinned forward: Aspire injects AZURE_TOKEN_CREDENTIALS=ManagedIdentityCredential, which
+         Azure.Identity only accepts from 1.16 onwards (1.14 allowed just 'dev' and 'prod'). -->
+    <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.7" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.7" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.7" />

@@ -24,7 +24,7 @@ namespace ValenceControl.PackageCatalog.Persistence.SqlServerMigrations.Migratio
                 maxLength: 4096,
                 nullable: true,
                 oldClrType: typeof(string),
-                oldType: "nvarchar(4096)",
+                oldType: "nvarchar(max)",
                 oldMaxLength: 4096,
                 oldNullable: true);
 
@@ -139,12 +139,12 @@ namespace ValenceControl.PackageCatalog.Persistence.SqlServerMigrations.Migratio
 
                 INSERT INTO WorkspacePermissionAuditRecords
                     (Id, WorkspaceId, GrantId, AccountId, Permission, Action, ActorAccountId, OccurredAt)
-                SELECT NEWID(), grant.WorkspaceId, grant.Id, grant.AccountId, grant.Permission, 'Granted', grant.GrantedByAccountId, grant.CreatedAt
-                FROM WorkspacePermissionGrants AS grant
+                SELECT NEWID(), grantRow.WorkspaceId, grantRow.Id, grantRow.AccountId, grantRow.Permission, 'Granted', grantRow.GrantedByAccountId, grantRow.CreatedAt
+                FROM WorkspacePermissionGrants AS grantRow
                 WHERE NOT EXISTS (
                     SELECT 1
                     FROM WorkspacePermissionAuditRecords AS audit
-                    WHERE audit.GrantId = grant.Id AND audit.Action = 'Granted'
+                    WHERE audit.GrantId = grantRow.Id AND audit.Action = 'Granted'
                 );
                 """);
         }
@@ -162,7 +162,7 @@ namespace ValenceControl.PackageCatalog.Persistence.SqlServerMigrations.Migratio
             migrationBuilder.AlterColumn<string>(
                 name: "ProtectedSecret",
                 table: "DeploymentCredentialReferences",
-                type: "nvarchar(4096)",
+                type: "nvarchar(max)",
                 maxLength: 4096,
                 nullable: true,
                 oldClrType: typeof(string),

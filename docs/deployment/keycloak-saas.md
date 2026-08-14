@@ -1,5 +1,10 @@
 # Keycloak SaaS Deployment
 
+> **Legacy.** This hand-written Bicep stack (including its self-hosted Keycloak) is no longer
+> the deployment path. Provisioning is driven by the Aspire AppHost through `azd up`, which
+> uses Microsoft Entra ID for sign-in and managed identity for Azure SQL. These files are kept
+> under `infra-legacy/` for reference.
+
 ## Decision
 
 Run Keycloak as a separate production identity service and keep Valence Control as
@@ -30,8 +35,8 @@ Enable it with:
 ```bash
 az deployment group create \
   --resource-group rg-valence-control-prod \
-  --template-file infra/main.bicep \
-  --parameters @infra/parameters/prod.example.json \
+  --template-file infra-legacy/main.bicep \
+  --parameters @infra-legacy/parameters/prod.example.json \
   --parameters \
       adminApiKey='<strong-admin-key>' \
       sqlAdministratorPassword='<strong-sql-password>' \

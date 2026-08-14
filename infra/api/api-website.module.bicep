@@ -1,0 +1,255 @@
+@description('The location for the resource(s) to be deployed.')
+param location string = resourceGroup().location
+
+param valence_control_outputs_azure_container_registry_endpoint string
+
+param valence_control_outputs_planid string
+
+param valence_control_outputs_azure_container_registry_managed_identity_id string
+
+param valence_control_outputs_azure_container_registry_managed_identity_client_id string
+
+param api_containerimage string
+
+param api_containerport string
+
+@secure()
+param adminapikey_value string
+
+param control_sql_outputs_sqlserverfqdn string
+
+param entratenantid_value string
+
+param entraclientid_value string
+
+@secure()
+param entraclientsecret_value string
+
+@secure()
+param builderclientapikey_value string
+
+param api_identity_outputs_id string
+
+param api_identity_outputs_clientid string
+
+param valence_control_outputs_azure_app_service_dashboard_uri string
+
+param valence_control_outputs_azure_website_contributor_managed_identity_id string
+
+param valence_control_outputs_azure_website_contributor_managed_identity_principal_id string
+
+resource mainContainer 'Microsoft.Web/sites/sitecontainers@2025-03-01' = {
+  name: 'main'
+  properties: {
+    authType: 'UserAssigned'
+    image: api_containerimage
+    isMain: true
+    targetPort: api_containerport
+    userManagedIdentityClientId: valence_control_outputs_azure_container_registry_managed_identity_client_id
+  }
+  parent: webapp
+}
+
+resource webapp 'Microsoft.Web/sites@2025-03-01' = {
+  name: take('${toLower('api')}-${uniqueString(resourceGroup().id)}', 60)
+  location: location
+  properties: {
+    serverFarmId: valence_control_outputs_planid
+    keyVaultReferenceIdentity: api_identity_outputs_id
+    siteConfig: {
+      numberOfWorkers: 1
+      linuxFxVersion: 'SITECONTAINERS'
+      acrUseManagedIdentityCreds: true
+      acrUserManagedIdentityID: valence_control_outputs_azure_container_registry_managed_identity_client_id
+      appSettings: [
+        {
+          name: 'WEBSITES_PORT'
+          value: api_containerport
+        }
+        {
+          name: 'OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY'
+          value: 'in_memory'
+        }
+        {
+          name: 'ASPNETCORE_FORWARDEDHEADERS_ENABLED'
+          value: 'true'
+        }
+        {
+          name: 'HTTP_PORTS'
+          value: api_containerport
+        }
+        {
+          name: 'Authentication__ApiKey'
+          value: adminapikey_value
+        }
+        {
+          name: 'ConnectionStrings__Catalog'
+          value: 'Server=tcp:${control_sql_outputs_sqlserverfqdn},1433;Encrypt=True;Authentication="Active Directory Default";Database=Catalog'
+        }
+        {
+          name: 'CATALOG_HOST'
+          value: control_sql_outputs_sqlserverfqdn
+        }
+        {
+          name: 'CATALOG_PORT'
+          value: '1433'
+        }
+        {
+          name: 'CATALOG_URI'
+          value: 'mssql://${control_sql_outputs_sqlserverfqdn}:1433/Catalog'
+        }
+        {
+          name: 'CATALOG_JDBCCONNECTIONSTRING'
+          value: 'jdbc:sqlserver://${control_sql_outputs_sqlserverfqdn}:1433;database=Catalog;encrypt=true;trustServerCertificate=false'
+        }
+        {
+          name: 'CATALOG_DATABASENAME'
+          value: 'Catalog'
+        }
+        {
+          name: 'Database__Provider'
+          value: 'SqlServer'
+        }
+        {
+          name: 'DataProtection__KeysPath'
+          value: '/home/data-protection-keys'
+        }
+        {
+          name: 'WEBSITES_ENABLE_APP_SERVICE_STORAGE'
+          value: 'true'
+        }
+        {
+          name: 'Authentication__ControlIdentity__Provider'
+          value: 'MicrosoftEntra'
+        }
+        {
+          name: 'Authentication__ControlIdentity__Authority'
+          value: 'https://login.microsoftonline.com/${entratenantid_value}/v2.0'
+        }
+        {
+          name: 'Authentication__ControlIdentity__Issuer'
+          value: 'https://login.microsoftonline.com/${entratenantid_value}/v2.0'
+        }
+        {
+          name: 'Authentication__ControlIdentity__Audience'
+          value: entraclientid_value
+        }
+        {
+          name: 'Authentication__ControlIdentity__ClientId'
+          value: entraclientid_value
+        }
+        {
+          name: 'Authentication__ControlIdentity__ClientSecret'
+          value: entraclientsecret_value
+        }
+        {
+          name: 'Authentication__ControlIdentity__RedirectUri'
+          value: '/api/auth/callback'
+        }
+        {
+          name: 'Authentication__ControlIdentity__PostLogoutRedirectUri'
+          value: '/admin'
+        }
+        {
+          name: 'Authentication__ControlIdentity__RequireHttpsMetadata'
+          value: 'true'
+        }
+        {
+          name: 'Authentication__ControlIdentity__Claims__DisplayName__0'
+          value: 'name'
+        }
+        {
+          name: 'Authentication__ControlIdentity__Claims__DisplayName__1'
+          value: 'preferred_username'
+        }
+        {
+          name: 'Authentication__ControlIdentity__Claims__Email__0'
+          value: 'email'
+        }
+        {
+          name: 'Authentication__ControlIdentity__Claims__Email__1'
+          value: 'preferred_username'
+        }
+        {
+          name: 'Authentication__Admin__AllowAuthenticatedCustomerSession'
+          value: 'true'
+        }
+        {
+          name: 'Authentication__BuilderClientApiKey'
+          value: builderclientapikey_value
+        }
+        {
+          name: 'Cors__BuilderClientOrigins__0'
+          value: 'https://www.elsaworkflows.io'
+        }
+        {
+          name: 'Cors__BuilderClientOrigins__1'
+          value: 'https://elsaworkflows.io'
+        }
+        {
+          name: 'AZURE_CLIENT_ID'
+          value: api_identity_outputs_clientid
+        }
+        {
+          name: 'AZURE_TOKEN_CREDENTIALS'
+          value: 'ManagedIdentityCredential'
+        }
+        {
+          name: 'ASPIRE_ENVIRONMENT_NAME'
+          value: 'valence-control'
+        }
+        {
+          name: 'OTEL_SERVICE_NAME'
+          value: 'api'
+        }
+        {
+          name: 'OTEL_EXPORTER_OTLP_PROTOCOL'
+          value: 'grpc'
+        }
+        {
+          name: 'OTEL_EXPORTER_OTLP_ENDPOINT'
+          value: 'http://localhost:6001'
+        }
+        {
+          name: 'WEBSITE_ENABLE_ASPIRE_OTEL_SIDECAR'
+          value: 'true'
+        }
+        {
+          name: 'OTEL_COLLECTOR_URL'
+          value: valence_control_outputs_azure_app_service_dashboard_uri
+        }
+        {
+          name: 'OTEL_CLIENT_ID'
+          value: valence_control_outputs_azure_container_registry_managed_identity_client_id
+        }
+      ]
+    }
+  }
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${valence_control_outputs_azure_container_registry_managed_identity_id}': { }
+      '${api_identity_outputs_id}': { }
+    }
+  }
+}
+
+resource api_website_ra 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(webapp.id, valence_control_outputs_azure_website_contributor_managed_identity_id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'de139f84-1756-47ae-9be6-808fbbe84772'))
+  properties: {
+    principalId: valence_control_outputs_azure_website_contributor_managed_identity_principal_id
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'de139f84-1756-47ae-9be6-808fbbe84772')
+    principalType: 'ServicePrincipal'
+  }
+  scope: webapp
+}
+
+resource slotConfigNames 'Microsoft.Web/sites/config@2025-03-01' = {
+  name: 'slotConfigNames'
+  properties: {
+    appSettingNames: [
+      'OTEL_SERVICE_NAME'
+    ]
+  }
+  parent: webapp
+}

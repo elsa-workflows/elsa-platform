@@ -17,6 +17,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Package source sync uses the NuGet client libraries, which resolve their user config and HTTP
+         cache from $HOME. In the published container HOME defaults to the read-only /app, so sync fails
+         with "Failed to read NuGet.Config due to unauthorized access". App Service rejects HOME as an
+         app setting, so it is baked into the image instead, pointing at a writable directory. -->
+    <ContainerEnvironmentVariable Include="HOME" Value="/tmp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Azure.Identity" />
     <PackageReference Include="ConsoleLogStreaming.AspNetCore" />
     <PackageReference Include="JetBrains.Annotations" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
