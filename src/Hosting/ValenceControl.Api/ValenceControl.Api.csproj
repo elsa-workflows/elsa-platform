@@ -38,4 +38,32 @@
     <PackageReference Include="Microsoft.OpenApi" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
   </ItemGroup>
+
+  <!-- The console is a Vite app served from /admin. The Dockerfile builds it, but azd/Aspire publish
+       the API with .NET SDK container publishing, which never runs that Dockerfile - so the deployed
+       image shipped without the console and /admin fell back to the "assets not built" placeholder.
+       Building it here means any publish path produces a complete image. Set SkipAdminConsoleBuild
+       when a pipeline has already produced dist/ (the container build does this). -->
+  <PropertyGroup>
+    <AdminConsoleRoot>$(MSBuildThisFileDirectory)../ValenceControl.Console/</AdminConsoleRoot>
+  </PropertyGroup>
+
+  <Target Name="BuildAdminConsole" BeforeTargets="ComputeFilesToPublish"
+          Condition="'$(SkipAdminConsoleBuild)' != 'true' AND Exists('$(AdminConsoleRoot)package.json')">
+    <Exec Command="npm ci --no-audit --no-fund" WorkingDirectory="$(AdminConsoleRoot)"
+          Condition="!Exists('$(AdminConsoleRoot)node_modules')" />
+    <Exec Command="npm run build" WorkingDirectory="$(AdminConsoleRoot)" />
+  </Target>
+
+  <Target Name="PublishAdminConsole" AfterTargets="ComputeFilesToPublish"
+          Condition="Exists('$(AdminConsoleRoot)dist')">
+    <ItemGroup>
+      <AdminConsoleDist Include="$(AdminConsoleRoot)dist/**/*" />
+      <ResolvedFileToPublish Include="@(AdminConsoleDist->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">
+        <RelativePath>wwwroot/admin/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
 </Project>
