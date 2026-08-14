@@ -120,11 +120,28 @@ namespace ValenceControl.PackageCatalog.Persistence.SqlServerMigrations.Migratio
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            // Workspaces store timestamps as datetimeoffset, while the organization tables store
+            // DateTimeOffset.UtcTicks as bigint (see OrganizationConfiguration). Copying the columns
+            // straight across is an operand type clash, so convert each value to UTC ticks.
             migrationBuilder.Sql("""
                 INSERT INTO Organizations (Id, Name, Status, CreatedAt, UpdatedAt, ArchivedAt, CreatedByAccountId, CustomerReference)
-                SELECT Id, Name, 'Active', CreatedAt, UpdatedAt, NULL, NULL, NULL
-                FROM Workspaces
-                WHERE OrganizationId IS NULL;
+                SELECT
+                    w.Id,
+                    w.Name,
+                    'Active',
+                    DATEDIFF_BIG(DAY, CONVERT(datetime2, '0001-01-01'), utc.CreatedAt) * 864000000000
+                        + DATEDIFF_BIG(NANOSECOND, CONVERT(date, utc.CreatedAt), utc.CreatedAt) / 100,
+                    DATEDIFF_BIG(DAY, CONVERT(datetime2, '0001-01-01'), utc.UpdatedAt) * 864000000000
+                        + DATEDIFF_BIG(NANOSECOND, CONVERT(date, utc.UpdatedAt), utc.UpdatedAt) / 100,
+                    NULL,
+                    NULL,
+                    NULL
+                FROM Workspaces AS w
+                CROSS APPLY (VALUES (
+                    CONVERT(datetime2, SWITCHOFFSET(w.CreatedAt, 0)),
+                    CONVERT(datetime2, SWITCHOFFSET(w.UpdatedAt, 0))
+                )) AS utc(CreatedAt, UpdatedAt)
+                WHERE w.OrganizationId IS NULL;
                 """);
 
             migrationBuilder.Sql("""
@@ -140,12 +157,18 @@ namespace ValenceControl.PackageCatalog.Persistence.SqlServerMigrations.Migratio
                     w.OrganizationId,
                     wm.AccountId,
                     CASE WHEN wm.Role = 2 THEN 'Owner' ELSE 'Member' END,
-                    wm.CreatedAt,
-                    wm.UpdatedAt,
+                    DATEDIFF_BIG(DAY, CONVERT(datetime2, '0001-01-01'), utc.CreatedAt) * 864000000000
+                        + DATEDIFF_BIG(NANOSECOND, CONVERT(date, utc.CreatedAt), utc.CreatedAt) / 100,
+                    DATEDIFF_BIG(DAY, CONVERT(datetime2, '0001-01-01'), utc.UpdatedAt) * 864000000000
+                        + DATEDIFF_BIG(NANOSECOND, CONVERT(date, utc.UpdatedAt), utc.UpdatedAt) / 100,
                     NULL,
                     NULL
                 FROM WorkspaceMemberships wm
                 INNER JOIN Workspaces w ON w.Id = wm.WorkspaceId
+                CROSS APPLY (VALUES (
+                    CONVERT(datetime2, SWITCHOFFSET(wm.CreatedAt, 0)),
+                    CONVERT(datetime2, SWITCHOFFSET(wm.UpdatedAt, 0))
+                )) AS utc(CreatedAt, UpdatedAt)
                 WHERE NOT EXISTS (
                     SELECT 1
                     FROM OrganizationMemberships existing

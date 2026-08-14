@@ -465,3 +465,6 @@ FodyWeavers.xsd
 *.msp
 
 src/Hosting/ValenceControl.Api/.data-protection-keys/
+
+# azd environment state (contains provisioning secrets)
+.azure/

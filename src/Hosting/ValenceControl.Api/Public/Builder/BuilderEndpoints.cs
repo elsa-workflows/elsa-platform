@@ -16,7 +16,7 @@ public static class BuilderEndpoints
 {
     public static IEndpointRouteBuilder MapBuilderEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/builder").WithTags("Runtime Builder");
+        var group = endpoints.MapGroup("/api/builder").WithTags("Runtime Builder").RequireCors(PublicBuilderCors.PolicyName);
 
         group.MapGet("/catalog", async ([FromQuery] Guid[] sourceIds, PublicCatalogQueryService catalog, RuntimeImageCatalog runtimeImages, InfrastructureProviderCatalog infrastructure, CancellationToken cancellationToken) =>
         {

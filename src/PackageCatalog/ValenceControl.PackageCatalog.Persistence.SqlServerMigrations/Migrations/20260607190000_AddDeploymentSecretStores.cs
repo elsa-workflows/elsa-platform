@@ -63,7 +63,7 @@ namespace ValenceControl.PackageCatalog.Persistence.SqlServerMigrations.Migratio
                     SecretStoreId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     Reference = table.Column<string>(type: "nvarchar(1024)", maxLength: 1024, nullable: false),
-                    ProtectedSecret = table.Column<string>(type: "nvarchar(4096)", maxLength: 4096, nullable: true),
+                    ProtectedSecret = table.Column<string>(type: "nvarchar(max)", maxLength: 4096, nullable: true),
                     ProtectedSecretUpdatedAt = table.Column<long>(type: "bigint", nullable: true),
                     Description = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
                     Status = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
@@ -118,7 +118,11 @@ namespace ValenceControl.PackageCatalog.Persistence.SqlServerMigrations.Migratio
                 column: "CredentialReferenceId",
                 principalTable: "DeploymentCredentialReferences",
                 principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
+                // Workspaces cascade to both WorkflowEngines and DeploymentCredentialReferences, so a
+                // SET NULL here gives SQL Server multiple cascade paths to WorkflowEngines and it
+                // refuses to create the constraint. SQLite tolerates the cycle; SQL Server does not.
+                // EF still nulls the reference for entities it has loaded.
+                onDelete: ReferentialAction.NoAction);
         }
 
         /// <inheritdoc />

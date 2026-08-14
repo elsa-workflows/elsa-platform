@@ -1,5 +1,10 @@
 # Azure Valence Control Deployment Plan
 
+> **Legacy.** This hand-written Bicep stack (including its self-hosted Keycloak) is no longer
+> the deployment path. Provisioning is driven by the Aspire AppHost through `azd up`, which
+> uses Microsoft Entra ID for sign-in and managed identity for Azure SQL. These files are kept
+> under `infra-legacy/` for reference.
+
 ## Objective
 
 Deploy Valence Control repeatably into any Azure subscription from repository-owned infrastructure as code. The first production deployment unit is the Valence Control API container, including the built Console assets under `/admin`.
@@ -25,7 +30,7 @@ The API runs with:
 - `Authentication__ApiKey=<strong deployment secret>`
 - optional `Authentication__BuilderClientApiKey=<strong deployment secret>`
 
-For SaaS customer login, enable the optional Keycloak stack in `infra/main.bicep`
+For SaaS customer login, enable the optional Keycloak stack in `infra-legacy/main.bicep`
 with `deployKeycloak=true`. This provisions a separate Keycloak Web App,
 PostgreSQL Flexible Server, and API OIDC app settings. The production runbook is
 documented in [keycloak-saas.md](keycloak-saas.md).
@@ -35,7 +40,7 @@ The API applies EF Core SQL Server migrations at startup outside the `Testing` e
 ## Deployment Flow
 
 1. Select target subscription, resource group, location, and environment name.
-2. Provision or update Azure infrastructure from `infra/main.bicep`.
+2. Provision or update Azure infrastructure from `infra-legacy/main.bicep`.
 3. Build the API container with the Console baked in. The helper script targets `linux/amd64` by default so local Apple Silicon builds run correctly on Linux App Service.
 4. Push the image to the provisioned Azure Container Registry.
 5. Re-run the Bicep deployment with the pushed image reference.
@@ -58,8 +63,8 @@ For an infrastructure preview:
 ```bash
 az deployment group what-if \
   --resource-group rg-valence-control-prod \
-  --template-file infra/main.bicep \
-  --parameters @infra/parameters/prod.example.json \
+  --template-file infra-legacy/main.bicep \
+  --parameters @infra-legacy/parameters/prod.example.json \
   --parameters adminApiKey='<strong-secret>' sqlAdministratorPassword='<strong-sql-password>'
 ```
 
