@@ -46,8 +46,7 @@ public static class AdminAuthorization
     private sealed class AdminApiRequirement : IAuthorizationRequirement;
 
     private sealed class AdminApiAuthorizationHandler(
-        IOptions<AdminAuthorizationOptions> options,
-        IWebHostEnvironment environment) : AuthorizationHandler<AdminApiRequirement>
+        IOptions<AdminAuthorizationOptions> options) : AuthorizationHandler<AdminApiRequirement>
     {
         protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, AdminApiRequirement requirement)
         {
@@ -57,8 +56,7 @@ public static class AdminAuthorization
                 return Task.CompletedTask;
             }
 
-            if (!environment.IsProduction() &&
-                options.Value.AllowAuthenticatedCustomerSession &&
+            if (options.Value.AllowAuthenticatedCustomerSession &&
                 HasAuthenticatedIdentity(context.User))
                 context.Succeed(requirement);
 
@@ -71,5 +69,9 @@ public sealed class AdminAuthorizationOptions
 {
     public const string ConfigurationSection = "Authentication:Admin";
 
+    /// <summary>
+    /// Allows any authenticated customer session to use the global admin API. The identity provider
+    /// must restrict application assignment to trusted operators when this is enabled.
+    /// </summary>
     public bool AllowAuthenticatedCustomerSession { get; init; }
 }

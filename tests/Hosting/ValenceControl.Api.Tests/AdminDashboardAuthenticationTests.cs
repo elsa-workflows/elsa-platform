@@ -5,12 +5,15 @@ using ValenceControl.Api.Admin.Sources;
 using ValenceControl.Api.Authentication;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
@@ -34,7 +37,7 @@ public sealed class AdminDashboardAuthenticationTests
     }
 
     [Fact]
-    public async Task Dashboard_root_redirects_to_console_shell()
+    public async Task Dashboard_root_serves_console_shell_without_redirect()
     {
         await using var app = new ControlApiTestApplication();
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
@@ -43,8 +46,25 @@ public sealed class AdminDashboardAuthenticationTests
 
         var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        Assert.Equal("/admin/", response.Headers.Location!.OriginalString);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(response.Headers.Location);
+        Assert.Contains("/api/auth/login?returnUrl=%2Fadmin%2Foverview", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Dashboard_root_serves_console_shell_when_forwarded_as_path_base()
+    {
+        await using var app = new ControlApiTestApplication();
+        var client = app.CreateClient(new() { AllowAutoRedirect = false });
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/");
+        request.Headers.Add(ControlApiTestApplication.TestPathBaseHeader, "/admin");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(response.Headers.Location);
+        Assert.Contains("/api/auth/login?returnUrl=%2Fadmin%2Foverview", await response.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -185,6 +205,28 @@ public sealed class AdminDashboardAuthenticationTests
         var response = await client.GetAsync("/api/admin/sources");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Configured_production_customer_session_can_authorize_admin_api()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddCatalogAuthorization();
+        services.AddSingleton<IOptions<AdminAuthorizationOptions>>(Options.Create(new AdminAuthorizationOptions
+        {
+            AllowAuthenticatedCustomerSession = true
+        }));
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment(Environments.Production));
+        await using var provider = services.BuildServiceProvider();
+        var authorization = provider.GetRequiredService<IAuthorizationService>();
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", "admin-user")],
+            CustomerAuthenticationDefaults.CookieScheme));
+
+        var result = await authorization.AuthorizeAsync(principal, resource: null, AdminAuthorization.Policy);
+
+        Assert.True(result.Succeeded);
     }
 
     [Fact]
@@ -346,6 +388,16 @@ public sealed class AdminDashboardAuthenticationTests
         var ticket = new AuthenticationTicket(principal, CustomerAuthenticationDefaults.CookieScheme);
         var cookie = options.TicketDataFormat.Protect(ticket);
         client.DefaultRequestHeaders.Add("Cookie", $"{CustomerAuthenticationDefaults.CookieName}={cookie}");
+    }
+
+    private sealed class TestWebHostEnvironment(string environmentName) : IWebHostEnvironment
+    {
+        public string ApplicationName { get; set; } = nameof(AdminDashboardAuthenticationTests);
+        public string EnvironmentName { get; set; } = environmentName;
+        public string WebRootPath { get; set; } = "";
+        public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
+        public string ContentRootPath { get; set; } = "";
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
     private sealed class DevelopmentConsoleStub(WebApplication app, string url) : IAsyncDisposable

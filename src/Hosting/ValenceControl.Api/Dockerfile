@@ -14,10 +14,13 @@ COPY . .
 RUN mkdir -p src/Hosting/ValenceControl.Api/wwwroot/admin
 COPY --from=console-build /src/src/Hosting/ValenceControl.Console/dist/ src/Hosting/ValenceControl.Api/wwwroot/admin/
 RUN dotnet restore src/Hosting/ValenceControl.Api/ValenceControl.Api.csproj
+# The console is built by the node stage above and copied into wwwroot/admin, and this SDK image has
+# no npm, so the project's own console build is skipped here.
 RUN dotnet publish src/Hosting/ValenceControl.Api/ValenceControl.Api.csproj \
     --configuration Release \
     --output /app/publish \
-    --no-restore
+    --no-restore \
+    -p:SkipAdminConsoleBuild=true
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
