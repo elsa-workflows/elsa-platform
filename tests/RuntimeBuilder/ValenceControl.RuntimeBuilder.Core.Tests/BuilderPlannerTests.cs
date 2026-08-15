@@ -1,11 +1,13 @@
 using ValenceControl.RuntimeBuilder.Abstractions;
 using ValenceControl.RuntimeBuilder.Abstractions.Planner;
 using ValenceControl.PackageCatalog.Abstractions.Catalog;
+using ValenceControl.PackageCatalog.Abstractions.Compatibility;
 using ValenceControl.PackageCatalog.Core.Compatibility;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.RuntimeBuilder.Core.Builder;
 using ValenceControl.RuntimeBuilder.Core.Builder.Planner;
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace ValenceControl.RuntimeBuilder.Core.Tests;
 
@@ -97,10 +99,42 @@ public sealed class BuilderPlannerTests
         Assert.Single(result.Findings, x => x.Code == "feature.runtimeKindUnsupported");
     }
 
+    [Fact]
+    public async Task Planner_loads_catalog_only_for_sources_declared_by_the_intent()
+    {
+        var selectedSource = new PublicPackageSourceProjection(Guid.NewGuid(), "Selected", "https://selected.example.test/v3/index.json");
+        var unrelatedSource = new PublicPackageSourceProjection(Guid.NewGuid(), "Unrelated", "https://unrelated.example.test/v3/index.json");
+        var queries = new FakeQueries([
+            Package(selectedSource, "Elsa.Selected", Feature("selected")),
+            Package(unrelatedSource, "Elsa.Unrelated", Feature("unrelated"))
+        ]);
+        var service = CreateService(queries);
+
+        await service.PlanAsync(new BuilderPlanRequest(new RuntimeBuilderIntent(
+            new RuntimeImageSelection("elsa-pro-combined", "latest", 8080, new Dictionary<string, string>()),
+            [new BundlePackageSelection(selectedSource.Id, "Elsa.Selected", "1.0.0", ["selected"], null)],
+            [new PackageSourceSelection(selectedSource.Id)],
+            [],
+            new LocalPackagesOptions(false, "packages"))));
+
+        Assert.Equal([selectedSource.Id], queries.LastSourceIds);
+    }
+
     private static BuilderPlannerService CreateService(IReadOnlyList<PublicPackageProjection> packages)
     {
         var queries = new FakeQueries(packages);
-        return new BuilderPlannerService(queries, new CompatibilityCheckService(queries, new VersionRangeEvaluator()), RuntimeImageFixtures.Catalog(), new InfrastructureProviderCatalog());
+        return CreateService(queries);
+    }
+
+    private static BuilderPlannerService CreateService(FakeQueries queries)
+    {
+        return new BuilderPlannerService(
+            queries,
+            new CompatibilityCheckService(queries, new VersionRangeEvaluator()),
+            RuntimeImageFixtures.Catalog(),
+            new InfrastructureProviderCatalog(),
+            Options.Create(new RuntimeBuilderOptions()),
+            NullLogger<BuilderPlannerService>.Instance);
     }
 
     private static PublicPackageProjection Package(PublicPackageSourceProjection source, string packageId, PublicFeatureProjection feature)
@@ -137,8 +171,13 @@ public sealed class BuilderPlannerTests
 
     private sealed class FakeQueries(IReadOnlyList<PublicPackageProjection> packages) : IPublicCatalogQueries, ICompatibilityQueries
     {
-        public Task<IReadOnlyList<PublicPackageProjection>> ListPackagesAsync(IReadOnlyList<Guid> sourceIds, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<PublicPackageProjection>>(packages.Where(x => sourceIds.Count == 0 || sourceIds.Contains(x.Source.Id)).ToList());
+        public IReadOnlyList<Guid> LastSourceIds { get; private set; } = [];
+
+        public Task<IReadOnlyList<PublicPackageProjection>> ListPackagesAsync(IReadOnlyList<Guid> sourceIds, CancellationToken cancellationToken = default)
+        {
+            LastSourceIds = sourceIds;
+            return Task.FromResult<IReadOnlyList<PublicPackageProjection>>(packages.Where(x => sourceIds.Count == 0 || sourceIds.Contains(x.Source.Id)).ToList());
+        }
 
         public Task<IReadOnlyList<PublicPackageProjection>> ListPackagesForWorkspaceAsync(Guid workspaceId, IReadOnlyList<Guid> sourceIds, CancellationToken cancellationToken = default) =>
             ListPackagesAsync(sourceIds, cancellationToken);
@@ -191,6 +230,16 @@ public sealed class BuilderPlannerTests
                 ApprovalStatus = PackageApprovalStatus.Approved,
                 IsListed = true
             });
+        }
+
+        public async Task<IReadOnlyList<PackageVersion>> GetPackageVersionsAsync(
+            Guid? workspaceId,
+            IReadOnlyList<SelectedPackageVersion> selections,
+            CancellationToken cancellationToken = default)
+        {
+            var results = await Task.WhenAll(selections.Select(selection =>
+                GetPackageVersionAsync(workspaceId, selection.SourceId, selection.PackageId, selection.Version, cancellationToken)));
+            return results.OfType<PackageVersion>().ToList();
         }
 
         private static string ToManifestFeatureJson(PublicFeatureProjection feature)

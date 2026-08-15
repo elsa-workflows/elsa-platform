@@ -165,5 +165,11 @@ public sealed class CompatibilityConflictTests
     {
         public Task<PackageVersion?> GetPackageVersionAsync(Guid? workspaceId, Guid sourceId, string packageId, string version, CancellationToken cancellationToken = default) =>
             Task.FromResult(versions.SingleOrDefault(x => x.Package?.SourceId == sourceId && x.Package.PackageId == packageId && x.Version == version));
+
+        public Task<IReadOnlyList<PackageVersion>> GetPackageVersionsAsync(Guid? workspaceId, IReadOnlyList<SelectedPackageVersion> packages, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<PackageVersion>>(versions.Where(version => packages.Any(package =>
+                version.Package?.SourceId == package.SourceId
+                && version.Package.PackageId == package.PackageId
+                && version.Version == package.Version)).ToList());
     }
 }

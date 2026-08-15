@@ -26,9 +26,19 @@ public sealed class CompatibilityCheckService(ICompatibilityQueries queries, Ver
             validPackages.Add(package);
         }
 
+        var loadedVersions = await queries.GetPackageVersionsAsync(request.WorkspaceId, validPackages, cancellationToken);
+        var versionsBySelection = loadedVersions.ToLookup(
+            version => new PackageVersionSelection(
+                version.Package?.SourceId ?? Guid.Empty,
+                version.Package?.PackageId ?? "",
+                version.Version),
+            PackageVersionSelectionComparer.Instance);
+
         foreach (var package in validPackages)
         {
-            var version = await queries.GetPackageVersionAsync(request.WorkspaceId, package.SourceId, package.PackageId, package.Version, cancellationToken);
+            var version = versionsBySelection[
+                new PackageVersionSelection(package.SourceId, package.PackageId, package.Version)]
+                .FirstOrDefault();
             if (version is null)
             {
                 findings.Add(CompatibilityFinding.Error("package.missing", $"{package.PackageId} {package.Version} is not indexed."));
@@ -190,9 +200,35 @@ public sealed class CompatibilityCheckService(ICompatibilityQueries queries, Ver
 public interface ICompatibilityQueries
 {
     Task<PackageVersion?> GetPackageVersionAsync(Guid? workspaceId, Guid sourceId, string packageId, string version, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PackageVersion>> GetPackageVersionsAsync(
+        Guid? workspaceId,
+        IReadOnlyList<SelectedPackageVersion> packages,
+        CancellationToken cancellationToken = default);
 }
 
 internal sealed record SelectedPackageIdentity(Guid SourceId, string PackageId);
+
+internal sealed record PackageVersionSelection(Guid SourceId, string PackageId, string Version);
+
+internal sealed class PackageVersionSelectionComparer : IEqualityComparer<PackageVersionSelection>
+{
+    public static PackageVersionSelectionComparer Instance { get; } = new();
+
+    public bool Equals(PackageVersionSelection? x, PackageVersionSelection? y) =>
+        ReferenceEquals(x, y)
+        || (x is not null
+            && y is not null
+            && x.SourceId == y.SourceId
+            && string.Equals(x.PackageId, y.PackageId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.Version, y.Version, StringComparison.OrdinalIgnoreCase));
+
+    public int GetHashCode(PackageVersionSelection value) =>
+        HashCode.Combine(
+            value.SourceId,
+            StringComparer.OrdinalIgnoreCase.GetHashCode(value.PackageId),
+            StringComparer.OrdinalIgnoreCase.GetHashCode(value.Version));
+}
 
 internal sealed record SelectedFeatureManifest(string PackageId, string PackageVersion, CompatibilityManifest? PackageCompatibility, FeatureManifest Feature)
 {

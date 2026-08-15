@@ -70,6 +70,27 @@ public sealed class CompatibilityCheckServiceTests
     }
 
     [Fact]
+    public async Task Loads_all_selected_package_versions_in_one_batch()
+    {
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var packages = Enumerable.Range(1, 15)
+            .Select(index => PublicCatalogSeedData.CreatePackage(source, $"Elsa.Package{index}"))
+            .ToList();
+        var versions = packages.Select(package => PublicCatalogSeedData.AddVersion(package)).ToList();
+        var queries = new FakeQueries(versions);
+        var service = new CompatibilityCheckService(queries, new VersionRangeEvaluator());
+
+        await service.CheckAsync(new CompatibilityCheckRequest(
+            null,
+            null,
+            packages.Select(package => Selection(source, package.PackageId)).ToList(),
+            []));
+
+        Assert.Equal(1, queries.BatchCallCount);
+        Assert.Equal(0, queries.CallCount);
+    }
+
+    [Fact]
     public async Task Reports_missing_package_dependency_for_selected_feature()
     {
         var source = PublicCatalogSeedData.CreatePackageSource();
@@ -334,10 +355,26 @@ public sealed class CompatibilityCheckServiceTests
     {
         public int CallCount { get; private set; }
 
+        public int BatchCallCount { get; private set; }
+
         public Task<PackageVersion?> GetPackageVersionAsync(Guid? workspaceId, Guid sourceId, string packageId, string version, CancellationToken cancellationToken = default)
         {
             CallCount++;
             return Task.FromResult(versions.SingleOrDefault(x => x.Package?.SourceId == sourceId && x.Package.PackageId == packageId && x.Version == version));
+        }
+
+        public Task<IReadOnlyList<PackageVersion>> GetPackageVersionsAsync(
+            Guid? workspaceId,
+            IReadOnlyList<SelectedPackageVersion> packages,
+            CancellationToken cancellationToken = default)
+        {
+            BatchCallCount++;
+            return Task.FromResult<IReadOnlyList<PackageVersion>>(versions
+                .Where(version => packages.Any(package =>
+                    version.Package?.SourceId == package.SourceId
+                    && string.Equals(version.Package.PackageId, package.PackageId, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(version.Version, package.Version, StringComparison.OrdinalIgnoreCase)))
+                .ToList());
         }
     }
 }

@@ -10,6 +10,8 @@ public sealed class RuntimeBuilderOptions
 {
     public const string SectionName = "RuntimeBuilder";
 
+    public int PlanTimeoutSeconds { get; set; } = 20;
+
     public IList<RuntimeImageDefinition> Images { get; set; } = [];
 
     public IReadOnlyList<RuntimeImage> ToRuntimeImages() => [.. Images.Select(x => x.ToRuntimeImage())];

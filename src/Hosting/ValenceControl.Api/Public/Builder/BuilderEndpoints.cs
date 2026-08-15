@@ -51,26 +51,116 @@ public static class BuilderEndpoints
                 result.Findings.Select(x => new CompatibilityFindingApiResponse(x.Severity, x.Code, x.Message)).ToList()));
         });
 
-        group.MapPost("/plan", async (BuilderPlanApiRequest request, BuilderPlannerService planner, CancellationToken cancellationToken) =>
+        group.MapPost("/plan", async (
+            BuilderPlanApiRequest request,
+            BuilderPlannerService planner,
+            ILogger<BuilderPlannerService> logger,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
         {
             if (request.Intent is null)
-                return Results.BadRequest(new { error = "intent is required." });
+                return BuilderProblem(
+                    httpContext,
+                    "urn:valence-control:problem:builder-plan-invalid-request",
+                    "Invalid builder plan request",
+                    "builder.plan.invalid_request",
+                    "intent is required.",
+                    StatusCodes.Status400BadRequest);
 
-            var result = await planner.PlanAsync(new BuilderPlanRequest(request.Intent), cancellationToken: cancellationToken);
-            return Results.Ok(ToResponse(result));
+            try
+            {
+                var result = await planner.PlanAsync(new BuilderPlanRequest(request.Intent), cancellationToken: cancellationToken);
+                return Results.Ok(ToResponse(result));
+            }
+            catch (BuilderPlanningTimeoutException exception)
+            {
+                return PlanningTimeoutProblem(exception, httpContext);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogError(exception, "Builder planning failed traceId={TraceId}", httpContext.TraceIdentifier);
+                return BuilderProblem(
+                    httpContext,
+                    "urn:valence-control:problem:builder-plan-failed",
+                    "Builder planning failed",
+                    "builder.plan.failed",
+                    "The builder plan could not be completed. Use the traceId to correlate this response with server logs.",
+                    StatusCodes.Status500InternalServerError);
+            }
         });
 
-        group.MapPost("/bundle", async (BuilderBundleRequest request, BundleGenerationService bundles, CancellationToken cancellationToken) =>
+        group.MapPost("/bundle", async (
+            BuilderBundleRequest request,
+            BundleGenerationService bundles,
+            ILogger<BundleGenerationService> logger,
+            HttpContext httpContext,
+            CancellationToken cancellationToken) =>
         {
             if (!TryMapIntent(request, out var intent, out var error))
-                return Results.BadRequest(new { error });
+                return BuilderProblem(
+                    httpContext,
+                    "urn:valence-control:problem:builder-bundle-invalid-request",
+                    "Invalid bundle request",
+                    "builder.bundle.invalid_request",
+                    error,
+                    StatusCodes.Status400BadRequest);
 
-            var result = await bundles.GenerateAsync(intent, cancellationToken: cancellationToken);
-            return Results.Ok(ToResponse(result));
+            try
+            {
+                var result = await bundles.GenerateAsync(intent, cancellationToken: cancellationToken);
+                return Results.Ok(ToResponse(result));
+            }
+            catch (BuilderPlanningTimeoutException exception)
+            {
+                return PlanningTimeoutProblem(exception, httpContext);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogError(exception, "Builder bundle generation failed traceId={TraceId}", httpContext.TraceIdentifier);
+                return BuilderProblem(
+                    httpContext,
+                    "urn:valence-control:problem:builder-bundle-generation-failed",
+                    "Bundle generation failed",
+                    "builder.bundle.failed",
+                    "The bundle could not be generated. Use the traceId to correlate this response with server logs.",
+                    StatusCodes.Status500InternalServerError);
+            }
         }).RequireAuthorization(BuilderClientAuthorization.Policy);
 
         return endpoints;
     }
+
+    internal static IResult PlanningTimeoutProblem(BuilderPlanningTimeoutException exception, HttpContext httpContext) =>
+        Results.Problem(
+            type: "urn:valence-control:problem:builder-plan-timeout",
+            title: "Builder planning timed out",
+            detail: $"Planning exceeded the server deadline during {exception.Phase}.",
+            statusCode: StatusCodes.Status408RequestTimeout,
+            extensions: new Dictionary<string, object?>
+            {
+                ["code"] = "builder.plan.timeout",
+                ["phase"] = exception.Phase,
+                ["timeoutSeconds"] = exception.Timeout.TotalSeconds,
+                ["traceId"] = httpContext.TraceIdentifier
+            });
+
+    internal static IResult BuilderProblem(
+        HttpContext httpContext,
+        string type,
+        string title,
+        string code,
+        string detail,
+        int statusCode) =>
+        Results.Problem(
+            type: type,
+            title: title,
+            detail: detail,
+            statusCode: statusCode,
+            extensions: new Dictionary<string, object?>
+            {
+                ["code"] = code,
+                ["traceId"] = httpContext.TraceIdentifier
+            });
 
     internal static bool TryMapIntent(BuilderBundleRequest request, out RuntimeBuilderIntent intent, out string error)
     {

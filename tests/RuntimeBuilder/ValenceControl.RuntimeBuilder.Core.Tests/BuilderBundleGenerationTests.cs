@@ -4,14 +4,15 @@ using ValenceControl.RuntimeBuilder.Abstractions;
 using ValenceControl.RuntimeBuilder.Abstractions.Planner;
 using ValenceControl.RuntimeBuilder.Core.Builder.Renderers;
 using ValenceControl.PackageCatalog.Abstractions.Catalog;
+using ValenceControl.PackageCatalog.Abstractions.Compatibility;
 using ValenceControl.PackageCatalog.Core.Compatibility;
 using ValenceControl.RuntimeBuilder.DeploymentTemplates;
 using ValenceControl.PackageCatalog.Core.Packages;
 using ValenceControl.PackageCatalog.Testing;
 using ValenceControl.RuntimeBuilder.Core.Builder;
 using ValenceControl.RuntimeBuilder.Core.Builder.Planner;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace ValenceControl.RuntimeBuilder.Core.Tests;
 
@@ -271,7 +272,13 @@ public sealed class BuilderBundleGenerationTests
             compatibility,
             runtimeImages,
             infrastructure,
-            new BuilderPlannerService(catalog, compatibility, runtimeImages, infrastructure),
+            new BuilderPlannerService(
+                catalog,
+                compatibility,
+                runtimeImages,
+                infrastructure,
+                Options.Create(new RuntimeBuilderOptions()),
+                NullLogger<BuilderPlannerService>.Instance),
             new DeploymentTemplateRegistry(
             [
                 new DockerComposeBundleRenderer(),
@@ -402,5 +409,11 @@ public sealed class BuilderBundleGenerationTests
     {
         public Task<PackageVersion?> GetPackageVersionAsync(Guid? workspaceId, Guid sourceId, string packageId, string version, CancellationToken cancellationToken = default) =>
             Task.FromResult(versions.SingleOrDefault(x => x.Package?.SourceId == sourceId && x.Package.PackageId == packageId && x.Version == version));
+
+        public Task<IReadOnlyList<PackageVersion>> GetPackageVersionsAsync(Guid? workspaceId, IReadOnlyList<SelectedPackageVersion> packages, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<PackageVersion>>(versions.Where(version => packages.Any(package =>
+                version.Package?.SourceId == package.SourceId
+                && version.Package.PackageId == package.PackageId
+                && version.Version == package.Version)).ToList());
     }
 }

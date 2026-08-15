@@ -65,26 +65,78 @@ public static class WorkspaceBuilderEndpoints
             Guid workspaceId,
             BuilderPlanApiRequest request,
             BuilderPlannerService planner,
+            ILogger<BuilderPlannerService> logger,
+            HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
             if (request.Intent is null)
-                return Results.BadRequest(new { error = "intent is required." });
+                return BuilderEndpoints.BuilderProblem(
+                    httpContext,
+                    "urn:valence-control:problem:builder-plan-invalid-request",
+                    "Invalid builder plan request",
+                    "builder.plan.invalid_request",
+                    "intent is required.",
+                    StatusCodes.Status400BadRequest);
 
-            var result = await planner.PlanAsync(new BuilderPlanRequest(request.Intent), workspaceId, cancellationToken);
-            return Results.Ok(BuilderEndpoints.ToResponse(result));
+            try
+            {
+                var result = await planner.PlanAsync(new BuilderPlanRequest(request.Intent), workspaceId, cancellationToken);
+                return Results.Ok(BuilderEndpoints.ToResponse(result));
+            }
+            catch (BuilderPlanningTimeoutException exception)
+            {
+                return BuilderEndpoints.PlanningTimeoutProblem(exception, httpContext);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogError(exception, "Workspace builder planning failed workspaceId={WorkspaceId} traceId={TraceId}", workspaceId, httpContext.TraceIdentifier);
+                return BuilderEndpoints.BuilderProblem(
+                    httpContext,
+                    "urn:valence-control:problem:builder-plan-failed",
+                    "Builder planning failed",
+                    "builder.plan.failed",
+                    "The builder plan could not be completed. Use the traceId to correlate this response with server logs.",
+                    StatusCodes.Status500InternalServerError);
+            }
         }).RequireWorkspaceAccess();
 
         builder.MapPost("/bundle", async (
             Guid workspaceId,
             BuilderBundleRequest request,
             BundleGenerationService bundles,
+            ILogger<BundleGenerationService> logger,
+            HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
             if (!BuilderEndpoints.TryMapIntent(request, out var intent, out var error))
-                return Results.BadRequest(new { error });
+                return BuilderEndpoints.BuilderProblem(
+                    httpContext,
+                    "urn:valence-control:problem:builder-bundle-invalid-request",
+                    "Invalid bundle request",
+                    "builder.bundle.invalid_request",
+                    error,
+                    StatusCodes.Status400BadRequest);
 
-            var result = await bundles.GenerateAsync(intent, workspaceId, cancellationToken);
-            return Results.Ok(BuilderEndpoints.ToResponse(result));
+            try
+            {
+                var result = await bundles.GenerateAsync(intent, workspaceId, cancellationToken);
+                return Results.Ok(BuilderEndpoints.ToResponse(result));
+            }
+            catch (BuilderPlanningTimeoutException exception)
+            {
+                return BuilderEndpoints.PlanningTimeoutProblem(exception, httpContext);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogError(exception, "Workspace bundle generation failed workspaceId={WorkspaceId} traceId={TraceId}", workspaceId, httpContext.TraceIdentifier);
+                return BuilderEndpoints.BuilderProblem(
+                    httpContext,
+                    "urn:valence-control:problem:builder-bundle-generation-failed",
+                    "Bundle generation failed",
+                    "builder.bundle.failed",
+                    "The bundle could not be generated. Use the traceId to correlate this response with server logs.",
+                    StatusCodes.Status500InternalServerError);
+            }
         }).RequireWorkspaceAccess();
 
         endpoints.MapPost("/api/workspaces/{workspaceId:guid}/compatibility/check", async (

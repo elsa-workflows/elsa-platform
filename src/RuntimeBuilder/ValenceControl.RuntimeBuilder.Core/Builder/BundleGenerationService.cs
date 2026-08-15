@@ -201,7 +201,10 @@ public sealed class BundleGenerationService(
         List<BundleFinding> findings,
         CancellationToken cancellationToken)
     {
-        var sources = packages.Select(x => x.Source).ToDictionary(x => x.SourceId);
+        var sources = packages
+            .Select(x => x.Source)
+            .DistinctBy(x => x.SourceId)
+            .ToDictionary(x => x.SourceId);
         var requestedSourceIds = selections.Where(x => x.SourceId != Guid.Empty).Select(x => x.SourceId).Distinct().ToList();
         if (requestedSourceIds.Count > 0)
         {
