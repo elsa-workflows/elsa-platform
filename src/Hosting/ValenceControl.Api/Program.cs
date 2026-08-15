@@ -353,7 +353,6 @@ if (!app.Environment.IsEnvironment("Testing"))
 app.UseExceptionHandler();
 app.UseCors();
 app.UseAuthentication();
-app.UseAdminDashboardAuthentication();
 app.UseAdminDashboardRequestForgeryGuard();
 app.UseStaticFiles();
 app.UseAuthorization();
@@ -361,18 +360,28 @@ app.UseAuthorization();
 app.MapOpenApi();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapGet("/", () => "Valence Control API");
-if (!AdminConsoleAssetsExist(app.Environment) &&
+var adminConsoleAssetsExist = AdminConsoleAssetsExist(app.Environment);
+if (!adminConsoleAssetsExist &&
     GetAdminConsoleDevelopmentUrl(app.Configuration) is { } adminConsoleDevelopmentUrl)
 {
-    app.MapMethods("/admin/{*path}", [HttpMethods.Get, HttpMethods.Head], (
+    async Task ProxyAdminConsoleAsync(
         HttpContext context,
         IHttpClientFactory httpClientFactory) =>
-        ProxyAdminConsoleDevelopmentServerAsync(context, httpClientFactory, adminConsoleDevelopmentUrl));
+        await ProxyAdminConsoleDevelopmentServerAsync(context, httpClientFactory, adminConsoleDevelopmentUrl);
+
+    app.MapMethods("/admin", [HttpMethods.Get, HttpMethods.Head], ProxyAdminConsoleAsync);
+    app.MapMethods("/admin/{*path}", [HttpMethods.Get, HttpMethods.Head], ProxyAdminConsoleAsync);
 }
-else if (!AdminConsoleAssetsExist(app.Environment))
+else if (!adminConsoleAssetsExist)
 {
-    app.MapGet("/admin/", () => Results.Content(AdminConsoleFallbackPage(), "text/html"));
+    app.MapGet("/admin", () => Results.Content(AdminConsoleFallbackPage(), "text/html"));
     app.MapGet("/admin/{*path:nonfile}", () => Results.Content(AdminConsoleFallbackPage(), "text/html"));
+}
+else
+{
+    app.MapGet("/admin", () => Results.File(
+        Path.Combine(app.Environment.WebRootPath!, "admin", "index.html"),
+        "text/html"));
 }
 app.MapCustomerAuthEndpoints();
 app.MapAdminDashboardAuthEndpoints();
@@ -400,7 +409,7 @@ app.MapAdminApprovalEndpoints();
 app.MapAdminValidationEndpoints();
 app.MapAdminWorkspaceEntitlementEndpoints();
 app.MapConsoleLogStreaming();
-if (AdminConsoleAssetsExist(app.Environment))
+if (adminConsoleAssetsExist)
     app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
 
 app.Run();
