@@ -52,6 +52,22 @@ public sealed class AdminDashboardAuthenticationTests
     }
 
     [Fact]
+    public async Task Dashboard_root_serves_console_shell_when_forwarded_as_path_base()
+    {
+        await using var app = new ControlApiTestApplication();
+        var client = app.CreateClient(new() { AllowAutoRedirect = false });
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/");
+        request.Headers.Add(ControlApiTestApplication.TestPathBaseHeader, "/admin");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(response.Headers.Location);
+        Assert.Contains("/api/auth/login?returnUrl=%2Fadmin%2Foverview", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task Dashboard_shell_renders_local_sign_in_fallback_without_starting_oidc_challenge()
     {
         await using var app = new ControlApiTestApplication();

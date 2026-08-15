@@ -337,6 +337,10 @@ builder.Services.AddHostedService<ManualSyncHostedService>();
 builder.Services.AddHostedService<ScheduledSyncHostedService>();
 
 var app = builder.Build();
+var adminConsoleAssetsExist = AdminConsoleAssetsExist(app.Environment);
+var adminConsoleDevelopmentUrl = adminConsoleAssetsExist
+    ? null
+    : GetAdminConsoleDevelopmentUrl(app.Configuration);
 
 var runtimeImageFindings = app.Services.GetRequiredService<RuntimeImageValidator>()
     .Validate(app.Services.GetRequiredService<RuntimeImageCatalog>().ListImages());
@@ -353,6 +357,36 @@ if (!app.Environment.IsEnvironment("Testing"))
 app.UseExceptionHandler();
 app.UseCors();
 app.UseAuthentication();
+app.Use(async (context, next) =>
+{
+    var combinedPath = context.Request.PathBase.Add(context.Request.Path);
+    if ((HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method)) &&
+        combinedPath.Equals("/admin"))
+    {
+        if (adminConsoleAssetsExist)
+        {
+            await Results.File(
+                    Path.Combine(app.Environment.WebRootPath!, "admin", "index.html"),
+                    "text/html")
+                .ExecuteAsync(context);
+            return;
+        }
+
+        if (adminConsoleDevelopmentUrl is not null)
+        {
+            await ProxyAdminConsoleDevelopmentServerAsync(
+                context,
+                context.RequestServices.GetRequiredService<IHttpClientFactory>(),
+                adminConsoleDevelopmentUrl);
+            return;
+        }
+
+        await Results.Content(AdminConsoleFallbackPage(), "text/html").ExecuteAsync(context);
+        return;
+    }
+
+    await next(context);
+});
 app.UseAdminDashboardRequestForgeryGuard();
 app.UseStaticFiles();
 app.UseAuthorization();
@@ -360,28 +394,17 @@ app.UseAuthorization();
 app.MapOpenApi();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapGet("/", () => "Valence Control API");
-var adminConsoleAssetsExist = AdminConsoleAssetsExist(app.Environment);
-if (!adminConsoleAssetsExist &&
-    GetAdminConsoleDevelopmentUrl(app.Configuration) is { } adminConsoleDevelopmentUrl)
+if (adminConsoleDevelopmentUrl is not null)
 {
-    async Task ProxyAdminConsoleAsync(
+    app.MapMethods("/admin/{*path}", [HttpMethods.Get, HttpMethods.Head], (
         HttpContext context,
         IHttpClientFactory httpClientFactory) =>
-        await ProxyAdminConsoleDevelopmentServerAsync(context, httpClientFactory, adminConsoleDevelopmentUrl);
-
-    app.MapMethods("/admin", [HttpMethods.Get, HttpMethods.Head], ProxyAdminConsoleAsync);
-    app.MapMethods("/admin/{*path}", [HttpMethods.Get, HttpMethods.Head], ProxyAdminConsoleAsync);
+        ProxyAdminConsoleDevelopmentServerAsync(context, httpClientFactory, adminConsoleDevelopmentUrl));
 }
 else if (!adminConsoleAssetsExist)
 {
-    app.MapGet("/admin", () => Results.Content(AdminConsoleFallbackPage(), "text/html"));
+    app.MapGet("/admin/", () => Results.Content(AdminConsoleFallbackPage(), "text/html"));
     app.MapGet("/admin/{*path:nonfile}", () => Results.Content(AdminConsoleFallbackPage(), "text/html"));
-}
-else
-{
-    app.MapGet("/admin", () => Results.File(
-        Path.Combine(app.Environment.WebRootPath!, "admin", "index.html"),
-        "text/html"));
 }
 app.MapCustomerAuthEndpoints();
 app.MapAdminDashboardAuthEndpoints();

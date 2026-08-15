@@ -8,6 +8,7 @@ using ValenceControl.Deployment.Core.Workspace;
 using ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -19,6 +20,7 @@ namespace ValenceControl.Api.Tests;
 internal sealed class ControlApiTestApplication : WebApplicationFactory<Program>, IAsyncDisposable
 {
     public const string TestRemoteIpHeader = "X-Test-Remote-Ip";
+    public const string TestPathBaseHeader = "X-Test-Path-Base";
     public const string TestControlIdentityIssuer = "https://local.valence-control.test";
     public const string TestControlIdentityAudience = "valence-control-tests";
     public const string TestControlIdentitySigningKey = "local-test-control-identity-signing-key-change-me-12345";
@@ -121,6 +123,14 @@ internal sealed class ControlApiTestApplication : WebApplicationFactory<Program>
                     context.Connection.RemoteIpAddress = IPAddress.TryParse(remoteIp, out var address)
                         ? address
                         : IPAddress.Loopback;
+
+                    var pathBase = context.Request.Headers[TestPathBaseHeader].FirstOrDefault();
+                    if (!string.IsNullOrWhiteSpace(pathBase))
+                    {
+                        context.Request.PathBase = pathBase;
+                        context.Request.Path = PathString.Empty;
+                    }
+
                     await nextMiddleware();
                 });
                 next(app);
