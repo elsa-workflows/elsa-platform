@@ -5,10 +5,7 @@ public sealed class AdminDashboardAuthenticationMiddleware(RequestDelegate next)
     public async Task InvokeAsync(HttpContext context)
     {
         if (context.Request.Path.Equals("/admin"))
-        {
-            context.Response.Redirect("/admin/");
-            return;
-        }
+            context.Request.Path = "/admin/";
 
         await next(context);
     }
