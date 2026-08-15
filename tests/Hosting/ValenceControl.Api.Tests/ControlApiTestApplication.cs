@@ -128,7 +128,7 @@ internal sealed class ControlApiTestApplication : WebApplicationFactory<Program>
                     if (!string.IsNullOrWhiteSpace(pathBase))
                     {
                         context.Request.PathBase = pathBase;
-                        context.Request.Path = PathString.Empty;
+                        context.Request.Path = "/";
                     }
 
                     await nextMiddleware();

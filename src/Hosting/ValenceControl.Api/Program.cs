@@ -361,7 +361,7 @@ app.Use(async (context, next) =>
 {
     var combinedPath = context.Request.PathBase.Add(context.Request.Path);
     if ((HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method)) &&
-        combinedPath.Equals("/admin"))
+        (combinedPath.Equals("/admin") || combinedPath.Equals("/admin/")))
     {
         if (adminConsoleAssetsExist)
         {
