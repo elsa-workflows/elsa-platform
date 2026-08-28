@@ -2,19 +2,19 @@
 
 ## Allowed Dependencies
 
-`ValenceControl.Deployment.Artifacts` may reference:
+`ElsaControl.Deployment.Artifacts` may reference:
 
-- `ValenceControl.Deployment.Abstractions`
-- `ValenceControl.Deployment.Manifest`
+- `ElsaControl.Deployment.Abstractions`
+- `ElsaControl.Deployment.Manifest`
 - .NET base class libraries
 - `System.Text.Json`
 - `System.IO.Compression`
 
 Test projects may reference:
 
-- `ValenceControl.Deployment.Artifacts`
-- `ValenceControl.Deployment.Abstractions`
-- `ValenceControl.Deployment.Manifest`
+- `ElsaControl.Deployment.Artifacts`
+- `ElsaControl.Deployment.Abstractions`
+- `ElsaControl.Deployment.Manifest`
 - xUnit
 - xUnit's built-in assertions
 
@@ -22,9 +22,9 @@ Test projects may reference:
 
 The artifact package must not reference:
 
-- `ValenceControl.Deployment.Engine`
-- `ValenceControl.Deployment.Cli`
-- `ValenceControl.Deployment.Api`
+- `ElsaControl.Deployment.Engine`
+- `ElsaControl.Deployment.Cli`
+- `ElsaControl.Deployment.Api`
 - Package Catalog implementation, persistence, API, or source packages
 - Runtime Builder implementation or API packages
 - ASP.NET hosting packages

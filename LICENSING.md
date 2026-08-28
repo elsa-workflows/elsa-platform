@@ -1,7 +1,7 @@
 # Licensing
 
-Valence Control is proprietary software governed by the
-[Valence Control Commercial License](LICENSE). Use requires a separate written
+Elsa Control is proprietary software governed by the
+[Elsa Control Commercial License](LICENSE). Use requires a separate written
 commercial agreement or other explicit written authorisation from the licensor.
 
 The legal licensor is Skywalker Digital B.V., trading as Valence Works.

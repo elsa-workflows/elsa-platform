@@ -6,19 +6,19 @@
 
 ## Summary
 
-Add a durable deployment command contract and runtime sync API that separates deployment intent from delivery transport. Deployment runs remain the console-facing source of truth, while command records let external runtime integrations poll, claim, heartbeat, report progress, and complete or fail work without requiring inbound runtime endpoints. Webhooks are modeled as optional command-available notifications only; runtimes still fetch and claim authoritative commands from Valence Control.
+Add a durable deployment command contract and runtime sync API that separates deployment intent from delivery transport. Deployment runs remain the console-facing source of truth, while command records let external runtime integrations poll, claim, heartbeat, report progress, and complete or fail work without requiring inbound runtime endpoints. Webhooks are modeled as optional command-available notifications only; runtimes still fetch and claim authoritative commands from Elsa Control.
 
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console where command state appears in deployment history.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `ValenceControl.Deployment.Core` deployment run services, `ValenceControl.Deployment.Artifacts` envelope metadata, xUnit and its built-in assertions, React Router, TanStack Query, and Vitest.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permissions, EF Core catalog persistence, `ElsaControl.Deployment.Core` deployment run services, `ElsaControl.Deployment.Artifacts` envelope metadata, xUnit and its built-in assertions, React Router, TanStack Query, and Vitest.
 
-**Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Command tables store command metadata, lease/attempt state, progress, safe diagnostics, artifact/revision references, and runtime result references only.
+**Storage**: Existing catalog relational database through `ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Command tables store command metadata, lease/attempt state, progress, safe diagnostics, artifact/revision references, and runtime result references only.
 
 **Testing**: Focused `dotnet test` for Deployment.Core command lifecycle, PackageCatalog persistence, and API tests; console `vitest` for command history display if UI changes are needed; `git diff --check`.
 
-**Target platform**: ASP.NET Core Valence Control API and runtime-facing workspace command endpoints.
+**Target platform**: ASP.NET Core Elsa Control API and runtime-facing workspace command endpoints.
 
 **Project Type**: Modular monolith web service with EF-backed workspace persistence and runtime integration APIs.
 
@@ -30,7 +30,7 @@ Add a durable deployment command contract and runtime sync API that separates de
 
 ## Constitution Check
 
-- **Control Plane First**: Pass. Commands represent platform-owned deployment intent and metadata; runtime execution remains outside Valence Control.
+- **Control Plane First**: Pass. Commands represent platform-owned deployment intent and metadata; runtime execution remains outside Elsa Control.
 - **Bounded Subsystems**: Pass. Deployment.Core owns command lifecycle models/services; EF persists records; API exposes runtime-facing contracts. Runtime appliers remain separate packages.
 - **Contract Stability**: Pass. Runtime sync endpoints and command payloads are explicitly versioned through documented contracts before package consumers depend on them.
 - **Safety By Design**: Pass. Commands carry references, digests, and safe diagnostics only; raw secrets and payload content are forbidden.
@@ -59,7 +59,7 @@ specs/028-runtime-command-sync/
 
 ```text
 src/
-  ValenceControl.Deployment.Core/
+  ElsaControl.Deployment.Core/
     Workspace/
       DeploymentCommandModels.cs
       DeploymentCommandService.cs
@@ -67,19 +67,19 @@ src/
       DeploymentRunService.cs
       DeploymentQueueWorker.cs
 
-  ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
+  ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/
     DeploymentWorkspaceStore.cs
     Models/DeploymentWorkspaceEntities.cs
     Models/CatalogModelConfiguration.cs
 
-  ValenceControl.Api/
+  ElsaControl.Api/
     Workspace/
       RuntimeCommandContracts.cs
       RuntimeCommandEndpoints.cs
       WorkspaceDeploymentEndpoints.cs
     Program.cs
 
-  ValenceControl.Console/
+  ElsaControl.Console/
     src/features/deployments/
       deploymentModels.ts
       DeploymentsPage.tsx
@@ -88,14 +88,14 @@ src/
 
 ```text
 tests/
-  ValenceControl.Deployment.Core.Tests/
+  ElsaControl.Deployment.Core.Tests/
     DeploymentCommandServiceTests.cs
     DeploymentQueueWorkerTests.cs
 
-  ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+  ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
     DeploymentCommandPersistenceTests.cs
 
-  ValenceControl.Api.Tests/
+  ElsaControl.Api.Tests/
     RuntimeCommandApiTests.cs
     WorkspaceDeploymentApiTests.cs
 ```

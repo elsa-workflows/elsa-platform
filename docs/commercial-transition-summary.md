@@ -3,11 +3,11 @@
 ## Completed changes
 
 - Transferred the existing GitHub repository object from
-  `elsa-workflows/elsa-platform` to `valence-works/valence-control`, preserving
+  `elsa-workflows/elsa-platform` to `valence-works/elsa-control`, preserving
   Git history and GitHub metadata supported by repository transfer.
-- Renamed the product to Valence Control and product-owned .NET identifiers to
-  the `ValenceControl` root.
-- Replaced the repository's MIT licence with the Valence Control Commercial
+- Renamed the product to Elsa Control and product-owned .NET identifiers to
+  the `ElsaControl` root.
+- Replaced the repository's MIT licence with the Elsa Control Commercial
   License.
 - Added `NOTICE.md` and updated `LICENSING.md`, `legal/README.md`,
   `CONTRIBUTING.md`, and the README product boundary.

@@ -20,8 +20,8 @@
 
 - [x] T001 [P] Add runtime command API examples in `specs/028-runtime-command-sync/contracts/runtime-command-api.md`
 - [x] T002 [P] Add console command history UX examples in `specs/028-runtime-command-sync/contracts/console-command-history-ux.md`
-- [ ] T003 [P] Add command lifecycle test fixtures in `tests/ValenceControl.Deployment.Core.Tests/WorkspaceDeploymentTestFixtures.cs`
-- [ ] T004 [P] Add runtime command API test helpers in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentTestFixtures.cs`
+- [ ] T003 [P] Add command lifecycle test fixtures in `tests/ElsaControl.Deployment.Core.Tests/WorkspaceDeploymentTestFixtures.cs`
+- [ ] T004 [P] Add runtime command API test helpers in `tests/ElsaControl.Api.Tests/WorkspaceDeploymentTestFixtures.cs`
 
 ---
 
@@ -31,15 +31,15 @@
 
 **Checkpoint**: Deployment commands can be represented, stored, queried, and linked to deployment runs.
 
-- [x] T005 Define command, lease, attempt, progress, result, and webhook models in `src/ValenceControl.Deployment.Core/Workspace/DeploymentCommandModels.cs`
-- [x] T006 Define command store contract in `src/ValenceControl.Deployment.Core/Workspace/IWorkspaceDeploymentCommandStore.cs`
-- [x] T007 Add command service skeleton and lifecycle validation in `src/ValenceControl.Deployment.Core/Workspace/DeploymentCommandService.cs`
-- [x] T008 Extend deployment run queueing to create command records in `src/ValenceControl.Deployment.Core/Workspace/DeploymentRunService.cs`
-- [x] T009 Add EF command, command event, and webhook notification entities in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`
-- [x] T010 Add EF command mappings in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
-- [x] T011 Implement command store methods in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [x] T012 Add SQLite and SQL Server migrations for runtime command metadata in `src/ValenceControl.PackageCatalog.Persistence.SqliteMigrations/Migrations/` and `src/ValenceControl.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
-- [x] T013 Register command services and store contracts in `src/ValenceControl.Api/Program.cs`
+- [x] T005 Define command, lease, attempt, progress, result, and webhook models in `src/ElsaControl.Deployment.Core/Workspace/DeploymentCommandModels.cs`
+- [x] T006 Define command store contract in `src/ElsaControl.Deployment.Core/Workspace/IWorkspaceDeploymentCommandStore.cs`
+- [x] T007 Add command service skeleton and lifecycle validation in `src/ElsaControl.Deployment.Core/Workspace/DeploymentCommandService.cs`
+- [x] T008 Extend deployment run queueing to create command records in `src/ElsaControl.Deployment.Core/Workspace/DeploymentRunService.cs`
+- [x] T009 Add EF command, command event, and webhook notification entities in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`
+- [x] T010 Add EF command mappings in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
+- [x] T011 Implement command store methods in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T012 Add SQLite and SQL Server migrations for runtime command metadata in `src/ElsaControl.PackageCatalog.Persistence.SqliteMigrations/Migrations/` and `src/ElsaControl.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
+- [x] T013 Register command services and store contracts in `src/ElsaControl.Api/Program.cs`
 
 ---
 
@@ -51,15 +51,15 @@
 
 ### Tests for User Story 1
 
-- [x] T014 [P] [US1] Add core poll/claim and lease exclusivity tests in `tests/ValenceControl.Deployment.Core.Tests/DeploymentCommandServiceTests.cs`
-- [x] T015 [P] [US1] Add persistence poll ordering and active lease tests in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentCommandPersistenceTests.cs`
-- [x] T016 [P] [US1] Add runtime poll/claim API authorization and conflict tests in `tests/ValenceControl.Api.Tests/RuntimeCommandApiTests.cs`
+- [x] T014 [P] [US1] Add core poll/claim and lease exclusivity tests in `tests/ElsaControl.Deployment.Core.Tests/DeploymentCommandServiceTests.cs`
+- [x] T015 [P] [US1] Add persistence poll ordering and active lease tests in `tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentCommandPersistenceTests.cs`
+- [x] T016 [P] [US1] Add runtime poll/claim API authorization and conflict tests in `tests/ElsaControl.Api.Tests/RuntimeCommandApiTests.cs`
 
 ### Implementation for User Story 1
 
-- [x] T017 [US1] Implement poll and claim lifecycle behavior in `src/ValenceControl.Deployment.Core/Workspace/DeploymentCommandService.cs`
-- [x] T018 [US1] Implement pending command queries and claim persistence in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [x] T019 [US1] Add runtime command poll and claim endpoints in `src/ValenceControl.Api/Workspace/RuntimeCommandEndpoints.cs` and `src/ValenceControl.Api/Workspace/RuntimeCommandContracts.cs`
+- [x] T017 [US1] Implement poll and claim lifecycle behavior in `src/ElsaControl.Deployment.Core/Workspace/DeploymentCommandService.cs`
+- [x] T018 [US1] Implement pending command queries and claim persistence in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T019 [US1] Add runtime command poll and claim endpoints in `src/ElsaControl.Api/Workspace/RuntimeCommandEndpoints.cs` and `src/ElsaControl.Api/Workspace/RuntimeCommandContracts.cs`
 - [x] T020 [US1] Run focused US1 checks documented in `specs/028-runtime-command-sync/quickstart.md`
 
 **Checkpoint**: Runtime pull and claim are independently functional.
@@ -74,16 +74,16 @@
 
 ### Tests for User Story 2
 
-- [x] T021 [P] [US2] Add heartbeat, progress, complete, fail, and reject core tests in `tests/ValenceControl.Deployment.Core.Tests/DeploymentCommandServiceTests.cs`
-- [x] T022 [P] [US2] Add persistence tests for command final state and run history projection in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentCommandPersistenceTests.cs`
-- [x] T023 [P] [US2] Add runtime heartbeat/progress/complete/fail/reject API tests in `tests/ValenceControl.Api.Tests/RuntimeCommandApiTests.cs`
+- [x] T021 [P] [US2] Add heartbeat, progress, complete, fail, and reject core tests in `tests/ElsaControl.Deployment.Core.Tests/DeploymentCommandServiceTests.cs`
+- [x] T022 [P] [US2] Add persistence tests for command final state and run history projection in `tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentCommandPersistenceTests.cs`
+- [x] T023 [P] [US2] Add runtime heartbeat/progress/complete/fail/reject API tests in `tests/ElsaControl.Api.Tests/RuntimeCommandApiTests.cs`
 
 ### Implementation for User Story 2
 
-- [x] T024 [US2] Implement heartbeat, progress, complete, fail, and reject behavior in `src/ValenceControl.Deployment.Core/Workspace/DeploymentCommandService.cs`
-- [x] T025 [US2] Implement command event and final result persistence in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [x] T026 [US2] Add runtime heartbeat/progress/complete/fail/reject endpoints in `src/ValenceControl.Api/Workspace/RuntimeCommandEndpoints.cs`
-- [x] T027 [US2] Project command events into run detail/history in `src/ValenceControl.Deployment.Core/Workspace/DeploymentRunService.cs` and `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [x] T024 [US2] Implement heartbeat, progress, complete, fail, and reject behavior in `src/ElsaControl.Deployment.Core/Workspace/DeploymentCommandService.cs`
+- [x] T025 [US2] Implement command event and final result persistence in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T026 [US2] Add runtime heartbeat/progress/complete/fail/reject endpoints in `src/ElsaControl.Api/Workspace/RuntimeCommandEndpoints.cs`
+- [x] T027 [US2] Project command events into run detail/history in `src/ElsaControl.Deployment.Core/Workspace/DeploymentRunService.cs` and `src/ElsaControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
 - [x] T028 [US2] Run focused US2 checks documented in `specs/028-runtime-command-sync/quickstart.md`
 
 **Checkpoint**: Runtime command outcomes are visible through deployment run history.
@@ -98,15 +98,15 @@
 
 ### Tests for User Story 3
 
-- [x] T029 [P] [US3] Add stale lease and duplicate final-state core tests in `tests/ValenceControl.Deployment.Core.Tests/DeploymentCommandServiceTests.cs`
-- [x] T030 [P] [US3] Add stale command recovery persistence tests in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentCommandPersistenceTests.cs`
-- [x] T031 [P] [US3] Add duplicate delivery and duplicate completion API tests in `tests/ValenceControl.Api.Tests/RuntimeCommandApiTests.cs`
+- [x] T029 [P] [US3] Add stale lease and duplicate final-state core tests in `tests/ElsaControl.Deployment.Core.Tests/DeploymentCommandServiceTests.cs`
+- [x] T030 [P] [US3] Add stale command recovery persistence tests in `tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentCommandPersistenceTests.cs`
+- [x] T031 [P] [US3] Add duplicate delivery and duplicate completion API tests in `tests/ElsaControl.Api.Tests/RuntimeCommandApiTests.cs`
 
 ### Implementation for User Story 3
 
-- [x] T032 [US3] Implement stale command recovery and idempotent final-state handling in `src/ValenceControl.Deployment.Core/Workspace/DeploymentCommandService.cs`
-- [x] T033 [US3] Bridge existing in-process queue worker to command claim/complete semantics in `src/ValenceControl.Deployment.Core/Workspace/DeploymentQueueWorker.cs`
-- [x] T034 [US3] Persist stale recovery and duplicate delivery events in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T032 [US3] Implement stale command recovery and idempotent final-state handling in `src/ElsaControl.Deployment.Core/Workspace/DeploymentCommandService.cs`
+- [x] T033 [US3] Bridge existing in-process queue worker to command claim/complete semantics in `src/ElsaControl.Deployment.Core/Workspace/DeploymentQueueWorker.cs`
+- [x] T034 [US3] Persist stale recovery and duplicate delivery events in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
 - [x] T035 [US3] Run focused US3 checks documented in `specs/028-runtime-command-sync/quickstart.md`
 
 **Checkpoint**: Duplicate delivery and stale recovery fail closed.
@@ -121,15 +121,15 @@
 
 ### Tests for User Story 4
 
-- [x] T036 [P] [US4] Add webhook trigger record tests in `tests/ValenceControl.Deployment.Core.Tests/DeploymentCommandServiceTests.cs`
-- [x] T037 [P] [US4] Add webhook notification persistence tests in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentCommandPersistenceTests.cs`
-- [x] T038 [P] [US4] Add webhook-triggered fetch API/contract tests in `tests/ValenceControl.Api.Tests/RuntimeCommandApiTests.cs`
+- [x] T036 [P] [US4] Add webhook trigger record tests in `tests/ElsaControl.Deployment.Core.Tests/DeploymentCommandServiceTests.cs`
+- [x] T037 [P] [US4] Add webhook notification persistence tests in `tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentCommandPersistenceTests.cs`
+- [x] T038 [P] [US4] Add webhook-triggered fetch API/contract tests in `tests/ElsaControl.Api.Tests/RuntimeCommandApiTests.cs`
 
 ### Implementation for User Story 4
 
-- [x] T039 [US4] Add webhook notification models and creation behavior in `src/ValenceControl.Deployment.Core/Workspace/DeploymentCommandModels.cs` and `src/ValenceControl.Deployment.Core/Workspace/DeploymentCommandService.cs`
-- [x] T040 [US4] Persist webhook notification records/events in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [x] T041 [US4] Expose safe webhook trigger metadata where needed in `src/ValenceControl.Api/Workspace/RuntimeCommandContracts.cs`
+- [x] T039 [US4] Add webhook notification models and creation behavior in `src/ElsaControl.Deployment.Core/Workspace/DeploymentCommandModels.cs` and `src/ElsaControl.Deployment.Core/Workspace/DeploymentCommandService.cs`
+- [x] T040 [US4] Persist webhook notification records/events in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T041 [US4] Expose safe webhook trigger metadata where needed in `src/ElsaControl.Api/Workspace/RuntimeCommandContracts.cs`
 - [x] T042 [US4] Run focused US4 checks documented in `specs/028-runtime-command-sync/quickstart.md`
 
 **Checkpoint**: Webhook-triggered fetch is modeled as notification only.
@@ -140,15 +140,15 @@
 
 **Purpose**: Surface command lifecycle safely and run focused verification.
 
-- [x] T043 [P] Update deployment run models/API response contracts with command lifecycle summary in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentContracts.cs`
-- [x] T044 [P] Update console deployment history rendering if command events are not already visible in `src/ValenceControl.Console/src/features/deployments/DeploymentRunsPanel.tsx`
-- [x] T045 [P] Add console command history tests if UI changes are needed in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
-- [x] T046 Review payload/secret redaction, command authorization, lease token handling, duplicate delivery, stale recovery, and run history projection across `src/ValenceControl.Deployment.Core/Workspace/`, `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/ValenceControl.Api/Workspace/RuntimeCommandEndpoints.cs`
-- [x] T047 Run `dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj --filter DeploymentCommand` and record result in `specs/028-runtime-command-sync/quickstart.md`
-- [x] T048 Run `dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand` and record result in `specs/028-runtime-command-sync/quickstart.md`
-- [x] T049 Run `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter RuntimeCommand` and record result in `specs/028-runtime-command-sync/quickstart.md`
-- [x] T050 Run `cd src/ValenceControl.Console && npm test -- --run deployments` and record result in `specs/028-runtime-command-sync/quickstart.md`
-- [x] T051 Run `cd src/ValenceControl.Console && npm run typecheck` and record result in `specs/028-runtime-command-sync/quickstart.md`
+- [x] T043 [P] Update deployment run models/API response contracts with command lifecycle summary in `src/ElsaControl.Api/Workspace/WorkspaceDeploymentContracts.cs`
+- [x] T044 [P] Update console deployment history rendering if command events are not already visible in `src/ElsaControl.Console/src/features/deployments/DeploymentRunsPanel.tsx`
+- [x] T045 [P] Add console command history tests if UI changes are needed in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [x] T046 Review payload/secret redaction, command authorization, lease token handling, duplicate delivery, stale recovery, and run history projection across `src/ElsaControl.Deployment.Core/Workspace/`, `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/ElsaControl.Api/Workspace/RuntimeCommandEndpoints.cs`
+- [x] T047 Run `dotnet test tests/ElsaControl.Deployment.Core.Tests/ElsaControl.Deployment.Core.Tests.csproj --filter DeploymentCommand` and record result in `specs/028-runtime-command-sync/quickstart.md`
+- [x] T048 Run `dotnet test tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentCommand` and record result in `specs/028-runtime-command-sync/quickstart.md`
+- [x] T049 Run `dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj --filter RuntimeCommand` and record result in `specs/028-runtime-command-sync/quickstart.md`
+- [x] T050 Run `cd src/ElsaControl.Console && npm test -- --run deployments` and record result in `specs/028-runtime-command-sync/quickstart.md`
+- [x] T051 Run `cd src/ElsaControl.Console && npm run typecheck` and record result in `specs/028-runtime-command-sync/quickstart.md`
 - [x] T052 Run `git diff --check` and record result in `specs/028-runtime-command-sync/quickstart.md`
 
 ---

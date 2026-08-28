@@ -2,7 +2,7 @@
 
 > **Forward compatibility note**: `specs/031-organization-tenancy` intentionally revisits the tenant-boundary decision and chooses Organization as the customer tenant boundary while preserving Workspace as the operational isolation boundary.
 
-## Decision: Use Workspace As The Valence Control Tenant Boundary
+## Decision: Use Workspace As The Elsa Control Tenant Boundary
 
 **Rationale**: Existing account-owned custom feed work already models `Account`, `ExternalIdentity`, `Workspace`, `WorkspaceMembership`, and `WorkspaceEntitlementSnapshot`. Saved runtime configurations, BYOC deployment targets, and managed hosting specs all refer to workspace-scoped ownership or authorization. Standardizing on workspace avoids parallel customer, tenant, organization, and account isolation models.
 
@@ -12,15 +12,15 @@
 - External customer-service ID as tenant: couples catalog ownership to a future system and conflicts with the roadmap that treats external customer IDs as references.
 - Runtime tenant as platform tenant: mixes platform ownership with Elsa runtime tenant behavior and would pull deferred deployment reconciliation scope into this feature.
 
-## Decision: Use Pluggable Valence Control Identity Adapters
+## Decision: Use Pluggable Elsa Control Identity Adapters
 
-**Rationale**: Valence Control should not force one identity provider. Deployments need to configure Microsoft Entra, Auth0, Keycloak, generic OIDC/JWT, or a trusted backend/customer service adapter while keeping the same `issuer + subject -> Account -> Workspace` mapping. Provider presets should configure validation and claim defaults, but the workspace tenancy model must remain provider-neutral.
+**Rationale**: Elsa Control should not force one identity provider. Deployments need to configure Microsoft Entra, Auth0, Keycloak, generic OIDC/JWT, or a trusted backend/customer service adapter while keeping the same `issuer + subject -> Account -> Workspace` mapping. Provider presets should configure validation and claim defaults, but the workspace tenancy model must remain provider-neutral.
 
 **Alternatives considered**:
 
 - Hard-code Microsoft Entra: strong Azure fit, but too restrictive for self-hosted or non-Azure platform users.
 - Hard-code Auth0: convenient SaaS identity provider, but also too restrictive.
-- Implement OpenIddict as the default identity provider: useful for a future self-hosted identity module, but it would make Valence Control responsible for user credentials, recovery, MFA, abuse prevention, and client management before that is a product requirement.
+- Implement OpenIddict as the default identity provider: useful for a future self-hosted identity module, but it would make Elsa Control responsible for user credentials, recovery, MFA, abuse prevention, and client management before that is a product requirement.
 
 ## Decision: Derive Customer Identity From OIDC/JWT Or Trusted Server-To-Server Context
 
@@ -38,7 +38,7 @@
 
 **Alternatives considered**:
 
-- Remove admin key immediately: unnecessary risk while Valence Control identity is introduced.
+- Remove admin key immediately: unnecessary risk while Elsa Control identity is introduced.
 - Treat admin key as a super-customer identity: weakens audit and breaks tenant isolation semantics.
 
 ## Decision: Centralize Workspace Authorization Helpers

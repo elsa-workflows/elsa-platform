@@ -38,7 +38,7 @@ Fields:
 - `status`: Deployable, warning, or blocked.
 - `requiredCapabilities`: Canonical capability IDs required by the artifact.
 - `missingCapabilities`: Required capabilities absent from the engine.
-- `payloadAvailable`: Whether Valence Control can open a safe download stream.
+- `payloadAvailable`: Whether Elsa Control can open a safe download stream.
 - `diagnostics`: Safe structured details.
 
 Rules:
@@ -94,7 +94,7 @@ Safe instruction for retrieving an artifact payload.
 Fields:
 
 - `artifactRecordId`: Artifact to retrieve.
-- `downloadUrl`: Valence Control URL, not a raw storage path.
+- `downloadUrl`: Elsa Control URL, not a raw storage path.
 - `fileName`: Safe file name.
 - `contentType`: MIME type.
 - `contentDigest`: Expected digest.

@@ -9,19 +9,19 @@ Verify that v1alpha manifests parse and normalize independently from artifact IO
 Run focused tests:
 
 ```bash
-dotnet test tests/ValenceControl.Deployment.Manifest.Tests/ValenceControl.Deployment.Manifest.Tests.csproj
+dotnet test tests/ElsaControl.Deployment.Manifest.Tests/ElsaControl.Deployment.Manifest.Tests.csproj
 ```
 
 Run full solution tests:
 
 ```bash
-dotnet test ValenceControl.sln
+dotnet test ElsaControl.sln
 ```
 
 Check dependency references:
 
 ```bash
-dotnet list src/ValenceControl.Deployment.Manifest/ValenceControl.Deployment.Manifest.csproj reference
+dotnet list src/ElsaControl.Deployment.Manifest/ElsaControl.Deployment.Manifest.csproj reference
 ```
 
 Expected result:
@@ -36,17 +36,17 @@ Expected result:
 Last verified on 2026-05-20:
 
 ```text
-dotnet list src/ValenceControl.Deployment.Manifest/ValenceControl.Deployment.Manifest.csproj reference
-Project reference: ../ValenceControl.Deployment.Abstractions/ValenceControl.Deployment.Abstractions.csproj
+dotnet list src/ElsaControl.Deployment.Manifest/ElsaControl.Deployment.Manifest.csproj reference
+Project reference: ../ElsaControl.Deployment.Abstractions/ElsaControl.Deployment.Abstractions.csproj
 ```
 
 ```text
-dotnet test tests/ValenceControl.Deployment.Manifest.Tests/ValenceControl.Deployment.Manifest.Tests.csproj
+dotnet test tests/ElsaControl.Deployment.Manifest.Tests/ElsaControl.Deployment.Manifest.Tests.csproj
 Passed: 18
 ```
 
 ```text
-dotnet test ValenceControl.sln
+dotnet test ElsaControl.sln
 Passed all .NET test projects
 ```
 

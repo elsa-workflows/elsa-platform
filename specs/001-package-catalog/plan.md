@@ -1,4 +1,4 @@
-# Implementation Plan: Valence Control Package Catalog
+# Implementation Plan: Elsa Control Package Catalog
 
 **Branch**: `001-package-catalog` | **Date**: 2026-05-14 | **Spec**: [spec.md](./spec.md)
 
@@ -6,8 +6,8 @@
 
 ## Summary
 
-Build Valence Control Package Catalog as an ASP.NET Core modular monolith plus a shared
-`ValenceControl.PackageManifests` contract package. The catalog indexes explicitly
+Build Elsa Control Package Catalog as an ASP.NET Core modular monolith plus a shared
+`Elsa.Specifications.PackageManifests` contract package. The catalog indexes explicitly
 configured NuGet feeds, extracts versioned `elsa-package.json` manifests without
 loading package assemblies, validates and stores manifests with immutable
 package-version records, separates validation from approval and listing, and
@@ -57,10 +57,10 @@ deployment bundle generation remain out of scope.
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 - **Manifest-first**: PASS. Package metadata flows through explicit
-  `elsa-package.json` manifests and the `ValenceControl.PackageManifests` contract.
+  `elsa-package.json` manifests and the `Elsa.Specifications.PackageManifests` contract.
 - **No arbitrary code execution**: PASS. NuGet packages are handled as archives;
   only package files, nuspec metadata, and manifest JSON are inspected.
-- **Stable contracts**: PASS. `ValenceControl.PackageManifests` is a dependency-light wire
+- **Stable contracts**: PASS. `Elsa.Specifications.PackageManifests` is a dependency-light wire
   contract package separate from catalog persistence and runtime internals.
 - **Schema evolution**: PASS. Versioned JSON Schema resources, extension metadata
   preservation, unsupported-version validation failures, and breaking-change
@@ -105,13 +105,13 @@ specs/001-package-catalog/
 
 ```text
 src/
-├── ValenceControl.PackageManifests/
+├── Elsa.Specifications.PackageManifests/
 │   ├── Compatibility/
 │   ├── Documentation/
 │   ├── Licensing/
 │   ├── Schemas/
 │   └── Validation/
-├── ValenceControl.PackageCatalog.Core/
+├── ElsaControl.PackageCatalog.Core/
 │   ├── Approvals/
 │   ├── Compatibility/
 │   ├── Manifests/
@@ -119,33 +119,33 @@ src/
 │   ├── Sources/
 │   ├── Sync/
 │   └── Validation/
-├── ValenceControl.Api/
+├── ElsaControl.Api/
 │   ├── Admin/
 │   ├── Public/
 │   ├── Authentication/
 │   └── Program.cs
-├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
+├── ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/
 │   ├── Migrations/
 │   ├── Models/
 │   └── CatalogDbContext.cs
-└── ValenceControl.PackageCatalog.Sources.NuGet/
+└── ElsaControl.PackageCatalog.Sources.NuGet/
     ├── PackageArchiveManifestReader.cs
     ├── NuGetPackageSourceClient.cs
     └── NuGetSyncPackageDownloader.cs
 
 tests/
-├── ValenceControl.PackageManifests.Tests/
-├── ValenceControl.PackageCatalog.Core.Tests/
-├── ValenceControl.Api.Tests/
-├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
-├── ValenceControl.PackageCatalog.Sources.NuGet.Tests/
-└── ValenceControl.PackageCatalog.Testing/
+├── Elsa.Specifications.PackageManifests.Tests/
+├── ElsaControl.PackageCatalog.Core.Tests/
+├── ElsaControl.Api.Tests/
+├── ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+├── ElsaControl.PackageCatalog.Sources.NuGet.Tests/
+└── ElsaControl.PackageCatalog.Testing/
 ```
 
-**Structure Decision**: Use an onion-style modular monolith. `ValenceControl.PackageCatalog.Core`
-is the inner catalog model and workflow layer. `ValenceControl.Api` is the delivery
-edge. `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore` and
-`ValenceControl.PackageCatalog.Sources.NuGet` are outer adapters. The shared manifest package
+**Structure Decision**: Use an onion-style modular monolith. `ElsaControl.PackageCatalog.Core`
+is the inner catalog model and workflow layer. `ElsaControl.Api` is the delivery
+edge. `ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore` and
+`ElsaControl.PackageCatalog.Sources.NuGet` are outer adapters. The shared manifest package
 remains independent.
 
 ## Complexity Tracking

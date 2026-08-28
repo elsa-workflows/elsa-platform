@@ -1,9 +1,9 @@
 # Quickstart: Identity And Workspace Tenancy
 
-## Local Valence Control Identity Smoke Test
+## Local Elsa Control Identity Smoke Test
 
 1. Configure `Authentication:ControlIdentity` with `Provider = GenericOidc` and a local test issuer/audience/signing key.
-2. Start the Valence Control API.
+2. Start the Elsa Control API.
 3. Call `GET /api/me/workspaces` with a valid trusted identity.
 4. Confirm the response contains one account and one personal workspace.
 5. Call the same endpoint again with the same issuer and subject.
@@ -73,7 +73,7 @@ Expected result: operator-only work remains available, but the operator fallback
 
 ## Verification Results
 
-- `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter "FullyQualifiedName~WorkspaceProvisioningTests|FullyQualifiedName~CustomerAuthenticationTests|FullyQualifiedName~ControlIdentityTests|FullyQualifiedName~WorkspaceIsolationTests|FullyQualifiedName~WorkspaceAuthorizationTests|FullyQualifiedName~OperatorAuthorizationTests"`: passed, 49 tests.
+- `dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj --filter "FullyQualifiedName~WorkspaceProvisioningTests|FullyQualifiedName~CustomerAuthenticationTests|FullyQualifiedName~ControlIdentityTests|FullyQualifiedName~WorkspaceIsolationTests|FullyQualifiedName~WorkspaceAuthorizationTests|FullyQualifiedName~OperatorAuthorizationTests"`: passed, 49 tests.
 
 ## Scope Notes
 

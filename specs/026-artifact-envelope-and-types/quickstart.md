@@ -2,7 +2,7 @@
 
 ## API Smoke Scenario
 
-1. Start the Valence Control API with workspace identity enabled.
+1. Start the Elsa Control API with workspace identity enabled.
 2. Sign in as a workspace member with deployment setup permission.
 3. Submit a valid `elsa.workflow-definition` envelope through the workspace artifact registration API.
 4. Confirm the response includes artifact type, schema version, producer metadata, safe display metadata, compatibility hints, digests, payload reference summary, and submission metadata.
@@ -28,28 +28,28 @@
 ## Verification Commands
 
 ```sh
-dotnet test tests/ValenceControl.Deployment.Artifacts.Tests/ValenceControl.Deployment.Artifacts.Tests.csproj --filter ArtifactEnvelope
-dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj --filter WorkspaceArtifact
-dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceArtifact
-dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter WorkspaceArtifact
-cd src/ValenceControl.Console && npm test -- --run artifacts
-cd src/ValenceControl.Console && npm run typecheck
+dotnet test tests/ElsaControl.Deployment.Artifacts.Tests/ElsaControl.Deployment.Artifacts.Tests.csproj --filter ArtifactEnvelope
+dotnet test tests/ElsaControl.Deployment.Core.Tests/ElsaControl.Deployment.Core.Tests.csproj --filter WorkspaceArtifact
+dotnet test tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceArtifact
+dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj --filter WorkspaceArtifact
+cd src/ElsaControl.Console && npm test -- --run artifacts
+cd src/ElsaControl.Console && npm run typecheck
 git diff --check
 ```
 
 ## Verification Results
 
-- `dotnet test tests/ValenceControl.Deployment.Artifacts.Tests/ValenceControl.Deployment.Artifacts.Tests.csproj --filter ArtifactEnvelope`: passed, 8 tests.
-- `dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj --filter WorkspaceArtifact`: passed, 11 tests.
-- `dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceArtifact`: passed, 7 tests.
-- `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter WorkspaceArtifact`: passed, 8 tests.
-- `cd src/ValenceControl.Console && npm test -- --run artifacts`: passed, 3 tests.
-- `cd src/ValenceControl.Console && npm run typecheck`: passed.
+- `dotnet test tests/ElsaControl.Deployment.Artifacts.Tests/ElsaControl.Deployment.Artifacts.Tests.csproj --filter ArtifactEnvelope`: passed, 8 tests.
+- `dotnet test tests/ElsaControl.Deployment.Core.Tests/ElsaControl.Deployment.Core.Tests.csproj --filter WorkspaceArtifact`: passed, 11 tests.
+- `dotnet test tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceArtifact`: passed, 7 tests.
+- `dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj --filter WorkspaceArtifact`: passed, 8 tests.
+- `cd src/ElsaControl.Console && npm test -- --run artifacts`: passed, 3 tests.
+- `cd src/ElsaControl.Console && npm run typecheck`: passed.
 - `git diff --check`: passed.
 
 ## Known Scope Boundaries
 
-- Studio **Submit to Valence Control** UX is covered by `027-studio-submit-to-valence-control`.
+- Studio **Submit to Elsa Control** UX is covered by `027-studio-submit-to-elsa-control`.
 - Runtime command polling, claiming, and completion are covered by `028-runtime-command-sync`.
 - Workflow artifact application inside Elsa runtimes is covered by `029-workflow-artifact-runtime-applier`.
 - Object storage upload, OCI publication, artifact signing, and payload encryption are future provider-specific slices.

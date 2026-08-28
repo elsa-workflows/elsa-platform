@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Elsa.Specifications.PackageManifests" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\PackageCatalog\ElsaControl.PackageCatalog.Abstractions\ElsaControl.PackageCatalog.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\src\PackageCatalog\ElsaControl.PackageCatalog.Core\ElsaControl.PackageCatalog.Core.csproj" />
+    <ProjectReference Include="..\ElsaControl.PackageCatalog.Testing\ElsaControl.PackageCatalog.Testing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>

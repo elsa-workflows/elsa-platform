@@ -61,7 +61,7 @@ A deployment administrator selects engine credentials from registered workspace 
 
 ### User Story 4 - Manage Secret Store Metadata (Priority: P2)
 
-A deployment administrator manages workspace-scoped secret store and credential reference metadata without storing secret values in Valence Control.
+A deployment administrator manages workspace-scoped secret store and credential reference metadata without storing secret values in Elsa Control.
 
 **Why this priority**: Pickers require an authoritative source. The registry must be manageable in the deployment setup surface and must preserve the safety boundary that raw secrets live outside the platform.
 

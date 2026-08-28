@@ -13,7 +13,7 @@ Fields:
 - `DisplayName`: optional latest display name.
 - `Email`: optional latest email.
 - `AuthenticationMethod`: customer token, browser login session, or trusted backend adapter.
-- `Provider`: configured Valence Control identity provider adapter that produced the context.
+- `Provider`: configured Elsa Control identity provider adapter that produced the context.
 
 Validation:
 

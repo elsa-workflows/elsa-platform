@@ -1,3 +1,0 @@
-<Project>
-  <Import Project="..\build\ValenceControl.PackageManifest.Generator.props" />
-</Project>

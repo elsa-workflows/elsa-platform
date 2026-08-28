@@ -36,7 +36,7 @@ Expected coverage areas:
 - XML documentation enrichment.
 - Override file merge and validation.
 - JSON Schema Draft 2020-12 setting schema generation.
-- Manifest validation through `ValenceControl.PackageManifests`.
+- Manifest validation through `Elsa.Specifications.PackageManifests`.
 - Pack integration and package inspection.
 - Deterministic output across repeated builds.
 - Safety checks proving constructors and property getters are not invoked.
@@ -59,7 +59,7 @@ Create or use a fixture class library that references the generator:
 
   <ItemGroup>
     <PackageReference Include="CShells.Abstractions" Version="x.y.z" />
-    <PackageReference Include="ValenceControl.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
+    <PackageReference Include="Elsa.Specifications.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
   </ItemGroup>
 </Project>
 ```
@@ -68,7 +68,7 @@ Create or use a fixture class library that references the generator:
 
 ```csharp
 using CShells.Features;
-using ValenceControl.PackageManifest.Generator.Hints;
+using Elsa.Specifications.PackageManifest.Generator.Hints;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -112,7 +112,7 @@ Expected result:
 ## Example Generated Manifest
 
 Shape shown for orientation only; the exact JSON members are owned by
-`ValenceControl.PackageManifests`.
+`Elsa.Specifications.PackageManifests`.
 
 ```json
 {
@@ -194,7 +194,7 @@ dotnet pack
 Expected result:
 
 - The produced `.nupkg` contains exactly one root `elsa-package.json`.
-- The manifest uses the `ValenceControl.PackageManifests` contract.
+- The manifest uses the `Elsa.Specifications.PackageManifests` contract.
 - The manifest is no larger than 1 MB.
 
 ## Validate Override Behavior

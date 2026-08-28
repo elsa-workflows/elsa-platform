@@ -17,7 +17,7 @@ Store type values:
 {
   "id": "00000000-0000-0000-0000-000000000000",
   "workspaceId": "00000000-0000-0000-0000-000000000000",
-  "name": "Valence Control engine credentials",
+  "name": "Elsa Control engine credentials",
   "provider": "Local encrypted database",
   "type": "LocalEncryptedDatabase",
   "description": "Engine API credentials for platform command dispatch",
@@ -38,7 +38,7 @@ Request:
 
 ```json
 {
-  "name": "Valence Control engine credentials",
+  "name": "Elsa Control engine credentials",
   "type": "LocalEncryptedDatabase",
   "provider": null,
   "description": "Engine API credentials for platform command dispatch"
@@ -57,12 +57,12 @@ Behavior:
   "id": "00000000-0000-0000-0000-000000000000",
   "workspaceId": "00000000-0000-0000-0000-000000000000",
   "secretStoreId": "00000000-0000-0000-0000-000000000000",
-  "secretStoreName": "Valence Control engine credentials",
+  "secretStoreName": "Elsa Control engine credentials",
   "secretStoreProvider": "Local encrypted database",
   "secretStoreType": "LocalEncryptedDatabase",
   "name": "Dev engine API",
   "reference": "local://engine/dev-api",
-  "description": "Credential used by Valence Control to call the Dev engine",
+  "description": "Credential used by Elsa Control to call the Dev engine",
   "status": "Active",
   "verificationStatus": "Unverified",
   "lastVerifiedAt": null,
@@ -87,7 +87,7 @@ Local encrypted database request:
 {
   "name": "Dev engine API",
   "reference": "local://engine/dev-api",
-  "description": "Credential used by Valence Control to call the Dev engine",
+  "description": "Credential used by Elsa Control to call the Dev engine",
   "secretValue": "submitted once over the request body"
 }
 ```
@@ -97,8 +97,8 @@ External provider request:
 ```json
 {
   "name": "Prod engine API",
-  "reference": "kv://valence-control/prod/engine-api",
-  "description": "Credential used by Valence Control to call the Prod engine"
+  "reference": "kv://elsa-control/prod/engine-api",
+  "description": "Credential used by Elsa Control to call the Prod engine"
 }
 ```
 

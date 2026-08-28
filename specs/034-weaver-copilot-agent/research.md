@@ -2,7 +2,7 @@
 
 ## Decision: Use GitHub Copilot SDK .NET as the Weaver runtime
 
-**Rationale**: GitHub Copilot SDK is generally available as of 2026-06-02 and provides the agent loop, custom tools, custom agents, streaming, hooks, telemetry, session resume, and BYOK support. The .NET SDK matches Valence Control's backend stack and avoids building a custom orchestration layer.
+**Rationale**: GitHub Copilot SDK is generally available as of 2026-06-02 and provides the agent loop, custom tools, custom agents, streaming, hooks, telemetry, session resume, and BYOK support. The .NET SDK matches Elsa Control's backend stack and avoids building a custom orchestration layer.
 
 **Alternatives considered**:
 
@@ -21,7 +21,7 @@
 
 ## Decision: Disable generic shell, filesystem, and file-edit tools in hosted sessions
 
-**Rationale**: Weaver is a platform operations assistant, not a code editing agent inside the console. Hosted sessions should expose only typed Valence Control tools with explicit schemas and authorization.
+**Rationale**: Weaver is a platform operations assistant, not a code editing agent inside the console. Hosted sessions should expose only typed Elsa Control tools with explicit schemas and authorization.
 
 **Alternatives considered**:
 
@@ -30,7 +30,7 @@
 
 ## Decision: Use custom tools first; MCP only for optional external integrations
 
-**Rationale**: First-party Valence Control data can be exposed more safely through in-process typed tools that use existing services and permission checks. MCP remains useful later for GitHub, documentation, or customer-support systems.
+**Rationale**: First-party Elsa Control data can be exposed more safely through in-process typed tools that use existing services and permission checks. MCP remains useful later for GitHub, documentation, or customer-support systems.
 
 **Alternatives considered**:
 

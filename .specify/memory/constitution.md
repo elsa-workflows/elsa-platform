@@ -1,12 +1,12 @@
-# Valence Control Constitution
+# Elsa Control Constitution
 
 ## Core Principles
 
 ### I. Control Plane First
-Valence Control owns deployable control-plane capabilities: manifests, artifacts, catalog metadata, compatibility, governance, deployment planning, and reconciliation. It must not reconcile Elsa data-plane state such as workflow instances, bookmarks, execution state, logs, locks, queues, or transient runtime state.
+Elsa Control owns deployable control-plane capabilities: manifests, artifacts, catalog metadata, compatibility, governance, deployment planning, and reconciliation. It must not reconcile Elsa data-plane state such as workflow instances, bookmarks, execution state, logs, locks, queues, or transient runtime state.
 
 ### II. Bounded Subsystems
-Valence Control subsystems must have explicit module boundaries. Deployment, Package Catalog, Package Manifests, and Package Manifest Generator are sibling subsystems unless a dependency is deliberately introduced through an abstraction or client contract. Deployment must not depend on catalog persistence or API internals.
+Elsa Control subsystems must have explicit module boundaries. Deployment, Package Catalog, Package Manifests, and Package Manifest Generator are sibling subsystems unless a dependency is deliberately introduced through an abstraction or client contract. Deployment must not depend on catalog persistence or API internals.
 
 ### III. Contract Stability
 Wire contracts, manifest schemas, package IDs, CLI output intended for automation, and public APIs must be versioned deliberately. Renames are allowed before public adoption, but compatibility shims or deprecation notes are required once packages or APIs have known consumers.
@@ -37,6 +37,6 @@ Every phase must have independently testable outcomes, clear decision gates, and
 
 ## Governance
 
-This constitution guides Spec Kit planning and implementation in `valence-control`. Changes to these principles require an update to this file and a note in the relevant spec or ADR explaining the reason and migration impact.
+This constitution guides Spec Kit planning and implementation in `elsa-control`. Changes to these principles require an update to this file and a note in the relevant spec or ADR explaining the reason and migration impact.
 
 **Version**: 1.0.0 | **Ratified**: 2026-05-19 | **Last Amended**: 2026-05-19

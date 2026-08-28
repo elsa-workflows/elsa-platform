@@ -2,7 +2,7 @@
 
 ## Decision: Add A Dedicated Manifest Package
 
-**Rationale**: Manifest parsing and normalization are reusable by artifact builders, CLI commands, API endpoints, and the engine. Keeping them in `ValenceControl.Deployment.Manifest` prevents the CLI or engine from owning the manifest language.
+**Rationale**: Manifest parsing and normalization are reusable by artifact builders, CLI commands, API endpoints, and the engine. Keeping them in `ElsaControl.Deployment.Manifest` prevents the CLI or engine from owning the manifest language.
 
 **Alternatives considered**:
 

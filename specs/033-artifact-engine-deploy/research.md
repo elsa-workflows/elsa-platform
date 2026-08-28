@@ -2,7 +2,7 @@
 
 ## Decision 1: Deployability is a first-class Deployment Core service
 
-**Decision**: Add a structured deployability service/model in `ValenceControl.Deployment.Core.Workspace` and expose it through workspace-scoped API endpoints before queueing a run.
+**Decision**: Add a structured deployability service/model in `ElsaControl.Deployment.Core.Workspace` and expose it through workspace-scoped API endpoints before queueing a run.
 
 **Rationale**: Current queue-time validation throws exceptions such as missing runtime capability text after the user clicks deploy. A deployability result gives the console stable, testable blocker data with remediation actions and keeps queueing logic from becoming the only validation surface.
 
@@ -31,7 +31,7 @@
 **Alternatives Considered**:
 
 - One command per artifact. Rejected because partial command ordering and duplicate run history would make a single revision deploy harder to reason about.
-- One command per applier. Rejected because applier ownership is runtime implementation detail and should not leak into Valence Control dispatch.
+- One command per applier. Rejected because applier ownership is runtime implementation detail and should not leak into Elsa Control dispatch.
 
 ## Decision 4: Runtime artifact downloads use command lease authorization
 
@@ -48,11 +48,11 @@
 
 **Decision**: When one artifact applies successfully and a later artifact fails, the command and run are marked failed or recovery-required according to finalization rules, with per-artifact outcomes preserved. The system does not claim automatic rollback.
 
-**Rationale**: The runtime may have changed local state before failure. Valence Control cannot safely infer rollback semantics across artifact types without runtime-specific recovery logic.
+**Rationale**: The runtime may have changed local state before failure. Elsa Control cannot safely infer rollback semantics across artifact types without runtime-specific recovery logic.
 
 **Alternatives Considered**:
 
-- Automatically rollback successful artifact items. Rejected because Valence Control does not own runtime-local apply state and rollback may not exist.
+- Automatically rollback successful artifact items. Rejected because Elsa Control does not own runtime-local apply state and rollback may not exist.
 - Mark the run succeeded with warnings. Rejected because the revision was not fully applied.
 
 ## Decision 6: Stale or missing engine capability metadata blocks deployment

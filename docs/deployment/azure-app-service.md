@@ -40,20 +40,20 @@ confirm the detected Aspire AppHost.
 
 ## GitHub Actions Deployment
 
-The `Azure Valence Control API Deploy` workflow runs on pushes to `main` and can also be run
+The `Azure Elsa Control API Deploy` workflow runs on pushes to `main` and can also be run
 manually from GitHub Actions. Normal `main` deployments build the console,
 build the API container with the console static assets mounted
 under `/admin`, push it to ACR, and update the existing App Service site
 container:
 
 ```bash
-docker build --file src/Hosting/ValenceControl.Api/Dockerfile --tag <acr>/<repo>:<sha> .
+docker build --file src/Hosting/ElsaControl.Api/Dockerfile --tag <acr>/<repo>:<sha> .
 docker push <acr>/<repo>:<sha>
 az webapp sitecontainers update ...
 ```
 
-The Dockerfile uses a Node build stage for `src/Hosting/ValenceControl.Console` and copies
-the Vite `dist` output into `src/Hosting/ValenceControl.Api/wwwroot/admin` before
+The Dockerfile uses a Node build stage for `src/Hosting/ElsaControl.Console` and copies
+the Vite `dist` output into `src/Hosting/ElsaControl.Api/wwwroot/admin` before
 `dotnet publish`. ASP.NET Core serves `/admin` as the console SPA and keeps the
 admin API endpoints under `/api/admin`.
 
@@ -85,29 +85,29 @@ Required GitHub Actions variables:
 - `AZURE_TENANT_ID`: Microsoft Entra tenant ID.
 - `AZURE_SUBSCRIPTION_ID`: target Azure subscription ID.
 - `AZURE_ENV_NAME`: existing or desired `azd` environment name, for example
-  `valence-control`.
+  `elsa-control`.
 - `AZURE_LOCATION`: Azure region for the `azd` environment, for example
   `westeurope`.
 - `AZURE_RESOURCE_GROUP`: resource group containing the deployed App Service,
-  for example `rg-valence-control`.
+  for example `rg-elsa-control`.
 - `AZURE_WEBAPP_NAME`: API App Service name, for example `api-k35qdj734hds2`.
 - `AZURE_APP_SERVICE_DASHBOARD_URI`: Aspire dashboard URL emitted by `azd up`.
 - `AZURE_CONTAINER_REGISTRY_ENDPOINT`: ACR login server for app image pushes,
-  for example `valencecontrolacrk35qdj734hds2.azurecr.io`.
+  for example `elsacontrolacrk35qdj734hds2.azurecr.io`.
 - `API_IDENTITY_CLIENTID` and `API_IDENTITY_ID`: managed identity values emitted
   by `azd up` for the API Web App.
 - `CONTROL_SQL_SQLSERVERFQDN`: Azure SQL server FQDN emitted by `azd up`.
-- `VALENCE_CONTROL_AZURE_APP_SERVICE_DASHBOARD_URI`: Aspire dashboard URL
+- `ELSA_CONTROL_AZURE_APP_SERVICE_DASHBOARD_URI`: Aspire dashboard URL
   emitted by `azd up`.
-- `VALENCE_CONTROL_AZURE_CONTAINER_REGISTRY_ENDPOINT`: ACR login server
+- `ELSA_CONTROL_AZURE_CONTAINER_REGISTRY_ENDPOINT`: ACR login server
   emitted by `azd up`.
-- `VALENCE_CONTROL_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID` and
-  `VALENCE_CONTROL_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID`: managed
+- `ELSA_CONTROL_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID` and
+  `ELSA_CONTROL_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID`: managed
   identity values emitted by `azd up` for ACR image pushes.
-- `VALENCE_CONTROL_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_ID` and
-  `VALENCE_CONTROL_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_PRINCIPAL_ID`:
+- `ELSA_CONTROL_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_ID` and
+  `ELSA_CONTROL_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_PRINCIPAL_ID`:
   managed identity values emitted by `azd up` for Web App updates.
-- `VALENCE_CONTROL_PLANID`: App Service plan resource ID emitted by
+- `ELSA_CONTROL_PLANID`: App Service plan resource ID emitted by
   `azd up`.
 
 Required GitHub Actions secrets:
@@ -128,7 +128,7 @@ Use the bootstrap script to recreate or refresh the GitHub `production`
 environment wiring from the selected `azd` environment:
 
 ```bash
-scripts/bootstrap-github-azure.sh --azd-environment valence-control
+scripts/bootstrap-github-azure.sh --azd-environment elsa-control
 ```
 
 The script:
@@ -184,8 +184,8 @@ injects `ConnectionStrings__Catalog`, and sets `Database__Provider=SqlServer`.
 
 Each provider has its own EF Core migration assembly:
 
-- SQLite: `ValenceControl.PackageCatalog.Persistence.SqliteMigrations`
-- SQL Server/Azure SQL: `ValenceControl.PackageCatalog.Persistence.SqlServerMigrations`
+- SQLite: `ElsaControl.PackageCatalog.Persistence.SqliteMigrations`
+- SQL Server/Azure SQL: `ElsaControl.PackageCatalog.Persistence.SqlServerMigrations`
 
 The API selects the matching migration assembly with the provider and applies
 migrations at startup outside the `Testing` environment.

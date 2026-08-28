@@ -89,5 +89,5 @@ When a reference is created on the management page:
 Every creation and management area must avoid generic "secrets" wording that could imply runtime secret management. Prefer:
 - `Engine credential store`
 - `Credential reference`
-- `Valence Control-to-engine credentials`
+- `Elsa Control-to-engine credentials`
 - `Runtime secrets remain managed inside runtimes`

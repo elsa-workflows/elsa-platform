@@ -2,7 +2,7 @@
 
 ## Proprietary project
 
-Valence Control is proprietary commercial software. Do not submit external pull
+Elsa Control is proprietary commercial software. Do not submit external pull
 requests unless Valence Works has explicitly invited the contribution under
 written contributor terms.
 

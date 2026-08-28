@@ -5,7 +5,7 @@
 A package project opts in with:
 
 ```xml
-<PackageReference Include="ValenceControl.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
+<PackageReference Include="Elsa.Specifications.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
 ```
 
 The generator package supplies:
@@ -58,21 +58,21 @@ Rules:
 
 ## Generator Package Layout
 
-Recommended generated `.nupkg` shape for `ValenceControl.PackageManifest.Generator`:
+Recommended generated `.nupkg` shape for `Elsa.Specifications.PackageManifest.Generator`:
 
 ```text
 build/
-├── ValenceControl.PackageManifest.Generator.props
-└── ValenceControl.PackageManifest.Generator.targets
+├── Elsa.Specifications.PackageManifest.Generator.props
+└── Elsa.Specifications.PackageManifest.Generator.targets
 buildTransitive/
-├── ValenceControl.PackageManifest.Generator.props
-└── ValenceControl.PackageManifest.Generator.targets
+├── Elsa.Specifications.PackageManifest.Generator.props
+└── Elsa.Specifications.PackageManifest.Generator.targets
 tasks/
-└── ValenceControl.PackageManifest.Generator.MSBuild.dll
+└── Elsa.Specifications.PackageManifest.Generator.MSBuild.dll
 contentFiles/
 └── cs/
     └── any/
-        └── ValenceControl.PackageManifest.Generator.Hints/
+        └── Elsa.Specifications.PackageManifest.Generator.Hints/
             ├── ManifestSettingAttribute.cs
             ├── ManifestIgnoreAttribute.cs
             └── ManifestExtensionAttribute.cs

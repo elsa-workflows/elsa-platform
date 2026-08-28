@@ -1,0 +1,69 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\..\PackageCatalog\ElsaControl.PackageCatalog.Abstractions\ElsaControl.PackageCatalog.Abstractions.csproj" />
+    <ProjectReference Include="..\..\PackageCatalog\ElsaControl.PackageCatalog.Core\ElsaControl.PackageCatalog.Core.csproj" />
+    <ProjectReference Include="..\..\PackageCatalog\ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore\ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\..\PackageCatalog\ElsaControl.PackageCatalog.Persistence.SqliteMigrations\ElsaControl.PackageCatalog.Persistence.SqliteMigrations.csproj" />
+    <ProjectReference Include="..\..\PackageCatalog\ElsaControl.PackageCatalog.Persistence.SqlServerMigrations\ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.csproj" />
+    <ProjectReference Include="..\..\PackageCatalog\ElsaControl.PackageCatalog.Sources.NuGet\ElsaControl.PackageCatalog.Sources.NuGet.csproj" />
+    <ProjectReference Include="..\ElsaControl.ServiceDefaults\ElsaControl.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\..\Deployment\ElsaControl.Deployment.Core\ElsaControl.Deployment.Core.csproj" />
+    <ProjectReference Include="..\..\Deployment\ElsaControl.Deployment.Artifacts\ElsaControl.Deployment.Artifacts.csproj" />
+    <ProjectReference Include="..\..\RuntimeBuilder\ElsaControl.RuntimeBuilder.Abstractions\ElsaControl.RuntimeBuilder.Abstractions.csproj" />
+    <ProjectReference Include="..\..\RuntimeBuilder\ElsaControl.RuntimeBuilder.Core\ElsaControl.RuntimeBuilder.Core.csproj" />
+    <ProjectReference Include="..\..\RuntimeBuilder\ElsaControl.RuntimeBuilder.DeploymentTemplates\ElsaControl.RuntimeBuilder.DeploymentTemplates.csproj" />
+    <ProjectReference Include="..\..\Weaver\ElsaControl.Weaver.Core\ElsaControl.Weaver.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Package source sync uses the NuGet client libraries, which resolve their user config and HTTP
+         cache from $HOME. In the published container HOME defaults to the read-only /app, so sync fails
+         with "Failed to read NuGet.Config due to unauthorized access". App Service rejects HOME as an
+         app setting, so it is baked into the image instead, pointing at a writable directory. -->
+    <ContainerEnvironmentVariable Include="HOME" Value="/tmp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Elsa.Specifications.PackageManifests" />
+    <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="ConsoleLogStreaming.AspNetCore" />
+    <PackageReference Include="JetBrains.Annotations" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.OpenApi" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
+  </ItemGroup>
+
+  <!-- The console is a Vite app served from /admin. The Dockerfile builds it, but azd/Aspire publish
+       the API with .NET SDK container publishing, which never runs that Dockerfile - so the deployed
+       image shipped without the console and /admin fell back to the "assets not built" placeholder.
+       Building it here means any publish path produces a complete image. Set SkipAdminConsoleBuild
+       when a pipeline has already produced dist/ (the container build does this). -->
+  <PropertyGroup>
+    <AdminConsoleRoot>$(MSBuildThisFileDirectory)../ElsaControl.Console/</AdminConsoleRoot>
+  </PropertyGroup>
+
+  <Target Name="BuildAdminConsole" BeforeTargets="ComputeFilesToPublish"
+          Condition="'$(SkipAdminConsoleBuild)' != 'true' AND Exists('$(AdminConsoleRoot)package.json')">
+    <Exec Command="npm ci --no-audit --no-fund" WorkingDirectory="$(AdminConsoleRoot)"
+          Condition="!Exists('$(AdminConsoleRoot)node_modules')" />
+    <Exec Command="npm run build" WorkingDirectory="$(AdminConsoleRoot)" />
+  </Target>
+
+  <Target Name="PublishAdminConsole" AfterTargets="ComputeFilesToPublish"
+          Condition="Exists('$(AdminConsoleRoot)dist')">
+    <ItemGroup>
+      <AdminConsoleDist Include="$(AdminConsoleRoot)dist/**/*" />
+      <ResolvedFileToPublish Include="@(AdminConsoleDist->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">
+        <RelativePath>wwwroot/admin/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
+</Project>

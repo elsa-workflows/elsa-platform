@@ -1,4 +1,4 @@
-# Research: Valence Control Package Catalog
+# Research: Elsa Control Package Catalog
 
 ## Decision: Target .NET 10 LTS
 
@@ -23,9 +23,9 @@ EF Core persistence, and NuGet packaging.
 
 **Rationale**: The constitution requires modular monolith first, and the project
 preference is onion-style layering rather than separate Application and Domain
-projects. `ValenceControl.PackageCatalog.Core` keeps catalog entities, models, invariants, and
+projects. `ElsaControl.PackageCatalog.Core` keeps catalog entities, models, invariants, and
 small workflow services in the center. API, persistence, and NuGet packaging
-stay outside that core. `ValenceControl.PackageManifests` remains free from catalog
+stay outside that core. `Elsa.Specifications.PackageManifests` remains free from catalog
 persistence and runtime implementation dependencies.
 
 **Alternatives considered**:

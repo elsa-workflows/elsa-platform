@@ -1,13 +1,13 @@
 @description('The location for the resource(s) to be deployed.')
 param location string = resourceGroup().location
 
-param valence_control_outputs_azure_container_registry_endpoint string
+param elsa_control_outputs_azure_container_registry_endpoint string
 
-param valence_control_outputs_planid string
+param elsa_control_outputs_planid string
 
-param valence_control_outputs_azure_container_registry_managed_identity_id string
+param elsa_control_outputs_azure_container_registry_managed_identity_id string
 
-param valence_control_outputs_azure_container_registry_managed_identity_client_id string
+param elsa_control_outputs_azure_container_registry_managed_identity_client_id string
 
 param api_containerimage string
 
@@ -32,11 +32,11 @@ param api_identity_outputs_id string
 
 param api_identity_outputs_clientid string
 
-param valence_control_outputs_azure_app_service_dashboard_uri string
+param elsa_control_outputs_azure_app_service_dashboard_uri string
 
-param valence_control_outputs_azure_website_contributor_managed_identity_id string
+param elsa_control_outputs_azure_website_contributor_managed_identity_id string
 
-param valence_control_outputs_azure_website_contributor_managed_identity_principal_id string
+param elsa_control_outputs_azure_website_contributor_managed_identity_principal_id string
 
 resource mainContainer 'Microsoft.Web/sites/sitecontainers@2025-03-01' = {
   name: 'main'
@@ -45,7 +45,7 @@ resource mainContainer 'Microsoft.Web/sites/sitecontainers@2025-03-01' = {
     image: api_containerimage
     isMain: true
     targetPort: api_containerport
-    userManagedIdentityClientId: valence_control_outputs_azure_container_registry_managed_identity_client_id
+    userManagedIdentityClientId: elsa_control_outputs_azure_container_registry_managed_identity_client_id
   }
   parent: webapp
 }
@@ -54,13 +54,13 @@ resource webapp 'Microsoft.Web/sites@2025-03-01' = {
   name: take('${toLower('api')}-${uniqueString(resourceGroup().id)}', 60)
   location: location
   properties: {
-    serverFarmId: valence_control_outputs_planid
+    serverFarmId: elsa_control_outputs_planid
     keyVaultReferenceIdentity: api_identity_outputs_id
     siteConfig: {
       numberOfWorkers: 1
       linuxFxVersion: 'SITECONTAINERS'
       acrUseManagedIdentityCreds: true
-      acrUserManagedIdentityID: valence_control_outputs_azure_container_registry_managed_identity_client_id
+      acrUserManagedIdentityID: elsa_control_outputs_azure_container_registry_managed_identity_client_id
       appSettings: [
         {
           name: 'WEBSITES_PORT'
@@ -196,7 +196,7 @@ resource webapp 'Microsoft.Web/sites@2025-03-01' = {
         }
         {
           name: 'ASPIRE_ENVIRONMENT_NAME'
-          value: 'valence-control'
+          value: 'elsa-control'
         }
         {
           name: 'OTEL_SERVICE_NAME'
@@ -216,11 +216,11 @@ resource webapp 'Microsoft.Web/sites@2025-03-01' = {
         }
         {
           name: 'OTEL_COLLECTOR_URL'
-          value: valence_control_outputs_azure_app_service_dashboard_uri
+          value: elsa_control_outputs_azure_app_service_dashboard_uri
         }
         {
           name: 'OTEL_CLIENT_ID'
-          value: valence_control_outputs_azure_container_registry_managed_identity_client_id
+          value: elsa_control_outputs_azure_container_registry_managed_identity_client_id
         }
       ]
     }
@@ -228,16 +228,16 @@ resource webapp 'Microsoft.Web/sites@2025-03-01' = {
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
-      '${valence_control_outputs_azure_container_registry_managed_identity_id}': { }
+      '${elsa_control_outputs_azure_container_registry_managed_identity_id}': { }
       '${api_identity_outputs_id}': { }
     }
   }
 }
 
 resource api_website_ra 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(webapp.id, valence_control_outputs_azure_website_contributor_managed_identity_id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'de139f84-1756-47ae-9be6-808fbbe84772'))
+  name: guid(webapp.id, elsa_control_outputs_azure_website_contributor_managed_identity_id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'de139f84-1756-47ae-9be6-808fbbe84772'))
   properties: {
-    principalId: valence_control_outputs_azure_website_contributor_managed_identity_principal_id
+    principalId: elsa_control_outputs_azure_website_contributor_managed_identity_principal_id
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'de139f84-1756-47ae-9be6-808fbbe84772')
     principalType: 'ServicePrincipal'
   }

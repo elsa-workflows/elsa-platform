@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`ValenceControl.Deployment.Abstractions` defines the deployment language shared by manifest, artifact, engine, CLI, API, operator, and extension packages. It does not implement parsing, IO, reconciliation, persistence, transport, or runtime adapters.
+`ElsaControl.Deployment.Abstractions` defines the deployment language shared by manifest, artifact, engine, CLI, API, operator, and extension packages. It does not implement parsing, IO, reconciliation, persistence, transport, or runtime adapters.
 
 ## Value Contracts
 

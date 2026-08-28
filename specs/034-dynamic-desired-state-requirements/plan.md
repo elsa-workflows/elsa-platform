@@ -12,13 +12,13 @@ Make desired-state revision creation derive additional record editors from envir
 
 **Language/Version**: C# on .NET 10 for deployment core/API; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace authorization and deployment permission grants, `ValenceControl.Deployment.Core` tier capability services, EF-backed deployment store projections, React Router, TanStack Query, Vitest, xUnit and its built-in assertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace authorization and deployment permission grants, `ElsaControl.Deployment.Core` tier capability services, EF-backed deployment store projections, React Router, TanStack Query, Vitest, xUnit and its built-in assertions.
 
 **Storage**: No new persistence. Requirement metadata is computed from existing environment tier capabilities and stable platform requirement definitions.
 
 **Testing**: Focused xUnit API tests for requirement metadata; Vitest coverage for new revision form visibility/submission; `npm run typecheck`; focused console tests; focused API tests; `git diff --check`.
 
-**Target platform**: Valence Control API and hosted React console.
+**Target platform**: Elsa Control API and hosted React console.
 
 **Project Type**: Modular monolith web service plus hosted console.
 
@@ -62,16 +62,16 @@ specs/034-dynamic-desired-state-requirements/
 
 ```text
 src/
-├── ValenceControl.Deployment.Core/
+├── ElsaControl.Deployment.Core/
 │   └── Workspace/
-├── ValenceControl.Api/
+├── ElsaControl.Api/
 │   └── Workspace/
-└── ValenceControl.Console/
+└── ElsaControl.Console/
     └── src/features/deployments/
 
 tests/
-├── ValenceControl.Api.Tests/
-└── ValenceControl.Console/src/features/deployments/
+├── ElsaControl.Api.Tests/
+└── ElsaControl.Console/src/features/deployments/
 ```
 
 **Structure Decision**: Extend the existing workspace deployment core/API/console flow in place. Requirement metadata belongs next to tier capability and deployment validation logic, not in a new subsystem.

@@ -1,6 +1,6 @@
 # Commercial-licence legal review
 
-The repository now contains the Valence Control Commercial License, but it is
+The repository now contains the Elsa Control Commercial License, but it is
 not ready for commercial distribution. Every item below requires qualified
 legal review.
 

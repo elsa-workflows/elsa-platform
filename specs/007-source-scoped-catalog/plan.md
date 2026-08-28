@@ -38,7 +38,7 @@ The plan MUST answer these gates:
 
 - **Manifest-first**: Pass. Package metadata remains manifest-derived; filtering and identity changes do not execute package code.
 - **No arbitrary code execution**: Pass. Source filtering and account ownership do not change package inspection safety boundaries.
-- **Stable contracts**: Pass. No `ValenceControl.PackageManifests` wire contract changes are required.
+- **Stable contracts**: Pass. No `Elsa.Specifications.PackageManifests` wire contract changes are required.
 - **Schema evolution**: Pass. Public API contracts and persistence schema changes are documented separately from manifest schema evolution.
 - **Immutable versions**: Pass. Source-qualified identity preserves existing version immutability and suspicious-change behavior.
 - **Approval separation**: Pass. Public filtering still returns only approved/listed/valid versions and keeps approval independent from validity.
@@ -70,32 +70,32 @@ specs/007-source-scoped-catalog/
 
 ```text
 src/
-├── ValenceControl.PackageCatalog.Core/
+├── ElsaControl.PackageCatalog.Core/
 │   ├── Packages/
 │   │   ├── PublicCatalogQueryService.cs
 │   │   └── PackageModels.cs
 │   ├── Sources/
 │   │   └── PublicSourceQueryService.cs
 │   └── Accounts/                  # later account/workspace slice
-├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
+├── ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/
 │   ├── PublicCatalogQueries.cs
 │   ├── PublicSourceQueries.cs
 │   └── Models/CatalogModelConfiguration.cs
-├── ValenceControl.Api/
+├── ElsaControl.Api/
 │   └── Public/
 │       ├── Sources/
 │       ├── Packages/
 │       └── Builder/
-└── ValenceControl.Console/
+└── ElsaControl.Console/
     └── src/features/sources/       # admin/operator source flags if needed
 
 tests/
-├── ValenceControl.PackageCatalog.Core.Tests/
-├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
-└── ValenceControl.Api.Tests/
+├── ElsaControl.PackageCatalog.Core.Tests/
+├── ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+└── ElsaControl.Api.Tests/
 ```
 
-**Structure Decision**: Keep public source filtering and source-qualified package queries in `ValenceControl.PackageCatalog.Core` and EF Core query adapters because visibility is domain/query behavior. Expose public browseable sources and source-qualified package routes under `ValenceControl.Api/Public`. Defer account/workspace source management to a later `Accounts` or `Workspaces` area once paid custom feeds are actively implemented.
+**Structure Decision**: Keep public source filtering and source-qualified package queries in `ElsaControl.PackageCatalog.Core` and EF Core query adapters because visibility is domain/query behavior. Expose public browseable sources and source-qualified package routes under `ElsaControl.Api/Public`. Defer account/workspace source management to a later `Accounts` or `Workspaces` area once paid custom feeds are actively implemented.
 
 ## Complexity Tracking
 

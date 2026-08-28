@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Move Runtime Builder deployment artifact generation out of the Lovable/browser frontend and into the Valence Control backend so the same bundle output can be used by Lovable, future CLI clients, Weaver/agent automation, saved configurations, and later deployment workflows."
+**Input**: User description: "Move Runtime Builder deployment artifact generation out of the Lovable/browser frontend and into the Elsa Control backend so the same bundle output can be used by Lovable, future CLI clients, Weaver/agent automation, saved configurations, and later deployment workflows."
 
 ## Clarifications
 

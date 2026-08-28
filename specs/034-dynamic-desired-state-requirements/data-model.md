@@ -2,7 +2,7 @@
 
 ## DesiredStateRequirement
 
-Valence Control-defined metadata describing a desired-state record expected by an environment tier or contextual validation action.
+Elsa Control-defined metadata describing a desired-state record expected by an environment tier or contextual validation action.
 
 Fields:
 

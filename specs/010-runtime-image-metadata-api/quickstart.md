@@ -52,6 +52,6 @@ Lovable may keep purely presentational fallback fields during migration, includi
 ## Validation Commands
 
 ```bash
-dotnet build ValenceControl.sln --no-restore
-dotnet test ValenceControl.sln --no-build
+dotnet build ElsaControl.sln --no-restore
+dotnet test ElsaControl.sln --no-build
 ```

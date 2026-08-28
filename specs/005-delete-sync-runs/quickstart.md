@@ -30,8 +30,8 @@
 Run:
 
 ```sh
-dotnet test tests/ValenceControl.PackageCatalog.Core.Tests/ValenceControl.PackageCatalog.Core.Tests.csproj --filter SyncRunCleanup
-dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter SyncPersistence
-dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter AdminSync
-cd src/ValenceControl.Console && npm test -- --run src/features/sync-runs/SyncRunsPage.test.tsx
+dotnet test tests/ElsaControl.PackageCatalog.Core.Tests/ElsaControl.PackageCatalog.Core.Tests.csproj --filter SyncRunCleanup
+dotnet test tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter SyncPersistence
+dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj --filter AdminSync
+cd src/ElsaControl.Console && npm test -- --run src/features/sync-runs/SyncRunsPage.test.tsx
 ```

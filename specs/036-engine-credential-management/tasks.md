@@ -12,8 +12,8 @@
 
 **Purpose**: Confirm baseline and prepare shared code boundaries.
 
-- [X] T001 Inspect current deployment routing/navigation and credential panel usage in `src/ValenceControl.Console/src/app/routes.tsx`, `src/ValenceControl.Console/src/app/AppShell.tsx`, and `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
-- [X] T002 Inspect existing deployment credential API/query keys and test helpers in `src/ValenceControl.Console/src/features/deployments/deploymentApi.ts`, `src/ValenceControl.Console/src/lib/query/queryClient.tsx`, and `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T001 Inspect current deployment routing/navigation and credential panel usage in `src/ElsaControl.Console/src/app/routes.tsx`, `src/ElsaControl.Console/src/app/AppShell.tsx`, and `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T002 Inspect existing deployment credential API/query keys and test helpers in `src/ElsaControl.Console/src/features/deployments/deploymentApi.ts`, `src/ElsaControl.Console/src/lib/query/queryClient.tsx`, and `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ---
 
@@ -21,9 +21,9 @@
 
 **Purpose**: Create reusable credential-management building blocks shared by setup wizard and standalone page.
 
-- [X] T003 Extract or adapt the existing `SecretStoresPanel` into a reusable engine credential management component in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
-- [X] T004 Add reusable mutation/query invalidation helpers for store/reference create, update, rotate, usage, and archive flows in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
-- [X] T005 Ensure credential management copy consistently says engine credentials and platform-to-engine credentials in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T003 Extract or adapt the existing `SecretStoresPanel` into a reusable engine credential management component in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T004 Add reusable mutation/query invalidation helpers for store/reference create, update, rotate, usage, and archive flows in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T005 Ensure credential management copy consistently says engine credentials and platform-to-engine credentials in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
 
 **Checkpoint**: Shared component can still serve the new application setup credential step.
 
@@ -37,15 +37,15 @@
 
 ### Tests for User Story 1
 
-- [X] T006 [P] [US1] Add route/navigation test coverage for the Engine credentials page in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
-- [X] T007 [P] [US1] Add read-only/empty state test coverage for the standalone credential management page in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T006 [P] [US1] Add route/navigation test coverage for the Engine credentials page in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T007 [P] [US1] Add read-only/empty state test coverage for the standalone credential management page in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 1
 
-- [X] T008 [US1] Add `DeploymentCredentialsPage` export and page shell in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
-- [X] T009 [US1] Add `/admin/deployments/credentials` route in `src/ValenceControl.Console/src/app/routes.tsx`
-- [X] T010 [US1] Add an `Engine credentials` navigation item under Deployments in `src/ValenceControl.Console/src/app/AppShell.tsx`
-- [X] T011 [US1] Render active stores/references by default and archived records through an explicit filter in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T008 [US1] Add `DeploymentCredentialsPage` export and page shell in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T009 [US1] Add `/admin/deployments/credentials` route in `src/ElsaControl.Console/src/app/routes.tsx`
+- [X] T010 [US1] Add an `Engine credentials` navigation item under Deployments in `src/ElsaControl.Console/src/app/AppShell.tsx`
+- [X] T011 [US1] Render active stores/references by default and archived records through an explicit filter in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
 
 **Checkpoint**: User Story 1 is fully functional and testable independently.
 
@@ -59,15 +59,15 @@
 
 ### Tests for User Story 2
 
-- [X] T012 [P] [US2] Add standalone create-store and create-reference tests in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
-- [X] T013 [P] [US2] Add edit metadata and local rotation tests in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T012 [P] [US2] Add standalone create-store and create-reference tests in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T013 [P] [US2] Add edit metadata and local rotation tests in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 2
 
-- [X] T014 [US2] Add standalone store create/edit form behavior in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
-- [X] T015 [US2] Add standalone credential reference create/edit form behavior in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
-- [X] T016 [US2] Add local encrypted credential rotation behavior with non-empty value validation in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
-- [X] T017 [US2] Invalidate store/reference/cockpit queries after mutations in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T014 [US2] Add standalone store create/edit form behavior in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T015 [US2] Add standalone credential reference create/edit form behavior in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T016 [US2] Add local encrypted credential rotation behavior with non-empty value validation in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T017 [US2] Invalidate store/reference/cockpit queries after mutations in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
 
 **Checkpoint**: User Story 2 works without entering the new application setup wizard.
 
@@ -81,14 +81,14 @@
 
 ### Tests for User Story 3
 
-- [X] T018 [P] [US3] Add usage disclosure and archive confirmation tests in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
-- [X] T019 [P] [US3] Add rotation usage-disclosure test for local encrypted references in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T018 [P] [US3] Add usage disclosure and archive confirmation tests in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T019 [P] [US3] Add rotation usage-disclosure test for local encrypted references in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 3
 
-- [X] T020 [US3] Add on-demand usage expansion with application/environment/engine context in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
-- [X] T021 [US3] Add archive confirmation that discloses usage before submitting store/reference archive in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
-- [X] T022 [US3] Add rotation confirmation or inline usage disclosure before local credential rotation in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T020 [US3] Add on-demand usage expansion with application/environment/engine context in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T021 [US3] Add archive confirmation that discloses usage before submitting store/reference archive in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T022 [US3] Add rotation confirmation or inline usage disclosure before local credential rotation in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
 
 **Checkpoint**: User Story 3 provides impact context before disruptive actions.
 
@@ -102,13 +102,13 @@
 
 ### Tests for User Story 4
 
-- [X] T023 [P] [US4] Add engine registration empty-credential link test in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
-- [X] T024 [P] [US4] Add query-refresh test proving created active references are selectable in engine setup in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T023 [P] [US4] Add engine registration empty-credential link test in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T024 [P] [US4] Add query-refresh test proving created active references are selectable in engine setup in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 4
 
-- [X] T025 [US4] Add manage-credentials route links from engine registration/edit empty credential states in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
-- [X] T026 [US4] Ensure credential creation invalidates engine setup options for the selected workspace in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T025 [US4] Add manage-credentials route links from engine registration/edit empty credential states in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T026 [US4] Ensure credential creation invalidates engine setup options for the selected workspace in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
 
 **Checkpoint**: User Story 4 connects standalone management with engine setup.
 
@@ -122,7 +122,7 @@
 - [X] T028 Run `npm run test -- src/features/deployments/DeploymentsPage.test.tsx`
 - [X] T029 Run `npm run typecheck`
 - [X] T030 Run `git diff --check`
-- [X] T031 Run targeted .NET API tests only if API behavior changed: `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --no-restore --filter WorkspaceDeploymentApiTests` (not required; no API behavior changed)
+- [X] T031 Run targeted .NET API tests only if API behavior changed: `dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj --no-restore --filter WorkspaceDeploymentApiTests` (not required; no API behavior changed)
 - [X] T032 Perform self-review for critical issues across credential safety, permission gating, workspace scoping, and query invalidation
 - [X] T033 Open PR, address critical review findings, and merge after checks pass
 

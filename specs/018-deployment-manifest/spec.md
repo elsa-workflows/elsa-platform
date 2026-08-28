@@ -6,13 +6,13 @@
 
 **Status**: Draft
 
-**Input**: User description: "Implement the next Phase 1 deployment slice: v1alpha deployment manifest parsing, schema validation, and normalization for Valence Control."
+**Input**: User description: "Implement the next Phase 1 deployment slice: v1alpha deployment manifest parsing, schema validation, and normalization for Elsa Control."
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Parse A Versioned Environment Manifest (Priority: P1)
 
-A platform maintainer can load a v1alpha environment manifest and convert its workflow, variable, feature, package, and recipe entries into normalized deployment resources that use the foundation contracts from `ValenceControl.Deployment.Abstractions`.
+A platform maintainer can load a v1alpha environment manifest and convert its workflow, variable, feature, package, and recipe entries into normalized deployment resources that use the foundation contracts from `ElsaControl.Deployment.Abstractions`.
 
 **Why this priority**: The manifest is the first input to the deployment loop. Artifact, validation, dry-run, apply, CLI, and API work cannot proceed reliably until the manifest shape is parsed into the shared deployment resource model.
 
@@ -70,9 +70,9 @@ A future deployment package can add new metadata and resource handler bindings w
 
 ### Functional Requirements
 
-- **FR-001**: The system MUST define a `ValenceControl.Deployment.Manifest` package that depends on `ValenceControl.Deployment.Abstractions` and not on engine, CLI, API, Package Catalog implementation, Runtime Builder implementation, persistence, or hosting packages.
+- **FR-001**: The system MUST define a `ElsaControl.Deployment.Manifest` package that depends on `ElsaControl.Deployment.Abstractions` and not on engine, CLI, API, Package Catalog implementation, Runtime Builder implementation, persistence, or hosting packages.
 - **FR-002**: The system MUST parse v1alpha environment manifests from YAML and JSON text.
-- **FR-003**: The system MUST require `apiVersion: valence-control/v1alpha1`, `kind: EnvironmentManifest`, and `metadata.name`.
+- **FR-003**: The system MUST require `apiVersion: elsa-control/v1alpha1`, `kind: EnvironmentManifest`, and `metadata.name`.
 - **FR-004**: The system MUST normalize workflow, variable, feature, package, and recipe entries into `DeploymentResource` instances with stable resource types.
 - **FR-005**: The system MUST preserve safe manifest metadata and resource metadata as string dictionaries.
 - **FR-006**: The system MUST compute deterministic desired-state hashes for normalized resources.

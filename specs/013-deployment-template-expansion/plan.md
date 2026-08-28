@@ -35,10 +35,10 @@ Extend the bundle generation service with target-specific renderers while keepin
 ## Project Structure
 
 ```text
-src/ValenceControl.PackageCatalog.Core/Builder/Renderers/
-src/ValenceControl.PackageCatalog.Core/DeploymentTemplates/
-tests/ValenceControl.PackageCatalog.Core.Tests/
-tests/ValenceControl.Api.Tests/
+src/ElsaControl.PackageCatalog.Core/Builder/Renderers/
+src/ElsaControl.PackageCatalog.Core/DeploymentTemplates/
+tests/ElsaControl.PackageCatalog.Core.Tests/
+tests/ElsaControl.Api.Tests/
 ```
 
 ## Complexity Tracking

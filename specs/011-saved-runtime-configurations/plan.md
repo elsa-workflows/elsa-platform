@@ -55,14 +55,14 @@ specs/011-saved-runtime-configurations/
 
 ```text
 src/
-├── ValenceControl.PackageCatalog.Core/RuntimeConfigurations/
-├── ValenceControl.Api/Workspace/WorkspaceRuntimeConfigurationEndpoints.cs
-└── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
+├── ElsaControl.PackageCatalog.Core/RuntimeConfigurations/
+├── ElsaControl.Api/Workspace/WorkspaceRuntimeConfigurationEndpoints.cs
+└── ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/
 
 tests/
-├── ValenceControl.PackageCatalog.Core.Tests/
-├── ValenceControl.Api.Tests/
-└── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+├── ElsaControl.PackageCatalog.Core.Tests/
+├── ElsaControl.Api.Tests/
+└── ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
 ```
 
 ## Complexity Tracking

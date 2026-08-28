@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\ElsaControl.Deployment.Abstractions\ElsaControl.Deployment.Abstractions.csproj" />
+    <ProjectReference Include="..\ElsaControl.Deployment.Manifest\ElsaControl.Deployment.Manifest.csproj" />
+  </ItemGroup>
+</Project>

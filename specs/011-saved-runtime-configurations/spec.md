@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Let authenticated users save, reopen, edit, clone, version, and regenerate Valence Control Runtime Builder configurations while anonymous builder use remains local/browser-only."
+**Input**: User description: "Let authenticated users save, reopen, edit, clone, version, and regenerate Elsa Control Runtime Builder configurations while anonymous builder use remains local/browser-only."
 
 ## User Scenarios & Testing *(mandatory)*
 

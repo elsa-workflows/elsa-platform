@@ -12,8 +12,8 @@
 
 **Purpose**: Establish shared runtime-kind constants and locate affected projections.
 
-- [x] T001 Add official runtime-kind constants and normalization helpers in `src/ValenceControl.PackageManifests/Compatibility/RuntimeKindCompatibility.cs`
-- [x] T002 [P] Add runtime-kind sample manifests in `src/ValenceControl.PackageManifests/Schemas/examples/`
+- [x] T001 Add official runtime-kind constants and normalization helpers in `src/Elsa.Specifications.PackageManifests/Compatibility/RuntimeKindCompatibility.cs`
+- [x] T002 [P] Add runtime-kind sample manifests in `src/Elsa.Specifications.PackageManifests/Schemas/examples/`
 
 ---
 
@@ -21,13 +21,13 @@
 
 **Purpose**: Extend manifest contracts and validation before catalog/API/UI consumers depend on runtime-kind metadata.
 
-- [x] T003 Add package-level runtime kind support to `src/ValenceControl.PackageManifests/Compatibility/CompatibilityManifest.cs`
-- [x] T004 Add feature-level compatibility support to `src/ValenceControl.PackageManifests/FeatureManifest.cs`
-- [x] T005 Update schema contract for package and feature runtime kinds in `src/ValenceControl.PackageManifests/Schemas/elsa-package-manifest.v1.json`
-- [x] T006 Add runtime-kind validation to `src/ValenceControl.PackageManifests/Validation/ManifestValidator.cs`
-- [x] T007 [P] Add manifest contract and validation tests in `tests/ValenceControl.PackageManifests.Tests/ManifestRuntimeKindCompatibilityTests.cs`
-- [x] T008 Update generator override models to accept feature and package runtime kind declarations in `src/ValenceControl.PackageManifest.Generator.Core/Overrides/ManifestOverrideModels.cs`
-- [x] T009 [P] Add generator override validation tests in `tests/ValenceControl.PackageManifest.Generator.Core.Tests/FeatureDiscoveryTests.cs`
+- [x] T003 Add package-level runtime kind support to `src/Elsa.Specifications.PackageManifests/Compatibility/CompatibilityManifest.cs`
+- [x] T004 Add feature-level compatibility support to `src/Elsa.Specifications.PackageManifests/FeatureManifest.cs`
+- [x] T005 Update schema contract for package and feature runtime kinds in `src/Elsa.Specifications.PackageManifests/Schemas/elsa-package-manifest.v1.json`
+- [x] T006 Add runtime-kind validation to `src/Elsa.Specifications.PackageManifests/Validation/ManifestValidator.cs`
+- [x] T007 [P] Add manifest contract and validation tests in `tests/Elsa.Specifications.PackageManifests.Tests/ManifestRuntimeKindCompatibilityTests.cs`
+- [x] T008 Update generator override models to accept feature and package runtime kind declarations in `src/Elsa.Specifications.PackageManifest.Generator.Core/Overrides/ManifestOverrideModels.cs`
+- [x] T009 [P] Add generator override validation tests in `tests/Elsa.Specifications.PackageManifest.Generator.Core.Tests/FeatureDiscoveryTests.cs`
 
 **Checkpoint**: Manifest contracts can express and validate runtime-kind compatibility.
 
@@ -41,19 +41,19 @@
 
 ### Tests for User Story 1
 
-- [x] T010 [P] [US1] Add catalog projection tests for server/studio/mixed package filtering in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs`
-- [x] T011 [P] [US1] Add Runtime Builder catalog tests for excluding studio-only features in `tests/ValenceControl.Api.Tests/PublicBuilderApiTests.cs`
-- [x] T012 [P] [US1] Add API projection tests for runtime kind metadata in `tests/ValenceControl.Api.Tests/PublicPackagesApiTests.cs`
+- [x] T010 [P] [US1] Add catalog projection tests for server/studio/mixed package filtering in `tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs`
+- [x] T011 [P] [US1] Add Runtime Builder catalog tests for excluding studio-only features in `tests/ElsaControl.Api.Tests/PublicBuilderApiTests.cs`
+- [x] T012 [P] [US1] Add API projection tests for runtime kind metadata in `tests/ElsaControl.Api.Tests/PublicPackagesApiTests.cs`
 
 ### Implementation for User Story 1
 
-- [x] T013 [US1] Extend catalog feature/package models with effective runtime kinds in `src/ValenceControl.PackageCatalog.Abstractions/Catalog/PublicCatalogContracts.cs`
-- [x] T014 [US1] Persist package and feature runtime kinds through manifest ingestion in `src/ValenceControl.PackageCatalog.Core/Manifests/ManifestIngestionService.cs`
-- [x] T015 [US1] Preserve runtime kind metadata through existing stored manifest JSON in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/PublicCatalogQueries.cs`
-- [x] T016 [US1] Project effective runtime kinds from catalog queries in `src/ValenceControl.PackageCatalog.Core/Packages/PublicCatalogQueryService.cs` and `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/PublicCatalogQueries.cs`
-- [x] T017 [US1] Expose runtime kind metadata through public package/feature API contracts in `src/ValenceControl.Api/Public/Packages/PublicPackageContracts.cs` and `src/ValenceControl.Api/Public/Features/PublicFeatureContracts.cs`
-- [x] T018 [US1] Filter Elsa Server builder package/features by `elsa.server` in `src/ValenceControl.Api/Public/Builder/BuilderEndpoints.cs` and `src/ValenceControl.Api/Workspace/WorkspaceBuilderEndpoints.cs`
-- [x] T019 [US1] Update console runtime-builder models to carry runtime kind metadata in `src/ValenceControl.Console/src/features/runtime-builder/runtimeBuilderModels.ts`
+- [x] T013 [US1] Extend catalog feature/package models with effective runtime kinds in `src/ElsaControl.PackageCatalog.Abstractions/Catalog/PublicCatalogContracts.cs`
+- [x] T014 [US1] Persist package and feature runtime kinds through manifest ingestion in `src/ElsaControl.PackageCatalog.Core/Manifests/ManifestIngestionService.cs`
+- [x] T015 [US1] Preserve runtime kind metadata through existing stored manifest JSON in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/PublicCatalogQueries.cs`
+- [x] T016 [US1] Project effective runtime kinds from catalog queries in `src/ElsaControl.PackageCatalog.Core/Packages/PublicCatalogQueryService.cs` and `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/PublicCatalogQueries.cs`
+- [x] T017 [US1] Expose runtime kind metadata through public package/feature API contracts in `src/ElsaControl.Api/Public/Packages/PublicPackageContracts.cs` and `src/ElsaControl.Api/Public/Features/PublicFeatureContracts.cs`
+- [x] T018 [US1] Filter Elsa Server builder package/features by `elsa.server` in `src/ElsaControl.Api/Public/Builder/BuilderEndpoints.cs` and `src/ElsaControl.Api/Workspace/WorkspaceBuilderEndpoints.cs`
+- [x] T019 [US1] Update console runtime-builder models to carry runtime kind metadata in `src/ElsaControl.Console/src/features/runtime-builder/runtimeBuilderModels.ts`
 
 **Checkpoint**: User Story 1 is independently functional and testable.
 
@@ -67,15 +67,15 @@
 
 ### Tests for User Story 2
 
-- [x] T020 [P] [US2] Add manifest serialization round-trip tests for package and feature compatibility in `tests/ValenceControl.PackageManifests.Tests/ManifestSerializationTests.cs`
-- [x] T021 [P] [US2] Add manifest ingestion tests for package defaults and feature overrides in `tests/ValenceControl.PackageCatalog.Core.Tests/ManifestIngestionServiceTests.cs`
-- [x] T022 [P] [US2] Add persistence tests for preserving unknown valid runtime kinds through stored manifest JSON in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs`
+- [x] T020 [P] [US2] Add manifest serialization round-trip tests for package and feature compatibility in `tests/Elsa.Specifications.PackageManifests.Tests/ManifestSerializationTests.cs`
+- [x] T021 [P] [US2] Add manifest ingestion tests for package defaults and feature overrides in `tests/ElsaControl.PackageCatalog.Core.Tests/ManifestIngestionServiceTests.cs`
+- [x] T022 [P] [US2] Add persistence tests for preserving unknown valid runtime kinds through stored manifest JSON in `tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/SyncPersistenceTests.cs`
 
 ### Implementation for User Story 2
 
-- [x] T023 [US2] Implement effective runtime-kind resolution helpers in `src/ValenceControl.PackageCatalog.Core/Compatibility/RuntimeKindCompatibilityPolicy.cs`
-- [x] T024 [US2] Apply package-default and feature-override resolution during ingestion in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/PublicCatalogQueries.cs`
-- [x] T025 [US2] Preserve unknown valid runtime kinds in public feature/package projections in `src/ValenceControl.PackageCatalog.Abstractions/Catalog/PublicCatalogContracts.cs`
+- [x] T023 [US2] Implement effective runtime-kind resolution helpers in `src/ElsaControl.PackageCatalog.Core/Compatibility/RuntimeKindCompatibilityPolicy.cs`
+- [x] T024 [US2] Apply package-default and feature-override resolution during ingestion in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/PublicCatalogQueries.cs`
+- [x] T025 [US2] Preserve unknown valid runtime kinds in public feature/package projections in `src/ElsaControl.PackageCatalog.Abstractions/Catalog/PublicCatalogContracts.cs`
 
 **Checkpoint**: User Story 2 is independently functional and testable.
 
@@ -89,13 +89,13 @@
 
 ### Tests for User Story 3
 
-- [x] T026 [P] [US3] Add defaulting tests for undeclared manifests in `tests/ValenceControl.PackageCatalog.Core.Tests/ManifestIngestionServiceTests.cs`
-- [x] T027 [P] [US3] Add API tests proving undeclared packages project `elsa.server` compatibility in `tests/ValenceControl.Api.Tests/PublicPackageVersionApiTests.cs`
+- [x] T026 [P] [US3] Add defaulting tests for undeclared manifests in `tests/ElsaControl.PackageCatalog.Core.Tests/ManifestIngestionServiceTests.cs`
+- [x] T027 [P] [US3] Add API tests proving undeclared packages project `elsa.server` compatibility in `tests/ElsaControl.Api.Tests/PublicPackageVersionApiTests.cs`
 
 ### Implementation for User Story 3
 
-- [x] T028 [US3] Add backward-compatible server defaulting in `src/ValenceControl.PackageCatalog.Core/Compatibility/RuntimeKindCompatibilityPolicy.cs`
-- [x] T029 [US3] Ensure undeclared packages remain visible in existing package and Runtime Builder flows in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/PublicCatalogQueries.cs` and `src/ValenceControl.Api/Public/Builder/BuilderEndpoints.cs`
+- [x] T028 [US3] Add backward-compatible server defaulting in `src/ElsaControl.PackageCatalog.Core/Compatibility/RuntimeKindCompatibilityPolicy.cs`
+- [x] T029 [US3] Ensure undeclared packages remain visible in existing package and Runtime Builder flows in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/PublicCatalogQueries.cs` and `src/ElsaControl.Api/Public/Builder/BuilderEndpoints.cs`
 
 **Checkpoint**: User Story 3 is independently functional and testable.
 
@@ -105,9 +105,9 @@
 
 **Purpose**: Documentation, alignment, and verification.
 
-- [x] T030 [P] Update manifest author documentation in `src/ValenceControl.PackageManifests/README.md`
-- [x] T031 [P] Update generator documentation in `src/ValenceControl.PackageManifest.Generator/README.md`
-- [x] T032 [P] Update package catalog test fixtures in `tests/ValenceControl.PackageCatalog.Testing/ManifestFixtureBuilder.cs`
+- [x] T030 [P] Update manifest author documentation in `src/Elsa.Specifications.PackageManifests/README.md`
+- [x] T031 [P] Update generator documentation in `src/Elsa.Specifications.PackageManifest.Generator/README.md`
+- [x] T032 [P] Update package catalog test fixtures in `tests/ElsaControl.PackageCatalog.Testing/ManifestFixtureBuilder.cs`
 - [x] T033 Run quickstart validation commands from `specs/032-runtime-kind-compatibility/quickstart.md`
 - [x] T034 Run self-review against `specs/032-runtime-kind-compatibility/spec.md`, `plan.md`, and `tasks.md` and fix any high-priority findings
 

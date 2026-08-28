@@ -1,13 +1,13 @@
-# Valence Control
+# Elsa Control
 
-Valence Control is commercial deployment-governance and operations software for
+Elsa Control is commercial deployment-governance and operations software for
 professional teams using Elsa Workflows.
 
 Elsa Workflows remains a separate, MIT-licensed, vendor-neutral open-source
-project. Valence Control is optional commercial software developed and
+project. Elsa Control is optional commercial software developed and
 distributed by Valence Works.
 
-Valence Control is evolving into a central control plane for cooperating teams
+Elsa Control is evolving into a central control plane for cooperating teams
 that operate Elsa environments across development, test, staging, and
 production. Its direction includes canonical workflow-definition management,
 controlled promotion, configuration management, secret references and
@@ -20,8 +20,8 @@ control plane; they are not presented as an existing capability.
 
 ## Licensing
 
-Valence Control is proprietary software governed by the
-[Valence Control Commercial License](LICENSE), licensed by Skywalker Digital
+Elsa Control is proprietary software governed by the
+[Elsa Control Commercial License](LICENSE), licensed by Skywalker Digital
 B.V., trading as Valence Works. Qualified legal counsel must review and approve
 the licence before commercial distribution. Third-party components, including
 Elsa Workflows, retain their respective licences. See [LICENSING.md](LICENSING.md) and
@@ -52,18 +52,18 @@ workspace shell for those capabilities.
 
 ```text
 src/
-  ValenceControl.AppHost                         .NET Aspire orchestration
-  ValenceControl.Console                         React admin/workspace console
-  ValenceControl.PackageManifests                Manifest wire contract
-  ValenceControl.PackageManifest.Generator*      Generator, MSBuild task, and core logic
-  ValenceControl.PackageCatalog.*                API, core services, EF Core persistence, sources
-  ValenceControl.RuntimeBuilder.*                Runtime plans, bundles, deployment templates
-  ValenceControl.Deployment.*                    Deployment manifests, artifacts, engine contracts
-  ValenceControl.ServiceDefaults                 Shared host defaults
+  ElsaControl.AppHost                         .NET Aspire orchestration
+  ElsaControl.Console                         React admin/workspace console
+  Elsa.Specifications.PackageManifests                 Manifest wire contract (consumed from NuGet)
+  Elsa.Specifications.PackageManifest.Generator*       Generator packages (consumed from NuGet)
+  ElsaControl.PackageCatalog.*                API, core services, EF Core persistence, sources
+  ElsaControl.RuntimeBuilder.*                Runtime plans, bundles, deployment templates
+  ElsaControl.Deployment.*                    Deployment manifests, artifacts, engine contracts
+  ElsaControl.ServiceDefaults                 Shared host defaults
 
 tests/
-  ValenceControl.*.Tests                         Unit and integration-style test projects
-  ValenceControl.Console.E2E                     Playwright console smoke tests
+  ElsaControl.*.Tests                         Unit and integration-style test projects
+  ElsaControl.Console.E2E                     Playwright console smoke tests
 
 specs/
   001-...025-*                                  Spec Kit feature history and active plans
@@ -73,11 +73,11 @@ Subsystem boundaries matter. Deployment may consume catalog abstractions or clie
 
 ## Control-plane model
 
-The current control-plane model is centered on accounts and workspaces. Workspace is the tenant boundary for customer-owned catalog and builder data. Public catalog endpoints remain anonymous where appropriate, while workspace-scoped endpoints derive account and workspace context from configured Valence Control identity. Operator administration is separate and still supports an admin-key-backed local fallback.
+The current control-plane model is centered on accounts and workspaces. Workspace is the tenant boundary for customer-owned catalog and builder data. Public catalog endpoints remain anonymous where appropriate, while workspace-scoped endpoints derive account and workspace context from configured Elsa Control identity. Operator administration is separate and still supports an admin-key-backed local fallback.
 
-Valence Control is the source of truth for immutable deployable artifacts and versioned desired-state revisions. Elsa Studio remains the authoring and single-engine inspection surface. Elsa runtimes remain responsible for executing deployed artifacts and owning runtime state such as workflow instances, bookmarks, queues, locks, and execution logs.
+Elsa Control is the source of truth for immutable deployable artifacts and versioned desired-state revisions. Elsa Studio remains the authoring and single-engine inspection surface. Elsa runtimes remain responsible for executing deployed artifacts and owning runtime state such as workflow instances, bookmarks, queues, locks, and execution logs.
 
-For Valence Control-integrated Studio installations, the handoff command is **Submit to Valence Control**. It creates an immutable artifact in Valence Control. It does not release, promote, deploy, or make the workflow immediately executable. Direct runtime **Publish** remains direct-runtime terminology for non-integrated Studio installations or explicitly separated fallback behavior.
+For Elsa Control-integrated Studio installations, the handoff command is **Submit to Elsa Control**. It creates an immutable artifact in Elsa Control. It does not release, promote, deploy, or make the workflow immediately executable. Direct runtime **Publish** remains direct-runtime terminology for non-integrated Studio installations or explicitly separated fallback behavior.
 
 The control plane is artifact-driven rather than workflow-only:
 
@@ -87,7 +87,7 @@ producer integration -> artifact registry -> desired-state revision -> deploymen
 
 The first-class product path is Elsa workflow artifacts, but the architecture is intentionally extensible. Workflow definitions, runtime configurations, container image references, Helm charts, or other application artifacts can all share the same control-plane envelope when they have an artifact type, metadata, digest, reference, target capability requirements, and a deployment adapter.
 
-The active identity and tenancy work is documented in [specs/021-identity-tenancy/plan.md](specs/021-identity-tenancy/plan.md). The current execution plan for the artifact-driven deployment model is documented in [docs/valence-control-artifact-deployment-execution-plan.md](docs/valence-control-artifact-deployment-execution-plan.md).
+The active identity and tenancy work is documented in [specs/021-identity-tenancy/plan.md](specs/021-identity-tenancy/plan.md). The current execution plan for the artifact-driven deployment model is documented in [docs/elsa-control-artifact-deployment-execution-plan.md](docs/elsa-control-artifact-deployment-execution-plan.md).
 
 ## Technology
 
@@ -105,14 +105,14 @@ The SDK is pinned by [global.json](global.json) to .NET SDK `10.0.300` with late
 Restore and build the solution:
 
 ```bash
-dotnet restore ValenceControl.sln
-dotnet build ValenceControl.sln
+dotnet restore ElsaControl.sln
+dotnet build ElsaControl.sln
 ```
 
 Run the API directly:
 
 ```bash
-dotnet run --project src/Hosting/ValenceControl.Api
+dotnet run --project src/Hosting/ElsaControl.Api
 ```
 
 The API exposes `/health`, OpenAPI metadata, public catalog endpoints, workspace endpoints, and the admin console route under `/admin`. In development it uses SQLite by default with the connection string from `appsettings.Development.json`.
@@ -120,15 +120,15 @@ The API exposes `/health`, OpenAPI metadata, public catalog endpoints, workspace
 Local development uses `GenericOidc`-style JWT bearer validation for workspace APIs. Generate a local token that matches `appsettings.Development.json`:
 
 ```bash
-chmod +x scripts/create-local-valence-control-jwt.sh
-TOKEN="$(scripts/create-local-valence-control-jwt.sh)"
+chmod +x scripts/create-local-elsa-control-jwt.sh
+TOKEN="$(scripts/create-local-elsa-control-jwt.sh)"
 curl -H "Authorization: Bearer $TOKEN" http://localhost:5220/api/me/workspaces
 ```
 
-The local token defaults to issuer `https://local.valence-control.test`, audience `valence-control-dev`, subject `user-123`, and a one-hour lifetime. Pass a different subject/name/email when you need another user:
+The local token defaults to issuer `https://local.elsa-control.test`, audience `elsa-control-dev`, subject `user-123`, and a one-hour lifetime. Pass a different subject/name/email when you need another user:
 
 ```bash
-TOKEN="$(scripts/create-local-valence-control-jwt.sh user-456 'Grace Hopper' grace@example.test)"
+TOKEN="$(scripts/create-local-elsa-control-jwt.sh user-456 'Grace Hopper' grace@example.test)"
 ```
 
 For a browser sign-in flow, start the local Keycloak realm, API, and console dev server in separate terminals:
@@ -136,8 +136,8 @@ For a browser sign-in flow, start the local Keycloak realm, API, and console dev
 ```bash
 docker compose -f docker-compose.identity.yml up
 dotnet dev-certs https --trust
-ASPNETCORE_ENVIRONMENT=Keycloak dotnet run --project src/Hosting/ValenceControl.Api --launch-profile https
-cd src/Hosting/ValenceControl.Console && npm install && npm run dev
+ASPNETCORE_ENVIRONMENT=Keycloak dotnet run --project src/Hosting/ElsaControl.Api --launch-profile https
+cd src/Hosting/ElsaControl.Console && npm install && npm run dev
 ```
 
 Then open the console and use a workspace-only view such as Runtime Builder:
@@ -160,14 +160,14 @@ The local Keycloak admin console is available at `http://127.0.0.1:8080` with `a
 Run the Aspire host:
 
 ```bash
-dotnet run --project src/Hosting/ValenceControl.AppHost
+dotnet run --project src/Hosting/ElsaControl.AppHost
 ```
 
 In local Aspire runs, the dashboard starts Keycloak, the API, and the Vite-based
 console. The Aspire-managed Keycloak instance imports
-`dev/keycloak/valence-control-realm.json`, listens on `https://127.0.0.1:8080`, and
+`dev/keycloak/elsa-control-realm.json`, listens on `https://127.0.0.1:8080`, and
 uses `admin` / `admin` for the local admin console. Keycloak data is persisted in
-the `valence-control-keycloak-data` Aspire volume, so locally registered users
+the `elsa-control-keycloak-data` Aspire volume, so locally registered users
 survive AppHost restarts. The imported console user is `ada` / `password`. Local
 self-registration is enabled in the imported realm, so the Keycloak sign-in page
 shows a registration link. If the Keycloak data volume already exists, either
@@ -181,25 +181,25 @@ serves the built console assets from the API container under `/admin`.
 Run the console during frontend development:
 
 ```bash
-cd src/Hosting/ValenceControl.Console
+cd src/Hosting/ElsaControl.Console
 npm install
 npm run dev
 ```
 
-The console dev server proxies relative `/api` requests to `http://localhost:5220` by default. Override `CATALOG_API_PROXY_TARGET` in `src/Hosting/ValenceControl.Console/.env` when the API is running elsewhere.
+The console dev server proxies relative `/api` requests to `http://localhost:5220` by default. Override `CATALOG_API_PROXY_TARGET` in `src/Hosting/ElsaControl.Console/.env` when the API is running elsewhere.
 
 ## Verification
 
 Run the full .NET test suite:
 
 ```bash
-dotnet test ValenceControl.sln
+dotnet test ElsaControl.sln
 ```
 
 Run console checks:
 
 ```bash
-cd src/Hosting/ValenceControl.Console
+cd src/Hosting/ElsaControl.Console
 npm test
 npm run typecheck
 npm run build
@@ -208,7 +208,7 @@ npm run build
 Run console end-to-end smoke tests:
 
 ```bash
-cd tests/Hosting/ValenceControl.Console.E2E
+cd tests/Hosting/ElsaControl.Console.E2E
 npm install
 npm run e2e
 ```
@@ -218,12 +218,12 @@ npm run e2e
 Runtime package authors add the manifest generator as a private build dependency:
 
 ```xml
-<PackageReference Include="ValenceControl.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
+<PackageReference Include="Elsa.Specifications.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
 ```
 
 During build or pack, the generator discovers public CShells feature classes, extracts deploy-time settings, applies XML documentation and optional source-only hints, validates the manifest contract, and includes one root `elsa-package.json` in the produced NuGet package. It intentionally ignores application-code hooks and unsupported CLR-only configuration shapes so manifests stay deploy-time focused and safe to inspect.
 
-See [src/PackageManifests/ValenceControl.PackageManifest.Generator/README.md](src/PackageManifests/ValenceControl.PackageManifest.Generator/README.md) and [src/PackageManifests/ValenceControl.PackageManifests/README.md](src/PackageManifests/ValenceControl.PackageManifests/README.md) for the package-authoring details.
+See the [Elsa Specifications repository](https://github.com/elsa-workflows/elsa-specifications) for package-authoring details.
 
 ## Runtime And Deployment Flow
 
@@ -232,23 +232,23 @@ The long-term control-plane flow is:
 1. Runtime packages publish an `elsa-package.json` manifest.
 2. Package Catalog synchronizes package sources, validates manifests, records approvals, and exposes compatible package/version data.
 3. Runtime Builder creates saved runtime configurations and bundle artifacts from catalog selections.
-4. Artifact producers submit immutable artifacts to Valence Control. The first producer integration is Elsa Studio's **Submit to Valence Control** command for workflow snapshots.
+4. Artifact producers submit immutable artifacts to Elsa Control. The first producer integration is Elsa Studio's **Submit to Elsa Control** command for workflow snapshots.
 5. The artifact registry stores workspace-owned metadata, digests, inspection state, and payload references without storing raw workflow content, provider tokens, credentials, or secret values in catalog tables.
 6. Desired-state revisions reference artifacts plus environment-specific configuration, secret references, observability bindings, and target bindings.
 7. Promotion preview, validation, dry-run, deployment, rollback, and history operate on those product-owned revisions.
 8. Deployment runs produce durable deployment commands for target runtimes or providers.
 9. Runtime/provider integrations consume commands, fetch or receive artifacts, verify digests and compatibility, apply supported artifact types, and report progress/results back to the deployment run.
 
-Runtime communication is transport-independent. The preferred default for customer-hosted runtimes is outbound runtime pull/sync, because it avoids requiring inbound network access from Valence Control. Webhooks are optional advisory notifications that tell a runtime to fetch authoritative commands. Direct control-plane push is available only for environments that explicitly support inbound connectivity and trust configuration.
+Runtime communication is transport-independent. The preferred default for customer-hosted runtimes is outbound runtime pull/sync, because it avoids requiring inbound network access from Elsa Control. Webhooks are optional advisory notifications that tell a runtime to fetch authoritative commands. Direct control-plane push is available only for environments that explicitly support inbound connectivity and trust configuration.
 
 The legacy in-process deployment queue worker is disabled by default with `Deployment:QueueWorker:Enabled=false`. When enabled, it performs stale-run recovery only; runtime/provider integrations remain responsible for claiming commands, applying artifacts, and reporting results.
 
 ```text
 Elsa Studio integration
-  Submit to Valence Control
+  Submit to Elsa Control
   -> artifact submission
 
-Valence Control
+Elsa Control
   artifact registry
   desired-state revision
   deployment run
@@ -261,20 +261,19 @@ Runtime integration
   report status and safe diagnostics
 ```
 
-Valence Control stays agnostic about artifact internals. It owns identity, permissions, environment targeting, capabilities, validation lifecycle, run history, idempotency, and audit. Artifact producers and consumers own domain-specific packaging and application behavior.
+Elsa Control stays agnostic about artifact internals. It owns identity, permissions, environment targeting, capabilities, validation lifecycle, run history, idempotency, and audit. Artifact producers and consumers own domain-specific packaging and application behavior.
 
 Several of these pieces are already implemented as contracts and services; others are represented by Spec Kit plans and roadmap affordances in the console until backend contracts are ready.
 
 ## Documentation
 
-- [Package manifest contract](src/PackageManifests/ValenceControl.PackageManifests/README.md)
-- [Manifest generator](src/PackageManifests/ValenceControl.PackageManifest.Generator/README.md)
-- [Valence Control console](src/Hosting/ValenceControl.Console/README.md)
+- [Package manifest contract and generator](https://github.com/elsa-workflows/elsa-specifications)
+- [Elsa Control console](src/Hosting/ElsaControl.Console/README.md)
 - [Active identity and workspace tenancy plan](specs/021-identity-tenancy/plan.md)
-- [Artifact-driven deployment execution plan](docs/valence-control-artifact-deployment-execution-plan.md)
-- [Valence Control artifact workflow E2E smoke](docs/valence-control-artifact-workflow-e2e-smoke.md)
+- [Artifact-driven deployment execution plan](docs/elsa-control-artifact-deployment-execution-plan.md)
+- [Elsa Control artifact workflow E2E smoke](docs/elsa-control-artifact-workflow-e2e-smoke.md)
 - [Spec Kit feature history](specs/)
-- [Valence Control integration packaging and host configuration](docs/valence-control-integration-packaging.md)
+- [Elsa Control integration packaging and host configuration](docs/elsa-control-integration-packaging.md)
 - [Runtime transport trust policy](docs/runtime-transport-trust-policy.md)
 
 Implementation work is tracked through Spec Kit under `specs/`. Start with the current plan for active branch context before making architectural changes.

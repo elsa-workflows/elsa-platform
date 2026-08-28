@@ -18,7 +18,7 @@ When engine registration starts with no active stores:
 - Show a clear empty state instead of only disabled selects.
 - Primary action: create engine credential store.
 - Secondary action: continue with credentials deferred.
-- Explain that these credentials are only for Valence Control calling the engine, not runtime secrets.
+- Explain that these credentials are only for Elsa Control calling the engine, not runtime secrets.
 
 ## Store Creation Form
 
@@ -28,11 +28,11 @@ Fields:
 - Description
 
 Store type help text:
-- Local encrypted database: Valence Control stores protected engine credential material.
-- Azure Key Vault: Valence Control stores a Key Vault locator only.
-- Kubernetes Secrets: Valence Control stores a namespace/name/key locator only.
-- Environment variable name: Valence Control stores an engine-host environment variable name only.
-- Generic external reference: Valence Control stores a customer-governed reference it cannot browse or verify.
+- Local encrypted database: Elsa Control stores protected engine credential material.
+- Azure Key Vault: Elsa Control stores a Key Vault locator only.
+- Kubernetes Secrets: Elsa Control stores a namespace/name/key locator only.
+- Environment variable name: Elsa Control stores an engine-host environment variable name only.
+- Generic external reference: Elsa Control stores a customer-governed reference it cannot browse or verify.
 
 ## Credential Reference Form
 

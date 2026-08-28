@@ -1,12 +1,12 @@
 # Lovable prompt — Elsa Hub runtime builder configurator
 
-Paste the block below into Lovable for the Elsa Hub project. It describes the live Valence Control
+Paste the block below into Lovable for the Elsa Hub project. It describes the live Elsa Control
 API that backs `/elsa-plus/runtime-builder/new`.
 
 ---
 
 Update the runtime builder configurator at `/elsa-plus/runtime-builder/new` to run against the live
-Valence Control API instead of any mock or hard-coded data.
+Elsa Control API instead of any mock or hard-coded data.
 
 ## API
 

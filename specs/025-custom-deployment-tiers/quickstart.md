@@ -6,7 +6,7 @@ Verify that workspaces can replace fixed Dev/Test/Stage/Production environment t
 
 ## API Smoke Scenario
 
-1. Start the Valence Control API with customer workspace identity enabled.
+1. Start the Elsa Control API with customer workspace identity enabled.
 2. Sign in as a workspace owner.
 3. Request the capability catalog:
 
@@ -53,23 +53,23 @@ Verify that workspaces can replace fixed Dev/Test/Stage/Production environment t
 ## Verification Commands
 
 ```sh
-dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj --filter DeploymentTier
-dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceTier
-dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter WorkspaceDeploymentTier
-cd src/ValenceControl.Console && npm test -- --run deployments
-cd src/ValenceControl.Console && npm run typecheck
+dotnet test tests/ElsaControl.Deployment.Core.Tests/ElsaControl.Deployment.Core.Tests.csproj --filter DeploymentTier
+dotnet test tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceTier
+dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj --filter WorkspaceDeploymentTier
+cd src/ElsaControl.Console && npm test -- --run deployments
+cd src/ElsaControl.Console && npm run typecheck
 git diff --check
 ```
 
 ## Verification Results
 
-- 2026-05-28: `dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj --filter DeploymentTier` passed: 8 tests.
-- 2026-05-28: `dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceTier` passed: 10 tests.
-- 2026-05-28: `dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter "DeploymentWorkspacePersistenceTests|DeploymentWorkspaceTier"` passed: 20 tests.
-- 2026-05-28: `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter WorkspaceDeploymentTier` passed: 7 tests.
-- 2026-05-28: `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter "WorkspaceDeploymentApiTests|WorkspaceDeploymentTier"` passed: 16 tests.
-- 2026-05-28: `cd src/ValenceControl.Console && npm test -- --run deployments` passed: 22 tests.
-- 2026-05-28: `cd src/ValenceControl.Console && npm run typecheck` passed.
+- 2026-05-28: `dotnet test tests/ElsaControl.Deployment.Core.Tests/ElsaControl.Deployment.Core.Tests.csproj --filter DeploymentTier` passed: 8 tests.
+- 2026-05-28: `dotnet test tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceTier` passed: 10 tests.
+- 2026-05-28: `dotnet test tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter "DeploymentWorkspacePersistenceTests|DeploymentWorkspaceTier"` passed: 20 tests.
+- 2026-05-28: `dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj --filter WorkspaceDeploymentTier` passed: 7 tests.
+- 2026-05-28: `dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj --filter "WorkspaceDeploymentApiTests|WorkspaceDeploymentTier"` passed: 16 tests.
+- 2026-05-28: `cd src/ElsaControl.Console && npm test -- --run deployments` passed: 22 tests.
+- 2026-05-28: `cd src/ElsaControl.Console && npm run typecheck` passed.
 - 2026-05-28: `git diff --check` passed.
 
 ## Known Scope Boundaries

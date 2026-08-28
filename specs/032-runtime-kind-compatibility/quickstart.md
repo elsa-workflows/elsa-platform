@@ -27,10 +27,10 @@
 ## Suggested checks
 
 ```bash
-dotnet test tests/ValenceControl.PackageManifests.Tests/ValenceControl.PackageManifests.Tests.csproj
-dotnet test tests/ValenceControl.PackageCatalog.Core.Tests/ValenceControl.PackageCatalog.Core.Tests.csproj
-dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj
-dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj
-dotnet test tests/ValenceControl.RuntimeBuilder.Core.Tests/ValenceControl.RuntimeBuilder.Core.Tests.csproj
+dotnet test tests/Elsa.Specifications.PackageManifests.Tests/Elsa.Specifications.PackageManifests.Tests.csproj
+dotnet test tests/ElsaControl.PackageCatalog.Core.Tests/ElsaControl.PackageCatalog.Core.Tests.csproj
+dotnet test tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj
+dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj
+dotnet test tests/ElsaControl.RuntimeBuilder.Core.Tests/ElsaControl.RuntimeBuilder.Core.Tests.csproj
 git diff --check
 ```

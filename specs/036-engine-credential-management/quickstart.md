@@ -45,6 +45,6 @@ git diff --check
 If backend behavior changes:
 
 ```bash
-dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --no-restore --filter WorkspaceDeploymentApiTests
-dotnet build ValenceControl.sln --no-restore
+dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj --no-restore --filter WorkspaceDeploymentApiTests
+dotnet build ElsaControl.sln --no-restore
 ```

@@ -18,7 +18,7 @@ Use a representative Elsa shell-feature package project:
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ValenceControl.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
+    <PackageReference Include="Elsa.Specifications.PackageManifest.Generator" Version="x.y.z" PrivateAssets="all" />
   </ItemGroup>
 </Project>
 ```
@@ -118,13 +118,13 @@ Expected result:
 Run focused tests while implementing:
 
 ```bash
-dotnet test tests/ValenceControl.PackageManifest.Generator.Core.Tests/ValenceControl.PackageManifest.Generator.Core.Tests.csproj
-dotnet test tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests/ValenceControl.PackageManifest.Generator.MSBuild.Tests.csproj
-dotnet test tests/ValenceControl.PackageManifest.Generator.IntegrationTests/ValenceControl.PackageManifest.Generator.IntegrationTests.csproj
+dotnet test tests/Elsa.Specifications.PackageManifest.Generator.Core.Tests/Elsa.Specifications.PackageManifest.Generator.Core.Tests.csproj
+dotnet test tests/Elsa.Specifications.PackageManifest.Generator.MSBuild.Tests/Elsa.Specifications.PackageManifest.Generator.MSBuild.Tests.csproj
+dotnet test tests/Elsa.Specifications.PackageManifest.Generator.IntegrationTests/Elsa.Specifications.PackageManifest.Generator.IntegrationTests.csproj
 ```
 
 Run the full solution before completion:
 
 ```bash
-dotnet test ValenceControl.sln
+dotnet test ElsaControl.sln
 ```
