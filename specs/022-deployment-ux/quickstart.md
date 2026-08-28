@@ -6,7 +6,7 @@ Verify that deployment functionality is durable, workspace-scoped, and usable th
 
 ## API Smoke Scenario
 
-1. Start the Valence Control API with customer workspace identity enabled.
+1. Start the Elsa Control API with customer workspace identity enabled.
 2. Sign in as a customer workspace owner.
 3. Call `GET /api/me/workspaces` and record the workspace ID.
 4. Confirm the caller has effective deployment permissions:
@@ -62,12 +62,12 @@ Verify that deployment functionality is durable, workspace-scoped, and usable th
 ## Verification Commands
 
 ```sh
-dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj
-dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj
-dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter WorkspaceDeployment
-cd src/ValenceControl.Console && npm test -- --run deployments
-cd src/ValenceControl.Console && npm run typecheck
-cd tests/ValenceControl.Console.E2E && ADMIN_UI_BASE_URL=http://127.0.0.1:5173 npm run e2e -- deployments.spec.ts
+dotnet test tests/ElsaControl.Deployment.Core.Tests/ElsaControl.Deployment.Core.Tests.csproj
+dotnet test tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj
+dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj --filter WorkspaceDeployment
+cd src/ElsaControl.Console && npm test -- --run deployments
+cd src/ElsaControl.Console && npm run typecheck
+cd tests/ElsaControl.Console.E2E && ADMIN_UI_BASE_URL=http://127.0.0.1:5173 npm run e2e -- deployments.spec.ts
 ```
 
 ## Current Implementation Notes
@@ -83,13 +83,13 @@ Results are recorded during implementation and final verification.
 
 | Command | Result | Notes |
 | --- | --- | --- |
-| `dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj --no-restore` | Passed | 26 tests |
-| `dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --no-restore` | Passed | 31 tests |
-| `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --no-restore --filter WorkspaceDeployment` | Passed | 19 tests |
-| `cd src/ValenceControl.Console && npm test -- --run deployments` | Passed | 13 tests |
-| `cd src/ValenceControl.Console && npm run typecheck` | Passed | TypeScript project build |
-| `cd tests/ValenceControl.Console.E2E && ADMIN_UI_BASE_URL=http://127.0.0.1:5173 npm run e2e -- deployments.spec.ts` | Passed | 1 Chromium smoke test; requires console dev server |
-| `dotnet test ValenceControl.sln --no-restore -m:1 /nr:false` | Passed | Existing `NU1903` warning for `Microsoft.Build.Utilities.Core` in package manifest generator projects |
+| `dotnet test tests/ElsaControl.Deployment.Core.Tests/ElsaControl.Deployment.Core.Tests.csproj --no-restore` | Passed | 26 tests |
+| `dotnet test tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --no-restore` | Passed | 31 tests |
+| `dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj --no-restore --filter WorkspaceDeployment` | Passed | 19 tests |
+| `cd src/ElsaControl.Console && npm test -- --run deployments` | Passed | 13 tests |
+| `cd src/ElsaControl.Console && npm run typecheck` | Passed | TypeScript project build |
+| `cd tests/ElsaControl.Console.E2E && ADMIN_UI_BASE_URL=http://127.0.0.1:5173 npm run e2e -- deployments.spec.ts` | Passed | 1 Chromium smoke test; requires console dev server |
+| `dotnet test ElsaControl.sln --no-restore -m:1 /nr:false` | Passed | Existing `NU1903` warning for `Microsoft.Build.Utilities.Core` in package manifest generator projects |
 | `git diff --check` | Passed | No whitespace errors |
 
 ## Safety Review Results

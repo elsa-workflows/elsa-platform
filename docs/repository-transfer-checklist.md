@@ -2,13 +2,13 @@
 
 The GitHub repository was transferred on 26 July 2026 from
 `elsa-workflows/elsa-platform` to the private repository
-`valence-works/valence-control` using GitHub's supported transfer and rename
+`valence-works/elsa-control` using GitHub's supported transfer and rename
 operations.
 
 ## Verified
 
 - [x] Canonical repository URL is
-  `https://github.com/valence-works/valence-control`.
+  `https://github.com/valence-works/elsa-control`.
 - [x] Default branch remains `main`.
 - [x] Git commit history was preserved without rewriting.
 - [x] Nine remote branches and zero tags remained available.

@@ -144,5 +144,5 @@ When the shape changes (new artifact-declared required key, admin edit), environ
 - Loom recipe parameter binding or contribution (future `recipe-declared` origin reserved).
 - Workflow variable management (travels inside workflow artifacts).
 - Infra materialization adapters (ConfigMaps, App Service settings) — phase 2 of delivery.
-- Valence Control-side environment secret store registries, vault browsing/pickers, or secret value storage.
+- Elsa Control-side environment secret store registries, vault browsing/pickers, or secret value storage.
 - Cross-application or workspace-level shared shapes/overlays.

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\PackageCatalog\ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore\ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\..\..\src\PackageCatalog\ElsaControl.PackageCatalog.Persistence.SqliteMigrations\ElsaControl.PackageCatalog.Persistence.SqliteMigrations.csproj" />
+    <ProjectReference Include="..\..\..\src\PackageCatalog\ElsaControl.PackageCatalog.Persistence.SqlServerMigrations\ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.csproj" />
+    <ProjectReference Include="..\..\..\src\RuntimeBuilder\ElsaControl.RuntimeBuilder.Core\ElsaControl.RuntimeBuilder.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Weaver\ElsaControl.Weaver.Core\ElsaControl.Weaver.Core.csproj" />
+    <ProjectReference Include="..\ElsaControl.PackageCatalog.Testing\ElsaControl.PackageCatalog.Testing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>

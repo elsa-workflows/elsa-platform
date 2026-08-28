@@ -1,4 +1,4 @@
-# Quickstart: Valence Control Package Catalog Console UI
+# Quickstart: Elsa Control Package Catalog Console UI
 
 This quickstart describes how to verify the planned console once tasks
 are implemented.
@@ -14,7 +14,7 @@ are implemented.
 From the repository root:
 
 ```bash
-dotnet run --project src/ValenceControl.Api
+dotnet run --project src/ElsaControl.Api
 ```
 
 Use the existing admin API key configuration for authenticated admin requests.
@@ -24,7 +24,7 @@ Use the existing admin API key configuration for authenticated admin requests.
 From the console project:
 
 ```bash
-cd src/ValenceControl.Console
+cd src/ElsaControl.Console
 npm install
 npm run dev
 ```
@@ -100,7 +100,7 @@ Expected implementation commands:
 
 ```bash
 dotnet test
-cd src/ValenceControl.Console
+cd src/ElsaControl.Console
 npm test
 npm run build
 npm run e2e

@@ -6,11 +6,11 @@
 
 **Status**: Draft
 
-**Input**: Investigate how Valence Control can use the GitHub Copilot SDK to turn Weaver from a placeholder chat drawer into a full agentic workspace assistant, then update the Weaver PRD with the recommended product and technical direction.
+**Input**: Investigate how Elsa Control can use the GitHub Copilot SDK to turn Weaver from a placeholder chat drawer into a full agentic workspace assistant, then update the Weaver PRD with the recommended product and technical direction.
 
 ## Research Summary
 
-GitHub Copilot SDK is now a viable foundation for Weaver. GitHub announced the SDK as generally available on 2026-06-02, with stable API support for embedding Copilot's agent runtime into applications and services. The SDK exposes the same agent runtime behind Copilot, including planning, tool invocation, streaming, multi-turn sessions, and file operations. Official SDKs exist for TypeScript, Python, Go, .NET, Rust, and Java; Valence Control should use the .NET SDK in the backend because the platform is already a .NET control plane.
+GitHub Copilot SDK is now a viable foundation for Weaver. GitHub announced the SDK as generally available on 2026-06-02, with stable API support for embedding Copilot's agent runtime into applications and services. The SDK exposes the same agent runtime behind Copilot, including planning, tool invocation, streaming, multi-turn sessions, and file operations. Official SDKs exist for TypeScript, Python, Go, .NET, Rust, and Java; Elsa Control should use the .NET SDK in the backend because the platform is already a .NET control plane.
 
 Primary sources:
 
@@ -26,9 +26,9 @@ Primary sources:
 
 ## Product Thesis
 
-Weaver should not be a generic chat box. Weaver should be an agentic control-plane assistant that understands the current organization, workspace, route, page entity, permissions, deployment topology, package catalog state, runtime state, and audit requirements. It should explain what is happening, investigate platform state through scoped tools, draft operational plans, and execute only approved plans through Valence Control APIs.
+Weaver should not be a generic chat box. Weaver should be an agentic control-plane assistant that understands the current organization, workspace, route, page entity, permissions, deployment topology, package catalog state, runtime state, and audit requirements. It should explain what is happening, investigate platform state through scoped tools, draft operational plans, and execute only approved plans through Elsa Control APIs.
 
-The GitHub Copilot SDK changes the implementation strategy: instead of building our own agent loop, tool orchestration, streaming, sub-agent delegation, and session protocol, Valence Control should wrap the Copilot SDK with platform-specific tools, permission gates, audit hooks, and UI plan review.
+The GitHub Copilot SDK changes the implementation strategy: instead of building our own agent loop, tool orchestration, streaming, sub-agent delegation, and session protocol, Elsa Control should wrap the Copilot SDK with platform-specific tools, permission gates, audit hooks, and UI plan review.
 
 ## Goals
 
@@ -38,7 +38,7 @@ The GitHub Copilot SDK changes the implementation strategy: instead of building 
 - Provide domain-specific tools for safe inspection of deployments, artifacts, runtimes, packages, organizations, workspaces, tiers, and audit events.
 - Support agent-generated plans for deployment, rollback, engine registration, runtime controls, secret reference remediation, and setup guidance.
 - Require explicit platform approval for all mutating actions.
-- Persist user-visible session transcripts, plans, approvals, tool calls, and outcomes in Valence Control audit storage.
+- Persist user-visible session transcripts, plans, approvals, tool calls, and outcomes in Elsa Control audit storage.
 - Use hooks and permission handlers to enforce authorization and prevent prompt injection, cross-workspace access, and secret disclosure.
 
 ## Non-Goals
@@ -55,19 +55,19 @@ The GitHub Copilot SDK changes the implementation strategy: instead of building 
 - Workspace reader: asks Weaver to explain current state and recommended next checks.
 - Deployment operator: asks Weaver to investigate drift, compare revisions, prepare deployment plans, and guide runtime actions.
 - Workspace admin: reviews Weaver plans and approves sensitive operations.
-- Valence Control operator: future role for cross-workspace support and incident workflows.
+- Elsa Control operator: future role for cross-workspace support and incident workflows.
 
 ## Recommended Architecture
 
 ### Backend Runtime
 
-Add a backend Weaver service, preferably `ValenceControl.Weaver` or an API/Core pair under existing platform boundaries. The service owns Copilot SDK client lifecycle, session creation/resume, tool registration, permissions, event streaming, and audit integration.
+Add a backend Weaver service, preferably `ElsaControl.Weaver` or an API/Core pair under existing platform boundaries. The service owns Copilot SDK client lifecycle, session creation/resume, tool registration, permissions, event streaming, and audit integration.
 
 Use the .NET SDK package `GitHub.Copilot.SDK`. The SDK documentation states .NET 8.0 or later is supported, which fits the platform's .NET 10 direction. The SDK can spawn the bundled CLI runtime or connect to an external CLI server. For production, prefer a controlled hosted runtime process with explicit `COPILOT_HOME`/base directory, bounded concurrency, telemetry, and lifecycle supervision.
 
 ### Session Model
 
-Each Weaver interaction belongs to one Valence Control assistant session:
+Each Weaver interaction belongs to one Elsa Control assistant session:
 
 - Organization ID
 - Workspace ID
@@ -78,7 +78,7 @@ Each Weaver interaction belongs to one Valence Control assistant session:
 - Mode: Inspect, Plan, Operate
 - Status: Active, WaitingForUser, WaitingForApproval, Executing, Completed, Failed, Archived
 
-Use Copilot SDK resumable sessions for continuity, but do not rely on SDK session storage as the authoritative audit store. Valence Control must persist its own transcript, tool-call metadata, plan snapshots, approvals, and execution outcomes.
+Use Copilot SDK resumable sessions for continuity, but do not rely on SDK session storage as the authoritative audit store. Elsa Control must persist its own transcript, tool-call metadata, plan snapshots, approvals, and execution outcomes.
 
 ### Agent Model
 
@@ -131,7 +131,7 @@ Mutation tools require approval and must execute existing platform APIs:
 - `execute_approved_runtime_control`
 - `execute_approved_engine_registration`
 
-MCP should be optional. Use Copilot SDK MCP integration for external systems only when needed, such as GitHub issues, documentation repositories, or customer support systems. First-party Valence Control data should be exposed through in-process custom tools or an internal HTTP tool boundary with the same authorization model as platform APIs.
+MCP should be optional. Use Copilot SDK MCP integration for external systems only when needed, such as GitHub issues, documentation repositories, or customer support systems. First-party Elsa Control data should be exposed through in-process custom tools or an internal HTTP tool boundary with the same authorization model as platform APIs.
 
 ### Hooks And Guardrails
 

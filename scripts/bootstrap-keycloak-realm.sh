@@ -2,13 +2,13 @@
 set -euo pipefail
 
 KEYCLOAK_URL="${KEYCLOAK_URL:-}"
-VALENCE_CONTROL_API_URL="${VALENCE_CONTROL_API_URL:-}"
+ELSA_CONTROL_API_URL="${ELSA_CONTROL_API_URL:-}"
 KEYCLOAK_ADMIN_USERNAME="${KEYCLOAK_ADMIN_USERNAME:-keycloak-admin}"
 KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-}"
-KEYCLOAK_REALM="${KEYCLOAK_REALM:-valence-control}"
-KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-valence-control-console}"
+KEYCLOAK_REALM="${KEYCLOAK_REALM:-elsa-control}"
+KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-elsa-control-console}"
 KEYCLOAK_CLIENT_SECRET="${KEYCLOAK_CLIENT_SECRET:-}"
-VALENCE_CONTROL_ADMIN_ROLE="${VALENCE_CONTROL_ADMIN_ROLE:-control_admin}"
+ELSA_CONTROL_ADMIN_ROLE="${ELSA_CONTROL_ADMIN_ROLE:-control_admin}"
 CREATE_DEV_USER="${CREATE_DEV_USER:-false}"
 DEV_USERNAME="${DEV_USERNAME:-ada}"
 DEV_PASSWORD="${DEV_PASSWORD:-password}"
@@ -20,15 +20,15 @@ Usage: scripts/bootstrap-keycloak-realm.sh
 
 Required environment variables:
   KEYCLOAK_URL
-  VALENCE_CONTROL_API_URL
+  ELSA_CONTROL_API_URL
   KEYCLOAK_ADMIN_PASSWORD
   KEYCLOAK_CLIENT_SECRET
 
 Optional environment variables:
   KEYCLOAK_ADMIN_USERNAME       Default: keycloak-admin
-  KEYCLOAK_REALM                Default: valence-control
-  KEYCLOAK_CLIENT_ID            Default: valence-control-console
-  VALENCE_CONTROL_ADMIN_ROLE           Default: control_admin
+  KEYCLOAK_REALM                Default: elsa-control
+  KEYCLOAK_CLIENT_ID            Default: elsa-control-console
+  ELSA_CONTROL_ADMIN_ROLE           Default: control_admin
   CREATE_DEV_USER               Default: false
   DEV_USERNAME                  Default: ada
   DEV_PASSWORD                  Default: password
@@ -54,12 +54,12 @@ require_value() {
 require_command curl
 require_command jq
 require_value KEYCLOAK_URL
-require_value VALENCE_CONTROL_API_URL
+require_value ELSA_CONTROL_API_URL
 require_value KEYCLOAK_ADMIN_PASSWORD
 require_value KEYCLOAK_CLIENT_SECRET
 
 KEYCLOAK_URL="${KEYCLOAK_URL%/}"
-VALENCE_CONTROL_API_URL="${VALENCE_CONTROL_API_URL%/}"
+ELSA_CONTROL_API_URL="${ELSA_CONTROL_API_URL%/}"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -74,7 +74,7 @@ TOKEN="$(curl -fsS -X POST "$KEYCLOAK_URL/realms/master/protocol/openid-connect/
 realm_check_file="$tmp_dir/realm-check.out"
 realm_payload_file="$tmp_dir/realm.json"
 role_check_file="$tmp_dir/role-check.out"
-role_payload_file="$tmp_dir/valence-control-admin-role.json"
+role_payload_file="$tmp_dir/elsa-control-admin-role.json"
 client_payload_file="$tmp_dir/client.json"
 role_mapper_payload_file="$tmp_dir/role-mapper.json"
 user_payload_file="$tmp_dir/user.json"
@@ -104,18 +104,18 @@ fi
 
 role_status="$(curl -sS -o "$role_check_file" -w '%{http_code}' \
   -H "Authorization: Bearer $TOKEN" \
-  "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/roles/$VALENCE_CONTROL_ADMIN_ROLE")"
+  "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/roles/$ELSA_CONTROL_ADMIN_ROLE")"
 if [[ "$role_status" == "404" ]]; then
-  jq -n --arg name "$VALENCE_CONTROL_ADMIN_ROLE" \
-    '{name:$name, description:"Grants access to Valence Control administration surfaces."}' \
+  jq -n --arg name "$ELSA_CONTROL_ADMIN_ROLE" \
+    '{name:$name, description:"Grants access to Elsa Control administration surfaces."}' \
     > "$role_payload_file"
   curl -fsS -X POST "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/roles" \
     -H "Authorization: Bearer $TOKEN" \
     -H 'Content-Type: application/json' \
     --data @"$role_payload_file"
-  echo "Created realm role $VALENCE_CONTROL_ADMIN_ROLE."
+  echo "Created realm role $ELSA_CONTROL_ADMIN_ROLE."
 elif [[ "$role_status" == "200" ]]; then
-  echo "Realm role $VALENCE_CONTROL_ADMIN_ROLE already exists."
+  echo "Realm role $ELSA_CONTROL_ADMIN_ROLE already exists."
 else
   echo "Unexpected role lookup status $role_status." >&2
   cat "$role_check_file" >&2
@@ -131,7 +131,7 @@ jq -n \
   --arg id "$client_uuid" \
   --arg clientId "$KEYCLOAK_CLIENT_ID" \
   --arg secret "$KEYCLOAK_CLIENT_SECRET" \
-  --arg apiUrl "$VALENCE_CONTROL_API_URL" \
+  --arg apiUrl "$ELSA_CONTROL_API_URL" \
   '{
     id: (if $id == "" then null else $id end),
     clientId: $clientId,
@@ -239,20 +239,20 @@ if [[ "$CREATE_DEV_USER" == "true" ]]; then
 
   role="$(curl -fsS \
     -H "Authorization: Bearer $TOKEN" \
-    "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/roles/$VALENCE_CONTROL_ADMIN_ROLE")"
+    "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/roles/$ELSA_CONTROL_ADMIN_ROLE")"
   has_role="$(curl -fsS \
     -H "Authorization: Bearer $TOKEN" \
     "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/users/$user_id/role-mappings/realm" \
-    | jq -r --arg role "$VALENCE_CONTROL_ADMIN_ROLE" 'any(.[]; .name == $role)')"
+    | jq -r --arg role "$ELSA_CONTROL_ADMIN_ROLE" 'any(.[]; .name == $role)')"
   if [[ "$has_role" == "true" ]]; then
-    echo "$DEV_USERNAME already has $VALENCE_CONTROL_ADMIN_ROLE."
+    echo "$DEV_USERNAME already has $ELSA_CONTROL_ADMIN_ROLE."
   else
     printf '[%s]' "$role" > "$dev_user_role_payload_file"
     curl -fsS -X POST "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/users/$user_id/role-mappings/realm" \
       -H "Authorization: Bearer $TOKEN" \
       -H 'Content-Type: application/json' \
       --data @"$dev_user_role_payload_file"
-    echo "Assigned $VALENCE_CONTROL_ADMIN_ROLE to $DEV_USERNAME."
+    echo "Assigned $ELSA_CONTROL_ADMIN_ROLE to $DEV_USERNAME."
   fi
 fi
 

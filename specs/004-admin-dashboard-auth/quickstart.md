@@ -22,7 +22,7 @@
 Run:
 
 ```sh
-dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj
+dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj
 ```
 
 Expected coverage includes:
@@ -36,7 +36,7 @@ Expected coverage includes:
 - Existing API-key header authorization.
 - Logout.
 - Public endpoint access.
-- Separation between operator dashboard authentication and customer Valence Control identity.
+- Separation between operator dashboard authentication and customer Elsa Control identity.
 
 ## Deployment Smoke
 

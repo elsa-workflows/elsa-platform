@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="Elsa.Specifications.PackageManifests" Version="0.0.1" />
     <PackageVersion Include="Elsa.Diagnostics.OpenTelemetry" Version="4.0.0-preview.167" />
     <PackageVersion Include="Elsa.Diagnostics.OpenTelemetry.Core" Version="4.0.0-preview.167" />
     <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.4.6" />

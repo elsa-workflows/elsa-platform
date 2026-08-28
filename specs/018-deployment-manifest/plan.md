@@ -6,17 +6,17 @@
 
 ## Summary
 
-Add `ValenceControl.Deployment.Manifest` as the next Phase 1 deployment package. The package parses `valence-control/v1alpha1` `EnvironmentManifest` documents from YAML and JSON text, validates the supported shape, and normalizes workflow, variable, feature, package, and recipe entries into `DeploymentResource` values from `ValenceControl.Deployment.Abstractions`. This slice stops before artifact IO, deployment planning, dry-run, apply, CLI, API, runtime adapters, overlays, and secret handling.
+Add `ElsaControl.Deployment.Manifest` as the next Phase 1 deployment package. The package parses `elsa-control/v1alpha1` `EnvironmentManifest` documents from YAML and JSON text, validates the supported shape, and normalizes workflow, variable, feature, package, and recipe entries into `DeploymentResource` values from `ElsaControl.Deployment.Abstractions`. This slice stops before artifact IO, deployment planning, dry-run, apply, CLI, API, runtime adapters, overlays, and secret handling.
 
 ## Technical Context
 
 **Language/Version**: C# on .NET 10 using repository-wide `Directory.Build.props`.
 
-**Primary Dependencies**: `ValenceControl.Deployment.Abstractions`, `System.Text.Json`, YamlDotNet for YAML parsing, xUnit and its built-in assertions for tests.
+**Primary Dependencies**: `ElsaControl.Deployment.Abstractions`, `System.Text.Json`, YamlDotNet for YAML parsing, xUnit and its built-in assertions for tests.
 
 **Storage**: N/A. Manifest parsing is in-memory only.
 
-**Testing**: `dotnet test` for `tests/ValenceControl.Deployment.Manifest.Tests/` plus full solution verification.
+**Testing**: `dotnet test` for `tests/ElsaControl.Deployment.Manifest.Tests/` plus full solution verification.
 
 **Target platform**: Cross-platform .NET library consumed by future artifact, engine, CLI, API, and operator packages.
 
@@ -59,7 +59,7 @@ specs/018-deployment-manifest/
 
 ```text
 src/
-  ValenceControl.Deployment.Manifest/
+  ElsaControl.Deployment.Manifest/
     EnvironmentManifest.cs
     ManifestMetadata.cs
     ManifestResourceEntries.cs
@@ -72,7 +72,7 @@ src/
     IManifestResourceMapper.cs
 
 tests/
-  ValenceControl.Deployment.Manifest.Tests/
+  ElsaControl.Deployment.Manifest.Tests/
     ManifestReaderTests.cs
     ManifestNormalizationTests.cs
     ManifestDiagnosticTests.cs
@@ -80,7 +80,7 @@ tests/
     ManifestBoundaryTests.cs
 ```
 
-**Structure Decision**: Keep parsing and normalization in `ValenceControl.Deployment.Manifest`. Artifact layout/checksum behavior belongs in `ValenceControl.Deployment.Artifacts`, and reconciliation belongs in `ValenceControl.Deployment.Engine`.
+**Structure Decision**: Keep parsing and normalization in `ElsaControl.Deployment.Manifest`. Artifact layout/checksum behavior belongs in `ElsaControl.Deployment.Artifacts`, and reconciliation belongs in `ElsaControl.Deployment.Engine`.
 
 ## Phase Plan
 

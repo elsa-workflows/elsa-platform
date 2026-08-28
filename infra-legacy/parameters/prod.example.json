@@ -21,14 +21,14 @@
       "value": "B2"
     },
     "keycloakRealm": {
-      "value": "valence-control"
+      "value": "elsa-control"
     },
     "keycloakClientId": {
-      "value": "valence-control-console"
+      "value": "elsa-control-console"
     },
     "tags": {
       "value": {
-        "application": "valence-control",
+        "application": "elsa-control",
         "environment": "prod"
       }
     }

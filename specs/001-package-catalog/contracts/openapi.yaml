@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Valence Control API
+  title: Elsa Control API
   version: 0.1.0
   description: Public and admin REST contracts for package, feature, compatibility, sync, validation, and approval workflows.
 servers:

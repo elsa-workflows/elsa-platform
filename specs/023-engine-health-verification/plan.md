@@ -16,13 +16,13 @@ This slice stays inside the deployment UX PRD: it updates persisted control-plan
 
 **Language/Version**: C# on .NET 10 for API/Core/Persistence; TypeScript/React for the hosted console.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permission grants, EF Core catalog persistence, `ValenceControl.Deployment.Core` workspace services, React Router, TanStack Query, Vitest, Playwright where needed, xUnit and its built-in assertions.
+**Primary Dependencies**: ASP.NET Core minimal APIs, existing workspace identity/authorization and deployment permission grants, EF Core catalog persistence, `ElsaControl.Deployment.Core` workspace services, React Router, TanStack Query, Vitest, Playwright where needed, xUnit and its built-in assertions.
 
-**Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Engine records gain verification metadata; optional append-only verification event records may be added if needed for audit/debugging.
+**Storage**: Existing catalog relational database through `ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore`, with SQLite and SQL Server migrations. Engine records gain verification metadata; optional append-only verification event records may be added if needed for audit/debugging.
 
 **Testing**: Focused `dotnet test` for Deployment.Core, API, and persistence projects; `npm test -- --run deployments` and `npm run typecheck` for console; E2E smoke only if the console flow changes enough to need browser coverage.
 
-**Target platform**: ASP.NET Core Valence Control API and React console served from the platform host.
+**Target platform**: ASP.NET Core Elsa Control API and React console served from the platform host.
 
 **Project Type**: Modular monolith web service with React admin/customer console and EF-backed persistence.
 
@@ -63,7 +63,7 @@ specs/023-engine-health-verification/
 
 ```text
 src/
-  ValenceControl.Deployment.Core/
+  ElsaControl.Deployment.Core/
     Cockpit/
       DeploymentCockpitModels.cs
     Workspace/
@@ -73,24 +73,24 @@ src/
       EngineHealthService.cs
       EngineHealthModels.cs
 
-  ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
+  ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/
     DeploymentWorkspaceStore.cs
     Models/
       DeploymentWorkspaceEntities.cs
       CatalogModelConfiguration.cs
 
-  ValenceControl.PackageCatalog.Persistence.SqliteMigrations/
+  ElsaControl.PackageCatalog.Persistence.SqliteMigrations/
     Migrations/
 
-  ValenceControl.PackageCatalog.Persistence.SqlServerMigrations/
+  ElsaControl.PackageCatalog.Persistence.SqlServerMigrations/
     Migrations/
 
-  ValenceControl.Api/
+  ElsaControl.Api/
     Workspace/
       WorkspaceDeploymentEndpoints.cs
       WorkspaceDeploymentContracts.cs
 
-  ValenceControl.Console/
+  ElsaControl.Console/
     src/features/deployments/
       deploymentApi.ts
       deploymentModels.ts
@@ -101,21 +101,21 @@ src/
 
 ```text
 tests/
-  ValenceControl.Deployment.Core.Tests/
+  ElsaControl.Deployment.Core.Tests/
     EngineHealthServiceTests.cs
     RuntimeControlServiceTests.cs
 
-  ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+  ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
     DeploymentWorkspacePersistenceTests.cs
 
-  ValenceControl.Api.Tests/
+  ElsaControl.Api.Tests/
     WorkspaceDeploymentEngineHealthTests.cs
 
-  src/ValenceControl.Console/src/features/deployments/
+  src/ElsaControl.Console/src/features/deployments/
     DeploymentsPage.test.tsx
 ```
 
-**Structure Decision**: Keep verification orchestration in `ValenceControl.Deployment.Core` as deployment domain logic. Reuse the catalog EF database as the workspace-owned persistence adapter because engine registrations already live there. Keep API routes as authorization/contract adapters and add console behavior within the existing deployments feature directory.
+**Structure Decision**: Keep verification orchestration in `ElsaControl.Deployment.Core` as deployment domain logic. Reuse the catalog EF database as the workspace-owned persistence adapter because engine registrations already live there. Keep API routes as authorization/contract adapters and add console behavior within the existing deployments feature directory.
 
 ## Phase Plan
 

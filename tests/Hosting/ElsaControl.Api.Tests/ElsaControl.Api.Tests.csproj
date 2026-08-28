@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Hosting\ElsaControl.Api\ElsaControl.Api.csproj" />
+    <ProjectReference Include="..\..\..\src\PackageCatalog\ElsaControl.PackageCatalog.Core\ElsaControl.PackageCatalog.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Studio\ElsaControl.Studio.Submit\ElsaControl.Studio.Submit.csproj" />
+    <ProjectReference Include="..\..\..\src\Workflows\ElsaControl.Workflows.RuntimeApplier\ElsaControl.Workflows.RuntimeApplier.csproj" />
+    <ProjectReference Include="..\..\PackageCatalog\ElsaControl.PackageCatalog.Testing\ElsaControl.PackageCatalog.Testing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>

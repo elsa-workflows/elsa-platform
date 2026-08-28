@@ -11,7 +11,7 @@ RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-}"
 SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-}"
 APP_DISPLAY_NAME="${APP_DISPLAY_NAME:-}"
 AZURE_CLIENT_ID="${AZURE_CLIENT_ID:-}"
-SQL_ADMINISTRATOR_LOGIN="${SQL_ADMINISTRATOR_LOGIN:-valenceadmin}"
+SQL_ADMINISTRATOR_LOGIN="${SQL_ADMINISTRATOR_LOGIN:-elsaadmin}"
 DRY_RUN=false
 SKIP_ROLE_ASSIGNMENTS=false
 
@@ -26,7 +26,7 @@ Options:
   --environment <name>        GitHub environment name. Default: production.
   --azure-environment <name>  Azure/Bicep environment name. Default: GitHub environment,
                               with development mapped to dev.
-  --resource-group <name>     Azure resource group. Default: rg-valence-control-<azure-env>.
+  --resource-group <name>     Azure resource group. Default: rg-elsa-control-<azure-env>.
   --location <name>           Azure region. Default: westeurope.
   --subscription <id>         Azure subscription ID. Default: current az account.
   --client-id <id>            Existing Entra app registration client ID to use.
@@ -189,8 +189,8 @@ if [[ -z "$AZURE_ENVIRONMENT" ]]; then
   fi
 fi
 
-RESOURCE_GROUP="${RESOURCE_GROUP:-rg-valence-control-$AZURE_ENVIRONMENT}"
-APP_DISPLAY_NAME="${APP_DISPLAY_NAME:-valence-control-$GITHUB_ENVIRONMENT-github-actions}"
+RESOURCE_GROUP="${RESOURCE_GROUP:-rg-elsa-control-$AZURE_ENVIRONMENT}"
+APP_DISPLAY_NAME="${APP_DISPLAY_NAME:-elsa-control-$GITHUB_ENVIRONMENT-github-actions}"
 
 REPO_FULL_NAME="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
 SUBJECT="repo:$REPO_FULL_NAME:environment:$GITHUB_ENVIRONMENT"
@@ -260,7 +260,7 @@ fi
 
 OUTPUTS="$(az deployment group show --resource-group "$RESOURCE_GROUP" --name main --query properties.outputs -o json 2>/dev/null || true)"
 if [[ -z "$OUTPUTS" || "$OUTPUTS" == "null" ]]; then
-  echo "Could not read deployment outputs from $RESOURCE_GROUP/main. Run an infra deployment first or create the resource group with scripts/deploy-azure-valence-control.sh." >&2
+  echo "Could not read deployment outputs from $RESOURCE_GROUP/main. Run an infra deployment first or create the resource group with scripts/deploy-azure-elsa-control.sh." >&2
   exit 1
 fi
 

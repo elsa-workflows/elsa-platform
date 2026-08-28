@@ -22,7 +22,7 @@ actions scoped to package versions.
 
 **Language/Version**: C# on .NET 10 LTS for API/Core/Persistence; TypeScript + React for the existing console.
 
-**Primary Dependencies**: ASP.NET Core minimal APIs and authorization, Entity Framework Core, System.Text.Json, ValenceControl.PackageManifests JSON shape, React Router, TanStack Query, TailwindCSS, shadcn/ui-style local components, Vitest/Testing Library.
+**Primary Dependencies**: ASP.NET Core minimal APIs and authorization, Entity Framework Core, System.Text.Json, Elsa.Specifications.PackageManifests JSON shape, React Router, TanStack Query, TailwindCSS, shadcn/ui-style local components, Vitest/Testing Library.
 
 **Storage**: Existing relational catalog database. No new durable entity is required; the feature reads existing `Packages`, `PackageVersions`, `PackageSources`, validation result records, feature records, and feature setting records.
 
@@ -48,8 +48,8 @@ The plan MUST answer these gates:
   - Pass. Details display existing stored manifest JSON, feature projections, and validation records only.
 - **No arbitrary code execution**: Does every package-processing path inspect only package files, nuspec metadata, and manifest JSON?
   - Pass. No package-processing or assembly-loading behavior is added.
-- **Stable contracts**: Are `ValenceControl.PackageManifests` changes dependency-light, versioned, and separate from persistence/runtime internals?
-  - Pass. No `ValenceControl.PackageManifests` contract changes are required; existing manifest JSON remains read-only data.
+- **Stable contracts**: Are `Elsa.Specifications.PackageManifests` changes dependency-light, versioned, and separate from persistence/runtime internals?
+  - Pass. No `Elsa.Specifications.PackageManifests` contract changes are required; existing manifest JSON remains read-only data.
 - **Schema evolution**: Are schema versioning, extension metadata, compatibility behavior, and breaking-change rules documented?
   - Pass. The page surfaces schema version and compatibility metadata already present on indexed versions; schema rules remain unchanged.
 - **Immutable versions**: Does package-version handling preserve existing manifests and flag suspicious content changes?
@@ -88,7 +88,7 @@ specs/006-package-details-page/
 
 ```text
 src/
-├── ValenceControl.PackageCatalog.Core/
+├── ElsaControl.PackageCatalog.Core/
 │   ├── Packages/
 │   │   ├── PackageModels.cs
 │   │   └── PublicCatalogVisibilityPolicy.cs
@@ -96,16 +96,16 @@ src/
 │   │   └── FeatureProjectionModels.cs
 │   └── Persistence/
 │       └── CatalogStoreContracts.cs
-├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
+├── ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/
 │   └── ApprovalStore.cs
-├── ValenceControl.Api/
+├── ElsaControl.Api/
 │   └── Admin/
 │       └── Packages/
 │           ├── AdminPackageContracts.cs
 │           ├── AdminPackageEndpoints.cs
 │           ├── AdminValidationEndpoints.cs
 │           └── AdminApprovalEndpoints.cs
-└── ValenceControl.Console/
+└── ElsaControl.Console/
     └── src/
         ├── app/
         │   ├── routes.tsx
@@ -125,17 +125,17 @@ src/
             └── status/
 
 tests/
-├── ValenceControl.Api.Tests/
+├── ElsaControl.Api.Tests/
 │   ├── AdminPackagesApiTests.cs
 │   ├── AdminValidationApiTests.cs
 │   └── AdminApprovalApiTests.cs
-├── ValenceControl.PackageCatalog.Testing/
+├── ElsaControl.PackageCatalog.Testing/
 │   └── PublicCatalogSeedData.cs
-└── ValenceControl.Console.E2E/
+└── ElsaControl.Console.E2E/
     └── package-details.spec.ts
 
 src/
-└── ValenceControl.Console/
+└── ElsaControl.Console/
     └── src/
         └── features/
             └── packages/

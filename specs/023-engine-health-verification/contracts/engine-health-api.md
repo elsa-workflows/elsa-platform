@@ -1,6 +1,6 @@
 # Contract: Engine Health API
 
-All routes are scoped to a workspace and require trusted Valence Control identity. The server derives workspace membership and deployment permissions from existing workspace authorization records.
+All routes are scoped to a workspace and require trusted Elsa Control identity. The server derives workspace membership and deployment permissions from existing workspace authorization records.
 
 ## Common Rules
 

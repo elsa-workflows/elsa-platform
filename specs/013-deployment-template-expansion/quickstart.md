@@ -21,8 +21,8 @@ Expected: Helm/Kubernetes files and README are returned.
 ## Validation Commands
 
 ```bash
-dotnet build ValenceControl.sln --no-restore
-dotnet test ValenceControl.sln --no-build
+dotnet build ElsaControl.sln --no-restore
+dotnet test ElsaControl.sln --no-build
 ```
 
 ## Supported Targets

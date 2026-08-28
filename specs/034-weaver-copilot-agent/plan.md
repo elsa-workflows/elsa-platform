@@ -14,11 +14,11 @@ Turn the existing placeholder Weaver drawer into a backend-backed agentic worksp
 
 **Primary Dependencies**: GitHub Copilot SDK for .NET, ASP.NET Core minimal APIs, existing workspace identity/authorization helpers, EF Core catalog persistence, existing deployment/core services, React Router, TanStack Query, Vitest, xUnit and its built-in assertions.
 
-**Storage**: Existing catalog relational database through `ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore`. Weaver stores safe session records, messages, tool-call summaries, immutable plans, approvals, execution summaries, and configuration metadata. Provider API keys and raw secrets are never stored.
+**Storage**: Existing catalog relational database through `ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore`. Weaver stores safe session records, messages, tool-call summaries, immutable plans, approvals, execution summaries, and configuration metadata. Provider API keys and raw secrets are never stored.
 
 **Testing**: xUnit and its built-in assertions for core/API/persistence behavior; Vitest/Testing Library for console drawer behavior; focused `dotnet test`, `npm test`, `npm run typecheck`, and `git diff --check`.
 
-**Target platform**: Valence Control API/catalog host and React console. Hosted production deployments must be able to disable Weaver or run it with BYOK provider configuration.
+**Target platform**: Elsa Control API/catalog host and React console. Hosted production deployments must be able to disable Weaver or run it with BYOK provider configuration.
 
 **Project Type**: Modular monolith web service plus hosted console.
 
@@ -64,34 +64,34 @@ specs/034-weaver-copilot-agent/
 
 ```text
 src/
-├── ValenceControl.Api/
+├── ElsaControl.Api/
 │   └── Workspace/
 │       ├── WorkspaceWeaverContracts.cs
 │       └── WorkspaceWeaverEndpoints.cs
-├── ValenceControl.Weaver.Core/
+├── ElsaControl.Weaver.Core/
 │   ├── Configuration/
 │   ├── Runtime/
 │   ├── Sessions/
 │   ├── Tools/
 │   └── Plans/
-├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
+├── ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/
 │   └── Models/
-└── ValenceControl.Console/
+└── ElsaControl.Console/
     └── src/
         ├── app/
         └── features/weaver/
 
 tests/
-├── ValenceControl.Api.Tests/
-├── ValenceControl.Weaver.Core.Tests/
-├── ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
-└── ValenceControl.Console/
+├── ElsaControl.Api.Tests/
+├── ElsaControl.Weaver.Core.Tests/
+├── ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/
+└── ElsaControl.Console/
 ```
 
-**Structure Decision**: Add `ValenceControl.Weaver.Core` for agent/session/tool logic so API endpoints remain thin and persistence stays behind store abstractions. Store EF entities in existing catalog persistence because workspace-owned operational metadata already lives there. Add console code under `features/weaver` and replace the placeholder drawer in `AppShell.tsx` with the feature component.
+**Structure Decision**: Add `ElsaControl.Weaver.Core` for agent/session/tool logic so API endpoints remain thin and persistence stays behind store abstractions. Store EF entities in existing catalog persistence because workspace-owned operational metadata already lives there. Add console code under `features/weaver` and replace the placeholder drawer in `AppShell.tsx` with the feature component.
 
 ## Complexity Tracking
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| New core project | Weaver needs a bounded subsystem for runtime/tool/plan logic independent of API and persistence | Putting agent logic in `ValenceControl.Api` would couple transport, runtime orchestration, and domain policies |
+| New core project | Weaver needs a bounded subsystem for runtime/tool/plan logic independent of API and persistence | Putting agent logic in `ElsaControl.Api` would couple transport, runtime orchestration, and domain policies |

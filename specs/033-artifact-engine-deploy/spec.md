@@ -156,7 +156,7 @@ A user who cannot deploy an artifact because of engine capabilities, missing run
 - Existing artifact registry, desired-state revisions, deployment runs, runtime command sync, and runtime-side artifact applier concepts remain the foundation for this feature.
 - The first concrete artifact type is `elsa.workflow-definition`; additional artifact types must use the same deployability model rather than special-case UI rules.
 - Runtime engines advertise capabilities through registration and heartbeat metadata; stale or missing heartbeat data is treated as a blocker or warning according to deployment risk.
-- Valence Control owns compatibility, dispatch, audit, and history; runtime integrations own artifact interpretation and local apply semantics.
+- Elsa Control owns compatibility, dispatch, audit, and history; runtime integrations own artifact interpretation and local apply semantics.
 - Deployment download links are authorized platform actions, not direct exposure of storage paths.
 - Direct push deployment remains out of scope unless a later transport-specific spec explicitly enables it.
 - This feature does not replace promotion, rollback, runtime command sync, or runtime applier specs; it connects those capabilities into a complete deploy-to-engine path.

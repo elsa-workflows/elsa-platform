@@ -10,7 +10,7 @@ This contract documents externally visible behavior for customer identity, works
 - A server-side browser login session created from a valid trusted identity.
 - A trusted server-to-server request from Lovable or a future customer service when the platform authenticates the service independently.
 
-## Valence Control Identity Provider Configuration
+## Elsa Control Identity Provider Configuration
 
 Built-in adapter kinds:
 
@@ -168,7 +168,7 @@ Rules:
 - Customer identity alone is not sufficient.
 - Operator identity does not automatically imply workspace membership.
 - Operator entitlement management may update workspace entitlement snapshots.
-- Operator actions should produce audit metadata that distinguishes operator authorization from Valence Control identity authorization.
+- Operator actions should produce audit metadata that distinguishes operator authorization from Elsa Control identity authorization.
 
 ## Public Catalog APIs
 

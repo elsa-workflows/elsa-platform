@@ -6,11 +6,11 @@
 
 **Status**: Draft
 
-**Input**: User description: "Move deployment-affecting Docker runtime image metadata out of the Lovable static frontend file and into the Valence Control backend so image selection, environment defaults, companion rules, and bundle generation use a single source of truth."
+**Input**: User description: "Move deployment-affecting Docker runtime image metadata out of the Lovable static frontend file and into the Elsa Control backend so image selection, environment defaults, companion rules, and bundle generation use a single source of truth."
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - Select Runtime Images From Valence Control Metadata (Priority: P1)
+### User Story 1 - Select Runtime Images From Elsa Control Metadata (Priority: P1)
 
 A Runtime Builder user can choose from Elsa runtime images supplied by the platform rather than relying on a frontend-only static image list.
 
@@ -76,7 +76,7 @@ Operators and contributors can detect incomplete or inconsistent runtime image d
 
 ### User Story 5 - Configure Runtime Images From Backend Definitions (Priority: P2)
 
-Valence Control operators can curate the runtime images and image-level configurable attributes exposed by Runtime Builder without changing console code.
+Elsa Control operators can curate the runtime images and image-level configurable attributes exposed by Runtime Builder without changing console code.
 
 **Why this priority**: The builder UI should be a generic renderer of platform image metadata. Adding an image, changing exposed image attributes, or adjusting deployment-shape defaults should not require editing React select options or per-image form logic.
 

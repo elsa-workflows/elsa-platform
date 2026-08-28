@@ -26,7 +26,7 @@
 
 ## Decision: External store types capture safe locators only
 
-**Rationale**: Azure Key Vault, Kubernetes Secrets, environment variable names, and generic external references are externally governed sources. Valence Control should capture enough locator metadata to identify the credential but must not collect the raw secret value for these types.
+**Rationale**: Azure Key Vault, Kubernetes Secrets, environment variable names, and generic external references are externally governed sources. Elsa Control should capture enough locator metadata to identify the credential but must not collect the raw secret value for these types.
 
 **Alternatives considered**:
 - Browse provider contents during setup: deferred because provider integrations, auth, and browsing policies are broader than this feature.
@@ -34,7 +34,7 @@
 
 ## Decision: Generic external reference means customer-governed metadata only
 
-**Rationale**: Generic external reference is useful as an escape hatch for providers not modeled yet or for enterprise secret catalogs. It should not imply that Valence Control can resolve, browse, verify, or fetch the secret. Examples include an internal secret catalog URI, a ticket-controlled credential record, a vendor-specific vault URI, or a provider type not yet first-class.
+**Rationale**: Generic external reference is useful as an escape hatch for providers not modeled yet or for enterprise secret catalogs. It should not imply that Elsa Control can resolve, browse, verify, or fetch the secret. Examples include an internal secret catalog URI, a ticket-controlled credential record, a vendor-specific vault URI, or a provider type not yet first-class.
 
 **Alternatives considered**:
 - Remove generic external reference: rejected because users asked for it and it preserves extensibility.

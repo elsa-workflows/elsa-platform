@@ -125,5 +125,5 @@ Content-Type: application/json
 Partial failure rules:
 
 - If any artifact item fails after another item is applied, the aggregate run is failed or recovery-required according to finalization policy.
-- Valence Control preserves the successful and failed item outcomes.
-- Valence Control does not report automatic rollback unless a separate runtime recovery action explicitly performed and reported it.
+- Elsa Control preserves the successful and failed item outcomes.
+- Elsa Control does not report automatic rollback unless a separate runtime recovery action explicitly performed and reported it.

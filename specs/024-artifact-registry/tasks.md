@@ -20,8 +20,8 @@
 
 - [x] T001 [P] Add artifact API contract examples in `specs/024-artifact-registry/contracts/artifact-registry-api.md`
 - [x] T002 [P] Add console Artifacts UX contract examples in `specs/024-artifact-registry/contracts/console-artifacts-ux.md`
-- [x] T003 [P] Add artifact core test fixture helpers in `tests/ValenceControl.Deployment.Core.Tests/WorkspaceDeploymentTestFixtures.cs`
-- [x] T004 [P] Add artifact API test helpers in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentTestFixtures.cs`
+- [x] T003 [P] Add artifact core test fixture helpers in `tests/ElsaControl.Deployment.Core.Tests/WorkspaceDeploymentTestFixtures.cs`
+- [x] T004 [P] Add artifact API test helpers in `tests/ElsaControl.Api.Tests/WorkspaceDeploymentTestFixtures.cs`
 
 ---
 
@@ -31,14 +31,14 @@
 
 **Checkpoint**: Artifact metadata can be represented, stored, queried by workspace, and migrated.
 
-- [x] T005 Define workspace artifact request/result models in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceArtifactModels.cs`
-- [x] T006 Define artifact store contract in `src/ValenceControl.Deployment.Core/Workspace/IWorkspaceArtifactStore.cs`
-- [x] T007 Add artifact validation and registration service skeleton in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
-- [x] T008 Add EF artifact entity in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`
-- [x] T009 Add EF artifact mappings in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
-- [x] T010 Add artifact store methods to `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [x] T011 Add SQLite and SQL Server migrations for artifact registry metadata in `src/ValenceControl.PackageCatalog.Persistence.SqliteMigrations/Migrations/` and `src/ValenceControl.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
-- [x] T012 Register artifact services and store contracts in `src/ValenceControl.Api/Program.cs`
+- [x] T005 Define workspace artifact request/result models in `src/ElsaControl.Deployment.Core/Workspace/WorkspaceArtifactModels.cs`
+- [x] T006 Define artifact store contract in `src/ElsaControl.Deployment.Core/Workspace/IWorkspaceArtifactStore.cs`
+- [x] T007 Add artifact validation and registration service skeleton in `src/ElsaControl.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
+- [x] T008 Add EF artifact entity in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`
+- [x] T009 Add EF artifact mappings in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
+- [x] T010 Add artifact store methods to `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T011 Add SQLite and SQL Server migrations for artifact registry metadata in `src/ElsaControl.PackageCatalog.Persistence.SqliteMigrations/Migrations/` and `src/ElsaControl.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
+- [x] T012 Register artifact services and store contracts in `src/ElsaControl.Api/Program.cs`
 
 ---
 
@@ -50,15 +50,15 @@
 
 ### Tests for User Story 1
 
-- [x] T013 [P] [US1] Add core artifact registration validation tests in `tests/ValenceControl.Deployment.Core.Tests/WorkspaceArtifactServiceTests.cs`
-- [x] T014 [P] [US1] Add artifact persistence round-trip and duplicate tests in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactPersistenceTests.cs`
-- [x] T015 [P] [US1] Add artifact registration API permission, duplicate, and safe response tests in `tests/ValenceControl.Api.Tests/WorkspaceArtifactApiTests.cs`
+- [x] T013 [P] [US1] Add core artifact registration validation tests in `tests/ElsaControl.Deployment.Core.Tests/WorkspaceArtifactServiceTests.cs`
+- [x] T014 [P] [US1] Add artifact persistence round-trip and duplicate tests in `tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactPersistenceTests.cs`
+- [x] T015 [P] [US1] Add artifact registration API permission, duplicate, and safe response tests in `tests/ElsaControl.Api.Tests/WorkspaceArtifactApiTests.cs`
 
 ### Implementation for User Story 1
 
-- [x] T016 [US1] Implement artifact registration validation and duplicate metadata behavior in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
-- [x] T017 [US1] Implement artifact persistence registration behavior in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [x] T018 [US1] Add artifact registration endpoint and request/response contracts in `src/ValenceControl.Api/Workspace/WorkspaceArtifactEndpoints.cs` and `src/ValenceControl.Api/Workspace/WorkspaceArtifactContracts.cs`
+- [x] T016 [US1] Implement artifact registration validation and duplicate metadata behavior in `src/ElsaControl.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
+- [x] T017 [US1] Implement artifact persistence registration behavior in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T018 [US1] Add artifact registration endpoint and request/response contracts in `src/ElsaControl.Api/Workspace/WorkspaceArtifactEndpoints.cs` and `src/ElsaControl.Api/Workspace/WorkspaceArtifactContracts.cs`
 - [x] T019 [US1] Run focused US1 checks documented in `specs/024-artifact-registry/quickstart.md`
 
 **Checkpoint**: Artifact registration is independently functional through API.
@@ -73,16 +73,16 @@
 
 ### Tests for User Story 2
 
-- [x] T020 [P] [US2] Add artifact list/detail API isolation and performance tests in `tests/ValenceControl.Api.Tests/WorkspaceArtifactApiTests.cs`
-- [x] T021 [P] [US2] Add Artifacts page list/detail/empty tests in `src/ValenceControl.Console/src/features/artifacts/ArtifactsPage.test.tsx`
+- [x] T020 [P] [US2] Add artifact list/detail API isolation and performance tests in `tests/ElsaControl.Api.Tests/WorkspaceArtifactApiTests.cs`
+- [x] T021 [P] [US2] Add Artifacts page list/detail/empty tests in `src/ElsaControl.Console/src/features/artifacts/ArtifactsPage.test.tsx`
 
 ### Implementation for User Story 2
 
-- [x] T022 [US2] Implement artifact list/detail store queries in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [x] T023 [US2] Add artifact list/detail endpoints in `src/ValenceControl.Api/Workspace/WorkspaceArtifactEndpoints.cs`
-- [x] T024 [US2] Add artifact API client and models in `src/ValenceControl.Console/src/features/artifacts/artifactApi.ts` and `src/ValenceControl.Console/src/features/artifacts/artifactModels.ts`
-- [x] T025 [US2] Implement Artifacts page list/detail/register shell in `src/ValenceControl.Console/src/features/artifacts/ArtifactsPage.tsx`
-- [x] T026 [US2] Enable Artifacts navigation and route in `src/ValenceControl.Console/src/app/AppShell.tsx` and `src/ValenceControl.Console/src/app/routes.tsx`
+- [x] T022 [US2] Implement artifact list/detail store queries in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T023 [US2] Add artifact list/detail endpoints in `src/ElsaControl.Api/Workspace/WorkspaceArtifactEndpoints.cs`
+- [x] T024 [US2] Add artifact API client and models in `src/ElsaControl.Console/src/features/artifacts/artifactApi.ts` and `src/ElsaControl.Console/src/features/artifacts/artifactModels.ts`
+- [x] T025 [US2] Implement Artifacts page list/detail/register shell in `src/ElsaControl.Console/src/features/artifacts/ArtifactsPage.tsx`
+- [x] T026 [US2] Enable Artifacts navigation and route in `src/ElsaControl.Console/src/app/AppShell.tsx` and `src/ElsaControl.Console/src/app/routes.tsx`
 - [x] T027 [US2] Run focused US2 checks documented in `specs/024-artifact-registry/quickstart.md`
 
 **Checkpoint**: Artifact inspection is independently functional through API and console.
@@ -97,17 +97,17 @@
 
 ### Tests for User Story 3
 
-- [x] T028 [P] [US3] Add core inspection refresh service tests in `tests/ValenceControl.Deployment.Core.Tests/WorkspaceArtifactServiceTests.cs`
-- [x] T029 [P] [US3] Add persistence tests for inspection status updates preserving identity in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactPersistenceTests.cs`
-- [x] T030 [P] [US3] Add refresh API permission, invalid reference, and unsupported provider tests in `tests/ValenceControl.Api.Tests/WorkspaceArtifactApiTests.cs`
-- [x] T031 [P] [US3] Add console refresh inspection tests in `src/ValenceControl.Console/src/features/artifacts/ArtifactsPage.test.tsx`
+- [x] T028 [P] [US3] Add core inspection refresh service tests in `tests/ElsaControl.Deployment.Core.Tests/WorkspaceArtifactServiceTests.cs`
+- [x] T029 [P] [US3] Add persistence tests for inspection status updates preserving identity in `tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactPersistenceTests.cs`
+- [x] T030 [P] [US3] Add refresh API permission, invalid reference, and unsupported provider tests in `tests/ElsaControl.Api.Tests/WorkspaceArtifactApiTests.cs`
+- [x] T031 [P] [US3] Add console refresh inspection tests in `src/ElsaControl.Console/src/features/artifacts/ArtifactsPage.test.tsx`
 
 ### Implementation for User Story 3
 
-- [x] T032 [US3] Implement local/test artifact inspection adapter in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
-- [x] T033 [US3] Implement inspection status update persistence in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [x] T034 [US3] Add artifact refresh endpoint in `src/ValenceControl.Api/Workspace/WorkspaceArtifactEndpoints.cs`
-- [x] T035 [US3] Add refresh action and invalid/unsupported states in `src/ValenceControl.Console/src/features/artifacts/ArtifactsPage.tsx`
+- [x] T032 [US3] Implement local/test artifact inspection adapter in `src/ElsaControl.Deployment.Core/Workspace/WorkspaceArtifactService.cs`
+- [x] T033 [US3] Implement inspection status update persistence in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T034 [US3] Add artifact refresh endpoint in `src/ElsaControl.Api/Workspace/WorkspaceArtifactEndpoints.cs`
+- [x] T035 [US3] Add refresh action and invalid/unsupported states in `src/ElsaControl.Console/src/features/artifacts/ArtifactsPage.tsx`
 - [x] T036 [US3] Run focused US3 checks documented in `specs/024-artifact-registry/quickstart.md`
 
 **Checkpoint**: Artifact inspection refresh is independently functional and fail-closed.
@@ -121,12 +121,12 @@
 - [x] T037 [P] Update quickstart results and known limitations in `specs/024-artifact-registry/quickstart.md`
 - [x] T038 [P] Update final API contract examples in `specs/024-artifact-registry/contracts/artifact-registry-api.md`
 - [x] T039 [P] Update final console UX contract examples in `specs/024-artifact-registry/contracts/console-artifacts-ux.md`
-- [x] T040 Review payload/secret redaction, workspace permission checks, duplicate handling, cross-workspace rejection, and unsupported-reference handling across `src/ValenceControl.Deployment.Core/Workspace/`, `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/ValenceControl.Api/Workspace/WorkspaceArtifactEndpoints.cs`
-- [x] T041 Run `dotnet test tests/ValenceControl.Deployment.Core.Tests/ValenceControl.Deployment.Core.Tests.csproj --filter WorkspaceArtifact` and record result in `specs/024-artifact-registry/quickstart.md`
-- [x] T042 Run `dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceArtifact` and record result in `specs/024-artifact-registry/quickstart.md`
-- [x] T043 Run `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --filter WorkspaceArtifact` and record result in `specs/024-artifact-registry/quickstart.md`
-- [x] T044 Run `cd src/ValenceControl.Console && npm test -- --run artifacts` and record result in `specs/024-artifact-registry/quickstart.md`
-- [x] T045 Run `cd src/ValenceControl.Console && npm run typecheck` and record result in `specs/024-artifact-registry/quickstart.md`
+- [x] T040 Review payload/secret redaction, workspace permission checks, duplicate handling, cross-workspace rejection, and unsupported-reference handling across `src/ElsaControl.Deployment.Core/Workspace/`, `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`, and `src/ElsaControl.Api/Workspace/WorkspaceArtifactEndpoints.cs`
+- [x] T041 Run `dotnet test tests/ElsaControl.Deployment.Core.Tests/ElsaControl.Deployment.Core.Tests.csproj --filter WorkspaceArtifact` and record result in `specs/024-artifact-registry/quickstart.md`
+- [x] T042 Run `dotnet test tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --filter DeploymentWorkspaceArtifact` and record result in `specs/024-artifact-registry/quickstart.md`
+- [x] T043 Run `dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj --filter WorkspaceArtifact` and record result in `specs/024-artifact-registry/quickstart.md`
+- [x] T044 Run `cd src/ElsaControl.Console && npm test -- --run artifacts` and record result in `specs/024-artifact-registry/quickstart.md`
+- [x] T045 Run `cd src/ElsaControl.Console && npm run typecheck` and record result in `specs/024-artifact-registry/quickstart.md`
 - [x] T046 Run `git diff --check` and record result in `specs/024-artifact-registry/quickstart.md`
 
 ---
@@ -139,24 +139,24 @@
 
 ### Tests for User Story 4
 
-- [ ] T047 [P] [US4] Add core upload-session validation and inspection tests in `tests/ValenceControl.Deployment.Core.Tests/WorkspaceArtifactUploadServiceTests.cs`
-- [ ] T048 [P] [US4] Add artifact blob storage contract tests with local/test provider in `tests/ValenceControl.Deployment.Core.Tests/ArtifactBlobStorageTests.cs`
-- [ ] T049 [P] [US4] Add persistence tests for upload sessions, expiration, completion, duplicate content, and cleanup state in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactUploadPersistenceTests.cs`
-- [ ] T050 [P] [US4] Add API tests for upload session create, content upload, completion, abort, permission checks, idempotency, unsafe ZIP rejection, and cross-workspace rejection in `tests/ValenceControl.Api.Tests/WorkspaceArtifactUploadApiTests.cs`
-- [ ] T051 [P] [US4] Add console upload wizard tests for file selection, progress states, completion navigation, failed diagnostics, permission-blocked state, and absence of raw payload/secret output in `src/ValenceControl.Console/src/features/artifacts/ArtifactsPage.test.tsx`
+- [ ] T047 [P] [US4] Add core upload-session validation and inspection tests in `tests/ElsaControl.Deployment.Core.Tests/WorkspaceArtifactUploadServiceTests.cs`
+- [ ] T048 [P] [US4] Add artifact blob storage contract tests with local/test provider in `tests/ElsaControl.Deployment.Core.Tests/ArtifactBlobStorageTests.cs`
+- [ ] T049 [P] [US4] Add persistence tests for upload sessions, expiration, completion, duplicate content, and cleanup state in `tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspaceArtifactUploadPersistenceTests.cs`
+- [ ] T050 [P] [US4] Add API tests for upload session create, content upload, completion, abort, permission checks, idempotency, unsafe ZIP rejection, and cross-workspace rejection in `tests/ElsaControl.Api.Tests/WorkspaceArtifactUploadApiTests.cs`
+- [ ] T051 [P] [US4] Add console upload wizard tests for file selection, progress states, completion navigation, failed diagnostics, permission-blocked state, and absence of raw payload/secret output in `src/ElsaControl.Console/src/features/artifacts/ArtifactsPage.test.tsx`
 
 ### Implementation for User Story 4
 
-- [ ] T052 [US4] Define artifact upload request/result models and upload status enums in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceArtifactUploadModels.cs`
-- [ ] T053 [US4] Define artifact blob storage abstraction and local/test provider in `src/ValenceControl.Deployment.Core/Workspace/IWorkspaceArtifactBlobStore.cs`
-- [ ] T054 [US4] Add upload-session store contract methods in `src/ValenceControl.Deployment.Core/Workspace/IWorkspaceArtifactStore.cs`
-- [ ] T055 [US4] Add upload session EF entity, mappings, and migrations in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`, `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`, and migration projects
-- [ ] T056 [US4] Implement upload session create, idempotency, completion, expiration, abort, duplicate detection, and cleanup state in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceArtifactUploadService.cs`
+- [ ] T052 [US4] Define artifact upload request/result models and upload status enums in `src/ElsaControl.Deployment.Core/Workspace/WorkspaceArtifactUploadModels.cs`
+- [ ] T053 [US4] Define artifact blob storage abstraction and local/test provider in `src/ElsaControl.Deployment.Core/Workspace/IWorkspaceArtifactBlobStore.cs`
+- [ ] T054 [US4] Add upload-session store contract methods in `src/ElsaControl.Deployment.Core/Workspace/IWorkspaceArtifactStore.cs`
+- [ ] T055 [US4] Add upload session EF entity, mappings, and migrations in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`, `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`, and migration projects
+- [ ] T056 [US4] Implement upload session create, idempotency, completion, expiration, abort, duplicate detection, and cleanup state in `src/ElsaControl.Deployment.Core/Workspace/WorkspaceArtifactUploadService.cs`
 - [ ] T057 [US4] Implement ZIP safety validation, digest computation, artifact envelope inspection, manifest/resource extraction, size limits, entry-count limits, path traversal rejection, and safe diagnostics in the upload service
-- [ ] T058 [US4] Register artifact blob storage and upload services in `src/ValenceControl.Api/Program.cs`
-- [ ] T059 [US4] Add upload endpoints and contracts in `src/ValenceControl.Api/Workspace/WorkspaceArtifactEndpoints.cs` and `src/ValenceControl.Api/Workspace/WorkspaceArtifactContracts.cs`
-- [ ] T060 [US4] Add artifact upload API client/models in `src/ValenceControl.Console/src/features/artifacts/artifactApi.ts` and `src/ValenceControl.Console/src/features/artifacts/artifactModels.ts`
-- [ ] T061 [US4] Replace primary inline manual registration UX with a dedicated Upload artifact page/wizard in `src/ValenceControl.Console/src/features/artifacts/ArtifactsPage.tsx`
+- [ ] T058 [US4] Register artifact blob storage and upload services in `src/ElsaControl.Api/Program.cs`
+- [ ] T059 [US4] Add upload endpoints and contracts in `src/ElsaControl.Api/Workspace/WorkspaceArtifactEndpoints.cs` and `src/ElsaControl.Api/Workspace/WorkspaceArtifactContracts.cs`
+- [ ] T060 [US4] Add artifact upload API client/models in `src/ElsaControl.Console/src/features/artifacts/artifactApi.ts` and `src/ElsaControl.Console/src/features/artifacts/artifactModels.ts`
+- [ ] T061 [US4] Replace primary inline manual registration UX with a dedicated Upload artifact page/wizard in `src/ElsaControl.Console/src/features/artifacts/ArtifactsPage.tsx`
 - [ ] T062 [US4] Keep manual Register artifact available as an advanced/reference-registration path, separated from the primary upload flow
 - [ ] T063 [US4] Add upload quickstart coverage and verification results in `specs/024-artifact-registry/quickstart.md`
 

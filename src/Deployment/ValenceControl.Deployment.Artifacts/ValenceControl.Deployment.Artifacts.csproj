@@ -1,6 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <ProjectReference Include="..\ValenceControl.Deployment.Abstractions\ValenceControl.Deployment.Abstractions.csproj" />
-    <ProjectReference Include="..\ValenceControl.Deployment.Manifest\ValenceControl.Deployment.Manifest.csproj" />
-  </ItemGroup>
-</Project>

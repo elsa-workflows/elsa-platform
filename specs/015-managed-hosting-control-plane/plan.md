@@ -33,11 +33,11 @@ Introduce a narrow managed hosting control plane for provisioning, lifecycle, UR
 ## Project Structure
 
 ```text
-src/ValenceControl.PackageCatalog.Core/ManagedHosting/
-src/ValenceControl.Api/Workspace/WorkspaceManagedHostingEndpoints.cs
-src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
-tests/ValenceControl.PackageCatalog.Core.Tests/
-tests/ValenceControl.Api.Tests/
+src/ElsaControl.PackageCatalog.Core/ManagedHosting/
+src/ElsaControl.Api/Workspace/WorkspaceManagedHostingEndpoints.cs
+src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/
+tests/ElsaControl.PackageCatalog.Core.Tests/
+tests/ElsaControl.Api.Tests/
 ```
 
 ## Complexity Tracking

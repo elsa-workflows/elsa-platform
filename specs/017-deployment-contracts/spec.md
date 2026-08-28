@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Add the next Phase 1 slice for the Valence Control by establishing the deployment foundation contracts and project skeletons that support manifest -> artifact -> validation -> dry-run -> apply -> history without implementing the full reconciliation engine yet."
+**Input**: User description: "Add the next Phase 1 slice for the Elsa Control by establishing the deployment foundation contracts and project skeletons that support manifest -> artifact -> validation -> dry-run -> apply -> history without implementing the full reconciliation engine yet."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -26,7 +26,7 @@ A platform maintainer can model the smallest stable deployment language for reso
 
 ---
 
-### User Story 2 - Enforce Valence Control Boundaries (Priority: P2)
+### User Story 2 - Enforce Elsa Control Boundaries (Priority: P2)
 
 A platform contributor can add the deployment foundation packages to the solution without coupling deployment abstractions to Package Catalog implementation, Runtime Builder implementation, API hosting, persistence, or runtime execution state.
 

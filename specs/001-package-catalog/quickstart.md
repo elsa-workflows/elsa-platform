@@ -1,4 +1,4 @@
-# Quickstart: Valence Control Package Catalog
+# Quickstart: Elsa Control Package Catalog
 
 This quickstart describes how an implementer should validate the first usable
 slice once tasks are generated and implemented.
@@ -36,7 +36,7 @@ Expected coverage areas:
 ## Run Locally
 
 ```bash
-dotnet run --project src/ValenceControl.Api
+dotnet run --project src/ElsaControl.Api
 ```
 
 Expected default behavior:

@@ -2,7 +2,7 @@
 
 ## Decision: Keep deployment workspace orchestration in Deployment.Core
 
-**Rationale**: The deployment cockpit, engine registration, validation, run tracking, rollback, and runtime controls are deployment-domain behavior. Keeping them in `ValenceControl.Deployment.Core` avoids turning package catalog services into the deployment product layer while still allowing the API and persistence projects to adapt the services to the existing platform host.
+**Rationale**: The deployment cockpit, engine registration, validation, run tracking, rollback, and runtime controls are deployment-domain behavior. Keeping them in `ElsaControl.Deployment.Core` avoids turning package catalog services into the deployment product layer while still allowing the API and persistence projects to adapt the services to the existing platform host.
 
 **Alternatives considered**:
 

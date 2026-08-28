@@ -37,7 +37,7 @@ Fields:
 - `typeId`: Stable identifier, for example `elsa.workflow-definition`.
 - `displayName`: Safe human-readable name.
 - `description`: Safe description of the type purpose.
-- `ownedBy`: Valence Control or extension owner.
+- `ownedBy`: Elsa Control or extension owner.
 - `supportedSchemaVersions`: Accepted schema version range or set.
 - `enabled`: Whether new submissions are accepted.
 - `defaultCompatibilityHints`: Optional baseline hints for this type.

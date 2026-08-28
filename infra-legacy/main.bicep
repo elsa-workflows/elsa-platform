@@ -10,7 +10,7 @@ param location string = resourceGroup().location
 @description('Optional globally unique prefix. Leave empty to derive names from the environment and resource group.')
 param namePrefix string = ''
 
-@description('Container image to run, for example myacr.azurecr.io/valence-control/api:tag. Leave empty for the default repository in the provisioned ACR.')
+@description('Container image to run, for example myacr.azurecr.io/elsa-control/api:tag. Leave empty for the default repository in the provisioned ACR.')
 param containerImage string = ''
 
 @secure()
@@ -22,7 +22,7 @@ param adminApiKey string
 param builderClientApiKey string = ''
 
 @description('SQL administrator login name.')
-param sqlAdministratorLogin string = 'valenceadmin'
+param sqlAdministratorLogin string = 'elsaadmin'
 
 @secure()
 @description('SQL administrator password.')
@@ -72,14 +72,14 @@ param keycloakContainerImage string = 'quay.io/keycloak/keycloak:26.0'
 @description('Keycloak container startup command.')
 param keycloakStartCommand string = 'start --hostname-strict=false'
 
-@description('Keycloak realm used by Valence Control.')
-param keycloakRealm string = 'valence-control'
+@description('Keycloak realm used by Elsa Control.')
+param keycloakRealm string = 'elsa-control'
 
-@description('Keycloak OIDC client ID used by the Valence Control API.')
-param keycloakClientId string = 'valence-control-console'
+@description('Keycloak OIDC client ID used by the Elsa Control API.')
+param keycloakClientId string = 'elsa-control-console'
 
 @secure()
-@description('Keycloak OIDC confidential client secret used by the Valence Control API. Must match the Keycloak client.')
+@description('Keycloak OIDC confidential client secret used by the Elsa Control API. Must match the Keycloak client.')
 param keycloakClientSecret string = ''
 
 @description('Keycloak bootstrap admin username. Used by Keycloak only when the server initializes an empty database.')
@@ -108,9 +108,9 @@ param additionalAppSettings object = {}
 @description('Tags applied to all resources.')
 param tags object = {}
 
-var normalizedPrefix = empty(namePrefix) ? 'valence-control-${environmentName}' : namePrefix
+var normalizedPrefix = empty(namePrefix) ? 'elsa-control-${environmentName}' : namePrefix
 var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id, environmentName)
-var registryNamePrefix = empty(namePrefix) ? 'valencecontrol${environmentName}' : replace(namePrefix, '-', '')
+var registryNamePrefix = empty(namePrefix) ? 'elsacontrol${environmentName}' : replace(namePrefix, '-', '')
 var registryName = take(toLower('${registryNamePrefix}${uniqueSuffix}'), 50)
 var appServicePlanName = '${normalizedPrefix}-plan-${uniqueSuffix}'
 var webAppName = take('${normalizedPrefix}-api-${uniqueSuffix}', 60)
@@ -122,7 +122,7 @@ var keycloakWebAppName = take('${normalizedPrefix}-identity-${uniqueSuffix}', 60
 var keycloakPlanName = '${normalizedPrefix}-identity-plan-${uniqueSuffix}'
 var keycloakPostgresName = take(toLower('${normalizedPrefix}-identity-pg-${uniqueSuffix}'), 63)
 var keycloakDatabaseName = 'keycloak'
-var defaultImage = '${registryName}.azurecr.io/valence-control/api:latest'
+var defaultImage = '${registryName}.azurecr.io/elsa-control/api:latest'
 var effectiveContainerImage = empty(containerImage) ? defaultImage : containerImage
 var keycloakDefaultHostName = 'https://${keycloakWebAppName}.azurewebsites.net'
 var keycloakAuthority = '${keycloakDefaultHostName}/realms/${keycloakRealm}'

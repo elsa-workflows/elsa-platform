@@ -54,7 +54,7 @@ The current Docker and Compose references use tags rather than immutable
 digests. For each release candidate:
 
 - resolve and record the final image digests;
-- generate an SBOM from the final Valence Control image;
+- generate an SBOM from the final Elsa Control image;
 - retain required operating-system, .NET, Node, Keycloak, and other base-image
   notices;
 - inspect generated NuGet packages, frontend bundles, and source archives for

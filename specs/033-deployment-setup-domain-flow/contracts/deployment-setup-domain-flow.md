@@ -36,7 +36,7 @@ Response:
     {
       "id": "00000000-0000-0000-0000-000000000000",
       "workspaceId": "00000000-0000-0000-0000-000000000000",
-      "name": "Valence Control Key Vault",
+      "name": "Elsa Control Key Vault",
       "provider": "Azure Key Vault",
       "description": "Shared deployment credential vault",
       "status": "Active",
@@ -55,7 +55,7 @@ Request:
 
 ```json
 {
-  "name": "Valence Control Key Vault",
+  "name": "Elsa Control Key Vault",
   "provider": "Azure Key Vault",
   "description": "Shared deployment credential vault"
 }
@@ -74,7 +74,7 @@ Request:
 
 ```json
 {
-  "name": "Valence Control Key Vault",
+  "name": "Elsa Control Key Vault",
   "provider": "Azure Key Vault",
   "description": "Shared deployment credential vault"
 }

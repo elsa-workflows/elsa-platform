@@ -41,7 +41,7 @@ Success response:
       "workspaces": [
         {
           "id": "00000000-0000-0000-0000-000000000201",
-          "name": "Valence Control Team",
+          "name": "Elsa Control Team",
           "role": "owner"
         }
       ]

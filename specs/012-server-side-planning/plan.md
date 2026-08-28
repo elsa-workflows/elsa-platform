@@ -35,11 +35,11 @@ Add a backend planner that turns builder intent into resolved runtime state and 
 ## Project Structure
 
 ```text
-src/ValenceControl.PackageCatalog.Core/Builder/Planner/
-src/ValenceControl.Api/Public/Builder/
-src/ValenceControl.Api/Workspace/
-tests/ValenceControl.PackageCatalog.Core.Tests/
-tests/ValenceControl.Api.Tests/
+src/ElsaControl.PackageCatalog.Core/Builder/Planner/
+src/ElsaControl.Api/Public/Builder/
+src/ElsaControl.Api/Workspace/
+tests/ElsaControl.PackageCatalog.Core.Tests/
+tests/ElsaControl.Api.Tests/
 ```
 
 ## Complexity Tracking

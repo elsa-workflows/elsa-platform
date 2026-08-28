@@ -63,7 +63,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: src/Hosting/ValenceControl.Console/package-lock.json
+          cache-dependency-path: src/Hosting/ElsaControl.Console/package-lock.json
 
       - name: Check deployment configuration
         id: deployment-config
@@ -113,16 +113,16 @@ jobs:
           echo "::notice::Deployment skipped because configuration is incomplete. Missing: $missing_names"
 
       - name: Restore
-        run: dotnet restore ValenceControl.sln
+        run: dotnet restore ElsaControl.sln
 
       - name: Build AppHost
-        run: dotnet build src/Hosting/ValenceControl.AppHost/ValenceControl.AppHost.csproj --configuration Release --no-restore
+        run: dotnet build src/Hosting/ElsaControl.AppHost/ElsaControl.AppHost.csproj --configuration Release --no-restore
 
       - name: Test API
-        run: dotnet test tests/Hosting/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --configuration Release --no-restore --verbosity normal
+        run: dotnet test tests/Hosting/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj --configuration Release --no-restore --verbosity normal
 
       - name: Build and test console
-        working-directory: src/Hosting/ValenceControl.Console
+        working-directory: src/Hosting/ElsaControl.Console
         run: |
           npm ci
           npm test
@@ -143,18 +143,18 @@ jobs:
           set -euo pipefail
 
           if [ "$DEPLOY_MODE" = "infra" ]; then
-            scripts/deploy-azure-valence-control.sh \
+            scripts/deploy-azure-elsa-control.sh \
               --environment "$AZURE_ENV_NAME" \
               --resource-group "$AZURE_RESOURCE_GROUP" \
               --location "$AZURE_LOCATION" \
               --subscription "$AZURE_SUBSCRIPTION_ID" \
               --image-tag "$GITHUB_SHA"
           else
-            image="$AZURE_CONTAINER_REGISTRY_ENDPOINT/valence-control/api:${GITHUB_SHA}"
+            image="$AZURE_CONTAINER_REGISTRY_ENDPOINT/elsa-control/api:${GITHUB_SHA}"
             acr_name="${AZURE_CONTAINER_REGISTRY_ENDPOINT%%.azurecr.io}"
 
             az acr login --name "$acr_name"
-            docker build --file src/Hosting/ValenceControl.Api/Dockerfile --tag "$image" .
+            docker build --file src/Hosting/ElsaControl.Api/Dockerfile --tag "$image" .
             docker push "$image"
 
             az webapp config appsettings set \

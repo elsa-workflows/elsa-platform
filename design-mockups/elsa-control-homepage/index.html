@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Elsa Control homepage redesign concept">
+  <title>Elsa Control — Deployment control plane for Elsa</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header" data-header>
+    <a class="brand" href="#top" aria-label="Elsa Control home">
+      <svg class="brand-mark" viewBox="0 0 34 34" aria-hidden="true">
+        <path d="M4.5 8.2 17 1l12.5 7.2v17.6L17 33 4.5 25.8Z"/>
+        <path d="m10.4 11.2 6.6 11.5 6.6-11.5"/>
+      </svg>
+      <span>Elsa <strong>Control</strong></span>
+    </a>
+
+    <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-nav" data-menu-toggle>
+      <span></span><span></span>
+      <span class="sr-only">Toggle navigation</span>
+    </button>
+
+    <nav class="site-nav" id="site-nav" aria-label="Primary navigation" data-menu>
+      <a href="#platform">Platform</a>
+      <a href="#deployment">How it works</a>
+      <a href="#trust">Trust</a>
+      <a href="#roadmap">Roadmap</a>
+    </nav>
+
+    <a class="header-cta" href="#contact">Request access <span aria-hidden="true">↗</span></a>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="signal-grid" aria-hidden="true"></div>
+      <div class="hero-copy reveal">
+        <p class="eyebrow"><span class="status-dot"></span> The deployment control plane for Elsa</p>
+        <h1>Ship workflows.<br><em>Keep control.</em></h1>
+        <p class="hero-lead">Turn Elsa workflows into governed releases—validated, previewed, deployed, and recorded across every environment.</p>
+        <div class="hero-actions">
+          <a class="button button-primary magnetic" href="#contact">Request early access <span aria-hidden="true">↗</span></a>
+          <a class="button button-quiet" href="#deployment">
+            <span class="play-icon" aria-hidden="true">▶</span>
+            Follow a deployment
+          </a>
+        </div>
+        <p class="hero-note">Cloud, self-hosted, or air-gapped. Your runtimes stay yours.</p>
+      </div>
+
+      <div class="control-deck reveal" aria-label="Illustration of a successful workflow deployment">
+        <div class="deck-topbar">
+          <div>
+            <span class="deck-kicker">Example release / orders-v42</span>
+            <strong>Production deployment</strong>
+          </div>
+          <span class="live-pill"><span></span> Illustrative</span>
+        </div>
+
+        <div class="artifact-row">
+          <div class="artifact-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h5M10 13h5M10 17h5"/></svg>
+          </div>
+          <div>
+            <span>Artifact</span>
+            <strong>orders-workflow@4.2.0</strong>
+          </div>
+          <code>sha:7e2c</code>
+        </div>
+
+        <div class="deployment-rail" role="tablist" aria-label="Deployment stage details">
+          <button class="rail-step is-active" type="button" role="tab" data-stage="build" aria-selected="true" aria-controls="stage-detail" tabindex="0">
+            <span class="rail-node"><span>→</span></span>
+            <small>01</small>
+            <strong>Build</strong>
+            <em>0.8s</em>
+          </button>
+          <button class="rail-step" type="button" role="tab" data-stage="validate" aria-selected="false" aria-controls="stage-detail" tabindex="-1">
+            <span class="rail-node"><span></span></span>
+            <small>02</small>
+            <strong>Validate</strong>
+            <em>1.4s</em>
+          </button>
+          <button class="rail-step" type="button" role="tab" data-stage="preview" aria-selected="false" aria-controls="stage-detail" tabindex="-1">
+            <span class="rail-node"><span></span></span>
+            <small>03</small>
+            <strong>Preview</strong>
+            <em>12 changes</em>
+          </button>
+          <button class="rail-step" type="button" role="tab" data-stage="apply" aria-selected="false" aria-controls="stage-detail" tabindex="-1">
+            <span class="rail-node"><span></span></span>
+            <small>04</small>
+            <strong>Apply</strong>
+            <em>18.2s</em>
+          </button>
+        </div>
+
+        <div class="stage-detail" id="stage-detail" role="tabpanel" aria-live="polite" data-stage-detail>
+          <div>
+            <span class="detail-label">Build result</span>
+            <strong>Immutable artifact created</strong>
+          </div>
+          <code>manifest → normalized → immutable</code>
+        </div>
+
+        <div class="environment-row">
+          <span class="environment-label">Targets</span>
+          <div class="environment is-complete" data-environment="dev"><span>Dev</span><strong>Synced</strong></div>
+          <div class="environment is-complete" data-environment="test"><span>Test</span><strong>Synced</strong></div>
+          <div class="environment is-current" data-environment="prod"><span>Prod EU</span><strong>Queued</strong></div>
+        </div>
+
+        <div class="deck-footer">
+          <span><i></i> Audit event appended</span>
+          <code>2026-07-27 14:20:01Z</code>
+        </div>
+      </div>
+
+      <div class="hero-metrics" aria-label="Release model">
+        <div><strong>Versioned</strong><span>manifests & artifacts</span></div>
+        <div><strong>Previewed</strong><span>plans & dry-runs</span></div>
+        <div><strong>Repeatable</strong><span>idempotent apply</span></div>
+        <div class="metric-message"><span class="mono">COMPLETE PROVENANCE</span><strong>One release model. Every environment.</strong></div>
+      </div>
+    </section>
+
+    <section class="problem-section section" id="platform">
+      <div class="section-heading reveal">
+        <p class="eyebrow">Control replaces guesswork</p>
+        <h2>Your workflows deserve a real release process.</h2>
+      </div>
+
+      <div class="problem-layout">
+        <div class="problem-copy reveal">
+          <p class="large-copy">Elsa makes workflow automation flexible. Elsa Control makes shipping it <em>predictable.</em></p>
+          <p>Stop relying on environment-specific scripts, invisible changes, and tribal knowledge. Define what should run, preview what will change, then apply the same artifact everywhere.</p>
+          <a class="text-link" href="#deployment">See the release model <span>→</span></a>
+        </div>
+
+        <div class="principle-list reveal">
+          <article>
+            <span class="principle-index">01</span>
+            <div>
+              <h3>Desired state, not deployment scripts</h3>
+              <p>Version one manifest for workflows, variables, packages, features, schedules, and safe secret references.</p>
+            </div>
+          </article>
+          <article>
+            <span class="principle-index">02</span>
+            <div>
+              <h3>See the change before it happens</h3>
+              <p>Validate policy, inspect a deterministic diff, and dry-run every release before apply.</p>
+            </div>
+          </article>
+          <article>
+            <span class="principle-index">03</span>
+            <div>
+              <h3>A history you can actually trust</h3>
+              <p>Record who changed what, which artifact ran, and where it landed—without storing sensitive payloads.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="deployment-section section" id="deployment">
+      <div class="section-heading section-heading-split reveal">
+        <div>
+          <p class="eyebrow">One deterministic path</p>
+          <h2>From Studio to runtime,<br>without the handoffs.</h2>
+        </div>
+        <p>Design stays in Elsa Studio. Execution stays in Elsa Runtime. Elsa Control governs everything between them.</p>
+      </div>
+
+      <div class="journey reveal">
+        <div class="journey-source">
+          <span class="journey-number">01</span>
+          <div class="source-mark">E</div>
+          <div><small>Author</small><strong>Elsa Studio</strong></div>
+        </div>
+
+        <div class="journey-track" aria-hidden="true">
+          <span class="journey-signal"></span>
+          <span class="journey-label">immutable artifact</span>
+        </div>
+
+        <div class="journey-control">
+          <span class="journey-number">02</span>
+          <svg class="mini-mark" viewBox="0 0 34 34" aria-hidden="true"><path d="M4.5 8.2 17 1l12.5 7.2v17.6L17 33 4.5 25.8Z"/><path d="m10.4 11.2 6.6 11.5 6.6-11.5"/></svg>
+          <div><small>Govern</small><strong>Elsa Control</strong></div>
+          <ul>
+            <li><span>✓</span> Validate</li>
+            <li><span>✓</span> Preview</li>
+            <li><span>✓</span> Approve</li>
+            <li><span>✓</span> Record</li>
+          </ul>
+        </div>
+
+        <div class="journey-track" aria-hidden="true">
+          <span class="journey-signal delay"></span>
+          <span class="journey-label">governed release</span>
+        </div>
+
+        <div class="journey-targets">
+          <span class="journey-number">03</span>
+          <div class="target-stack">
+            <span><i></i> Development</span>
+            <span><i></i> UAT</span>
+            <span class="target-live"><i></i> Production</span>
+          </div>
+          <div><small>Execute</small><strong>Elsa Runtimes</strong></div>
+        </div>
+      </div>
+
+      <div class="boundary-note reveal">
+        <span class="boundary-icon">↳</span>
+        <p><strong>A deliberate boundary.</strong> Elsa Control coordinates deployment state; it never takes over workflow execution, runtime queues, or live instance data.</p>
+      </div>
+    </section>
+
+    <section class="capability-section section">
+      <div class="section-heading reveal">
+        <p class="eyebrow">A complete control surface</p>
+        <h2>Built for the whole<br>deployment lifecycle.</h2>
+      </div>
+
+      <div class="capability-grid">
+        <article class="capability-card capability-card-wide reveal">
+          <div class="card-heading">
+            <span class="capability-icon">⌘</span>
+            <span class="availability">Current focus</span>
+          </div>
+          <h3>Compose trusted runtimes</h3>
+          <p>Choose packages, resolve compatibility, and save repeatable runtime configurations from a governed catalog.</p>
+          <div class="package-stack" aria-hidden="true">
+            <span><i class="package-dot core"></i> Elsa.Workflows.Core <code>3.4.1</code><b>Approved</b></span>
+            <span><i class="package-dot http"></i> Elsa.Http <code>3.4.0</code><b>Approved</b></span>
+            <span><i class="package-dot quartz"></i> Elsa.Scheduling.Quartz <code>3.3.2</code><b>Verified</b></span>
+          </div>
+        </article>
+
+        <article class="capability-card reveal">
+          <div class="card-heading">
+            <span class="capability-icon">⇄</span>
+            <span class="availability availability-next">Next</span>
+          </div>
+          <h3>Promote with policy</h3>
+          <p>Move a proven release from Dev to Production with environment-aware checks and explicit approval.</p>
+          <div class="promotion" aria-hidden="true">
+            <span>DEV <i></i></span><b>→</b><span>TEST <i></i></span><b>→</b><span class="promote-pending">PROD <i></i></span>
+          </div>
+        </article>
+
+        <article class="capability-card reveal">
+          <div class="card-heading">
+            <span class="capability-icon">◎</span>
+            <span class="availability availability-later">Later</span>
+          </div>
+          <h3>Operate without drift</h3>
+          <p>Monitor runtime health, detect configuration drift, and reconcile fleets from one operational view.</p>
+          <div class="drift-chart" aria-hidden="true">
+            <svg viewBox="0 0 300 74" preserveAspectRatio="none">
+              <path class="chart-grid" d="M0 18.5h300M0 37h300M0 55.5h300"/>
+              <path class="chart-line" d="M0 50 C32 48 42 18 73 25 S112 60 147 44 185 12 222 30 265 56 300 22"/>
+            </svg>
+            <span>fleet convergence</span><strong>Planned</strong>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="trust-section section" id="trust">
+      <div class="trust-grid">
+        <div class="section-heading reveal">
+          <p class="eyebrow">Designed for the boundary</p>
+          <h2>Governance without taking custody.</h2>
+          <p class="trust-lead">Sensitive values remain in your providers. Runtime execution remains in your environments. Elsa Control stores only the safe metadata needed to coordinate and prove a release.</p>
+        </div>
+
+        <div class="trust-ledger reveal">
+          <div class="ledger-row">
+            <span class="ledger-state state-kept">Kept</span>
+            <strong>Secrets & credentials</strong>
+            <p>Your secret store</p>
+          </div>
+          <div class="ledger-row">
+            <span class="ledger-state state-kept">Kept</span>
+            <strong>Runtime execution data</strong>
+            <p>Your Elsa Runtime</p>
+          </div>
+          <div class="ledger-row">
+            <span class="ledger-state state-recorded">Recorded</span>
+            <strong>Artifact identity & digest</strong>
+            <p>Elsa Control</p>
+          </div>
+          <div class="ledger-row">
+            <span class="ledger-state state-recorded">Recorded</span>
+            <strong>Plan, outcome & provenance</strong>
+            <p>Elsa Control</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="deployment-options reveal">
+        <span>Deploy your way</span>
+        <strong>Cloud</strong>
+        <i></i>
+        <strong>Self-hosted</strong>
+        <i></i>
+        <strong>Air-gapped</strong>
+        <span class="option-note">API-first · CLI-ready · GitOps-compatible</span>
+      </div>
+    </section>
+
+    <section class="roadmap-section section" id="roadmap">
+      <div class="section-heading section-heading-split reveal">
+        <div>
+          <p class="eyebrow">Built in the open</p>
+          <h2>A practical path to<br>fleet-scale operations.</h2>
+        </div>
+        <p>Start with repeatable deployment. Add promotion, drift detection, and policy without replacing the foundation.</p>
+      </div>
+
+      <ol class="roadmap">
+        <li class="reveal">
+          <span class="roadmap-dot is-now"></span>
+          <small>Now</small>
+          <h3>Compose & catalogue</h3>
+          <p>Package trust, compatibility, runtime configuration, deployment abstractions.</p>
+        </li>
+        <li class="reveal">
+          <span class="roadmap-dot"></span>
+          <small>Next</small>
+          <h3>Deploy & promote</h3>
+          <p>Artifacts, planning, dry-runs, idempotent apply, full deployment history.</p>
+        </li>
+        <li class="reveal">
+          <span class="roadmap-dot"></span>
+          <small>Later</small>
+          <h3>Observe & reconcile</h3>
+          <p>Drift detection, approvals, signed artifacts, fleet management, policy.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="closing-section" id="contact">
+      <div class="closing-signal" aria-hidden="true">
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="closing-content reveal">
+        <p class="eyebrow">The release process Elsa teams have been missing</p>
+        <h2>Make every workflow release<br><em>boringly predictable.</em></h2>
+        <p>Join the early access list or walk through the architecture with the team.</p>
+        <div class="hero-actions closing-actions">
+          <a class="button button-primary magnetic" href="mailto:hello@elsa-control.com?subject=Elsa%20Control%20early%20access">Request early access <span aria-hidden="true">↗</span></a>
+          <a class="button button-quiet" href="#deployment">Review the architecture <span aria-hidden="true">→</span></a>
+        </div>
+      </div>
+      <footer>
+        <a class="brand" href="#top">
+          <svg class="brand-mark" viewBox="0 0 34 34" aria-hidden="true"><path d="M4.5 8.2 17 1l12.5 7.2v17.6L17 33 4.5 25.8Z"/><path d="m10.4 11.2 6.6 11.5 6.6-11.5"/></svg>
+          <span>Elsa <strong>Control</strong></span>
+        </a>
+        <span>Deployment control for Elsa workflows.</span>
+        <span>Concept mockup · 2026</span>
+      </footer>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

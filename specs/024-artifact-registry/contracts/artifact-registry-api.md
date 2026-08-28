@@ -22,7 +22,7 @@ Response: `200 OK`
     {
       "id": "artifact-record-id",
       "artifactId": "sha256:abc123",
-      "layoutVersion": "valence-control/deployment-artifact/v1alpha1",
+      "layoutVersion": "elsa-control/deployment-artifact/v1alpha1",
       "contentDigest": { "algorithm": "sha256", "value": "abc123" },
       "format": "Zip",
       "referenceProvider": "local",
@@ -49,7 +49,7 @@ Response: `200 OK`
 {
   "id": "artifact-record-id",
   "artifactId": "sha256:abc123",
-  "layoutVersion": "valence-control/deployment-artifact/v1alpha1",
+  "layoutVersion": "elsa-control/deployment-artifact/v1alpha1",
   "contentDigest": { "algorithm": "sha256", "value": "abc123" },
   "format": "Zip",
   "referenceProvider": "local",
@@ -85,7 +85,7 @@ Request:
 ```json
 {
   "artifactId": "sha256:abc123",
-  "layoutVersion": "valence-control/deployment-artifact/v1alpha1",
+  "layoutVersion": "elsa-control/deployment-artifact/v1alpha1",
   "contentDigest": { "algorithm": "sha256", "value": "abc123" },
   "format": "Zip",
   "referenceProvider": "local",
@@ -201,7 +201,7 @@ Response: `201 Created` or `200 OK`
   "artifact": {
     "id": "artifact-record-id",
     "artifactId": "sha256:abc123",
-    "layoutVersion": "valence-control/deployment-artifact/v1alpha1",
+    "layoutVersion": "elsa-control/deployment-artifact/v1alpha1",
     "contentDigest": { "algorithm": "sha256", "value": "abc123" },
     "format": "Zip",
     "referenceProvider": "artifact-store",

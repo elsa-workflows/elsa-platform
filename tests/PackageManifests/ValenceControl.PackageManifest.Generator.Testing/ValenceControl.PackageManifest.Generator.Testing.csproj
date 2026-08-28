@@ -1,5 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <ProjectReference Include="..\..\..\src\PackageManifests\ValenceControl.PackageManifest.Generator.Core\ValenceControl.PackageManifest.Generator.Core.csproj" />
-  </ItemGroup>
-</Project>

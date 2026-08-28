@@ -33,11 +33,11 @@ Add operational visibility and lifecycle safety for managed runtimes after manag
 ## Project Structure
 
 ```text
-src/ValenceControl.PackageCatalog.Core/RuntimeOperations/
-src/ValenceControl.Api/Workspace/WorkspaceRuntimeOperationsEndpoints.cs
-src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
-tests/ValenceControl.PackageCatalog.Core.Tests/
-tests/ValenceControl.Api.Tests/
+src/ElsaControl.PackageCatalog.Core/RuntimeOperations/
+src/ElsaControl.Api/Workspace/WorkspaceRuntimeOperationsEndpoints.cs
+src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/
+tests/ElsaControl.PackageCatalog.Core.Tests/
+tests/ElsaControl.Api.Tests/
 ```
 
 ## Complexity Tracking

@@ -12,7 +12,7 @@
 
 **Purpose**: Confirm existing implementation shape and align shared feature artifacts.
 
-- [x] T001 Review current deployment secret-store models, API contracts, persistence, migrations, and console wizard in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`, `src/ValenceControl.Api/Workspace/WorkspaceDeploymentContracts.cs`, `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`, and `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [x] T001 Review current deployment secret-store models, API contracts, persistence, migrations, and console wizard in `src/ElsaControl.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`, `src/ElsaControl.Api/Workspace/WorkspaceDeploymentContracts.cs`, `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs`, and `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
 - [x] T002 Validate Spec Kit artifacts for this feature in `specs/035-engine-secret-stores/spec.md`, `specs/035-engine-secret-stores/plan.md`, `specs/035-engine-secret-stores/data-model.md`, `specs/035-engine-secret-stores/contracts/`, and `specs/035-engine-secret-stores/quickstart.md`
 
 ---
@@ -21,11 +21,11 @@
 
 **Purpose**: Shared model, validation, and storage changes needed before story-specific behavior.
 
-- [x] T003 Add engine credential store type and credential assignment status contracts in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`
-- [x] T004 Add local protected secret metadata fields to EF entities/configuration in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs` and `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
-- [x] T005 Add SQLite and SQL Server migrations for store type and protected secret metadata in `src/ValenceControl.PackageCatalog.Persistence.SqliteMigrations/Migrations/` and `src/ValenceControl.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
-- [x] T006 Update API request/response DTOs for store type, secret value submission, rotation, usage, and deferred credential assignment in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentContracts.cs`
-- [x] T007 Wire local secret protection at the API boundary in `src/ValenceControl.Api/Program.cs` and `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [x] T003 Add engine credential store type and credential assignment status contracts in `src/ElsaControl.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`
+- [x] T004 Add local protected secret metadata fields to EF entities/configuration in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs` and `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
+- [x] T005 Add SQLite and SQL Server migrations for store type and protected secret metadata in `src/ElsaControl.PackageCatalog.Persistence.SqliteMigrations/Migrations/` and `src/ElsaControl.PackageCatalog.Persistence.SqlServerMigrations/Migrations/`
+- [x] T006 Update API request/response DTOs for store type, secret value submission, rotation, usage, and deferred credential assignment in `src/ElsaControl.Api/Workspace/WorkspaceDeploymentContracts.cs`
+- [x] T007 Wire local secret protection at the API boundary in `src/ElsaControl.Api/Program.cs` and `src/ElsaControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
 
 **Checkpoint**: Shared contracts can represent explicit store types, local protected secret presence, and deferred engine credentials without exposing raw values.
 
@@ -39,17 +39,17 @@
 
 ### Tests for User Story 1
 
-- [x] T008 [P] [US1] Add API tests for creating supported store types in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
-- [x] T009 [P] [US1] Add persistence tests for store type storage and legacy provider compatibility in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
-- [x] T010 [P] [US1] Add console tests for store type choices and engine-only help text in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [x] T008 [P] [US1] Add API tests for creating supported store types in `tests/ElsaControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
+- [x] T009 [P] [US1] Add persistence tests for store type storage and legacy provider compatibility in `tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
+- [x] T010 [P] [US1] Add console tests for store type choices and engine-only help text in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 1
 
-- [x] T011 [US1] Implement store type validation and provider display derivation in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
-- [x] T012 [US1] Persist and project store type in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [x] T013 [US1] Expose store type through deployment API endpoints in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [x] T014 [US1] Update console deployment API/model types for store type in `src/ValenceControl.Console/src/features/deployments/deploymentApi.ts` and `src/ValenceControl.Console/src/features/deployments/deploymentModels.ts`
-- [x] T015 [US1] Update secret-store creation UI copy and store type selector in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [x] T011 [US1] Implement store type validation and provider display derivation in `src/ElsaControl.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
+- [x] T012 [US1] Persist and project store type in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T013 [US1] Expose store type through deployment API endpoints in `src/ElsaControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [x] T014 [US1] Update console deployment API/model types for store type in `src/ElsaControl.Console/src/features/deployments/deploymentApi.ts` and `src/ElsaControl.Console/src/features/deployments/deploymentModels.ts`
+- [x] T015 [US1] Update secret-store creation UI copy and store type selector in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
 
 **Checkpoint**: User Story 1 is independently functional.
 
@@ -63,16 +63,16 @@
 
 ### Tests for User Story 2
 
-- [x] T016 [P] [US2] Add API tests for local secret submission, external secret rejection, and rotation in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
-- [x] T017 [P] [US2] Add persistence tests proving protected secret presence is stored but not projected as raw value in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
-- [x] T018 [P] [US2] Add console tests for local secret field, external locator-only fields, and no raw value rendering in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [x] T016 [P] [US2] Add API tests for local secret submission, external secret rejection, and rotation in `tests/ElsaControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
+- [x] T017 [P] [US2] Add persistence tests proving protected secret presence is stored but not projected as raw value in `tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
+- [x] T018 [P] [US2] Add console tests for local secret field, external locator-only fields, and no raw value rendering in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 2
 
-- [x] T019 [US2] Implement credential reference validation for local versus external store types in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
-- [x] T020 [US2] Persist protected secret presence and update timestamps in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [x] T021 [US2] Implement create/update/rotate endpoint behavior in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [x] T022 [US2] Update console credential reference forms for local secret entry and external locator-only entry in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [x] T019 [US2] Implement credential reference validation for local versus external store types in `src/ElsaControl.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
+- [x] T020 [US2] Persist protected secret presence and update timestamps in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T021 [US2] Implement create/update/rotate endpoint behavior in `src/ElsaControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [x] T022 [US2] Update console credential reference forms for local secret entry and external locator-only entry in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
 
 **Checkpoint**: User Story 2 is independently functional.
 
@@ -86,16 +86,16 @@
 
 ### Tests for User Story 3
 
-- [x] T023 [P] [US3] Add service/API tests for deferred engine registration and later credential assignment in `tests/ValenceControl.Deployment.Core.Tests/WorkspaceDeploymentServiceTests.cs` and `tests/ValenceControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
-- [x] T024 [P] [US3] Add persistence tests for nullable engine credential assignment status in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
-- [x] T025 [P] [US3] Add console wizard tests for deferred credential path and later assignment status in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [x] T023 [P] [US3] Add service/API tests for deferred engine registration and later credential assignment in `tests/ElsaControl.Deployment.Core.Tests/WorkspaceDeploymentServiceTests.cs` and `tests/ElsaControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
+- [x] T024 [P] [US3] Add persistence tests for nullable engine credential assignment status in `tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
+- [x] T025 [P] [US3] Add console wizard tests for deferred credential path and later assignment status in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 3
 
-- [x] T026 [US3] Allow explicit deferred credentials in engine service validation in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
-- [x] T027 [US3] Persist and project deferred credential state for engines in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [x] T028 [US3] Expose deferred credential assignment through engine API endpoints in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [x] T029 [US3] Update create application wizard and engine registration UI to create credentials or defer them in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [x] T026 [US3] Allow explicit deferred credentials in engine service validation in `src/ElsaControl.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
+- [x] T027 [US3] Persist and project deferred credential state for engines in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T028 [US3] Expose deferred credential assignment through engine API endpoints in `src/ElsaControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [x] T029 [US3] Update create application wizard and engine registration UI to create credentials or defer them in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
 
 **Checkpoint**: User Story 3 is independently functional.
 
@@ -109,16 +109,16 @@
 
 ### Tests for User Story 4
 
-- [x] T030 [P] [US4] Add API tests for credential usage response in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
-- [x] T031 [P] [US4] Add persistence tests for credential usage projection across applications/environments/engines in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
-- [x] T032 [P] [US4] Add console tests for usage warnings before credential reference archival in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [x] T030 [P] [US4] Add API tests for credential usage response in `tests/ElsaControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
+- [x] T031 [P] [US4] Add persistence tests for credential usage projection across applications/environments/engines in `tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
+- [x] T032 [P] [US4] Add console tests for usage warnings before credential reference archival in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 4
 
-- [x] T033 [US4] Add credential usage query contract to `src/ValenceControl.Deployment.Core/Workspace/IWorkspaceDeploymentStore.cs` and `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`
-- [x] T034 [US4] Implement credential usage projection in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [x] T035 [US4] Expose credential usage endpoint in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
-- [x] T036 [US4] Show usage and lifecycle warning UI in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [x] T033 [US4] Add credential usage query contract to `src/ElsaControl.Deployment.Core/Workspace/IWorkspaceDeploymentStore.cs` and `src/ElsaControl.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`
+- [x] T034 [US4] Implement credential usage projection in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [x] T035 [US4] Expose credential usage endpoint in `src/ElsaControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [x] T036 [US4] Show usage and lifecycle warning UI in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
 
 **Checkpoint**: User Story 4 is independently functional.
 
@@ -128,10 +128,10 @@
 
 **Purpose**: Validate the full feature and remove critical issues before PR.
 
-- [x] T037 [P] Run `dotnet test ValenceControl.sln --filter "WorkspaceDeployment|DeploymentWorkspace|WorkspaceDeploymentService"` from repository root
-- [x] T038 [P] Run `npm run test -- src/features/deployments/DeploymentsPage.test.tsx` from `src/ValenceControl.Console`
-- [x] T039 [P] Run `npm run typecheck` from `src/ValenceControl.Console`
-- [x] T040 Run `dotnet build ValenceControl.sln` from repository root
+- [x] T037 [P] Run `dotnet test ElsaControl.sln --filter "WorkspaceDeployment|DeploymentWorkspace|WorkspaceDeploymentService"` from repository root
+- [x] T038 [P] Run `npm run test -- src/features/deployments/DeploymentsPage.test.tsx` from `src/ElsaControl.Console`
+- [x] T039 [P] Run `npm run typecheck` from `src/ElsaControl.Console`
+- [x] T040 Run `dotnet build ElsaControl.sln` from repository root
 - [x] T041 Run `git diff --check` from repository root
 - [x] T042 Perform self-review of credential safety, deferred engine behavior, migration compatibility, and console UX using the spec and quickstart in `specs/035-engine-secret-stores/`
 - [x] T043 Address all critical self-review findings in the affected source and test files

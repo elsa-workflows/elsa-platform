@@ -6,10 +6,10 @@
 
 ## Summary
 
-Build `ValenceControl.PackageManifest.Generator` as a NuGet build package for Elsa
+Build `Elsa.Specifications.PackageManifest.Generator` as a NuGet build package for Elsa
 professional extension libraries. The package adds MSBuild targets and a safe
 metadata-inspection task that runs after compilation and before pack, generates
-one deterministic `elsa-package.json`, validates it with `ValenceControl.PackageManifests`,
+one deterministic `elsa-package.json`, validates it with `Elsa.Specifications.PackageManifests`,
 and includes it at the NuGet package root.
 
 The implementation stays deliberately small: CShells metadata discovery, a tiny
@@ -26,7 +26,7 @@ deterministic builds.
 
 **Primary Dependencies**: MSBuild task APIs, System.Reflection.Metadata,
 MetadataLoadContext where useful for metadata-only inspection, System.Xml.Linq,
-System.Text.Json, JsonSchema.Net, ValenceControl.PackageManifests, NuGet.Versioning,
+System.Text.Json, JsonSchema.Net, Elsa.Specifications.PackageManifests, NuGet.Versioning,
 xUnit and its built-in assertions.
 
 **Storage**: File artifacts only. Inputs are compiled assemblies, XML
@@ -67,15 +67,15 @@ Recursive object schema generation and Roslyn analyzers are out of scope.
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 - **Manifest-first**: PASS. The generator emits the explicit
-  `elsa-package.json` distribution contract and uses `ValenceControl.PackageManifests`.
+  `elsa-package.json` distribution contract and uses `Elsa.Specifications.PackageManifests`.
 - **No arbitrary code execution**: PASS. Discovery uses metadata inspection of
   assemblies, XML docs, and JSON files only; constructors/getters are forbidden.
 - **Stable contracts**: PASS. Generated JSON is based on
-  `ValenceControl.PackageManifests`; CShells metadata and manifest hints are generator
+  `Elsa.Specifications.PackageManifests`; CShells metadata and manifest hints are generator
   inputs only.
 - **Schema evolution**: PASS. The plan standardizes on versioned manifest schema
   validation and Draft 2020-12 JSON Schema resources owned by
-  `ValenceControl.PackageManifests`.
+  `Elsa.Specifications.PackageManifests`.
 - **Immutable versions**: N/A. This feature generates package artifacts and does
   not index package versions.
 - **Approval separation**: N/A. Approval is catalog behavior, not generator
@@ -120,39 +120,39 @@ specs/002-package-manifest-generator/
 
 ```text
 src/
-├── ValenceControl.PackageManifests/
+├── Elsa.Specifications.PackageManifests/
 │   ├── Schemas/
 │   └── Validation/
-├── ValenceControl.PackageManifest.Generator/
+├── Elsa.Specifications.PackageManifest.Generator/
 │   ├── build/
 │   ├── buildTransitive/
 │   ├── src/
-│   │   └── ValenceControl.PackageManifest.Generator.Hints/
-│   └── ValenceControl.PackageManifest.Generator.csproj
-├── ValenceControl.PackageManifest.Generator.Core/
+│   │   └── Elsa.Specifications.PackageManifest.Generator.Hints/
+│   └── Elsa.Specifications.PackageManifest.Generator.csproj
+├── Elsa.Specifications.PackageManifest.Generator.Core/
 │   ├── AssemblyInspection/
 │   ├── Documentation/
 │   ├── Generation/
 │   ├── Overrides/
 │   ├── SchemaGeneration/
 │   └── Validation/
-└── ValenceControl.PackageManifest.Generator.MSBuild/
+└── Elsa.Specifications.PackageManifest.Generator.MSBuild/
     ├── GenerateElsaPackageManifestTask.cs
     └── Packaging/
 
 tests/
-├── ValenceControl.PackageManifest.Generator.Core.Tests/
-├── ValenceControl.PackageManifest.Generator.MSBuild.Tests/
-├── ValenceControl.PackageManifest.Generator.IntegrationTests/
-└── ValenceControl.PackageManifest.Generator.Testing/
+├── Elsa.Specifications.PackageManifest.Generator.Core.Tests/
+├── Elsa.Specifications.PackageManifest.Generator.MSBuild.Tests/
+├── Elsa.Specifications.PackageManifest.Generator.IntegrationTests/
+└── Elsa.Specifications.PackageManifest.Generator.Testing/
 ```
 
 **Structure Decision**: Use a small package facade plus separate core and
-MSBuild projects. `ValenceControl.PackageManifest.Generator` is the NuGet package authors
+MSBuild projects. `Elsa.Specifications.PackageManifest.Generator` is the NuGet package authors
 reference; it carries targets, props, task binaries, and optional source-only
 manifest hints. `Core` owns deterministic generation and validation
 orchestration. `MSBuild` owns task binding and pack item integration. The existing
-`ValenceControl.PackageManifests` package remains the wire contract and schema owner.
+`Elsa.Specifications.PackageManifests` package remains the wire contract and schema owner.
 
 ## Complexity Tracking
 

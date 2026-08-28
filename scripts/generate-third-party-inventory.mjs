@@ -21,7 +21,7 @@ function collectNuGetPackages() {
     "dotnet",
     [
       "list",
-      "ValenceControl.sln",
+      "ElsaControl.sln",
       "package",
       "--include-transitive",
       "--format",
@@ -273,16 +273,16 @@ function renderInventory() {
   return `# Third-party dependency and attribution inventory
 
 This generated inventory records third-party dependencies resolved by the
-Valence Control solution and its npm lockfiles. It is evidence for release
+Elsa Control solution and its npm lockfiles. It is evidence for release
 review, not legal advice or a substitute for reviewing the actual licence and
 notice text shipped by each dependency.
 
 Regenerate it after dependency changes:
 
 \`\`\`bash
-dotnet restore ValenceControl.sln
-npm ci --prefix src/ValenceControl.Console
-npm ci --prefix tests/ValenceControl.Console.E2E
+dotnet restore ElsaControl.sln
+npm ci --prefix src/ElsaControl.Console
+npm ci --prefix tests/ElsaControl.Console.E2E
 node scripts/generate-third-party-inventory.mjs
 \`\`\`
 

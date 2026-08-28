@@ -1,16 +1,16 @@
-# Research: Valence Control Package Catalog Console UI
+# Research: Elsa Control Package Catalog Console UI
 
 ## Decision: Add a dedicated admin frontend project
 
 **Rationale**: The repository currently has ASP.NET Core API, core, persistence,
 packaging, and manifest generator projects but no browser UI. A dedicated
-`src/ValenceControl.Console` project keeps React/TypeScript build tooling,
+`src/ElsaControl.Console` project keeps React/TypeScript build tooling,
 components, route definitions, and UI tests separate from API concerns while
 remaining in the same monorepo and local development flow.
 
 **Alternatives considered**:
 
-- Embed UI files directly in `ValenceControl.Api`: rejected because it mixes
+- Embed UI files directly in `ElsaControl.Api`: rejected because it mixes
   frontend build concerns with API endpoints and makes UI testing/dependencies
   noisier.
 - Create an external repository: rejected because this is an internal operator

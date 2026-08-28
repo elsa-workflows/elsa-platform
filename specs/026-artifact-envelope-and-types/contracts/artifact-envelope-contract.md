@@ -10,7 +10,7 @@ Content-Type: application/json
 ```json
 {
   "artifactId": "sales-onboarding:2026.05.28.1",
-  "envelopeVersion": "valence-control/artifact-envelope/v1alpha1",
+  "envelopeVersion": "elsa-control/artifact-envelope/v1alpha1",
   "artifactTypeId": "elsa.workflow-definition",
   "artifactSchemaVersion": "1.0",
   "contentDigest": {

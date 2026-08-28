@@ -18,7 +18,7 @@ samples/basic-workflow-deployment/
 Sample manifest:
 
 ```yaml
-apiVersion: valence-control/v1alpha1
+apiVersion: elsa-control/v1alpha1
 kind: EnvironmentManifest
 metadata:
   name: sales-staging
@@ -55,7 +55,7 @@ artifacts/sales-staging/
 3. Build a folder artifact from the manifest and workspace root.
 4. Inspect the folder artifact and verify:
    - `Succeeded` is true.
-   - Layout version is `valence-control/deployment-artifact/v1alpha1`.
+   - Layout version is `elsa-control/deployment-artifact/v1alpha1`.
    - Artifact ID starts with `sha256:`.
    - Manifest, metadata, payload, and checksum entries are present.
 5. Build a ZIP artifact from the same workspace.
@@ -68,7 +68,7 @@ artifacts/sales-staging/
 Focused verification after implementation:
 
 ```bash
-dotnet test tests/ValenceControl.Deployment.Artifacts.Tests/ValenceControl.Deployment.Artifacts.Tests.csproj
+dotnet test tests/ElsaControl.Deployment.Artifacts.Tests/ElsaControl.Deployment.Artifacts.Tests.csproj
 ```
 
 Full verification before PR:

@@ -48,17 +48,17 @@ module control_sql 'control-sql/control-sql.module.bicep' = {
     location: location
   }
 }
-module valence_control 'valence-control/valence-control.module.bicep' = {
-  name: 'valence-control'
+module elsa_control 'elsa-control/elsa-control.module.bicep' = {
+  name: 'elsa-control'
   scope: rg
   params: {
     location: location
     userPrincipalId: principalId
-    valence_control_acr_outputs_name: valence_control_acr.outputs.name
+    elsa_control_acr_outputs_name: elsa_control_acr.outputs.name
   }
 }
-module valence_control_acr 'valence-control-acr/valence-control-acr.module.bicep' = {
-  name: 'valence-control-acr'
+module elsa_control_acr 'elsa-control-acr/elsa-control-acr.module.bicep' = {
+  name: 'elsa-control-acr'
   scope: rg
   params: {
     location: location
@@ -66,13 +66,13 @@ module valence_control_acr 'valence-control-acr/valence-control-acr.module.bicep
 }
 output API_IDENTITY_CLIENTID string = api_identity.outputs.clientId
 output API_IDENTITY_ID string = api_identity.outputs.id
-output AZURE_APP_SERVICE_DASHBOARD_URI string = valence_control.outputs.AZURE_APP_SERVICE_DASHBOARD_URI
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = valence_control.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
+output AZURE_APP_SERVICE_DASHBOARD_URI string = elsa_control.outputs.AZURE_APP_SERVICE_DASHBOARD_URI
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = elsa_control.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output CONTROL_SQL_SQLSERVERFQDN string = control_sql.outputs.sqlServerFqdn
-output VALENCE_CONTROL_AZURE_APP_SERVICE_DASHBOARD_URI string = valence_control.outputs.AZURE_APP_SERVICE_DASHBOARD_URI
-output VALENCE_CONTROL_AZURE_CONTAINER_REGISTRY_ENDPOINT string = valence_control.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
-output VALENCE_CONTROL_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID string = valence_control.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID
-output VALENCE_CONTROL_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = valence_control.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
-output VALENCE_CONTROL_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_ID string = valence_control.outputs.AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_ID
-output VALENCE_CONTROL_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_PRINCIPAL_ID string = valence_control.outputs.AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_PRINCIPAL_ID
-output VALENCE_CONTROL_PLANID string = valence_control.outputs.planId
+output ELSA_CONTROL_AZURE_APP_SERVICE_DASHBOARD_URI string = elsa_control.outputs.AZURE_APP_SERVICE_DASHBOARD_URI
+output ELSA_CONTROL_AZURE_CONTAINER_REGISTRY_ENDPOINT string = elsa_control.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
+output ELSA_CONTROL_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID string = elsa_control.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_CLIENT_ID
+output ELSA_CONTROL_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = elsa_control.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
+output ELSA_CONTROL_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_ID string = elsa_control.outputs.AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_ID
+output ELSA_CONTROL_AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_PRINCIPAL_ID string = elsa_control.outputs.AZURE_WEBSITE_CONTRIBUTOR_MANAGED_IDENTITY_PRINCIPAL_ID
+output ELSA_CONTROL_PLANID string = elsa_control.outputs.planId

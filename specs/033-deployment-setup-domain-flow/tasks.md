@@ -13,8 +13,8 @@
 **Purpose**: Align feature documentation and existing deployment setup surfaces.
 
 - [X] T001 Update `AGENTS.md` Spec Kit plan reference to `specs/033-deployment-setup-domain-flow/plan.md`
-- [X] T002 [P] Review existing deployment setup form code in `src/ValenceControl.Console/src/features/deployments/DeploymentSetupPanel.tsx`
-- [X] T003 [P] Review existing deployment workspace persistence code in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T002 [P] Review existing deployment setup form code in `src/ElsaControl.Console/src/features/deployments/DeploymentSetupPanel.tsx`
+- [X] T003 [P] Review existing deployment workspace persistence code in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
 
 ---
 
@@ -22,12 +22,12 @@
 
 **Purpose**: Add shared secret-store/reference domain contracts and persistence needed by engine registration pickers.
 
-- [X] T004 Add secret-store and credential-reference models and requests in `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`
-- [X] T005 Add secret-store and credential-reference store/service operations in `src/ValenceControl.Deployment.Core/Workspace/IWorkspaceDeploymentStore.cs` and `src/ValenceControl.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
-- [X] T006 Add secret-store and credential-reference EF entities/configuration in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs` and `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
+- [X] T004 Add secret-store and credential-reference models and requests in `src/ElsaControl.Deployment.Core/Workspace/WorkspaceDeploymentModels.cs`
+- [X] T005 Add secret-store and credential-reference store/service operations in `src/ElsaControl.Deployment.Core/Workspace/IWorkspaceDeploymentStore.cs` and `src/ElsaControl.Deployment.Core/Workspace/WorkspaceDeploymentService.cs`
+- [X] T006 Add secret-store and credential-reference EF entities/configuration in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/DeploymentWorkspaceEntities.cs` and `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/Models/CatalogModelConfiguration.cs`
 - [X] T007 Add SQLite and SQL Server migrations for deployment secret stores, credential references, and optional engine credential-reference linkage in migration projects
-- [X] T008 Implement secret-store and credential-reference persistence in `src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
-- [X] T009 Add API contracts and endpoints for secret stores and credential references in `src/ValenceControl.Api/Workspace/WorkspaceDeploymentContracts.cs` and `src/ValenceControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
+- [X] T008 Implement secret-store and credential-reference persistence in `src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs`
+- [X] T009 Add API contracts and endpoints for secret stores and credential references in `src/ElsaControl.Api/Workspace/WorkspaceDeploymentContracts.cs` and `src/ElsaControl.Api/Workspace/WorkspaceDeploymentEndpoints.cs`
 - [X] T010 Add TypeScript models, API calls, and query keys for secret stores and credential references in deployment console files
 
 ---
@@ -40,13 +40,13 @@
 
 ### Tests for User Story 1
 
-- [X] T011 [P] [US1] Add API test proving environment creation does not require engine data in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
-- [X] T012 [P] [US1] Add console test proving Add environment form only renders environment fields in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T011 [P] [US1] Add API test proving environment creation does not require engine data in `tests/ElsaControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
+- [X] T012 [P] [US1] Add console test proving Add environment form only renders environment fields in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 1
 
-- [X] T013 [US1] Replace Add environment usage of combined setup panel with environment-only form in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
-- [X] T014 [US1] Update Add environment success navigation and empty-state copy in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T013 [US1] Replace Add environment usage of combined setup panel with environment-only form in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T014 [US1] Update Add environment success navigation and empty-state copy in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
 
 **Checkpoint**: A new environment can be created without an engine and the UI points users to the next engine-registration action.
 
@@ -60,12 +60,12 @@
 
 ### Tests for User Story 2
 
-- [X] T015 [P] [US2] Add API test for engine registration with selected credential reference metadata in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
-- [X] T016 [P] [US2] Add console test for no-engine empty state and Register engine action in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T015 [P] [US2] Add API test for engine registration with selected credential reference metadata in `tests/ElsaControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
+- [X] T016 [P] [US2] Add console test for no-engine empty state and Register engine action in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 2
 
-- [X] T017 [US2] Update engine registration panel labels and validation in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T017 [US2] Update engine registration panel labels and validation in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
 - [X] T018 [US2] Ensure engine registration derives provider/reference from selected metadata in API/service code while preserving legacy string request support
 
 **Checkpoint**: Engine registration is discoverable only after an environment exists and uses clear engine terminology.
@@ -80,13 +80,13 @@
 
 ### Tests for User Story 3
 
-- [X] T019 [P] [US3] Add API tests for creating/listing/archiving secret stores and credential references in `tests/ValenceControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
-- [X] T020 [P] [US3] Add persistence tests for active/archived secret store and credential reference behavior in `tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
-- [X] T021 [P] [US3] Add console tests for secret-store and credential-reference picker behavior in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T019 [P] [US3] Add API tests for creating/listing/archiving secret stores and credential references in `tests/ElsaControl.Api.Tests/WorkspaceDeploymentApiTests.cs`
+- [X] T020 [P] [US3] Add persistence tests for active/archived secret store and credential reference behavior in `tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/DeploymentWorkspacePersistenceTests.cs`
+- [X] T021 [P] [US3] Add console tests for secret-store and credential-reference picker behavior in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 3
 
-- [X] T022 [US3] Add deployment setup option loading to `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T022 [US3] Add deployment setup option loading to `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
 - [X] T023 [US3] Replace engine credential provider/reference free-text controls with secret-store/reference pickers in engine setup panels
 - [X] T024 [US3] Preserve legacy credential display for existing engines without registered reference metadata
 
@@ -102,11 +102,11 @@
 
 ### Tests for User Story 4
 
-- [X] T025 [P] [US4] Add console tests for secret store/reference management interactions in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
+- [X] T025 [P] [US4] Add console tests for secret store/reference management interactions in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.test.tsx`
 
 ### Implementation for User Story 4
 
-- [X] T026 [US4] Add a Secret stores setup panel to deployment application or environment setup surfaces in `src/ValenceControl.Console/src/features/deployments/DeploymentsPage.tsx`
+- [X] T026 [US4] Add a Secret stores setup panel to deployment application or environment setup surfaces in `src/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx`
 - [X] T027 [US4] Wire create/archive mutations and query invalidation for secret stores and credential references in console deployment code
 
 **Checkpoint**: The console can manage safe credential metadata needed by engine registration pickers.
@@ -117,10 +117,10 @@
 
 **Purpose**: Verify, clean up, and document the finished feature.
 
-- [X] T028 Run API tests with `dotnet test tests/ValenceControl.Api.Tests/ValenceControl.Api.Tests.csproj --no-restore`
-- [X] T029 Run persistence tests with `dotnet test tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --no-restore --filter DeploymentWorkspace`
-- [X] T030 Run console typecheck with `npm run typecheck` from `src/ValenceControl.Console`
-- [X] T031 Run console tests with `npm test -- DeploymentsPage` from `src/ValenceControl.Console`
+- [X] T028 Run API tests with `dotnet test tests/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj --no-restore`
+- [X] T029 Run persistence tests with `dotnet test tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests.csproj --no-restore --filter DeploymentWorkspace`
+- [X] T030 Run console typecheck with `npm run typecheck` from `src/ElsaControl.Console`
+- [X] T031 Run console tests with `npm test -- DeploymentsPage` from `src/ElsaControl.Console`
 - [X] T032 Run `git diff --check`
 - [X] T033 Perform self-review and fix high-priority issues before PR
 

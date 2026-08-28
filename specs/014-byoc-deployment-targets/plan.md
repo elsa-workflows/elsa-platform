@@ -35,11 +35,11 @@ Add workspace-owned deployment targets, preview runs, and deployment run trackin
 ## Project Structure
 
 ```text
-src/ValenceControl.PackageCatalog.Core/DeploymentTargets/
-src/ValenceControl.Api/Workspace/WorkspaceDeploymentTargetEndpoints.cs
-src/ValenceControl.PackageCatalog.Persistence.EntityFrameworkCore/
-tests/ValenceControl.PackageCatalog.Core.Tests/
-tests/ValenceControl.Api.Tests/
+src/ElsaControl.PackageCatalog.Core/DeploymentTargets/
+src/ElsaControl.Api/Workspace/WorkspaceDeploymentTargetEndpoints.cs
+src/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/
+tests/ElsaControl.PackageCatalog.Core.Tests/
+tests/ElsaControl.Api.Tests/
 ```
 
 ## Complexity Tracking

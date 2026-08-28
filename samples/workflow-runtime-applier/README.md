@@ -1,13 +1,13 @@
 # Workflow Runtime Applier Sample
 
-This sample shows how an Elsa Workflows runtime host wires `ValenceControl.Workflows.RuntimeApplier` so the runtime can poll Control deployment commands, claim work, fetch workflow artifacts, apply them locally, and report results.
+This sample shows how an Elsa Workflows runtime host wires `ElsaControl.Workflows.RuntimeApplier` so the runtime can poll Control deployment commands, claim work, fetch workflow artifacts, apply them locally, and report results.
 
 ## Package
 
 Add the runtime applier package to the Elsa Workflows runtime host:
 
 ```xml
-<PackageReference Include="ValenceControl.Workflows.RuntimeApplier" Version="0.0.1" />
+<PackageReference Include="ElsaControl.Workflows.RuntimeApplier" Version="0.0.1" />
 ```
 
 Use the same package version as the Control backend until an explicit Control API compatibility range is available.
@@ -16,20 +16,20 @@ Use the same package version as the Control backend until an explicit Control AP
 
 ```csharp
 using System.Net.Http.Headers;
-using ValenceControl.Workflows.RuntimeApplier;
+using ElsaControl.Workflows.RuntimeApplier;
 
 var runtimeOptions = new WorkflowArtifactRuntimeOptions
 {
-    ControlEndpoint = new Uri(builder.Configuration["ValenceControl:Endpoint"]!),
-    WorkspaceId = Guid.Parse(builder.Configuration["ValenceControl:WorkspaceId"]!),
-    EngineId = Guid.Parse(builder.Configuration["ValenceControl:EngineId"]!),
-    WorkerId = builder.Configuration["ValenceControl:WorkerId"] ?? Environment.MachineName,
+    ControlEndpoint = new Uri(builder.Configuration["ElsaControl:Endpoint"]!),
+    WorkspaceId = Guid.Parse(builder.Configuration["ElsaControl:WorkspaceId"]!),
+    EngineId = Guid.Parse(builder.Configuration["ElsaControl:EngineId"]!),
+    WorkerId = builder.Configuration["ElsaControl:WorkerId"] ?? Environment.MachineName,
     RuntimeVersion = typeof(Program).Assembly.GetName().Version?.ToString(),
     ClaimLeaseDuration = TimeSpan.FromMinutes(5),
     HeartbeatInterval = TimeSpan.FromSeconds(30),
     Capabilities = ["workflow-definition.apply"],
     AllowedPayloadReferenceProviders = ["producer-managed"],
-    AllowedPayloadHosts = builder.Configuration.GetSection("ValenceControl:AllowedPayloadHosts").Get<string[]>() ?? []
+    AllowedPayloadHosts = builder.Configuration.GetSection("ElsaControl:AllowedPayloadHosts").Get<string[]>() ?? []
 };
 runtimeOptions.Validate();
 
@@ -117,7 +117,7 @@ Production workers should add bounded retry/backoff around poll failures and use
 Polling remains required. If Control's disabled-by-default webhook dispatcher is enabled, expose the configured notification path and use it only to wake the normal poll/claim loop:
 
 ```csharp
-app.MapPost("/api/valence-control/deployment-command-notifications", async (
+app.MapPost("/api/elsa-control/deployment-command-notifications", async (
     ControlCommandWakeupQueue wakeups,
     CancellationToken cancellationToken) =>
 {
@@ -136,9 +136,9 @@ Start from [appsettings.example.json](appsettings.example.json).
 
 Required values:
 
-- `ValenceControl:Endpoint`: base Control URL.
-- `ValenceControl:WorkspaceId`: workspace that owns the deployment engine.
-- `ValenceControl:EngineId`: registered Control engine ID for this runtime.
-- `ValenceControl:AllowedPayloadHosts`: approved public artifact payload hosts.
+- `ElsaControl:Endpoint`: base Control URL.
+- `ElsaControl:WorkspaceId`: workspace that owns the deployment engine.
+- `ElsaControl:EngineId`: registered Control engine ID for this runtime.
+- `ElsaControl:AllowedPayloadHosts`: approved public artifact payload hosts.
 
 The default payload fetcher rejects redirects, proxy use, private-address hosts, unapproved hosts, invalid media types, expired references, and oversized payloads. If artifacts must be fetched from private infrastructure, replace `IWorkflowArtifactPayloadFetcher` with a host-owned implementation that keeps equivalent trust checks.

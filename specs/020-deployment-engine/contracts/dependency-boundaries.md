@@ -2,17 +2,17 @@
 
 ## Allowed Dependencies
 
-`ValenceControl.Deployment.Engine` may reference:
+`ElsaControl.Deployment.Engine` may reference:
 
-- `ValenceControl.Deployment.Abstractions`
+- `ElsaControl.Deployment.Abstractions`
 - .NET base class libraries
 - `IArtifactReader.ReadResourcesAsync(...)`
 - `DeploymentExecutionContext`
 
 Test projects may reference:
 
-- `ValenceControl.Deployment.Engine`
-- `ValenceControl.Deployment.Abstractions`
+- `ElsaControl.Deployment.Engine`
+- `ElsaControl.Deployment.Abstractions`
 - xUnit
 - xUnit's built-in assertions
 
@@ -20,10 +20,10 @@ Test projects may reference:
 
 The engine package must not reference:
 
-- `ValenceControl.Deployment.Cli`
-- `ValenceControl.Deployment.Api`
-- `ValenceControl.Deployment.Artifacts` concrete package
-- `ValenceControl.Deployment.Manifest` concrete package
+- `ElsaControl.Deployment.Cli`
+- `ElsaControl.Deployment.Api`
+- `ElsaControl.Deployment.Artifacts` concrete package
+- `ElsaControl.Deployment.Manifest` concrete package
 - Package Catalog implementation, persistence, API, or source packages
 - Runtime Builder implementation or API packages
 - ASP.NET hosting packages

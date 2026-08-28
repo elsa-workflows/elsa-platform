@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Valence Control Package Catalog Console UI
+# Specification Quality Checklist: Elsa Control Package Catalog Console UI
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-05-15

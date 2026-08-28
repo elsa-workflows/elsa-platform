@@ -20,7 +20,7 @@
 
 ## Decision: Reuse Deployment.Artifacts contracts for metadata and checksum semantics
 
-**Rationale**: `ValenceControl.Deployment.Artifacts` already defines layout version, artifact identity, content digest, manifest metadata, resource summaries, entries, checksums, and diagnostics. The registry should project these concepts rather than invent a parallel artifact language.
+**Rationale**: `ElsaControl.Deployment.Artifacts` already defines layout version, artifact identity, content digest, manifest metadata, resource summaries, entries, checksums, and diagnostics. The registry should project these concepts rather than invent a parallel artifact language.
 
 **Alternatives considered**:
 

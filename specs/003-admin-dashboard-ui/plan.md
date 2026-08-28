@@ -1,4 +1,4 @@
-# Implementation Plan: Valence Control Package Catalog Console UI
+# Implementation Plan: Elsa Control Package Catalog Console UI
 
 **Branch**: `codex/004-admin-dashboard-ui` | **Date**: 2026-05-15 | **Spec**: [spec.md](./spec.md)
 
@@ -6,7 +6,7 @@
 
 ## Summary
 
-Build a small internal admin web UI for Valence Control Package Catalog operations. The UI
+Build a small internal admin web UI for Elsa Control Package Catalog operations. The UI
 uses the existing authenticated Catalog Admin REST APIs for package source
 management, package-version approval, validation inspection, manifest
 inspection, and sync-run troubleshooting. The first slice intentionally exposes
@@ -27,7 +27,7 @@ version detail for manifest/validation/visibility explanation screens.
 
 **Primary Dependencies**: React, React Router, TanStack Query, TailwindCSS,
 shadcn/ui-style component composition, existing Catalog Admin REST APIs, existing
-`ValenceControl.PackageManifests` manifest JSON contract.
+`Elsa.Specifications.PackageManifests` manifest JSON contract.
 
 **Storage**: No frontend-owned durable storage. The dashboard may keep transient
 UI state in memory and URL query parameters. Durable source, package, approval,
@@ -72,7 +72,7 @@ workflow platform.
 - **No arbitrary code execution**: PASS. The dashboard consumes admin API JSON
   and never loads package assemblies or executes package code.
 - **Stable contracts**: PASS. No changes are planned for
-  `ValenceControl.PackageManifests`; UI contracts consume existing manifest JSON and
+  `Elsa.Specifications.PackageManifests`; UI contracts consume existing manifest JSON and
   validation DTOs.
 - **Schema evolution**: PASS. Manifest schema versions are displayed as catalog
   data. The UI does not define schema evolution rules.
@@ -121,7 +121,7 @@ specs/003-admin-dashboard-ui/
 
 ```text
 src/
-├── ValenceControl.Console/
+├── ElsaControl.Console/
 │   ├── src/
 │   │   ├── app/
 │   │   ├── components/
@@ -138,22 +138,22 @@ src/
 │   ├── package.json
 │   ├── vite.config.ts
 │   └── tailwind.config.ts
-├── ValenceControl.Api/
+├── ElsaControl.Api/
 │   └── Admin/
 └── existing catalog projects unchanged unless admin API contract deltas require
     small source, approval, validation, or sync endpoint updates
 
 tests/
-├── ValenceControl.Api.Tests/
-└── ValenceControl.Console.E2E/
+├── ElsaControl.Api.Tests/
+└── ElsaControl.Console.E2E/
 ```
 
 **Structure Decision**: Add one dedicated frontend project under
-`src/ValenceControl.Console` so the UI can evolve independently from the ASP.NET
+`src/ElsaControl.Console` so the UI can evolve independently from the ASP.NET
 Core API while still living inside the same repository and release workflow.
 Shared frontend code is organized by operational feature area and a thin `lib/api`
-adapter layer. Backend changes remain in the existing `ValenceControl.Api`,
-`ValenceControl.PackageCatalog.Core`, and persistence test projects only when needed to satisfy
+adapter layer. Backend changes remain in the existing `ElsaControl.Api`,
+`ElsaControl.PackageCatalog.Core`, and persistence test projects only when needed to satisfy
 the UI contract.
 
 ## Complexity Tracking

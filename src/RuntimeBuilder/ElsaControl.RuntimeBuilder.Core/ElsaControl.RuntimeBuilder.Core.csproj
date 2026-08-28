@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\PackageCatalog\ElsaControl.PackageCatalog.Abstractions\ElsaControl.PackageCatalog.Abstractions.csproj" />
+    <ProjectReference Include="..\ElsaControl.RuntimeBuilder.Abstractions\ElsaControl.RuntimeBuilder.Abstractions.csproj" />
+    <ProjectReference Include="..\ElsaControl.RuntimeBuilder.DeploymentTemplates\ElsaControl.RuntimeBuilder.DeploymentTemplates.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+</Project>

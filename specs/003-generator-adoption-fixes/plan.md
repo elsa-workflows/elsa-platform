@@ -6,7 +6,7 @@
 
 ## Summary
 
-Harden `ValenceControl.PackageManifest.Generator` for broad Elsa Core module adoption by
+Harden `Elsa.Specifications.PackageManifest.Generator` for broad Elsa Core module adoption by
 fixing three build-package behaviors discovered during preview rollout: warning
 severity must not make the MSBuild task return failure when only warnings are
 logged, delegate-shaped shell-feature properties must be treated as
@@ -30,7 +30,7 @@ cases.
 deterministic builds.
 
 **Primary Dependencies**: Existing MSBuild task APIs, System.Reflection metadata
-inspection, System.Text.Json, ValenceControl.PackageManifests validation, xUnit,
+inspection, System.Text.Json, Elsa.Specifications.PackageManifests validation, xUnit,
 xUnit's built-in assertions, and existing generator test helpers.
 
 **Storage**: File artifacts only. Inputs are compiled assemblies, XML docs,
@@ -72,7 +72,7 @@ contract.
 - **No arbitrary code execution**: PASS. Delegate filtering and setting
   discovery remain metadata-only; no constructors, getters, factories, or
   callbacks are invoked.
-- **Stable contracts**: PASS. No `ValenceControl.PackageManifests` wire-contract change is
+- **Stable contracts**: PASS. No `Elsa.Specifications.PackageManifests` wire-contract change is
   planned.
 - **Schema evolution**: PASS. No schema version change is needed because the
   feature excludes non-configurable code hooks rather than adding new manifest
@@ -117,11 +117,11 @@ specs/003-generator-adoption-fixes/
 
 ```text
 src/
-├── ValenceControl.PackageManifest.Generator/
+├── Elsa.Specifications.PackageManifest.Generator/
 │   └── build/
-│       ├── ValenceControl.PackageManifest.Generator.props
-│       └── ValenceControl.PackageManifest.Generator.targets
-├── ValenceControl.PackageManifest.Generator.Core/
+│       ├── Elsa.Specifications.PackageManifest.Generator.props
+│       └── Elsa.Specifications.PackageManifest.Generator.targets
+├── Elsa.Specifications.PackageManifest.Generator.Core/
 │   ├── AssemblyInspection/
 │   ├── Generation/
 │   │   ├── ManifestGenerator.cs
@@ -132,15 +132,15 @@ src/
 │   └── Validation/
 │       ├── GenerationDiagnostics.cs
 │       └── ValidationSeverityPolicy.cs
-└── ValenceControl.PackageManifest.Generator.MSBuild/
+└── Elsa.Specifications.PackageManifest.Generator.MSBuild/
     ├── GenerateElsaPackageManifestTask.cs
     └── Packaging/
 
 tests/
-├── ValenceControl.PackageManifest.Generator.Core.Tests/
-├── ValenceControl.PackageManifest.Generator.MSBuild.Tests/
-├── ValenceControl.PackageManifest.Generator.IntegrationTests/
-└── ValenceControl.PackageManifest.Generator.Testing/
+├── Elsa.Specifications.PackageManifest.Generator.Core.Tests/
+├── Elsa.Specifications.PackageManifest.Generator.MSBuild.Tests/
+├── Elsa.Specifications.PackageManifest.Generator.IntegrationTests/
+└── Elsa.Specifications.PackageManifest.Generator.Testing/
 ```
 
 **Structure Decision**: Extend the existing generator core/MSBuild/package

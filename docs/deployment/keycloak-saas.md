@@ -7,7 +7,7 @@
 
 ## Decision
 
-Run Keycloak as a separate production identity service and keep Valence Control as
+Run Keycloak as a separate production identity service and keep Elsa Control as
 an OIDC relying party. Elsa owns accounts, workspaces, roles, entitlements, and
 tenant authorization. Keycloak owns users, passwords, MFA, federation, sessions,
 and OIDC tokens.
@@ -25,7 +25,7 @@ the SaaS identity boundary and keep `Workspace` as the SaaS tenant boundary.
 
 The Bicep deployment can optionally provision:
 
-- Valence Control API Web App and Azure SQL catalog database.
+- Elsa Control API Web App and Azure SQL catalog database.
 - Keycloak Web App running the official Keycloak container.
 - Azure Database for PostgreSQL Flexible Server for Keycloak.
 - API app settings that point Elsa at the Keycloak realm.
@@ -34,7 +34,7 @@ Enable it with:
 
 ```bash
 az deployment group create \
-  --resource-group rg-valence-control-prod \
+  --resource-group rg-elsa-control-prod \
   --template-file infra-legacy/main.bicep \
   --parameters @infra-legacy/parameters/prod.example.json \
   --parameters \
@@ -61,7 +61,7 @@ development startup command while the Azure shape is being validated:
 
 ```bash
 KEYCLOAK_START_COMMAND='start-dev --hostname-strict=false' \
-scripts/deploy-azure-valence-control.sh --environment dev --deploy-keycloak
+scripts/deploy-azure-elsa-control.sh --environment dev --deploy-keycloak
 ```
 
 Use the default production command once hostname, TLS, and realm configuration
@@ -73,7 +73,7 @@ After infrastructure is deployed, bootstrap the realm and confidential client:
 
 ```bash
 KEYCLOAK_URL='https://<keycloak-app>.azurewebsites.net' \
-VALENCE_CONTROL_API_URL='https://<valence-control-api-app>.azurewebsites.net' \
+ELSA_CONTROL_API_URL='https://<elsa-control-api-app>.azurewebsites.net' \
 KEYCLOAK_ADMIN_USERNAME='keycloak-admin' \
 KEYCLOAK_ADMIN_PASSWORD='<strong-keycloak-admin-password>' \
 KEYCLOAK_CLIENT_SECRET='<strong-oidc-client-secret>' \
@@ -103,7 +103,7 @@ complete any operational realm configuration that should not be hard-coded:
 Client settings:
 
 ```text
-Client ID: valence-control-console
+Client ID: elsa-control-console
 Client authentication: On
 Standard flow: On
 Direct access grants: Off
@@ -114,13 +114,13 @@ URLs:
 
 ```text
 Valid redirect URIs:
-  https://<valence-control-api-app>.azurewebsites.net/api/auth/callback
+  https://<elsa-control-api-app>.azurewebsites.net/api/auth/callback
 
 Valid post logout redirect URIs:
-  https://<valence-control-api-app>.azurewebsites.net/admin/*
+  https://<elsa-control-api-app>.azurewebsites.net/admin/*
 
 Web origins:
-  https://<valence-control-api-app>.azurewebsites.net
+  https://<elsa-control-api-app>.azurewebsites.net
 
 Role claim:
 
@@ -143,10 +143,10 @@ When `deployKeycloak=true`, Bicep writes these API settings:
 
 ```text
 Authentication__ControlIdentity__Provider=Keycloak
-Authentication__ControlIdentity__Authority=https://<keycloak-app>.azurewebsites.net/realms/valence-control
-Authentication__ControlIdentity__Issuer=https://<keycloak-app>.azurewebsites.net/realms/valence-control
-Authentication__ControlIdentity__Audience=valence-control-console
-Authentication__ControlIdentity__ClientId=valence-control-console
+Authentication__ControlIdentity__Authority=https://<keycloak-app>.azurewebsites.net/realms/elsa-control
+Authentication__ControlIdentity__Issuer=https://<keycloak-app>.azurewebsites.net/realms/elsa-control
+Authentication__ControlIdentity__Audience=elsa-control-console
+Authentication__ControlIdentity__ClientId=elsa-control-console
 Authentication__ControlIdentity__ClientSecret=<secret>
 Authentication__ControlIdentity__RequireHttpsMetadata=true
 Authentication__WorkspaceTrustedHeaders__Enabled=false
@@ -164,14 +164,14 @@ For custom domains, update both sides together:
 After realm/client setup:
 
 ```bash
-curl https://<valence-control-api-app>.azurewebsites.net/health
-curl https://<valence-control-api-app>.azurewebsites.net/api/auth/session
+curl https://<elsa-control-api-app>.azurewebsites.net/health
+curl https://<elsa-control-api-app>.azurewebsites.net/api/auth/session
 ```
 
 Open:
 
 ```text
-https://<valence-control-api-app>.azurewebsites.net/admin/runtime-builder
+https://<elsa-control-api-app>.azurewebsites.net/admin/runtime-builder
 ```
 
 Expected flow:

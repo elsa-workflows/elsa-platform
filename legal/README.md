@@ -1,7 +1,7 @@
 # Legal documents
 
 The repository's active licence is the
-[Valence Control Commercial License](../LICENSE). [NOTICE.md](../NOTICE.md)
+[Elsa Control Commercial License](../LICENSE). [NOTICE.md](../NOTICE.md)
 records the product boundary and third-party licensing principle.
 
 Skywalker Digital B.V., trading as Valence Works, is the legal licensor.

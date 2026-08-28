@@ -6,14 +6,14 @@
 
 **Status**: Draft
 
-**Input**: User description: "Implement the Phase 1 deployment artifact package. It should build and read immutable deployment artifacts from a manifest-normalized resource set, supporting folder artifacts and ZIP artifacts, artifact metadata, content checksums, artifact inspection, and artifact diagnostics. It must consume ValenceControl.Deployment.Manifest and ValenceControl.Deployment.Abstractions, stay transport-agnostic and hosting-agnostic, avoid OCI/NuGet/signatures/policy/engine/apply concerns, and produce contracts that future engine, CLI, API, GitOps, and operator slices can reuse."
+**Input**: User description: "Implement the Phase 1 deployment artifact package. It should build and read immutable deployment artifacts from a manifest-normalized resource set, supporting folder artifacts and ZIP artifacts, artifact metadata, content checksums, artifact inspection, and artifact diagnostics. It must consume ElsaControl.Deployment.Manifest and ElsaControl.Deployment.Abstractions, stay transport-agnostic and hosting-agnostic, avoid OCI/NuGet/signatures/policy/engine/apply concerns, and produce contracts that future engine, CLI, API, GitOps, and operator slices can reuse."
 
 ## Clarifications
 
 ### Session 2026-05-20
 
 - Q: Which checksum algorithm should Phase 1 standardize on? -> A: SHA-256 only for Phase 1; the model keeps an algorithm field for future expansion.
-- Q: How should the artifact layout be versioned? -> A: Use an explicit `valence-control/deployment-artifact/v1alpha1` layout version in artifact metadata.
+- Q: How should the artifact layout be versioned? -> A: Use an explicit `elsa-control/deployment-artifact/v1alpha1` layout version in artifact metadata.
 - Q: What happens when artifact build detects any invalid input? -> A: Artifact build is atomic; any error prevents a valid artifact result and leaves no partially valid artifact.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -90,7 +90,7 @@ A platform maintainer can rely on the artifact package to remain portable and se
 - **FR-011**: The system MUST keep ZIP, OCI, NuGet, signature, policy, engine, apply, CLI, API, GitOps, and operator concerns separated so the artifact package can be reused by later slices.
 - **FR-012**: The system MUST provide public contracts for artifact building, reading, inspection, metadata, checksum entries, and artifact layout versioning.
 - **FR-013**: The system MUST use SHA-256 checksums for Phase 1 while retaining an explicit checksum algorithm field.
-- **FR-014**: The system MUST mark artifact metadata with layout version `valence-control/deployment-artifact/v1alpha1`.
+- **FR-014**: The system MUST mark artifact metadata with layout version `elsa-control/deployment-artifact/v1alpha1`.
 - **FR-015**: The system MUST treat artifact build as atomic: any error prevents a successful artifact result and no partial output may be reported as valid.
 
 ### Key Entities *(include if feature involves data)*
