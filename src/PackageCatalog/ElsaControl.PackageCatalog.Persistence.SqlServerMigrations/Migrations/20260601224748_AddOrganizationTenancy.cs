@@ -124,14 +124,14 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
             // DateTimeOffset.UtcTicks as bigint (see OrganizationConfiguration). Copying the columns
             // straight across is an operand type clash, so convert each value to UTC ticks.
             migrationBuilder.Sql("""
-                INSERT INTO Organizations (Id, Name, Status, CreatedAt, UpdatedAt, ArchivedAt, CreatedByAccountId, CustomerReference)
+                EXEC(N'INSERT INTO Organizations (Id, Name, Status, CreatedAt, UpdatedAt, ArchivedAt, CreatedByAccountId, CustomerReference)
                 SELECT
                     w.Id,
                     w.Name,
-                    'Active',
-                    DATEDIFF_BIG(DAY, CONVERT(datetime2, '0001-01-01'), utc.CreatedAt) * 864000000000
+                    ''Active'',
+                    DATEDIFF_BIG(DAY, CONVERT(datetime2, ''0001-01-01''), utc.CreatedAt) * 864000000000
                         + DATEDIFF_BIG(NANOSECOND, CONVERT(date, utc.CreatedAt), utc.CreatedAt) / 100,
-                    DATEDIFF_BIG(DAY, CONVERT(datetime2, '0001-01-01'), utc.UpdatedAt) * 864000000000
+                    DATEDIFF_BIG(DAY, CONVERT(datetime2, ''0001-01-01''), utc.UpdatedAt) * 864000000000
                         + DATEDIFF_BIG(NANOSECOND, CONVERT(date, utc.UpdatedAt), utc.UpdatedAt) / 100,
                     NULL,
                     NULL,
@@ -141,25 +141,25 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     CONVERT(datetime2, SWITCHOFFSET(w.CreatedAt, 0)),
                     CONVERT(datetime2, SWITCHOFFSET(w.UpdatedAt, 0))
                 )) AS utc(CreatedAt, UpdatedAt)
-                WHERE w.OrganizationId IS NULL;
+                WHERE w.OrganizationId IS NULL;');
                 """);
 
             migrationBuilder.Sql("""
-                UPDATE Workspaces
+                EXEC(N'UPDATE Workspaces
                 SET OrganizationId = Id
-                WHERE OrganizationId IS NULL;
+                WHERE OrganizationId IS NULL;');
                 """);
 
             migrationBuilder.Sql("""
-                INSERT INTO OrganizationMemberships (Id, OrganizationId, AccountId, Role, CreatedAt, UpdatedAt, DisabledAt, InvitedByAccountId)
+                EXEC(N'INSERT INTO OrganizationMemberships (Id, OrganizationId, AccountId, Role, CreatedAt, UpdatedAt, DisabledAt, InvitedByAccountId)
                 SELECT
                     NEWID(),
                     w.OrganizationId,
                     wm.AccountId,
-                    CASE WHEN wm.Role = 2 THEN 'Owner' ELSE 'Member' END,
-                    DATEDIFF_BIG(DAY, CONVERT(datetime2, '0001-01-01'), utc.CreatedAt) * 864000000000
+                    CASE WHEN wm.Role = 2 THEN ''Owner'' ELSE ''Member'' END,
+                    DATEDIFF_BIG(DAY, CONVERT(datetime2, ''0001-01-01''), utc.CreatedAt) * 864000000000
                         + DATEDIFF_BIG(NANOSECOND, CONVERT(date, utc.CreatedAt), utc.CreatedAt) / 100,
-                    DATEDIFF_BIG(DAY, CONVERT(datetime2, '0001-01-01'), utc.UpdatedAt) * 864000000000
+                    DATEDIFF_BIG(DAY, CONVERT(datetime2, ''0001-01-01''), utc.UpdatedAt) * 864000000000
                         + DATEDIFF_BIG(NANOSECOND, CONVERT(date, utc.UpdatedAt), utc.UpdatedAt) / 100,
                     NULL,
                     NULL
@@ -174,7 +174,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     FROM OrganizationMemberships existing
                     WHERE existing.OrganizationId = w.OrganizationId
                       AND existing.AccountId = wm.AccountId
-                );
+                );');
                 """);
 
             migrationBuilder.AlterColumn<Guid>(
