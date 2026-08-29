@@ -233,8 +233,14 @@ if [[ "$mode" == cleanup ]]; then
   cleanup_principal_id="${stored_principal_id:-$identity_principal_id}"
   role_assignment_id=""
   if [[ -n "$stored_deployment_name" ]]; then
-    [[ "$stored_deployment_name" =~ ^elsa108-${proof_name}-[0-9a-f]{12}-acr$ ]] || {
-      echo "Refusing resource-group deletion: stored ACR deployment name is invalid" >&2
+    [[ "$cleanup_principal_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ && -n "$stored_registry_id" ]] || {
+      echo "Refusing resource-group deletion: stored ACR deployment provenance is incomplete" >&2
+      exit 3
+    }
+    external_context="${proof_subscription_id}/${resource_group}/${cleanup_principal_id}/${registry_subscription_id}/${registry_resource_group}/${registry_name}"
+    expected_deployment_name="elsa108-${proof_name}-$(sha256_text "$external_context" | cut -c1-12)-acr"
+    [[ "$stored_deployment_name" == "$expected_deployment_name" ]] || {
+      echo "Refusing resource-group deletion: stored ACR deployment name does not match this exact proof context" >&2
       exit 3
     }
     if ! deployment_list_json="$(az deployment group list --resource-group "$registry_resource_group" --output json --only-show-errors)"; then

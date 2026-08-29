@@ -378,6 +378,7 @@ delete_and_verify_role_assignment /subscriptions/proof/registries/acr /subscript
         self.assertEqual(0, validate(valid.upper()).returncode)
         self.assertNotEqual(0, validate("").returncode)
         self.assertNotEqual(0, validate(valid.replace("/registries/acr/", "/registries/other/")).returncode)
+        self.assertNotEqual(0, validate(valid.replace("Microsoft.ContainerRegistry", "MicrosoftXContainerRegistry")).returncode)
 
     def test_role_cleanup_fails_when_assignment_never_disappears(self) -> None:
         script = r'''

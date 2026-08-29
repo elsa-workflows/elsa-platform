@@ -110,10 +110,13 @@ remove_owned_sql_bootstrap_admin() {
 # when the CLI returns an error. Verify the exact owned assignment is absent
 # before its deployment record (the cleanup provenance) can be removed.
 valid_role_assignment_id() {
-  local registry_id_lower assignment_id_lower
+  local registry_id_lower assignment_id_lower expected_prefix assignment_guid
   registry_id_lower="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
   assignment_id_lower="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
-  [[ "$assignment_id_lower" =~ ^${registry_id_lower}/providers/microsoft\.authorization/roleassignments/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]
+  expected_prefix="${registry_id_lower}/providers/microsoft.authorization/roleassignments/"
+  [[ "${assignment_id_lower:0:${#expected_prefix}}" == "$expected_prefix" ]] || return 1
+  assignment_guid="${assignment_id_lower:${#expected_prefix}}"
+  [[ "$assignment_guid" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]
 }
 
 delete_and_verify_role_assignment() {
