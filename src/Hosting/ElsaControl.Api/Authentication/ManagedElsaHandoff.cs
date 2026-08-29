@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -52,6 +53,7 @@ public sealed record ManagedElsaHandoffAuthorization(
     Guid InstanceId,
     string Audience,
     Uri RedirectUri,
+    string CodeChallenge,
     IReadOnlySet<string> Scopes);
 
 public sealed record ManagedElsaHandoffRequest(
@@ -59,6 +61,7 @@ public sealed record ManagedElsaHandoffRequest(
     Guid InstanceId,
     string Audience,
     Uri RedirectUri,
+    string CodeChallenge,
     IReadOnlySet<string>? Scopes = null)
 {
     public IReadOnlySet<string> RequestedScopes => Scopes is { Count: > 0 }
@@ -124,6 +127,8 @@ public sealed class ManagedElsaHandoffKeyRing : IDisposable
 
     public IReadOnlyCollection<SecurityKey> ValidationKeys => _keys.Values.Cast<SecurityKey>().ToArray();
 
+    public bool ContainsKey(string keyId) => _keys.ContainsKey(keyId);
+
     public static ManagedElsaHandoffKeyRing CreateEphemeral() =>
         new("prototype", RSA.Create(2048));
 
@@ -153,6 +158,7 @@ public sealed record ManagedElsaHandoffClaims(
     Guid InstanceId,
     string Audience,
     Uri RedirectUri,
+    string CodeChallenge,
     IReadOnlySet<string> Scopes,
     DateTimeOffset IssuedAt,
     DateTimeOffset ExpiresAt)
@@ -244,7 +250,9 @@ public sealed class ManagedElsaHandoffIssuer(
             request.OrganizationId != authorization.OrganizationId ||
             request.InstanceId != authorization.InstanceId ||
             request.RedirectUri != authorization.RedirectUri ||
+            !string.Equals(request.CodeChallenge, authorization.CodeChallenge, StringComparison.Ordinal) ||
             !IsSafeRedirectUri(request.RedirectUri) ||
+            !IsValidCodeChallenge(request.CodeChallenge) ||
             string.IsNullOrWhiteSpace(identity.Issuer) ||
             string.IsNullOrWhiteSpace(identity.Subject) ||
             !request.RequestedScopes.SetEquals([ManagedElsaHandoffDefaults.RuntimeSessionScope]) ||
@@ -262,6 +270,7 @@ public sealed class ManagedElsaHandoffIssuer(
             new("org_id", authorization.OrganizationId.ToString("D")),
             new("instance_id", authorization.InstanceId.ToString("D")),
             new("redirect_uri", authorization.RedirectUri.OriginalString),
+            new("code_challenge", authorization.CodeChallenge),
             new("scope", string.Join(' ', request.RequestedScopes.Order(StringComparer.Ordinal))),
             new(JwtRegisteredClaimNames.Jti, jti)
         };
@@ -307,6 +316,17 @@ public sealed class ManagedElsaHandoffIssuer(
           (redirectUri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) || redirectUri.Host.Equals("127.0.0.1", StringComparison.Ordinal)))) &&
         !redirectUri.Fragment.Any() &&
         !redirectUri.UserInfo.Any();
+
+    internal static bool IsValidCodeChallenge(string? codeChallenge) =>
+        codeChallenge is { Length: 43 } &&
+        codeChallenge.All(character =>
+            character is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9' or '-' or '_');
+
+    internal static string CreateCodeChallenge(string verifier) =>
+        Convert.ToBase64String(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)))
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
 }
 
 public sealed class ManagedElsaHandoffRedeemer(
@@ -323,11 +343,13 @@ public sealed class ManagedElsaHandoffRedeemer(
         string token,
         string expectedAudience,
         Uri expectedRedirectUri,
+        string codeVerifier,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(token) ||
             string.IsNullOrWhiteSpace(expectedAudience) ||
-            !ManagedElsaHandoffIssuer.IsSafeRedirectUri(expectedRedirectUri))
+            !ManagedElsaHandoffIssuer.IsSafeRedirectUri(expectedRedirectUri) ||
+            string.IsNullOrWhiteSpace(codeVerifier))
             return await InvalidAsync(cancellationToken);
 
         ManagedElsaHandoffClaims claims;
@@ -343,6 +365,12 @@ public sealed class ManagedElsaHandoffRedeemer(
         {
             return await InvalidAsync(cancellationToken);
         }
+
+        var computedChallenge = ManagedElsaHandoffIssuer.CreateCodeChallenge(codeVerifier);
+        if (!CryptographicOperations.FixedTimeEquals(
+                Encoding.ASCII.GetBytes(computedChallenge),
+                Encoding.ASCII.GetBytes(claims.CodeChallenge)))
+            return await InvalidAsync(cancellationToken);
 
         if (!await replayStore.TryConsumeAsync(claims.Jti, claims.ExpiresAt, cancellationToken))
         {
@@ -400,7 +428,10 @@ public sealed class ManagedElsaHandoffRedeemer(
         };
         var principal = handler.ValidateToken(token, validationParameters, out var validatedToken);
         if (validatedToken is not JwtSecurityToken jwt ||
-            !string.Equals(jwt.Header.Alg, SecurityAlgorithms.RsaSha256, StringComparison.Ordinal))
+            !string.Equals(jwt.Header.Alg, SecurityAlgorithms.RsaSha256, StringComparison.Ordinal) ||
+            !string.Equals(jwt.Header.Typ, ManagedElsaHandoffDefaults.TokenType, StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(jwt.Header.Kid) ||
+            !keyRing.ContainsKey(jwt.Header.Kid))
             throw new SecurityTokenException("Only RS256 handoff tokens are accepted.");
 
         var jti = RequiredClaim(principal, JwtRegisteredClaimNames.Jti);
@@ -409,6 +440,7 @@ public sealed class ManagedElsaHandoffRedeemer(
         var controlSubject = RequiredClaim(principal, "control_sub");
         var organizationId = RequiredGuid(principal, "org_id");
         var instanceId = RequiredGuid(principal, "instance_id");
+        var codeChallenge = RequiredClaim(principal, "code_challenge");
         var audience = RequiredClaim(principal, JwtRegisteredClaimNames.Aud);
         var redirectUri = new Uri(RequiredClaim(principal, "redirect_uri"), UriKind.Absolute);
         var scopes = RequiredClaim(principal, "scope")
@@ -430,6 +462,7 @@ public sealed class ManagedElsaHandoffRedeemer(
             instanceId,
             audience,
             redirectUri,
+            codeChallenge,
             scopes,
             issuedAt,
             expiresAt);
@@ -511,42 +544,7 @@ public sealed class ManagedElsaHandoffService(
         string token,
         string expectedAudience,
         Uri expectedRedirectUri,
+        string codeVerifier,
         CancellationToken cancellationToken = default) =>
-        redeemer.RedeemAsync(token, expectedAudience, expectedRedirectUri, cancellationToken);
-}
-
-public sealed record ManagedElsaHandoffSession(
-    string SessionId,
-    Guid AccountId,
-    Guid OrganizationId,
-    Guid InstanceId,
-    IReadOnlySet<string> Scopes,
-    DateTimeOffset ExpiresAt);
-
-/// <summary>
-/// Local prototype for the managed runtime's session boundary. A production runtime
-/// should back this with its own HttpOnly/SameSite session cookie and revoke it on
-/// logout; the handoff JWT is never used as the runtime's long-lived bearer token.
-/// </summary>
-public sealed class InMemoryManagedElsaSessionStore(TimeProvider timeProvider)
-{
-    private readonly ConcurrentDictionary<string, ManagedElsaHandoffSession> _sessions = new(StringComparer.Ordinal);
-
-    public ManagedElsaHandoffSession Create(ManagedElsaHandoffClaims claims)
-    {
-        var session = new ManagedElsaHandoffSession(
-            claims.Jti,
-            claims.AccountId,
-            claims.OrganizationId,
-            claims.InstanceId,
-            claims.Scopes,
-            claims.ExpiresAt);
-        _sessions[session.SessionId] = session;
-        return session;
-    }
-
-    public bool IsActive(string sessionId) =>
-        _sessions.TryGetValue(sessionId, out var session) && session.ExpiresAt > timeProvider.GetUtcNow();
-
-    public bool Revoke(string sessionId) => _sessions.TryRemove(sessionId, out _);
+        redeemer.RedeemAsync(token, expectedAudience, expectedRedirectUri, codeVerifier, cancellationToken);
 }

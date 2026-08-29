@@ -54,7 +54,7 @@ public static class ManagedElsaHandoffEndpoints
             if (!request.TryCreate(out var audience, out var redirectUri))
                 return Results.BadRequest(new { error = "A valid audience and HTTPS redirect URI are required." });
 
-            var result = await handoff.RedeemAsync(request.Token, audience!, redirectUri!, cancellationToken);
+            var result = await handoff.RedeemAsync(request.Token, audience!, redirectUri!, request.CodeVerifier, cancellationToken);
             return result.Failure switch
             {
                 ManagedElsaHandoffRedeemFailure.Replay => Results.Conflict(new { error = "This handoff has already been used." }),
@@ -78,6 +78,7 @@ public sealed record ManagedElsaHandoffIssueRequest(
     Guid InstanceId,
     string Audience,
     string RedirectUri,
+    string CodeChallenge,
     string[]? Scopes = null)
 {
     public bool TryCreate(out ManagedElsaHandoffRequest? request)
@@ -91,8 +92,10 @@ public sealed record ManagedElsaHandoffIssueRequest(
             InstanceId,
             Audience,
             redirectUri,
+            CodeChallenge,
             Scopes?.ToHashSet(StringComparer.Ordinal));
         return !string.IsNullOrWhiteSpace(Audience) &&
+               ManagedElsaHandoffIssuer.IsValidCodeChallenge(CodeChallenge) &&
                (Scopes is null || Scopes.All(x => !string.IsNullOrWhiteSpace(x))) &&
                ManagedElsaHandoffIssuer.IsSafeRedirectUri(redirectUri);
     }
@@ -109,13 +112,17 @@ public sealed record ManagedElsaHandoffIssueResponse(
 public sealed record ManagedElsaHandoffRedeemRequest(
     string Token,
     string Audience,
-    string RedirectUri)
+    string RedirectUri,
+    string CodeVerifier)
 {
     public bool TryCreate(out string? audience, out Uri? redirectUri)
     {
         audience = string.IsNullOrWhiteSpace(Audience) ? null : Audience;
         redirectUri = Uri.TryCreate(RedirectUri, UriKind.Absolute, out var parsed) ? parsed : null;
-        return audience is not null && redirectUri is not null && ManagedElsaHandoffIssuer.IsSafeRedirectUri(redirectUri);
+        return audience is not null &&
+               redirectUri is not null &&
+               !string.IsNullOrWhiteSpace(CodeVerifier) &&
+               ManagedElsaHandoffIssuer.IsSafeRedirectUri(redirectUri);
     }
 }
 

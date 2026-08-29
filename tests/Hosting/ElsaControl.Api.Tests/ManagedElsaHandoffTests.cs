@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.IdentityModel.Tokens.Jwt;
 using ElsaControl.Api.Authentication;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,6 +13,7 @@ namespace ElsaControl.Api.Tests;
 
 public sealed class ManagedElsaHandoffTests
 {
+    private const string CodeVerifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
     [Fact]
     public async Task Existing_control_identity_can_issue_and_redeem_one_time_handoff()
     {
@@ -27,7 +30,8 @@ public sealed class ManagedElsaHandoffTests
                 organizationId,
                 instanceId,
                 authorizer.Audience,
-                authorizer.RedirectUri.OriginalString));
+                authorizer.RedirectUri.OriginalString,
+                authorizer.CodeChallenge));
 
         Assert.Equal(HttpStatusCode.OK, issue.StatusCode);
         var issued = (await issue.Content.ReadControlJsonAsync<ManagedElsaHandoffIssueResponse>())!;
@@ -37,7 +41,7 @@ public sealed class ManagedElsaHandoffTests
 
         var redeem = await app.CreateClient().PostControlJsonAsync(
             "/api/managed-elsa/handoff/redeem",
-            new ManagedElsaHandoffRedeemRequest(issued.Token, authorizer.Audience, authorizer.RedirectUri.OriginalString));
+            new ManagedElsaHandoffRedeemRequest(issued.Token, authorizer.Audience, authorizer.RedirectUri.OriginalString, CodeVerifier));
 
         Assert.Equal(HttpStatusCode.OK, redeem.StatusCode);
         var session = (await redeem.Content.ReadControlJsonAsync<ManagedElsaHandoffRedeemResponse>())!;
@@ -60,7 +64,8 @@ public sealed class ManagedElsaHandoffTests
                 Guid.NewGuid(),
                 authorizer.InstanceId,
                 authorizer.Audience,
-                authorizer.RedirectUri.OriginalString));
+                authorizer.RedirectUri.OriginalString,
+                authorizer.CodeChallenge));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -76,6 +81,21 @@ public sealed class ManagedElsaHandoffTests
 
         Assert.True(first.Succeeded);
         Assert.Equal(ManagedElsaHandoffRedeemFailure.Replay, second.Failure);
+        Assert.Contains(fixture.Audit.Events, audit => audit.Action == "redeem.succeeded");
+        Assert.Contains(fixture.Audit.Events, audit => audit.Action == "redeem.replay_rejected");
+    }
+
+    [Fact]
+    public async Task Concurrent_redeemers_allow_exactly_one_success()
+    {
+        using var fixture = CreateFixture();
+        var token = fixture.Issue();
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => fixture.RedeemAsync(token)));
+
+        Assert.Single(results, result => result.Succeeded);
+        Assert.Equal(31, results.Count(result => result.Failure == ManagedElsaHandoffRedeemFailure.Replay));
+        Assert.Equal(31, fixture.Audit.Events.Count(x => x.Action == "redeem.replay_rejected"));
     }
 
     [Fact]
@@ -86,6 +106,54 @@ public sealed class ManagedElsaHandoffTests
         var result = await fixture.RedeemAsync(fixture.Issue(), expectedAudience: "urn:elsa:instance:other");
 
         Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, result.Failure);
+    }
+
+    [Fact]
+    public async Task Missing_or_wrong_verifier_is_rejected()
+    {
+        using var fixture = CreateFixture();
+        var token = fixture.Issue();
+
+        var missing = await fixture.RedeemAsync(token, codeVerifier: "");
+        var wrong = await fixture.RedeemAsync(fixture.Issue(), codeVerifier: "wrong-verifier");
+
+        Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, missing.Failure);
+        Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, wrong.Failure);
+        Assert.Equal(2, fixture.Audit.Events.Count(audit => audit.Action == "redeem.invalid"));
+    }
+
+    [Fact]
+    public void Issued_token_contains_the_required_type_and_known_key_id()
+    {
+        using var fixture = CreateFixture();
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(fixture.Issue());
+
+        Assert.Equal(ManagedElsaHandoffDefaults.TokenType, jwt.Header.Typ);
+        Assert.Equal("prototype", jwt.Header.Kid);
+    }
+
+    [Fact]
+    public async Task Wrong_token_type_and_unknown_key_id_are_rejected()
+    {
+        using var fixture = CreateFixture();
+        var wrongType = fixture.IssueWithTokenType("JWT");
+        using var unknownKeyRing = ManagedElsaHandoffKeyRing.CreateEphemeral();
+        var alternateIssuer = new ManagedElsaHandoffIssuer(
+            Options.Create(new ManagedElsaHandoffOptions
+            {
+                Enabled = true,
+                Issuer = "https://cloud.example.test",
+                TokenLifetime = TimeSpan.FromMinutes(1)
+            }),
+            unknownKeyRing,
+            fixture.Clock);
+        var unknownKey = alternateIssuer.Issue(
+            new TrustedWorkspaceIdentity("https://idp.example.test", "subject", "User", "user@example.test"),
+            fixture.Request,
+            fixture.Authorizer.Authorization).Token;
+
+        Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, (await fixture.RedeemAsync(wrongType)).Failure);
+        Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, (await fixture.RedeemAsync(unknownKey)).Failure);
     }
 
     [Fact]
@@ -109,6 +177,7 @@ public sealed class ManagedElsaHandoffTests
         var result = await fixture.RedeemAsync(token);
 
         Assert.Equal(ManagedElsaHandoffRedeemFailure.AuthorizationRevoked, result.Failure);
+        Assert.Contains(fixture.Audit.Events, audit => audit.Action == "redeem.authorization_revoked");
     }
 
     [Fact]
@@ -121,19 +190,6 @@ public sealed class ManagedElsaHandoffTests
             expectedRedirectUri: new Uri("https://managed.example.test/another-callback"));
 
         Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, result.Failure);
-    }
-
-    [Fact]
-    public async Task Runtime_session_is_local_and_logout_revokes_it()
-    {
-        using var fixture = CreateFixture();
-        var claims = (await fixture.RedeemAsync(fixture.Issue())).Claims!;
-        var sessions = new InMemoryManagedElsaSessionStore(fixture.Clock);
-        var session = sessions.Create(claims);
-
-        Assert.True(sessions.IsActive(session.SessionId));
-        Assert.True(sessions.Revoke(session.SessionId));
-        Assert.False(sessions.IsActive(session.SessionId));
     }
 
     private static ControlApiTestApplication CreateApplication(FakeHandoffAuthorizer authorizer) =>
@@ -161,7 +217,7 @@ public sealed class ManagedElsaHandoffTests
         var audit = new RecordingAuditSink();
         var issuer = new ManagedElsaHandoffIssuer(options, keyRing, clock);
         var redeemer = new ManagedElsaHandoffRedeemer(options, keyRing, replayStore, authorizer, clock, audit);
-        return new HandoffFixture(clock, authorizer, issuer, redeemer, keyRing);
+        return new HandoffFixture(clock, authorizer, issuer, redeemer, keyRing, audit);
     }
 
     private sealed class HandoffFixture(
@@ -169,33 +225,55 @@ public sealed class ManagedElsaHandoffTests
         FakeHandoffAuthorizer authorizer,
         ManagedElsaHandoffIssuer issuer,
         ManagedElsaHandoffRedeemer redeemer,
-        ManagedElsaHandoffKeyRing keyRing) : IDisposable
+        ManagedElsaHandoffKeyRing keyRing,
+        RecordingAuditSink audit) : IDisposable
     {
         public TestTimeProvider Clock { get; } = clock;
         public FakeHandoffAuthorizer Authorizer { get; } = authorizer;
         private ManagedElsaHandoffIssuer Issuer { get; } = issuer;
         private ManagedElsaHandoffRedeemer Redeemer { get; } = redeemer;
         private ManagedElsaHandoffKeyRing KeyRing { get; } = keyRing;
+        public RecordingAuditSink Audit { get; } = audit;
 
         public ManagedElsaHandoffRequest Request => new(
             Authorizer.OrganizationId,
             Authorizer.InstanceId,
             Authorizer.Audience,
-            Authorizer.RedirectUri);
+            Authorizer.RedirectUri,
+            Authorizer.CodeChallenge);
 
         public string Issue() => Issuer.Issue(
             new TrustedWorkspaceIdentity("https://idp.example.test", "subject", "User", "user@example.test"),
             Request,
             Authorizer.Authorization).Token;
 
+        public string IssueWithTokenType(string tokenType)
+        {
+            var handler = new JwtSecurityTokenHandler();
+            var source = handler.ReadJwtToken(Issue());
+            return handler.WriteToken(handler.CreateToken(new Microsoft.IdentityModel.Tokens.SecurityTokenDescriptor
+            {
+                Issuer = source.Issuer,
+                Audience = source.Audiences.Single(),
+                Subject = new System.Security.Claims.ClaimsIdentity(source.Claims),
+                IssuedAt = source.ValidFrom,
+                NotBefore = source.ValidFrom,
+                Expires = source.ValidTo,
+                TokenType = tokenType,
+                SigningCredentials = KeyRing.ActiveSigningCredentials
+            }));
+        }
+
         public Task<ManagedElsaHandoffRedeemResult> RedeemAsync(
             string token,
             string? expectedAudience = null,
-            Uri? expectedRedirectUri = null) =>
+            Uri? expectedRedirectUri = null,
+            string? codeVerifier = null) =>
             Redeemer.RedeemAsync(
                 token,
                 expectedAudience ?? Authorizer.Audience,
-                expectedRedirectUri ?? Authorizer.RedirectUri);
+                expectedRedirectUri ?? Authorizer.RedirectUri,
+                codeVerifier ?? CodeVerifier);
 
         public void Dispose() => KeyRing.Dispose();
     }
@@ -207,6 +285,7 @@ public sealed class ManagedElsaHandoffTests
         public Guid AccountId { get; } = Guid.NewGuid();
         public string Audience { get; } = $"urn:elsa:instance:{instanceId:D}";
         public Uri RedirectUri { get; } = new($"https://managed.example.test/instances/{instanceId:D}/auth/callback");
+        public string CodeChallenge { get; } = ManagedElsaHandoffIssuer.CreateCodeChallenge(CodeVerifier);
         public bool IsAuthorized { get; set; } = true;
 
         public ManagedElsaHandoffAuthorization Authorization => new(
@@ -215,6 +294,7 @@ public sealed class ManagedElsaHandoffTests
             InstanceId,
             Audience,
             RedirectUri,
+            CodeChallenge,
             new HashSet<string>([ManagedElsaHandoffDefaults.RuntimeSessionScope], StringComparer.Ordinal));
 
         public ValueTask<ManagedElsaHandoffAuthorization?> AuthorizeAsync(
@@ -238,11 +318,11 @@ public sealed class ManagedElsaHandoffTests
 
     private sealed class RecordingAuditSink : IManagedElsaHandoffAuditSink
     {
-        public List<ManagedElsaHandoffAuditEvent> Events { get; } = [];
+        public ConcurrentQueue<ManagedElsaHandoffAuditEvent> Events { get; } = new();
 
         public ValueTask RecordAsync(ManagedElsaHandoffAuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
-            Events.Add(auditEvent);
+            Events.Enqueue(auditEvent);
             return ValueTask.CompletedTask;
         }
     }

@@ -14,11 +14,13 @@ create a second customer account or accept a Control session cookie.
    its own store. Browser-provided account IDs, roles, organization IDs and
    instance IDs are never trusted as authority.
 3. Control signs a one-minute RS256 JWT for the exact managed instance audience and
-   exact callback URI. The token is returned only to the authenticated caller.
+   exact callback URI. The token includes a PKCE S256 code challenge; the token is
+   returned only to the authenticated caller.
 4. The managed runtime posts the code to the Control redemption seam over TLS,
-   supplying its expected audience and callback URI. Control validates the
-   signature and claims, atomically consumes the `jti`, and checks current
-   organization/instance authorization again.
+   supplying its expected audience, callback URI and the verifier held by the
+   initiating browser/runtime. Control validates the signature, claims and
+   verifier, atomically consumes the `jti`, and checks current organization/instance
+   authorization again.
 5. The runtime creates its own short-lived HttpOnly/SameSite session. It never uses
    the handoff code as a long-lived bearer token. Runtime logout revokes that local
    session.
@@ -29,6 +31,13 @@ The prototype endpoints are:
 POST /api/managed-elsa/handoff/issue
 POST /api/managed-elsa/handoff/redeem
 ```
+
+The issue request carries a high-entropy PKCE `code_challenge` and the redeem
+request carries its matching `code_verifier`. The challenge is S256 only. This
+prevents a stolen front-channel JWT from being redeemed without the verifier.
+The browser's callback `state` remains a separate CSRF/callback-correlation value:
+it is generated and checked by the console/runtime and is not an authorization
+claim or a substitute for PKCE.
 
 They are disabled by default and the application registers an explicit deny-all
 authorizer until the Elsa Instance aggregate supplies a real implementation. The
@@ -51,6 +60,7 @@ Its claims are:
 | `org_id` | Authorized customer organization. |
 | `instance_id` | Authorized Elsa Instance. |
 | `redirect_uri` | Exact HTTPS (or local development) callback binding. |
+| `code_challenge` | S256 PKCE challenge held by the initiating browser/runtime. |
 | `scope` | Only `runtime:session` in this prototype. |
 | `jti` | Unique one-time redemption identifier. |
 | `iat`, `nbf`, `exp` | One-minute lifetime; maximum configured lifetime is five minutes. |
@@ -78,10 +88,11 @@ but must not be silently treated as a permanent instance identity.
 
 | Threat | Control |
 |---|---|
-| Stolen front-channel code | One-minute expiry, exact audience and callback binding, TLS redemption, and atomic `jti` consumption. A code is not a runtime session. |
+| Stolen front-channel code | S256 PKCE verifier, one-minute expiry, exact audience and callback binding, TLS redemption, and atomic `jti` consumption. A code is not a runtime session. |
 | Code replay/race | `IManagedElsaHandoffReplayStore.TryConsumeAsync` is the first state-changing redemption operation; `ConcurrentDictionary.TryAdd` gives the local prototype an atomic single-use check. Production must use a shared durable conditional insert with expiry. |
 | Wrong runtime receives a code | `aud` is instance-specific and is validated against the target's expected audience. |
 | Open redirect | Redirect URIs must be absolute HTTPS URIs (localhost HTTP is test-only), with no fragment or user-info. The target authorizer must return the canonical URI; the request is not an allowlist. |
+| Callback CSRF or mix-up | The console/runtime maintains a separate unpredictable callback `state` bound to the initiating browser session and validates it before posting the code. PKCE protects the code exchange even if a code is observed. |
 | Revoked organization/instance membership | Current authorization is checked both at issue and redemption. A failed redemption consumes the code and returns a generic authorization failure. |
 | Cross-organization confusion | `org_id` and `instance_id` are issued only from an authorization result and are checked as a pair. |
 | Privilege escalation | The only prototype scope is `runtime:session`; requested scopes must be a subset of authorizer-granted scopes. Runtime API/admin permissions are not represented. |
@@ -113,8 +124,10 @@ Production rotation is: publish the new public key, begin signing with the new
 `kid`, retain the old public key for at least the maximum token lifetime plus clock
 skew, then retire it. Key changes and failed validation spikes are audit events.
 
-The runtime session lifetime is independent from the code lifetime and should be
-bounded by the Control customer session and the runtime's own session policy.
+The runtime session lifetime must be independent from the code lifetime and bounded
+by the Control customer session and the runtime's own session policy. The prototype
+does not implement a runtime session store; that behavior belongs to #144, avoiding
+the unsafe implication that a one-minute handoff code is a one-minute user session.
 Logout clears/revokes the runtime session. It does not use an OIDC back-channel
 logout as a substitute for local session revocation; federation logout remains a
 separate enterprise concern.
@@ -123,11 +136,13 @@ separate enterprise concern.
 
 `tests/Hosting/ElsaControl.Api.Tests/ManagedElsaHandoffTests.cs` exercises the
 existing ASP.NET Core identity seam and the local protocol implementation. The
-tests cover valid issue/redeem, replay, wrong audience, expiry, revoked
-membership, cross-organization authorization, redirect mismatch and logout.
+tests cover valid issue/redeem, missing and wrong PKCE verifier, concurrent replay,
+wrong audience, expiry, revoked membership, cross-organization authorization,
+redirect mismatch, strict token type/key ID and audit outcomes.
 
 This spike does not claim a production-ready Elsa 3.8 runtime hook, durable
-replay storage, instance persistence, distributed key management, browser E2E, or
-an actual Azure-hosted Combined callback. Those are decomposed into follow-up
-Tasks so the walking skeleton cannot silently ship the prototype's in-memory
-boundaries.
+cross-instance replay storage, instance persistence, distributed key management,
+browser E2E, or an actual Azure-hosted Combined callback. Those are decomposed into
+follow-up Tasks so the walking skeleton cannot silently ship the prototype's
+in-memory boundaries. The in-process replay race is executable evidence only for
+concurrency inside one process; #143 owns the shared durable replay guarantee.
