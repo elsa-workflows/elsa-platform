@@ -1,5 +1,5 @@
 
-=== DIRECTORY TREE (max depth 3, source files only) ===
+=== DIRECTORY TREE (max depth 3, repository paths) ===
 .agents
 .agents/skills
 .agents/skills/speckit-analyze
@@ -296,7 +296,7 @@ EndProject
 
 
 === ENTRY POINTS ===
-No common entry points found. Check 'main' or 'scripts.start' in manifest files above.
+The automated heuristic did not identify entry points. Confirmed entry points include `src/Hosting/ElsaControl.Api/Program.cs`, `src/Hosting/ElsaControl.AppHost/AppHost.cs` and the console scripts in `src/Hosting/ElsaControl.Console/package.json`; see `docs/codebase/STRUCTURE.md`.
 
 === LINTING AND FORMATTING CONFIG ===
 No linting or formatting config files found in project root.
