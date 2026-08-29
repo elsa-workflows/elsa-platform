@@ -145,7 +145,10 @@ if [[ "$mode" == cleanup ]]; then
   proof_subscription_id="$(az account show --query id --output tsv --only-show-errors)"
   registry_subscription_id="${registry_subscription_id:-$proof_subscription_id}"
   az account set --subscription "$registry_subscription_id"
-  registry_id="$(az acr show --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors 2>/dev/null || true)"
+  if ! registry_id="$(az acr show --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors)"; then
+    echo "Refusing resource-group deletion: the requested ACR scope could not be resolved" >&2
+    exit 3
+  fi
   stored_deployment_name="$(jq -r '.acrDeployment // empty' <<<"$group_tags")"
   stored_principal_id="$(jq -r '.acrPrincipal // empty' <<<"$group_tags")"
   stored_registry_id="$(jq -r '.acrRegistryId // empty' <<<"$group_tags")"
@@ -160,10 +163,22 @@ if [[ "$mode" == cleanup ]]; then
   cleanup_principal_id="${stored_principal_id:-$identity_principal_id}"
   role_assignment_id=""
   if [[ -n "$stored_deployment_name" ]]; then
-    role_assignment_id="$(az deployment group show --resource-group "$registry_resource_group" --name "$stored_deployment_name" --query properties.outputs.roleAssignmentId.value --output tsv --only-show-errors 2>/dev/null || true)"
+    [[ "$stored_deployment_name" =~ ^elsa108-[a-z0-9-]+-[0-9a-f]{12}-acr$ ]] || {
+      echo "Refusing resource-group deletion: stored ACR deployment name is invalid" >&2
+      exit 3
+    }
+    if ! deployment_list_json="$(az deployment group list --resource-group "$registry_resource_group" --output json --only-show-errors)"; then
+      echo "Refusing resource-group deletion: ACR deployment records could not be read" >&2
+      exit 3
+    fi
+    role_assignment_id="$(jq -r --arg name "$stored_deployment_name" '[.[] | select(.name == $name)][0].properties.outputs.roleAssignmentId.value // empty' <<<"$deployment_list_json")"
   fi
   if [[ -n "$role_assignment_id" ]]; then
-    assignment_json="$(az role assignment show --ids "$role_assignment_id" --output json --only-show-errors 2>/dev/null || true)"
+    if ! assignment_list_json="$(az role assignment list --scope "$registry_id" --output json --only-show-errors)"; then
+      echo "Refusing resource-group deletion: ACR role assignments could not be read" >&2
+      exit 3
+    fi
+    assignment_json="$(jq -c --arg id "$role_assignment_id" '[.[] | select(.id == $id)][0] // empty' <<<"$assignment_list_json")"
     if [[ -n "$assignment_json" ]]; then
       assignment_principal_id="$(jq -r '.principalId // empty' <<<"$assignment_json")"
       assignment_scope="$(jq -r '.scope // empty' <<<"$assignment_json")"
@@ -176,7 +191,10 @@ if [[ "$mode" == cleanup ]]; then
     fi
     az deployment group delete --resource-group "$registry_resource_group" --name "$stored_deployment_name" --only-show-errors || cleanup_status=1
   elif [[ -n "$cleanup_principal_id" && -n "$registry_id" ]]; then
-    role_ids="$(az role assignment list --scope "$registry_id" --assignee-object-id "$cleanup_principal_id" --role AcrPull --query '[].id' --output tsv --only-show-errors 2>/dev/null || true)"
+    if ! role_ids="$(az role assignment list --scope "$registry_id" --assignee-object-id "$cleanup_principal_id" --role AcrPull --query '[].id' --output tsv --only-show-errors)"; then
+      echo "Refusing resource-group deletion: identity-scoped ACR assignments could not be read" >&2
+      exit 3
+    fi
     while IFS= read -r role_id; do
       [[ -z "$role_id" ]] || az role assignment delete --ids "$role_id" --only-show-errors || cleanup_status=1
     done <<<"$role_ids"
