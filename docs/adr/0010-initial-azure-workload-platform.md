@@ -14,6 +14,8 @@ Current Azure assets deploy the Elsa Control host to Azure App Service and Azure
 
 Azure Container Apps, Azure SQL, Front Door, Key Vault/managed identity, Azure Monitor/OpenTelemetry and storage are the preferred hypothesis. Networking, revision behavior, database tenancy, cost, quotas and IaC ownership are not yet validated.
 
+The [#108 read-only preflight](../spikes/108-azure-workload-provider-preflight.md) confirmed West Europe capacity, provider registration, Bicep compilation, and a low bounded proof cost. It also found that the current Elsa 3.8 Combined image supports SQLite persistence only. Acceptance is therefore blocked on a SQL Server-capable immutable image from [`elsa-production-image#26`](https://github.com/valence-works/elsa-production-image/issues/26) and the subsequent real deployment evidence.
+
 ## Proposed Decision
 
 - Use Azure Container Apps for the initial Elsa workload proof unless the bounded spike disproves requirements.
