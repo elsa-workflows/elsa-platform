@@ -88,6 +88,7 @@ public sealed record AzureProviderOperation(
     AzureProviderOperationStatus Status,
     AzureProviderOperationPhase Phase,
     long CheckpointSequence,
+    int AttemptNumber,
     long Version,
     AzureProviderResourceReferences Resources,
     string? Endpoint,

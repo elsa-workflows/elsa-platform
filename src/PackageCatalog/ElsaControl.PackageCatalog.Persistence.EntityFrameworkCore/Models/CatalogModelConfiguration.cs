@@ -723,8 +723,10 @@ internal sealed class AzureProviderOperationConfiguration : IEntityTypeConfigura
         builder.Property(x => x.StableTrafficRevisionName).HasMaxLength(128);
         builder.Property(x => x.Endpoint).HasMaxLength(2048);
         builder.Property(x => x.DiagnosticsJson).HasMaxLength(10000).IsRequired();
+        builder.Property(x => x.Version).IsConcurrencyToken().ValueGeneratedNever();
         builder.Property(x => x.WorkerId).HasMaxLength(256);
         builder.Property(x => x.LeaseTokenHash).HasMaxLength(64);
+        builder.Property(x => x.CompletionLeaseTokenHash).HasMaxLength(64);
         ConfigureDateTime(builder.Property(x => x.CreatedAt));
         ConfigureDateTime(builder.Property(x => x.UpdatedAt));
         ConfigureNullableDateTime(builder.Property(x => x.CompletedAt));
@@ -735,6 +737,7 @@ internal sealed class AzureProviderOperationConfiguration : IEntityTypeConfigura
             .IsUnique().HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
         builder.HasIndex(x => new { x.WorkspaceId, x.Status, x.LeaseExpiresAt, x.UpdatedAt });
         builder.HasIndex(x => new { x.WorkspaceId, x.TargetKey, x.CreatedAt });
+        builder.HasOne(x => x.Workspace).WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
         builder.HasMany(x => x.Transitions).WithOne(x => x.Operation).HasForeignKey(x => x.OperationId).OnDelete(DeleteBehavior.Restrict);
     }
 

@@ -44,6 +44,13 @@ public sealed class AzureProviderOperationValidationTests
     }
 
     [Fact]
+    public void Accepts_safe_non_governed_repository_for_upstream_admission()
+    {
+        var request = ValidRequest() with { ImageRepository = "another.azurecr.io/runtime-combined" };
+        Assert.DoesNotContain("imageRepository.mustBeRepository", AzureProviderOperationValidation.Validate(request));
+    }
+
+    [Fact]
     public void Hash_and_identity_are_stable_for_case_normalization()
     {
         var first = ValidRequest();

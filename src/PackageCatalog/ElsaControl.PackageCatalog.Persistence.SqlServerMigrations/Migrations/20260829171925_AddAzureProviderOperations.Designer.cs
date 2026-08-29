@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 {
     [DbContext(typeof(CatalogDbContext))]
-    [Migration("20260829164943_AddAzureProviderOperations")]
+    [Migration("20260829171925_AddAzureProviderOperations")]
     partial class AddAzureProviderOperations
     {
         /// <inheritdoc />
@@ -891,11 +891,18 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<int>("AttemptNumber")
+                        .HasColumnType("int");
+
                     b.Property<long>("CheckpointSequence")
                         .HasColumnType("bigint");
 
                     b.Property<long?>("CompletedAt")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("CompletionLeaseTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<long>("CreatedAt")
                         .HasColumnType("bigint");
@@ -1023,6 +1030,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasColumnType("bigint");
 
                     b.Property<long>("Version")
+                        .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
                     b.Property<string>("WorkerId")
@@ -3104,6 +3112,17 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasForeignKey("WorkspaceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationEntity", b =>
+                {
+                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationTransitionEntity", b =>

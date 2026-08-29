@@ -1,4 +1,5 @@
 using ElsaControl.Deployment.Azure;
+using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -15,6 +16,8 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         _connection.Open();
         using var db = CreateContext();
         db.Database.EnsureCreated();
+        db.Workspaces.Add(new Workspace { Id = _workspaceId, Name = "Azure operation workspace" });
+        db.SaveChanges();
     }
 
     [Fact]
@@ -28,6 +31,14 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
 
         Assert.Equal(first.Id, second.Id);
         Assert.Single(await store.ListTransitionsAsync(_workspaceId, first.Id));
+    }
+
+    [Fact]
+    public async Task Unknown_workspace_is_rejected_by_catalog_foreign_key()
+    {
+        using var db = CreateContext();
+        var request = Request() with { WorkspaceId = Guid.NewGuid() };
+        await Assert.ThrowsAsync<DbUpdateException>(() => new AzureProviderOperationStore(db).CreateOrGetAsync(request, DateTimeOffset.UtcNow));
     }
 
     [Fact]
@@ -61,6 +72,8 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.Equal(checkpoint?.Version, replay?.Version);
         var completed = await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Completed.", now);
         Assert.Equal(AzureProviderOperationStatus.Succeeded, completed?.Status);
+        Assert.Null(await store.FinalizeAsync(_workspaceId, operation.Id, "wrong-lease", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Completed.", now));
+        Assert.Equal(completed?.Id, (await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Completed.", now))?.Id);
         Assert.Equal(4, (await store.ListTransitionsAsync(_workspaceId, operation.Id)).Count);
     }
 
@@ -75,6 +88,8 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.Equal(1, await store.RecoverStaleAsync(now.AddMinutes(2)));
         var recovered = await store.GetAsync(_workspaceId, operation.Id);
         Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, recovered?.Status);
+        Assert.Null(await store.ClaimAsync(_workspaceId, operation.Id, "worker-2", "lease-2", TimeSpan.FromMinutes(1), now.AddMinutes(2)));
+        Assert.NotNull(await store.ClaimRecoveryAsync(_workspaceId, operation.Id, "worker-2", "lease-2", TimeSpan.FromMinutes(1), now.AddMinutes(2), recovered!.Version));
         Assert.Null(await store.CheckpointAsync(_workspaceId, operation.Id, "lease-1", new(
             AzureProviderOperationPhase.FoundationReady, "late", "Late.", new(), null, AzureProviderHealth.Unknown, []), now.AddMinutes(2)));
         Assert.Null(recovered?.CompletedAt);
@@ -90,6 +105,8 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
             await using (var seed = new CatalogDbContext(options))
             {
                 await seed.Database.EnsureCreatedAsync();
+                seed.Workspaces.Add(new Workspace { Id = _workspaceId, Name = "Azure operation workspace" });
+                await seed.SaveChangesAsync();
                 var operation = await new AzureProviderOperationStore(seed).CreateOrGetAsync(Request(), DateTimeOffset.UtcNow);
                 await using var first = new CatalogDbContext(options);
                 await using var second = new CatalogDbContext(options);
@@ -102,6 +119,28 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         finally
         {
             if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task Stale_recovery_wins_against_heartbeat_checkpoint_and_finalize_versions()
+    {
+        using var firstDb = CreateContext();
+        using var secondDb = CreateContext();
+        var first = new AzureProviderOperationStore(firstDb);
+        var second = new AzureProviderOperationStore(secondDb);
+        foreach (var suffix in new[] { "heartbeat", "checkpoint", "finalize" })
+        {
+            var operation = await first.CreateOrGetAsync(Request() with { TargetKey = "workload-" + suffix, IdempotencyKey = suffix }, DateTimeOffset.UtcNow);
+            var claimed = await first.ClaimAsync(_workspaceId, operation.Id, "worker-a", "lease-" + suffix, TimeSpan.FromMinutes(1), DateTimeOffset.UtcNow);
+            Assert.NotNull(claimed);
+            Assert.Equal(1, await second.RecoverStaleAsync(DateTimeOffset.UtcNow.AddMinutes(2)));
+            if (suffix == "heartbeat")
+                Assert.Null(await first.HeartbeatAsync(_workspaceId, operation.Id, "lease-heartbeat", TimeSpan.FromMinutes(1), DateTimeOffset.UtcNow.AddMinutes(2), claimed!.Version));
+            else if (suffix == "checkpoint")
+                Assert.Null(await first.CheckpointAsync(_workspaceId, operation.Id, "lease-checkpoint", new(AzureProviderOperationPhase.FoundationReady, "checkpoint.ready", "Ready.", new(), null, AzureProviderHealth.Unknown, []), DateTimeOffset.UtcNow.AddMinutes(2), claimed!.Version));
+            else
+                Assert.Null(await first.FinalizeAsync(_workspaceId, operation.Id, "lease-finalize", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Completed.", DateTimeOffset.UtcNow.AddMinutes(2), claimed!.Version));
         }
     }
 

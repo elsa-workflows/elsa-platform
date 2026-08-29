@@ -36,6 +36,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     Status = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
                     Phase = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
                     CheckpointSequence = table.Column<long>(type: "bigint", nullable: false),
+                    AttemptNumber = table.Column<int>(type: "int", nullable: false),
                     Version = table.Column<long>(type: "bigint", nullable: false),
                     ResourceGroupName = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
                     FoundationDeploymentId = table.Column<string>(type: "nvarchar(512)", maxLength: 512, nullable: true),
@@ -48,6 +49,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     DiagnosticsJson = table.Column<string>(type: "nvarchar(max)", maxLength: 10000, nullable: false),
                     WorkerId = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     LeaseTokenHash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
+                    CompletionLeaseTokenHash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
                     LeaseExpiresAt = table.Column<long>(type: "bigint", nullable: true),
                     HeartbeatAt = table.Column<long>(type: "bigint", nullable: true),
                     CreatedAt = table.Column<long>(type: "bigint", nullable: false),
@@ -57,6 +59,12 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_AzureProviderOperations", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_AzureProviderOperations_Workspaces_WorkspaceId",
+                        column: x => x.WorkspaceId,
+                        principalTable: "Workspaces",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(

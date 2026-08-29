@@ -36,6 +36,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     Status = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
                     Phase = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false),
                     CheckpointSequence = table.Column<long>(type: "INTEGER", nullable: false),
+                    AttemptNumber = table.Column<int>(type: "INTEGER", nullable: false),
                     Version = table.Column<long>(type: "INTEGER", nullable: false),
                     ResourceGroupName = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true),
                     FoundationDeploymentId = table.Column<string>(type: "TEXT", maxLength: 512, nullable: true),
@@ -48,6 +49,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     DiagnosticsJson = table.Column<string>(type: "TEXT", maxLength: 10000, nullable: false),
                     WorkerId = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
                     LeaseTokenHash = table.Column<string>(type: "TEXT", maxLength: 64, nullable: true),
+                    CompletionLeaseTokenHash = table.Column<string>(type: "TEXT", maxLength: 64, nullable: true),
                     LeaseExpiresAt = table.Column<long>(type: "INTEGER", nullable: true),
                     HeartbeatAt = table.Column<long>(type: "INTEGER", nullable: true),
                     CreatedAt = table.Column<long>(type: "INTEGER", nullable: false),
@@ -57,6 +59,12 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_AzureProviderOperations", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_AzureProviderOperations_Workspaces_WorkspaceId",
+                        column: x => x.WorkspaceId,
+                        principalTable: "Workspaces",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(

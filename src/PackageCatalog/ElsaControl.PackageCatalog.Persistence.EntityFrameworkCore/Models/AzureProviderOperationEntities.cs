@@ -1,4 +1,5 @@
 using ElsaControl.Deployment.Azure;
+using ElsaControl.PackageCatalog.Core.Accounts;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models;
 
@@ -6,6 +7,7 @@ internal sealed class AzureProviderOperationEntity
 {
     public Guid Id { get; set; }
     public Guid WorkspaceId { get; set; }
+    public Workspace? Workspace { get; set; }
     public string TargetKey { get; set; } = "";
     public AzureProviderOperationAction Action { get; set; }
     public string IdempotencyKey { get; set; } = "";
@@ -25,6 +27,7 @@ internal sealed class AzureProviderOperationEntity
     public AzureProviderOperationStatus Status { get; set; }
     public AzureProviderOperationPhase Phase { get; set; }
     public long CheckpointSequence { get; set; }
+    public int AttemptNumber { get; set; }
     public long Version { get; set; }
     public string? ResourceGroupName { get; set; }
     public string? FoundationDeploymentId { get; set; }
@@ -37,6 +40,7 @@ internal sealed class AzureProviderOperationEntity
     public string DiagnosticsJson { get; set; } = "[]";
     public string? WorkerId { get; set; }
     public string? LeaseTokenHash { get; set; }
+    public string? CompletionLeaseTokenHash { get; set; }
     public DateTimeOffset? LeaseExpiresAt { get; set; }
     public DateTimeOffset? HeartbeatAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }

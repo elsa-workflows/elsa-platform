@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace ElsaControl.Deployment.Azure;
 
@@ -8,15 +9,18 @@ public static class AzureProviderOperationValidation
 {
     public static void ValidateCheckpoint(AzureProviderCheckpoint checkpoint)
     {
-        if (!Enum.IsDefined(checkpoint.Phase) || string.IsNullOrWhiteSpace(checkpoint.Code) || checkpoint.Code.Length > 128)
+        if (checkpoint is null) throw new ArgumentNullException(nameof(checkpoint));
+        if (checkpoint.Resources is null) throw new ArgumentException("Resources are required.", nameof(checkpoint));
+        if (!Enum.IsDefined(checkpoint.Phase) || !IsSafeCode(checkpoint.Code))
             throw new ArgumentException("Checkpoint code and phase are required.", nameof(checkpoint));
         if (checkpoint.Message is null || checkpoint.Message.Length > 2000 || checkpoint.Message.Any(char.IsControl) || ContainsSensitiveMarker(checkpoint.Message))
             throw new ArgumentException("Checkpoint message is unsafe.", nameof(checkpoint));
         ValidateEndpoint(checkpoint.Endpoint);
-        if (checkpoint.Diagnostics is null) throw new ArgumentException("Diagnostics are required.", nameof(checkpoint));
+        if (checkpoint.Diagnostics is null || checkpoint.Diagnostics.Count > 20) throw new ArgumentException("Diagnostics are required and bounded.", nameof(checkpoint));
+        if (JsonSerializer.Serialize(checkpoint.Diagnostics).Length > 10000) throw new ArgumentException("Diagnostics are too large.", nameof(checkpoint));
         foreach (var diagnostic in checkpoint.Diagnostics)
         {
-            if (diagnostic is null || string.IsNullOrWhiteSpace(diagnostic.Code) || diagnostic.Code.Length > 128 || diagnostic.Code.Any(char.IsControl) ||
+            if (diagnostic is null || !IsSafeCode(diagnostic.Code) ||
                 diagnostic.Message.Length > 2000 || diagnostic.Message.Any(char.IsControl) || ContainsSensitiveMarker(diagnostic.Message))
                 throw new ArgumentException("Diagnostic is unsafe.", nameof(checkpoint));
         }
@@ -29,23 +33,59 @@ public static class AzureProviderOperationValidation
             throw new ArgumentException("Diagnostic message is unsafe.", nameof(message));
     }
 
+    public static void ValidateCode(string code)
+    {
+        if (!IsSafeCode(code)) throw new ArgumentException("Diagnostic code is unsafe.", nameof(code));
+    }
+
     public static void ValidateEndpoint(string? endpoint)
     {
         if (endpoint is null) return;
-        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps ||
-            !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment))
+        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || string.IsNullOrEmpty(uri.Host) ||
+            !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) ||
+            uri.AbsolutePath.Contains("..", StringComparison.Ordinal) || uri.AbsolutePath.Any(char.IsControl))
             throw new ArgumentException("Endpoint must be a safe HTTPS URI.", nameof(endpoint));
     }
 
     public static void ValidateReferences(AzureProviderResourceReferences references)
     {
-        foreach (var value in new[] { references.ResourceGroupName, references.FoundationDeploymentId, references.WorkloadDeploymentId,
-                     references.WorkloadResourceId, references.WorkloadRevisionName, references.StableTrafficRevisionName })
-        {
-            if (value is not null && (value.Length > 1024 || value.Any(char.IsControl)))
-                throw new ArgumentException("Provider resource reference is unsafe.", nameof(references));
-        }
+        if (references is null) throw new ArgumentNullException(nameof(references));
+        ValidateAzureName(references.ResourceGroupName, 90, "resourceGroupName");
+        ValidateAzureReference(references.FoundationDeploymentId, "foundationDeploymentId");
+        ValidateAzureReference(references.WorkloadDeploymentId, "workloadDeploymentId");
+        ValidateAzureReference(references.WorkloadResourceId, "workloadResourceId");
+        ValidateAzureName(references.WorkloadRevisionName, 128, "workloadRevisionName");
+        ValidateAzureName(references.StableTrafficRevisionName, 128, "stableTrafficRevisionName");
     }
+
+    public static void ValidateWorkerId(string workerId)
+    {
+        if (string.IsNullOrWhiteSpace(workerId) || workerId.Length > 128 || !Regex.IsMatch(workerId, "^[A-Za-z0-9][A-Za-z0-9._-]*$"))
+            throw new ArgumentException("Worker ID is unsafe.", nameof(workerId));
+    }
+
+    private static void ValidateAzureName(string? value, int max, string name)
+    {
+        if (value is null) return;
+        if (value.Length > max || !Regex.IsMatch(value, "^[A-Za-z0-9._()\\-]+$") || ContainsSensitiveMarker(value))
+            throw new ArgumentException("Azure resource name is unsafe.", name);
+    }
+
+    private static void ValidateAzureReference(string? value, string name)
+    {
+        if (value is null) return;
+        if (value.Length > 1024 || value.Any(char.IsControl) || value.Any(char.IsWhiteSpace) ||
+            value.Contains("?", StringComparison.Ordinal) || value.Contains("#", StringComparison.Ordinal) ||
+            value.Contains("@", StringComparison.Ordinal) || value.Contains("://", StringComparison.Ordinal) ||
+            ContainsSensitiveMarker(value) || !Regex.IsMatch(value, "^[A-Za-z0-9._:/()\\-]+$"))
+            throw new ArgumentException("Azure resource reference is unsafe.", name);
+    }
+
+    private static bool IsSafeCode(string? value) => value is not null && value.Length <= 128 && Regex.IsMatch(value, "^[a-z0-9]+(?:[._-][a-z0-9]+)*$");
+
+    private static bool IsSafeRepository(string? value) => value is not null && value.Length <= 512 &&
+        Regex.IsMatch(value, "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?:/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*$");
+
     public static AzureProviderOperationRequest Normalize(AzureProviderOperationRequest request)
     {
         var errors = Validate(request);
@@ -101,7 +141,7 @@ public static class AzureProviderOperationValidation
         BoundedSafe(request.Isolation, 64, "isolation", errors);
         BoundedSafe(request.Location, 64, "location", errors);
         BoundedSafe(request.ImageRepository, 512, "imageRepository", errors);
-        if (request.ImageRepository?.Contains('@') == true || request.ImageRepository?.Contains(':') == true)
+        if (!IsSafeRepository(request.ImageRepository))
             errors.Add("imageRepository.mustBeRepository");
 
         return errors;

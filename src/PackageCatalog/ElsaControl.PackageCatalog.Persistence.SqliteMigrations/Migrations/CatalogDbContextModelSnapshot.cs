@@ -883,11 +883,18 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("AttemptNumber")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("CheckpointSequence")
                         .HasColumnType("INTEGER");
 
                     b.Property<long?>("CompletedAt")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("CompletionLeaseTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
 
                     b.Property<long>("CreatedAt")
                         .HasColumnType("INTEGER");
@@ -1015,6 +1022,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<long>("Version")
+                        .IsConcurrencyToken()
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("WorkerId")
@@ -3096,6 +3104,17 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasForeignKey("WorkspaceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationEntity", b =>
+                {
+                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationTransitionEntity", b =>
