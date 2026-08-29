@@ -26,10 +26,16 @@ When running `src/ElsaControl.AppHost`, Aspire starts this Vite app as the
 ## Verification
 
 ```bash
+npm ci
 npm test
 npm run typecheck
 npm run build
 ```
+
+These are the same required quality gates run by the `Console quality gates`
+job in GitHub Actions. `npm ci` installs exactly the dependency graph recorded
+in `package-lock.json`; changing that lockfile invalidates the CI dependency
+cache.
 
 Package details coverage lives in `src/features/packages/PackageDetailsPage.test.tsx`
 and the Playwright smoke test in `tests/ElsaControl.Console.E2E/package-details.spec.ts`.

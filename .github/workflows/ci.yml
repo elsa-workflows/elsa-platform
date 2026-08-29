@@ -34,3 +34,32 @@ jobs:
 
       - name: Test
         run: dotnet test ElsaControl.sln --configuration Release --no-build --verbosity normal
+
+  console:
+    name: Console quality gates
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/Hosting/ElsaControl.Console
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/Hosting/ElsaControl.Console/package-lock.json
+
+      - name: Install locked console dependencies
+        run: npm ci
+
+      - name: Run console unit tests
+        run: npm test
+
+      - name: Typecheck console
+        run: npm run typecheck
+
+      - name: Build production console bundle
+        run: npm run build
