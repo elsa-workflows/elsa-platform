@@ -107,7 +107,7 @@ public sealed record AzureProviderOperation(
     DateTimeOffset? CompletedAt,
     string? ReleaseManifestReference = null,
     string? ReleaseManifestSignatureReference = null,
-    IReadOnlyDictionary<string, string>? SecretReferences = null)
+    [property: JsonIgnore] IReadOnlyDictionary<string, string>? SecretReferences = null)
 {
     [JsonIgnore]
     public IReadOnlyDictionary<string, string> SafeSecretReferences => SecretReferences ?? EmptySecretReferences;

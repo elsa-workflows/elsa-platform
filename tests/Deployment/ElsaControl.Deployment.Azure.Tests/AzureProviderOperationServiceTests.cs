@@ -1,4 +1,5 @@
 using ElsaControl.Deployment.Azure;
+using System.Text.Json;
 
 namespace ElsaControl.Deployment.Azure.Tests;
 
@@ -57,6 +58,54 @@ public sealed class AzureProviderOperationServiceTests
 
         Assert.Equal(AzureProviderOperationAction.Delete, result.Action);
         Assert.Equal(AzureProviderOperationAction.Delete, store.Request!.Action);
+    }
+
+    [Fact]
+    public void Operation_json_does_not_include_secret_locators_or_recovery_only_projection()
+    {
+        var operation = new AzureProviderOperation(
+            Guid.Parse("22222222-2222-2222-2222-222222222222"),
+            WorkspaceId,
+            "workload-a",
+            AzureProviderOperationAction.Reconcile,
+            "request-1",
+            new('a', 64),
+            new('b', 64),
+            new('c', 64),
+            new('d', 64),
+            "3.8.0",
+            "3.8",
+            "combined",
+            "Dedicated",
+            "westeurope",
+            "valenceruntimeimages.azurecr.io/runtime-combined",
+            "sha256:" + new string('e', 64),
+            "sha256:" + new string('f', 64),
+            "sha256:" + new string('a', 64),
+            AzureProviderOperationStatus.Accepted,
+            AzureProviderOperationPhase.Planned,
+            0,
+            0,
+            1,
+            new(),
+            null,
+            AzureProviderHealth.Unknown,
+            [],
+            null,
+            null,
+            null,
+            Now,
+            Now,
+            null,
+            "oci://evidence.example/manifest",
+            "oci://evidence.example/signature",
+            new Dictionary<string, string> { ["database:connectionstring"] = "secret://vault/database" });
+
+        var json = JsonSerializer.Serialize(operation);
+
+        Assert.DoesNotContain("SecretReferences", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret://vault/database", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("SafeSecretReferences", json, StringComparison.Ordinal);
     }
 
     private static AzureWorkloadPlan CreatePlan() => new(
@@ -135,6 +184,7 @@ public sealed class AzureProviderOperationServiceTests
             Task.FromResult(_operation is { WorkspaceId: var currentWorkspace, Id: var currentId } && currentWorkspace == workspaceId && currentId == operationId ? _operation : null);
 
         public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
+        public Task<AzureProviderOperation?> MarkUnrestorableAsync(Guid workspaceId, Guid operationId, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
         public Task<AzureProviderOperation?> ClaimAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
         public Task<AzureProviderOperation?> ClaimRecoveryAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
         public Task<AzureProviderOperation?> HeartbeatAsync(Guid workspaceId, Guid operationId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);

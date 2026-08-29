@@ -130,6 +130,49 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         return entity is null ? null : ToModel(entity);
     }
 
+    public async Task<AzureProviderOperation?> MarkUnrestorableAsync(
+        Guid workspaceId,
+        Guid operationId,
+        DateTimeOffset now,
+        long? expectedVersion = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var changed = await db.AzureProviderOperations
+            .Where(x => x.WorkspaceId == workspaceId && x.Id == operationId &&
+                        (x.Status == AzureProviderOperationStatus.Accepted ||
+                         x.Status == AzureProviderOperationStatus.Queued ||
+                         x.Status == AzureProviderOperationStatus.RecoveryRequired) &&
+                        (!expectedVersion.HasValue || x.Version == expectedVersion.Value))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, AzureProviderOperationStatus.Failed)
+                .SetProperty(x => x.CompletedAt, now)
+                .SetProperty(x => x.UpdatedAt, now)
+                .SetProperty(x => x.Version, x => x.Version + 1)
+                .SetProperty(x => x.LeaseTokenHash, (string?)null)
+                .SetProperty(x => x.LeaseExpiresAt, (DateTimeOffset?)null)
+                .SetProperty(x => x.WorkerId, (string?)null)
+                .SetProperty(x => x.CompletionLeaseTokenHash, (string?)null)
+                .SetProperty(x => x.CompletionFingerprint, (string?)null), cancellationToken);
+        if (changed == 0)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        db.ChangeTracker.Clear();
+        var entity = await db.AzureProviderOperations
+            .SingleAsync(x => x.WorkspaceId == workspaceId && x.Id == operationId, cancellationToken);
+        AddTransition(
+            entity,
+            "azure.plan.unrestorable",
+            "The persisted provider plan cannot be restored.",
+            now);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return ToModel(entity);
+    }
+
     public Task<AzureProviderOperation?> ClaimAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
         ClaimCoreAsync(workspaceId, operationId, workerId, leaseToken, leaseDuration, now, expectedVersion, allowRecovery: false, cancellationToken);
 

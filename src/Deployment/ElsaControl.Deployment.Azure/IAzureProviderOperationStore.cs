@@ -7,6 +7,17 @@ public interface IAzureProviderOperationStore
     Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<AzureProviderOperation>>([]);
     Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Transitions an operation whose persisted provider plan cannot be restored to a terminal,
+    /// value-free failure. The compare-and-set version prevents a stale worker from changing a
+    /// concurrently claimed or completed operation.
+    /// </summary>
+    Task<AzureProviderOperation?> MarkUnrestorableAsync(
+        Guid workspaceId,
+        Guid operationId,
+        DateTimeOffset now,
+        long? expectedVersion = null,
+        CancellationToken cancellationToken = default);
     Task<AzureProviderOperation?> ClaimAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default);
     Task<AzureProviderOperation?> ClaimRecoveryAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default);
     Task<AzureProviderOperation?> HeartbeatAsync(Guid workspaceId, Guid operationId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default);

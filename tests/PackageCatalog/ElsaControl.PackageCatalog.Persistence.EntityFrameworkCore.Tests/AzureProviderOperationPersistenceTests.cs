@@ -102,6 +102,24 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Unrestorable_plan_is_terminal_and_value_free_with_compare_and_set()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+
+        var failed = await store.MarkUnrestorableAsync(_workspaceId, operation.Id, now, operation.Version);
+
+        Assert.Equal(AzureProviderOperationStatus.Failed, failed?.Status);
+        Assert.Equal(now, failed?.CompletedAt);
+        var transition = Assert.Single(await store.ListTransitionsAsync(_workspaceId, operation.Id), x => x.Code == "azure.plan.unrestorable");
+        Assert.Equal("azure.plan.unrestorable", transition.Message);
+        Assert.Empty(await store.ListRunnableAsync(now, 10));
+        Assert.Null(await store.MarkUnrestorableAsync(_workspaceId, operation.Id, now, operation.Version));
+    }
+
+    [Fact]
     public async Task Concurrent_claim_has_one_winner()
     {
         var path = Path.Combine(Path.GetTempPath(), $"elsa-azure-operation-{Guid.NewGuid():N}.db");

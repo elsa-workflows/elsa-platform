@@ -39,7 +39,18 @@ public sealed class AzureProviderOperationWorker(
             cancellationToken.ThrowIfCancellationRequested();
             var plan = planSource.Resolve(operation);
             if (plan is null)
+            {
+                // A malformed or legacy persisted plan must not remain runnable forever. The
+                // store performs a versioned compare-and-set and records only stable, value-free
+                // diagnostics; terminal Failed is deliberately excluded from the poll query.
+                await store.MarkUnrestorableAsync(
+                    operation.WorkspaceId,
+                    operation.Id,
+                    now,
+                    operation.Version,
+                    cancellationToken);
                 continue;
+            }
 
             var request = new AzureProviderExecutionRequest(
                 CreateRequest(operation),

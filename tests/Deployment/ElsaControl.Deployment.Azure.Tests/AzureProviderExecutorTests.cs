@@ -743,6 +743,9 @@ public sealed class AzureProviderExecutorTests
                     ? _operation with { Action = AzureProviderOperationAction.Reconcile, Resources = LatestReconcileResources }
                     : _operation?.Action == AzureProviderOperationAction.Reconcile ? _operation : null);
 
+        public Task<AzureProviderOperation?> MarkUnrestorableAsync(Guid workspaceId, Guid operationId, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult<AzureProviderOperation?>(null);
+
         public Task<AzureProviderOperation?> ClaimAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => ClaimCore(workerId, leaseToken, leaseDuration, now, expectedVersion, false);
 
         public Task<AzureProviderOperation?> ClaimRecoveryAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => ClaimCore(workerId, leaseToken, leaseDuration, now, expectedVersion, true);
