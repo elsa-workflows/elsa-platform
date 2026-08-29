@@ -490,7 +490,7 @@ public sealed class ElsaInstancePlanResolver(
                 endpoint.Port,
                 endpoint.Visibility,
                 endpoint.RequiresTls,
-                endpoint.Path)))
+                EndpointPathPolicy.Normalize(endpoint.Path))))
             .GroupBy(endpoint => $"{endpoint.ComponentId}:{endpoint.Name}", StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .ToArray();
@@ -601,7 +601,8 @@ public sealed class ElsaInstancePlanResolver(
         var topology = manifest.Topologies?.FirstOrDefault(x => x is not null && string.Equals(x.Id, intent.Application.TopologyId, StringComparison.OrdinalIgnoreCase));
         if (topology is null)
             findings.Add(Error("topology.notFound", "The selected topology is not present in the admitted release manifest.", "topology"));
-        if (!string.Equals(admission.TopologyId, intent.Application.TopologyId, StringComparison.OrdinalIgnoreCase) && admission.TopologyId is not null)
+        var admittedTopologyId = admission.TopologyId ?? manifest.Topologies?.FirstOrDefault(x => x is not null)?.Id;
+        if (!string.Equals(admittedTopologyId, intent.Application.TopologyId, StringComparison.OrdinalIgnoreCase))
             findings.Add(Error("topology.selection.mismatch", "The admitted topology selection does not match instance intent.", "topology"));
     }
 
@@ -630,17 +631,17 @@ public sealed class ElsaInstancePlanResolver(
 
             if (supplyChain.Sbom is null)
                 findings.Add(Error("supplyChain.sbom.required", "Retained release SBOM evidence is required.", "releaseManifest.evidence"));
-            else if (!ReleaseManifestAdmissionService.IsSafeEvidenceReference(supplyChain.Sbom.Uri, supplyChain.Sbom.Digest))
+            else if (!IsStrictEvidenceReference(supplyChain.Sbom.Uri, supplyChain.Sbom.Digest))
                 findings.Add(Error("supplyChain.sbom.invalid", "Release SBOM evidence must be a safe immutable locator with a sha256 digest.", "releaseManifest.evidence"));
 
             if (supplyChain.Provenance is null)
                 findings.Add(Error("supplyChain.provenance.required", "Retained release provenance evidence is required.", "releaseManifest.evidence"));
-            else if (!ReleaseManifestAdmissionService.IsSafeEvidenceReference(supplyChain.Provenance.Uri, supplyChain.Provenance.Digest))
+            else if (!IsStrictEvidenceReference(supplyChain.Provenance.Uri, supplyChain.Provenance.Digest))
                 findings.Add(Error("supplyChain.provenance.invalid", "Release provenance evidence must be a safe immutable locator with a sha256 digest.", "releaseManifest.evidence"));
 
             if (supplyChain.VulnerabilityScan is null)
                 findings.Add(Error("supplyChain.vulnerabilityScan.required", "Retained release vulnerability-scan evidence is required.", "releaseManifest.evidence"));
-            else if (!ReleaseManifestAdmissionService.IsSafeEvidenceReference(supplyChain.VulnerabilityScan.Report, supplyChain.VulnerabilityScan.Digest))
+            else if (!IsStrictEvidenceReference(supplyChain.VulnerabilityScan.Report, supplyChain.VulnerabilityScan.Digest))
                 findings.Add(Error("supplyChain.vulnerabilityScan.invalid", "Release vulnerability-scan evidence must be a safe immutable locator with a sha256 digest.", "releaseManifest.evidence"));
         }
     }
@@ -659,7 +660,7 @@ public sealed class ElsaInstancePlanResolver(
                     || (image.PlatformDigests?.Any(x => !ReleaseManifestAdmissionService.IsDigest(x.Value)) ?? false)
                     || (image.Endpoints?.Where(x => x is not null).GroupBy(x => x!.Name, StringComparer.OrdinalIgnoreCase).Any(x => x.Count() > 1) ?? false)
                     || (image.Endpoints?.Any(endpoint => endpoint is null
-                        || (endpoint.Path is not null && !EndpointPathPolicy.IsSafe(endpoint.Path))) ?? false))
+                        || (!string.IsNullOrWhiteSpace(endpoint.Path) && !EndpointPathPolicy.IsSafe(endpoint.Path))) ?? false))
                     findings.Add(Error("releaseManifest.image.invalid", "Topology components must use safe immutable image references and sha256 digests.", "releaseManifest.images"));
             }
         }
@@ -809,6 +810,10 @@ public sealed class ElsaInstancePlanResolver(
         && value.Length == 71
         && value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)
         && value[7..].All(Uri.IsHexDigit);
+
+    private static bool IsStrictEvidenceReference(string reference, string? digest) =>
+        (digest is null || ReleaseManifestAdmissionService.IsDigest(digest))
+        && ReleaseManifestAdmissionService.IsSafeEvidenceReference(reference, digest);
 
     private static bool IsInstancePlanUri(string value, string? planId, Guid? expectedWorkspaceId)
     {

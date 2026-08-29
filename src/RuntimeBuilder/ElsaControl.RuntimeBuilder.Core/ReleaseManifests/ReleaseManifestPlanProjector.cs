@@ -144,7 +144,7 @@ public static class ReleaseManifestPlanProjector
     }
 
     private static ResolvedElsaEndpoint ToEndpoint(ReleaseManifestEndpoint endpoint) =>
-        new(endpoint.Name, endpoint.Protocol, endpoint.Port, endpoint.Visibility, endpoint.RequiresTls, endpoint.Path);
+        new(endpoint.Name, endpoint.Protocol, endpoint.Port, endpoint.Visibility, endpoint.RequiresTls, EndpointPathPolicy.Normalize(endpoint.Path));
 
     private static string ToRole(string runtimeKind) =>
         runtimeKind.StartsWith("elsa.", StringComparison.OrdinalIgnoreCase)

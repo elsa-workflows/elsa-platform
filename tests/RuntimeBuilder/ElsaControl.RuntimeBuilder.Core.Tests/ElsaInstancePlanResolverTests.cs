@@ -282,6 +282,53 @@ public sealed class ElsaInstancePlanResolverTests
     }
 
     [Fact]
+    public async Task Rejects_requested_topology_when_null_admission_selection_defaults_to_a_different_topology()
+    {
+        var baseline = CreateRequest();
+        var selected = baseline.ReleaseManifest.Manifest!.Topologies[0];
+        var first = selected with { Id = "combined" };
+        var request = baseline with
+        {
+            ReleaseManifest = baseline.ReleaseManifest with
+            {
+                TopologyId = null,
+                Manifest = baseline.ReleaseManifest.Manifest with { Topologies = [first, selected] }
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility()).ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Findings, finding => finding.Code == "topology.selection.mismatch");
+    }
+
+    [Fact]
+    public async Task Rejects_malformed_explicit_evidence_digest_even_when_reference_embeds_a_digest()
+    {
+        var baseline = CreateRequest();
+        var topology = baseline.ReleaseManifest.Manifest!.Topologies[0];
+        var supplyChain = topology.SupplyChain! with
+        {
+            Sbom = topology.SupplyChain!.Sbom! with { Digest = "sha256:invalid" }
+        };
+        var request = baseline with
+        {
+            ReleaseManifest = baseline.ReleaseManifest with
+            {
+                Manifest = baseline.ReleaseManifest.Manifest with
+                {
+                    Topologies = [topology with { SupplyChain = supplyChain }]
+                }
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility()).ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Findings, finding => finding.Code == "supplyChain.sbom.invalid");
+    }
+
+    [Fact]
     public async Task Rejects_package_runtime_incompatible_with_topology_without_selected_features()
     {
         var sourceId = Guid.NewGuid();
@@ -379,6 +426,33 @@ public sealed class ElsaInstancePlanResolverTests
 
         Assert.False(result.Succeeded);
         Assert.Contains(result.Findings, finding => finding.Code == "releaseManifest.image.invalid");
+    }
+
+    [Fact]
+    public async Task Treats_blank_optional_image_endpoint_path_as_absent()
+    {
+        var baseline = CreateRequest();
+        var topology = baseline.ReleaseManifest.Manifest!.Topologies[0];
+        var image = topology.Images[0]! with
+        {
+            Endpoints = [topology.Images[0]!.Endpoints![0] with { Path = " " }]
+        };
+        var request = baseline with
+        {
+            ReleaseManifest = baseline.ReleaseManifest with
+            {
+                Manifest = baseline.ReleaseManifest.Manifest with
+                {
+                    Topologies = [topology with { Images = [image] }]
+                }
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility()).ResolveAsync(request);
+
+        Assert.True(result.Succeeded, string.Join("; ", result.Findings.Select(finding => finding.Code)));
+        Assert.Null(Assert.Single(Assert.Single(result.Plan!.Topology.Components).Endpoints).Path);
+        Assert.Null(Assert.Single(result.Plan.Network.Endpoints).Path);
     }
 
     [Fact]
