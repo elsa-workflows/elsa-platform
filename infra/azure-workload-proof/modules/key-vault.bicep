@@ -9,7 +9,7 @@ param location string
 @description('Principal ID of the workload identity that reads runtime secrets.')
 param workloadPrincipalId string
 
-@description('Interactive Entra operator object ID allowed to seed the two proof secrets.')
+@description('Interactive Entra operator object ID allowed to seed the three proof secrets.')
 param bootstrapObjectId string
 
 @description('Name of the SQL connection secret created by the runbook after the vault exists.')
