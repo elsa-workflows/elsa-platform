@@ -105,9 +105,10 @@ public sealed class AzureProviderExecutor
         if (claimed is null)
         {
             var latest = await _store.GetAsync(operation.WorkspaceId, operation.Id, cancellationToken) ?? operation;
-            return latest.Status == AzureProviderOperationStatus.Succeeded
-                ? Result(latest, AzureProviderExecutionOutcome.NoOp, "azure.operation.no-op", "The Azure workload already matches the requested plan.")
-                : Result(latest, AzureProviderExecutionOutcome.InProgress, "azure.operation.claim-lost", "The Azure operation is owned by another worker or changed concurrently.");
+            return ResultForObservedState(
+                latest,
+                "azure.operation.claim-lost",
+                "The Azure operation is owned by another worker or changed concurrently.");
         }
 
         return claimed.Action == AzureProviderOperationAction.Delete
@@ -456,9 +457,10 @@ public sealed class AzureProviderExecutor
     private async Task<AzureProviderExecutionResult> GetConcurrentResultAsync(AzureProviderOperation operation)
     {
         var latest = await _store.GetAsync(operation.WorkspaceId, operation.Id, CancellationToken.None) ?? operation;
-        return latest.Status == AzureProviderOperationStatus.Succeeded
-            ? Result(latest, AzureProviderExecutionOutcome.NoOp, "azure.operation.no-op", "The Azure workload already matches the requested plan.")
-            : Result(latest, AzureProviderExecutionOutcome.InProgress, "azure.operation.concurrent-update", "The Azure operation changed concurrently and must be observed by its current owner.");
+        return ResultForObservedState(
+            latest,
+            "azure.operation.concurrent-update",
+            "The Azure operation changed concurrently and must be observed by its current owner.");
     }
 
     private async Task<(AzureProviderRunnerResult Result, AzureProviderOperation Operation)> RunRunnerAsync(
@@ -467,9 +469,10 @@ public sealed class AzureProviderExecutor
         string leaseToken,
         CancellationToken cancellationToken)
     {
+        using var runnerCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         try
         {
-            var runnerTask = _runner.RunAsync(command, cancellationToken);
+            var runnerTask = _runner.RunAsync(command, runnerCancellation.Token);
             while (true)
             {
                 var delayTask = Task.Delay(_heartbeatInterval, cancellationToken);
@@ -488,6 +491,15 @@ public sealed class AzureProviderExecutor
                     cancellationToken);
                 if (renewed is null)
                 {
+                    try
+                    {
+                        runnerCancellation.Cancel();
+                    }
+                    catch (AggregateException)
+                    {
+                        // Cancellation is best-effort. The runner contract still requires
+                        // every remote step to be idempotent when the external job cannot stop.
+                    }
                     _ = runnerTask.ContinueWith(static task => _ = task.Exception, TaskScheduler.Default);
                     throw new LeaseLostException();
                 }
@@ -663,6 +675,20 @@ public sealed class AzureProviderExecutor
         AzureProviderOperationValidation.ValidateMessage(message);
         return new(operation, outcome, code, message);
     }
+
+    private static AzureProviderExecutionResult ResultForObservedState(
+        AzureProviderOperation operation,
+        string inProgressCode,
+        string inProgressMessage) => operation.Status switch
+        {
+            AzureProviderOperationStatus.Succeeded =>
+                Result(operation, AzureProviderExecutionOutcome.NoOp, "azure.operation.no-op", "The Azure workload already matches the requested plan."),
+            AzureProviderOperationStatus.Failed or AzureProviderOperationStatus.Cancelled =>
+                Result(operation, AzureProviderExecutionOutcome.Failed, "azure.operation.terminal", "The Azure operation is terminal and requires a new idempotency key."),
+            AzureProviderOperationStatus.RecoveryRequired =>
+                Result(operation, AzureProviderExecutionOutcome.RecoveryRequired, "azure.operation.recovery-required", "The Azure operation requires explicit provider recovery."),
+            _ => Result(operation, AzureProviderExecutionOutcome.InProgress, inProgressCode, inProgressMessage)
+        };
 
     private static bool IsSha256Digest(string? value) =>
         value is not null && value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) &&

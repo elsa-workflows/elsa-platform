@@ -192,6 +192,54 @@ public sealed class AzureProviderExecutorTests
         Assert.True(store.HeartbeatCount > 0);
     }
 
+    [Theory]
+    [InlineData(AzureProviderOperationStatus.Failed, AzureProviderExecutionOutcome.Failed)]
+    [InlineData(AzureProviderOperationStatus.Cancelled, AzureProviderExecutionOutcome.Failed)]
+    [InlineData(AzureProviderOperationStatus.RecoveryRequired, AzureProviderExecutionOutcome.RecoveryRequired)]
+    public async Task Claim_race_reports_the_observed_operation_state(
+        AzureProviderOperationStatus observedStatus,
+        AzureProviderExecutionOutcome expectedOutcome)
+    {
+        var store = new FakeOperationStore { RejectClaimWithStatus = observedStatus };
+        var executor = new AzureProviderExecutor(store, new RecordingRunner(), new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        Assert.Equal(expectedOutcome, result.Outcome);
+        Assert.Equal(observedStatus, result.Operation.Status);
+    }
+
+    [Fact]
+    public async Task Checkpoint_race_reports_recovery_required_instead_of_in_progress()
+    {
+        var store = new FakeOperationStore { RejectCheckpointWithStatus = AzureProviderOperationStatus.RecoveryRequired };
+        var executor = new AzureProviderExecutor(store, new RecordingRunner(), new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, result.Operation.Status);
+    }
+
+    [Fact]
+    public async Task Lease_loss_signals_cancellation_to_the_still_running_runner()
+    {
+        var store = new FakeOperationStore { LoseLeaseOnHeartbeat = true };
+        var runner = new RecordingRunner { WaitForCancellationStep = AzureProviderRunnerStep.Foundation };
+        var executor = new AzureProviderExecutor(
+            store,
+            runner,
+            new StaticTimeProvider(Now),
+            TimeSpan.FromMilliseconds(100),
+            heartbeatInterval: TimeSpan.FromMilliseconds(5));
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        await runner.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(AzureProviderExecutionOutcome.InProgress, result.Outcome);
+        Assert.True(runner.CancellationObserved.Task.IsCompletedSuccessfully);
+    }
+
     [Fact]
     public async Task Cancellation_after_a_heartbeat_persists_recovery_using_the_latest_version()
     {
@@ -403,7 +451,9 @@ public sealed class AzureProviderExecutorTests
         public bool HostileDiagnostics { get; init; }
         public string RunnerMessage { get; init; } = "Azure lifecycle step completed.";
         public bool ThrowAfterDelay { get; init; }
+        public AzureProviderRunnerStep? WaitForCancellationStep { get; init; }
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource CancellationObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task<AzureProviderRunnerResult> RunAsync(AzureProviderRunnerCommand command, CancellationToken cancellationToken = default)
         {
@@ -415,9 +465,26 @@ public sealed class AzureProviderExecutorTests
             if (command.Step == AzureProviderRunnerStep.Cleanup && FailCleanupOnce && Steps.Count(x => x == AzureProviderRunnerStep.Cleanup) == 1)
                 throw new InvalidOperationException("remote cleanup result cannot be classified safely");
 
+            if (WaitForCancellationStep == command.Step)
+                return WaitForCancellationAsync(cancellationToken);
+
             if (Delay > TimeSpan.Zero && (!DelayOnlyStep.HasValue || DelayOnlyStep == command.Step))
                 return DelayedResultAsync(command);
             return Task.FromResult(CreateResult(command));
+        }
+
+        private async Task<AzureProviderRunnerResult> WaitForCancellationAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("The cancellation wait completed unexpectedly.");
+            }
+            catch (OperationCanceledException)
+            {
+                CancellationObserved.TrySetResult();
+                throw;
+            }
         }
 
         private async Task<AzureProviderRunnerResult> DelayedResultAsync(AzureProviderRunnerCommand command)
@@ -469,6 +536,9 @@ public sealed class AzureProviderExecutorTests
         private AzureProviderOperation? _operation;
         private readonly List<AzureProviderOperationTransition> _transitions = [];
         public int HeartbeatCount { get; private set; }
+        public AzureProviderOperationStatus? RejectClaimWithStatus { get; init; }
+        public AzureProviderOperationStatus? RejectCheckpointWithStatus { get; init; }
+        public bool LoseLeaseOnHeartbeat { get; init; }
 
         public Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default)
         {
@@ -526,6 +596,11 @@ public sealed class AzureProviderExecutorTests
 
         private Task<AzureProviderOperation?> ClaimCore(string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion, bool recovery)
         {
+            if (_operation is not null && RejectClaimWithStatus is { } observedStatus)
+            {
+                _operation = _operation with { Status = observedStatus, Version = _operation.Version + 1, UpdatedAt = now };
+                return Task.FromResult<AzureProviderOperation?>(null);
+            }
             if (_operation is null || expectedVersion.HasValue && _operation.Version != expectedVersion.Value || _operation.Status != (recovery ? AzureProviderOperationStatus.RecoveryRequired : AzureProviderOperationStatus.Accepted))
                 return Task.FromResult<AzureProviderOperation?>(null);
             _operation = _operation with
@@ -544,6 +619,8 @@ public sealed class AzureProviderExecutorTests
         public Task<AzureProviderOperation?> HeartbeatAsync(Guid workspaceId, Guid operationId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
         {
             HeartbeatCount++;
+            if (LoseLeaseOnHeartbeat)
+                return Task.FromResult<AzureProviderOperation?>(null);
             if (_operation is null || expectedVersion.HasValue && _operation.Version != expectedVersion.Value)
                 return Task.FromResult<AzureProviderOperation?>(null);
             _operation = _operation with { Version = _operation.Version + 1, UpdatedAt = now, HeartbeatAt = now, LeaseExpiresAt = now.Add(leaseDuration) };
@@ -552,6 +629,11 @@ public sealed class AzureProviderExecutorTests
 
         public Task<AzureProviderOperation?> CheckpointAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderCheckpoint checkpoint, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
         {
+            if (_operation is not null && RejectCheckpointWithStatus is { } observedStatus)
+            {
+                _operation = _operation with { Status = observedStatus, Version = _operation.Version + 1, UpdatedAt = now };
+                return Task.FromResult<AzureProviderOperation?>(null);
+            }
             if (_operation is null || _operation.Status != AzureProviderOperationStatus.Running || expectedVersion.HasValue && _operation.Version != expectedVersion.Value)
                 return Task.FromResult<AzureProviderOperation?>(null);
             _operation = _operation with
