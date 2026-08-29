@@ -105,3 +105,94 @@ remove_owned_sql_bootstrap_admin() {
   echo "Temporary SQL bootstrap administrator remained configured" >&2
   return 1
 }
+
+# Azure role-assignment deletion is eventually consistent and may commit even
+# when the CLI returns an error. Verify the exact owned assignment is absent
+# before its deployment record (the cleanup provenance) can be removed.
+valid_role_assignment_id() {
+  local registry_id_lower assignment_id_lower expected_prefix assignment_guid
+  registry_id_lower="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  assignment_id_lower="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+  expected_prefix="${registry_id_lower}/providers/microsoft.authorization/roleassignments/"
+  [[ "${assignment_id_lower:0:${#expected_prefix}}" == "$expected_prefix" ]] || return 1
+  assignment_guid="${assignment_id_lower:${#expected_prefix}}"
+  [[ "$assignment_guid" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]
+}
+
+delete_and_verify_role_assignment() {
+  local registry_id="$1"
+  local assignment_id="$2"
+  local max_attempts="${3:-24}"
+  local delay_seconds="${4:-5}"
+  local assignments_json attempt
+
+  az role assignment delete --ids "$assignment_id" --only-show-errors >/dev/null 2>&1 || true
+  for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
+    if assignments_json="$(az role assignment list --scope "$registry_id" --output json --only-show-errors 2>/dev/null)" &&
+      jq -e --arg id "$assignment_id" '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | length == 0' <<<"$assignments_json" >/dev/null; then
+      return 0
+    fi
+    (( attempt == max_attempts )) || sleep "$delay_seconds"
+  done
+  echo "Proof-owned ACR role assignment remained observable after deletion" >&2
+  return 1
+}
+
+delete_and_verify_group_deployment() {
+  local resource_group="$1"
+  local deployment_name="$2"
+  local max_attempts="${3:-24}"
+  local delay_seconds="${4:-5}"
+  local deployments_json attempt
+
+  az deployment group delete --resource-group "$resource_group" --name "$deployment_name" --only-show-errors >/dev/null 2>&1 || true
+  for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
+    if deployments_json="$(az deployment group list --resource-group "$resource_group" --output json --only-show-errors 2>/dev/null)" &&
+      jq -e --arg name "$deployment_name" '[.[] | select(.name == $name)] | length == 0' <<<"$deployments_json" >/dev/null; then
+      return 0
+    fi
+    (( attempt == max_attempts )) || sleep "$delay_seconds"
+  done
+  echo "Proof-owned ACR deployment record remained observable after deletion" >&2
+  return 1
+}
+
+wait_for_resource_group_absence() {
+  local resource_group="$1"
+  local max_attempts="${2:-240}"
+  local delay_seconds="${3:-5}"
+  local group_exists attempt
+
+  for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
+    group_exists="$(az group exists --name "$resource_group" --output tsv --only-show-errors 2>/dev/null || echo unknown)"
+    [[ "$group_exists" == false ]] && return 0
+    (( attempt == max_attempts )) || sleep "$delay_seconds"
+  done
+  echo "Proof resource group remained observable after the bounded deletion window" >&2
+  return 1
+}
+
+purge_and_verify_deleted_vault() {
+  local vault_name="$1"
+  local location="$2"
+  local max_attempts="${3:-30}"
+  local delay_seconds="${4:-5}"
+  local deleted_vaults_json vault_count attempt purge_requested=0
+
+  for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
+    if deleted_vaults_json="$(az keyvault list-deleted --resource-type vault --output json --only-show-errors 2>/dev/null)"; then
+      vault_count="$(jq -r --arg name "$vault_name" --arg location "$location" \
+        '[.[] | select(.name == $name and ((.properties.location // .location // "") | ascii_downcase) == ($location | ascii_downcase))] | length' \
+        <<<"$deleted_vaults_json")" || return 1
+      (( vault_count == 0 )) && return 0
+      (( vault_count == 1 )) || { echo "Expected at most one deleted proof vault" >&2; return 1; }
+      if (( purge_requested == 0 )); then
+        az keyvault purge --name "$vault_name" --location "$location" --only-show-errors >/dev/null 2>&1 || true
+        purge_requested=1
+      fi
+    fi
+    (( attempt == max_attempts )) || sleep "$delay_seconds"
+  done
+  echo "Deleted proof vault absence could not be verified" >&2
+  return 1
+}
