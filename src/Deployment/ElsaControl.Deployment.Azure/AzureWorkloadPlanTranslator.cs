@@ -57,7 +57,7 @@ public static class AzureWorkloadPlanTranslator
             string.Equals(x.Kind, ReleaseManifestSignatureEvidenceKind, StringComparison.OrdinalIgnoreCase));
         var secretReferences = new ReadOnlyDictionary<string, string>(normalized.Configuration.Entries
             .Where(x => x.Secret && x.SecretReference is not null)
-            .ToDictionary(x => x.Key, x => x.SecretReference!, StringComparer.OrdinalIgnoreCase));
+            .ToDictionary(x => x.Key.ToLowerInvariant(), x => x.SecretReference!, StringComparer.OrdinalIgnoreCase));
         var canonicalTarget = new
         {
             workloadName = target.WorkloadName.Trim().ToLowerInvariant(),

@@ -49,6 +49,7 @@ public sealed class AzureWorkloadPlanTranslatorTests
         Assert.Equal("oci://release-manifest.signature", first.Plan.ReleaseManifestSignatureReference);
         Assert.Equal(ImageDigest, first.Plan.ReleaseManifestSignatureDigest);
         Assert.Equal("secret://database", first.Plan.SecretReferences["Database:ConnectionString"]);
+        Assert.Equal("database:connectionstring", Assert.Single(first.Plan.SecretReferences).Key);
         Assert.Matches("^[a-f0-9]{64}$", first.Plan.Fingerprint);
     }
 
