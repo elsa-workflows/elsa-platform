@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import re
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -127,14 +130,49 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("temporary_firewall_rule", source)
         self.assertIn("keyvault purge", source)
         self.assertIn("Refusing to adopt unrelated resource group", source)
+        self.assertIn("external ACR cleanup cannot be proven", source)
+        self.assertIn("external ACR cleanup was incomplete", source)
         self.assertIn("registry-subscription", source)
         self.assertIn('proof-name="$proof_name"', source)
         self.assertIn("acr_role_ready", source)
+        self.assertIn('external_deployment_name="elsa108-${proof_name}-acr-pull"', source)
+        self.assertIn("properties.outputs.roleAssignmentId.value", source)
+        self.assertIn("az deployment group delete", source)
         self.assertIn("az group exists", source)
         self.assertIn("show-deleted", source)
         self.assertRegex(source, r"\[\[ \"\$\{DISPOSABLE_PROOF_APPLY:-\}\" == YES \]\]")
         validation = (ROOT / "scripts" / "validate-azure-workload-proof.sh").read_text()
         self.assertIn("Compiled main template SHA-256", validation)
+
+    def test_invalid_vault_derived_proof_names_fail_before_azure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_az = Path(temp_dir) / "az"
+            marker = Path(temp_dir) / "azure-was-called"
+            fake_az.write_text(f"#!/usr/bin/env bash\ntouch '{marker}'\nexit 99\n")
+            fake_az.chmod(0o700)
+            env = os.environ.copy()
+            env["PATH"] = f"{temp_dir}:{env['PATH']}"
+            common = [
+                str(RUNBOOK),
+                "apply",
+                "--resource-group", "rg-proof",
+                "--image-digest", "a" * 64,
+                "--registry-resource-group", "rg-acr",
+                "--sql-bootstrap-object-id", "00000000-0000-0000-0000-000000000001",
+                "--sql-bootstrap-login", "proof-user",
+                "--sql-bootstrap-ip", "203.0.113.10",
+            ]
+            for invalid_name in ("1abc", "abc-", "ab--cd"):
+                result = subprocess.run(
+                    [*common, "--proof-name", invalid_name],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(2, result.returncode)
+                self.assertIn("proof name must be", result.stderr)
+                self.assertFalse(marker.exists())
 
 
 def valid_image_reference(repository: str, digest: str) -> bool:

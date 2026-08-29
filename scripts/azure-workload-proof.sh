@@ -74,8 +74,8 @@ repo_root="$(cd -- "$script_dir/.." && pwd)"
 proof_dir="$repo_root/infra/azure-workload-proof"
 
 validate_name() {
-  [[ "$1" =~ ^[a-z0-9][a-z0-9-]{2,15}$ ]] || {
-    echo "proof name must be 3-16 lowercase letters, numbers or hyphens" >&2
+  [[ "$1" =~ ^[a-z][a-z0-9-]{1,14}[a-z0-9]$ && "$1" != *--* ]] || {
+    echo "proof name must be 3-16 lowercase letters, numbers or single hyphens; it must start with a letter and end with a letter or number" >&2
     exit 2
   }
 }
@@ -145,13 +145,27 @@ if [[ "$mode" == cleanup ]]; then
   proof_subscription_id="$(az account show --query id --output tsv --only-show-errors)"
   [[ -z "$registry_subscription_id" ]] || az account set --subscription "$registry_subscription_id"
   registry_id="$(az acr show --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors 2>/dev/null || true)"
-  if [[ -n "$identity_principal_id" && -n "$registry_id" ]]; then
+  external_deployment_name="elsa108-${proof_name}-acr-pull"
+  role_assignment_id="$(az deployment group show --resource-group "$registry_resource_group" --name "$external_deployment_name" --query properties.outputs.roleAssignmentId.value --output tsv --only-show-errors 2>/dev/null || true)"
+  if [[ -n "$role_assignment_id" ]]; then
+    if az role assignment show --ids "$role_assignment_id" --only-show-errors >/dev/null 2>&1; then
+      az role assignment delete --ids "$role_assignment_id" --only-show-errors || cleanup_status=1
+    fi
+    az deployment group delete --resource-group "$registry_resource_group" --name "$external_deployment_name" --only-show-errors || cleanup_status=1
+  elif [[ -n "$identity_principal_id" && -n "$registry_id" ]]; then
     role_ids="$(az role assignment list --scope "$registry_id" --assignee-object-id "$identity_principal_id" --role AcrPull --query '[].id' --output tsv --only-show-errors 2>/dev/null || true)"
     while IFS= read -r role_id; do
       [[ -z "$role_id" ]] || az role assignment delete --ids "$role_id" --only-show-errors || cleanup_status=1
     done <<<"$role_ids"
+  else
+    echo "Refusing resource-group deletion: external ACR cleanup cannot be proven from the proof identity or deployment record" >&2
+    exit 3
   fi
   az account set --subscription "$proof_subscription_id"
+  if (( cleanup_status != 0 )); then
+    echo "Refusing resource-group deletion because external ACR cleanup was incomplete" >&2
+    exit 3
+  fi
   az group delete --name "$resource_group" --yes --no-wait --only-show-errors || cleanup_status=1
   for _ in {1..60}; do
     [[ "$(az group exists --name "$resource_group" --only-show-errors 2>/dev/null || echo false)" == true ]] || break
@@ -268,9 +282,10 @@ trap cleanup_apply EXIT
 # The ACR is intentionally outside the disposable group. This idempotent role
 # assignment is the only proof mutation outside the supplied proof group.
 az account set --subscription "$registry_subscription_id"
+external_deployment_name="elsa108-${proof_name}-acr-pull"
 az deployment group create \
   --resource-group "$registry_resource_group" \
-  --name "${deployment_name}-acr-pull" \
+  --name "$external_deployment_name" \
   --template-file "$proof_dir/acr-pull-role.bicep" \
   --parameters registryName="$registry_name" workloadIdentityId="$identity_id" workloadPrincipalId="$identity_principal_id" \
   --query properties.outputs --output none --only-show-errors
