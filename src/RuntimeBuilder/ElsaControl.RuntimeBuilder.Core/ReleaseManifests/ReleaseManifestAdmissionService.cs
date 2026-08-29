@@ -619,7 +619,12 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
 
         var schemeMarker = reference.IndexOf("://", StringComparison.Ordinal);
         if (schemeMarker >= 0)
-            return IsSafeLocator(reference, requireAbsolute: true);
+        {
+            // Image references are OCI artifacts, not arbitrary web locators;
+            // only the oci:// scheme is accepted when a scheme is present.
+            return reference[..schemeMarker].Equals("oci", StringComparison.OrdinalIgnoreCase)
+                && IsSafeLocator(reference, requireAbsolute: true);
+        }
 
         // Standard OCI image references are commonly written without a scheme.
         // Reject user-info-like forms and require a digest marker; the full
