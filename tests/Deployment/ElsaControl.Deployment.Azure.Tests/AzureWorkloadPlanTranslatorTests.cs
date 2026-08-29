@@ -92,6 +92,32 @@ public sealed class AzureWorkloadPlanTranslatorTests
     }
 
     [Fact]
+    public void Does_not_layer_provider_findings_over_base_schema_failures()
+    {
+        var result = AzureWorkloadPlanTranslator.Translate(
+            CreatePlan() with { Topology = null! },
+            new("workload-a", "westeurope"));
+
+        Assert.Contains(result.Findings, x => x.Code == "topology.required");
+        Assert.DoesNotContain(result.Findings, x => x.Code.StartsWith("azure.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Configuration_key_casing_does_not_change_fingerprint()
+    {
+        var plan = CreatePlan();
+        var changedCasing = plan with
+        {
+            Configuration = new([plan.Configuration.Entries[0] with { Key = "database:connectionstring" }])
+        };
+
+        var first = AzureWorkloadPlanTranslator.Translate(plan, new("workload-a", "westeurope"));
+        var second = AzureWorkloadPlanTranslator.Translate(changedCasing, new("workload-a", "westeurope"));
+
+        Assert.Equal(first.Plan?.Fingerprint, second.Plan?.Fingerprint);
+    }
+
+    [Fact]
     public void Rejects_null_image_repository_without_throwing()
     {
         var plan = CreatePlan();

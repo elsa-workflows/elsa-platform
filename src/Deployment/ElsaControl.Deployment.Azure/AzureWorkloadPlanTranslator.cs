@@ -12,6 +12,11 @@ namespace ElsaControl.Deployment.Azure;
 /// </summary>
 public static class AzureWorkloadPlanTranslator
 {
+    private static readonly JsonSerializerOptions FingerprintJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = false
+    };
+
     public const string SupportedLocation = "westeurope";
     public const string SupportedTopology = "combined";
     public const string SupportedIsolation = "Dedicated";
@@ -26,9 +31,10 @@ public static class AzureWorkloadPlanTranslator
         AzureWorkloadTarget? target)
     {
         var findings = ResolvedElsaApplicationPlanValidator.Validate(resolvedPlan).ToList();
+        var basePlanIsValid = findings.Count == 0;
         ValidateTarget(target, findings);
 
-        if (resolvedPlan is not null)
+        if (basePlanIsValid && resolvedPlan is not null)
             ValidateProviderProfile(resolvedPlan, findings);
 
         if (findings.Count > 0 || resolvedPlan is null || target is null)
@@ -72,9 +78,12 @@ public static class AzureWorkloadPlanTranslator
             releaseManifestDigest = evidence.Digest!.ToLowerInvariant(),
             releaseManifestSignatureReference = signatureEvidence.Reference,
             releaseManifestSignatureDigest = signatureEvidence.Digest!.ToLowerInvariant(),
-            secretReferences = secretReferences.OrderBy(x => x.Key, StringComparer.Ordinal).ToArray()
+            secretReferences = secretReferences
+                .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(x => new { key = x.Key.ToLowerInvariant(), reference = x.Value })
+                .ToArray()
         };
-        var fingerprintInput = JsonSerializer.Serialize(fingerprintInputs);
+        var fingerprintInput = JsonSerializer.Serialize(fingerprintInputs, FingerprintJsonOptions);
         var fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(fingerprintInput)));
 
         return new(
