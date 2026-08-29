@@ -577,8 +577,22 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
 
     private static bool IsSafeLocator(string value, bool requireAbsolute)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Any(char.IsWhiteSpace) || value.Contains('?', StringComparison.Ordinal) || value.Contains('#', StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(value)
+            || value.Any(char.IsWhiteSpace)
+            || value.Any(char.IsControl)
+            || value.Contains('%', StringComparison.Ordinal)
+            || value.Contains('\\', StringComparison.Ordinal)
+            || value.Contains('?', StringComparison.Ordinal)
+            || value.Contains('#', StringComparison.Ordinal))
             return false;
+
+        var schemeMarker = value.IndexOf("://", StringComparison.Ordinal);
+        if (schemeMarker >= 0)
+        {
+            var pathMarker = value.IndexOf('/', schemeMarker + 3);
+            if (pathMarker >= 0 && !IsSafePath(value[pathMarker..], allowLeadingSlash: true))
+                return false;
+        }
 
         if (!Uri.TryCreate(value, requireAbsolute ? UriKind.Absolute : UriKind.RelativeOrAbsolute, out var uri))
             return false;
@@ -588,6 +602,9 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
         if (string.IsNullOrWhiteSpace(uri.Host) || string.IsNullOrEmpty(uri.AbsolutePath) || uri.AbsolutePath == "/")
             return false;
 
+        if (!IsSafePath(uri.AbsolutePath, allowLeadingSlash: true))
+            return false;
+
         return string.IsNullOrEmpty(uri.UserInfo)
             && (string.Equals(uri.Scheme, "oci", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase));
@@ -595,10 +612,7 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
 
     internal static bool IsImmutableImageReference(string? reference)
     {
-        if (string.IsNullOrWhiteSpace(reference))
-            return false;
-
-        if (reference.Any(char.IsWhiteSpace) || reference.Contains('?', StringComparison.Ordinal) || reference.Contains('#', StringComparison.Ordinal))
+        if (reference is null || !IsSafeImageReference(reference))
             return false;
 
         var digest = ExtractDigest(reference);
@@ -621,7 +635,12 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
         if (string.IsNullOrWhiteSpace(reference))
             return false;
 
-        if (reference.Any(char.IsWhiteSpace) || reference.Contains('?', StringComparison.Ordinal) || reference.Contains('#', StringComparison.Ordinal))
+        if (reference.Any(char.IsWhiteSpace)
+            || reference.Any(char.IsControl)
+            || reference.Contains('%', StringComparison.Ordinal)
+            || reference.Contains('\\', StringComparison.Ordinal)
+            || reference.Contains('?', StringComparison.Ordinal)
+            || reference.Contains('#', StringComparison.Ordinal))
             return false;
 
         var schemeMarker = reference.IndexOf("://", StringComparison.Ordinal);
@@ -629,17 +648,51 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
         {
             // Image references are OCI artifacts, not arbitrary web locators;
             // only the oci:// scheme is accepted when a scheme is present.
+            var at = reference.IndexOf('@');
             return reference[..schemeMarker].Equals("oci", StringComparison.OrdinalIgnoreCase)
-                && IsSafeLocator(reference, requireAbsolute: true);
+                && at > schemeMarker + 3
+                && IsSafePath(reference[(schemeMarker + 3)..at], allowLeadingSlash: false)
+                && IsSafeLocator(reference, requireAbsolute: true)
+                && HasOneDigestBinding(reference);
         }
 
         // Standard OCI image references are commonly written without a scheme.
-        // Reject user-info-like forms and require a digest marker; the full
-        // immutability check is performed separately.
+        // Validate the repository name as path segments rather than trusting
+        // Uri's normalization (which would otherwise accept traversal aliases).
         var digestMarker = reference.IndexOf('@');
         return digestMarker > 0
             && reference.IndexOf('@', digestMarker + 1) < 0
-            && !reference.StartsWith("/", StringComparison.Ordinal)
-            && !reference[..digestMarker].Contains("\\", StringComparison.Ordinal);
+            && IsDigest(reference[(digestMarker + 1)..])
+            && IsSafePath(reference[..digestMarker], allowLeadingSlash: false);
+    }
+
+    private static bool HasOneDigestBinding(string reference) =>
+        reference.Count(x => x == '@') == 1
+        && ExtractDigest(reference) is not null;
+
+    private static bool IsSafePath(string path, bool allowLeadingSlash)
+    {
+        if (string.IsNullOrWhiteSpace(path)
+            || path.Any(char.IsWhiteSpace)
+            || path.Any(char.IsControl)
+            || path.Contains('%', StringComparison.Ordinal)
+            || path.Contains('\\', StringComparison.Ordinal)
+            || path.Contains("//", StringComparison.Ordinal))
+            return false;
+
+        if (allowLeadingSlash)
+        {
+            if (!path.StartsWith("/", StringComparison.Ordinal))
+                return false;
+            path = path[1..];
+        }
+        else if (path.StartsWith("/", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var segments = path.Split('/');
+        return segments.Length > 0
+            && segments.All(segment => !string.IsNullOrEmpty(segment) && segment is not "." and not "..");
     }
 }

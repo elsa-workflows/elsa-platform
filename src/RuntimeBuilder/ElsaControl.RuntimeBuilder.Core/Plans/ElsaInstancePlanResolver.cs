@@ -132,7 +132,7 @@ public sealed class ElsaInstancePlanResolver(
     {
         var selections = request.BuilderIntent.Packages ?? [];
         var resolved = new List<ResolvedElsaPackage>(selections.Count);
-        var featureMetadata = new List<PublicFeatureProjection>();
+        var featureMetadata = new List<FeatureConfigurationCandidate>();
         var compatibilitySelections = new List<SelectedPackageVersion>(selections.Count);
         var selectedFeatureIds = new List<string>();
         var topologyRuntimeKinds = request.ReleaseManifest.Manifest!.Topologies
@@ -190,7 +190,7 @@ public sealed class ElsaInstancePlanResolver(
                     continue;
                 }
 
-                featureMetadata.Add(feature);
+                featureMetadata.Add(new(selection, feature));
                 if (!RuntimeKindCompatibilityPolicy.IsCompatible(feature.RuntimeKinds, version.RuntimeKinds))
                     findings.Add(Error("feature.runtimeKindUnsupported", "A selected feature is incompatible with the selected package runtime kinds.", "features"));
 
@@ -243,10 +243,22 @@ public sealed class ElsaInstancePlanResolver(
     private ResolvedConfigurationShape ResolveConfiguration(
         RuntimeBuilderIntent builderIntent,
         ElsaApplicationIntent application,
-        IReadOnlyList<PublicFeatureProjection> features,
+        IReadOnlyList<FeatureConfigurationCandidate> features,
         List<ElsaInstancePlanResolutionFinding> findings)
     {
         var entries = new List<ResolvedConfigurationEntry>();
+        var ambiguousSettingNames = features
+            .SelectMany(candidate => (candidate.Feature.Settings ?? [])
+                .Where(setting => !string.IsNullOrWhiteSpace(setting.Name))
+                .Select(setting => setting.Name))
+            .GroupBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var settingName in ambiguousSettingNames)
+            findings.Add(Error("configuration.key.ambiguous", "Configuration setting identities must be unique across selected features.", "configuration"));
+
         var supplied = (builderIntent.Packages ?? [])
             .Where(x => x is not null && x.Settings is not null)
             .SelectMany(selection => selection.Settings!
@@ -256,13 +268,35 @@ public sealed class ElsaInstancePlanResolver(
 
         foreach (var suppliedValue in supplied)
         {
-            if (!features.Any(feature => FeatureMatches(feature, suppliedValue.FeatureId)))
+            if (ambiguousSettingNames.Contains(suppliedValue.Setting))
+                continue;
+
+            var matchingFeatures = features
+                .Where(candidate => PackageSelectionMatches(candidate.Selection, suppliedValue.selection)
+                    && FeatureMatches(candidate.Feature, suppliedValue.FeatureId))
+                .ToList();
+            if (matchingFeatures.Count > 1)
+            {
+                findings.Add(Error("configuration.feature.ambiguous", "Configuration feature identities must resolve to one selected package feature.", "configuration"));
+                continue;
+            }
+
+            if (matchingFeatures.Count == 0)
             {
                 findings.Add(Error("configuration.feature.unknown", "Configuration references an unselected feature.", "configuration"));
                 continue;
             }
 
-            var matching = FindFeatureSetting(features, suppliedValue.FeatureId, suppliedValue.Setting);
+            var matchingSettings = (matchingFeatures[0].Feature.Settings ?? [])
+                .Where(setting => string.Equals(setting.Name, suppliedValue.Setting, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (matchingSettings.Count > 1)
+            {
+                findings.Add(Error("configuration.setting.ambiguous", "Configuration setting identities must resolve to one governed setting.", "configuration"));
+                continue;
+            }
+
+            var matching = matchingSettings.SingleOrDefault();
             if (matching is null)
             {
                 findings.Add(Error("configuration.setting.unknown", "Configuration references an unknown feature setting.", "configuration"));
@@ -316,9 +350,9 @@ public sealed class ElsaInstancePlanResolver(
             }
         }
 
-        foreach (var feature in features)
+        foreach (var candidate in features)
         {
-            foreach (var setting in feature.Settings ?? [])
+            foreach (var setting in candidate.Feature.Settings ?? [])
             {
                 if (string.IsNullOrWhiteSpace(setting.Name))
                 {
@@ -334,7 +368,8 @@ public sealed class ElsaInstancePlanResolver(
 
                 if (setting.Secret && !string.IsNullOrWhiteSpace(setting.DefaultValueJson))
                     findings.Add(Error("configuration.secretValue.forbidden", "Secret values cannot be embedded in a resolved plan.", "configuration"));
-                if (entries.Any(x => string.Equals(x.Key, setting.Name, StringComparison.OrdinalIgnoreCase)))
+                if (ambiguousSettingNames.Contains(setting.Name)
+                    || entries.Any(x => string.Equals(x.Key, setting.Name, StringComparison.OrdinalIgnoreCase)))
                     continue;
 
                 JsonElement? value = null;
@@ -368,7 +403,7 @@ public sealed class ElsaInstancePlanResolver(
                             : "Required configuration needs a governed value.",
                         "configuration"));
 
-                entries.Add(new(setting.Name, setting.JsonType, setting.Required, setting.Secret, setting.RestartRequired, setting.EnvironmentVariable, value, null, feature.FeatureId));
+                entries.Add(new(setting.Name, setting.JsonType, setting.Required, setting.Secret, setting.RestartRequired, setting.EnvironmentVariable, value, null, candidate.Feature.FeatureId));
             }
         }
 
@@ -522,11 +557,10 @@ public sealed class ElsaInstancePlanResolver(
         return profiles.FirstOrDefault(x => string.Equals(x.Key, name, StringComparison.OrdinalIgnoreCase)).Value;
     }
 
-    private static PublicFeatureSettingProjection? FindFeatureSetting(IReadOnlyList<PublicFeatureProjection> features, string featureId, string settingName) =>
-        features
-            .Where(feature => FeatureMatches(feature, featureId))
-            .SelectMany(feature => feature.Settings ?? [])
-            .FirstOrDefault(setting => string.Equals(setting.Name, settingName, StringComparison.OrdinalIgnoreCase));
+    private static bool PackageSelectionMatches(BundlePackageSelection selected, BundlePackageSelection requested) =>
+        selected.SourceId == requested.SourceId
+        && string.Equals(selected.PackageId, requested.PackageId, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(selected.Version, requested.Version, StringComparison.OrdinalIgnoreCase);
 
     private static bool FeatureMatches(PublicFeatureProjection feature, string requestedFeatureId)
     {
@@ -957,5 +991,9 @@ public sealed class ElsaInstancePlanResolver(
 
     private sealed record PackageResolution(
         IReadOnlyList<ResolvedElsaPackage> Packages,
-        IReadOnlyList<PublicFeatureProjection> FeatureMetadata);
+        IReadOnlyList<FeatureConfigurationCandidate> FeatureMetadata);
+
+    private sealed record FeatureConfigurationCandidate(
+        BundlePackageSelection Selection,
+        PublicFeatureProjection Feature);
 }

@@ -566,13 +566,80 @@ public sealed class ElsaInstancePlanResolverTests
     }
 
     [Fact]
+    public async Task Rejects_setting_identity_collisions_across_selected_packages()
+    {
+        var sourceA = new PublicPackageSourceProjection(Guid.NewGuid(), "source-a", "https://packages.example.test/a.json");
+        var sourceB = new PublicPackageSourceProjection(Guid.NewGuid(), "source-b", "https://packages.example.test/b.json");
+        var settingA = new PublicFeatureSettingProjection(
+            "endpoint", "System.String", "string", false, "\"https://runtime.example.test\"", "Endpoint", null, null, "{}", false, false, null, "{}", "{}");
+        var settingB = new PublicFeatureSettingProjection(
+            "endpoint", "System.String", "string", true, null, "Endpoint secret", null, null, "{}", true, false, "RUNTIME_ENDPOINT", "{}", "{}");
+        var featureA = new PublicFeatureProjection(
+            "shared", "Elsa.A", "1.0.0", sourceA, "Elsa.A.Shared", "Shared A", null, null, [], [], ["elsa.server"], [], [], [], false, false, "{}", [settingA]);
+        var featureB = new PublicFeatureProjection(
+            "shared", "Elsa.B", "1.0.0", sourceB, "Elsa.B.Shared", "Shared B", null, null, [], [], ["elsa.server"], [], [], [], false, false, "{}", [settingB]);
+        var versions = new[]
+        {
+            new PublicPackageVersionProjection("Elsa.A", "1.0.0", sourceA, "1.0", ["elsa.server"], null, [featureA], Digest('a')),
+            new PublicPackageVersionProjection("Elsa.B", "1.0.0", sourceB, "1.0", ["elsa.server"], null, [featureB], Digest('b'))
+        };
+        var baseline = CreateRequest();
+        var request = baseline with
+        {
+            BuilderIntent = baseline.BuilderIntent with
+            {
+                Packages =
+                [
+                    new(sourceA.Id, "Elsa.A", "1.0.0", ["shared"], null),
+                    new(sourceB.Id, "Elsa.B", "1.0.0", ["shared"], null)
+                ]
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog(versions), new FakeCompatibility()).ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Findings, finding => finding.Code == "configuration.key.ambiguous");
+        Assert.Null(result.Plan);
+    }
+
+    [Theory]
+    [InlineData("oci://runtime/runtime/../other@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")]
+    [InlineData("oci://runtime/runtime/%2e%2e/other@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")]
+    [InlineData("oci://runtime/runtime/%2fother@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")]
+    [InlineData("oci://runtime/runtime\\other@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")]
+    [InlineData("oci://runtime/runtime//other@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")]
+    [InlineData("runtime/runtime/../other@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")]
+    public async Task Rejects_unsafe_oci_image_reference_paths(string imageReference)
+    {
+        var baseline = CreateRequest();
+        var topology = baseline.ReleaseManifest.Manifest!.Topologies[0];
+        var image = topology.Images[0]! with { Reference = imageReference };
+        var request = baseline with
+        {
+            ReleaseManifest = baseline.ReleaseManifest with
+            {
+                Manifest = baseline.ReleaseManifest.Manifest with
+                {
+                    Topologies = [topology with { Images = [image] }]
+                }
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility()).ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Findings, finding => finding.Code == "releaseManifest.image.invalid");
+    }
+
+    [Fact]
     public async Task Produces_same_content_hash_for_reordered_safe_inputs()
     {
         var first = CreateRequest() with
         {
             ExistingEvidence = [
-                new("z-evidence", "https://evidence.example.test/z", "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "Safe evidence."),
-                new("a-evidence", "https://evidence.example.test/a", "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "Safe evidence.")]
+                new("z-evidence", "https://evidence.example.test/z@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "Retained immutable evidence."),
+                new("a-evidence", "https://evidence.example.test/a@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "Retained immutable evidence.")]
         };
         var second = first with { ExistingEvidence = first.ExistingEvidence!.Reverse().ToArray() };
         var resolver = new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility());

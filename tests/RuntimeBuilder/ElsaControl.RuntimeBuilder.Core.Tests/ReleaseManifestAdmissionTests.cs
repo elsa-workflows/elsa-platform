@@ -397,6 +397,46 @@ public sealed class ReleaseManifestAdmissionTests
     }
 
     [Fact]
+    public async Task Projector_rejects_existing_evidence_with_mismatched_digest_binding()
+    {
+        var admission = await Admit(Artifact(Digest('b')));
+        var plan = CreatePlan() with
+        {
+            Evidence = [new("existing", $"https://evidence.example/a@{Digest('a')}", Digest('b'), "Retained immutable evidence.")]
+        };
+
+        Assert.True(admission.Accepted);
+        Assert.Throws<InvalidOperationException>(() => ReleaseManifestPlanProjector.Project(admission, plan));
+    }
+
+    [Fact]
+    public async Task Projector_rejects_existing_evidence_with_unallowlisted_description()
+    {
+        var admission = await Admit(Artifact(Digest('b')));
+        var plan = CreatePlan() with
+        {
+            Evidence = [new("existing", $"https://evidence.example/a@{Digest('a')}", Digest('a'), "Evidence supplied by customer.")]
+        };
+
+        Assert.True(admission.Accepted);
+        Assert.Throws<InvalidOperationException>(() => ReleaseManifestPlanProjector.Project(admission, plan));
+    }
+
+    [Fact]
+    public async Task Projector_retains_unrelated_evidence_with_fixed_description_and_digest_binding()
+    {
+        var admission = await Admit(Artifact(Digest('b')));
+        var plan = CreatePlan() with
+        {
+            Evidence = [new("existing", $"https://evidence.example/a@{Digest('a')}", Digest('a'), "Retained immutable evidence.")]
+        };
+
+        var projected = ReleaseManifestPlanProjector.Project(admission, plan);
+
+        Assert.Contains(projected.Evidence, evidence => evidence.Kind == "existing" && evidence.Digest == Digest('a'));
+    }
+
+    [Fact]
     public async Task Projector_drops_legacy_existing_evidence_with_missing_kind()
     {
         var admission = await Admit(Artifact(Digest('b')));

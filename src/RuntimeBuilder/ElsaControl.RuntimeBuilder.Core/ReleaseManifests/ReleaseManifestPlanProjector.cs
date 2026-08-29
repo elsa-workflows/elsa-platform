@@ -9,6 +9,17 @@ namespace ElsaControl.RuntimeBuilder.Core.ReleaseManifests;
 /// </summary>
 public static class ReleaseManifestPlanProjector
 {
+    private const string GenericEvidenceDescription = "Retained immutable evidence.";
+    private static readonly IReadOnlyDictionary<string, string> FixedEvidenceDescriptions =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [ReleaseManifestEvidenceKinds.Manifest] = "Verified producer release manifest.",
+            [ReleaseManifestEvidenceKinds.Signature] = "Verified release-manifest signature evidence.",
+            [ReleaseManifestEvidenceKinds.Sbom] = "Verified release SBOM evidence.",
+            [ReleaseManifestEvidenceKinds.Provenance] = "Verified release provenance evidence.",
+            [ReleaseManifestEvidenceKinds.VulnerabilityScan] = "Producer-retained release vulnerability-scan evidence."
+        };
+
     public static ResolvedElsaApplicationPlan Project(
         ReleaseManifestAdmissionResult admission,
         ResolvedElsaApplicationPlan plan)
@@ -115,13 +126,13 @@ public static class ReleaseManifestPlanProjector
             .Where(x => x is not null && !string.IsNullOrWhiteSpace(x.Kind) && !kinds.Contains(x.Kind))
             .ToList();
         var supplyChain = topology.SupplyChain;
-        evidence.Add(new(ReleaseManifestEvidenceKinds.Manifest, admission.Reference!, admission.Digest, "Verified producer release manifest."));
-        evidence.Add(new(ReleaseManifestEvidenceKinds.Signature, admission.SignatureEvidence!.Reference, admission.SignatureEvidence.Digest, "Verified release-manifest signature evidence."));
-        evidence.Add(new(ReleaseManifestEvidenceKinds.Sbom, supplyChain.Sbom!.Uri, EvidenceDigest(supplyChain.Sbom.Digest, supplyChain.Sbom.Uri), "Verified release SBOM evidence."));
-        evidence.Add(new(ReleaseManifestEvidenceKinds.Provenance, supplyChain.Provenance!.Uri, EvidenceDigest(supplyChain.Provenance.Digest, supplyChain.Provenance.Uri), "Verified release provenance evidence."));
+        evidence.Add(new(ReleaseManifestEvidenceKinds.Manifest, admission.Reference!, admission.Digest, FixedEvidenceDescriptions[ReleaseManifestEvidenceKinds.Manifest]));
+        evidence.Add(new(ReleaseManifestEvidenceKinds.Signature, admission.SignatureEvidence!.Reference, admission.SignatureEvidence.Digest, FixedEvidenceDescriptions[ReleaseManifestEvidenceKinds.Signature]));
+        evidence.Add(new(ReleaseManifestEvidenceKinds.Sbom, supplyChain.Sbom!.Uri, EvidenceDigest(supplyChain.Sbom.Digest, supplyChain.Sbom.Uri), FixedEvidenceDescriptions[ReleaseManifestEvidenceKinds.Sbom]));
+        evidence.Add(new(ReleaseManifestEvidenceKinds.Provenance, supplyChain.Provenance!.Uri, EvidenceDigest(supplyChain.Provenance.Digest, supplyChain.Provenance.Uri), FixedEvidenceDescriptions[ReleaseManifestEvidenceKinds.Provenance]));
 
         var scan = supplyChain.VulnerabilityScan!;
-        evidence.Add(new(ReleaseManifestEvidenceKinds.VulnerabilityScan, scan.Report, EvidenceDigest(scan.Digest, scan.Report), "Producer-retained release vulnerability-scan evidence."));
+        evidence.Add(new(ReleaseManifestEvidenceKinds.VulnerabilityScan, scan.Report, EvidenceDigest(scan.Digest, scan.Report), FixedEvidenceDescriptions[ReleaseManifestEvidenceKinds.VulnerabilityScan]));
         return evidence;
     }
 
@@ -135,13 +146,26 @@ public static class ReleaseManifestPlanProjector
     {
         foreach (var evidence in existing ?? [])
         {
-            if (evidence is null
-                || !ReleaseManifestAdmissionService.IsSafeRetainedReference(evidence.Reference)
-                || string.IsNullOrWhiteSpace(evidence.Description)
-                || evidence.Description.Any(char.IsControl))
+            // Legacy entries without a kind are discarded by ProjectEvidence. They
+            // cannot be retained, but remain tolerated so old plans can be upgraded.
+            if (evidence is null || string.IsNullOrWhiteSpace(evidence.Kind))
+                continue;
+
+            if (!ReleaseManifestAdmissionService.IsDigest(evidence.Digest)
+                || ReleaseManifestAdmissionService.ExtractDigest(evidence.Reference) is not { } embeddedDigest
+                || !string.Equals(embeddedDigest, evidence.Digest, StringComparison.OrdinalIgnoreCase)
+                || !ReleaseManifestAdmissionService.IsSafeEvidenceReference(evidence.Reference, evidence.Digest)
+                || !IsAllowedEvidenceDescription(evidence.Kind, evidence.Description))
                 throw new InvalidOperationException("Existing plan evidence must be a safe locator with a non-sensitive description.");
         }
     }
+
+    private static bool IsAllowedEvidenceDescription(string kind, string description) =>
+        !string.IsNullOrWhiteSpace(description)
+        && !description.Any(char.IsControl)
+        && (FixedEvidenceDescriptions.TryGetValue(kind, out var expected)
+            ? string.Equals(description, expected, StringComparison.Ordinal)
+            : string.Equals(description, GenericEvidenceDescription, StringComparison.Ordinal));
 
     private static ResolvedElsaEndpoint ToEndpoint(ReleaseManifestEndpoint endpoint) =>
         new(endpoint.Name, endpoint.Protocol, endpoint.Port, endpoint.Visibility, endpoint.RequiresTls, EndpointPathPolicy.Normalize(endpoint.Path));
