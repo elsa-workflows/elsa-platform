@@ -49,6 +49,13 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                          AND e.ElsaInstanceId = i.ElsaInstanceId
                         WHERE i.ElsaInstanceId IS NOT NULL AND e.Id IS NULL)
                         THROW 51003, ''Managed deployment run binding mismatch'', 1;
+                    IF EXISTS (
+                        SELECT 1
+                        FROM inserted i
+                        JOIN deleted d ON d.Id = i.Id
+                        WHERE d.ElsaInstanceId IS NOT NULL
+                          AND (i.ElsaInstanceId IS NULL OR i.ElsaInstanceId <> d.ElsaInstanceId))
+                        THROW 51003, ''Managed deployment run binding mismatch'', 1;
                 END;');
                 """);
             migrationBuilder.Sql("""

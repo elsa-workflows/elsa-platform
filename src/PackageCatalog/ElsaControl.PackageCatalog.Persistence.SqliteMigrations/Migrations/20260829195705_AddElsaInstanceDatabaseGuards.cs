@@ -33,11 +33,13 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 BEGIN SELECT RAISE(ABORT, 'Managed deployment run binding mismatch'); END;
                 CREATE TRIGGER TR_DeploymentRuns_ManagedInstanceBinding_Update
                 BEFORE UPDATE OF WorkspaceId, EnvironmentId, ElsaInstanceId ON DeploymentRuns
-                WHEN NEW.ElsaInstanceId IS NOT NULL AND NOT EXISTS (
+                WHEN (NEW.ElsaInstanceId IS NOT NULL AND NOT EXISTS (
                     SELECT 1 FROM DeploymentEnvironments e
                     WHERE e.Id = NEW.EnvironmentId
                       AND e.WorkspaceId = NEW.WorkspaceId
-                      AND e.ElsaInstanceId = NEW.ElsaInstanceId)
+                      AND e.ElsaInstanceId = NEW.ElsaInstanceId))
+                     OR (OLD.ElsaInstanceId IS NOT NULL AND
+                         (NEW.ElsaInstanceId IS NULL OR NEW.ElsaInstanceId <> OLD.ElsaInstanceId))
                 BEGIN SELECT RAISE(ABORT, 'Managed deployment run binding mismatch'); END;
                 CREATE TRIGGER TR_DeploymentEnvironments_ManagedInstanceBinding_Update
                 BEFORE UPDATE OF WorkspaceId, Id, ElsaInstanceId ON DeploymentEnvironments

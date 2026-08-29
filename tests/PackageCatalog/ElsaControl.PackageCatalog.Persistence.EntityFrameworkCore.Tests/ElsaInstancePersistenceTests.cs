@@ -457,6 +457,51 @@ public sealed class ElsaInstancePersistenceTests
     }
 
     [Fact]
+    public async Task Existing_managed_run_binding_cannot_be_cleared_or_changed_through_ef()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+
+        var workspace = new Workspace { Name = "Run binding workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+        var application = new DeploymentApplicationEntity
+        {
+            WorkspaceId = workspace.Id,
+            Name = "Run binding app",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        var first = NewInstance(workspace.OrganizationId, workspace.Id);
+        var second = NewInstance(workspace.OrganizationId, workspace.Id);
+        db.DeploymentApplications.Add(application);
+        db.ElsaInstances.AddRange(first, second);
+        await db.SaveChangesAsync();
+        var environment = NewEnvironment(workspace.Id, application.Id, first.Id, "Run binding environment");
+        db.DeploymentEnvironments.Add(environment);
+        await db.SaveChangesAsync();
+        var run = NewRun(workspace.Id, application.Id, environment.Id, WorkspaceDeploymentRunStatus.Queued, first.Id);
+        db.DeploymentRuns.Add(run);
+        await db.SaveChangesAsync();
+
+        db.ChangeTracker.Clear();
+        var loaded = await db.DeploymentRuns.SingleAsync(x => x.Id == run.Id);
+        loaded.ElsaInstanceId = null;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+
+        db.ChangeTracker.Clear();
+        loaded = await db.DeploymentRuns.SingleAsync(x => x.Id == run.Id);
+        loaded.ElsaInstanceId = second.Id;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+
+        db.ChangeTracker.Clear();
+        db.DeploymentRuns.Add(NewRun(workspace.Id, application.Id, environment.Id, WorkspaceDeploymentRunStatus.RecoveryRequired, first.Id));
+        await Assert.ThrowsAnyAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
     public async Task HasActiveRun_includes_recovery_required_managed_runs()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -614,7 +659,7 @@ public sealed class ElsaInstancePersistenceTests
         var environment = NewEnvironment(workspace.Id, application.Id, first.Id, "Guard environment");
         db.DeploymentEnvironments.Add(environment);
         await db.SaveChangesAsync();
-        var run = NewRun(workspace.Id, application.Id, environment.Id, WorkspaceDeploymentRunStatus.Succeeded, first.Id);
+        var run = NewRun(workspace.Id, application.Id, environment.Id, WorkspaceDeploymentRunStatus.Queued, first.Id);
         var create = NewOperation(workspace, null, ElsaInstanceOperationState.Succeeded, "guard-create");
         var migration = new ElsaInstanceMigrationEntity
         {
@@ -633,7 +678,17 @@ public sealed class ElsaInstancePersistenceTests
         var deleteAction = "Delete";
 
         await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE DeploymentRuns SET ElsaInstanceId = {null} WHERE Id = {run.Id}"));
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
             $"UPDATE DeploymentRuns SET ElsaInstanceId = {second.Id} WHERE Id = {run.Id}"));
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO DeploymentRuns (Id, WorkspaceId, ElsaInstanceId, ApplicationId, EnvironmentId, EngineId,
+                SourceRevisionId, Status, ValidationOutcome, ConfirmationId, ActorAccountId, QueuedAt, CreatedAt, AttemptNumber)
+            SELECT {Guid.NewGuid()}, WorkspaceId, ElsaInstanceId, ApplicationId, EnvironmentId, EngineId,
+                SourceRevisionId, 'RecoveryRequired', ValidationOutcome, ConfirmationId, ActorAccountId, QueuedAt, CreatedAt, AttemptNumber
+            FROM DeploymentRuns WHERE Id = {run.Id}
+            """));
         await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
             $"UPDATE DeploymentEnvironments SET ElsaInstanceId = {second.Id} WHERE Id = {environment.Id}"));
         await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(

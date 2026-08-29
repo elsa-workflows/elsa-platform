@@ -471,10 +471,21 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             .Where(entry => entry.State is EntityState.Added or EntityState.Modified)
             .ToDictionary(entry => entry.Entity.Id, entry => entry.Entity);
 
-        var trackedRuns = ChangeTracker.Entries<Models.DeploymentRunEntity>()
+        var trackedRunEntries = ChangeTracker.Entries<Models.DeploymentRunEntity>()
             .Where(entry => entry.State is EntityState.Added or EntityState.Modified)
-            .Select(entry => entry.Entity)
             .ToArray();
+
+        foreach (var entry in trackedRunEntries)
+        {
+            if (entry.State == EntityState.Modified)
+            {
+                var originalInstanceId = (Guid?)entry.Property(nameof(Models.DeploymentRunEntity.ElsaInstanceId)).OriginalValue;
+                if (originalInstanceId is not null && entry.Entity.ElsaInstanceId != originalInstanceId)
+                    throw new InvalidOperationException("A managed deployment run instance binding is immutable.");
+            }
+        }
+
+        var trackedRuns = trackedRunEntries.Select(entry => entry.Entity).ToArray();
 
         foreach (var run in trackedRuns.Where(run => run.ElsaInstanceId is not null))
         {
