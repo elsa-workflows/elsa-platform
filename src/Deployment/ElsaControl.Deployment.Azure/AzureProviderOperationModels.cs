@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace ElsaControl.Deployment.Azure;
 
 public enum AzureProviderOperationAction
@@ -107,6 +109,7 @@ public sealed record AzureProviderOperation(
     string? ReleaseManifestSignatureReference = null,
     IReadOnlyDictionary<string, string>? SecretReferences = null)
 {
+    [JsonIgnore]
     public IReadOnlyDictionary<string, string> SafeSecretReferences => SecretReferences ?? EmptySecretReferences;
 
     private static readonly IReadOnlyDictionary<string, string> EmptySecretReferences =
