@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Collections.ObjectModel;
 using ElsaControl.RuntimeBuilder.Abstractions.Plans;
+using ElsaControl.RuntimeBuilder.Abstractions.ReleaseManifests;
 
 namespace ElsaControl.Deployment.Azure;
 
@@ -24,9 +25,6 @@ public static class AzureWorkloadPlanTranslator
     public const string SupportedReleaseLine = "3.8";
     public const string SupportedRegistryClass = "paid";
     public const string SupportedRegistryHost = "valenceruntimeimages.azurecr.io";
-    public const string ReleaseManifestEvidenceKind = "release-manifest";
-    public const string ReleaseManifestSignatureEvidenceKind = "release-manifest-signature";
-
     public static AzureWorkloadPlanTranslation Translate(
         ResolvedElsaApplicationPlan? resolvedPlan,
         AzureWorkloadTarget? target)
@@ -53,9 +51,9 @@ public static class AzureWorkloadPlanTranslator
         }
         var component = normalized.Topology.Components.Single();
         var evidence = normalized.Evidence.Single(x =>
-            string.Equals(x.Kind, ReleaseManifestEvidenceKind, StringComparison.OrdinalIgnoreCase));
+            string.Equals(x.Kind, ReleaseManifestEvidenceKinds.Manifest, StringComparison.OrdinalIgnoreCase));
         var signatureEvidence = normalized.Evidence.Single(x =>
-            string.Equals(x.Kind, ReleaseManifestSignatureEvidenceKind, StringComparison.OrdinalIgnoreCase));
+            string.Equals(x.Kind, ReleaseManifestEvidenceKinds.Signature, StringComparison.OrdinalIgnoreCase));
         var secretReferences = new ReadOnlyDictionary<string, string>(normalized.Configuration.Entries
             .Where(x => x.Secret && x.SecretReference is not null)
             .ToDictionary(x => x.Key.ToLowerInvariant(), x => x.SecretReference!, StringComparer.OrdinalIgnoreCase));
@@ -202,7 +200,7 @@ public static class AzureWorkloadPlanTranslator
         List<ResolvedPlanValidationFinding> findings)
     {
         var evidence = (plan.Evidence ?? [])
-            .Where(x => x is not null && string.Equals(x.Kind, ReleaseManifestSignatureEvidenceKind, StringComparison.OrdinalIgnoreCase))
+            .Where(x => x is not null && string.Equals(x.Kind, ReleaseManifestEvidenceKinds.Signature, StringComparison.OrdinalIgnoreCase))
             .ToArray();
         if (evidence.Length == 0)
         {
@@ -255,7 +253,7 @@ public static class AzureWorkloadPlanTranslator
             return;
 
         var evidence = (plan.Evidence ?? [])
-            .Where(x => x is not null && string.Equals(x.Kind, ReleaseManifestEvidenceKind, StringComparison.OrdinalIgnoreCase))
+            .Where(x => x is not null && string.Equals(x.Kind, ReleaseManifestEvidenceKinds.Manifest, StringComparison.OrdinalIgnoreCase))
             .ToArray();
         if (evidence.Length == 0)
         {
