@@ -135,7 +135,12 @@ public sealed class ResolvedElsaApplicationPlanTests
             "AzureKeyVault://vault/database",
             "secret:/database",
             "secret://vault/database?token=unsafe",
-            "secret://user:password@vault/database"
+            "secret://user:password@vault/database",
+            "secret://vault/database/../admin",
+            "secret://vault/database/./password",
+            "secret://vault/database//password",
+            "secret://vault/database%2f..%2fadmin",
+            "secret://vault/database\\password"
         };
         var plan = CreatePlan() with
         {

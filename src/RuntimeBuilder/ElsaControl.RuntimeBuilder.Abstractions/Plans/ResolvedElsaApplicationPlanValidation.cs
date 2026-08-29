@@ -318,14 +318,19 @@ public static class ResolvedElsaApplicationPlanValidator
 
     private static bool IsSafeSecretReference(string value)
     {
-        if (value.Any(char.IsWhiteSpace) || !Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        if (value.Any(char.IsWhiteSpace) || value.Contains('%') || value.Contains('\\') ||
+            value.Contains("/../", StringComparison.Ordinal) || value.EndsWith("/..", StringComparison.Ordinal) ||
+            value.Contains("/./", StringComparison.Ordinal) || value.EndsWith("/.", StringComparison.Ordinal) ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var uri))
             return false;
 
         return string.Equals(uri.Scheme, "secret", StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(uri.Host)
             && string.IsNullOrEmpty(uri.UserInfo)
             && string.IsNullOrEmpty(uri.Query)
-            && string.IsNullOrEmpty(uri.Fragment);
+            && string.IsNullOrEmpty(uri.Fragment)
+            && !uri.AbsolutePath.Contains("//", StringComparison.Ordinal)
+            && !uri.AbsolutePath.Split('/').Any(segment => segment is "." or "..");
     }
 
 }
