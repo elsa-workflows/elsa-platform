@@ -80,7 +80,11 @@ public sealed class AzureProviderProofAdapter(
             submission = planFactory.Create(selection, environment)
                 ?? throw new InvalidOperationException("The Azure proof plan factory returned no admitted plan.");
         }
-        catch (DeploymentProofStageException)
+        catch (DeploymentProofStageException exception) when (exception.Stage == DeploymentProofStage.Plan)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
