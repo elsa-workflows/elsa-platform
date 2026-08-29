@@ -234,6 +234,30 @@ public sealed class ElsaInstanceContractTests
             waiting.Instance, ElsaInstanceOperationAction.Delete, waiting.Operation));
     }
 
+    [Fact]
+    public void Only_delete_operations_can_wait_for_a_prior_operation()
+    {
+        var instance = CreateInstance(ElsaObservedLifecycle.Ready);
+        var reconcile = ElsaInstanceOperation.Create(instance.Id, ElsaInstanceOperationAction.Reconcile,
+            "instance/reconcile", "operation-key", Hash('a'), instance.Version);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            reconcile.TransitionTo(ElsaInstanceOperationState.WaitingForPriorOperation));
+        Assert.Equal(
+            ElsaInstanceOperationState.WaitingForPriorOperation,
+            OperationFor(instance, ElsaInstanceOperationState.WaitingForPriorOperation).State);
+    }
+
+    [Fact]
+    public void Delete_cannot_create_a_second_successor_after_cleanup_has_started()
+    {
+        var instance = CreateInstance(ElsaObservedLifecycle.Ready);
+        var first = ElsaInstanceStateMachine.Request(instance, ElsaInstanceOperationAction.Delete);
+
+        Assert.Throws<InvalidOperationException>(() => ElsaInstanceStateMachine.Request(
+            first.Instance, ElsaInstanceOperationAction.Delete, first.Operation));
+    }
+
     [Theory]
     [InlineData(ElsaObservedLifecycle.Pending, ElsaObservedLifecycle.Deleting)]
     [InlineData(ElsaObservedLifecycle.Provisioning, ElsaObservedLifecycle.Deleting)]
@@ -760,7 +784,10 @@ public sealed class ElsaInstanceContractTests
 
     private static ElsaInstanceOperation OperationFor(ElsaInstance instance, ElsaInstanceOperationState state)
     {
-        var operation = ElsaInstanceOperation.Create(instance.Id, ElsaInstanceOperationAction.Reconcile,
+        var action = state == ElsaInstanceOperationState.WaitingForPriorOperation
+            ? ElsaInstanceOperationAction.Delete
+            : ElsaInstanceOperationAction.Reconcile;
+        var operation = ElsaInstanceOperation.Create(instance.Id, action,
             "instance/reconcile", "operation-key", Hash('a'), instance.Version);
         return state switch
         {

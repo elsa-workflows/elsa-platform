@@ -365,8 +365,9 @@ public static class ElsaInstanceStateMachine
             return new ElsaInstanceTransitionResult(instance, activeOperation);
 
         if (action == ElsaInstanceOperationAction.Delete && activeOperation?.Action == ElsaInstanceOperationAction.Delete &&
-            activeOperation.State == ElsaInstanceOperationState.WaitingForPriorOperation)
-            throw new InvalidOperationException("A delete operation is already waiting for a prior operation.");
+            instance.Intent.DesiredLifecycle == ElsaDesiredLifecycle.Deleting &&
+            ElsaInstanceOperationGuard.IsBlocking(activeOperation.State))
+            throw new InvalidOperationException("A delete operation is already active for this instance.");
 
         var waitForPriorOperation = action == ElsaInstanceOperationAction.Delete &&
                                     activeOperation is not null &&
