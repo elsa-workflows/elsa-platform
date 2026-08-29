@@ -41,7 +41,9 @@ public sealed record AzureProviderRunnerCommand(
 /// <summary>
 /// Safe result returned by a provider step. A failed result means the provider knows the step
 /// did not complete. An uncertain result means an external side effect may have committed and
-/// the durable operation must be recovered before another mutation is attempted.
+/// the durable operation must be recovered before another mutation is attempted. For a
+/// reference-only checkpoint, a null endpoint or Unknown health means that the step did not
+/// provide a new observation; the prior durable observation is retained.
 /// </summary>
 public sealed record AzureProviderRunnerResult(
     AzureProviderRunnerOutcome Outcome,

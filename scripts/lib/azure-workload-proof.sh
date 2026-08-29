@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Pure selection logic shared by apply, what-if and offline behavioral tests.
+# Shared lifecycle helpers used by apply, what-if and offline behavioral tests.
 # Revision names are supplied as a JSON array so Azure pagination remains the
 # caller's responsibility and the decision itself stays deterministic.
 select_workload_revision_suffix() {
@@ -30,6 +30,43 @@ select_workload_revision_suffix() {
 
   echo "No free deterministic recovery revision suffix was available" >&2
   return 5
+}
+
+resolve_stable_traffic_revision() {
+  local resource_group="$1"
+  local app_name="$2"
+  local app_count stable_revision stable_state traffic_json
+
+  app_count="$(az resource list --resource-group "$resource_group" --resource-type Microsoft.App/containerApps --query "[?name=='${app_name}'] | length(@)" --output tsv --only-show-errors)"
+  if (( app_count == 0 )); then
+    return 0
+  fi
+  if (( app_count != 1 )); then
+    echo "Expected exactly one proof Container App named $app_name" >&2
+    return 5
+  fi
+
+  traffic_json="$(az containerapp show --resource-group "$resource_group" --name "$app_name" \
+    --query properties.configuration.ingress.traffic --output json --only-show-errors)" || return 1
+  stable_revision="$(jq -r '
+    if type != "array" then
+      empty
+    else
+      ([.[] | ((.weight // 0) | tonumber)] | add) as $total_weight |
+      ([.[] | select(.revisionName != null and ((.weight // 0) | tonumber) == 100)] | .) as $stable |
+      if $total_weight == 100 and ($stable | length) == 1 then $stable[0].revisionName else empty end
+    end
+  ' <<<"$traffic_json")" || return 1
+  [[ -n "$stable_revision" ]] || {
+    echo "Refusing rollout because existing app traffic has no single healthy 100% revision" >&2
+    return 5
+  }
+  stable_state="$(az containerapp revision show --resource-group "$resource_group" --name "$app_name" --revision "$stable_revision" --query 'properties.{active:active,health:healthState}' --output json --only-show-errors)" || return 1
+  [[ "$(jq -r .active <<<"$stable_state")" == true && "$(jq -r .health <<<"$stable_state")" == Healthy ]] || {
+    echo "Refusing rollout because stable revision $stable_revision is not active and healthy" >&2
+    return 5
+  }
+  printf '%s\n' "$stable_revision"
 }
 
 promote_workload_revision() {
@@ -108,7 +145,7 @@ remove_owned_sql_bootstrap_admin() {
   local server_name="$3"
   local expected_login="$4"
   local expected_object_id="$5"
-  local admin_count admin_state server_count
+  local admin_count admin_state server_count actual_object_id_lower expected_object_id_lower
 
   server_count="$(az sql server list --subscription "$subscription_id" --resource-group "$resource_group" \
     --query "[?name=='${server_name}'] | length(@)" --output tsv --only-show-errors 2>/dev/null)" || return 1
@@ -122,7 +159,9 @@ remove_owned_sql_bootstrap_admin() {
 
   admin_state="$(az sql server ad-admin list --subscription "$subscription_id" --resource-group "$resource_group" \
     --server "$server_name" --query '[0].{login:login,sid:sid}' --output json --only-show-errors 2>/dev/null)" || return 1
-  if [[ "$(jq -r .login <<<"$admin_state")" != "$expected_login" || "$(jq -r .sid <<<"$admin_state")" != "$expected_object_id" ]]; then
+  actual_object_id_lower="$(jq -r .sid <<<"$admin_state" | tr '[:upper:]' '[:lower:]')"
+  expected_object_id_lower="$(printf '%s' "$expected_object_id" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$(jq -r .login <<<"$admin_state")" != "$expected_login" || "$actual_object_id_lower" != "$expected_object_id_lower" ]]; then
     echo "Refusing to remove an unexpected SQL server administrator" >&2
     return 1
   fi
@@ -164,13 +203,36 @@ delete_and_verify_role_assignment() {
 
   az role assignment delete --ids "$assignment_id" --only-show-errors >/dev/null 2>&1 || true
   for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
-    if assignments_json="$(az role assignment list --scope "$registry_id" --output json --only-show-errors 2>/dev/null)" &&
+    if assignments_json="$(az role assignment list --all --scope "$registry_id" --output json --only-show-errors 2>/dev/null)" &&
       jq -e --arg id "$assignment_id" '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | length == 0' <<<"$assignments_json" >/dev/null; then
       return 0
     fi
     (( attempt == max_attempts )) || sleep "$delay_seconds"
   done
   echo "Proof-owned ACR role assignment remained observable after deletion" >&2
+  return 1
+}
+
+delete_and_verify_firewall_rule() {
+  local subscription_id="$1"
+  local resource_group="$2"
+  local server_name="$3"
+  local rule_name="$4"
+  local max_attempts="${5:-24}"
+  local delay_seconds="${6:-5}"
+  local firewall_rules_json attempt
+
+  az sql server firewall-rule delete --subscription "$subscription_id" --resource-group "$resource_group" \
+    --server "$server_name" --name "$rule_name" --only-show-errors >/dev/null 2>&1 || true
+  for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
+    if firewall_rules_json="$(az sql server firewall-rule list --subscription "$subscription_id" --resource-group "$resource_group" \
+      --server "$server_name" --output json --only-show-errors 2>/dev/null)" &&
+      jq -e --arg name "$rule_name" '[.[] | select(.name == $name)] | length == 0' <<<"$firewall_rules_json" >/dev/null; then
+      return 0
+    fi
+    (( attempt == max_attempts )) || sleep "$delay_seconds"
+  done
+  echo "Temporary SQL firewall rule remained observable after deletion" >&2
   return 1
 }
 
@@ -252,18 +314,20 @@ verify_proof_resource_inventory() {
   }
 
   vault_id="$group_id/providers/Microsoft.KeyVault/vaults/$proof_name-kv"
-  assignments_json="$(az role assignment list --scope "$vault_id" --output json --only-show-errors)" || return 1
+  assignments_json="$(az role assignment list --all --scope "$vault_id" --output json --only-show-errors)" || return 1
   jq -e --arg scope "$vault_id" --arg workload "$identity_principal_id" --arg bootstrap "$bootstrap_object_id" '
+    ($workload | ascii_downcase) as $workload_lower |
+    ($bootstrap | ascii_downcase) as $bootstrap_lower |
     [.[] | select((.scope // "" | ascii_downcase) == ($scope | ascii_downcase))] as $direct |
     ($direct | length) == 2 and
-    (any($direct[]; (.principalId // "") == $workload and ((.roleDefinitionId // "" | split("/") | last) | ascii_downcase) == "4633458b-17de-408a-b874-0445c86b69e6")) and
-    (any($direct[]; (.principalId // "") == $bootstrap and ((.roleDefinitionId // "" | split("/") | last) | ascii_downcase) == "b86a8fe4-44ce-4948-aee5-eccb2c155cd7"))
+    (any($direct[]; ((.principalId // "") | ascii_downcase) == $workload_lower and ((.roleDefinitionId // "" | split("/") | last) | ascii_downcase) == "4633458b-17de-408a-b874-0445c86b69e6")) and
+    (any($direct[]; ((.principalId // "") | ascii_downcase) == $bootstrap_lower and ((.roleDefinitionId // "" | split("/") | last) | ascii_downcase) == "b86a8fe4-44ce-4948-aee5-eccb2c155cd7"))
   ' <<<"$assignments_json" >/dev/null || {
     echo "Refusing cleanup: proof vault RBAC inventory is not exact" >&2
     return 1
   }
 
-  direct_group_assignments="$(az role assignment list --scope "$group_id" --output json --only-show-errors)" || return 1
+  direct_group_assignments="$(az role assignment list --all --scope "$group_id" --output json --only-show-errors)" || return 1
   jq -e --arg scope "$group_id" '[.[] | select((.scope // "" | ascii_downcase) == ($scope | ascii_downcase))] | length == 0' <<<"$direct_group_assignments" >/dev/null || {
     echo "Refusing cleanup: resource group has an unexpected direct role assignment" >&2
     return 1

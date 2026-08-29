@@ -136,6 +136,25 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Failed_promotion_without_observations_preserves_last_known_endpoint_and_health()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner
+        {
+            PromotionOutcome = AzureProviderRunnerOutcome.Failed,
+            StableTrafficRevisionName = null,
+            OmitPromotionObservations = true
+        };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal("https://workload.example.test", result.Operation.Endpoint);
+        Assert.Equal(AzureProviderHealth.Healthy, result.Operation.Health);
+    }
+
+    [Fact]
     public async Task Promotion_rollback_without_a_traffic_postcondition_stays_in_recovery()
     {
         var store = new FakeOperationStore();
@@ -421,6 +440,24 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Delete_without_owned_resources_absence_proof_fails_closed_even_without_a_snapshot()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner
+        {
+            CleanupResources = new(),
+            OwnedResourcesAbsentOverride = false
+        };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        var result = await executor.DeleteAsync(CreateRequest(AzureProviderOperationAction.Delete), CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.Failed, result.Outcome);
+        Assert.Equal("azure.cleanup.ownership.unverified", result.Code);
+        Assert.Equal(AzureProviderOperationStatus.Failed, result.Operation.Status);
+    }
+
+    [Fact]
     public async Task Interrupted_cleanup_enters_recovery_and_resumes()
     {
         var store = new FakeOperationStore();
@@ -532,6 +569,8 @@ public sealed class AzureProviderExecutorTests
         public bool StableTrafficRestored { get; init; } = true;
         public AzureProviderResourceReferences CleanupResources { get; init; } = new(ResourceGroupName: "proof-rg");
         public string? StableTrafficRevisionName { get; init; } = "stable-revision";
+        public bool OmitPromotionObservations { get; init; }
+        public bool? OwnedResourcesAbsentOverride { get; init; }
         public AzureProviderRunnerStep? DelayOnlyStep { get; init; }
         public string? EndpointOverride { get; init; }
         public AzureProviderResourceReferences? ResourcesOverride { get; init; }
@@ -596,7 +635,7 @@ public sealed class AzureProviderExecutorTests
                 return Result(AzureProviderRunnerOutcome.Completed, AzureProviderOperationPhase.HealthVerified, stableTrafficRestored: StableTrafficRestored);
             if (command.Step == AzureProviderRunnerStep.Cleanup)
                 return Result(AzureProviderRunnerOutcome.Completed, AzureProviderOperationPhase.CleanupVerified, CleanupResources,
-                    ownedResourcesAbsent: CleanupResources == new AzureProviderResourceReferences());
+                    ownedResourcesAbsent: OwnedResourcesAbsentOverride ?? (CleanupResources == new AzureProviderResourceReferences()));
             if (command.Step == AzureProviderRunnerStep.Health)
                 return Result(AzureProviderRunnerOutcome.Completed, AzureProviderOperationPhase.HealthVerified, health: Health);
             if (command.Step == AzureProviderRunnerStep.Foundation)
@@ -620,8 +659,14 @@ public sealed class AzureProviderExecutorTests
             outcome,
             phase,
             resources ?? ResourcesOverride ?? new(ResourceGroupName: "proof-rg", FoundationDeploymentId: "foundation-1", WorkloadDeploymentId: "workload-1", WorkloadResourceId: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app", WorkloadRevisionName: "app--candidate", StableTrafficRevisionName: StableTrafficRevisionName),
-            health == AzureProviderHealth.Unknown && phase is AzureProviderOperationPhase.HealthVerified or AzureProviderOperationPhase.TrafficPromoted ? AzureProviderHealth.Healthy : health,
-            EndpointOverride ?? (phase is AzureProviderOperationPhase.HealthVerified or AzureProviderOperationPhase.TrafficPromoted ? "https://workload.example.test" : null),
+            OmitPromotionObservations && phase == AzureProviderOperationPhase.TrafficPromoted
+                ? AzureProviderHealth.Unknown
+                : health == AzureProviderHealth.Unknown && (phase is AzureProviderOperationPhase.HealthVerified or AzureProviderOperationPhase.TrafficPromoted)
+                    ? AzureProviderHealth.Healthy
+                    : health,
+            OmitPromotionObservations && phase == AzureProviderOperationPhase.TrafficPromoted
+                ? null
+                : EndpointOverride ?? (phase is AzureProviderOperationPhase.HealthVerified or AzureProviderOperationPhase.TrafficPromoted ? "https://workload.example.test" : null),
             HostileDiagnostics
                 ? [new AzureProviderDiagnostic("azure.provider.detail", "password=do-not-persist\r\nraw response")]
                 : [],

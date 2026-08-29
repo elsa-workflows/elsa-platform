@@ -165,8 +165,13 @@ class AzureWorkloadProofTests(unittest.TestCase):
             line for line in source.splitlines()
             if "az sql server firewall-rule delete" in line
         ]
-        self.assertEqual(2, len(firewall_deletes))
-        self.assertTrue(all("--yes" not in line for line in firewall_deletes))
+        self.assertEqual(0, len(firewall_deletes))
+        library_firewall_deletes = [
+            line for line in library.splitlines()
+            if "az sql server firewall-rule delete" in line
+        ]
+        self.assertEqual(1, len(library_firewall_deletes))
+        self.assertNotIn("--yes", library_firewall_deletes[0])
         self.assertIn("keyvault purge", combined_source)
         self.assertIn("Refusing to adopt unrelated resource group", source)
         self.assertIn("different bootstrap identity", source)
@@ -178,6 +183,14 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("external_context=", source)
         self.assertIn('external_deployment_suffix="$(sha256_text', source)
         self.assertIn("tags.acrDeployment", source)
+        self.assertIn("delete_and_verify_firewall_rule", combined_source)
+        role_list_lines = [
+            line.strip()
+            for line in combined_source.splitlines()
+            if "az role assignment list" in line
+        ]
+        self.assertGreaterEqual(len(role_list_lines), 6)
+        self.assertTrue(all("--all" in line for line in role_list_lines), role_list_lines)
         self.assertIn("tags.acrPrincipal", source)
         self.assertIn("tags.acrRegistryId", source)
         self.assertIn("properties.outputs.roleAssignmentId.value", source)
@@ -250,6 +263,66 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertEqual(5, result.returncode)
         self.assertIn("No free deterministic recovery revision suffix", result.stderr)
 
+    def test_existing_split_traffic_fails_closed_without_latest_ready_fallback(self) -> None:
+        script = r'''
+source "$1"
+proof_name=proof
+resource_group=proof-rg
+az() {
+  case "$*" in
+    *"resource list"*) printf '1\n' ;;
+    *"configuration.ingress.traffic"*) printf '[{"revisionName":"stable-revision","weight":50},{"revisionName":"candidate-revision","weight":50}]\n' ;;
+    *"latestReadyRevisionName"*) printf 'candidate-revision\n' ;;
+    *) printf 'unexpected az call: %s\n' "$*" >&2; return 1 ;;
+  esac
+}
+resolve_stable_traffic_revision proof-rg proof-app
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertNotIn("command not found", result.stderr)
+        self.assertNotIn("latestReadyRevisionName", result.stderr)
+
+    def test_firewall_cleanup_waits_for_absence_after_uncertain_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = Path(temp_dir) / "state"
+            calls = Path(temp_dir) / "calls"
+            state.write_text("0")
+            script = r'''
+source "$1"
+STATE_FILE="$2"
+CALLS_FILE="$3"
+az() {
+  printf '%s\n' "$*" >>"$CALLS_FILE"
+  if [[ "$*" == *"firewall-rule delete"* ]]; then return 1; fi
+  count="$(<"$STATE_FILE")"
+  count=$((count + 1))
+  printf '%s' "$count" >"$STATE_FILE"
+  if (( count < 3 )); then
+    printf '[{"name":"temporary-rule"}]\n'
+  else
+    printf '[]\n'
+  fi
+}
+sleep() { :; }
+delete_and_verify_firewall_rule proof-sub proof-rg proof-sql temporary-rule 4 0
+'''
+            result = subprocess.run(
+                ["bash", "-c", script, "test", str(RUNBOOK_LIB), str(state), str(calls)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            call_lines = calls.read_text().splitlines()
+            self.assertEqual(1, sum("firewall-rule delete" in line for line in call_lines))
+            self.assertEqual(3, sum("firewall-rule list" in line for line in call_lines))
+
     def test_failed_promotion_restores_stable_traffic(self) -> None:
         script = r'''
 source "$1"
@@ -305,9 +378,9 @@ promote_workload_revision proof-rg proof-app stable-revision candidate-revision 
         ]
         vault_id = f"{base}/providers/Microsoft.KeyVault/vaults/proof-kv"
         assignments = [
-            {"scope": vault_id, "principalId": "11111111-1111-1111-1111-111111111111",
+            {"scope": vault_id, "principalId": "A1111111-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
              "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/4633458b-17de-408a-b874-0445c86b69e6"},
-            {"scope": vault_id, "principalId": "22222222-2222-2222-2222-222222222222",
+            {"scope": vault_id, "principalId": "B2222222-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
              "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/b86a8fe4-44ce-4948-aee5-eccb2c155cd7"},
         ]
         script = r'''
@@ -322,7 +395,7 @@ az() {
     *) return 1 ;;
   esac
 }
-verify_proof_resource_inventory proof-sub proof-rg proof 11111111-1111-1111-1111-111111111111 22222222-2222-2222-2222-222222222222
+verify_proof_resource_inventory proof-sub proof-rg proof a1111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa b2222222-bbbb-bbbb-bbbb-bbbbbbbbbbbb
 '''
         exact = subprocess.run(
             ["bash", "-c", script, "test", str(RUNBOOK_LIB), json.dumps(owned), json.dumps(assignments)],
@@ -400,6 +473,40 @@ remove_owned_sql_bootstrap_admin proof-sub proof-rg proof-sql proof-admin 000000
         self.assertIn("Refusing to remove an unexpected SQL server administrator", result.stderr)
         self.assertNotIn("ad-only-auth disable", result.stderr)
         self.assertNotIn("ad-admin delete", result.stderr)
+
+    def test_sql_admin_identity_comparison_is_case_insensitive(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = Path(temp_dir) / "state"
+            state.write_text("0")
+            script = r'''
+source "$1"
+STATE_FILE="$2"
+az() {
+  printf 'az:%s\n' "$*" >&2
+  case "$*" in
+    *"sql server list"*) printf '1\n' ;;
+    *"ad-admin list"*"length(@)"*)
+      count="$(<"$STATE_FILE")"
+      count=$((count + 1))
+      printf '%s' "$count" >"$STATE_FILE"
+      (( count == 1 )) && printf '1\n' || printf '0\n'
+      ;;
+    *"ad-admin list"*) printf '{"login":"proof-admin","sid":"A1111111-AAAA-AAAA-AAAA-AAAAAAAAAAAA"}\n' ;;
+    *"ad-only-auth disable"*|*"ad-admin delete"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+remove_owned_sql_bootstrap_admin proof-sub proof-rg proof-sql proof-admin a1111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+'''
+            result = subprocess.run(
+                ["bash", "-c", script, "test", str(RUNBOOK_LIB), str(state)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("ad-only-auth disable", result.stderr)
+            self.assertIn("ad-admin delete", result.stderr)
 
     def test_role_cleanup_waits_for_eventual_absence_after_uncertain_delete(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
