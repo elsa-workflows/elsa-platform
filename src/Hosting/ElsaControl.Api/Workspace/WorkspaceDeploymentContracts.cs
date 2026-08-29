@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Workspace;
+using ElsaControl.Deployment.Azure;
 
 namespace ElsaControl.Api.Workspace;
 
@@ -128,3 +129,29 @@ public sealed record WorkspaceDeploymentRunDetailResponse(
     IReadOnlyList<DeploymentRunCommandSummary> Commands);
 
 public sealed record WorkspaceRuntimeControlRunRequest(Guid ConfirmationId);
+
+/// <summary>
+/// API shape for a previously admitted Azure provider plan. The endpoint accepts only the
+/// provider-safe projection; admission of the provider-neutral resolved plan happens upstream.
+/// </summary>
+public sealed record AzureProviderOperationSubmissionRequest(
+    string IdempotencyKey,
+    string TemplateFingerprint,
+    string PlanFingerprint,
+    string WorkloadName,
+    string Location,
+    string ElsaVersion,
+    string ReleaseLine,
+    string Topology,
+    string Isolation,
+    string ImageRepository,
+    string ImageDigest,
+    string ReleaseManifestReference,
+    string ReleaseManifestDigest,
+    string ReleaseManifestSignatureReference,
+    string ReleaseManifestSignatureDigest,
+    IReadOnlyDictionary<string, string>? SecretReferences = null);
+
+public sealed record AzureProviderOperationResponse(
+    AzureProviderOperation Operation,
+    IReadOnlyList<AzureProviderOperationTransition> Transitions);

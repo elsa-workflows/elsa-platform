@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Workspace;
+using ElsaControl.Deployment.Azure;
 using ElsaControl.Api.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 
@@ -30,6 +31,36 @@ public static class WorkspaceDeploymentEndpoints
             CancellationToken cancellationToken) =>
             Results.Ok(await cockpit.GetCockpitAsync(workspaceId, cancellationToken)))
             .RequireDeploymentPermission(WorkspaceDeploymentPermissions.Read);
+
+        group.MapPost("/azure-operations", async (
+            Guid workspaceId,
+            AzureProviderOperationSubmissionRequest request,
+            IAzureProviderOperationService operations,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await operations.SubmitAsync(workspaceId, ToAzureSubmission(request), cancellationToken);
+            return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/azure-operations/{result.Id:D}", ToResponse(result, []));
+        }).RequireDeploymentPermission(WorkspaceDeploymentPermissions.ExecuteDeployment);
+
+        group.MapPost("/azure-operations/delete", async (
+            Guid workspaceId,
+            AzureProviderOperationSubmissionRequest request,
+            IAzureProviderOperationService operations,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await operations.SubmitDeleteAsync(workspaceId, ToAzureSubmission(request), cancellationToken);
+            return Results.Created($"/api/workspaces/{workspaceId:D}/deployments/azure-operations/{result.Id:D}", ToResponse(result, []));
+        }).RequireDeploymentPermission(WorkspaceDeploymentPermissions.ExecuteDeployment);
+
+        group.MapGet("/azure-operations/{operationId:guid}", async (
+            Guid workspaceId,
+            Guid operationId,
+            IAzureProviderOperationService operations,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await operations.GetStatusAsync(workspaceId, operationId, cancellationToken);
+            return result is null ? Results.NotFound() : Results.Ok(ToResponse(result.Operation, result.Transitions));
+        }).RequireDeploymentPermission(WorkspaceDeploymentPermissions.Read);
 
         group.MapGet("/tier-capabilities", (DeploymentTierService tiers) =>
             Results.Ok(new WorkspaceDeploymentTierCapabilitiesResponse(tiers.GetCapabilityCatalog())))
@@ -602,6 +633,38 @@ public static class WorkspaceDeploymentEndpoints
 
         return new JsonObject { ["records"] = items }.ToJsonString();
     }
+
+    private static AzureProviderOperationSubmission ToAzureSubmission(AzureProviderOperationSubmissionRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var imageDigest = request.ImageDigest?.Trim() ?? string.Empty;
+        if (imageDigest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+            imageDigest = imageDigest["sha256:".Length..];
+
+        return new AzureProviderOperationSubmission(
+            request.IdempotencyKey,
+            request.TemplateFingerprint,
+            new AzureWorkloadPlan(
+                request.WorkloadName,
+                request.Location,
+                request.ElsaVersion,
+                request.ReleaseLine,
+                request.Topology,
+                request.Isolation,
+                request.ImageRepository,
+                imageDigest,
+                request.ReleaseManifestReference,
+                request.ReleaseManifestDigest,
+                request.ReleaseManifestSignatureReference,
+                request.ReleaseManifestSignatureDigest,
+                request.SecretReferences ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                request.PlanFingerprint));
+    }
+
+    private static AzureProviderOperationResponse ToResponse(
+        AzureProviderOperation operation,
+        IReadOnlyList<AzureProviderOperationTransition> transitions) =>
+        new(operation, transitions);
 
     private static string? ProtectSecretValue(IDataProtectionProvider dataProtectionProvider, string? secretValue)
     {

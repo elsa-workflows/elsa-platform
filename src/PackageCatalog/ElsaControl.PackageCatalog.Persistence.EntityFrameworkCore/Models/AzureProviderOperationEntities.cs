@@ -24,6 +24,9 @@ internal sealed class AzureProviderOperationEntity
     public string ImageDigest { get; set; } = "";
     public string? ReleaseManifestDigest { get; set; }
     public string? ReleaseManifestSignatureDigest { get; set; }
+    public string? ReleaseManifestReference { get; set; }
+    public string? ReleaseManifestSignatureReference { get; set; }
+    public string SecretReferencesJson { get; set; } = "{}";
     public AzureProviderOperationStatus Status { get; set; }
     public AzureProviderOperationPhase Phase { get; set; }
     public long CheckpointSequence { get; set; }

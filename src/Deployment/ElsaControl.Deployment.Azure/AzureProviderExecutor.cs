@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Text.RegularExpressions;
 
 namespace ElsaControl.Deployment.Azure;
 
@@ -763,15 +762,8 @@ public sealed class AzureProviderExecutor
         if (!plan.ImageRepository.StartsWith($"{AzureWorkloadPlanTranslator.SupportedRegistryHost}/", StringComparison.Ordinal))
             throw new ArgumentException("The provider plan image must use the governed Azure registry authority.", nameof(request));
 
-        if (plan.SecretReferences is null || plan.SecretReferences.Count > 64)
-            throw new ArgumentException("Secret references are required and bounded.", nameof(request));
-        foreach (var pair in plan.SecretReferences)
-        {
-            if (string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 256 || pair.Key.Any(char.IsControl) ||
-                string.IsNullOrWhiteSpace(pair.Value) || pair.Value.Length > 512 || pair.Value.Any(char.IsControl) ||
-                !Regex.IsMatch(pair.Value, "^secret://[A-Za-z0-9._/-]+$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
-                throw new ArgumentException("Secret references must be safe provider locators.", nameof(request));
-        }
+        if (!AzureProviderOperationValidation.IsSafeSecretReferences(plan.SecretReferences))
+            throw new ArgumentException("Secret references must be safe provider locators.", nameof(request));
     }
 
     private static AzureProviderExecutionOutcome MapOutcome(AzureProviderOperationStatus status) =>

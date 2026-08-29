@@ -88,6 +88,33 @@ public sealed class AzureProviderOperationValidationTests
         Assert.False(AzureProviderOperationValidation.IsSafeImmutableEvidenceReference("oci://registry.example/manifest@not-a-digest", digest));
     }
 
+    [Theory]
+    [InlineData("secret://database", true)]
+    [InlineData("secret://vault/database", true)]
+    [InlineData("secret://vault/database/connection", true)]
+    [InlineData("secret://vault/../database", false)]
+    [InlineData("secret://vault/./database", false)]
+    [InlineData("secret://vault//database", false)]
+    [InlineData("secret://vault/database%2Fconnection", false)]
+    [InlineData("secret://vault/database%2E%2E", false)]
+    [InlineData("secret://vault/database\\connection", false)]
+    [InlineData("secret://user:password@vault/database", false)]
+    [InlineData("secret://vault/database?version=1", false)]
+    [InlineData("secret://vault/database#fragment", false)]
+    public void Secret_locators_are_opaque_and_never_filesystem_paths(string locator, bool expected)
+    {
+        Assert.Equal(expected, AzureProviderOperationValidation.IsSafeSecretReference(locator));
+    }
+
+    [Fact]
+    public void Secret_reference_collection_rejects_null_and_oversized_collections()
+    {
+        Assert.False(AzureProviderOperationValidation.IsSafeSecretReferences(null));
+        var references = Enumerable.Range(0, 65)
+            .ToDictionary(index => $"secret-{index}", _ => "secret://vault/value");
+        Assert.False(AzureProviderOperationValidation.IsSafeSecretReferences(references));
+    }
+
     [Fact]
     public void Hash_and_identity_are_stable_for_case_normalization()
     {

@@ -54,7 +54,10 @@ public sealed record AzureProviderOperationRequest(
     string ImageRepository,
     string ImageDigest,
     string? ReleaseManifestDigest = null,
-    string? ReleaseManifestSignatureDigest = null);
+    string? ReleaseManifestSignatureDigest = null,
+    string? ReleaseManifestReference = null,
+    string? ReleaseManifestSignatureReference = null,
+    IReadOnlyDictionary<string, string>? SecretReferences = null);
 
 public sealed record AzureProviderResourceReferences(
     string? ResourceGroupName = null,
@@ -99,7 +102,16 @@ public sealed record AzureProviderOperation(
     DateTimeOffset? HeartbeatAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    DateTimeOffset? CompletedAt);
+    DateTimeOffset? CompletedAt,
+    string? ReleaseManifestReference = null,
+    string? ReleaseManifestSignatureReference = null,
+    IReadOnlyDictionary<string, string>? SecretReferences = null)
+{
+    public IReadOnlyDictionary<string, string> SafeSecretReferences => SecretReferences ?? EmptySecretReferences;
+
+    private static readonly IReadOnlyDictionary<string, string> EmptySecretReferences =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+}
 
 public sealed record AzureProviderOperationTransition(
     Guid Id,

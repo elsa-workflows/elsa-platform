@@ -1,9 +1,11 @@
 # Azure workload-plan adapter
 
-This project is the pure boundary between a governed
-`ResolvedElsaApplicationPlan` and Azure workload realization. It performs no
-Azure calls, starts no processes and owns no persistence. Checked-in Bicep owns
-the resource model; later provider lifecycle code consumes the accepted intent.
+This project is the boundary between a governed
+`ResolvedElsaApplicationPlan` and Azure workload realization. Translation is
+pure; provider execution is performed by an injected runner, and durable
+operation state is owned by the catalog store. The project performs no
+unmediated Azure calls and starts no processes itself. Checked-in Bicep owns
+the resource model; provider lifecycle code consumes the accepted intent.
 
 The first admitted provider capability is deliberately narrow:
 
@@ -54,6 +56,21 @@ Promotion failures invoke the runner's stable-traffic restoration step. An
 uncertain promotion or cleanup remains `RecoveryRequired` until its external
 effect is confirmed. Cleanup only succeeds when the runner reports exact
 proof-owned resource absence (no resource references, endpoint or health fact).
+
+`AzureProviderOperationService` is the API/worker admission seam. It accepts
+only the typed provider-safe projection, persists the immutable evidence
+locators, digests and secret locators needed for recovery, and never accepts a
+raw resolved-plan payload. `AzureProviderOperationWorker` polls accepted or
+recoverable operations and uses `PersistedAzureProviderPlanSource` to rebuild
+that projection after restart. The hosted API worker is disabled by default;
+an application enables it only when an approved `IAzureProviderRunner`
+implementation is registered. The default runner fails closed, which keeps a
+misconfigured host from mutating Azure.
+
+`AzureProviderProofAdapter` implements the provider-neutral deployment-proof
+contract for a disposable Azure run. A live proof host supplies the admitted
+plan factory, workflow probe and concrete runner; the adapter preserves exact
+selection identity, durable operation idempotency and cleanup semantics.
 
 See [ADR-0004](../../../docs/adr/0004-deployment-engine-typed-reconciliation-hybrid.md),
 [ADR-0007](../../../docs/adr/0007-provider-neutral-elsa-application-desired-state.md)
