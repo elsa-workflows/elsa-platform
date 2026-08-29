@@ -2,6 +2,8 @@
 
 The disposable West Europe Elsa 3.8 Combined proof is implemented in [`infra/azure-workload-proof`](../../infra/azure-workload-proof/README.md). That README is the operational runbook and covers the two-phase secret/bootstrap boundary, immutable image input, validation, retry/idempotency, evidence, cost controls and complete cleanup.
 
+The proof completed successfully. Its hypothesis/evidence matrix, accepted provider boundary, limitations and follow-up work are recorded in the [#108 conclusion](../spikes/108-azure-workload-provider-preflight.md) and [ADR-0010](../adr/0010-initial-azure-workload-platform.md).
+
 Start with the non-mutating checks:
 
 ```bash

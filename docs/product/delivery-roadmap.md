@@ -77,29 +77,29 @@ Security threat modeling and commercial image provenance run in parallel but gat
 
 ## Earliest Agent Ready Tasks
 
-The GitHub Project is authoritative for live IDs and status. The current Agent Ready queue is:
+The GitHub Project is authoritative for live IDs and status. The initial prerequisite queue produced these outcomes:
 
-- Audit commercial image release metadata, version/tag/digest authority and Server/Studio/Combined composition.
-- Complete ADR-0004's shared typed desired-state reader/validation-diff prerequisites.
-- Spike Azure Container Apps, SQL, identity, edge and provider/IaC boundary with a disposable proof.
-- Produce the threat model for customer packages and initial isolation profile.
-- Define the deployment-proof executable test harness and evidence capture.
-- Define the short-lived, signed one-time identity handoff into managed Elsa.
-- Restore the missing Artifact Console module and frontend build health.
+- Completed the commercial image authority audit and producer manifest foundation (#105 and `elsa-production-image#27`).
+- Completed ADR-0004's typed desired-state reconciliation prerequisite (#107).
+- Completed and accepted the disposable Azure workload proof and cleanup hardening (#108, #146, #147 and #150).
+- Completed the customer-package and isolation threat model (#110).
+- Defined the short-lived, signed one-time identity handoff contract (#127).
+- Restored the Artifact Console module and frontend build health (#115).
+- Identified the provider-neutral Elsa Instance lifecycle (#114) and Azure provider vertical slice (#125) as the next critical-path work once their remaining native blockers are clear.
 
 The identity handoff contract and threat model are captured in
 [`docs/spikes/127-managed-elsa-identity-handoff.md`](../spikes/127-managed-elsa-identity-handoff.md).
 
-These seven evidence/prerequisite or regression tasks are independently dispatchable. The provider-neutral resolved application plan remains blocked on the commercial image authority audit, and provider implementation waits for that contract plus the Azure spike and typed reconciliation prerequisite.
+The completed #108 proof removes the Azure-platform gate. Live dependency state in the Project and native issue relationships determines whether #114 or #125 is the next executable critical-path item.
 
 ## Major Risks
 
 | Risk | Mitigation |
 |------|------------|
-| Commercial image metadata/release ownership is not yet a stable machine-readable contract. | Complete #105 before resolving application/provider contracts; require immutable digest, topology and provenance metadata. |
+| Elsa Control does not yet enforce the producer's signed release manifest at catalog/provider admission. | Implement admission from the completed #105/producer-manifest contract; require immutable digest, topology and provenance metadata. |
 | Shared isolation can dominate architecture and security. | Launch paid service with Dedicated only; require #110-derived executable evidence before adding Shared or Data-isolated. |
 | Existing deployment terminology covers application artifacts/environments while the mission adds infrastructure-backed Elsa instances. | Preserve existing boundaries and introduce the Elsa Instance aggregate only after #114's migration/API analysis. |
-| Azure provider work can leak infrastructure details upward or duplicate remote commands. | Enforce ADR-0007 and gate implementation on #106, #107 and #108. |
+| Azure provider work can leak infrastructure details upward or duplicate remote commands. | Enforce ADR-0007 and the completed #106/#107/#108 contracts while implementing #125. |
 | Seamless identity into managed Elsa expands the walking-skeleton critical path. | Treat the signed one-time handoff as required and time-box the trust-flow spike before implementation. |
 | Large deployment console/store files constrain safe parallel implementation. | Restore console build health in #115, then extract only stable capability seams as touched. |
 | SRE, backup, security and cost can be postponed despite gating launch. | Treat Milestones E–G exit evidence as non-negotiable and keep those concerns as explicit Epics, not cleanup. |

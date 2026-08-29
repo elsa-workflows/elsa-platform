@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Date
 
@@ -12,28 +12,30 @@ Proposed
 
 Current Azure assets deploy the Elsa Control host to Azure App Service and Azure SQL. They do not provision Elsa workloads. The first deployment proof needs container compute, relational persistence, managed identity/secrets, routing/TLS, telemetry and durable provider reconciliation while preserving future dedicated/private and regional evolution.
 
-Azure Container Apps, Azure SQL, Front Door, Key Vault/managed identity, Azure Monitor/OpenTelemetry and storage are the preferred hypothesis. Networking, revision behavior, database tenancy, cost, quotas and IaC ownership are not yet validated.
+Azure Container Apps, Azure SQL, Key Vault/managed identity, Azure Monitor/OpenTelemetry and checked-in Bicep were the preferred hypothesis. The bounded #108 proof has now validated the initial compute, relational persistence, identity/secret, revision, health, idempotency, cleanup, quota and IaC ownership boundary.
 
-The [#108 read-only preflight](../spikes/108-azure-workload-provider-preflight.md) confirmed West Europe capacity, provider registration, Bicep compilation, and a low bounded proof cost. It also found that the current Elsa 3.8 Combined image supports SQLite persistence only. Acceptance is therefore blocked on a SQL Server-capable immutable image from [`elsa-production-image#26`](https://github.com/valence-works/elsa-production-image/issues/26) and the subsequent real deployment evidence.
+The [#108 conclusion](../spikes/108-azure-workload-provider-preflight.md) records the completed West Europe proof. A signed SQL-capable Elsa 3.8 Combined image ran with Azure SQL persistence, managed identity, Key Vault references, SQL-aware readiness, multiple-revision traffic protection, safe identical reapply, and complete owned-resource cleanup.
 
-## Proposed Decision
+## Decision
 
-- Use Azure Container Apps for the initial Elsa workload proof unless the bounded spike disproves requirements.
-- Use Azure SQL with database/pool topology selected by isolation profile.
-- Use Front Door for public edge/routing/TLS when the proof requires managed public ingress.
+- Use Azure Container Apps for the initial Azure workload provider and managed Elsa vertical slice.
+- Use Azure SQL with a database per Dedicated instance initially; later isolation profiles require separate evidence.
+- Use direct Container Apps HTTPS ingress for the provider slice. Front Door, custom domains and managed edge routing remain a separate concern.
 - Use managed identity and Key Vault for provider/workload secrets; store only safe references in control-plane history.
 - Treat a deployment stamp as a provider-owned unit of region, capacity, failure containment and isolation.
 - Use checked-in Bicep/provider modules as the production resource-realization source of truth, with Elsa Control provider commands orchestrating idempotent plan/apply/checkpoint behavior. Aspire remains local orchestration/developer experience.
 - Defer AKS until a concrete requirement cannot be met safely/economically by Container Apps.
 
-## Evidence Required Before Acceptance
+## Acceptance Evidence
 
-- Actual Elsa endpoint deployed and workflow smoke-tested.
-- Repeated apply/no-op, interruption/retry and failed revision evidence.
-- Secret/identity and database lifecycle proof.
-- Network/private evolution analysis and observable cost/quota data.
+- A signed immutable Elsa endpoint was deployed and a workflow was published and executed successfully.
+- Durable workflow definition and instance state survived a healthy revision replacement.
+- Healthy, failed-SQL and recovery behavior proved the readiness/liveness and traffic boundary.
+- Identical apply, interrupted/uncertain operations, rollback and cleanup convergence were exercised.
+- Temporary bootstrap access, managed identity, Key Vault references and complete resource absence were verified.
+- Scope, cost guardrails, quotas and deferred private/edge/HA concerns are recorded in the #108 conclusion.
 
-## Consequences if Accepted
+## Consequences
 
 - Azure provider implementation proceeds in PR-sized resource/lifecycle slices.
 - Stamp and placement facts remain below the provider boundary established by ADR-0007.

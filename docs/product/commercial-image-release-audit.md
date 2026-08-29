@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 Issue: [#105](https://github.com/valence-works/elsa-control/issues/105)
-Status: Evidence complete; the producer release-manifest contract remains a follow-up
+Status: Evidence complete; producer release-manifest follow-up completed
 
 ## Executive finding
 
@@ -13,14 +13,15 @@ supply-chain steps for the commercial `runtime-server`, `runtime-studio` and
 `runtime-combined` images. Elsa Control owns the future catalog projection and customer
 desired state; it must not become a second hand-maintained image-release authority.
 
-The authority is clear enough to proceed with the release/topology design, but the
-machine-readable contract required by the product decision does not exist yet. Today,
-release facts are distributed across `Directory.Packages.props`, the GitHub Actions
-matrix, Dockerfiles, OCI labels and registry state. There is no producer-published,
-signed release manifest that Elsa Control can ingest and verify as a unit.
+At the time of this audit, release facts were distributed across
+`Directory.Packages.props`, the GitHub Actions matrix, Dockerfiles, OCI labels and
+registry state. [`elsa-production-image#27`](https://github.com/valence-works/elsa-production-image/issues/27)
+subsequently delivered the producer-published signed release manifest. The #147 proof
+verified a manifest, its immutable images, signatures and retained supply-chain evidence
+as a unit. Elsa Control catalog admission and projection remain follow-up implementation.
 
-The first observed commercial line is Elsa 3.8 preview. The exact current examples are
-the build-79 images published from production-image commit
+The first observed commercial line was Elsa 3.8 preview. At the time of the audit, the
+exact examples were the build-79 images published from production-image commit
 [`1aeee8df455b`](https://github.com/valence-works/elsa-production-image/commit/1aeee8df455b21cf3bf3d2b26dfbd512d76da27b).
 The Elsa 4 Foundation and Foundation Studio repositories are a separate, upstream
 preview ecosystem. No approved Elsa 4 commercial distribution authority was found.
@@ -49,11 +50,14 @@ Registry observations were made against the public GHCR Community images and the
 authenticated ACR subscription already configured for this workstation. No image was
 published, changed or deleted as part of this audit.
 
-## Current authority by metadata field
+## Authority captured by the initial audit
+
+The gaps in this table are the 2026-08-29 audit findings. The signed-manifest gaps
+were subsequently closed by `elsa-production-image#27`; consumer-side gaps remain.
 
 | Metadata | Current source of truth | Current evidence | Required Elsa Control behavior | Gap / owner |
 |---|---|---|---|---|
-| Commercial image definitions and topology build inputs | `valence-works/elsa-production-image` | The workflow matrix names `runtime-server`, `runtime-studio` and `runtime-combined`; the three Dockerfiles define their composition. | Project only verified producer metadata into the catalog. | No signed release manifest yet; producer follow-up in `elsa-production-image`. |
+| Commercial image definitions and topology build inputs | `valence-works/elsa-production-image` | The workflow matrix names `runtime-server`, `runtime-studio` and `runtime-combined`; the three Dockerfiles define their composition. | Project only verified producer metadata into the catalog. | At audit time no signed release manifest existed; `elsa-production-image#27` later closed this producer gap. |
 | Elsa runtime package set | `elsa-production-image/Directory.Packages.props` | Elsa Core packages are pinned to `3.8.0-preview.5413` at lines 23–44. | Store the exact component set and release line, not a mutable tag. | Package pins are source files, not a versioned release record; producer owns the projection into a manifest. |
 | Elsa Studio package set | `elsa-production-image/Directory.Packages.props` | Elsa Studio packages are pinned separately to `3.8.0-preview.1667` at lines 46–61. | Treat Studio version as an independent component identity. | A Studio image cannot safely reuse the Server/Combined tag: its version tag is different. |
 | Nuplane and CShells host dependencies | `elsa-production-image/Directory.Packages.props` | Current pins are Nuplane `0.0.10` and CShells `0.0.28` at lines 63–78. | Include exact host dependency versions in the resolved plan or component-set digest. | No central compatibility matrix ties these dependencies to each Elsa release. |
@@ -65,7 +69,7 @@ published, changed or deleted as part of this audit.
 | Release channel and lifecycle | Product policy in Elsa Control | Product decisions define `Preview`, `Supported`, `Maintenance` and `End of Support`; image workflow only exposes tag/channel hints. | Project lifecycle, dates and eligibility as policy-owned catalog data. | No producer release record maps an image to lifecycle/support dates. |
 | Topology composition | Dockerfiles, README and workflow matrix | Server has API/runtime; Studio has the Studio host only; Combined has API/runtime and Studio in one container. Studio supports Blazor Server or WebAssembly. | Keep version and topology separate and model component endpoints/capabilities explicitly. | Composition is implicit in image names and source files, not machine-readable release metadata. |
 | Package compatibility | `elsa-specifications` package manifest contract plus runtime/package source repositories | Manifest v1 supports `runtimeKinds`, `elsaVersionRange`, `dockerImageVersionRange`, `runtimeCapabilities` and package rules. | Use package metadata as one input to compatibility resolution. | The package contract does not own image digest, topology, SBOM, provenance, signature or release lifecycle. No cross-repository engine/Studio/Nuplane matrix exists. |
-| SBOM | Commercial image workflow / OCI attestations | `docker/build-push-action` runs with `sbom: true`; published OCI indexes contain attestation manifests. | Require an immutable SBOM locator/digest and retain verification evidence with the projection. | SBOM identity is not exposed through a producer release manifest. |
+| SBOM | Commercial image workflow / OCI attestations | `docker/build-push-action` runs with `sbom: true`; published OCI indexes contain attestation manifests. | Require an immutable SBOM locator/digest and retain verification evidence with the projection. | At audit time SBOM identity was not exposed through a producer release manifest; `elsa-production-image#27` later closed this producer gap. |
 | Build provenance | Commercial image workflow / OCI attestations | `provenance: mode=max` is enabled; OCI indexes contain attestation manifests. | Require provenance subject, builder/workflow identity and immutable predicate reference. | Provenance is not a catalog field and is not currently consumed by Elsa Control. |
 | Image signatures | Commercial image workflow / Sigstore | Each paid and Community image is signed by digest with keyless cosign. Public verification succeeded for all three Community build-79 index digests using the production-image GitHub Actions workflow identity and Fulcio issuer. | Verify the signature against the digest and approved identity before provider resolution. | Registry-specific signature references and the verification policy are not represented in catalog data. |
 | Vulnerability gate | Commercial image workflow / Trivy | Before push, the workflow scans the amd64 image for fixable HIGH/CRITICAL vulnerabilities and fails on findings; unfixed findings are ignored. | Treat the scan result as release evidence, not a substitute for runtime compatibility or isolation policy. | No immutable scan report/result is attached to a release record. |
@@ -165,7 +169,7 @@ It does not own container image publication, release channels, image digests, SB
 provenance or signatures. Elsa Control should consume it as package compatibility
 input, not use it as a substitute for a commercial image release manifest.
 
-## Facts versus required target contract
+## Initial facts versus required target contract
 
 The following distinction is deliberate:
 
@@ -179,12 +183,11 @@ The following distinction is deliberate:
 | Package manifests describe package compatibility. | The resolved application plan combines package compatibility with image compatibility, topology constraints, lifecycle/channel policy and isolation/provider requirements. |
 | Elsa 3 commercial and Elsa 4 Foundation are parallel ecosystems. | Elsa 4 enters the catalog only after a separately approved commercial distribution authority and release gate; no Elsa-major enum or hard-coded branch is introduced. |
 
-## Recommended machine-readable ownership contract
+## Machine-readable ownership contract
 
-The producer follow-up should publish a signed `commercial-release-manifest` artifact
-from `elsa-production-image` (checked in or attached to the immutable OCI release), with
-a schema version independent from Elsa package versions. The exact filename and transport
-can be chosen by the producer; the required semantics are:
+The producer now publishes a signed release-manifest OCI artifact from
+`elsa-production-image`, with a schema version independent from Elsa package versions.
+The required semantics established by the audit are:
 
 The `components` block below is intentionally compact. In the real manifest it must be
 either a complete package/module-ID-to-version map or an immutable lockfile reference
@@ -287,9 +290,10 @@ This audit deliberately does not implement the following:
   evidence at deployment time.
 - **[#110](https://github.com/valence-works/elsa-control/issues/110):** keep image
   provenance/compatibility separate from the executable-code isolation decision.
-- **[`elsa-production-image#27`](https://github.com/valence-works/elsa-production-image/issues/27):**
-  publish and sign the v1 release manifest, expose immutable SBOM and provenance subjects,
-  define signature identity/policy, and add a compatibility/topology matrix.
+- **Completed — [`elsa-production-image#27`](https://github.com/valence-works/elsa-production-image/issues/27):**
+  the producer publishes and signs the v1 release manifest with immutable SBOM,
+  provenance, signature-policy and compatibility/topology evidence. The #147 proof
+  verified the resulting contract; #114/#125 consume it in Control's lifecycle/provider path.
 - **Elsa 4 authority decision (to be filed with the owning Foundation/Studio/image
   repositories):** approve the commercial Elsa 4 distribution source, registry/access
   model and lifecycle/compatibility gate before adding Elsa 4 to the Control catalog.
