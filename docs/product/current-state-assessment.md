@@ -69,7 +69,7 @@ This is well aligned with the Elsa Control Cloud customer-agent hypothesis. It i
 11. Nuplane is not integrated in production code; current references are presentation/configuration hints rather than package reconciliation.
 12. The console router currently imports an absent artifact feature module, so frontend build health must be restored before treating the shell as a reliable base.
 13. Current commercial image publishing uses `runtime-*` identities and signed immutable supply-chain evidence, while Elsa Control still advertises obsolete `elsaworkflows/elsa-pro-* : latest` images.
-14. Elsa 3.8 commercial images and Elsa 4 Foundation/Foundation Studio are parallel release ecosystems; no central compatibility/lifecycle matrix unifies them.
+14. Elsa 3.8 commercial images and Elsa 4 Foundation/Foundation Studio are parallel release ecosystems; no central compatibility/lifecycle matrix unifies them. The detailed evidence and proposed release-manifest boundary are recorded in `docs/product/commercial-image-release-audit.md`.
 
 ## Intent-versus-Reality Divergences
 
