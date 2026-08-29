@@ -263,7 +263,7 @@ parameters=(
 )
 
 image_digest_lower="$(printf '%s' "$image_digest" | tr '[:upper:]' '[:lower:]')"
-plan_input="proof=108|name=${proof_name}|location=westeurope|image=${image_repository}@sha256:${image_digest_lower}|elsa=3.8|sql-workflow=3.8.0-preview.5413|sql-quartz=3.8.0-preview.342|topology=combined|acr=${registry_subscription_id}/${registry_resource_group}/${registry_name}|sql-bootstrap=${sql_bootstrap_object_id}/${sql_bootstrap_login}|secrets=sql-connection/identity-signing-key|expiry=${expiry_utc}"
+plan_input="proof=108|name=${proof_name}|location=westeurope|image=${image_repository}@sha256:${image_digest_lower}|elsa=3.8|sql-workflow=3.8.0-preview.5413|sql-quartz=3.8.0-preview.342|topology=combined|acr=${registry_subscription_id}/${registry_resource_group}/${registry_name}|sql-bootstrap=${sql_bootstrap_object_id}/${sql_bootstrap_login}|admin=proof-admin|secrets=sql-connection/identity-signing-key/admin-password|expiry=${expiry_utc}"
 deployment_suffix="$(sha256_text "$plan_input" | cut -c1-12)"
 
 [[ -z "$subscription_id" ]] || az account set --subscription "$subscription_id"
@@ -370,6 +370,7 @@ umask 077
 sql_connection="Server=tcp:${sql_fqdn},1433;Initial Catalog=Elsa;Encrypt=True;Authentication=\"Active Directory Managed Identity\";User Id=${identity_client_id};TrustServerCertificate=False;Connection Timeout=30;"
 printf '%s' "$sql_connection" >"$temp_dir/sql-connection"
 openssl rand -base64 48 | tr -d '\r\n' >"$temp_dir/identity-signing-key"
+openssl rand -base64 48 | tr -d '\r\n' >"$temp_dir/admin-password"
 seed_secret_if_missing() {
   local name="$1" file="$2"
   if az keyvault secret show --vault-name "$key_vault_name" --name "$name" --only-show-errors >/dev/null 2>&1; then return 0; fi
@@ -382,6 +383,7 @@ seed_secret_if_missing() {
 }
 seed_secret_if_missing sql-connection "$temp_dir/sql-connection"
 seed_secret_if_missing identity-signing-key "$temp_dir/identity-signing-key"
+seed_secret_if_missing admin-password "$temp_dir/admin-password"
 
 sed \
   -e "s/__WORKLOAD_IDENTITY_NAME__/${proof_name}-identity/g" \

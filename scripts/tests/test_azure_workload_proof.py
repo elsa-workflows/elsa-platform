@@ -94,6 +94,9 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("Nuplane__Setup__Feeds__1__ServiceIndex", source)
         self.assertIn("Nuplane__Setup__Feeds__2__IncludePatterns__0", source)
         self.assertIn("Nuplane__Setup__Feeds__2__IncludePatterns__1", source)
+        self.assertIn("CShells__Shells__Default__Features__DefaultAdminUser__AdminUsername", source)
+        self.assertIn("CShells__Shells__Default__Features__DefaultAdminUser__AdminPassword", source)
+        self.assertIn("secretRef: adminCredentialRef", source)
         self.assertIn("3.8.0-preview.5413", MAIN.read_text())
         self.assertIn("3.8.0-preview.342", MAIN.read_text())
 
@@ -138,6 +141,7 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("sqlcmd '-?'", source)
         self.assertIn("temporary_firewall_rule", source)
         self.assertIn("openssl rand -base64 48 | tr -d '\\r\\n'", source)
+        self.assertIn('seed_secret_if_missing admin-password "$temp_dir/admin-password"', source)
         firewall_deletes = [
             line for line in source.splitlines()
             if "az sql server firewall-rule delete" in line
