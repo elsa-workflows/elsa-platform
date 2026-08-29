@@ -35,6 +35,7 @@ Elsa data planes execute workflows independently of routine control-plane availa
 | Deployment Target/Agent | trusted execution boundary that reconciles local infrastructure/workload and reports safe facts |
 
 Workspace should remain the authorization/container primitive already implemented. Elsa Instance is added as the customer-facing managed environment rather than renaming existing deployment applications/environments without a migration analysis.
+The aggregate, lifecycle and migration contract is defined in [`elsa-instance-aggregate.md`](elsa-instance-aggregate.md) and is implemented additively against the existing deployment records.
 
 ## Desired-State Layers
 
