@@ -252,12 +252,12 @@ if [[ "$mode" == cleanup ]]; then
       echo "Refusing resource-group deletion: ACR role assignments could not be read" >&2
       exit 3
     fi
-    assignment_json="$(jq -c --arg id "$role_assignment_id" '[.[] | select(.id == $id)][0] // empty' <<<"$assignment_list_json")"
+    assignment_json="$(jq -c --arg id "$role_assignment_id" '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))][0] // empty' <<<"$assignment_list_json")"
     if [[ -n "$assignment_json" ]]; then
       assignment_principal_id="$(jq -r '.principalId // empty' <<<"$assignment_json")"
       assignment_scope="$(jq -r '.scope // empty' <<<"$assignment_json")"
       assignment_role_id="$(jq -r '.roleDefinitionId // empty | split("/") | last' <<<"$assignment_json")"
-      [[ "$assignment_principal_id" == "$cleanup_principal_id" && "$assignment_scope" == "$registry_id" && "$assignment_role_id" == 7f951dda-4ed3-4680-a7ca-43fe172d538d ]] || {
+      [[ "$assignment_principal_id" == "$cleanup_principal_id" && "${assignment_scope,,}" == "${registry_id,,}" && "$assignment_role_id" == 7f951dda-4ed3-4680-a7ca-43fe172d538d ]] || {
         echo "Refusing resource-group deletion: stored ACR assignment does not match this proof identity, scope, and role" >&2
         exit 3
       }
