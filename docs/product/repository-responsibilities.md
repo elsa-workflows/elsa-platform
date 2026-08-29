@@ -46,7 +46,7 @@ Elsa Control does not currently call Nuplane. For the initial proof this is inte
 ## Cross-Repository Contract Risks
 
 1. Studio-to-Control uses route strings, JSON, ZIP layout, artifact schema `1.0` and capability `loom.recipe.apply` without a generated/shared client contract.
-2. No central matrix governs Elsa engine, Studio, extension, Nuplane and CShells version compatibility across Elsa 3 and Elsa 4.
+2. No central matrix governs Elsa engine, Studio, extension, Nuplane and CShells feature-framework version compatibility across Elsa 3 and Elsa 4.
 3. Runtime Builder does not model image digest, signature, SBOM, provenance or release channel.
 4. Separate Server/Studio topology needs both browser-facing and container-facing backend URLs plus CORS; current generated metadata/templates do not clearly model both.
 5. The current `elsaworkflows.io` production bundle has no discoverable authoritative GitHub source. The planned canonical repository and Cloudflare Pages pipeline must import and verify that source before public product changes.

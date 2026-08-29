@@ -381,7 +381,7 @@ src/PackageCatalog/ElsaControl.PackageCatalog.Persistence.SqliteMigrations/Migra
 CI/CD: GitHub Actions
 
 === CONTAINERS & ORCHESTRATION ===
-No containerization configs detected.
+ASP.NET API Dockerfile, local identity Docker Compose configuration and checked-in Azure Bicep modules detected.
 
 === SECURITY & COMPLIANCE ===
 No security configs detected.
