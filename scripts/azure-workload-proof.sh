@@ -72,6 +72,8 @@ done
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
 proof_dir="$repo_root/infra/azure-workload-proof"
+# shellcheck source=scripts/lib/azure-workload-proof.sh
+source "$script_dir/lib/azure-workload-proof.sh"
 
 validate_name() {
   [[ "$1" =~ ^[a-z][a-z0-9-]{1,14}[a-z0-9]$ && "$1" != *--* ]] || {
@@ -134,6 +136,42 @@ sha256_stream() {
   else
     shasum -a 256 | awk '{print $1}'
   fi
+}
+
+load_revision_names() {
+  local app_id="$1"
+  local next_url="${app_id}/revisions?api-version=2024-03-01"
+  local page page_names
+  local revision_names='[]'
+
+  while [[ -n "$next_url" ]]; do
+    page="$(az rest --method get --url "$next_url" --only-show-errors)"
+    page_names="$(jq -c '[.value[].name]' <<<"$page")"
+    revision_names="$(jq -cn --argjson existing "$revision_names" --argjson page "$page_names" '$existing + $page')"
+    next_url="$(jq -r '.nextLink // empty' <<<"$page")"
+  done
+  printf '%s\n' "$revision_names"
+}
+
+resolve_workload_revision_suffix() {
+  local plan_fingerprint="$1"
+  local app_name="${proof_name}-app"
+  local app_id="/subscriptions/${proof_subscription_id}/resourceGroups/${resource_group}/providers/Microsoft.App/containerApps/${app_name}"
+  local app_count current_revision_suffix revision_names
+
+  app_count="$(az resource list --resource-group "$resource_group" --resource-type Microsoft.App/containerApps --query "[?name=='${app_name}'] | length(@)" --output tsv --only-show-errors)"
+  if (( app_count == 0 )); then
+    printf '%s\n' "$plan_fingerprint"
+    return 0
+  fi
+  if (( app_count != 1 )); then
+    echo "Expected exactly one proof Container App named $app_name" >&2
+    return 5
+  fi
+
+  current_revision_suffix="$(az resource show --ids "$app_id" --api-version 2024-03-01 --query properties.template.revisionSuffix --output tsv --only-show-errors)"
+  revision_names="$(load_revision_names "$app_id")"
+  select_workload_revision_suffix "$plan_fingerprint" "$current_revision_suffix" "$app_name" "$revision_names"
 }
 
 if [[ "$mode" == cleanup ]]; then
@@ -287,11 +325,22 @@ if [[ "$mode" == what-if ]]; then
     echo "what-if requires an existing resource group; no group was created" >&2
     exit 3
   fi
+  what_if_parameters=("${parameters[@]}")
+  foundation_deployment_name="elsa108-${proof_name}-${deployment_suffix}-foundation"
+  foundation_deployment_count="$(az deployment group list --resource-group "$resource_group" --query "[?name=='${foundation_deployment_name}'] | length(@)" --output tsv --only-show-errors)"
+  if (( foundation_deployment_count == 1 )); then
+    foundation_plan_fingerprint="$(az deployment group show --resource-group "$resource_group" --name "$foundation_deployment_name" --query properties.outputs.planFingerprint.value --output tsv --only-show-errors)"
+    what_if_revision_suffix="$(resolve_workload_revision_suffix "$foundation_plan_fingerprint")"
+    what_if_parameters+=("workloadRevisionSuffix=$what_if_revision_suffix")
+  elif (( foundation_deployment_count != 0 )); then
+    echo "Expected at most one matching foundation deployment" >&2
+    exit 5
+  fi
   az deployment group what-if \
     --resource-group "$resource_group" \
     --name "elsa108-${proof_name}-${deployment_suffix}-whatif" \
     --template-file "$proof_dir/main.bicep" \
-    --parameters "${parameters[@]}" \
+    --parameters "${what_if_parameters[@]}" \
     --only-show-errors
   exit 0
 fi
@@ -301,12 +350,20 @@ fi
   exit 3
 }
 
-existing_tags="$(az group show --name "$resource_group" --query tags --output json --only-show-errors 2>/dev/null || true)"
-if [[ -n "$existing_tags" ]]; then
+group_exists="$(az group exists --name "$resource_group" --output tsv --only-show-errors)"
+if [[ "$group_exists" == true ]]; then
+  existing_tags="$(az group show --name "$resource_group" --query tags --output json --only-show-errors)"
   [[ "$(jq -r '.proof // empty' <<<"$existing_tags")" == 108 && "$(jq -r '.owner // empty' <<<"$existing_tags")" == elsa-control && "$(jq -r '."proof-name" // empty' <<<"$existing_tags")" == "$proof_name" ]] || { echo "Refusing to adopt unrelated resource group" >&2; exit 3; }
+  az tag update --resource-id "/subscriptions/${proof_subscription_id}/resourceGroups/${resource_group}" \
+    --operation Merge --tags proof=108 owner=elsa-control proof-name="$proof_name" expiry="$expiry_utc" \
+    --only-show-errors >/dev/null
+elif [[ "$group_exists" == false ]]; then
+  az group create --name "$resource_group" --location westeurope \
+    --tags proof=108 owner=elsa-control proof-name="$proof_name" expiry="$expiry_utc" --only-show-errors >/dev/null
+else
+  echo "Could not determine whether the proof resource group exists" >&2
+  exit 5
 fi
-az group create --name "$resource_group" --location westeurope \
-  --tags proof=108 owner=elsa-control proof-name="$proof_name" expiry="$expiry_utc" --only-show-errors >/dev/null
 
 deployment_name="elsa108-${proof_name}-${deployment_suffix}"
 foundation_outputs="$(az deployment group create \
@@ -323,35 +380,7 @@ key_vault_name="${proof_name}-kv"
 sql_fqdn="$(jq -r '.sqlServerFqdn.value' <<<"$foundation_outputs")"
 plan_fingerprint="$(jq -r '.planFingerprint.value' <<<"$foundation_outputs")"
 
-# Container Apps revision suffixes are immutable. If an out-of-band diagnostic
-# revision changed the app's latest template, ARM cannot roll back by reusing an
-# older suffix. Reuse our current plan suffix when it is still latest; otherwise
-# select the first deterministic recovery suffix not present in revision history.
-app_name="${proof_name}-app"
-app_id="/subscriptions/${proof_subscription_id}/resourceGroups/${resource_group}/providers/Microsoft.App/containerApps/${app_name}"
-app_count="$(az resource list --resource-group "$resource_group" --resource-type Microsoft.App/containerApps --query "[?name=='${app_name}'] | length(@)" --output tsv --only-show-errors)"
-workload_revision_suffix="$plan_fingerprint"
-if (( app_count == 1 )); then
-  current_revision_suffix="$(az resource show --ids "$app_id" --api-version 2024-03-01 --query properties.template.revisionSuffix --output tsv --only-show-errors)"
-  if [[ "$current_revision_suffix" == "$plan_fingerprint" || "$current_revision_suffix" =~ ^${plan_fingerprint}-r[0-9]+$ ]]; then
-    workload_revision_suffix="$current_revision_suffix"
-  else
-    revisions_json="$(az rest --method get --url "${app_id}/revisions?api-version=2024-03-01" --only-show-errors)"
-    if jq -e --arg name "${app_name}--${workload_revision_suffix}" '.value[] | select(.name == $name)' <<<"$revisions_json" >/dev/null; then
-      for recovery_ordinal in {1..999}; do
-        candidate="${plan_fingerprint}-r${recovery_ordinal}"
-        if ! jq -e --arg name "${app_name}--${candidate}" '.value[] | select(.name == $name)' <<<"$revisions_json" >/dev/null; then
-          workload_revision_suffix="$candidate"
-          break
-        fi
-      done
-      [[ "$workload_revision_suffix" != "$plan_fingerprint" ]] || { echo "No free deterministic recovery revision suffix was available" >&2; exit 5; }
-    fi
-  fi
-elif (( app_count != 0 )); then
-  echo "Expected at most one proof Container App named $app_name" >&2
-  exit 5
-fi
+workload_revision_suffix="$(resolve_workload_revision_suffix "$plan_fingerprint")"
 
 sql_server_name="${proof_name}-sql"
 temporary_firewall_rule="elsa108-bootstrap"

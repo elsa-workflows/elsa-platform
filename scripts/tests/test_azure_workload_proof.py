@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import os
 import subprocess
@@ -20,6 +21,7 @@ ACR_ROLE = PROOF / "acr-pull-role.bicep"
 VAULT = PROOF / "modules" / "key-vault.bicep"
 SQL = PROOF / "modules" / "sql.bicep"
 RUNBOOK = ROOT / "scripts" / "azure-workload-proof.sh"
+RUNBOOK_LIB = ROOT / "scripts" / "lib" / "azure-workload-proof.sh"
 REGENERATE_INFRA = ROOT / "dev" / "regenerate-infra.sh"
 
 
@@ -177,8 +179,40 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn('template_fingerprint="$(az bicep build', source)
         self.assertIn('"templateFingerprint=$template_fingerprint"', source)
         self.assertIn('workloadRevisionSuffix="$workload_revision_suffix"', source)
-        self.assertIn('candidate="${plan_fingerprint}-r${recovery_ordinal}"', source)
+        self.assertIn("resolve_workload_revision_suffix", source)
         self.assertIn("/revisions?api-version=2024-03-01", source)
+        self.assertIn(".nextLink // empty", source)
+        self.assertIn("az tag update", source)
+        self.assertIn("--operation Merge", source)
+        self.assertIn("tags.acrDeployment", source)
+
+    def test_revision_suffix_selection_is_deterministic(self) -> None:
+        def select(current: str, revisions: list[str]) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; select_workload_revision_suffix plan123 "$2" proof-app "$3"',
+                    "test",
+                    str(RUNBOOK_LIB),
+                    current,
+                    json.dumps(revisions),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual("plan123", select("bad", []).stdout.strip())
+        occupied = ["proof-app--plan123", "proof-app--plan123-r1"]
+        self.assertEqual("plan123-r2", select("bad", occupied).stdout.strip())
+        self.assertEqual("plan123-r2", select("plan123-r2", occupied).stdout.strip())
+        self.assertEqual("plan123-r2", select("plan123-r2", occupied).stdout.strip())
+
+        exhausted = ["proof-app--plan123", *(f"proof-app--plan123-r{i}" for i in range(1, 1000))]
+        result = select("bad", exhausted)
+        self.assertEqual(5, result.returncode)
+        self.assertIn("No free deterministic recovery revision suffix", result.stderr)
 
     def test_invalid_vault_derived_proof_names_fail_before_azure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
