@@ -46,9 +46,11 @@ complete protocol without inventing a parallel identity system.
 
 ## Token contract
 
-The issuer is the configured HTTPS Control issuer. The audience is an
-instance-specific value, such as `urn:elsa:instance:{instance-id}`, and is not a
-shared `elsa` audience. The token is accepted only with `RS256` and a known `kid`.
+The issuer is the configured HTTPS Control issuer. The audience is the
+instance-specific value `urn:elsa:instance:{lowercase-canonical(instance-id)}` and
+is not a shared `elsa` audience. For the current Guid representation,
+`lowercase-canonical` is invariant `D` format with hyphens and no braces. The token
+is accepted only with `RS256` and a known `kid`.
 Its claims are:
 
 | Claim | Meaning |
