@@ -79,6 +79,8 @@ provider plan.
 Configuration entries contain a JSON type and shape metadata. A non-secret entry may
 carry its resolved JSON value. A secret entry may carry only a provider-backed
 `SecretReference` (for example `secret://workspace/database`), never the secret value.
+References must be absolute `secret://` locators with a non-empty authority and no
+userinfo, query string or fragment; provider tokens and arbitrary URLs are rejected.
 The validator rejects an entry that contains both a secret flag and a value, or a secret
 reference on a non-secret entry. Secret references are locators, not provider tokens.
 
@@ -248,11 +250,14 @@ differences are catalog data and the component composition; no `Elsa3Plan`,
 - missing policy, isolation, network, provider-capability or evidence descriptions.
 
 `ResolvedElsaApplicationPlanSerialization.Serialize` first calls `Normalize`, which
-sorts all unordered collections and digest dictionaries. Equivalent plans therefore
-produce identical compact JSON suitable for a desired-state content hash. Unknown JSON
-properties are ignored by the default `System.Text.Json` deserializer so additive
-fields can be introduced in a later schema version. Removing or changing field meaning
-requires a new schema version and an explicit compatibility/migration decision.
+sorts all unordered collections and digest dictionaries and recursively sorts JSON
+object properties while preserving array order. Equivalent plans therefore produce
+identical compact JSON suitable for a desired-state content hash. Malformed plans with
+null nested records/items are rejected deterministically at serialization, while
+`ResolvedElsaApplicationPlanValidator.Validate` reports findings without throwing.
+Unknown JSON properties are ignored by the default `System.Text.Json` deserializer so
+additive fields can be introduced in a later schema version. Removing or changing field
+meaning requires a new schema version and an explicit compatibility/migration decision.
 
 The v1 tests cover deterministic serialization, round-trip deserialization, immutable
 identity validation, secret rejection, and both Combined and Server-plus-Studio

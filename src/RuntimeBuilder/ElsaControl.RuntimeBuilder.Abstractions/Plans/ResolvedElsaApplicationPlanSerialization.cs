@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Buffers;
 
 namespace ElsaControl.RuntimeBuilder.Abstractions.Plans;
 
@@ -30,4 +31,65 @@ public static class ResolvedElsaApplicationPlanSerialization
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         WriteIndented = false
     };
+}
+
+internal static class ResolvedPlanJsonCanonicalizer
+{
+    public static JsonElement Canonicalize(JsonElement value)
+    {
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            Write(value, writer);
+        }
+
+        using var document = JsonDocument.Parse(buffer.WrittenMemory);
+        return document.RootElement.Clone();
+    }
+
+    private static void Write(JsonElement value, Utf8JsonWriter writer)
+    {
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (var property in value.EnumerateObject().OrderBy(x => x.Name, StringComparer.Ordinal))
+                {
+                    writer.WritePropertyName(property.Name);
+                    Write(property.Value, writer);
+                }
+                writer.WriteEndObject();
+                break;
+
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (var item in value.EnumerateArray())
+                    Write(item, writer);
+                writer.WriteEndArray();
+                break;
+
+            case JsonValueKind.String:
+                writer.WriteStringValue(value.GetString());
+                break;
+
+            case JsonValueKind.Number:
+                writer.WriteRawValue(value.GetRawText(), skipInputValidation: false);
+                break;
+
+            case JsonValueKind.True:
+                writer.WriteBooleanValue(true);
+                break;
+
+            case JsonValueKind.False:
+                writer.WriteBooleanValue(false);
+                break;
+
+            case JsonValueKind.Null:
+                writer.WriteNullValue();
+                break;
+
+            default:
+                throw new JsonException($"Unsupported JSON value kind {value.ValueKind}.");
+        }
+    }
 }

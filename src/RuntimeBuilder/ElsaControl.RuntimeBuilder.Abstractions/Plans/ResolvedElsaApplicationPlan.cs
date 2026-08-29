@@ -22,16 +22,23 @@ public sealed record ResolvedElsaApplicationPlan(
     /// <summary>
     /// Returns a copy with unordered collections normalized for stable serialization and hashing.
     /// </summary>
-    public ResolvedElsaApplicationPlan Normalize() => this with
+    public ResolvedElsaApplicationPlan Normalize()
     {
-        Packages = (Packages ?? []).Select(x => x.Normalize()).OrderBy(x => x.SourceId).ThenBy(x => x.PackageId, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Version, StringComparer.OrdinalIgnoreCase).ToArray(),
-        Topology = Topology.Normalize(),
-        Configuration = Configuration.Normalize(),
-        Capacity = Capacity.Normalize(),
-        Network = Network.Normalize(),
-        ProviderCapabilities = (ProviderCapabilities ?? []).Select(x => x.Normalize()).OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase).ToArray(),
-        Evidence = (Evidence ?? []).Select(x => x.Normalize()).OrderBy(x => x.Kind, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Reference, StringComparer.OrdinalIgnoreCase).ToArray()
-    };
+        var packages = ResolvedPlanNormalization.RequireItems(Packages, "packages");
+        var providerCapabilities = ResolvedPlanNormalization.RequireItems(ProviderCapabilities, "providerCapabilities");
+        var evidence = ResolvedPlanNormalization.RequireItems(Evidence, "evidence");
+
+        return this with
+        {
+            Packages = packages.Select(x => x.Normalize()).OrderBy(x => x.SourceId).ThenBy(x => x.PackageId, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Version, StringComparer.OrdinalIgnoreCase).ToArray(),
+            Topology = Topology?.Normalize() ?? throw ResolvedPlanNormalization.Missing("topology"),
+            Configuration = Configuration?.Normalize() ?? throw ResolvedPlanNormalization.Missing("configuration"),
+            Capacity = Capacity?.Normalize() ?? throw ResolvedPlanNormalization.Missing("capacity"),
+            Network = Network?.Normalize() ?? throw ResolvedPlanNormalization.Missing("network"),
+            ProviderCapabilities = providerCapabilities.Select(x => x.Normalize()).OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase).ToArray(),
+            Evidence = evidence.Select(x => x.Normalize()).OrderBy(x => x.Kind, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Reference, StringComparer.OrdinalIgnoreCase).ToArray()
+        };
+    }
 }
 
 public static class ResolvedElsaApplicationPlanSchema
@@ -59,10 +66,14 @@ public sealed record ResolvedElsaTopology(
     string Id,
     IReadOnlyList<ResolvedElsaComponent> Components)
 {
-    internal ResolvedElsaTopology Normalize() => this with
+    internal ResolvedElsaTopology Normalize()
     {
-        Components = (Components ?? []).Select(x => x.Normalize()).OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase).ToArray()
-    };
+        var components = ResolvedPlanNormalization.RequireItems(Components, "topology.components");
+        return this with
+        {
+            Components = components.Select(x => x.Normalize()).OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase).ToArray()
+        };
+    }
 }
 
 public sealed record ResolvedElsaComponent(
@@ -74,14 +85,18 @@ public sealed record ResolvedElsaComponent(
     IReadOnlyList<string> Capabilities,
     string? CompanionComponentId = null)
 {
-    internal ResolvedElsaComponent Normalize() => this with
+    internal ResolvedElsaComponent Normalize()
     {
-        Roles = (Roles ?? []).Order(StringComparer.OrdinalIgnoreCase).ToArray(),
-        RuntimeKinds = (RuntimeKinds ?? []).Order(StringComparer.OrdinalIgnoreCase).ToArray(),
-        Endpoints = (Endpoints ?? []).Select(x => x.Normalize()).OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToArray(),
-        Capabilities = (Capabilities ?? []).Order(StringComparer.OrdinalIgnoreCase).ToArray(),
-        Image = Image.Normalize()
-    };
+        var endpoints = ResolvedPlanNormalization.RequireItems(Endpoints, $"component:{Id}.endpoints");
+        return this with
+        {
+            Roles = (Roles ?? []).Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+            RuntimeKinds = (RuntimeKinds ?? []).Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+            Endpoints = endpoints.Select(x => x.Normalize()).OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToArray(),
+            Capabilities = (Capabilities ?? []).Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+            Image = Image?.Normalize() ?? throw ResolvedPlanNormalization.Missing($"component:{Id}.image")
+        };
+    }
 }
 
 public sealed record ResolvedImageIdentity(
@@ -91,15 +106,25 @@ public sealed record ResolvedImageIdentity(
     string Digest,
     IReadOnlyDictionary<string, string>? PlatformDigests = null)
 {
-    internal ResolvedImageIdentity Normalize() => this with
+    internal ResolvedImageIdentity Normalize()
     {
-        PlatformDigests = PlatformDigests is null
-            ? null
-            : new SortedDictionary<string, string>(
+        if (PlatformDigests is null)
+            return this;
+
+        var duplicate = PlatformDigests.Keys
+            .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(x => x.Count() > 1);
+        if (duplicate is not null)
+            throw new ArgumentException($"Platform digest key {duplicate.Key} is duplicated case-insensitively.", nameof(PlatformDigests));
+
+        return this with
+        {
+            PlatformDigests = new SortedDictionary<string, string>(
                 PlatformDigests.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
                     .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase),
                 StringComparer.OrdinalIgnoreCase)
-    };
+        };
+    }
 }
 
 public sealed record ResolvedElsaEndpoint(
@@ -124,11 +149,15 @@ public sealed record ResolvedElsaPackage(
     IReadOnlyList<string> RuntimeKinds,
     IReadOnlyList<ResolvedElsaFeature> Features)
 {
-    internal ResolvedElsaPackage Normalize() => this with
+    internal ResolvedElsaPackage Normalize()
     {
-        RuntimeKinds = (RuntimeKinds ?? []).Order(StringComparer.OrdinalIgnoreCase).ToArray(),
-        Features = (Features ?? []).Select(x => x.Normalize()).OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase).ToArray()
-    };
+        var features = ResolvedPlanNormalization.RequireItems(Features, $"package:{PackageId}.features");
+        return this with
+        {
+            RuntimeKinds = (RuntimeKinds ?? []).Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+            Features = features.Select(x => x.Normalize()).OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase).ToArray()
+        };
+    }
 }
 
 public sealed record ResolvedElsaFeature(
@@ -151,10 +180,14 @@ public sealed record ResolvedElsaFeature(
 public sealed record ResolvedConfigurationShape(
     IReadOnlyList<ResolvedConfigurationEntry> Entries)
 {
-    internal ResolvedConfigurationShape Normalize() => this with
+    internal ResolvedConfigurationShape Normalize()
     {
-        Entries = (Entries ?? []).Select(x => x.Normalize()).OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase).ToArray()
-    };
+        var entries = ResolvedPlanNormalization.RequireItems(Entries, "configuration.entries");
+        return this with
+        {
+            Entries = entries.Select(x => x.Normalize()).OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase).ToArray()
+        };
+    }
 }
 
 public sealed record ResolvedConfigurationEntry(
@@ -172,7 +205,10 @@ public sealed record ResolvedConfigurationEntry(
     {
         EnvironmentVariable = string.IsNullOrWhiteSpace(EnvironmentVariable) ? null : EnvironmentVariable.Trim(),
         SecretReference = string.IsNullOrWhiteSpace(SecretReference) ? null : SecretReference.Trim(),
-        SourceFeatureId = string.IsNullOrWhiteSpace(SourceFeatureId) ? null : SourceFeatureId.Trim()
+        SourceFeatureId = string.IsNullOrWhiteSpace(SourceFeatureId) ? null : SourceFeatureId.Trim(),
+        Value = Value is { } value && value.ValueKind != JsonValueKind.Undefined
+            ? ResolvedPlanJsonCanonicalizer.Canonicalize(value)
+            : null
     };
 }
 
@@ -180,11 +216,16 @@ public sealed record ResolvedCapacityOutcome(
     IReadOnlyList<ResolvedComponentCapacity> Components,
     IReadOnlyList<ResolvedStorageCapacity> Storage)
 {
-    internal ResolvedCapacityOutcome Normalize() => this with
+    internal ResolvedCapacityOutcome Normalize()
     {
-        Components = (Components ?? []).Select(x => x.Normalize()).OrderBy(x => x.ComponentId, StringComparer.OrdinalIgnoreCase).ToArray(),
-        Storage = (Storage ?? []).Select(x => x.Normalize()).OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToArray()
-    };
+        var components = ResolvedPlanNormalization.RequireItems(Components, "capacity.components");
+        var storage = ResolvedPlanNormalization.RequireItems(Storage, "capacity.storage");
+        return this with
+        {
+            Components = components.Select(x => x.Normalize()).OrderBy(x => x.ComponentId, StringComparer.OrdinalIgnoreCase).ToArray(),
+            Storage = storage.Select(x => x.Normalize()).OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToArray()
+        };
+    }
 }
 
 public sealed record ResolvedComponentCapacity(
@@ -215,11 +256,15 @@ public sealed record ResolvedNetworkOutcome(
     IReadOnlyList<string> AllowedOutboundDestinations,
     IReadOnlyList<ResolvedNetworkEndpoint> Endpoints)
 {
-    internal ResolvedNetworkOutcome Normalize() => this with
+    internal ResolvedNetworkOutcome Normalize()
     {
-        AllowedOutboundDestinations = (AllowedOutboundDestinations ?? []).Order(StringComparer.OrdinalIgnoreCase).ToArray(),
-        Endpoints = (Endpoints ?? []).Select(x => x.Normalize()).OrderBy(x => x.ComponentId, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToArray()
-    };
+        var endpoints = ResolvedPlanNormalization.RequireItems(Endpoints, "network.endpoints");
+        return this with
+        {
+            AllowedOutboundDestinations = (AllowedOutboundDestinations ?? []).Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+            Endpoints = endpoints.Select(x => x.Normalize()).OrderBy(x => x.ComponentId, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToArray()
+        };
+    }
 }
 
 public sealed record ResolvedNetworkEndpoint(
@@ -271,4 +316,18 @@ public sealed record ResolvedPlanEvidence(
     {
         Digest = string.IsNullOrWhiteSpace(Digest) ? null : Digest.Trim()
     };
+}
+
+internal static class ResolvedPlanNormalization
+{
+    public static IReadOnlyList<T> RequireItems<T>(IReadOnlyList<T>? items, string path) where T : class
+    {
+        if (items is null)
+            throw Missing(path);
+        if (items.Any(x => x is null))
+            throw new ArgumentException($"Collection {path} contains a null item.", path);
+        return items;
+    }
+
+    public static ArgumentException Missing(string path) => new($"Resolved application plan field {path} is required.", path);
 }
