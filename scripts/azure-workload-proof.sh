@@ -305,7 +305,11 @@ command -v sqlcmd >/dev/null || {
   echo "Go sqlcmd is required; install github.com/microsoft/go-sqlcmd and ensure --authentication-method is supported" >&2
   exit 4
 }
-sqlcmd --help 2>&1 | grep -q -- '--authentication-method' || {
+sqlcmd_compat_help="$(sqlcmd '-?' 2>&1)" || {
+  echo "sqlcmd compatibility help could not be read" >&2
+  exit 4
+}
+grep -q -- '--authentication-method' <<<"$sqlcmd_compat_help" || {
   echo "sqlcmd must be the Go sqlcmd with --authentication-method support; ODBC sqlcmd is not supported" >&2
   exit 4
 }

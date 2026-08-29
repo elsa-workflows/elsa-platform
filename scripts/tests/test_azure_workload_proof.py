@@ -135,6 +135,7 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("az group delete", source)
         self.assertIn("--sql-bootstrap-ip", source)
         self.assertIn("--authentication-method ActiveDirectoryDefault", source)
+        self.assertIn("sqlcmd '-?'", source)
         self.assertIn("temporary_firewall_rule", source)
         self.assertIn("keyvault purge", source)
         self.assertIn("Refusing to adopt unrelated resource group", source)
