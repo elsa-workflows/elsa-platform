@@ -117,6 +117,12 @@ public sealed record AzureProviderOperation(
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 }
 
+public sealed class AzureProviderOperationConflictException(AzureProviderOperation operation)
+    : InvalidOperationException("Another active Azure operation already owns this target.")
+{
+    public AzureProviderOperation Operation { get; } = operation;
+}
+
 public sealed record AzureProviderOperationTransition(
     Guid Id,
     Guid OperationId,

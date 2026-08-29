@@ -739,6 +739,8 @@ internal sealed class AzureProviderOperationConfiguration : IEntityTypeConfigura
         builder.HasIndex(x => new { x.WorkspaceId, x.TargetKey, x.IdempotencyKey }).IsUnique();
         builder.HasIndex(x => new { x.WorkspaceId, x.TargetKey, x.OperationIdentity })
             .IsUnique().HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
+        builder.HasIndex(x => new { x.WorkspaceId, x.TargetKey })
+            .IsUnique().HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
         builder.HasIndex(x => new { x.WorkspaceId, x.Status, x.LeaseExpiresAt, x.UpdatedAt });
         builder.HasIndex(x => new { x.WorkspaceId, x.TargetKey, x.CreatedAt });
         builder.HasOne(x => x.Workspace).WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);

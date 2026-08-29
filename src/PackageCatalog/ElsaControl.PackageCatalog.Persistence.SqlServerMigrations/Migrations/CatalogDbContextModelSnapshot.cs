@@ -1068,6 +1068,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("WorkspaceId", "TargetKey")
+                        .IsUnique()
+                        .HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
+
                     b.HasIndex("WorkspaceId", "TargetKey", "CreatedAt");
 
                     b.HasIndex("WorkspaceId", "TargetKey", "IdempotencyKey")

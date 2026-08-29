@@ -213,6 +213,21 @@ delete_and_verify_role_assignment() {
   return 1
 }
 
+validate_direct_acr_pull_assignment() {
+  local registry_id="$1"
+  local assignment_json="$2"
+  local assignment_id assignment_scope assignment_role_id registry_id_lower assignment_scope_lower
+
+  assignment_id="$(jq -r '.id // empty' <<<"$assignment_json")"
+  assignment_scope="$(jq -r '.scope // empty' <<<"$assignment_json")"
+  assignment_role_id="$(jq -r '.roleDefinitionId // empty | split("/") | last' <<<"$assignment_json")"
+  registry_id_lower="$(printf '%s' "$registry_id" | tr '[:upper:]' '[:lower:]')"
+  assignment_scope_lower="$(printf '%s' "$assignment_scope" | tr '[:upper:]' '[:lower:]')"
+  [[ "$assignment_scope_lower" == "$registry_id_lower" ]] || return 1
+  [[ "$(printf '%s' "$assignment_role_id" | tr '[:upper:]' '[:lower:]')" == 7f951dda-4ed3-4680-a7ca-43fe172d538d ]] || return 1
+  valid_role_assignment_id "$registry_id" "$assignment_id"
+}
+
 delete_and_verify_firewall_rule() {
   local subscription_id="$1"
   local resource_group="$2"
@@ -318,10 +333,15 @@ verify_proof_resource_inventory() {
   jq -e --arg scope "$vault_id" --arg workload "$identity_principal_id" --arg bootstrap "$bootstrap_object_id" '
     ($workload | ascii_downcase) as $workload_lower |
     ($bootstrap | ascii_downcase) as $bootstrap_lower |
-    [.[] | select((.scope // "" | ascii_downcase) == ($scope | ascii_downcase))] as $direct |
-    ($direct | length) == 2 and
-    (any($direct[]; ((.principalId // "") | ascii_downcase) == $workload_lower and ((.roleDefinitionId // "" | split("/") | last) | ascii_downcase) == "4633458b-17de-408a-b874-0445c86b69e6")) and
-    (any($direct[]; ((.principalId // "") | ascii_downcase) == $bootstrap_lower and ((.roleDefinitionId // "" | split("/") | last) | ascii_downcase) == "b86a8fe4-44ce-4948-aee5-eccb2c155cd7"))
+    ($scope | ascii_downcase) as $scope_lower |
+    [.[] | select(
+      ((.scope // "") | ascii_downcase) == $scope_lower or
+      ((.scope // "") | ascii_downcase | startswith($scope_lower + "/"))
+    )] as $owned |
+    ($owned | length) == 2 and
+    (all($owned[]; ((.scope // "") | ascii_downcase) == $scope_lower)) and
+    (any($owned[]; ((.principalId // "") | ascii_downcase) == $workload_lower and ((.roleDefinitionId // "" | split("/") | last) | ascii_downcase) == "4633458b-17de-408a-b874-0445c86b69e6")) and
+    (any($owned[]; ((.principalId // "") | ascii_downcase) == $bootstrap_lower and ((.roleDefinitionId // "" | split("/") | last) | ascii_downcase) == "b86a8fe4-44ce-4948-aee5-eccb2c155cd7"))
   ' <<<"$assignments_json" >/dev/null || {
     echo "Refusing cleanup: proof vault RBAC inventory is not exact" >&2
     return 1

@@ -3,6 +3,7 @@ using System;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 {
     [DbContext(typeof(CatalogDbContext))]
-    partial class CatalogDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260829210930_AddAzureProviderTargetSerialization")]
+    partial class AddAzureProviderTargetSerialization
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
@@ -985,16 +988,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasMaxLength(71)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("ReleaseManifestReference")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("ReleaseManifestSignatureDigest")
                         .HasMaxLength(71)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ReleaseManifestSignatureReference")
-                        .HasMaxLength(2048)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RequestHash")
@@ -1004,11 +999,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.Property<string>("ResourceGroupName")
                         .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SecretReferencesJson")
-                        .IsRequired()
-                        .HasMaxLength(10000)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("StableTrafficRevisionName")

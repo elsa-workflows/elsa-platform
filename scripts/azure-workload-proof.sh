@@ -289,13 +289,22 @@ if [[ "$mode" == cleanup ]]; then
       delete_and_verify_group_deployment "$registry_resource_group" "$stored_deployment_name" || cleanup_status=1
     fi
   elif [[ -n "$cleanup_principal_id" && -n "$registry_id" ]]; then
-    if ! role_ids="$(az role assignment list --all --scope "$registry_id" --assignee-object-id "$cleanup_principal_id" --role AcrPull --query '[].id' --output tsv --only-show-errors)"; then
+    if ! role_assignments_json="$(az role assignment list --all --scope "$registry_id" --assignee-object-id "$cleanup_principal_id" --role AcrPull --output json --only-show-errors)"; then
       echo "Refusing resource-group deletion: identity-scoped ACR assignments could not be read" >&2
       exit 3
     fi
-    while IFS= read -r role_id; do
-      [[ -z "$role_id" ]] || delete_and_verify_role_assignment "$registry_id" "$role_id" || cleanup_status=1
-    done <<<"$role_ids"
+    jq -e 'type == "array"' <<<"$role_assignments_json" >/dev/null || {
+      echo "Refusing resource-group deletion: identity-scoped ACR assignments were not returned as an array" >&2
+      exit 3
+    }
+    while IFS= read -r assignment_json; do
+      role_id="$(jq -r '.id // empty' <<<"$assignment_json")"
+      validate_direct_acr_pull_assignment "$registry_id" "$assignment_json" || {
+        echo "Refusing resource-group deletion: fallback ACR assignment is not directly scoped to the governed registry" >&2
+        exit 3
+      }
+      delete_and_verify_role_assignment "$registry_id" "$role_id" || cleanup_status=1
+    done < <(jq -c '.[]' <<<"$role_assignments_json")
   else
     echo "Refusing resource-group deletion: external ACR cleanup cannot be proven from the proof identity or deployment record" >&2
     exit 3
