@@ -393,11 +393,11 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
 
         try
         {
-            var diagnostics = JsonSerializer.Deserialize<List<AzureProviderDiagnostic?>>(json);
-            if (diagnostics is null || diagnostics.Any(x => x is null || string.IsNullOrWhiteSpace(x.Code) || string.IsNullOrWhiteSpace(x.Message)))
+            var diagnostics = JsonSerializer.Deserialize<List<AzureProviderDiagnostic>>(json);
+            if (diagnostics is null || !AzureProviderOperationValidation.IsSafeDiagnostics(diagnostics))
                 return ([], true);
 
-            return (diagnostics.Select(x => new AzureProviderDiagnostic(x!.Code, x.Message)).ToArray(), false);
+            return (diagnostics.Select(x => new AzureProviderDiagnostic(x.Code, x.Message)).ToArray(), false);
         }
         catch (JsonException)
         {

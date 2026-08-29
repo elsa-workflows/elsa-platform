@@ -17,15 +17,40 @@ public static class AzureProviderOperationValidation
         if (checkpoint.Message is null || checkpoint.Message.Length > 2000 || checkpoint.Message.Any(char.IsControl) || ContainsSensitiveMarker(checkpoint.Message))
             throw new ArgumentException("Checkpoint message is unsafe.", nameof(checkpoint));
         ValidateEndpoint(checkpoint.Endpoint);
-        if (checkpoint.Diagnostics is null || checkpoint.Diagnostics.Count > 20) throw new ArgumentException("Diagnostics are required and bounded.", nameof(checkpoint));
-        if (JsonSerializer.Serialize(checkpoint.Diagnostics).Length > 10000) throw new ArgumentException("Diagnostics are too large.", nameof(checkpoint));
-        foreach (var diagnostic in checkpoint.Diagnostics)
-        {
-            if (diagnostic is null || !IsSafeCode(diagnostic.Code) ||
-                string.IsNullOrWhiteSpace(diagnostic.Message) || diagnostic.Message.Length > 2000 || diagnostic.Message.Any(char.IsControl) || ContainsSensitiveMarker(diagnostic.Message))
-                throw new ArgumentException("Diagnostic is unsafe.", nameof(checkpoint));
-        }
+        if (!IsSafeDiagnostics(checkpoint.Diagnostics)) throw new ArgumentException("Diagnostics are required and bounded.", nameof(checkpoint));
         ValidateReferences(checkpoint.Resources);
+    }
+
+    /// <summary>
+    /// Applies the same bounded, value-free diagnostics contract to persisted values that are
+    /// read back from storage. Invalid stored diagnostics must not be returned through status
+    /// responses, even when their JSON is syntactically valid.
+    /// </summary>
+    public static bool IsSafeDiagnostics(IReadOnlyList<AzureProviderDiagnostic>? diagnostics)
+    {
+        if (diagnostics is null || diagnostics.Count > 20)
+            return false;
+
+        try
+        {
+            if (JsonSerializer.Serialize(diagnostics).Length > 10000)
+                return false;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            return false;
+        }
+
+        return diagnostics.All(diagnostic => diagnostic is not null &&
+            IsSafeCode(diagnostic.Code) &&
+            !string.IsNullOrWhiteSpace(diagnostic.Message) &&
+            diagnostic.Message.Length <= 2000 &&
+            !diagnostic.Message.Any(char.IsControl) &&
+            !ContainsSensitiveMarker(diagnostic.Message));
     }
 
     public static void ValidateMessage(string message)

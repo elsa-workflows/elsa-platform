@@ -158,6 +158,8 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     [Theory]
     [InlineData("DiagnosticsJson", "{")]
     [InlineData("DiagnosticsJson", "null")]
+    [InlineData("DiagnosticsJson", "[{\"Code\":\"azure.step\",\"Message\":\"password=top-secret\"}]")]
+    [InlineData("DiagnosticsJson", "[{\"Code\":\"azure.step\",\"Message\":\"line1\\nline2\"}]")]
     [InlineData("SecretReferencesJson", "{")]
     [InlineData("SecretReferencesJson", "null")]
     [InlineData("SecretReferencesJson", "{\"database\":null}")]
@@ -180,6 +182,7 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
 
         var runnable = Assert.Single(await store.ListRunnableAsync(now, 10));
         Assert.True(runnable.PersistedMetadataInvalid);
+        Assert.Empty(runnable.Diagnostics);
         Assert.Null(new PersistedAzureProviderPlanSource().Resolve(runnable));
 
         var worker = new AzureProviderOperationWorker(
@@ -191,6 +194,8 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
 
         var failed = await store.GetAsync(_workspaceId, operation.Id);
         Assert.Equal(AzureProviderOperationStatus.Failed, failed?.Status);
+        Assert.NotNull(failed);
+        Assert.Empty(failed!.Diagnostics);
         var transition = Assert.Single(await store.ListTransitionsAsync(_workspaceId, operation.Id), x => x.Code == "azure.plan.unrestorable");
         Assert.Equal("azure.plan.unrestorable", transition.Message);
     }
