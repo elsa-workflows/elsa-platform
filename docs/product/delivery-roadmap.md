@@ -87,6 +87,9 @@ The GitHub Project is authoritative for live IDs and status. The current Agent R
 - Define the short-lived, signed one-time identity handoff into managed Elsa.
 - Restore the missing Artifact Console module and frontend build health.
 
+The identity handoff contract and threat model are captured in
+[`docs/spikes/127-managed-elsa-identity-handoff.md`](../spikes/127-managed-elsa-identity-handoff.md).
+
 These seven evidence/prerequisite or regression tasks are independently dispatchable. The provider-neutral resolved application plan remains blocked on the commercial image authority audit, and provider implementation waits for that contract plus the Azure spike and typed reconciliation prerequisite.
 
 ## Major Risks

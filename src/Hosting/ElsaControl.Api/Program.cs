@@ -86,6 +86,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
 });
 builder.Services.Configure<ControlIdentityOptions>(builder.Configuration.GetSection(ControlIdentityDefaults.ConfigurationSection));
+builder.Services.Configure<ManagedElsaHandoffOptions>(builder.Configuration.GetSection(ManagedElsaHandoffDefaults.ConfigurationSection));
 var configuredControlIdentity = builder.Configuration.GetSection(ControlIdentityDefaults.ConfigurationSection).Get<ControlIdentityOptions>() ?? new ControlIdentityOptions();
 var authentication = builder.Services.AddAuthentication(options =>
     {
@@ -172,6 +173,14 @@ builder.Services.AddBuilderClientAuthorization();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AdminApiKeyValidator>();
 builder.Services.AddSingleton<BuilderClientApiKeyValidator>();
+builder.Services.AddSingleton<ManagedElsaHandoffKeyRing>(_ => ManagedElsaHandoffKeyRing.CreateEphemeral());
+builder.Services.AddSingleton<IManagedElsaHandoffReplayStore, InMemoryManagedElsaHandoffReplayStore>();
+builder.Services.AddSingleton<IManagedElsaHandoffAuthorizer, UnconfiguredManagedElsaHandoffAuthorizer>();
+builder.Services.AddSingleton<IManagedElsaHandoffAuditSink, NullManagedElsaHandoffAuditSink>();
+builder.Services.AddScoped<ManagedElsaHandoffIssuer>();
+builder.Services.AddScoped<ManagedElsaHandoffRedeemer>();
+builder.Services.AddScoped<ManagedElsaHandoffService>();
+builder.Services.AddHostedService<ManagedElsaHandoffConfigurationValidator>();
 builder.Services.AddCatalogDbContext(builder.Configuration);
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
 builder.Services.AddScoped<IPublicCatalogQueries, PublicCatalogQueries>();
@@ -407,6 +416,7 @@ else if (!adminConsoleAssetsExist)
     app.MapGet("/admin/{*path:nonfile}", () => Results.Content(AdminConsoleFallbackPage(), "text/html"));
 }
 app.MapCustomerAuthEndpoints();
+app.MapManagedElsaHandoffEndpoints();
 app.MapAdminDashboardAuthEndpoints();
 app.MapPublicPackageEndpoints();
 app.MapPublicSourceEndpoints();
