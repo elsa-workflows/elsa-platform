@@ -9,6 +9,9 @@ param location string
 @description('Principal ID of the workload identity that reads runtime secrets.')
 param workloadPrincipalId string
 
+@description('Interactive Entra operator object ID allowed to seed the two proof secrets.')
+param bootstrapObjectId string
+
 @description('Name of the SQL connection secret created by the runbook after the vault exists.')
 @minLength(1)
 @maxLength(127)
@@ -51,6 +54,17 @@ resource workloadSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01
 }
 
 var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
+var keyVaultSecretsOfficerRoleId = 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
+
+resource bootstrapSecretsOfficer 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(vault.id, bootstrapObjectId, keyVaultSecretsOfficerRoleId)
+  scope: vault
+  properties: {
+    principalId: bootstrapObjectId
+    principalType: 'User'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultSecretsOfficerRoleId)
+  }
+}
 
 output id string = vault.id
 output name string = vault.name

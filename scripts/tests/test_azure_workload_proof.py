@@ -50,7 +50,10 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("bootstrapObjectId", source)
         self.assertNotIn("administratorPassword", source)
         bootstrap = (PROOF / "sql-bootstrap.sql").read_text()
-        self.assertIn("FROM EXTERNAL PROVIDER", bootstrap)
+        self.assertIn("TYPE = E", bootstrap)
+        self.assertIn("__WORKLOAD_IDENTITY_CLIENT_ID__", bootstrap)
+        self.assertNotIn("__WORKLOAD_IDENTITY_OBJECT_ID__", bootstrap)
+        self.assertNotIn("Directory Readers", bootstrap)
         self.assertIn("db_ddladmin", bootstrap)
 
     def test_managed_identity_roles_are_narrow(self) -> None:
@@ -59,6 +62,7 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("targetScope = 'resourceGroup'", acr)
         self.assertIn("7f951dda-4ed3-4680-a7ca-43fe172d538d", acr)
         self.assertIn("4633458b-17de-408a-b874-0445c86b69e6", vault)
+        self.assertIn("b86a8fe4-44ce-4948-aee5-eccb2c155cd7", vault)
         self.assertIn("enableRbacAuthorization: true", vault)
 
     def test_app_has_safe_ingress_revision_and_probes(self) -> None:
@@ -79,6 +83,12 @@ class AzureWorkloadProofTests(unittest.TestCase):
         ):
             self.assertIn(expected, source)
         self.assertIn("workloadProfileType: 'Consumption'", ENVIRONMENT.read_text())
+        self.assertIn("Nuplane__Setup__Feeds__0__Name", source)
+        self.assertIn("Nuplane__Setup__Feeds__1__ServiceIndex", source)
+        self.assertIn("Nuplane__Setup__Feeds__2__IncludePatterns__0", source)
+        self.assertIn("Nuplane__Setup__Feeds__2__IncludePatterns__1", source)
+        self.assertIn("3.8.0-preview.5413", MAIN.read_text())
+        self.assertIn("3.8.0-preview.342", MAIN.read_text())
 
     def test_deterministic_fingerprint_and_required_tags(self) -> None:
         source = MAIN.read_text()
@@ -109,6 +119,14 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("DISPOSABLE_PROOF_APPLY:-", source)
         self.assertIn("what-if requires an existing resource group", source)
         self.assertIn("az group delete", source)
+        self.assertIn("--sql-bootstrap-ip", source)
+        self.assertIn("--authentication-method ActiveDirectoryDefault", source)
+        self.assertIn("temporary_firewall_rule", source)
+        self.assertIn("keyvault purge", source)
+        self.assertIn("Refusing to adopt unrelated resource group", source)
+        self.assertIn("registry-subscription", source)
+        self.assertIn("az group exists", source)
+        self.assertIn("show-deleted", source)
         self.assertRegex(source, r"\[\[ \"\$\{DISPOSABLE_PROOF_APPLY:-\}\" == YES \]\]")
         validation = (ROOT / "scripts" / "validate-azure-workload-proof.sh").read_text()
         self.assertIn("Compiled main template SHA-256", validation)

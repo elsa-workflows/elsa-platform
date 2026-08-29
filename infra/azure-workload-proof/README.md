@@ -30,13 +30,14 @@ The apply path is two-phase so secret values never enter Bicep parameters, deplo
 1. Deploy the foundation with `deployWorkload=false`.
 2. Grant the workload identity `AcrPull` on `valenceruntimeimages` using the separate role template.
 3. Generate the signing key locally and generate the Azure AD managed-identity SQL connection reference locally. Seed both into the proof Key Vault with file input; values are not printed.
-4. Run `sql-bootstrap.sql` once as the configured Microsoft Entra SQL administrator. This creates the workload identity as a contained external user and grants `db_datareader`, `db_datawriter` and temporary `db_ddladmin` for first-start migrations. Remove `db_ddladmin` after migration evidence if the proof policy requires least privilege.
+4. The configured operator is granted the proof vault's narrow Key Vault Secrets Officer role; the runbook retries while RBAC propagates.
+5. Run `sql-bootstrap.sql` once as the configured Microsoft Entra SQL administrator. It creates a service-principal contained user from the workload identity client ID (without Graph lookup or Directory Readers) and grants `db_datareader`, `db_datawriter` and temporary `db_ddladmin` for first-start migrations.
 5. Deploy the workload phase. Container Apps reads the two Key Vault secrets through the user-assigned identity; it does not receive secret values in the template.
 6. Wait for `/health` and capture only the endpoint, immutable image reference, resource IDs, plan fingerprint, revision and redacted health evidence.
 
 The SQL bootstrap operator must have an Entra login and object ID. SQL authentication is intentionally unavailable: the server is configured with `azureADOnlyAuthentication: true`. The runtime connection is generated with the workload identity client ID, Azure AD managed identity authentication, encryption enabled and certificate trust disabled.
 
-Use an interactive Entra user for the `FROM EXTERNAL PROVIDER` step. Azure SQL must be able to resolve the workload service principal through the external provider; if tenant policy blocks Graph resolution, stop and record the failure rather than falling back to SQL authentication or putting a password into the deployment.
+Use Go `sqlcmd` with `--authentication-method ActiveDirectoryDefault`; the ODBC sqlcmd is not supported. Supply one exact public IPv4 address with `--sql-bootstrap-ip`. The runbook creates a same-IP temporary SQL firewall rule, retries readiness/bootstrap, and removes the rule on success or failure. `0.0.0.0` is never used for operator access.
 
 ## What is provisioned
 
@@ -66,4 +67,4 @@ scripts/azure-workload-proof.sh cleanup --resource-group <disposable-proof-group
 az group exists --name <disposable-proof-group>  # must return false
 ```
 
-The cleanup command removes the deterministic ACR role assignment before deleting the proof group. If the ACR administrator is separate, run the equivalent role-assignment removal under that administrator's authority. Do not delete or mutate the shared ACR itself.
+Cleanup verifies exact proof ownership tags, removes only the workload identity's AcrPull assignment, waits for resource-group deletion, purges the exact proof vault's soft-deleted record, and verifies absence. It tolerates a partial foundation but refuses to adopt or delete an unrelated group.

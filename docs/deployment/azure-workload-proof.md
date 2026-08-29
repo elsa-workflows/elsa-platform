@@ -18,7 +18,10 @@ scripts/azure-workload-proof.sh what-if \
   --image-digest <64-hex-digest> \
   --registry-resource-group <runtime-acr-resource-group> \
   --sql-bootstrap-object-id <entra-object-id> \
-  --sql-bootstrap-login <entra-login>
+  --sql-bootstrap-login <entra-login> \
+  --sql-bootstrap-ip <operator-public-ipv4>
 ```
 
 Live apply is intentionally explicit and cost-bounded. It requires `DISPOSABLE_PROOF_APPLY=YES`, uses only the supplied disposable resource group, never accepts a mutable image tag, and must be followed by the cleanup command in the linked runbook.
+
+If the shared ACR is in another subscription, pass `--registry-subscription`; the runbook switches subscription context only for the narrowly scoped AcrPull role deployment and returns to the proof subscription afterward.

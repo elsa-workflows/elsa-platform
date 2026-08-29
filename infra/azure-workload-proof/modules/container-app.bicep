@@ -52,6 +52,14 @@ param signingRef string = 'identity-signing-key'
 @minLength(1)
 param elsaVersion string = '3.8'
 
+@description('Exact Nuplane feed version for Elsa SQL Server workflow/identity persistence packages.')
+@minLength(1)
+param sqlWorkflowPackageVersion string = '3.8.0-preview.5413'
+
+@description('Exact Nuplane feed version for Elsa Quartz SQL Server scheduling package.')
+@minLength(1)
+param sqlQuartzPackageVersion string = '3.8.0-preview.342'
+
 @description('Elsa topology represented by the immutable image.')
 @allowed([
   'combined'
@@ -71,6 +79,82 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing =
   scope: resourceGroup(registrySubscriptionId, registryResourceGroupName)
 }
 var immutableImage = '${imageRepository}@sha256:${toLower(imageDigest)}'
+var nuplaneFeedEnvironment = [
+  {
+    name: 'Nuplane__Setup__Feeds__0__Name'
+    value: 'local-packages'
+  }
+  {
+    name: 'Nuplane__Setup__Feeds__0__DirectoryPath'
+    value: 'packages'
+  }
+  {
+    name: 'Nuplane__Setup__Feeds__0__IncludePatterns__0'
+    value: '*'
+  }
+  {
+    name: 'Nuplane__Setup__Feeds__0__Directory__Watch'
+    value: 'true'
+  }
+  {
+    name: 'Nuplane__Setup__Feeds__0__Directory__DebounceWindow'
+    value: '00:00:01'
+  }
+  {
+    name: 'Nuplane__Setup__Feeds__1__Name'
+    value: 'nuget.org'
+  }
+  {
+    name: 'Nuplane__Setup__Feeds__1__ServiceIndex'
+    value: 'https://api.nuget.org/v3/index.json'
+  }
+  {
+    name: 'Nuplane__Setup__Feeds__2__Name'
+    value: 'feedz.io'
+  }
+  {
+    name: 'Nuplane__Setup__Feeds__2__ServiceIndex'
+    value: 'https://f.feedz.io/elsa-workflows/elsa-3/nuget/index.json'
+  }
+  {
+    name: 'Nuplane__Setup__Feeds__2__IncludePatterns__0'
+    value: 'Elsa.Persistence.EFCore.SqlServer [${sqlWorkflowPackageVersion}]'
+  }
+  {
+    name: 'Nuplane__Setup__Feeds__2__IncludePatterns__1'
+    value: 'Elsa.Scheduling.Quartz.EFCore.SqlServer [${sqlQuartzPackageVersion}]'
+  }
+]
+var featureEnvironment = [
+  {
+    name: 'CShells__Shells__Default__Features__SqliteWorkflowPersistence'
+    value: 'false'
+  }
+  {
+    name: 'CShells__Shells__Default__Features__SqliteIdentityPersistence'
+    value: 'false'
+  }
+  {
+    name: 'CShells__Shells__Default__Features__QuartzSqlite'
+    value: 'false'
+  }
+  {
+    name: 'CShells__Shells__Default__Features__SqlServerWorkflowPersistence__ConnectionString'
+    secretRef: sqlRef
+  }
+  {
+    name: 'CShells__Shells__Default__Features__SqlServerIdentityPersistence__ConnectionString'
+    secretRef: sqlRef
+  }
+  {
+    name: 'CShells__Shells__Default__Features__QuartzSqlServer__ConnectionString'
+    secretRef: sqlRef
+  }
+  {
+    name: 'CShells__Shells__Default__Features__Identity__SigningKey'
+    secretRef: signingRef
+  }
+]
 
 resource app 'Microsoft.App/containerApps@2023-05-01' = {
   name: name
@@ -128,7 +212,7 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
             cpu: json('0.5')
             memory: '1Gi'
           }
-          env: [
+          env: concat([
             {
               name: 'ASPNETCORE_ENVIRONMENT'
               value: 'Production'
@@ -145,35 +229,7 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
               name: 'ELSA_TOPOLOGY'
               value: topology
             }
-            {
-              name: 'CShells__Shells__Default__Features__SqliteWorkflowPersistence'
-              value: 'false'
-            }
-            {
-              name: 'CShells__Shells__Default__Features__SqliteIdentityPersistence'
-              value: 'false'
-            }
-            {
-              name: 'CShells__Shells__Default__Features__QuartzSqlite'
-              value: 'false'
-            }
-            {
-              name: 'CShells__Shells__Default__Features__SqlServerWorkflowPersistence__ConnectionString'
-              secretRef: sqlRef
-            }
-            {
-              name: 'CShells__Shells__Default__Features__SqlServerIdentityPersistence__ConnectionString'
-              secretRef: sqlRef
-            }
-            {
-              name: 'CShells__Shells__Default__Features__QuartzSqlServer__ConnectionString'
-              secretRef: sqlRef
-            }
-            {
-              name: 'CShells__Shells__Default__Features__Identity__SigningKey'
-              secretRef: signingRef
-            }
-          ]
+          ], concat(nuplaneFeedEnvironment, featureEnvironment))
           probes: [
             {
               type: 'Startup'

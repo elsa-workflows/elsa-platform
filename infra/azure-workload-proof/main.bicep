@@ -54,6 +54,14 @@ param signingKeySecretName string = 'identity-signing-key'
 @minLength(1)
 param elsaVersion string = '3.8'
 
+@description('Exact Nuplane feed version for Elsa SQL Server workflow/identity persistence packages.')
+@minLength(1)
+param sqlWorkflowPackageVersion string = '3.8.0-preview.5413'
+
+@description('Exact Nuplane feed version for Elsa Quartz SQL Server scheduling package.')
+@minLength(1)
+param sqlQuartzPackageVersion string = '3.8.0-preview.342'
+
 @description('UTC date after which the disposable proof must be reviewed and removed.')
 param expiryUtc string = '2026-09-02'
 
@@ -67,7 +75,7 @@ param deployWorkload bool = true
 @description('Additional tags. Required proof/owner/expiry/fingerprint tags always win.')
 param additionalTags object = {}
 
-var planInput = 'proof=108|name=${proofName}|location=${location}|image=${imageRepository}@sha256:${toLower(imageDigest)}|elsa=${elsaVersion}|topology=combined|acr=${registrySubscriptionId}/${registryResourceGroupName}/${registryName}|sql-bootstrap=${sqlBootstrapObjectId}/${sqlBootstrapLogin}|secrets=${sqlConnectionSecretName}/${signingKeySecretName}|expiry=${expiryUtc}'
+var planInput = 'proof=108|name=${proofName}|location=${location}|image=${imageRepository}@sha256:${toLower(imageDigest)}|elsa=${elsaVersion}|sql-workflow=${sqlWorkflowPackageVersion}|sql-quartz=${sqlQuartzPackageVersion}|topology=combined|acr=${registrySubscriptionId}/${registryResourceGroupName}/${registryName}|sql-bootstrap=${sqlBootstrapObjectId}/${sqlBootstrapLogin}|secrets=${sqlConnectionSecretName}/${signingKeySecretName}|expiry=${expiryUtc}'
 // Bicep 0.43 has no SHA-256 function. uniqueString is deterministic for the
 // canonical input; external evidence may additionally hash the compiled template.
 var planFingerprint = uniqueString(planInput)
@@ -117,6 +125,7 @@ module vault 'modules/key-vault.bicep' = {
     name: '${proofName}-kv'
     location: location
     workloadPrincipalId: workloadIdentity.outputs.principalId
+    bootstrapObjectId: sqlBootstrapObjectId
     sqlConnectionSecretName: sqlConnectionSecretName
     signingKeySecretName: signingKeySecretName
     tags: tags
@@ -150,6 +159,8 @@ module workload 'modules/container-app.bicep' = if (deployWorkload) {
     sqlRef: take(sqlConnectionSecretName, 63)
     signingRef: take(signingKeySecretName, 63)
     elsaVersion: elsaVersion
+    sqlWorkflowPackageVersion: sqlWorkflowPackageVersion
+    sqlQuartzPackageVersion: sqlQuartzPackageVersion
     revisionSuffix: revisionSuffix
     tags: tags
   }

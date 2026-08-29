@@ -21,9 +21,11 @@ Required apply/what-if options:
   --registry-resource-group <name>     Resource group containing valenceruntimeimages
   --sql-bootstrap-object-id <GUID>     Entra object ID for temporary SQL administrator
   --sql-bootstrap-login <name>         Entra login/display name for temporary SQL administrator
+  --sql-bootstrap-ip <IPv4 address>    Exact operator IP for the temporary SQL firewall rule
 
 Optional:
   --subscription <id>                  Azure subscription to use
+  --registry-subscription <id>         Subscription containing the existing ACR (default: --subscription)
   --registry-name <name>               Existing ACR (default: valenceruntimeimages)
   --expiry-utc <YYYY-MM-DD>            Proof expiry tag (default: 2026-09-02)
 EOF
@@ -43,7 +45,9 @@ registry_name="valenceruntimeimages"
 registry_resource_group=""
 sql_bootstrap_object_id=""
 sql_bootstrap_login=""
+sql_bootstrap_ip=""
 subscription_id=""
+registry_subscription_id=""
 expiry_utc="2026-09-02"
 
 while (($#)); do
@@ -56,7 +60,9 @@ while (($#)); do
     --registry-resource-group) registry_resource_group="${2:?Missing value for --registry-resource-group}"; shift 2 ;;
     --sql-bootstrap-object-id) sql_bootstrap_object_id="${2:?Missing value for --sql-bootstrap-object-id}"; shift 2 ;;
     --sql-bootstrap-login) sql_bootstrap_login="${2:?Missing value for --sql-bootstrap-login}"; shift 2 ;;
+    --sql-bootstrap-ip) sql_bootstrap_ip="${2:?Missing value for --sql-bootstrap-ip}"; shift 2 ;;
     --subscription) subscription_id="${2:?Missing value for --subscription}"; shift 2 ;;
+    --registry-subscription) registry_subscription_id="${2:?Missing value for --registry-subscription}"; shift 2 ;;
     --expiry-utc) expiry_utc="${2:?Missing value for --expiry-utc}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -102,23 +108,67 @@ validate_login() {
   }
 }
 
+validate_ipv4() {
+  local ip="$1" octet
+  [[ "$ip" =~ ^[0-9]+(\.[0-9]+){3}$ && "$ip" != 0.0.0.0 ]] || {
+    echo "--sql-bootstrap-ip must be a non-zero IPv4 address (CIDR and 0.0.0.0 are not accepted)" >&2
+    exit 2
+  }
+  IFS=. read -r -a octets <<<"$ip"
+  for octet in "${octets[@]}"; do
+    (( octet <= 255 )) || { echo "--sql-bootstrap-ip contains an invalid octet" >&2; exit 2; }
+  done
+}
+
+sha256_text() {
+  if command -v sha256sum >/dev/null; then
+    printf '%s' "$1" | sha256sum | awk '{print $1}'
+  else
+    printf '%s' "$1" | shasum -a 256 | awk '{print $1}'
+  fi
+}
+
 if [[ "$mode" == cleanup ]]; then
   : "${resource_group:?cleanup requires --resource-group}"
   : "${proof_name:?cleanup requires --proof-name so the external ACR role can be removed safely}"
   : "${registry_resource_group:?cleanup requires --registry-resource-group so the external ACR role can be removed safely}"
   validate_name "$proof_name"
+  command -v jq >/dev/null || { echo "jq is required for ownership-safe cleanup" >&2; exit 2; }
   [[ -z "$subscription_id" ]] || az account set --subscription "$subscription_id"
-  if az group show --name "$resource_group" --only-show-errors >/dev/null 2>&1; then
-    identity_principal_id="$(az identity show --resource-group "$resource_group" --name "${proof_name}-identity" --query principalId --output tsv --only-show-errors)"
-    registry_id="$(az acr show --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors)"
-    role_ids="$(az role assignment list --scope "$registry_id" --assignee-object-id "$identity_principal_id" --role AcrPull --query '[].id' --output tsv --only-show-errors)"
+  group_tags="$(az group show --name "$resource_group" --query tags --output json --only-show-errors 2>/dev/null || true)"
+  [[ "$(jq -r '.proof // empty' <<<"$group_tags")" == 108 && "$(jq -r '.owner // empty' <<<"$group_tags")" == elsa-control ]] || {
+    echo "Refusing cleanup: resource group is absent or lacks expected proof ownership tags" >&2
+    exit 3
+  }
+  cleanup_status=0
+  identity_principal_id="$(az identity show --resource-group "$resource_group" --name "${proof_name}-identity" --query principalId --output tsv --only-show-errors 2>/dev/null || true)"
+  proof_subscription_id="$(az account show --query id --output tsv --only-show-errors)"
+  [[ -z "$registry_subscription_id" ]] || az account set --subscription "$registry_subscription_id"
+  registry_id="$(az acr show --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors 2>/dev/null || true)"
+  if [[ -n "$identity_principal_id" && -n "$registry_id" ]]; then
+    role_ids="$(az role assignment list --scope "$registry_id" --assignee-object-id "$identity_principal_id" --role AcrPull --query '[].id' --output tsv --only-show-errors 2>/dev/null || true)"
     while IFS= read -r role_id; do
-      [[ -z "$role_id" ]] || az role assignment delete --ids "$role_id" --only-show-errors
+      [[ -z "$role_id" ]] || az role assignment delete --ids "$role_id" --only-show-errors || cleanup_status=1
     done <<<"$role_ids"
   fi
-  az group delete --name "$resource_group" --yes --no-wait --only-show-errors
-  echo "Deletion requested for $resource_group; verify with: az group exists --name $resource_group"
-  exit 0
+  az account set --subscription "$proof_subscription_id"
+  az group delete --name "$resource_group" --yes --no-wait --only-show-errors || cleanup_status=1
+  for _ in {1..60}; do
+    [[ "$(az group exists --name "$resource_group" --only-show-errors 2>/dev/null || echo false)" == true ]] || break
+    sleep 5
+  done
+  [[ "$(az group exists --name "$resource_group" --only-show-errors 2>/dev/null || echo false)" == true ]] && cleanup_status=1
+  vault_name="${proof_name}-kv"
+  if az keyvault show-deleted --name "$vault_name" --location westeurope --only-show-errors >/dev/null 2>&1; then
+    az keyvault purge --name "$vault_name" --location westeurope --only-show-errors || cleanup_status=1
+    for _ in {1..30}; do
+      az keyvault show-deleted --name "$vault_name" --location westeurope --only-show-errors >/dev/null 2>&1 || break
+      sleep 5
+    done
+    az keyvault show-deleted --name "$vault_name" --location westeurope --only-show-errors >/dev/null 2>&1 && cleanup_status=1
+  fi
+  (( cleanup_status == 0 )) && echo "Proof group deleted, external AcrPull removed, and proof vault purge verified." || echo "Cleanup incomplete; inspect exact proof targets." >&2
+  exit "$cleanup_status"
 fi
 
 if [[ "$mode" == validate ]]; then
@@ -132,6 +182,7 @@ validate_digest "$image_digest"
 validate_repository "$image_repository"
 validate_guid "$sql_bootstrap_object_id"
 validate_login "$sql_bootstrap_login"
+validate_ipv4 "$sql_bootstrap_ip"
 : "${resource_group:?$mode requires --resource-group}"
 : "${registry_resource_group:?$mode requires --registry-resource-group}"
 : "${sql_bootstrap_object_id:?$mode requires --sql-bootstrap-object-id}"
@@ -140,16 +191,25 @@ command -v jq >/dev/null || { echo "jq is required to read safe deployment outpu
 
 "$repo_root/scripts/validate-azure-workload-proof.sh"
 
+[[ -z "$subscription_id" ]] || az account set --subscription "$subscription_id"
+proof_subscription_id="$(az account show --query id --output tsv --only-show-errors)"
+registry_subscription_id="${registry_subscription_id:-$proof_subscription_id}"
+
 parameters=(
   "proofName=$proof_name"
   "imageRepository=$image_repository"
   "imageDigest=$image_digest"
   "registryName=$registry_name"
+  "registrySubscriptionId=$registry_subscription_id"
   "registryResourceGroupName=$registry_resource_group"
   "sqlBootstrapObjectId=$sql_bootstrap_object_id"
   "sqlBootstrapLogin=$sql_bootstrap_login"
   "expiryUtc=$expiry_utc"
 )
+
+image_digest_lower="$(printf '%s' "$image_digest" | tr '[:upper:]' '[:lower:]')"
+plan_input="proof=108|name=${proof_name}|location=westeurope|image=${image_repository}@sha256:${image_digest_lower}|elsa=3.8|sql-workflow=3.8.0-preview.5413|sql-quartz=3.8.0-preview.342|topology=combined|acr=${registry_resource_group}/${registry_name}|sql-bootstrap=${sql_bootstrap_object_id}/${sql_bootstrap_login}|secrets=sql-connection/identity-signing-key|expiry=${expiry_utc}"
+deployment_suffix="$(sha256_text "$plan_input" | cut -c1-12)"
 
 [[ -z "$subscription_id" ]] || az account set --subscription "$subscription_id"
 
@@ -160,7 +220,7 @@ if [[ "$mode" == what-if ]]; then
   fi
   az deployment group what-if \
     --resource-group "$resource_group" \
-    --name "elsa108-${proof_name}-whatif" \
+    --name "elsa108-${proof_name}-${deployment_suffix}-whatif" \
     --template-file "$proof_dir/main.bicep" \
     --parameters "${parameters[@]}" \
     --only-show-errors
@@ -172,10 +232,14 @@ fi
   exit 3
 }
 
+existing_tags="$(az group show --name "$resource_group" --query tags --output json --only-show-errors 2>/dev/null || true)"
+if [[ -n "$existing_tags" ]]; then
+  [[ "$(jq -r '.proof // empty' <<<"$existing_tags")" == 108 && "$(jq -r '.owner // empty' <<<"$existing_tags")" == elsa-control ]] || { echo "Refusing to adopt unrelated resource group" >&2; exit 3; }
+fi
 az group create --name "$resource_group" --location westeurope \
   --tags proof=108 owner=elsa-control expiry="$expiry_utc" --only-show-errors >/dev/null
 
-deployment_name="elsa108-${proof_name}"
+deployment_name="elsa108-${proof_name}-${deployment_suffix}"
 foundation_outputs="$(az deployment group create \
   --resource-group "$resource_group" \
   --name "${deployment_name}-foundation" \
@@ -189,39 +253,73 @@ identity_principal_id="$(jq -r '.workloadIdentityPrincipalId.value' <<<"$foundat
 key_vault_name="${proof_name}-kv"
 sql_fqdn="$(jq -r '.sqlServerFqdn.value' <<<"$foundation_outputs")"
 
+sql_server_name="${proof_name}-sql"
+temporary_firewall_rule="elsa108-bootstrap"
+temporary_firewall_created=0
+temp_dir=""
+cleanup_apply() {
+  if (( temporary_firewall_created )); then
+    az sql server firewall-rule delete --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --yes --only-show-errors >/dev/null 2>&1 || true
+  fi
+  [[ -z "$temp_dir" ]] || rm -rf -- "$temp_dir"
+}
+trap cleanup_apply EXIT
+
 # The ACR is intentionally outside the disposable group. This idempotent role
 # assignment is the only proof mutation outside the supplied proof group.
+az account set --subscription "$registry_subscription_id"
 az deployment group create \
   --resource-group "$registry_resource_group" \
   --name "${deployment_name}-acr-pull" \
   --template-file "$proof_dir/acr-pull-role.bicep" \
   --parameters registryName="$registry_name" workloadIdentityId="$identity_id" workloadPrincipalId="$identity_principal_id" \
   --query properties.outputs --output none --only-show-errors
+az account set --subscription "$proof_subscription_id"
 
 command -v sqlcmd >/dev/null || {
-  echo "sqlcmd is required for the controlled Entra contained-user bootstrap; install go-sqlcmd or the Microsoft ODBC sqlcmd client" >&2
+  echo "Go sqlcmd is required; install github.com/microsoft/go-sqlcmd and ensure --authentication-method is supported" >&2
+  exit 4
+}
+sqlcmd --help 2>&1 | grep -q -- '--authentication-method' || {
+  echo "sqlcmd must be the Go sqlcmd with --authentication-method support; ODBC sqlcmd is not supported" >&2
   exit 4
 }
 
+az sql server firewall-rule create --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" \
+  --start-ip-address "$sql_bootstrap_ip" --end-ip-address "$sql_bootstrap_ip" --only-show-errors >/dev/null
+temporary_firewall_created=1
+
 temp_dir="$(mktemp -d)"
-trap 'rm -rf "$temp_dir"' EXIT
 umask 077
 
 sql_connection="Server=tcp:${sql_fqdn},1433;Initial Catalog=Elsa;Encrypt=True;Authentication=\"Active Directory Managed Identity\";User Id=${identity_client_id};TrustServerCertificate=False;Connection Timeout=30;"
 printf '%s' "$sql_connection" >"$temp_dir/sql-connection"
 openssl rand -base64 48 >"$temp_dir/identity-signing-key"
-if ! az keyvault secret show --vault-name "$key_vault_name" --name sql-connection --only-show-errors >/dev/null 2>&1; then
-  az keyvault secret set --vault-name "$key_vault_name" --name sql-connection --file "$temp_dir/sql-connection" --only-show-errors >/dev/null
-fi
-if ! az keyvault secret show --vault-name "$key_vault_name" --name identity-signing-key --only-show-errors >/dev/null 2>&1; then
-  az keyvault secret set --vault-name "$key_vault_name" --name identity-signing-key --file "$temp_dir/identity-signing-key" --only-show-errors >/dev/null
-fi
+seed_secret_if_missing() {
+  local name="$1" file="$2"
+  if az keyvault secret show --vault-name "$key_vault_name" --name "$name" --only-show-errors >/dev/null 2>&1; then return 0; fi
+  for _ in {1..12}; do
+    if az keyvault secret set --vault-name "$key_vault_name" --name "$name" --file "$file" --only-show-errors >/dev/null; then return 0; fi
+    sleep 5
+  done
+  echo "Key Vault RBAC propagation did not complete for secret $name" >&2
+  return 1
+}
+seed_secret_if_missing sql-connection "$temp_dir/sql-connection"
+seed_secret_if_missing identity-signing-key "$temp_dir/identity-signing-key"
 
 sed \
   -e "s/__WORKLOAD_IDENTITY_NAME__/${proof_name}-identity/g" \
-  -e "s/__WORKLOAD_IDENTITY_OBJECT_ID__/${identity_principal_id}/g" \
+  -e "s/__WORKLOAD_IDENTITY_CLIENT_ID__/${identity_client_id}/g" \
   "$proof_dir/sql-bootstrap.sql" >"$temp_dir/sql-bootstrap.sql"
-sqlcmd -S "tcp:${sql_fqdn},1433" -d Elsa -G -i "$temp_dir/sql-bootstrap.sql"
+bootstrap_ok=0
+for _ in {1..12}; do
+  if sqlcmd -S "tcp:${sql_fqdn},1433" -d Elsa --authentication-method ActiveDirectoryDefault -i "$temp_dir/sql-bootstrap.sql"; then bootstrap_ok=1; break; fi
+  sleep 10
+done
+(( bootstrap_ok == 1 )) || { echo "SQL bootstrap did not become ready" >&2; exit 5; }
+az sql server firewall-rule delete --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --yes --only-show-errors >/dev/null
+temporary_firewall_created=0
 
 az deployment group create \
   --resource-group "$resource_group" \
