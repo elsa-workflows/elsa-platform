@@ -24,6 +24,11 @@ public sealed record ResolvedElsaApplicationPlan(
     /// </summary>
     public ResolvedElsaApplicationPlan Normalize()
     {
+        if (Release is null)
+            throw ResolvedPlanNormalization.Missing("release");
+        if (ReleasePolicy is null)
+            throw ResolvedPlanNormalization.Missing("releasePolicy");
+
         var packages = ResolvedPlanNormalization.RequireItems(Packages, "packages");
         var providerCapabilities = ResolvedPlanNormalization.RequireItems(ProviderCapabilities, "providerCapabilities");
         var evidence = ResolvedPlanNormalization.RequireItems(Evidence, "evidence");
