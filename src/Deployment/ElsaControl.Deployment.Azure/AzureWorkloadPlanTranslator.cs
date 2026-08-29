@@ -16,6 +16,8 @@ public static class AzureWorkloadPlanTranslator
     public const string SupportedTopology = "combined";
     public const string SupportedIsolation = "Dedicated";
     public const string SupportedReleaseLine = "3.8";
+    public const string SupportedRegistryClass = "paid";
+    public const string SupportedRegistryHost = "valenceruntimeimages.azurecr.io";
     public const string ReleaseManifestEvidenceKind = "release-manifest";
     public const string ReleaseManifestSignatureEvidenceKind = "release-manifest-signature";
 
@@ -32,7 +34,16 @@ public static class AzureWorkloadPlanTranslator
         if (findings.Count > 0 || resolvedPlan is null || target is null)
             return Rejected(findings);
 
-        var normalized = resolvedPlan.Normalize();
+        ResolvedElsaApplicationPlan normalized;
+        try
+        {
+            normalized = resolvedPlan.Normalize();
+        }
+        catch (ArgumentException)
+        {
+            findings.Add(new("azure.plan.normalization.invalid", "The resolved plan could not be normalized safely.", "plan"));
+            return Rejected(findings);
+        }
         var component = normalized.Topology.Components.Single();
         var evidence = normalized.Evidence.Single(x =>
             string.Equals(x.Kind, ReleaseManifestEvidenceKind, StringComparison.OrdinalIgnoreCase));
@@ -134,6 +145,17 @@ public static class AzureWorkloadPlanTranslator
             findings.Add(new("azure.network.unsupported", "The initial Azure provider profile supports public ingress, public endpoints and unrestricted egress without private connectivity.", "network"));
         }
 
+        var publicEndpoints = (plan.Network?.Endpoints ?? [])
+            .Where(x => x is not null && string.Equals(x.Visibility, "public", StringComparison.OrdinalIgnoreCase))
+            .Select(x => (x.Protocol, x.RequiresTls))
+            .Concat((plan.Topology?.Components ?? [])
+                .Where(x => x is not null)
+                .SelectMany(x => x.Endpoints ?? [])
+                .Where(x => x is not null && string.Equals(x.Visibility, "public", StringComparison.OrdinalIgnoreCase))
+                .Select(x => (x.Protocol, x.RequiresTls)));
+        if (publicEndpoints.Any(x => !string.Equals(x.Protocol, "https", StringComparison.OrdinalIgnoreCase) || !x.RequiresTls))
+            findings.Add(new("azure.network.tlsRequired", "Public Azure workload endpoints must require HTTPS and TLS.", "network.endpoints"));
+
         foreach (var capability in plan.ProviderCapabilities ?? [])
         {
             if (capability is null || !capability.Required)
@@ -152,6 +174,14 @@ public static class AzureWorkloadPlanTranslator
             .ToArray() ?? [];
         if (images.Any(x => !IsSafeImageRepository(x.Repository)))
             findings.Add(new("azure.imageRepository.invalid", "Azure image repositories must be credential-free registry paths.", "topology.components.image.repository"));
+        if (images.Any(x => !string.Equals(x.RegistryClass, SupportedRegistryClass, StringComparison.OrdinalIgnoreCase) ||
+                            string.IsNullOrWhiteSpace(x.Repository) ||
+                            !x.Repository.StartsWith($"{SupportedRegistryHost}/", StringComparison.Ordinal)))
+        {
+            findings.Add(new("azure.imageRegistry.unsupported", "The image is outside the initial governed Azure registry authority.", "topology.components.image.registry"));
+        }
+        if (images.Any(x => !ImageReferenceMatchesRepository(x)))
+            findings.Add(new("azure.imageReference.repositoryMismatch", "The immutable image reference must match its repository field.", "topology.components.image.reference"));
 
         ValidateManifestEvidence(plan, findings);
         ValidateSignatureEvidence(plan, findings);
@@ -193,6 +223,15 @@ public static class AzureWorkloadPlanTranslator
         char.IsAsciiLetterOrDigit(repository[^1]) &&
         repository.All(x => char.IsAsciiLetterOrDigit(x) || x is '.' or '_' or '-' or '/') &&
         !repository.Contains("//", StringComparison.Ordinal);
+
+    private static bool ImageReferenceMatchesRepository(ResolvedImageIdentity image)
+    {
+        if (string.IsNullOrWhiteSpace(image.Reference))
+            return false;
+
+        var marker = image.Reference.LastIndexOf("@sha256:", StringComparison.OrdinalIgnoreCase);
+        return marker > 0 && string.Equals(image.Reference[..marker], image.Repository, StringComparison.Ordinal);
+    }
 
     private static void ValidateManifestEvidence(
         ResolvedElsaApplicationPlan plan,

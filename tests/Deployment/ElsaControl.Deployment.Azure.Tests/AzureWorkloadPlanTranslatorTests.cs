@@ -79,6 +79,37 @@ public sealed class AzureWorkloadPlanTranslatorTests
         Assert.DoesNotContain(result.Findings, x => x.Message.Contains("Server=secret", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Rejects_null_collections_without_throwing()
+    {
+        var result = AzureWorkloadPlanTranslator.Translate(
+            CreatePlan() with { Packages = null! },
+            new("workload-a", "westeurope"));
+
+        Assert.False(result.IsAccepted);
+        Assert.Null(result.Plan);
+        Assert.Contains(result.Findings, x => x.Code == "azure.plan.normalization.invalid");
+    }
+
+    [Fact]
+    public void Rejects_null_image_repository_without_throwing()
+    {
+        var plan = CreatePlan();
+        var component = plan.Topology.Components[0];
+        var result = AzureWorkloadPlanTranslator.Translate(
+            plan with
+            {
+                Topology = plan.Topology with
+                {
+                    Components = [component with { Image = component.Image with { Repository = null! } }]
+                }
+            },
+            new("workload-a", "westeurope"));
+
+        Assert.Contains(result.Findings, x => x.Code == "image.repository.required");
+        Assert.Null(result.Plan);
+    }
+
     [Theory]
     [InlineData("server-studio", "Dedicated", "westeurope", "azure.topology.unsupported")]
     [InlineData("combined", "Shared", "westeurope", "azure.isolation.unsupported")]
@@ -162,6 +193,70 @@ public sealed class AzureWorkloadPlanTranslatorTests
             new("workload-a", "westeurope"));
 
         Assert.Contains(result.Findings, x => x.Code == "image.referenceDigest.mismatch");
+    }
+
+    [Fact]
+    public void Rejects_image_repository_that_disagrees_with_immutable_reference()
+    {
+        var plan = CreatePlan();
+        var component = plan.Topology.Components[0];
+        var result = AzureWorkloadPlanTranslator.Translate(
+            plan with
+            {
+                Topology = plan.Topology with
+                {
+                    Components = [component with
+                    {
+                        Image = component.Image with { Repository = "valenceruntimeimages.azurecr.io/other" }
+                    }]
+                }
+            },
+            new("workload-a", "westeurope"));
+
+        Assert.Contains(result.Findings, x => x.Code == "azure.imageReference.repositoryMismatch");
+    }
+
+    [Fact]
+    public void Rejects_images_outside_initial_paid_registry_authority()
+    {
+        var plan = CreatePlan();
+        var component = plan.Topology.Components[0];
+        var result = AzureWorkloadPlanTranslator.Translate(
+            plan with
+            {
+                Topology = plan.Topology with
+                {
+                    Components = [component with
+                    {
+                        Image = component.Image with
+                        {
+                            RegistryClass = "community",
+                            Repository = "ghcr.io/example/runtime",
+                            Reference = $"ghcr.io/example/runtime@{ImageDigest}"
+                        }
+                    }]
+                }
+            },
+            new("workload-a", "westeurope"));
+
+        Assert.Contains(result.Findings, x => x.Code == "azure.imageRegistry.unsupported");
+    }
+
+    [Fact]
+    public void Rejects_public_endpoint_without_Https_and_Tls()
+    {
+        var plan = CreatePlan();
+        var result = AzureWorkloadPlanTranslator.Translate(
+            plan with
+            {
+                Network = plan.Network with
+                {
+                    Endpoints = [plan.Network.Endpoints[0] with { Protocol = "http", RequiresTls = false }]
+                }
+            },
+            new("workload-a", "westeurope"));
+
+        Assert.Contains(result.Findings, x => x.Code == "azure.network.tlsRequired");
     }
 
     [Fact]

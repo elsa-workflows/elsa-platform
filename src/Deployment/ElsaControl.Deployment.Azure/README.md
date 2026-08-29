@@ -11,6 +11,8 @@ The first admitted provider capability is deliberately narrow:
 - Dedicated isolation
 - Combined topology with one component
 - Elsa release line 3.8
+- Paid images from the governed `valenceruntimeimages.azurecr.io` authority
+- Public HTTPS/TLS endpoints with unrestricted egress and no private connectivity
 
 Release line and exact version remain strings in the provider-neutral schema.
 The capability check rejects an unsupported later line with a provider finding;
