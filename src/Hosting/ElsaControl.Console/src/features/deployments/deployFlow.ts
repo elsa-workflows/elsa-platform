@@ -12,7 +12,7 @@ import type {
   WorkspaceDeploymentRunStatus,
   WorkspaceDesiredStateRecordRequest
 } from "@/features/deployments/deploymentModels";
-import type { WorkspaceArtifact } from "@/features/artifacts/artifactModels";
+import { artifactDisplayName, type WorkspaceArtifact } from "@/features/artifacts/artifactModels";
 
 /**
  * The user-facing phases of the "deploy this revision" chain. The confirmation step is an
@@ -208,11 +208,7 @@ export function runStatusLabel(status: WorkspaceDeploymentRunStatus) {
 // Extracted from DeploymentsPage so the setup wizard and the revision-create page build the exact
 // same records from an artifact selection.
 
-export function artifactDisplayName(artifact: WorkspaceArtifact) {
-  const name = artifact.displayMetadata?.name ?? artifact.manifest.name ?? artifact.artifactId;
-  const version = artifact.displayMetadata?.version ?? artifact.manifest.version;
-  return version ? `${name} ${version}` : name;
-}
+export { artifactDisplayName } from "@/features/artifacts/artifactModels";
 
 export function artifactRevisionRecord(artifact: WorkspaceArtifact): WorkspaceDesiredStateRecordRequest {
   return {
