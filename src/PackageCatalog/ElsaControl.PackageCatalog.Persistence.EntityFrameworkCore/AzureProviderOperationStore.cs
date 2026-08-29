@@ -97,8 +97,8 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
     private async Task<AzureProviderOperation?> ClaimCoreAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion, bool allowRecovery, CancellationToken cancellationToken)
     {
         AzureProviderOperationValidation.ValidateWorkerId(workerId);
-        if (string.IsNullOrWhiteSpace(leaseToken) || leaseToken.Length > 512 || leaseDuration <= TimeSpan.Zero || leaseDuration > TimeSpan.FromHours(1))
-            throw new ArgumentException("Worker and lease are required and bounded.");
+        AzureProviderOperationValidation.ValidateLeaseToken(leaseToken);
+        if (leaseDuration <= TimeSpan.Zero || leaseDuration > TimeSpan.FromHours(1)) throw new ArgumentException("Lease duration is required and bounded.");
         var hash = Hash(leaseToken);
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         DateTimeOffset leaseExpires;
@@ -111,6 +111,8 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
                 .SetProperty(x => x.Status, AzureProviderOperationStatus.Running)
                 .SetProperty(x => x.WorkerId, workerId)
                 .SetProperty(x => x.LeaseTokenHash, hash)
+                .SetProperty(x => x.CompletionLeaseTokenHash, (string?)null)
+                .SetProperty(x => x.CompletionFingerprint, (string?)null)
                 .SetProperty(x => x.LeaseExpiresAt, leaseExpires)
                 .SetProperty(x => x.HeartbeatAt, now)
                 .SetProperty(x => x.AttemptNumber, x => x.AttemptNumber + 1)
@@ -127,18 +129,20 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
 
     public async Task<AzureProviderOperation?> HeartbeatAsync(Guid workspaceId, Guid operationId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
     {
+        AzureProviderOperationValidation.ValidateLeaseToken(leaseToken);
         if (leaseDuration <= TimeSpan.Zero || leaseDuration > TimeSpan.FromHours(1)) throw new ArgumentException("Lease duration must be positive and bounded.");
         DateTimeOffset leaseExpires;
         try { leaseExpires = now.Add(leaseDuration); } catch (ArgumentOutOfRangeException) { throw new ArgumentException("Lease duration overflowed.", nameof(leaseDuration)); }
         var entity = await db.AzureProviderOperations.SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == operationId, cancellationToken);
         if (entity is null || entity.Status != AzureProviderOperationStatus.Running || !LeaseMatches(entity, leaseToken, now) || expectedVersion.HasValue && entity.Version != expectedVersion.Value) return null;
         entity.HeartbeatAt = now; entity.LeaseExpiresAt = leaseExpires; entity.UpdatedAt = now; entity.Version++;
-        try { await db.SaveChangesAsync(cancellationToken); } catch (DbUpdateConcurrencyException) { return null; }
+        try { await db.SaveChangesAsync(cancellationToken); } catch (DbUpdateConcurrencyException) { db.ChangeTracker.Clear(); return null; }
         return ToModel(entity);
     }
 
     public async Task<AzureProviderOperation?> CheckpointAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderCheckpoint checkpoint, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
     {
+        AzureProviderOperationValidation.ValidateLeaseToken(leaseToken);
         AzureProviderOperationValidation.ValidateCheckpoint(checkpoint);
         var entity = await db.AzureProviderOperations.SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == operationId, cancellationToken);
         if (entity is null || entity.Status != AzureProviderOperationStatus.Running || !LeaseMatches(entity, leaseToken, now) || expectedVersion.HasValue && entity.Version != expectedVersion.Value) return null;
@@ -154,25 +158,28 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         entity.Endpoint = checkpoint.Endpoint; entity.Health = checkpoint.Health;
         entity.DiagnosticsJson = diagnosticsJson;
         AddTransition(entity, checkpoint.Code, checkpoint.Message, now);
-        try { await db.SaveChangesAsync(cancellationToken); } catch (DbUpdateConcurrencyException) { return null; }
+        try { await db.SaveChangesAsync(cancellationToken); } catch (DbUpdateConcurrencyException) { db.ChangeTracker.Clear(); return null; }
         return ToModel(entity);
     }
 
     public async Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, string message, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
     {
+        AzureProviderOperationValidation.ValidateLeaseToken(leaseToken);
+        AzureProviderOperationValidation.ValidateMessage(message);
+        AzureProviderOperationValidation.ValidateCode(code);
         if (status is not (AzureProviderOperationStatus.Succeeded or AzureProviderOperationStatus.Failed or AzureProviderOperationStatus.Cancelled or AzureProviderOperationStatus.RecoveryRequired))
             throw new ArgumentException("Invalid final operation status.", nameof(status));
         var entity = await db.AzureProviderOperations.SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == operationId, cancellationToken);
         if (entity is null) return null;
-        if (entity.Status == status) return entity.CompletionLeaseTokenHash == Hash(leaseToken) && (!expectedVersion.HasValue || entity.Version == expectedVersion.Value) ? ToModel(entity) : null;
+        var completionFingerprint = Hash($"{status}|{code}|{message}");
+        if (entity.Status == status) return entity.CompletionLeaseTokenHash == Hash(leaseToken) && entity.CompletionFingerprint == completionFingerprint && (!expectedVersion.HasValue || entity.Version == expectedVersion.Value) ? ToModel(entity) : null;
         if (entity.Status != AzureProviderOperationStatus.Running || !LeaseMatches(entity, leaseToken, now) || expectedVersion.HasValue && entity.Version != expectedVersion.Value) return null;
-        AzureProviderOperationValidation.ValidateMessage(message);
-        AzureProviderOperationValidation.ValidateCode(code);
         entity.Status = status; entity.UpdatedAt = now; entity.CompletedAt = status == AzureProviderOperationStatus.RecoveryRequired ? null : now; entity.Version++;
         entity.CompletionLeaseTokenHash = entity.LeaseTokenHash;
+        entity.CompletionFingerprint = completionFingerprint;
         entity.LeaseTokenHash = null; entity.LeaseExpiresAt = null; entity.WorkerId = null;
         AddTransition(entity, code, message, now);
-        try { await db.SaveChangesAsync(cancellationToken); } catch (DbUpdateConcurrencyException) { return null; }
+        try { await db.SaveChangesAsync(cancellationToken); } catch (DbUpdateConcurrencyException) { db.ChangeTracker.Clear(); return null; }
         return ToModel(entity);
     }
 
@@ -189,7 +196,9 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
                 .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, AzureProviderOperationStatus.RecoveryRequired)
                     .SetProperty(x => x.UpdatedAt, now).SetProperty(x => x.Version, x => x.Version + 1)
                     .SetProperty(x => x.LeaseTokenHash, (string?)null).SetProperty(x => x.LeaseExpiresAt, (DateTimeOffset?)null)
-                    .SetProperty(x => x.WorkerId, (string?)null), cancellationToken);
+                    .SetProperty(x => x.WorkerId, (string?)null)
+                    .SetProperty(x => x.CompletionLeaseTokenHash, (string?)null)
+                    .SetProperty(x => x.CompletionFingerprint, (string?)null), cancellationToken);
             if (changed == 0) continue;
             recovered++;
             candidate.Status = AzureProviderOperationStatus.RecoveryRequired;
@@ -223,7 +232,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             Status = entity.Status,
             Phase = entity.Phase,
             Code = code,
-            Message = message,
+            Message = code,
             OccurredAt = now
         });
     }

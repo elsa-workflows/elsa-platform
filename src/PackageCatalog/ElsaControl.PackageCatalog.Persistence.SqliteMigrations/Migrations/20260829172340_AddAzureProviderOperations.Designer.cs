@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 {
     [DbContext(typeof(CatalogDbContext))]
-    [Migration("20260829171921_AddAzureProviderOperations")]
+    [Migration("20260829172340_AddAzureProviderOperations")]
     partial class AddAzureProviderOperations
     {
         /// <inheritdoc />
@@ -894,6 +894,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.Property<long?>("CompletedAt")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("CompletionFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("CompletionLeaseTokenHash")
                         .HasMaxLength(64)

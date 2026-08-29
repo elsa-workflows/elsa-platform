@@ -50,6 +50,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     WorkerId = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
                     LeaseTokenHash = table.Column<string>(type: "TEXT", maxLength: 64, nullable: true),
                     CompletionLeaseTokenHash = table.Column<string>(type: "TEXT", maxLength: 64, nullable: true),
+                    CompletionFingerprint = table.Column<string>(type: "TEXT", maxLength: 64, nullable: true),
                     LeaseExpiresAt = table.Column<long>(type: "INTEGER", nullable: true),
                     HeartbeatAt = table.Column<long>(type: "INTEGER", nullable: true),
                     CreatedAt = table.Column<long>(type: "INTEGER", nullable: false),

@@ -892,6 +892,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Property<long?>("CompletedAt")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("CompletionFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("CompletionLeaseTokenHash")
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");

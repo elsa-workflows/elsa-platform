@@ -727,6 +727,7 @@ internal sealed class AzureProviderOperationConfiguration : IEntityTypeConfigura
         builder.Property(x => x.WorkerId).HasMaxLength(256);
         builder.Property(x => x.LeaseTokenHash).HasMaxLength(64);
         builder.Property(x => x.CompletionLeaseTokenHash).HasMaxLength(64);
+        builder.Property(x => x.CompletionFingerprint).HasMaxLength(64);
         ConfigureDateTime(builder.Property(x => x.CreatedAt));
         ConfigureDateTime(builder.Property(x => x.UpdatedAt));
         ConfigureNullableDateTime(builder.Property(x => x.CompletedAt));

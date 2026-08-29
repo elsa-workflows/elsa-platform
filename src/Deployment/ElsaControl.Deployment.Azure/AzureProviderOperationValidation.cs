@@ -21,7 +21,7 @@ public static class AzureProviderOperationValidation
         foreach (var diagnostic in checkpoint.Diagnostics)
         {
             if (diagnostic is null || !IsSafeCode(diagnostic.Code) ||
-                diagnostic.Message.Length > 2000 || diagnostic.Message.Any(char.IsControl) || ContainsSensitiveMarker(diagnostic.Message))
+                string.IsNullOrWhiteSpace(diagnostic.Message) || diagnostic.Message.Length > 2000 || diagnostic.Message.Any(char.IsControl) || ContainsSensitiveMarker(diagnostic.Message))
                 throw new ArgumentException("Diagnostic is unsafe.", nameof(checkpoint));
         }
         ValidateReferences(checkpoint.Resources);
@@ -36,6 +36,12 @@ public static class AzureProviderOperationValidation
     public static void ValidateCode(string code)
     {
         if (!IsSafeCode(code)) throw new ArgumentException("Diagnostic code is unsafe.", nameof(code));
+    }
+
+    public static void ValidateLeaseToken(string leaseToken)
+    {
+        if (string.IsNullOrWhiteSpace(leaseToken) || leaseToken.Length > 512 || leaseToken.Any(char.IsControl))
+            throw new ArgumentException("Lease token is unsafe.", nameof(leaseToken));
     }
 
     public static void ValidateEndpoint(string? endpoint)

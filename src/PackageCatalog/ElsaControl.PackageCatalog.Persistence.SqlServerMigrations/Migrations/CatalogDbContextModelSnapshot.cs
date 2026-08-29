@@ -897,6 +897,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     b.Property<long?>("CompletedAt")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("CompletionFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("CompletionLeaseTokenHash")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");

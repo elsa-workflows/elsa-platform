@@ -50,6 +50,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     WorkerId = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     LeaseTokenHash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
                     CompletionLeaseTokenHash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
+                    CompletionFingerprint = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
                     LeaseExpiresAt = table.Column<long>(type: "bigint", nullable: true),
                     HeartbeatAt = table.Column<long>(type: "bigint", nullable: true),
                     CreatedAt = table.Column<long>(type: "bigint", nullable: false),

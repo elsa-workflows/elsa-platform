@@ -63,11 +63,11 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.Null(await store.ClaimAsync(_workspaceId, operation.Id, "worker-2", "lease-2", TimeSpan.FromMinutes(1), now));
 
         var checkpoint = await store.CheckpointAsync(_workspaceId, operation.Id, "lease-1", new(
-            AzureProviderOperationPhase.FoundationReady, "foundation.ready", "Foundation is ready.",
+            AzureProviderOperationPhase.FoundationReady, "foundation.ready", "hunter2",
             new(ResourceGroupName: "rg-safe", FoundationDeploymentId: "deployment-1"), null, AzureProviderHealth.Unknown, []), now);
         Assert.Equal(AzureProviderOperationPhase.FoundationReady, checkpoint?.Phase);
         var replay = await store.CheckpointAsync(_workspaceId, operation.Id, "lease-1", new(
-            AzureProviderOperationPhase.FoundationReady, "foundation.ready", "Foundation is ready.",
+            AzureProviderOperationPhase.FoundationReady, "foundation.ready", "hunter2",
             new(ResourceGroupName: "rg-safe", FoundationDeploymentId: "deployment-1"), null, AzureProviderHealth.Unknown, []), now);
         Assert.Equal(checkpoint?.Version, replay?.Version);
         var completed = await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Completed.", now);
@@ -75,6 +75,7 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.Null(await store.FinalizeAsync(_workspaceId, operation.Id, "wrong-lease", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Completed.", now));
         Assert.Equal(completed?.Id, (await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Completed.", now))?.Id);
         Assert.Equal(4, (await store.ListTransitionsAsync(_workspaceId, operation.Id)).Count);
+        Assert.DoesNotContain(await store.ListTransitionsAsync(_workspaceId, operation.Id), x => x.Message.Contains("hunter2", StringComparison.Ordinal));
     }
 
     [Fact]

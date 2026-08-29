@@ -41,6 +41,7 @@ internal sealed class AzureProviderOperationEntity
     public string? WorkerId { get; set; }
     public string? LeaseTokenHash { get; set; }
     public string? CompletionLeaseTokenHash { get; set; }
+    public string? CompletionFingerprint { get; set; }
     public DateTimeOffset? LeaseExpiresAt { get; set; }
     public DateTimeOffset? HeartbeatAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }

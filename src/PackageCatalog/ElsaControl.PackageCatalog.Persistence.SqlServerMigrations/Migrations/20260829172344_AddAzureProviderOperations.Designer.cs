@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 {
     [DbContext(typeof(CatalogDbContext))]
-    [Migration("20260829171925_AddAzureProviderOperations")]
+    [Migration("20260829172344_AddAzureProviderOperations")]
     partial class AddAzureProviderOperations
     {
         /// <inheritdoc />
@@ -899,6 +899,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                     b.Property<long?>("CompletedAt")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("CompletionFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("CompletionLeaseTokenHash")
                         .HasMaxLength(64)
