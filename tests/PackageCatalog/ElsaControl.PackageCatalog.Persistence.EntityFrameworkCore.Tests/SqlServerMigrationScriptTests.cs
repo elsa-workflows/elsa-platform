@@ -11,7 +11,7 @@ public sealed class SqlServerMigrationScriptTests
     {
         var options = new DbContextOptionsBuilder<CatalogDbContext>()
             .UseSqlServer(
-                "Server=localhost;Database=ElsaControlMigrationScript;User Id=sa;Password=DesignOnly!123456789;TrustServerCertificate=True",
+                "Server=localhost;Database=ElsaControlMigrationScript;Integrated Security=True;TrustServerCertificate=True",
                 sqlServer => sqlServer.MigrationsAssembly(CatalogDatabaseServiceCollectionExtensions.SqlServerMigrationsAssembly))
             .Options;
         using var db = new CatalogDbContext(options);
