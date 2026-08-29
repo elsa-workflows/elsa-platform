@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -8,6 +9,7 @@ using ElsaControl.PackageCatalog.Core.Packages;
 using ElsaControl.RuntimeBuilder.Abstractions.RuntimeConfigurations;
 using ElsaControl.PackageCatalog.Core.Sync;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 
@@ -130,24 +132,32 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.WeaverPlanExecutionConfiguration());
     }
 
-    public override int SaveChanges()
+    public override int SaveChanges() => SaveChanges(acceptAllChangesOnSuccess: true);
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        EnsureWorkspacePermissionAuditIsAppendOnly();
-        EnsureElsaInstanceAuditIsAppendOnly();
-        EnsureElsaInstanceDurableRowsAreNotDeleted();
-        ValidateElsaInstancePersistence();
-        EnsureOrganizationsForNewWorkspaces();
-        return base.SaveChanges();
+        PrepareForSave();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        SaveChangesAsync(acceptAllChangesOnSuccess: true, cancellationToken);
+
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        PrepareForSave();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void PrepareForSave()
     {
         EnsureWorkspacePermissionAuditIsAppendOnly();
         EnsureElsaInstanceAuditIsAppendOnly();
         EnsureElsaInstanceDurableRowsAreNotDeleted();
         ValidateElsaInstancePersistence();
         EnsureOrganizationsForNewWorkspaces();
-        return base.SaveChangesAsync(cancellationToken);
     }
 
     private void EnsureWorkspacePermissionAuditIsAppendOnly()
@@ -294,10 +304,42 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             operation.FailureCode = OptionalSafeCode(operation.FailureCode, nameof(operation.FailureCode));
             operation.FailureSummary = operation.FailureCode ??
                 (string.IsNullOrWhiteSpace(operation.FailureSummary) ? null : "operation.failure");
+            if (operation.ExpectedVersion < 1 || operation.AttemptNumber < 1)
+                throw new InvalidOperationException("An instance operation requires positive version and attempt values.");
             if (operation.InstanceId is not null && operation.InstanceId == Guid.Empty)
                 throw new InvalidOperationException("An instance operation requires organization ownership.");
             if (operation.InstanceId is null && operation.Action != ElsaInstanceOperationAction.Create)
                 throw new InvalidOperationException("Only create operations may omit an instance ID.");
+            if (operation.State == ElsaInstanceOperationState.WaitingForPriorOperation &&
+                operation.Action != ElsaInstanceOperationAction.Delete)
+                throw new InvalidOperationException("Only delete operations may wait for a prior operation.");
+
+            if (entry.State == EntityState.Modified)
+            {
+                foreach (var property in new[]
+                         {
+                             nameof(Models.ElsaInstanceOperationEntity.InstanceId),
+                             nameof(Models.ElsaInstanceOperationEntity.OrganizationId),
+                             nameof(Models.ElsaInstanceOperationEntity.WorkspaceId),
+                             nameof(Models.ElsaInstanceOperationEntity.Action),
+                             nameof(Models.ElsaInstanceOperationEntity.IdempotencyScope),
+                             nameof(Models.ElsaInstanceOperationEntity.IdempotencyKey),
+                             nameof(Models.ElsaInstanceOperationEntity.RequestHash),
+                             nameof(Models.ElsaInstanceOperationEntity.ExpectedVersion),
+                             nameof(Models.ElsaInstanceOperationEntity.AcceptedAt),
+                             nameof(Models.ElsaInstanceOperationEntity.CreatedAt)
+                         })
+                    EnsureUnchanged(entry, property, entry.Property(property).CurrentValue,
+                        "Instance operation envelope fields are immutable.");
+
+                var originalState = (ElsaInstanceOperationState)entry.Property(nameof(Models.ElsaInstanceOperationEntity.State)).OriginalValue!;
+                EnsureDefined(originalState, nameof(Models.ElsaInstanceOperationEntity.State));
+                if (!ElsaInstanceOperation.CanTransition(originalState, operation.State))
+                    throw new InvalidOperationException("Instance operation state transition is not allowed.");
+                var originalAttemptNumber = (int)entry.Property(nameof(Models.ElsaInstanceOperationEntity.AttemptNumber)).OriginalValue!;
+                if (operation.AttemptNumber < originalAttemptNumber)
+                    throw new InvalidOperationException("Instance operation attempt number cannot decrease.");
+            }
         }
 
         foreach (var entry in ChangeTracker.Entries<Models.ElsaInstanceIdentityBindingEntity>()
@@ -350,8 +392,14 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             var migration = entry.Entity;
             if (migration.MigrationId == Guid.Empty || migration.InstanceId == Guid.Empty)
                 throw new InvalidOperationException("An instance migration requires stable identifiers.");
-            migration.Phase = RequireSafeCode(migration.Phase, nameof(migration.Phase));
-            migration.SourceAccessMode = RequireSafeCode(migration.SourceAccessMode, nameof(migration.SourceAccessMode));
+            if (entry.State == EntityState.Modified)
+            {
+                foreach (var property in ImmutableMigrationProperties)
+                    EnsureUnchanged(entry, property, entry.Property(property).CurrentValue,
+                        "Instance migration identity and release references are immutable.");
+            }
+            migration.Phase = RequireMigrationPhase(migration.Phase);
+            migration.SourceAccessMode = RequireSourceAccessMode(migration.SourceAccessMode);
             ValidateMigrationTuple(migration, source: true);
             ValidateMigrationTuple(migration, source: false);
             if (migration.CutoverAt is not null && migration.SourceRetainUntil is null)
@@ -396,6 +444,16 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                 throw new InvalidOperationException("Migration ownership is required.");
             RequireInstancePlanUri(migration.SourcePlanUri!, nameof(migration.SourcePlanUri), migration.WorkspaceId, migration.InstanceId, migration.SourcePlanId!);
             RequireInstancePlanUri(migration.TargetPlanUri!, nameof(migration.TargetPlanUri), migration.WorkspaceId, migration.InstanceId, migration.TargetPlanId!);
+
+            if (entry.State == EntityState.Modified)
+            {
+                var originalPhase = (string)entry.Property(nameof(Models.ElsaInstanceMigrationEntity.Phase)).OriginalValue!;
+                if (!CanTransitionMigrationPhase(originalPhase, migration.Phase))
+                    throw new InvalidOperationException("Instance migration phase transition is not allowed.");
+                var originalUpdatedAt = (DateTimeOffset)entry.Property(nameof(Models.ElsaInstanceMigrationEntity.UpdatedAt)).OriginalValue!;
+                if (migration.UpdatedAt <= originalUpdatedAt)
+                    throw new InvalidOperationException("Instance migration updates must advance UpdatedAt.");
+            }
         }
 
         ValidateManagedDeploymentRunBindings();
@@ -462,6 +520,12 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             throw new InvalidOperationException($"{name} contains an unsupported value.");
     }
 
+    private static void EnsureUnchanged(EntityEntry entry, string propertyName, object? currentValue, string message)
+    {
+        if (!Equals(entry.Property(propertyName).OriginalValue, currentValue))
+            throw new InvalidOperationException(message);
+    }
+
     private static string RequireSafeCode(string? value, string name)
     {
         if (string.IsNullOrWhiteSpace(value) || value.Length > 128 ||
@@ -469,6 +533,35 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             throw new InvalidOperationException($"{name} must be a stable safe code.");
         return value;
     }
+
+    private static string RequireMigrationPhase(string? value)
+    {
+        var normalized = RequireSafeCode(value, nameof(Models.ElsaInstanceMigrationEntity.Phase));
+        if (normalized is not ("Planned" or "Preparing" or "ProvisioningTarget" or "Validating" or "Cutover" or "RetainingSource" or "RetiringSource" or "RolledBack" or "Released" or "Failed"))
+            throw new InvalidOperationException("Migration phase is not supported.");
+        return normalized;
+    }
+
+    private static string RequireSourceAccessMode(string? value)
+    {
+        var normalized = RequireSafeCode(value, nameof(Models.ElsaInstanceMigrationEntity.SourceAccessMode));
+        if (normalized is not ("Running" or "ReadOnly" or "Stopped"))
+            throw new InvalidOperationException("Migration source access mode is not supported.");
+        return normalized;
+    }
+
+    private static bool CanTransitionMigrationPhase(string current, string next) =>
+        string.Equals(current, next, StringComparison.Ordinal) || (current, next) switch
+        {
+            ("Planned", "Preparing" or "ProvisioningTarget" or "Failed") => true,
+            ("Preparing", "ProvisioningTarget" or "Validating" or "Cutover" or "Failed") => true,
+            ("ProvisioningTarget", "Validating" or "Cutover" or "Failed") => true,
+            ("Validating", "Cutover" or "Failed") => true,
+            ("Cutover", "RetainingSource" or "RetiringSource" or "RolledBack" or "Failed") => true,
+            ("RetainingSource", "Released" or "RolledBack" or "Failed") => true,
+            ("RetiringSource", "Released" or "RolledBack" or "Failed") => true,
+            _ => false
+        };
 
     private static string? OptionalSafeCode(string? value, string name) =>
         string.IsNullOrWhiteSpace(value) ? null : RequireSafeCode(value, name);
@@ -694,9 +787,23 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                         throw new InvalidOperationException("Feature overrides contain an unsafe entry.");
                     if (field.Name == "kind") kind = field.Value.GetString(); else value = field.Value.GetString();
                 }
-                RequireSafeCode(kind, "feature override kind");
                 if (string.IsNullOrWhiteSpace(value) || value.Length > 512 || value.Any(char.IsControl) || ContainsSensitiveMarker(value))
                     throw new InvalidOperationException("Feature overrides contain an unsafe value.");
+                var normalizedKind = RequireSafeCode(kind, "feature override kind");
+                if (!Enum.TryParse<ElsaFeatureOverrideKind>(normalizedKind, ignoreCase: true, out var parsedKind) ||
+                    !Enum.IsDefined(parsedKind) ||
+                    !string.Equals(normalizedKind, parsedKind.ToString(), StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Feature override kind is not supported.");
+                switch (parsedKind)
+                {
+                    case ElsaFeatureOverrideKind.Boolean when !bool.TryParse(value, out _):
+                        throw new InvalidOperationException("Boolean feature override values must be true or false.");
+                    case ElsaFeatureOverrideKind.Number when !decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _):
+                        throw new InvalidOperationException("Number feature override values must be invariant decimals.");
+                    case ElsaFeatureOverrideKind.Catalog:
+                        RequireCatalogValue(value, "feature override value");
+                        break;
+                }
             }
         }
         catch (JsonException)
@@ -745,6 +852,26 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             throw new InvalidOperationException("Component digest JSON is invalid.");
         }
     }
+
+    private static readonly string[] ImmutableMigrationProperties =
+    [
+        nameof(Models.ElsaInstanceMigrationEntity.InstanceId),
+        nameof(Models.ElsaInstanceMigrationEntity.OrganizationId),
+        nameof(Models.ElsaInstanceMigrationEntity.WorkspaceId),
+        nameof(Models.ElsaInstanceMigrationEntity.SourcePlanId),
+        nameof(Models.ElsaInstanceMigrationEntity.SourcePlanUri),
+        nameof(Models.ElsaInstanceMigrationEntity.SourceReleaseLine),
+        nameof(Models.ElsaInstanceMigrationEntity.SourceVersion),
+        nameof(Models.ElsaInstanceMigrationEntity.SourceManifestDigest),
+        nameof(Models.ElsaInstanceMigrationEntity.SourceDeploymentId),
+        nameof(Models.ElsaInstanceMigrationEntity.TargetPlanId),
+        nameof(Models.ElsaInstanceMigrationEntity.TargetPlanUri),
+        nameof(Models.ElsaInstanceMigrationEntity.TargetReleaseLine),
+        nameof(Models.ElsaInstanceMigrationEntity.TargetVersion),
+        nameof(Models.ElsaInstanceMigrationEntity.TargetManifestDigest),
+        nameof(Models.ElsaInstanceMigrationEntity.TargetDeploymentId),
+        nameof(Models.ElsaInstanceMigrationEntity.CreatedAt)
+    ];
 
     private static readonly JsonDocumentOptions SafeJsonOptions = new()
     {

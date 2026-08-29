@@ -597,7 +597,9 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         dbContext.DeploymentRuns.AnyAsync(
             x => x.WorkspaceId == workspaceId
                 && x.EnvironmentId == environmentId
-                && (x.Status == WorkspaceDeploymentRunStatus.Queued || x.Status == WorkspaceDeploymentRunStatus.Running),
+                && (x.Status == WorkspaceDeploymentRunStatus.Queued ||
+                    x.Status == WorkspaceDeploymentRunStatus.Running ||
+                    x.Status == WorkspaceDeploymentRunStatus.RecoveryRequired),
             cancellationToken);
 
     public async Task<WorkspaceDeploymentRun> CreateRunAsync(

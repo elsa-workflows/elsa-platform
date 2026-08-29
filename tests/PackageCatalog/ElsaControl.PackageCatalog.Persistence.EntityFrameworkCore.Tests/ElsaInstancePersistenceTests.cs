@@ -308,6 +308,69 @@ public sealed class ElsaInstancePersistenceTests
     }
 
     [Fact]
+    public async Task SaveChanges_accept_all_changes_false_still_runs_instance_validation_and_concurrency()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var setup = CreateMigratedContext(connection);
+        await setup.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Save overload workspace" };
+        setup.Workspaces.Add(workspace);
+        await setup.SaveChangesAsync();
+
+        var invalid = NewInstance(workspace.OrganizationId, workspace.Id);
+        invalid.FeatureOverridesJson = "{\"flag\":{\"kind\":\"Boolean\",\"value\":\"not-a-boolean\"}}";
+        setup.ElsaInstances.Add(invalid);
+        Assert.Throws<InvalidOperationException>(() => setup.SaveChanges(acceptAllChangesOnSuccess: false));
+        setup.ChangeTracker.Clear();
+
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        setup.ElsaInstances.Add(instance);
+        await setup.SaveChangesAsync();
+        var options = new DbContextOptionsBuilder<CatalogDbContext>()
+            .UseSqlite(connection, sqlite => sqlite.MigrationsAssembly(CatalogDatabaseServiceCollectionExtensions.SqliteMigrationsAssembly))
+            .Options;
+        await using var first = new CatalogDbContext(options);
+        await using var second = new CatalogDbContext(options);
+        var firstCopy = await first.ElsaInstances.SingleAsync(x => x.Id == instance.Id);
+        var secondCopy = await second.ElsaInstances.SingleAsync(x => x.Id == instance.Id);
+        firstCopy.Name = "First overload writer";
+        secondCopy.Name = "Second overload writer";
+
+        first.SaveChanges(acceptAllChangesOnSuccess: false);
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
+            second.SaveChangesAsync(acceptAllChangesOnSuccess: false));
+    }
+
+    [Fact]
+    public async Task Feature_overrides_require_known_kinds_and_matching_typed_values()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Typed override workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+
+        foreach (var json in new[]
+                 {
+                     "{\"flag\":{\"kind\":\"Unknown\",\"value\":\"safe\"}}",
+                     "{\"flag\":{\"kind\":\"Boolean\",\"value\":\"not-a-boolean\"}}",
+                     "{\"limit\":{\"kind\":\"Number\",\"value\":\"not-a-number\"}}",
+                     "{\"tier\":{\"kind\":\"Catalog\",\"value\":\"free text\"}}"
+                 })
+        {
+            var invalid = NewInstance(workspace.OrganizationId, workspace.Id);
+            invalid.FeatureOverridesJson = json;
+            db.ElsaInstances.Add(invalid);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+            db.ChangeTracker.Clear();
+        }
+    }
+
+    [Fact]
     public async Task Identity_binding_version_rejects_concurrent_rotation()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -391,6 +454,139 @@ public sealed class ElsaInstancePersistenceTests
         db.DeploymentRuns.Add(NewRun(workspace.Id, application.Id, environment.Id, WorkspaceDeploymentRunStatus.RecoveryRequired, instance.Id));
 
         await Assert.ThrowsAnyAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task HasActiveRun_includes_recovery_required_managed_runs()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Recovery run workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+        var application = new DeploymentApplicationEntity
+        {
+            WorkspaceId = workspace.Id,
+            Name = "Recovery app",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        db.DeploymentApplications.Add(application);
+        await db.SaveChangesAsync();
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        db.ElsaInstances.Add(instance);
+        await db.SaveChangesAsync();
+        var environment = NewEnvironment(workspace.Id, application.Id, instance.Id, "Recovery environment");
+        db.DeploymentEnvironments.Add(environment);
+        await db.SaveChangesAsync();
+        db.DeploymentRuns.Add(NewRun(workspace.Id, application.Id, environment.Id, WorkspaceDeploymentRunStatus.RecoveryRequired, instance.Id));
+        await db.SaveChangesAsync();
+
+        Assert.True(await new DeploymentWorkspaceStore(db).HasActiveRunAsync(workspace.Id, environment.Id));
+    }
+
+    [Fact]
+    public async Task Instance_operation_envelope_is_immutable_after_creation()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Operation immutability workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+        var first = NewInstance(workspace.OrganizationId, workspace.Id);
+        var second = NewInstance(workspace.OrganizationId, workspace.Id);
+        db.ElsaInstances.AddRange(first, second);
+        await db.SaveChangesAsync();
+        var operation = NewOperation(workspace, first, ElsaInstanceOperationState.Succeeded, "immutable-operation");
+        db.ElsaInstanceOperations.Add(operation);
+        await db.SaveChangesAsync();
+
+        operation.InstanceId = second.Id;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Instance_operation_state_transitions_are_validated_on_update()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Operation state workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        db.ElsaInstances.Add(instance);
+        await db.SaveChangesAsync();
+        var operation = NewOperation(workspace, instance, ElsaInstanceOperationState.Succeeded, "state-operation");
+        db.ElsaInstanceOperations.Add(operation);
+        await db.SaveChangesAsync();
+
+        operation.State = ElsaInstanceOperationState.Running;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Instance_migration_identity_and_release_references_are_immutable()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Migration immutability workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        db.ElsaInstances.Add(instance);
+        await db.SaveChangesAsync();
+        var migration = NewMigration(workspace, instance);
+        db.ElsaInstanceMigrations.Add(migration);
+        await db.SaveChangesAsync();
+
+        migration.SourcePlanId = "replacement-source-plan";
+        migration.SourcePlanUri = PlanUri(workspace.Id, instance.Id, migration.SourcePlanId);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Instance_migration_updates_use_phase_validation_and_optimistic_concurrency()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var setup = CreateMigratedContext(connection);
+        await setup.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Migration concurrency workspace" };
+        setup.Workspaces.Add(workspace);
+        await setup.SaveChangesAsync();
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        setup.ElsaInstances.Add(instance);
+        await setup.SaveChangesAsync();
+        var migration = NewMigration(workspace, instance, "Preparing");
+        setup.ElsaInstanceMigrations.Add(migration);
+        await setup.SaveChangesAsync();
+
+        var options = new DbContextOptionsBuilder<CatalogDbContext>()
+            .UseSqlite(connection, sqlite => sqlite.MigrationsAssembly(CatalogDatabaseServiceCollectionExtensions.SqliteMigrationsAssembly))
+            .Options;
+        await using var first = new CatalogDbContext(options);
+        await using var second = new CatalogDbContext(options);
+        var firstCopy = await first.ElsaInstanceMigrations.SingleAsync(x => x.MigrationId == migration.MigrationId);
+        var secondCopy = await second.ElsaInstanceMigrations.SingleAsync(x => x.MigrationId == migration.MigrationId);
+        firstCopy.Phase = "Cutover";
+        firstCopy.UpdatedAt = firstCopy.UpdatedAt.AddSeconds(1);
+        secondCopy.Phase = "Cutover";
+        secondCopy.UpdatedAt = secondCopy.UpdatedAt.AddSeconds(2);
+
+        await first.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => second.SaveChangesAsync());
     }
 
     [Fact]
@@ -797,6 +993,26 @@ public sealed class ElsaInstancePersistenceTests
 
     private static string PlanUri(Guid workspaceId, Guid instanceId, string planId) =>
         $"https://control.example/api/workspaces/{workspaceId:D}/instances/{instanceId:D}/resolved-plans/{planId}";
+
+    private static ElsaInstanceMigrationEntity NewMigration(Workspace workspace, ElsaInstanceEntity instance, string phase = "Cutover")
+    {
+        var now = DateTimeOffset.UtcNow;
+        var migration = new ElsaInstanceMigrationEntity
+        {
+            MigrationId = Guid.NewGuid(),
+            InstanceId = instance.Id,
+            OrganizationId = workspace.OrganizationId,
+            WorkspaceId = workspace.Id,
+            Phase = phase,
+            SourceAccessMode = "Stopped",
+            CutoverAt = now,
+            SourceRetainUntil = now.AddDays(30),
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        SetMigrationReferences(migration, workspace.Id, instance.Id);
+        return migration;
+    }
 
     private static void SetMigrationReferences(ElsaInstanceMigrationEntity migration, Guid workspaceId, Guid instanceId)
     {
