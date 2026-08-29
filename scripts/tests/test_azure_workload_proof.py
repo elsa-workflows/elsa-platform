@@ -137,6 +137,12 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("--authentication-method ActiveDirectoryDefault", source)
         self.assertIn("sqlcmd '-?'", source)
         self.assertIn("temporary_firewall_rule", source)
+        firewall_deletes = [
+            line for line in source.splitlines()
+            if "az sql server firewall-rule delete" in line
+        ]
+        self.assertEqual(2, len(firewall_deletes))
+        self.assertTrue(all("--yes" not in line for line in firewall_deletes))
         self.assertIn("keyvault purge", source)
         self.assertIn("Refusing to adopt unrelated resource group", source)
         self.assertIn("external ACR cleanup cannot be proven", source)

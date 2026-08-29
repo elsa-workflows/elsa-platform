@@ -314,7 +314,7 @@ temporary_firewall_created=0
 temp_dir=""
 cleanup_apply() {
   if (( temporary_firewall_created )); then
-    az sql server firewall-rule delete --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --yes --only-show-errors >/dev/null 2>&1 || true
+    az sql server firewall-rule delete --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --only-show-errors >/dev/null 2>&1 || true
   fi
   [[ -z "$temp_dir" ]] || rm -rf -- "$temp_dir"
 }
@@ -393,7 +393,7 @@ for _ in {1..12}; do
   sleep 10
 done
 (( bootstrap_ok == 1 )) || { echo "SQL bootstrap did not become ready" >&2; exit 5; }
-az sql server firewall-rule delete --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --yes --only-show-errors >/dev/null
+az sql server firewall-rule delete --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --only-show-errors >/dev/null
 temporary_firewall_created=0
 
 az deployment group create \
