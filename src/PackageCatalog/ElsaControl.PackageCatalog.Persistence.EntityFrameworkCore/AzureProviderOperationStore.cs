@@ -147,7 +147,10 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         var entity = await db.AzureProviderOperations.SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == operationId, cancellationToken);
         if (entity is null || entity.Status != AzureProviderOperationStatus.Running || !LeaseMatches(entity, leaseToken, now) || expectedVersion.HasValue && entity.Version != expectedVersion.Value) return null;
         if ((long)checkpoint.Phase < (long)entity.Phase) throw new InvalidOperationException("Checkpoint phase cannot move backwards.");
-        var diagnosticsJson = JsonSerializer.Serialize(checkpoint.Diagnostics);
+        var safeDiagnostics = checkpoint.Diagnostics
+            .Select(x => new AzureProviderDiagnostic(x.Code, x.Code))
+            .ToArray();
+        var diagnosticsJson = JsonSerializer.Serialize(safeDiagnostics);
         if (entity.Phase == checkpoint.Phase && entity.Endpoint == checkpoint.Endpoint && entity.Health == checkpoint.Health &&
             entity.DiagnosticsJson == diagnosticsJson && ResourcesEqual(entity, checkpoint.Resources))
             return ToModel(entity);
@@ -171,8 +174,8 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             throw new ArgumentException("Invalid final operation status.", nameof(status));
         var entity = await db.AzureProviderOperations.SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == operationId, cancellationToken);
         if (entity is null) return null;
-        var completionFingerprint = Hash($"{status}|{code}|{message}");
-        if (entity.Status == status) return entity.CompletionLeaseTokenHash == Hash(leaseToken) && entity.CompletionFingerprint == completionFingerprint && (!expectedVersion.HasValue || entity.Version == expectedVersion.Value) ? ToModel(entity) : null;
+        var completionFingerprint = Hash($"{status}|{code}");
+        if (entity.Status == status) return entity.CompletionLeaseTokenHash == Hash(leaseToken) && entity.CompletionFingerprint == completionFingerprint ? ToModel(entity) : null;
         if (entity.Status != AzureProviderOperationStatus.Running || !LeaseMatches(entity, leaseToken, now) || expectedVersion.HasValue && entity.Version != expectedVersion.Value) return null;
         entity.Status = status; entity.UpdatedAt = now; entity.CompletedAt = status == AzureProviderOperationStatus.RecoveryRequired ? null : now; entity.Version++;
         entity.CompletionLeaseTokenHash = entity.LeaseTokenHash;

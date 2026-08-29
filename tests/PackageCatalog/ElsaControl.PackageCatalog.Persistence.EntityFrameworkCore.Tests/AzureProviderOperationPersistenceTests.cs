@@ -64,16 +64,21 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
 
         var checkpoint = await store.CheckpointAsync(_workspaceId, operation.Id, "lease-1", new(
             AzureProviderOperationPhase.FoundationReady, "foundation.ready", "hunter2",
-            new(ResourceGroupName: "rg-safe", FoundationDeploymentId: "deployment-1"), null, AzureProviderHealth.Unknown, []), now);
-        Assert.Equal(AzureProviderOperationPhase.FoundationReady, checkpoint?.Phase);
+            new(ResourceGroupName: "rg-safe", FoundationDeploymentId: "deployment-1"), null, AzureProviderHealth.Unknown,
+            [new("foundation.note", "even-more-sensitive")]), now);
+        var savedCheckpoint = Assert.IsType<AzureProviderOperation>(checkpoint);
+        Assert.Equal(AzureProviderOperationPhase.FoundationReady, savedCheckpoint.Phase);
+        Assert.Equal("foundation.note", Assert.Single(savedCheckpoint.Diagnostics).Message);
         var replay = await store.CheckpointAsync(_workspaceId, operation.Id, "lease-1", new(
             AzureProviderOperationPhase.FoundationReady, "foundation.ready", "hunter2",
-            new(ResourceGroupName: "rg-safe", FoundationDeploymentId: "deployment-1"), null, AzureProviderHealth.Unknown, []), now);
-        Assert.Equal(checkpoint?.Version, replay?.Version);
-        var completed = await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Completed.", now);
+            new(ResourceGroupName: "rg-safe", FoundationDeploymentId: "deployment-1"), null, AzureProviderHealth.Unknown,
+            [new("foundation.note", "different-unpersisted-detail")]), now);
+        Assert.Equal(savedCheckpoint.Version, replay?.Version);
+        var completed = await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Completed.", now, savedCheckpoint.Version);
         Assert.Equal(AzureProviderOperationStatus.Succeeded, completed?.Status);
         Assert.Null(await store.FinalizeAsync(_workspaceId, operation.Id, "wrong-lease", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Completed.", now));
-        Assert.Equal(completed?.Id, (await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Completed.", now))?.Id);
+        Assert.Equal(completed?.Id, (await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Different unpersisted detail.", now, savedCheckpoint.Version))?.Id);
+        Assert.Null(await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.different", "Completed.", now, savedCheckpoint.Version));
         Assert.Equal(4, (await store.ListTransitionsAsync(_workspaceId, operation.Id)).Count);
         Assert.DoesNotContain(await store.ListTransitionsAsync(_workspaceId, operation.Id), x => x.Message.Contains("hunter2", StringComparison.Ordinal));
     }

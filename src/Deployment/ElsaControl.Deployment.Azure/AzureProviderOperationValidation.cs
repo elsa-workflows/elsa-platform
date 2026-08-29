@@ -47,9 +47,11 @@ public static class AzureProviderOperationValidation
     public static void ValidateEndpoint(string? endpoint)
     {
         if (endpoint is null) return;
-        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || string.IsNullOrEmpty(uri.Host) ||
+        if (endpoint.Length > 2048 || endpoint.Contains("%2e", StringComparison.OrdinalIgnoreCase) ||
+            endpoint.Contains("%2f", StringComparison.OrdinalIgnoreCase) || endpoint.Contains("%5c", StringComparison.OrdinalIgnoreCase) ||
+            !Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || string.IsNullOrEmpty(uri.Host) ||
             !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) ||
-            uri.AbsolutePath.Contains("..", StringComparison.Ordinal) || uri.AbsolutePath.Any(char.IsControl))
+            Uri.UnescapeDataString(uri.AbsolutePath).Contains("..", StringComparison.Ordinal) || uri.AbsolutePath.Any(char.IsControl))
             throw new ArgumentException("Endpoint must be a safe HTTPS URI.", nameof(endpoint));
     }
 

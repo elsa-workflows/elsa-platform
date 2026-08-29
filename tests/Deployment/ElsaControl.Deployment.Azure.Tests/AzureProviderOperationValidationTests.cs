@@ -50,6 +50,21 @@ public sealed class AzureProviderOperationValidationTests
         Assert.DoesNotContain("imageRepository.mustBeRepository", AzureProviderOperationValidation.Validate(request));
     }
 
+    [Theory]
+    [InlineData("https://runtime.example.test/%2e%2e/admin")]
+    [InlineData("https://runtime.example.test/path?token=value")]
+    public void Rejects_ambiguous_or_secret_bearing_endpoints(string endpoint)
+    {
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateEndpoint(endpoint));
+    }
+
+    [Fact]
+    public void Rejects_endpoint_larger_than_the_persistence_contract()
+    {
+        var endpoint = "https://runtime.example.test/" + new string('a', 2048);
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateEndpoint(endpoint));
+    }
+
     [Fact]
     public void Hash_and_identity_are_stable_for_case_normalization()
     {
