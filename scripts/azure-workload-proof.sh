@@ -174,6 +174,30 @@ resolve_workload_revision_suffix() {
   select_workload_revision_suffix "$plan_fingerprint" "$current_revision_suffix" "$app_name" "$revision_names"
 }
 
+resolve_stable_traffic_revision() {
+  local app_name="${proof_name}-app"
+  local app_count stable_revision stable_state
+
+  app_count="$(az resource list --resource-group "$resource_group" --resource-type Microsoft.App/containerApps --query "[?name=='${app_name}'] | length(@)" --output tsv --only-show-errors)"
+  if (( app_count == 0 )); then
+    return 0
+  fi
+  if (( app_count != 1 )); then
+    echo "Expected exactly one proof Container App named $app_name" >&2
+    return 5
+  fi
+
+  # shellcheck disable=SC2016 # Backticks are JMESPath numeric literals.
+  stable_revision="$(az containerapp show --resource-group "$resource_group" --name "$app_name" --query 'properties.configuration.ingress.traffic[?weight == `100` && revisionName != null].revisionName | [0]' --output tsv --only-show-errors)"
+  if [[ -z "$stable_revision" ]]; then
+    stable_revision="$(az containerapp show --resource-group "$resource_group" --name "$app_name" --query properties.latestReadyRevisionName --output tsv --only-show-errors)"
+  fi
+  [[ -n "$stable_revision" ]] || { echo "Existing proof app has no stable revision" >&2; return 5; }
+  stable_state="$(az containerapp revision show --resource-group "$resource_group" --name "$app_name" --revision "$stable_revision" --query 'properties.{active:active,health:healthState}' --output json --only-show-errors)"
+  [[ "$(jq -r .active <<<"$stable_state")" == true && "$(jq -r .health <<<"$stable_state")" == Healthy ]] || { echo "Refusing rollout because stable revision $stable_revision is not active and healthy" >&2; return 5; }
+  printf '%s\n' "$stable_revision"
+}
+
 if [[ "$mode" == cleanup ]]; then
   : "${resource_group:?cleanup requires --resource-group}"
   : "${proof_name:?cleanup requires --proof-name so the external ACR role can be removed safely}"
@@ -326,6 +350,8 @@ if [[ "$mode" == what-if ]]; then
     exit 3
   fi
   what_if_parameters=("${parameters[@]}")
+  what_if_stable_revision="$(resolve_stable_traffic_revision)"
+  [[ -z "$what_if_stable_revision" ]] || what_if_parameters+=("stableTrafficRevisionName=$what_if_stable_revision")
   foundation_deployment_name="elsa108-${proof_name}-${deployment_suffix}-foundation"
   foundation_deployment_count="$(az deployment group list --resource-group "$resource_group" --query "[?name=='${foundation_deployment_name}'] | length(@)" --output tsv --only-show-errors)"
   if (( foundation_deployment_count == 1 )); then
@@ -381,6 +407,7 @@ sql_fqdn="$(jq -r '.sqlServerFqdn.value' <<<"$foundation_outputs")"
 plan_fingerprint="$(jq -r '.planFingerprint.value' <<<"$foundation_outputs")"
 
 workload_revision_suffix="$(resolve_workload_revision_suffix "$plan_fingerprint")"
+stable_traffic_revision="$(resolve_stable_traffic_revision)"
 
 sql_server_name="${proof_name}-sql"
 temporary_firewall_rule="elsa108-bootstrap"
@@ -476,9 +503,20 @@ az deployment group create \
   --resource-group "$resource_group" \
   --name "${deployment_name}-workload" \
   --template-file "$proof_dir/main.bicep" \
-  --parameters "${parameters[@]}" deployWorkload=true workloadRevisionSuffix="$workload_revision_suffix" \
+  --parameters "${parameters[@]}" deployWorkload=true workloadRevisionSuffix="$workload_revision_suffix" stableTrafficRevisionName="$stable_traffic_revision" \
   --query properties.outputs --output none --only-show-errors
 
 endpoint="$(az deployment group show --resource-group "$resource_group" --name "${deployment_name}-workload" --query 'properties.outputs.containerAppEndpoint.value' --output tsv --only-show-errors)"
-curl --fail --silent --show-error --retry 20 --retry-delay 10 "$endpoint/health" >/dev/null
+candidate_revision="${proof_name}-app--${workload_revision_suffix}"
+candidate_healthy=0
+for _ in {1..60}; do
+  candidate_state="$(az containerapp revision show --resource-group "$resource_group" --name "${proof_name}-app" --revision "$candidate_revision" --query properties.healthState --output tsv --only-show-errors)"
+  if [[ "$candidate_state" == Healthy ]]; then candidate_healthy=1; break; fi
+  sleep 5
+done
+(( candidate_healthy == 1 )) || { echo "Candidate revision $candidate_revision did not become healthy; stable traffic was preserved" >&2; exit 5; }
+
+az containerapp ingress traffic set --resource-group "$resource_group" --name "${proof_name}-app" \
+  --revision-weight "${candidate_revision}=100" --only-show-errors --output none
+curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 5 --max-time 10 "$endpoint/health" >/dev/null
 echo "Workload is healthy at $endpoint; capture only redacted IDs, endpoint and immutable digest as evidence."

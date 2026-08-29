@@ -91,6 +91,10 @@ param templateFingerprint string
 @maxLength(63)
 param workloadRevisionSuffix string = ''
 
+@description('Existing healthy revision kept at 100% while a candidate warms. Empty is valid only for the first workload deployment.')
+@maxLength(64)
+param stableTrafficRevisionName string = ''
+
 @description('Additional tags. Required proof/owner/expiry/fingerprint tags always win.')
 param additionalTags object = {}
 
@@ -185,6 +189,7 @@ module workload 'modules/container-app.bicep' = if (deployWorkload) {
     sqlWorkflowPackageVersion: sqlWorkflowPackageVersion
     sqlQuartzPackageVersion: sqlQuartzPackageVersion
     revisionSuffix: revisionSuffix
+    stableTrafficRevisionName: stableTrafficRevisionName
     tags: tags
   }
 }

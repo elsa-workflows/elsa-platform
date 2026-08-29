@@ -84,6 +84,10 @@ param topology string = 'combined'
 @maxLength(63)
 param revisionSuffix string
 
+@description('Existing healthy revision kept at 100% while the candidate revision warms. Empty uses latest revision for the first deployment.')
+@maxLength(64)
+param stableTrafficRevisionName string = ''
+
 @description('Tags applied to the app.')
 param tags object = {}
 
@@ -197,12 +201,17 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
         targetPort: 8080
         transport: 'auto'
         allowInsecure: false
-        traffic: [
-          {
-            latestRevision: true
-            weight: 100
-          }
-        ]
+        traffic: empty(stableTrafficRevisionName) ? [
+            {
+              latestRevision: true
+              weight: 100
+            }
+          ] : [
+            {
+              revisionName: stableTrafficRevisionName
+              weight: 100
+            }
+          ]
       }
       registries: [
         {
