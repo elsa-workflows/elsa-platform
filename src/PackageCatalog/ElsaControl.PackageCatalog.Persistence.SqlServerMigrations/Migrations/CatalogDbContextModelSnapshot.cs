@@ -1962,6 +1962,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasColumnType("nvarchar(256)");
 
                     b.Property<int>("BindingVersion")
+                        .IsConcurrencyToken()
                         .HasColumnType("int");
 
                     b.Property<string>("CanonicalCallbackUri")
@@ -2207,7 +2208,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                     b.HasIndex("WorkspaceId", "State", "AcceptedAt");
 
-                    b.ToTable("ElsaInstanceOperations");
+                    b.ToTable("ElsaInstanceOperations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'");
+                        });
                 });
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.EngineCapabilityEntity", b =>

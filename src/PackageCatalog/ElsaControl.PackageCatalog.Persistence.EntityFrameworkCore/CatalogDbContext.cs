@@ -397,6 +397,63 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             RequireInstancePlanUri(migration.SourcePlanUri!, nameof(migration.SourcePlanUri), migration.WorkspaceId, migration.InstanceId, migration.SourcePlanId!);
             RequireInstancePlanUri(migration.TargetPlanUri!, nameof(migration.TargetPlanUri), migration.WorkspaceId, migration.InstanceId, migration.TargetPlanId!);
         }
+
+        ValidateManagedDeploymentRunBindings();
+    }
+
+    /// <summary>
+    /// A managed deployment run carries a reservation for one explicit Elsa
+    /// instance.  The reservation is valid only when the referenced environment
+    /// carries the same instance binding in the same workspace.  This validation
+    /// intentionally leaves null legacy runs and environments alone.
+    /// </summary>
+    private void ValidateManagedDeploymentRunBindings()
+    {
+        var trackedEnvironments = ChangeTracker.Entries<Models.DeploymentEnvironmentEntity>()
+            .Where(entry => entry.State is EntityState.Added or EntityState.Modified)
+            .ToDictionary(entry => entry.Entity.Id, entry => entry.Entity);
+
+        var trackedRuns = ChangeTracker.Entries<Models.DeploymentRunEntity>()
+            .Where(entry => entry.State is EntityState.Added or EntityState.Modified)
+            .Select(entry => entry.Entity)
+            .ToArray();
+
+        foreach (var run in trackedRuns.Where(run => run.ElsaInstanceId is not null))
+        {
+            var environment = trackedEnvironments.TryGetValue(run.EnvironmentId, out var changedEnvironment)
+                ? changedEnvironment
+                : DeploymentEnvironments.Local.FirstOrDefault(environment => environment.Id == run.EnvironmentId)
+                  ?? DeploymentEnvironments.AsNoTracking().SingleOrDefault(environment => environment.Id == run.EnvironmentId);
+
+            if (environment is null || environment.WorkspaceId != run.WorkspaceId || environment.ElsaInstanceId != run.ElsaInstanceId)
+                throw new InvalidOperationException("A managed deployment run must match its environment instance binding.");
+        }
+
+        // An environment binding cannot be changed or removed while an
+        // existing managed run still points at the old binding.  Exclude only
+        // tracked run writes so a coordinated run/environment update is
+        // validated against its final values below.
+        foreach (var environment in trackedEnvironments.Values)
+        {
+            var changedRunIds = trackedRuns
+                .Where(run => run.EnvironmentId == environment.Id)
+                .Select(run => run.Id)
+                .ToArray();
+
+            var persistedRuns = DeploymentRuns.AsNoTracking()
+                .Where(run => run.EnvironmentId == environment.Id && run.ElsaInstanceId != null)
+                .Where(run => !changedRunIds.Contains(run.Id))
+                .ToArray();
+
+            if (persistedRuns.Any(run => run.WorkspaceId != environment.WorkspaceId || run.ElsaInstanceId != environment.ElsaInstanceId))
+                throw new InvalidOperationException("An environment binding cannot break an existing managed deployment run.");
+
+            foreach (var run in trackedRuns.Where(run => run.EnvironmentId == environment.Id && run.ElsaInstanceId is not null))
+            {
+                if (run.WorkspaceId != environment.WorkspaceId || run.ElsaInstanceId != environment.ElsaInstanceId)
+                    throw new InvalidOperationException("A managed deployment run must match its environment instance binding.");
+            }
+        }
     }
 
     private static void EnsureDefined<TEnum>(TEnum value, string name) where TEnum : struct, Enum

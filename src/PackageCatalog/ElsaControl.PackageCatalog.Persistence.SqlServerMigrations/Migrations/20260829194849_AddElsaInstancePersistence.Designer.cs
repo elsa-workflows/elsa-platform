@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 {
     [DbContext(typeof(CatalogDbContext))]
-    [Migration("20260829182516_AddElsaInstancePersistence")]
+    [Migration("20260829194849_AddElsaInstancePersistence")]
     partial class AddElsaInstancePersistence
     {
         /// <inheritdoc />
@@ -1236,8 +1236,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ApplicationId");
-
                     b.HasIndex("ElsaInstanceId")
                         .IsUnique()
                         .HasFilter("ElsaInstanceId IS NOT NULL");
@@ -1331,8 +1329,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("EnvironmentId");
 
                     b.HasIndex("WorkspaceId", "EnvironmentId")
                         .IsUnique()
@@ -1969,6 +1965,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasColumnType("nvarchar(256)");
 
                     b.Property<int>("BindingVersion")
+                        .IsConcurrencyToken()
                         .HasColumnType("int");
 
                     b.Property<string>("CanonicalCallbackUri")
@@ -2015,6 +2012,9 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("InstanceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OrganizationId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Phase")
@@ -2084,11 +2084,16 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     b.Property<long>("UpdatedAt")
                         .HasColumnType("bigint");
 
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("MigrationId");
 
                     b.HasIndex("InstanceId", "Phase");
 
                     b.HasIndex("InstanceId", "SourceRetainUntil");
+
+                    b.HasIndex("OrganizationId", "WorkspaceId", "InstanceId");
 
                     b.ToTable("ElsaInstanceMigrations");
                 });
@@ -2206,7 +2211,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                     b.HasIndex("WorkspaceId", "State", "AcceptedAt");
 
-                    b.ToTable("ElsaInstanceOperations");
+                    b.ToTable("ElsaInstanceOperations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'");
+                        });
                 });
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.EngineCapabilityEntity", b =>
@@ -3483,22 +3491,16 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentEnvironmentEntity", b =>
                 {
-                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentApplicationEntity", "Application")
-                        .WithMany("Environments")
-                        .HasForeignKey("ApplicationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
                     b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentTierDefinitionEntity", "TierDefinition")
                         .WithMany("Environments")
                         .HasForeignKey("TierId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentApplicationEntity", null)
-                        .WithMany()
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentApplicationEntity", "Application")
+                        .WithMany("Environments")
                         .HasForeignKey("WorkspaceId", "ApplicationId")
                         .HasPrincipalKey("WorkspaceId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceEntity", "ElsaInstance")
@@ -3518,7 +3520,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 {
                     b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentEnvironmentEntity", "Environment")
                         .WithMany()
-                        .HasForeignKey("EnvironmentId")
+                        .HasForeignKey("WorkspaceId", "EnvironmentId")
+                        .HasPrincipalKey("WorkspaceId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -3651,9 +3654,23 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceMigrationEntity", b =>
                 {
+                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "WorkspaceId")
+                        .HasPrincipalKey("OrganizationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceEntity", "Instance")
                         .WithMany("Migrations")
-                        .HasForeignKey("InstanceId")
+                        .HasForeignKey("OrganizationId", "WorkspaceId", "InstanceId")
+                        .HasPrincipalKey("OrganizationId", "WorkspaceId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -3670,7 +3687,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                     b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", null)
                         .WithMany()
-                        .HasForeignKey("WorkspaceId")
+                        .HasForeignKey("OrganizationId", "WorkspaceId")
+                        .HasPrincipalKey("OrganizationId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 

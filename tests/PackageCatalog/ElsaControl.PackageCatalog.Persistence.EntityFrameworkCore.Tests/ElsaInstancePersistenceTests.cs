@@ -308,6 +308,40 @@ public sealed class ElsaInstancePersistenceTests
     }
 
     [Fact]
+    public async Task Identity_binding_version_rejects_concurrent_rotation()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var setup = CreateMigratedContext(connection);
+        await setup.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Binding concurrency workspace" };
+        setup.Workspaces.Add(workspace);
+        await setup.SaveChangesAsync();
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        setup.ElsaInstances.Add(instance);
+        setup.ElsaInstanceIdentityBindings.Add(NewBinding(
+            instance.Id,
+            $"urn:elsa:instance:{instance.Id:D}",
+            "https://control.example/managed-elsa/handoff/callback"));
+        await setup.SaveChangesAsync();
+
+        var options = new DbContextOptionsBuilder<CatalogDbContext>()
+            .UseSqlite(connection, sqlite => sqlite.MigrationsAssembly(CatalogDatabaseServiceCollectionExtensions.SqliteMigrationsAssembly))
+            .Options;
+        await using var first = new CatalogDbContext(options);
+        await using var second = new CatalogDbContext(options);
+        var firstCopy = await first.ElsaInstanceIdentityBindings.SingleAsync(x => x.InstanceId == instance.Id);
+        var secondCopy = await second.ElsaInstanceIdentityBindings.SingleAsync(x => x.InstanceId == instance.Id);
+        firstCopy.BindingVersion = 2;
+        firstCopy.ChangedAt = firstCopy.ChangedAt.AddSeconds(1);
+        secondCopy.BindingVersion = 2;
+        secondCopy.ChangedAt = secondCopy.ChangedAt.AddSeconds(2);
+        await first.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => second.SaveChangesAsync());
+    }
+
+    [Fact]
     public async Task Instance_slug_is_immutable_after_creation()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -357,6 +391,61 @@ public sealed class ElsaInstancePersistenceTests
         db.DeploymentRuns.Add(NewRun(workspace.Id, application.Id, environment.Id, WorkspaceDeploymentRunStatus.RecoveryRequired, instance.Id));
 
         await Assert.ThrowsAnyAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Database_guards_managed_run_bindings_operation_scope_and_durable_rows()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Database guard workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+        var application = new DeploymentApplicationEntity
+        {
+            WorkspaceId = workspace.Id,
+            Name = "Guard app",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        var first = NewInstance(workspace.OrganizationId, workspace.Id);
+        var second = NewInstance(workspace.OrganizationId, workspace.Id);
+        db.DeploymentApplications.Add(application);
+        db.ElsaInstances.AddRange(first, second);
+        await db.SaveChangesAsync();
+        var environment = NewEnvironment(workspace.Id, application.Id, first.Id, "Guard environment");
+        db.DeploymentEnvironments.Add(environment);
+        await db.SaveChangesAsync();
+        var run = NewRun(workspace.Id, application.Id, environment.Id, WorkspaceDeploymentRunStatus.Succeeded, first.Id);
+        var create = NewOperation(workspace, null, ElsaInstanceOperationState.Succeeded, "guard-create");
+        var migration = new ElsaInstanceMigrationEntity
+        {
+            MigrationId = Guid.NewGuid(),
+            InstanceId = first.Id,
+            Phase = "Preparing",
+            SourceAccessMode = "Running",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        SetMigrationReferences(migration, workspace.Id, first.Id);
+        db.DeploymentRuns.Add(run);
+        db.ElsaInstanceOperations.Add(create);
+        db.ElsaInstanceMigrations.Add(migration);
+        await db.SaveChangesAsync();
+        var deleteAction = "Delete";
+
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE DeploymentRuns SET ElsaInstanceId = {second.Id} WHERE Id = {run.Id}"));
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE DeploymentEnvironments SET ElsaInstanceId = {second.Id} WHERE Id = {environment.Id}"));
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE ElsaInstanceOperations SET Action = {deleteAction} WHERE Id = {create.Id}"));
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE FROM ElsaInstanceMigrations WHERE MigrationId = {migration.MigrationId}"));
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE FROM ElsaInstances WHERE Id = {second.Id}"));
     }
 
     [Fact]

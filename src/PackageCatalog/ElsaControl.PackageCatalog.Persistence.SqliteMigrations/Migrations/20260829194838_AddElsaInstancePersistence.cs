@@ -11,11 +11,21 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<Guid>(
-                name: "ElsaInstanceId",
-                table: "DeploymentEnvironments",
-                type: "TEXT",
-                nullable: true);
+            migrationBuilder.DropForeignKey(
+                name: "FK_DeploymentEnvironments_DeploymentApplications_ApplicationId",
+                table: "DeploymentEnvironments");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_DeploymentRuns_DeploymentEnvironments_EnvironmentId",
+                table: "DeploymentRuns");
+
+            migrationBuilder.DropIndex(
+                name: "IX_DeploymentRuns_EnvironmentId",
+                table: "DeploymentRuns");
+
+            migrationBuilder.DropIndex(
+                name: "IX_DeploymentEnvironments_ApplicationId",
+                table: "DeploymentEnvironments");
 
             migrationBuilder.AddColumn<Guid>(
                 name: "ElsaInstanceId",
@@ -23,14 +33,25 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 type: "TEXT",
                 nullable: true);
 
-            // SQLite rebuilds tables for AddUniqueConstraint. Doing that while
-            // DeploymentEnvironments also gains a composite FK makes a
-            // temporary table reference the old, not-yet-unique parent. A unique
-            // index is an equivalent SQLite parent key and avoids that rebuild.
+            migrationBuilder.AddColumn<Guid>(
+                name: "ElsaInstanceId",
+                table: "DeploymentEnvironments",
+                type: "TEXT",
+                nullable: true);
+
+            // SQLite rebuilds tables for AddUniqueConstraint. Unique indexes are valid
+            // parent keys for SQLite foreign keys and let us establish the parent keys
+            // before rebuilding the dependent legacy tables below.
             migrationBuilder.CreateIndex(
                 name: "IX_Workspaces_OrganizationId_Id",
                 table: "Workspaces",
                 columns: new[] { "OrganizationId", "Id" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DeploymentEnvironments_WorkspaceId_Id",
+                table: "DeploymentEnvironments",
+                columns: new[] { "WorkspaceId", "Id" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
@@ -217,6 +238,18 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         principalTable: "ElsaInstances",
                         principalColumns: new[] { "OrganizationId", "WorkspaceId", "Id" },
                         onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_ElsaInstanceMigrations_Organizations_OrganizationId",
+                        column: x => x.OrganizationId,
+                        principalTable: "Organizations",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_ElsaInstanceMigrations_Workspaces_OrganizationId_WorkspaceId",
+                        columns: x => new { x.OrganizationId, x.WorkspaceId },
+                        principalTable: "Workspaces",
+                        principalColumns: new[] { "OrganizationId", "Id" },
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -252,6 +285,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_ElsaInstanceOperations", x => x.Id);
+                    table.CheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'");
                     table.ForeignKey(
                         name: "FK_ElsaInstanceOperations_ElsaInstances_OrganizationId_WorkspaceId_InstanceId",
                         columns: x => new { x.OrganizationId, x.WorkspaceId, x.InstanceId },
@@ -265,10 +299,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
-                        name: "FK_ElsaInstanceOperations_Workspaces_WorkspaceId",
-                        column: x => x.WorkspaceId,
+                        name: "FK_ElsaInstanceOperations_Workspaces_OrganizationId_WorkspaceId",
+                        columns: x => new { x.OrganizationId, x.WorkspaceId },
                         principalTable: "Workspaces",
-                        principalColumn: "Id",
+                        principalColumns: new[] { "OrganizationId", "Id" },
                         onDelete: ReferentialAction.Restrict);
                 });
 
@@ -331,6 +365,11 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 columns: new[] { "InstanceId", "SourceRetainUntil" });
 
             migrationBuilder.CreateIndex(
+                name: "IX_ElsaInstanceMigrations_OrganizationId_WorkspaceId_InstanceId",
+                table: "ElsaInstanceMigrations",
+                columns: new[] { "OrganizationId", "WorkspaceId", "InstanceId" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_ElsaInstanceOperations_ActiveInstanceId",
                 table: "ElsaInstanceOperations",
                 column: "InstanceId",
@@ -383,28 +422,19 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 principalColumns: new[] { "WorkspaceId", "Id" },
                 onDelete: ReferentialAction.Restrict);
 
-            migrationBuilder.Sql("""
-                CREATE TRIGGER TR_ElsaInstanceAuditEvents_AppendOnly_Update
-                BEFORE UPDATE ON ElsaInstanceAuditEvents
-                BEGIN
-                    SELECT RAISE(ABORT, 'Elsa instance audit events are append-only.');
-                END;
-                CREATE TRIGGER TR_ElsaInstanceAuditEvents_AppendOnly_Delete
-                BEFORE DELETE ON ElsaInstanceAuditEvents
-                BEGIN
-                    SELECT RAISE(ABORT, 'Elsa instance audit events are append-only.');
-                END;
-                """);
+            migrationBuilder.AddForeignKey(
+                name: "FK_DeploymentRuns_DeploymentEnvironments_WorkspaceId_EnvironmentId",
+                table: "DeploymentRuns",
+                columns: new[] { "WorkspaceId", "EnvironmentId" },
+                principalTable: "DeploymentEnvironments",
+                principalColumns: new[] { "WorkspaceId", "Id" },
+                onDelete: ReferentialAction.Restrict);
+
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.Sql("""
-                DROP TRIGGER IF EXISTS TR_ElsaInstanceAuditEvents_AppendOnly_Update;
-                DROP TRIGGER IF EXISTS TR_ElsaInstanceAuditEvents_AppendOnly_Delete;
-                """);
-
             migrationBuilder.DropForeignKey(
                 name: "FK_DeploymentEnvironments_DeploymentApplications_WorkspaceId_ApplicationId",
                 table: "DeploymentEnvironments");
@@ -412,6 +442,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
             migrationBuilder.DropForeignKey(
                 name: "FK_DeploymentEnvironments_ElsaInstances_WorkspaceId_ElsaInstanceId",
                 table: "DeploymentEnvironments");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_DeploymentRuns_DeploymentEnvironments_WorkspaceId_EnvironmentId",
+                table: "DeploymentRuns");
 
             migrationBuilder.DropTable(
                 name: "ElsaInstanceAuditEvents");
@@ -437,6 +471,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 table: "DeploymentRuns");
 
             migrationBuilder.DropIndex(
+                name: "IX_DeploymentEnvironments_WorkspaceId_Id",
+                table: "DeploymentEnvironments");
+
+            migrationBuilder.DropIndex(
                 name: "IX_DeploymentEnvironments_ElsaInstanceId",
                 table: "DeploymentEnvironments");
 
@@ -450,11 +488,37 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
             migrationBuilder.DropColumn(
                 name: "ElsaInstanceId",
-                table: "DeploymentEnvironments");
+                table: "DeploymentRuns");
 
             migrationBuilder.DropColumn(
                 name: "ElsaInstanceId",
-                table: "DeploymentRuns");
+                table: "DeploymentEnvironments");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DeploymentRuns_EnvironmentId",
+                table: "DeploymentRuns",
+                column: "EnvironmentId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DeploymentEnvironments_ApplicationId",
+                table: "DeploymentEnvironments",
+                column: "ApplicationId");
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_DeploymentEnvironments_DeploymentApplications_ApplicationId",
+                table: "DeploymentEnvironments",
+                column: "ApplicationId",
+                principalTable: "DeploymentApplications",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_DeploymentRuns_DeploymentEnvironments_EnvironmentId",
+                table: "DeploymentRuns",
+                column: "EnvironmentId",
+                principalTable: "DeploymentEnvironments",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Restrict);
         }
     }
 }

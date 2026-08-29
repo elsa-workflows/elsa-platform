@@ -11,11 +11,21 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<Guid>(
-                name: "ElsaInstanceId",
-                table: "DeploymentEnvironments",
-                type: "uniqueidentifier",
-                nullable: true);
+            migrationBuilder.DropForeignKey(
+                name: "FK_DeploymentEnvironments_DeploymentApplications_ApplicationId",
+                table: "DeploymentEnvironments");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_DeploymentRuns_DeploymentEnvironments_EnvironmentId",
+                table: "DeploymentRuns");
+
+            migrationBuilder.DropIndex(
+                name: "IX_DeploymentRuns_EnvironmentId",
+                table: "DeploymentRuns");
+
+            migrationBuilder.DropIndex(
+                name: "IX_DeploymentEnvironments_ApplicationId",
+                table: "DeploymentEnvironments");
 
             migrationBuilder.AddColumn<Guid>(
                 name: "ElsaInstanceId",
@@ -23,10 +33,21 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 type: "uniqueidentifier",
                 nullable: true);
 
+            migrationBuilder.AddColumn<Guid>(
+                name: "ElsaInstanceId",
+                table: "DeploymentEnvironments",
+                type: "uniqueidentifier",
+                nullable: true);
+
             migrationBuilder.AddUniqueConstraint(
                 name: "AK_Workspaces_OrganizationId_Id",
                 table: "Workspaces",
                 columns: new[] { "OrganizationId", "Id" });
+
+            migrationBuilder.AddUniqueConstraint(
+                name: "AK_DeploymentEnvironments_WorkspaceId_Id",
+                table: "DeploymentEnvironments",
+                columns: new[] { "WorkspaceId", "Id" });
 
             migrationBuilder.AddUniqueConstraint(
                 name: "AK_DeploymentApplications_WorkspaceId_Id",
@@ -178,6 +199,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 {
                     MigrationId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     InstanceId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    OrganizationId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    WorkspaceId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     SourcePlanId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
                     SourcePlanUri = table.Column<string>(type: "nvarchar(2048)", maxLength: 2048, nullable: true),
                     SourceReleaseLine = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
@@ -204,10 +227,22 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 {
                     table.PrimaryKey("PK_ElsaInstanceMigrations", x => x.MigrationId);
                     table.ForeignKey(
-                        name: "FK_ElsaInstanceMigrations_ElsaInstances_InstanceId",
-                        column: x => x.InstanceId,
+                        name: "FK_ElsaInstanceMigrations_ElsaInstances_OrganizationId_WorkspaceId_InstanceId",
+                        columns: x => new { x.OrganizationId, x.WorkspaceId, x.InstanceId },
                         principalTable: "ElsaInstances",
+                        principalColumns: new[] { "OrganizationId", "WorkspaceId", "Id" },
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_ElsaInstanceMigrations_Organizations_OrganizationId",
+                        column: x => x.OrganizationId,
+                        principalTable: "Organizations",
                         principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_ElsaInstanceMigrations_Workspaces_OrganizationId_WorkspaceId",
+                        columns: x => new { x.OrganizationId, x.WorkspaceId },
+                        principalTable: "Workspaces",
+                        principalColumns: new[] { "OrganizationId", "Id" },
                         onDelete: ReferentialAction.Restrict);
                 });
 
@@ -244,6 +279,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_ElsaInstanceOperations", x => x.Id);
+                    table.CheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'");
                     table.ForeignKey(
                         name: "FK_ElsaInstanceOperations_ElsaInstances_OrganizationId_WorkspaceId_InstanceId",
                         columns: x => new { x.OrganizationId, x.WorkspaceId, x.InstanceId },
@@ -257,10 +293,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
-                        name: "FK_ElsaInstanceOperations_Workspaces_WorkspaceId",
-                        column: x => x.WorkspaceId,
+                        name: "FK_ElsaInstanceOperations_Workspaces_OrganizationId_WorkspaceId",
+                        columns: x => new { x.OrganizationId, x.WorkspaceId },
                         principalTable: "Workspaces",
-                        principalColumn: "Id",
+                        principalColumns: new[] { "OrganizationId", "Id" },
                         onDelete: ReferentialAction.Restrict);
                 });
 
@@ -323,6 +359,11 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 columns: new[] { "InstanceId", "SourceRetainUntil" });
 
             migrationBuilder.CreateIndex(
+                name: "IX_ElsaInstanceMigrations_OrganizationId_WorkspaceId_InstanceId",
+                table: "ElsaInstanceMigrations",
+                columns: new[] { "OrganizationId", "WorkspaceId", "InstanceId" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_ElsaInstanceOperations_ActiveInstanceId",
                 table: "ElsaInstanceOperations",
                 column: "InstanceId",
@@ -375,27 +416,19 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 principalColumns: new[] { "WorkspaceId", "Id" },
                 onDelete: ReferentialAction.Restrict);
 
-            migrationBuilder.Sql("""
-                IF OBJECT_ID(N'TR_ElsaInstanceAuditEvents_AppendOnly', N'TR') IS NULL
-                EXEC(N'CREATE TRIGGER TR_ElsaInstanceAuditEvents_AppendOnly
-                ON ElsaInstanceAuditEvents
-                AFTER UPDATE, DELETE
-                AS
-                BEGIN
-                    SET NOCOUNT ON;
-                    THROW 51000, ''Elsa instance audit events are append-only.'', 1;
-                END');
-                """);
+            migrationBuilder.AddForeignKey(
+                name: "FK_DeploymentRuns_DeploymentEnvironments_WorkspaceId_EnvironmentId",
+                table: "DeploymentRuns",
+                columns: new[] { "WorkspaceId", "EnvironmentId" },
+                principalTable: "DeploymentEnvironments",
+                principalColumns: new[] { "WorkspaceId", "Id" },
+                onDelete: ReferentialAction.Restrict);
+
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.Sql("""
-                IF OBJECT_ID(N'TR_ElsaInstanceAuditEvents_AppendOnly', N'TR') IS NOT NULL
-                    DROP TRIGGER TR_ElsaInstanceAuditEvents_AppendOnly;
-                """);
-
             migrationBuilder.DropForeignKey(
                 name: "FK_DeploymentEnvironments_DeploymentApplications_WorkspaceId_ApplicationId",
                 table: "DeploymentEnvironments");
@@ -403,6 +436,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
             migrationBuilder.DropForeignKey(
                 name: "FK_DeploymentEnvironments_ElsaInstances_WorkspaceId_ElsaInstanceId",
                 table: "DeploymentEnvironments");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_DeploymentRuns_DeploymentEnvironments_WorkspaceId_EnvironmentId",
+                table: "DeploymentRuns");
 
             migrationBuilder.DropTable(
                 name: "ElsaInstanceAuditEvents");
@@ -427,6 +464,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 name: "IX_DeploymentRuns_WorkspaceId_EnvironmentId",
                 table: "DeploymentRuns");
 
+            migrationBuilder.DropUniqueConstraint(
+                name: "AK_DeploymentEnvironments_WorkspaceId_Id",
+                table: "DeploymentEnvironments");
+
             migrationBuilder.DropIndex(
                 name: "IX_DeploymentEnvironments_ElsaInstanceId",
                 table: "DeploymentEnvironments");
@@ -441,11 +482,37 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
             migrationBuilder.DropColumn(
                 name: "ElsaInstanceId",
-                table: "DeploymentEnvironments");
+                table: "DeploymentRuns");
 
             migrationBuilder.DropColumn(
                 name: "ElsaInstanceId",
-                table: "DeploymentRuns");
+                table: "DeploymentEnvironments");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DeploymentRuns_EnvironmentId",
+                table: "DeploymentRuns",
+                column: "EnvironmentId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DeploymentEnvironments_ApplicationId",
+                table: "DeploymentEnvironments",
+                column: "ApplicationId");
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_DeploymentEnvironments_DeploymentApplications_ApplicationId",
+                table: "DeploymentEnvironments",
+                column: "ApplicationId",
+                principalTable: "DeploymentApplications",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_DeploymentRuns_DeploymentEnvironments_EnvironmentId",
+                table: "DeploymentRuns",
+                column: "EnvironmentId",
+                principalTable: "DeploymentEnvironments",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Restrict);
         }
     }
 }
