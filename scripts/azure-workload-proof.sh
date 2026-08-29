@@ -262,8 +262,10 @@ if [[ "$mode" == cleanup ]]; then
     if [[ -n "$assignment_json" ]]; then
       assignment_principal_id="$(jq -r '.principalId // empty' <<<"$assignment_json")"
       assignment_scope="$(jq -r '.scope // empty' <<<"$assignment_json")"
+      assignment_scope_lower="$(printf '%s' "$assignment_scope" | tr '[:upper:]' '[:lower:]')"
+      registry_id_lower="$(printf '%s' "$registry_id" | tr '[:upper:]' '[:lower:]')"
       assignment_role_id="$(jq -r '.roleDefinitionId // empty | split("/") | last' <<<"$assignment_json")"
-      [[ "$assignment_principal_id" == "$cleanup_principal_id" && "${assignment_scope,,}" == "${registry_id,,}" && "$assignment_role_id" == 7f951dda-4ed3-4680-a7ca-43fe172d538d ]] || {
+      [[ "$assignment_principal_id" == "$cleanup_principal_id" && "$assignment_scope_lower" == "$registry_id_lower" && "$assignment_role_id" == 7f951dda-4ed3-4680-a7ca-43fe172d538d ]] || {
         echo "Refusing resource-group deletion: stored ACR assignment does not match this proof identity, scope, and role" >&2
         exit 3
       }
