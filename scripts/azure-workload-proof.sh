@@ -396,6 +396,23 @@ temporary_firewall_rule="elsa108-bootstrap"
 temporary_firewall_created=0
 bootstrap_admin_removed=0
 temp_dir=""
+ensure_sql_bootstrap_admin_for_reapply() {
+  local admin_count admin_state server_count
+  server_count="$(az sql server list --subscription "$proof_subscription_id" --resource-group "$resource_group" --query "[?name=='${sql_server_name}'] | length(@)" --output tsv --only-show-errors)" || return 1
+  if (( server_count == 0 )); then return 0; fi
+  (( server_count == 1 )) || { echo "Expected at most one proof SQL server named $sql_server_name" >&2; return 1; }
+
+  admin_count="$(az sql server ad-admin list --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" --query 'length(@)' --output tsv --only-show-errors)" || return 1
+  (( admin_count <= 1 )) || { echo "Expected at most one SQL server administrator" >&2; return 1; }
+  if (( admin_count == 0 )); then
+    az sql server ad-admin create --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" \
+      --display-name "$sql_bootstrap_login" --object-id "$sql_bootstrap_object_id" --only-show-errors >/dev/null || return 1
+  fi
+  admin_state="$(az sql server ad-admin list --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" --query '[0].{login:login,sid:sid}' --output json --only-show-errors)" || return 1
+  [[ "$(jq -r .login <<<"$admin_state")" == "$sql_bootstrap_login" && "$(jq -r .sid <<<"$admin_state")" == "$sql_bootstrap_object_id" ]] || { echo "Refusing to replace an unexpected SQL server administrator" >&2; return 1; }
+  az sql server ad-only-auth enable --subscription "$proof_subscription_id" --resource-group "$resource_group" --name "$sql_server_name" --only-show-errors >/dev/null || return 1
+  bootstrap_admin_removed=0
+}
 remove_sql_bootstrap_admin() {
   local admin_count server_count
   server_count="$(az sql server list --subscription "$proof_subscription_id" --resource-group "$resource_group" --query "[?name=='${sql_server_name}'] | length(@)" --output tsv --only-show-errors 2>/dev/null)" || return 1
@@ -424,6 +441,8 @@ cleanup_apply() {
   [[ -z "$temp_dir" ]] || rm -rf -- "$temp_dir"
 }
 trap cleanup_apply EXIT
+
+ensure_sql_bootstrap_admin_for_reapply || { echo "Temporary SQL bootstrap administrator could not be established safely" >&2; exit 5; }
 
 deployment_name="elsa108-${proof_name}-${deployment_suffix}"
 foundation_outputs="$(az deployment group create \
