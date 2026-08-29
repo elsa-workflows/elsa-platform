@@ -330,6 +330,7 @@ b34c24b refactor: remove Healing component and related configurations
 4a34c1b Rename Elsa Platform to Valence Control (#79)
 
 === HIGH-CHURN FILES (last 90 days, top 20) ===
+This Git-history-derived list includes historical paths that were later renamed or deleted; use the directory tree above for current locations.
   18 src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx
   18 src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx
   16 AGENTS.md
