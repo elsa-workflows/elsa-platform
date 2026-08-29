@@ -185,7 +185,9 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("resolve_stable_traffic_revision", source)
         self.assertIn("candidate_healthy", source)
         self.assertIn("stable traffic was preserved", source)
-        self.assertIn("--retry-all-errors", source)
+        library = RUNBOOK_LIB.read_text()
+        self.assertIn("promote_workload_revision", library)
+        self.assertIn("--retry-all-errors", library)
         self.assertIn("/revisions?api-version=2024-03-01", source)
         self.assertIn(".nextLink // empty", source)
         self.assertIn("az tag update", source)
@@ -219,6 +221,54 @@ class AzureWorkloadProofTests(unittest.TestCase):
         result = select("bad", exhausted)
         self.assertEqual(5, result.returncode)
         self.assertIn("No free deterministic recovery revision suffix", result.stderr)
+
+    def test_failed_promotion_restores_stable_traffic(self) -> None:
+        script = r'''
+source "$1"
+az() {
+  printf 'az:%s\n' "$*"
+  return 0
+}
+curl() { return 1; }
+promote_workload_revision proof-rg proof-app stable-revision candidate-revision https://proof.invalid
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(5, result.returncode)
+        calls = [line for line in result.stdout.splitlines() if line.startswith("az:")]
+        self.assertEqual(2, len(calls))
+        self.assertIn("candidate-revision=100", calls[0])
+        self.assertIn("stable-revision=100 candidate-revision=0", calls[1])
+        self.assertIn("Restored stable traffic", result.stderr)
+
+    def test_uncertain_traffic_set_result_also_rolls_back(self) -> None:
+        script = r'''
+source "$1"
+attempt=0
+az() {
+  attempt=$((attempt + 1))
+  printf 'az:%s\n' "$*"
+  (( attempt > 1 ))
+}
+curl() { echo 'curl must not run' >&2; return 99; }
+promote_workload_revision proof-rg proof-app stable-revision candidate-revision https://proof.invalid
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(5, result.returncode)
+        calls = [line for line in result.stdout.splitlines() if line.startswith("az:")]
+        self.assertEqual(2, len(calls))
+        self.assertNotIn("curl must not run", result.stderr)
+        self.assertIn("uncertain result", result.stderr)
+        self.assertIn("Restored stable traffic", result.stderr)
 
     def test_invalid_vault_derived_proof_names_fail_before_azure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

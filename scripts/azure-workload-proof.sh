@@ -516,7 +516,5 @@ for _ in {1..60}; do
 done
 (( candidate_healthy == 1 )) || { echo "Candidate revision $candidate_revision did not become healthy; stable traffic was preserved" >&2; exit 5; }
 
-az containerapp ingress traffic set --resource-group "$resource_group" --name "${proof_name}-app" \
-  --revision-weight "${candidate_revision}=100" --only-show-errors --output none
-curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 5 --max-time 10 "$endpoint/health" >/dev/null
+promote_workload_revision "$resource_group" "${proof_name}-app" "$stable_traffic_revision" "$candidate_revision" "$endpoint"
 echo "Workload is healthy at $endpoint; capture only redacted IDs, endpoint and immutable digest as evidence."
