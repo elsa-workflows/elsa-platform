@@ -26,7 +26,7 @@ param imageDigest string
 param registryName string = 'valenceruntimeimages'
 
 @description('Subscription ID containing the existing runtime ACR.')
-param registrySubscriptionId string = subscription().id
+param registrySubscriptionId string = subscription().subscriptionId
 
 @description('Resource group containing the existing runtime ACR.')
 @minLength(1)

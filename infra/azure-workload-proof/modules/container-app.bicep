@@ -15,7 +15,7 @@ param managedEnvironmentId string
 param registryName string = 'valenceruntimeimages'
 
 @description('Subscription ID containing the existing ACR.')
-param registrySubscriptionId string = subscription().id
+param registrySubscriptionId string = subscription().subscriptionId
 
 @description('Resource group containing the existing ACR.')
 @minLength(1)

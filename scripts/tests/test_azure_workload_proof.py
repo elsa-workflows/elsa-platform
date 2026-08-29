@@ -20,6 +20,7 @@ ACR_ROLE = PROOF / "acr-pull-role.bicep"
 VAULT = PROOF / "modules" / "key-vault.bicep"
 SQL = PROOF / "modules" / "sql.bicep"
 RUNBOOK = ROOT / "scripts" / "azure-workload-proof.sh"
+REGENERATE_INFRA = ROOT / "dev" / "regenerate-infra.sh"
 
 
 class AzureWorkloadProofTests(unittest.TestCase):
@@ -119,6 +120,13 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertNotIn("frontdoor", source)
         self.assertNotIn("virtualnetwork", source)
         self.assertNotIn("microsoft.network/virtualnetworks", source)
+
+    def test_aspire_regeneration_preserves_manual_proof(self) -> None:
+        source = REGENERATE_INFRA.read_text()
+        self.assertIn("preserved_proof", source)
+        self.assertIn("mv infra/azure-workload-proof", source)
+        self.assertIn("trap restore_preserved_proof EXIT", source)
+        self.assertLess(source.index("mv infra/azure-workload-proof"), source.index("rm -rf infra"))
 
     def test_runbook_is_fail_closed(self) -> None:
         source = RUNBOOK.read_text()
