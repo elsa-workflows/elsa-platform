@@ -72,6 +72,8 @@ done
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
 proof_dir="$repo_root/infra/azure-workload-proof"
+# shellcheck source=scripts/lib/azure-workload-proof.sh
+source "$script_dir/lib/azure-workload-proof.sh"
 
 validate_name() {
   [[ "$1" =~ ^[a-z][a-z0-9-]{1,14}[a-z0-9]$ && "$1" != *--* ]] || {
@@ -126,6 +128,74 @@ sha256_text() {
   else
     printf '%s' "$1" | shasum -a 256 | awk '{print $1}'
   fi
+}
+
+sha256_stream() {
+  if command -v sha256sum >/dev/null; then
+    sha256sum | awk '{print $1}'
+  else
+    shasum -a 256 | awk '{print $1}'
+  fi
+}
+
+load_revision_names() {
+  local app_id="$1"
+  local next_url="${app_id}/revisions?api-version=2024-03-01"
+  local page page_names
+  local revision_names='[]'
+
+  while [[ -n "$next_url" ]]; do
+    page="$(az rest --method get --url "$next_url" --only-show-errors)"
+    page_names="$(jq -c '[.value[].name]' <<<"$page")"
+    revision_names="$(jq -cn --argjson existing "$revision_names" --argjson page "$page_names" '$existing + $page')"
+    next_url="$(jq -r '.nextLink // empty' <<<"$page")"
+  done
+  printf '%s\n' "$revision_names"
+}
+
+resolve_workload_revision_suffix() {
+  local plan_fingerprint="$1"
+  local app_name="${proof_name}-app"
+  local app_id="/subscriptions/${proof_subscription_id}/resourceGroups/${resource_group}/providers/Microsoft.App/containerApps/${app_name}"
+  local app_count current_revision_suffix revision_names
+
+  app_count="$(az resource list --resource-group "$resource_group" --resource-type Microsoft.App/containerApps --query "[?name=='${app_name}'] | length(@)" --output tsv --only-show-errors)"
+  if (( app_count == 0 )); then
+    printf '%s\n' "$plan_fingerprint"
+    return 0
+  fi
+  if (( app_count != 1 )); then
+    echo "Expected exactly one proof Container App named $app_name" >&2
+    return 5
+  fi
+
+  current_revision_suffix="$(az resource show --ids "$app_id" --api-version 2024-03-01 --query properties.template.revisionSuffix --output tsv --only-show-errors)"
+  revision_names="$(load_revision_names "$app_id")"
+  select_workload_revision_suffix "$plan_fingerprint" "$current_revision_suffix" "$app_name" "$revision_names"
+}
+
+resolve_stable_traffic_revision() {
+  local app_name="${proof_name}-app"
+  local app_count stable_revision stable_state
+
+  app_count="$(az resource list --resource-group "$resource_group" --resource-type Microsoft.App/containerApps --query "[?name=='${app_name}'] | length(@)" --output tsv --only-show-errors)"
+  if (( app_count == 0 )); then
+    return 0
+  fi
+  if (( app_count != 1 )); then
+    echo "Expected exactly one proof Container App named $app_name" >&2
+    return 5
+  fi
+
+  # shellcheck disable=SC2016 # Backticks are JMESPath numeric literals.
+  stable_revision="$(az containerapp show --resource-group "$resource_group" --name "$app_name" --query 'properties.configuration.ingress.traffic[?weight == `100` && revisionName != null].revisionName | [0]' --output tsv --only-show-errors)"
+  if [[ -z "$stable_revision" ]]; then
+    stable_revision="$(az containerapp show --resource-group "$resource_group" --name "$app_name" --query properties.latestReadyRevisionName --output tsv --only-show-errors)"
+  fi
+  [[ -n "$stable_revision" ]] || { echo "Existing proof app has no stable revision" >&2; return 5; }
+  stable_state="$(az containerapp revision show --resource-group "$resource_group" --name "$app_name" --revision "$stable_revision" --query 'properties.{active:active,health:healthState}' --output json --only-show-errors)"
+  [[ "$(jq -r .active <<<"$stable_state")" == true && "$(jq -r .health <<<"$stable_state")" == Healthy ]] || { echo "Refusing rollout because stable revision $stable_revision is not active and healthy" >&2; return 5; }
+  printf '%s\n' "$stable_revision"
 }
 
 if [[ "$mode" == cleanup ]]; then
@@ -246,6 +316,11 @@ command -v jq >/dev/null || { echo "jq is required to read safe deployment outpu
 
 "$repo_root/scripts/validate-azure-workload-proof.sh"
 
+# Bind the deployment/revision identity to the exact compiled IaC, not only to
+# its data parameters. This prevents a code-only template change from being
+# mistaken for an unchanged plan.
+template_fingerprint="$(az bicep build --file "$proof_dir/main.bicep" --stdout | sha256_stream)"
+
 [[ -z "$subscription_id" ]] || az account set --subscription "$subscription_id"
 proof_subscription_id="$(az account show --query id --output tsv --only-show-errors)"
 registry_subscription_id="${registry_subscription_id:-$proof_subscription_id}"
@@ -260,10 +335,11 @@ parameters=(
   "sqlBootstrapObjectId=$sql_bootstrap_object_id"
   "sqlBootstrapLogin=$sql_bootstrap_login"
   "expiryUtc=$expiry_utc"
+  "templateFingerprint=$template_fingerprint"
 )
 
 image_digest_lower="$(printf '%s' "$image_digest" | tr '[:upper:]' '[:lower:]')"
-plan_input="proof=108|name=${proof_name}|location=westeurope|image=${image_repository}@sha256:${image_digest_lower}|elsa=3.8|sql-workflow=3.8.0-preview.5413|sql-quartz=3.8.0-preview.342|topology=combined|acr=${registry_subscription_id}/${registry_resource_group}/${registry_name}|sql-bootstrap=${sql_bootstrap_object_id}/${sql_bootstrap_login}|secrets=sql-connection/identity-signing-key|expiry=${expiry_utc}"
+plan_input="proof=108|template=${template_fingerprint}|name=${proof_name}|location=westeurope|image=${image_repository}@sha256:${image_digest_lower}|elsa=3.8|sql-workflow=3.8.0-preview.5413|sql-quartz=3.8.0-preview.342|topology=combined|acr=${registry_subscription_id}/${registry_resource_group}/${registry_name}|sql-bootstrap=${sql_bootstrap_object_id}/${sql_bootstrap_login}|admin=proof-admin|secrets=sql-connection/identity-signing-key/admin-password|expiry=${expiry_utc}"
 deployment_suffix="$(sha256_text "$plan_input" | cut -c1-12)"
 
 [[ -z "$subscription_id" ]] || az account set --subscription "$subscription_id"
@@ -273,11 +349,24 @@ if [[ "$mode" == what-if ]]; then
     echo "what-if requires an existing resource group; no group was created" >&2
     exit 3
   fi
+  what_if_parameters=("${parameters[@]}")
+  what_if_stable_revision="$(resolve_stable_traffic_revision)"
+  [[ -z "$what_if_stable_revision" ]] || what_if_parameters+=("stableTrafficRevisionName=$what_if_stable_revision")
+  foundation_deployment_name="elsa108-${proof_name}-${deployment_suffix}-foundation"
+  foundation_deployment_count="$(az deployment group list --resource-group "$resource_group" --query "[?name=='${foundation_deployment_name}'] | length(@)" --output tsv --only-show-errors)"
+  if (( foundation_deployment_count == 1 )); then
+    foundation_plan_fingerprint="$(az deployment group show --resource-group "$resource_group" --name "$foundation_deployment_name" --query properties.outputs.planFingerprint.value --output tsv --only-show-errors)"
+    what_if_revision_suffix="$(resolve_workload_revision_suffix "$foundation_plan_fingerprint")"
+    what_if_parameters+=("workloadRevisionSuffix=$what_if_revision_suffix")
+  elif (( foundation_deployment_count != 0 )); then
+    echo "Expected at most one matching foundation deployment" >&2
+    exit 5
+  fi
   az deployment group what-if \
     --resource-group "$resource_group" \
     --name "elsa108-${proof_name}-${deployment_suffix}-whatif" \
     --template-file "$proof_dir/main.bicep" \
-    --parameters "${parameters[@]}" \
+    --parameters "${what_if_parameters[@]}" \
     --only-show-errors
   exit 0
 fi
@@ -287,12 +376,60 @@ fi
   exit 3
 }
 
-existing_tags="$(az group show --name "$resource_group" --query tags --output json --only-show-errors 2>/dev/null || true)"
-if [[ -n "$existing_tags" ]]; then
+group_exists="$(az group exists --name "$resource_group" --output tsv --only-show-errors)"
+if [[ "$group_exists" == true ]]; then
+  existing_tags="$(az group show --name "$resource_group" --query tags --output json --only-show-errors)"
   [[ "$(jq -r '.proof // empty' <<<"$existing_tags")" == 108 && "$(jq -r '.owner // empty' <<<"$existing_tags")" == elsa-control && "$(jq -r '."proof-name" // empty' <<<"$existing_tags")" == "$proof_name" ]] || { echo "Refusing to adopt unrelated resource group" >&2; exit 3; }
+  az tag update --resource-id "/subscriptions/${proof_subscription_id}/resourceGroups/${resource_group}" \
+    --operation Merge --tags proof=108 owner=elsa-control proof-name="$proof_name" expiry="$expiry_utc" \
+    --only-show-errors >/dev/null
+elif [[ "$group_exists" == false ]]; then
+  az group create --name "$resource_group" --location westeurope \
+    --tags proof=108 owner=elsa-control proof-name="$proof_name" expiry="$expiry_utc" --only-show-errors >/dev/null
+else
+  echo "Could not determine whether the proof resource group exists" >&2
+  exit 5
 fi
-az group create --name "$resource_group" --location westeurope \
-  --tags proof=108 owner=elsa-control proof-name="$proof_name" expiry="$expiry_utc" --only-show-errors >/dev/null
+
+sql_server_name="${proof_name}-sql"
+temporary_firewall_rule="elsa108-bootstrap"
+temporary_firewall_created=0
+bootstrap_admin_removed=0
+temp_dir=""
+ensure_sql_bootstrap_admin_for_reapply() {
+  local admin_count admin_state server_count
+  server_count="$(az sql server list --subscription "$proof_subscription_id" --resource-group "$resource_group" --query "[?name=='${sql_server_name}'] | length(@)" --output tsv --only-show-errors)" || return 1
+  if (( server_count == 0 )); then return 0; fi
+  (( server_count == 1 )) || { echo "Expected at most one proof SQL server named $sql_server_name" >&2; return 1; }
+
+  admin_count="$(az sql server ad-admin list --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" --query 'length(@)' --output tsv --only-show-errors)" || return 1
+  (( admin_count <= 1 )) || { echo "Expected at most one SQL server administrator" >&2; return 1; }
+  if (( admin_count == 0 )); then
+    az sql server ad-admin create --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" \
+      --display-name "$sql_bootstrap_login" --object-id "$sql_bootstrap_object_id" --only-show-errors >/dev/null || return 1
+  fi
+  admin_state="$(az sql server ad-admin list --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" --query '[0].{login:login,sid:sid}' --output json --only-show-errors)" || return 1
+  [[ "$(jq -r .login <<<"$admin_state")" == "$sql_bootstrap_login" && "$(jq -r .sid <<<"$admin_state")" == "$sql_bootstrap_object_id" ]] || { echo "Refusing to replace an unexpected SQL server administrator" >&2; return 1; }
+  az sql server ad-only-auth enable --subscription "$proof_subscription_id" --resource-group "$resource_group" --name "$sql_server_name" --only-show-errors >/dev/null || return 1
+  bootstrap_admin_removed=0
+}
+remove_sql_bootstrap_admin() {
+  remove_owned_sql_bootstrap_admin "$proof_subscription_id" "$resource_group" "$sql_server_name" \
+    "$sql_bootstrap_login" "$sql_bootstrap_object_id" || return 1
+  bootstrap_admin_removed=1
+}
+cleanup_apply() {
+  if (( temporary_firewall_created )); then
+    az sql server firewall-rule delete --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --only-show-errors >/dev/null 2>&1 || true
+  fi
+  if (( bootstrap_admin_removed == 0 )); then
+    remove_sql_bootstrap_admin >/dev/null 2>&1 || echo "CRITICAL: temporary SQL bootstrap administrator cleanup could not be verified" >&2
+  fi
+  [[ -z "$temp_dir" ]] || rm -rf -- "$temp_dir"
+}
+trap cleanup_apply EXIT
+
+ensure_sql_bootstrap_admin_for_reapply || { echo "Temporary SQL bootstrap administrator could not be established safely" >&2; exit 5; }
 
 deployment_name="elsa108-${proof_name}-${deployment_suffix}"
 foundation_outputs="$(az deployment group create \
@@ -307,18 +444,10 @@ identity_client_id="$(jq -r '.workloadIdentityClientId.value' <<<"$foundation_ou
 identity_principal_id="$(jq -r '.workloadIdentityPrincipalId.value' <<<"$foundation_outputs")"
 key_vault_name="${proof_name}-kv"
 sql_fqdn="$(jq -r '.sqlServerFqdn.value' <<<"$foundation_outputs")"
+plan_fingerprint="$(jq -r '.planFingerprint.value' <<<"$foundation_outputs")"
 
-sql_server_name="${proof_name}-sql"
-temporary_firewall_rule="elsa108-bootstrap"
-temporary_firewall_created=0
-temp_dir=""
-cleanup_apply() {
-  if (( temporary_firewall_created )); then
-    az sql server firewall-rule delete --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --yes --only-show-errors >/dev/null 2>&1 || true
-  fi
-  [[ -z "$temp_dir" ]] || rm -rf -- "$temp_dir"
-}
-trap cleanup_apply EXIT
+workload_revision_suffix="$(resolve_workload_revision_suffix "$plan_fingerprint")"
+stable_traffic_revision="$(resolve_stable_traffic_revision)"
 
 # The ACR is intentionally outside the disposable group. This idempotent role
 # assignment is the only proof mutation outside the supplied proof group.
@@ -369,7 +498,8 @@ umask 077
 
 sql_connection="Server=tcp:${sql_fqdn},1433;Initial Catalog=Elsa;Encrypt=True;Authentication=\"Active Directory Managed Identity\";User Id=${identity_client_id};TrustServerCertificate=False;Connection Timeout=30;"
 printf '%s' "$sql_connection" >"$temp_dir/sql-connection"
-openssl rand -base64 48 >"$temp_dir/identity-signing-key"
+openssl rand -base64 48 | tr -d '\r\n' >"$temp_dir/identity-signing-key"
+openssl rand -base64 48 | tr -d '\r\n' >"$temp_dir/admin-password"
 seed_secret_if_missing() {
   local name="$1" file="$2"
   if az keyvault secret show --vault-name "$key_vault_name" --name "$name" --only-show-errors >/dev/null 2>&1; then return 0; fi
@@ -382,6 +512,7 @@ seed_secret_if_missing() {
 }
 seed_secret_if_missing sql-connection "$temp_dir/sql-connection"
 seed_secret_if_missing identity-signing-key "$temp_dir/identity-signing-key"
+seed_secret_if_missing admin-password "$temp_dir/admin-password"
 
 sed \
   -e "s/__WORKLOAD_IDENTITY_NAME__/${proof_name}-identity/g" \
@@ -393,16 +524,27 @@ for _ in {1..12}; do
   sleep 10
 done
 (( bootstrap_ok == 1 )) || { echo "SQL bootstrap did not become ready" >&2; exit 5; }
-az sql server firewall-rule delete --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --yes --only-show-errors >/dev/null
+az sql server firewall-rule delete --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --only-show-errors >/dev/null
 temporary_firewall_created=0
 
 az deployment group create \
   --resource-group "$resource_group" \
   --name "${deployment_name}-workload" \
   --template-file "$proof_dir/main.bicep" \
-  --parameters "${parameters[@]}" deployWorkload=true \
+  --parameters "${parameters[@]}" deployWorkload=true workloadRevisionSuffix="$workload_revision_suffix" stableTrafficRevisionName="$stable_traffic_revision" \
   --query properties.outputs --output none --only-show-errors
 
+remove_sql_bootstrap_admin || { echo "Temporary SQL bootstrap administrator cleanup failed" >&2; exit 5; }
+
 endpoint="$(az deployment group show --resource-group "$resource_group" --name "${deployment_name}-workload" --query 'properties.outputs.containerAppEndpoint.value' --output tsv --only-show-errors)"
-curl --fail --silent --show-error --retry 20 --retry-delay 10 "$endpoint/health" >/dev/null
+candidate_revision="${proof_name}-app--${workload_revision_suffix}"
+candidate_healthy=0
+for _ in {1..60}; do
+  candidate_state="$(az containerapp revision show --resource-group "$resource_group" --name "${proof_name}-app" --revision "$candidate_revision" --query properties.healthState --output tsv --only-show-errors)"
+  if [[ "$candidate_state" == Healthy ]]; then candidate_healthy=1; break; fi
+  sleep 5
+done
+(( candidate_healthy == 1 )) || { echo "Candidate revision $candidate_revision did not become healthy; stable traffic was preserved" >&2; exit 5; }
+
+promote_workload_revision "$resource_group" "${proof_name}-app" "$stable_traffic_revision" "$candidate_revision" "$endpoint"
 echo "Workload is healthy at $endpoint; capture only redacted IDs, endpoint and immutable digest as evidence."

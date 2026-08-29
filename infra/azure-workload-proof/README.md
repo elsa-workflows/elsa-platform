@@ -29,15 +29,28 @@ The apply path is two-phase so secret values never enter Bicep parameters, deplo
 
 1. Deploy the foundation with `deployWorkload=false`.
 2. Grant the workload identity `AcrPull` on `valenceruntimeimages` using the separate role template.
-3. Generate the signing key locally and generate the Azure AD managed-identity SQL connection reference locally. Seed both into the proof Key Vault with file input; values are not printed.
+3. Generate the signing key and disposable proof-administrator password locally, and generate the Azure AD managed-identity SQL connection reference locally. Seed all three into the proof Key Vault with file input; values are not printed.
 4. The configured operator is granted the proof vault's narrow Key Vault Secrets Officer role; the runbook retries while RBAC propagates.
 5. Run `sql-bootstrap.sql` once as the configured Microsoft Entra SQL administrator. It creates a service-principal contained user from the workload identity client ID (without Graph lookup or Directory Readers) and grants `db_datareader`, `db_datawriter` and temporary `db_ddladmin` for first-start migrations.
-5. Deploy the workload phase. Container Apps reads the two Key Vault secrets through the user-assigned identity; it does not receive secret values in the template.
-6. Wait for `/health` and capture only the endpoint, immutable image reference, resource IDs, plan fingerprint, revision and redacted health evidence.
+6. Deploy the workload phase. Container Apps reads the three Key Vault secrets through the user-assigned identity; it does not receive secret values in the template.
+7. Remove the interactive Microsoft Entra SQL server administrator and verify that no server administrator remains. The EXIT cleanup path also attempts and verifies removal after any failure once the owned proof group exists.
+8. Wait for the candidate to become healthy, promote it safely, and capture only the endpoint, immutable image reference, resource IDs, plan fingerprint, revision and redacted health evidence.
 
-The SQL bootstrap operator must have an Entra login and object ID. SQL authentication is intentionally unavailable: the server is configured with `azureADOnlyAuthentication: true`. The runtime connection is generated with the workload identity client ID, Azure AD managed identity authentication, encryption enabled and certificate trust disabled.
+The SQL bootstrap operator must have an Entra login and object ID. The proof never supplies, stores or outputs SQL login credentials; runtime access is exclusively the contained workload identity. It enables `azureADOnlyAuthentication` for bootstrap; Azure requires that flag to be disabled before deleting the Entra server administrator. The operator is therefore server administrator only during the controlled bootstrap/deployment window; successful apply and failure cleanup disable the flag, remove the administrator and verify absence. On reapply, the runbook fail-closed verifies or briefly re-establishes only the exact configured bootstrap identity before ARM reconciliation, then removes it again. The contained workload identity continues to authenticate with Azure AD managed identity. Its runtime connection enables encryption and disables certificate trust.
 
 Use Go `sqlcmd` with `--authentication-method ActiveDirectoryDefault`; the ODBC sqlcmd is not supported. Supply one exact public IPv4 address with `--sql-bootstrap-ip`. The runbook creates a same-IP temporary SQL firewall rule, retries readiness/bootstrap, and removes the rule on success or failure. `0.0.0.0` is never used for operator access.
+
+The generated administrator username is `proof-admin`. If an operator needs it for functional proof, retrieve the password into a private shell variable without printing it:
+
+```bash
+proof_admin_password="$(az keyvault secret show \
+  --vault-name <proof-vault-name> \
+  --name admin-password \
+  --query value \
+  --output tsv)"
+```
+
+Do not echo, log or persist that variable. Cleanup deletes and purges the disposable vault with the resource group.
 
 ## What is provisioned
 
@@ -45,7 +58,7 @@ Use Go `sqlcmd` with `--authentication-method ActiveDirectoryDefault`; the ODBC 
 | --- | --- |
 | User-assigned managed identity | ACR pull, Key Vault secret read, SQL contained user |
 | Key Vault | RBAC, soft delete, public access for this no-VNet proof, 7-day retention |
-| Azure SQL | Entra-only logical server; GP serverless 0.5 minimum, 60-minute auto-pause, local backup redundancy |
+| Azure SQL | Entra-only bootstrap, no proof-managed SQL credentials, contained managed-identity runtime access; GP serverless 0.5 minimum, 60-minute auto-pause, local backup redundancy |
 | Log Analytics | PerGB2018, minimum 30-day retention; ACA console/system logs and metrics |
 | Container Apps environment | West Europe, consumption-backed, no zone redundancy |
 | Container App | External HTTPS-only ingress, port 8080, multiple revisions, latest revision at 100%, 0–1 replicas, startup/readiness/liveness probes |
@@ -54,7 +67,11 @@ Front Door, custom domains, private networking, VNet integration and production 
 
 ## Determinism, cost and cleanup
 
-Names are derived from the caller's unique `proofName`. The plan input includes proof ID, image digest, Elsa version, topology, ACR location, bootstrap identity, secret names and expiry. Bicep derives a stable `uniqueString` fingerprint and revision suffix; the runbook uses a stable deployment name. Repeating the same inputs is therefore safe and should produce no resource changes. Evidence can additionally record a SHA-256 of the compiled template.
+Names are derived from the caller's unique `proofName`. The plan input includes the compiled `main.bicep` SHA-256 (including its referenced modules), proof ID, image digest, Elsa version, topology, ACR location, bootstrap identity, secret names and expiry. The separately scoped `acr-pull-role.bicep` is not part of the workload revision fingerprint. Bicep derives a stable `uniqueString` fingerprint and revision suffix; the runbook uses a stable deployment name. Repeating the exact workload template and inputs is therefore safe and should produce no resource changes.
+
+Container Apps revision suffixes are immutable. If a diagnostic or fault-injection revision changes the app outside Bicep, the runbook cannot reuse the older suffix to restore the desired template. It detects that drift, retains the plan fingerprint, and selects the first free deterministic `-rN` recovery suffix. Subsequent unchanged applies reuse that recovery suffix; a compiled-template or input change produces a new plan fingerprint.
+
+For updates, the runbook keeps the current active, healthy revision at 100% traffic while ARM creates the candidate. It waits for Azure to report the candidate healthy before atomically moving traffic, then retries bounded transient non-2xx responses during ingress propagation. A candidate that never becomes healthy leaves stable traffic unchanged. A failed or uncertain promotion explicitly restores the prior stable revision to 100% and still returns failure. The first workload deployment has no prior revision and therefore uses Container Apps' latest-revision route.
 
 The proof uses consumption compute, a one-vCore serverless SQL database with auto-pause, and the minimum 30-day Log Analytics retention. Keep the run inside a short time box, scale to zero when idle, and inspect current subscription pricing before applying. Azure has no instantaneous hard spend cap; the controlling guardrail is immediate deletion.
 

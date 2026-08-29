@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import os
 import subprocess
@@ -20,6 +21,7 @@ ACR_ROLE = PROOF / "acr-pull-role.bicep"
 VAULT = PROOF / "modules" / "key-vault.bicep"
 SQL = PROOF / "modules" / "sql.bicep"
 RUNBOOK = ROOT / "scripts" / "azure-workload-proof.sh"
+RUNBOOK_LIB = ROOT / "scripts" / "lib" / "azure-workload-proof.sh"
 REGENERATE_INFRA = ROOT / "dev" / "regenerate-infra.sh"
 
 
@@ -94,13 +96,20 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("Nuplane__Setup__Feeds__1__ServiceIndex", source)
         self.assertIn("Nuplane__Setup__Feeds__2__IncludePatterns__0", source)
         self.assertIn("Nuplane__Setup__Feeds__2__IncludePatterns__1", source)
+        self.assertIn("CShells__Shells__Default__Features__DefaultAdminUser__AdminUsername", source)
+        self.assertIn("CShells__Shells__Default__Features__DefaultAdminUser__AdminPassword", source)
+        self.assertIn("secretRef: adminCredentialRef", source)
+        self.assertIn("stableTrafficRevisionName", source)
+        self.assertIn("revisionName: stableTrafficRevisionName", source)
         self.assertIn("3.8.0-preview.5413", MAIN.read_text())
         self.assertIn("3.8.0-preview.342", MAIN.read_text())
 
     def test_deterministic_fingerprint_and_required_tags(self) -> None:
         source = MAIN.read_text()
         self.assertIn("var planInput =", source)
+        self.assertIn("template=${toLower(templateFingerprint)}", source)
         self.assertIn("var planFingerprint = uniqueString(planInput)", source)
+        self.assertIn("empty(workloadRevisionSuffix)", source)
         self.assertIn("'plan-fingerprint': planFingerprint", source)
         self.assertIn("deploymentName string = take('elsa108-${proofName}-${take(planFingerprint, 12)}', 64)", source)
         self.assertIn("proof: '108'", source)
@@ -130,6 +139,8 @@ class AzureWorkloadProofTests(unittest.TestCase):
 
     def test_runbook_is_fail_closed(self) -> None:
         source = RUNBOOK.read_text()
+        library = RUNBOOK_LIB.read_text()
+        combined_source = source + "\n" + library
         self.assertIn("DISPOSABLE_PROOF_APPLY:-", source)
         self.assertIn("what-if requires an existing resource group", source)
         self.assertIn("az group delete", source)
@@ -137,6 +148,25 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("--authentication-method ActiveDirectoryDefault", source)
         self.assertIn("sqlcmd '-?'", source)
         self.assertIn("temporary_firewall_rule", source)
+        self.assertIn("remove_sql_bootstrap_admin", source)
+        self.assertIn("ensure_sql_bootstrap_admin_for_reapply", source)
+        self.assertIn("az sql server ad-admin create", source)
+        self.assertIn("az sql server ad-only-auth enable", source)
+        self.assertIn("Refusing to replace an unexpected SQL server administrator", source)
+        self.assertIn("az sql server ad-admin delete", combined_source)
+        self.assertIn("az sql server ad-admin list", combined_source)
+        self.assertIn("az sql server ad-only-auth disable", combined_source)
+        self.assertIn("Refusing to remove an unexpected SQL server administrator", library)
+        self.assertIn("Temporary SQL bootstrap administrator cleanup failed", source)
+        self.assertIn("CRITICAL: temporary SQL bootstrap administrator cleanup could not be verified", source)
+        self.assertIn("openssl rand -base64 48 | tr -d '\\r\\n'", source)
+        self.assertIn('seed_secret_if_missing admin-password "$temp_dir/admin-password"', source)
+        firewall_deletes = [
+            line for line in source.splitlines()
+            if "az sql server firewall-rule delete" in line
+        ]
+        self.assertEqual(2, len(firewall_deletes))
+        self.assertTrue(all("--yes" not in line for line in firewall_deletes))
         self.assertIn("keyvault purge", source)
         self.assertIn("Refusing to adopt unrelated resource group", source)
         self.assertIn("external ACR cleanup cannot be proven", source)
@@ -160,6 +190,124 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertRegex(source, r"\[\[ \"\$\{DISPOSABLE_PROOF_APPLY:-\}\" == YES \]\]")
         validation = (ROOT / "scripts" / "validate-azure-workload-proof.sh").read_text()
         self.assertIn("Compiled main template SHA-256", validation)
+        self.assertIn('templateFingerprint="$compiled_fingerprint"', validation)
+        self.assertIn('template_fingerprint="$(az bicep build', source)
+        self.assertIn('"templateFingerprint=$template_fingerprint"', source)
+        self.assertIn('workloadRevisionSuffix="$workload_revision_suffix"', source)
+        self.assertIn("resolve_workload_revision_suffix", source)
+        self.assertIn("resolve_stable_traffic_revision", source)
+        self.assertIn("candidate_healthy", source)
+        self.assertIn("stable traffic was preserved", source)
+        self.assertIn("promote_workload_revision", library)
+        self.assertIn("remove_owned_sql_bootstrap_admin", library)
+        self.assertIn("--retry-all-errors", library)
+        self.assertIn("/revisions?api-version=2024-03-01", source)
+        self.assertIn(".nextLink // empty", source)
+        self.assertIn("az tag update", source)
+        self.assertIn("--operation Merge", source)
+        self.assertIn("tags.acrDeployment", source)
+
+    def test_revision_suffix_selection_is_deterministic(self) -> None:
+        def select(current: str, revisions: list[str]) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; select_workload_revision_suffix plan123 "$2" proof-app "$3"',
+                    "test",
+                    str(RUNBOOK_LIB),
+                    current,
+                    json.dumps(revisions),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual("plan123", select("bad", []).stdout.strip())
+        occupied = ["proof-app--plan123", "proof-app--plan123-r1"]
+        self.assertEqual("plan123-r2", select("bad", occupied).stdout.strip())
+        self.assertEqual("plan123-r2", select("plan123-r2", occupied).stdout.strip())
+        self.assertEqual("plan123-r2", select("plan123-r2", occupied).stdout.strip())
+
+        exhausted = ["proof-app--plan123", *(f"proof-app--plan123-r{i}" for i in range(1, 1000))]
+        result = select("bad", exhausted)
+        self.assertEqual(5, result.returncode)
+        self.assertIn("No free deterministic recovery revision suffix", result.stderr)
+
+    def test_failed_promotion_restores_stable_traffic(self) -> None:
+        script = r'''
+source "$1"
+az() {
+  printf 'az:%s\n' "$*"
+  return 0
+}
+curl() { return 1; }
+promote_workload_revision proof-rg proof-app stable-revision candidate-revision https://proof.invalid
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(5, result.returncode)
+        calls = [line for line in result.stdout.splitlines() if line.startswith("az:")]
+        self.assertEqual(2, len(calls))
+        self.assertIn("candidate-revision=100", calls[0])
+        self.assertIn("stable-revision=100 candidate-revision=0", calls[1])
+        self.assertIn("Restored stable traffic", result.stderr)
+
+    def test_uncertain_traffic_set_result_also_rolls_back(self) -> None:
+        script = r'''
+source "$1"
+attempt=0
+az() {
+  attempt=$((attempt + 1))
+  printf 'az:%s\n' "$*"
+  (( attempt > 1 ))
+}
+curl() { echo 'curl must not run' >&2; return 99; }
+promote_workload_revision proof-rg proof-app stable-revision candidate-revision https://proof.invalid
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(5, result.returncode)
+        calls = [line for line in result.stdout.splitlines() if line.startswith("az:")]
+        self.assertEqual(2, len(calls))
+        self.assertNotIn("curl must not run", result.stderr)
+        self.assertIn("uncertain result", result.stderr)
+        self.assertIn("Restored stable traffic", result.stderr)
+
+    def test_unexpected_sql_admin_is_preserved_by_cleanup(self) -> None:
+        script = r'''
+source "$1"
+az() {
+  printf 'az:%s\n' "$*" >&2
+  case "$*" in
+    *"sql server list"*) printf '1\n' ;;
+    *"ad-admin list"*"length(@)"*) printf '1\n' ;;
+    *"ad-admin list"*) printf '{"login":"unrelated-admin","sid":"00000000-0000-0000-0000-000000000099"}\n' ;;
+    *"ad-only-auth disable"*|*"ad-admin delete"*) return 97 ;;
+    *) return 98 ;;
+  esac
+}
+remove_owned_sql_bootstrap_admin proof-sub proof-rg proof-sql proof-admin 00000000-0000-0000-0000-000000000001
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(1, result.returncode)
+        self.assertIn("Refusing to remove an unexpected SQL server administrator", result.stderr)
+        self.assertNotIn("ad-only-auth disable", result.stderr)
+        self.assertNotIn("ad-admin delete", result.stderr)
 
     def test_invalid_vault_derived_proof_names_fail_before_azure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

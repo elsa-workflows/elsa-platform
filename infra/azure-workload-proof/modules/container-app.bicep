@@ -38,6 +38,9 @@ param sqlConnectionSecretUri string
 @description('Key Vault URI for the Elsa identity signing secret.')
 param signingKeySecretUri string
 
+@description('Key Vault URI for the disposable proof administrator password.')
+param adminPasswordSecretUri string
+
 @description('SQL Key Vault reference name used inside Container Apps.')
 @minLength(1)
 @maxLength(63)
@@ -47,6 +50,16 @@ param sqlRef string = 'sql-connection'
 @minLength(1)
 @maxLength(63)
 param signingRef string = 'identity-signing-key'
+
+@description('Administrator password Key Vault reference name used inside Container Apps.')
+@minLength(1)
+@maxLength(63)
+param adminCredentialRef string = 'admin-password'
+
+@description('Disposable proof administrator username.')
+@minLength(1)
+@maxLength(128)
+param adminUsername string = 'proof-admin'
 
 @description('Elsa version represented by the immutable image.')
 @minLength(1)
@@ -70,6 +83,10 @@ param topology string = 'combined'
 @minLength(8)
 @maxLength(63)
 param revisionSuffix string
+
+@description('Existing healthy revision kept at 100% while the candidate revision warms. Empty uses latest revision for the first deployment.')
+@maxLength(64)
+param stableTrafficRevisionName string = ''
 
 @description('Tags applied to the app.')
 param tags object = {}
@@ -154,6 +171,14 @@ var featureEnvironment = [
     name: 'CShells__Shells__Default__Features__Identity__SigningKey'
     secretRef: signingRef
   }
+  {
+    name: 'CShells__Shells__Default__Features__DefaultAdminUser__AdminUsername'
+    value: adminUsername
+  }
+  {
+    name: 'CShells__Shells__Default__Features__DefaultAdminUser__AdminPassword'
+    secretRef: adminCredentialRef
+  }
 ]
 
 resource app 'Microsoft.App/containerApps@2023-05-01' = {
@@ -176,12 +201,17 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
         targetPort: 8080
         transport: 'auto'
         allowInsecure: false
-        traffic: [
-          {
-            latestRevision: true
-            weight: 100
-          }
-        ]
+        traffic: empty(stableTrafficRevisionName) ? [
+            {
+              latestRevision: true
+              weight: 100
+            }
+          ] : [
+            {
+              revisionName: stableTrafficRevisionName
+              weight: 100
+            }
+          ]
       }
       registries: [
         {
@@ -198,6 +228,11 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: signingRef
           keyVaultUrl: signingKeySecretUri
+          identity: workloadIdentityId
+        }
+        {
+          name: adminCredentialRef
+          keyVaultUrl: adminPasswordSecretUri
           identity: workloadIdentityId
         }
       ]

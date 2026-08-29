@@ -9,7 +9,7 @@ param location string
 @description('Principal ID of the workload identity that reads runtime secrets.')
 param workloadPrincipalId string
 
-@description('Interactive Entra operator object ID allowed to seed the two proof secrets.')
+@description('Interactive Entra operator object ID allowed to seed the three proof secrets.')
 param bootstrapObjectId string
 
 @description('Name of the SQL connection secret created by the runbook after the vault exists.')
@@ -21,6 +21,11 @@ param sqlConnectionSecretName string
 @minLength(1)
 @maxLength(127)
 param signingKeySecretName string
+
+@description('Name of the disposable proof administrator password created by the runbook after the vault exists.')
+@minLength(1)
+@maxLength(127)
+param adminPasswordSecretName string
 
 @description('Tags applied to the vault.')
 param tags object = {}
@@ -71,3 +76,4 @@ output name string = vault.name
 output uri string = vault.properties.vaultUri
 output sqlConnectionSecretUri string = '${vault.properties.vaultUri}secrets/${sqlConnectionSecretName}'
 output signingKeySecretUri string = '${vault.properties.vaultUri}secrets/${signingKeySecretName}'
+output adminCredentialUri string = '${vault.properties.vaultUri}secrets/${adminPasswordSecretName}'
