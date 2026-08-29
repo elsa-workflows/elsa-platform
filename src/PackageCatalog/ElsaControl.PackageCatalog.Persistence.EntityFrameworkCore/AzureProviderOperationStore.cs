@@ -24,6 +24,10 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         existing ??= identityEntity is null ? null : ToModel(identityEntity);
         if (existing is not null) return EnsureSameRequest(existing, hash);
 
+        var activeTargetEntity = await FindActiveTargetAsync(normalized, cancellationToken);
+        if (activeTargetEntity is not null)
+            throw new AzureProviderOperationConflictException(ToModel(activeTargetEntity));
+
         var entity = new AzureProviderOperationEntity
         {
             Id = Guid.NewGuid(),
@@ -81,6 +85,9 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
                 .SingleOrDefaultAsync(cancellationToken);
             existing ??= identityEntity is null ? null : ToModel(identityEntity);
             if (existing is not null) return EnsureSameRequest(existing, hash);
+            activeTargetEntity = await FindActiveTargetAsync(normalized, cancellationToken);
+            if (activeTargetEntity is not null)
+                throw new AzureProviderOperationConflictException(ToModel(activeTargetEntity));
             throw;
         }
     }
@@ -125,7 +132,11 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         var changed = await db.AzureProviderOperations.Where(x => x.WorkspaceId == workspaceId && x.Id == operationId &&
                 (x.Status == AzureProviderOperationStatus.Accepted || x.Status == AzureProviderOperationStatus.Queued ||
                  (allowRecovery && x.Status == AzureProviderOperationStatus.RecoveryRequired)) &&
-                (x.LeaseExpiresAt == null || x.LeaseExpiresAt <= now) && (!expectedVersion.HasValue || x.Version == expectedVersion.Value))
+                (x.LeaseExpiresAt == null || x.LeaseExpiresAt <= now) && (!expectedVersion.HasValue || x.Version == expectedVersion.Value) &&
+                !db.AzureProviderOperations.Any(other => other.Id != operationId && other.WorkspaceId == workspaceId &&
+                    other.TargetKey == x.TargetKey &&
+                    (other.Status == AzureProviderOperationStatus.Accepted || other.Status == AzureProviderOperationStatus.Queued ||
+                     other.Status == AzureProviderOperationStatus.Running || other.Status == AzureProviderOperationStatus.RecoveryRequired)))
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(x => x.Status, AzureProviderOperationStatus.Running)
                 .SetProperty(x => x.WorkerId, workerId)
@@ -239,6 +250,17 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
 
     private async Task<AzureProviderOperation?> FindByKeyAsync(AzureProviderOperationRequest request, CancellationToken cancellationToken) =>
         await db.AzureProviderOperations.AsNoTracking().SingleOrDefaultAsync(x => x.WorkspaceId == request.WorkspaceId && x.TargetKey == request.TargetKey && x.IdempotencyKey == request.IdempotencyKey, cancellationToken) is { } entity ? ToModel(entity) : null;
+
+    private async Task<AzureProviderOperationEntity?> FindActiveTargetAsync(
+        AzureProviderOperationRequest request,
+        CancellationToken cancellationToken) =>
+        await db.AzureProviderOperations.AsNoTracking()
+            .Where(x => x.WorkspaceId == request.WorkspaceId && x.TargetKey == request.TargetKey &&
+                        (x.Status == AzureProviderOperationStatus.Accepted || x.Status == AzureProviderOperationStatus.Queued ||
+                         x.Status == AzureProviderOperationStatus.Running || x.Status == AzureProviderOperationStatus.RecoveryRequired))
+            .OrderBy(x => x.CreatedAt)
+            .ThenBy(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
 
     private static AzureProviderOperation EnsureSameRequest(AzureProviderOperation operation, string hash) =>
         operation.RequestHash == hash ? operation : throw new InvalidOperationException("The idempotency key is already bound to a different request.");

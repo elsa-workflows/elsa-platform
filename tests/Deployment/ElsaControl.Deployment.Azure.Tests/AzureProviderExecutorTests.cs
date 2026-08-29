@@ -293,6 +293,20 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Target_conflict_is_reported_without_invoking_the_runner()
+    {
+        var store = new FakeOperationStore { RejectCreateWithStatus = AzureProviderOperationStatus.Running };
+        var runner = new RecordingRunner();
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.InProgress, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.Running, result.Operation.Status);
+        Assert.Empty(runner.Steps);
+    }
+
+    [Fact]
     public async Task Checkpoint_race_reports_recovery_required_instead_of_in_progress()
     {
         var store = new FakeOperationStore { RejectCheckpointWithStatus = AzureProviderOperationStatus.RecoveryRequired };
@@ -684,6 +698,7 @@ public sealed class AzureProviderExecutorTests
         public int HeartbeatCount { get; private set; }
         public AzureProviderOperationStatus? RejectClaimWithStatus { get; init; }
         public AzureProviderOperationStatus? RejectCheckpointWithStatus { get; init; }
+        public AzureProviderOperationStatus? RejectCreateWithStatus { get; init; }
         public bool LoseLeaseOnHeartbeat { get; init; }
         public AzureProviderResourceReferences? LatestReconcileResources { get; init; }
 
@@ -731,6 +746,11 @@ public sealed class AzureProviderExecutorTests
                 now,
                 now,
                 null);
+            if (RejectCreateWithStatus is { } conflictStatus)
+            {
+                _operation = _operation with { Status = conflictStatus, Version = _operation.Version + 1 };
+                throw new AzureProviderOperationConflictException(_operation);
+            }
             return Task.FromResult(_operation);
         }
 

@@ -89,7 +89,18 @@ public sealed class AzureProviderExecutor
     {
         var now = _timeProvider.GetUtcNow();
         var operationRequest = AzureProviderOperationValidation.Normalize(request.Operation);
-        var operation = await _store.CreateOrGetAsync(operationRequest, now, cancellationToken);
+        AzureProviderOperation operation;
+        try
+        {
+            operation = await _store.CreateOrGetAsync(operationRequest, now, cancellationToken);
+        }
+        catch (AzureProviderOperationConflictException exception)
+        {
+            return ResultForObservedState(
+                exception.Operation,
+                "azure.operation.target-busy",
+                "Another Azure operation currently owns this target.");
+        }
 
         if (operation.Status == AzureProviderOperationStatus.Succeeded)
             return Result(operation, AzureProviderExecutionOutcome.NoOp, "azure.operation.no-op", "The Azure workload already matches the requested plan.");

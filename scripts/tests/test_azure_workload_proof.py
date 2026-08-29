@@ -218,6 +218,7 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("remove_owned_sql_bootstrap_admin", library)
         self.assertIn("delete_and_verify_role_assignment", library)
         self.assertIn("valid_role_assignment_id", library)
+        self.assertIn("validate_direct_acr_pull_assignment", library)
         self.assertIn("delete_and_verify_group_deployment", library)
         self.assertIn("wait_for_resource_group_absence", library)
         self.assertIn("verify_proof_resource_inventory", combined_source)
@@ -409,6 +410,79 @@ verify_proof_resource_inventory proof-sub proof-rg proof a1111111-aaaa-aaaa-aaaa
             capture_output=True, text=True, check=False)
         self.assertNotEqual(0, mixed.returncode)
         self.assertIn("unowned resource", mixed.stderr)
+
+    def test_inventory_rejects_extra_child_scoped_vault_role_assignment(self) -> None:
+        base = "/subscriptions/proof-sub/resourceGroups/proof-rg"
+        owned = [
+            {"id": f"{base}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/proof-identity",
+             "type": "Microsoft.ManagedIdentity/userAssignedIdentities"},
+            {"id": f"{base}/providers/Microsoft.KeyVault/vaults/proof-kv",
+             "type": "Microsoft.KeyVault/vaults"},
+            {"id": f"{base}/providers/Microsoft.Sql/servers/proof-sql",
+             "type": "Microsoft.Sql/servers"},
+            {"id": f"{base}/providers/Microsoft.OperationalInsights/workspaces/proof-logs",
+             "type": "Microsoft.OperationalInsights/workspaces"},
+            {"id": f"{base}/providers/Microsoft.App/managedEnvironments/proof-aca",
+             "type": "Microsoft.App/managedEnvironments"},
+            {"id": f"{base}/providers/Microsoft.App/containerApps/proof-app",
+             "type": "Microsoft.App/containerApps"},
+        ]
+        vault_id = f"{base}/providers/Microsoft.KeyVault/vaults/proof-kv"
+        assignments = [
+            {"scope": vault_id, "principalId": "A1111111-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+             "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/4633458b-17de-408a-b874-0445c86b69e6"},
+            {"scope": vault_id, "principalId": "B2222222-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+             "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/b86a8fe4-44ce-4948-aee5-eccb2c155cd7"},
+            {"scope": f"{vault_id}/secrets/unrelated", "principalId": "C3333333-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+             "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/4633458b-17de-408a-b874-0445c86b69e6"},
+        ]
+        script = r'''
+source "$1"
+RESOURCE_JSON="$2"
+ASSIGNMENTS_JSON="$3"
+az() {
+  case "$*" in
+    *"resource list"*) printf '%s\n' "$RESOURCE_JSON" ;;
+    *"vaults/proof-kv"*) printf '%s\n' "$ASSIGNMENTS_JSON" ;;
+    *"resourceGroups/proof-rg"*) printf '[]\n' ;;
+    *) return 1 ;;
+  esac
+}
+verify_proof_resource_inventory proof-sub proof-rg proof a1111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa b2222222-bbbb-bbbb-bbbb-bbbbbbbbbbbb
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB), json.dumps(owned), json.dumps(assignments)],
+            capture_output=True, text=True, check=False)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("vault RBAC inventory is not exact", result.stderr)
+
+    def test_fallback_acr_cleanup_accepts_only_direct_registry_role_assignments(self) -> None:
+        registry = "/subscriptions/proof-sub/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/acr"
+        role = f"{registry}/providers/Microsoft.Authorization/roleAssignments/00000000-0000-0000-0000-000000000001"
+        direct = json.dumps({
+            "id": role,
+            "scope": registry,
+            "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/7f951dda-4ed3-4680-a7ca-43fe172d538d",
+        })
+        inherited = json.dumps({
+            "id": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleAssignments/00000000-0000-0000-0000-000000000002",
+            "scope": "/subscriptions/proof-sub",
+            "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/7f951dda-4ed3-4680-a7ca-43fe172d538d",
+        })
+        script = r'''
+source "$1"
+validate_direct_acr_pull_assignment "$2" "$3"
+'''
+        self.assertEqual(
+            0,
+            subprocess.run(
+                ["bash", "-c", script, "test", str(RUNBOOK_LIB), registry, direct],
+                capture_output=True, text=True, check=False).returncode)
+        self.assertNotEqual(
+            0,
+            subprocess.run(
+                ["bash", "-c", script, "test", str(RUNBOOK_LIB), registry, inherited],
+                capture_output=True, text=True, check=False).returncode)
 
     def test_uncertain_traffic_set_result_also_rolls_back(self) -> None:
         script = r'''
