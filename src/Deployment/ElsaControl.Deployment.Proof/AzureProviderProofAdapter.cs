@@ -89,6 +89,9 @@ public sealed class AzureProviderProofAdapter(
             throw new DeploymentProofStageException(DeploymentProofStage.Plan, "azure.proof.planUnavailable", "An admitted Azure proof plan could not be created.");
         }
 
+        if (submission.Plan is null)
+            throw new DeploymentProofStageException(DeploymentProofStage.Plan, "azure.proof.planUnavailable", "An admitted Azure proof plan could not be created.");
+
         var planImageReference = $"{submission.Plan.ImageRepository}@sha256:{submission.Plan.ImageDigest}";
         if (!string.Equals(submission.TemplateFingerprint, templateFingerprint, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(submission.Plan.ElsaVersion, selection.ElsaVersion, StringComparison.Ordinal) ||
@@ -203,7 +206,7 @@ public sealed class AzureProviderProofAdapter(
         var submission = GetSubmission(plan, DeploymentProofStage.Cleanup);
         var operation = await operationService.SubmitDeleteAsync(workspaceId, submission, cancellationToken);
         var execution = await executor.DeleteAsync(
-            AzureProviderOperationService.CreateOperationRequest(workspaceId, $"{submission.IdempotencyKey}:delete", templateFingerprint, submission.Plan, AzureProviderOperationAction.Delete),
+            AzureProviderOperationService.CreateOperationRequest(workspaceId, operation.IdempotencyKey, templateFingerprint, submission.Plan, AzureProviderOperationAction.Delete),
             submission.Plan,
             cancellationToken);
         if (!execution.Succeeded)

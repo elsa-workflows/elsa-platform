@@ -54,14 +54,17 @@ public sealed class AzureProviderOperationService(
     public Task<AzureProviderOperation> SubmitDeleteAsync(
         Guid workspaceId,
         AzureProviderOperationSubmission submission,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(submission);
         // Idempotency is scoped to a lifecycle action. A cleanup request must never
         // accidentally reuse the successful reconcile operation for the same target.
-        SubmitCoreAsync(
+        return SubmitCoreAsync(
             workspaceId,
             submission with { IdempotencyKey = $"{submission.IdempotencyKey}:delete" },
             AzureProviderOperationAction.Delete,
             cancellationToken);
+    }
 
     public async Task<AzureProviderOperationStatusResponse?> GetStatusAsync(
         Guid workspaceId,
@@ -140,6 +143,10 @@ public sealed class AzureProviderOperationService(
     {
         if (operation is null || string.IsNullOrWhiteSpace(operation.ReleaseManifestReference) ||
             string.IsNullOrWhiteSpace(operation.ReleaseManifestSignatureReference) ||
+            string.IsNullOrWhiteSpace(operation.ImageDigest) ||
+            operation.ImageDigest.Length != "sha256:".Length + 64 ||
+            !operation.ImageDigest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) ||
+            !operation.ImageDigest["sha256:".Length..].All(Uri.IsHexDigit) ||
             !AzureProviderOperationValidation.IsSafeImmutableEvidenceReference(operation.ReleaseManifestReference, operation.ReleaseManifestDigest) ||
             !AzureProviderOperationValidation.IsSafeImmutableEvidenceReference(operation.ReleaseManifestSignatureReference, operation.ReleaseManifestSignatureDigest) ||
             !AzureProviderOperationValidation.IsSafeSecretReferences(operation.SafeSecretReferences))

@@ -11,6 +11,16 @@ public sealed class AzureProviderOperationWorker(
     IAzureProviderPlanSource planSource,
     TimeProvider? timeProvider = null)
 {
+    // Keep the executor-only construction seam available to hosts that predate the persisted
+    // plan source; the default source still enforces the same admission checks.
+    public AzureProviderOperationWorker(
+        IAzureProviderOperationStore store,
+        AzureProviderExecutor executor,
+        TimeProvider timeProvider)
+        : this(store, executor, new PersistedAzureProviderPlanSource(), timeProvider)
+    {
+    }
+
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     public async Task<int> ProcessOnceAsync(
