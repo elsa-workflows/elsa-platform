@@ -56,6 +56,11 @@ Promotion failures invoke the runner's stable-traffic restoration step. An
 uncertain promotion or cleanup remains `RecoveryRequired` until its external
 effect is confirmed. Cleanup only succeeds when the runner reports exact
 proof-owned resource absence (no resource references, endpoint or health fact).
+If no reconcile snapshot exists, an empty reference set is valid only for a
+never-provisioned target; the executor does not infer absence from that empty
+set. The trusted runner must independently prove exact absence from the plan
+and return `OwnedResourcesAbsent`, otherwise cleanup remains failed or requires
+recovery.
 
 `AzureProviderOperationService` is the API/worker admission seam. It accepts
 only the typed provider-safe projection, persists the immutable evidence

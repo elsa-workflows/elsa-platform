@@ -190,30 +190,6 @@ resolve_workload_revision_suffix() {
   select_workload_revision_suffix "$plan_fingerprint" "$current_revision_suffix" "$app_name" "$revision_names"
 }
 
-resolve_stable_traffic_revision() {
-  local app_name="${proof_name}-app"
-  local app_count stable_revision stable_state
-
-  app_count="$(az resource list --resource-group "$resource_group" --resource-type Microsoft.App/containerApps --query "[?name=='${app_name}'] | length(@)" --output tsv --only-show-errors)"
-  if (( app_count == 0 )); then
-    return 0
-  fi
-  if (( app_count != 1 )); then
-    echo "Expected exactly one proof Container App named $app_name" >&2
-    return 5
-  fi
-
-  # shellcheck disable=SC2016 # Backticks are JMESPath numeric literals.
-  stable_revision="$(az containerapp show --resource-group "$resource_group" --name "$app_name" --query 'properties.configuration.ingress.traffic[?weight == `100` && revisionName != null].revisionName | [0]' --output tsv --only-show-errors)"
-  if [[ -z "$stable_revision" ]]; then
-    stable_revision="$(az containerapp show --resource-group "$resource_group" --name "$app_name" --query properties.latestReadyRevisionName --output tsv --only-show-errors)"
-  fi
-  [[ -n "$stable_revision" ]] || { echo "Existing proof app has no stable revision" >&2; return 5; }
-  stable_state="$(az containerapp revision show --resource-group "$resource_group" --name "$app_name" --revision "$stable_revision" --query 'properties.{active:active,health:healthState}' --output json --only-show-errors)"
-  [[ "$(jq -r .active <<<"$stable_state")" == true && "$(jq -r .health <<<"$stable_state")" == Healthy ]] || { echo "Refusing rollout because stable revision $stable_revision is not active and healthy" >&2; return 5; }
-  printf '%s\n' "$stable_revision"
-}
-
 if [[ "$mode" == cleanup ]]; then
   : "${resource_group:?cleanup requires --resource-group}"
   : "${proof_name:?cleanup requires --proof-name so the external ACR role can be removed safely}"
@@ -229,7 +205,9 @@ if [[ "$mode" == cleanup ]]; then
   }
   cleanup_status=0
   identity_principal_id="$(az identity show --resource-group "$resource_group" --name "${proof_name}-identity" --query principalId --output tsv --only-show-errors 2>/dev/null || true)"
+  identity_principal_id="$(printf '%s' "$identity_principal_id" | tr '[:upper:]' '[:lower:]')"
   proof_subscription_id="$(az account show --query id --output tsv --only-show-errors)"
+  identity_principal_id_lower="$identity_principal_id"
   stored_bootstrap_object_id="$(jq -r '.sqlBootstrapObjectId // empty' <<<"$group_tags")"
   [[ "$stored_bootstrap_object_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || {
     echo "Refusing cleanup: proof bootstrap identity provenance is missing" >&2
@@ -253,11 +231,14 @@ if [[ "$mode" == cleanup ]]; then
   stored_deployment_name="$(jq -r '.acrDeployment // empty' <<<"$group_tags")"
   stored_principal_id="$(jq -r '.acrPrincipal // empty' <<<"$group_tags")"
   stored_registry_id="$(jq -r '.acrRegistryId // empty' <<<"$group_tags")"
-  if [[ -n "$stored_principal_id" && -n "$identity_principal_id" && "$stored_principal_id" != "$identity_principal_id" ]]; then
+  stored_principal_id_lower="$(printf '%s' "$stored_principal_id" | tr '[:upper:]' '[:lower:]')"
+  if [[ -n "$stored_principal_id" && -n "$identity_principal_id" && "$stored_principal_id_lower" != "$identity_principal_id_lower" ]]; then
     echo "Refusing resource-group deletion: stored and live proof identities do not match" >&2
     exit 3
   fi
-  if [[ -n "$stored_registry_id" && "$stored_registry_id" != "$registry_id" ]]; then
+  stored_registry_id_lower="$(printf '%s' "$stored_registry_id" | tr '[:upper:]' '[:lower:]')"
+  registry_id_lower="$(printf '%s' "$registry_id" | tr '[:upper:]' '[:lower:]')"
+  if [[ -n "$stored_registry_id" && "$stored_registry_id_lower" != "$registry_id_lower" ]]; then
     echo "Refusing resource-group deletion: stored and requested ACR scopes do not match" >&2
     exit 3
   fi
@@ -285,7 +266,7 @@ if [[ "$mode" == cleanup ]]; then
     }
   fi
   if [[ -n "$role_assignment_id" ]]; then
-    if ! assignment_list_json="$(az role assignment list --scope "$registry_id" --output json --only-show-errors)"; then
+    if ! assignment_list_json="$(az role assignment list --all --scope "$registry_id" --output json --only-show-errors)"; then
       echo "Refusing resource-group deletion: ACR role assignments could not be read" >&2
       exit 3
     fi
@@ -294,9 +275,11 @@ if [[ "$mode" == cleanup ]]; then
       assignment_principal_id="$(jq -r '.principalId // empty' <<<"$assignment_json")"
       assignment_scope="$(jq -r '.scope // empty' <<<"$assignment_json")"
       assignment_scope_lower="$(printf '%s' "$assignment_scope" | tr '[:upper:]' '[:lower:]')"
-      registry_id_lower="$(printf '%s' "$registry_id" | tr '[:upper:]' '[:lower:]')"
       assignment_role_id="$(jq -r '.roleDefinitionId // empty | split("/") | last' <<<"$assignment_json")"
-      [[ "$assignment_principal_id" == "$cleanup_principal_id" && "$assignment_scope_lower" == "$registry_id_lower" && "$assignment_role_id" == 7f951dda-4ed3-4680-a7ca-43fe172d538d ]] || {
+      assignment_principal_id_lower="$(printf '%s' "$assignment_principal_id" | tr '[:upper:]' '[:lower:]')"
+      cleanup_principal_id_lower="$(printf '%s' "$cleanup_principal_id" | tr '[:upper:]' '[:lower:]')"
+      assignment_role_id_lower="$(printf '%s' "$assignment_role_id" | tr '[:upper:]' '[:lower:]')"
+      [[ "$assignment_principal_id_lower" == "$cleanup_principal_id_lower" && "$assignment_scope_lower" == "$registry_id_lower" && "$assignment_role_id_lower" == 7f951dda-4ed3-4680-a7ca-43fe172d538d ]] || {
         echo "Refusing resource-group deletion: stored ACR assignment does not match this proof identity, scope, and role" >&2
         exit 3
       }
@@ -306,7 +289,7 @@ if [[ "$mode" == cleanup ]]; then
       delete_and_verify_group_deployment "$registry_resource_group" "$stored_deployment_name" || cleanup_status=1
     fi
   elif [[ -n "$cleanup_principal_id" && -n "$registry_id" ]]; then
-    if ! role_ids="$(az role assignment list --scope "$registry_id" --assignee-object-id "$cleanup_principal_id" --role AcrPull --query '[].id' --output tsv --only-show-errors)"; then
+    if ! role_ids="$(az role assignment list --all --scope "$registry_id" --assignee-object-id "$cleanup_principal_id" --role AcrPull --query '[].id' --output tsv --only-show-errors)"; then
       echo "Refusing resource-group deletion: identity-scoped ACR assignments could not be read" >&2
       exit 3
     fi
@@ -341,6 +324,7 @@ validate_digest "$image_digest"
 validate_repository "$image_repository"
 validate_registry_name "$registry_name"
 validate_guid "$sql_bootstrap_object_id"
+sql_bootstrap_object_id="$(printf '%s' "$sql_bootstrap_object_id" | tr '[:upper:]' '[:lower:]')"
 validate_login "$sql_bootstrap_login"
 validate_ipv4 "$sql_bootstrap_ip"
 : "${resource_group:?$mode requires --resource-group}"
@@ -385,7 +369,7 @@ if [[ "$mode" == what-if ]]; then
     exit 3
   fi
   what_if_parameters=("${parameters[@]}")
-  what_if_stable_revision="$(resolve_stable_traffic_revision)"
+  what_if_stable_revision="$(resolve_stable_traffic_revision "$resource_group" "${proof_name}-app")"
   [[ -z "$what_if_stable_revision" ]] || what_if_parameters+=("stableTrafficRevisionName=$what_if_stable_revision")
   foundation_deployment_name="elsa108-${proof_name}-${deployment_suffix}-foundation"
   foundation_deployment_count="$(az deployment group list --resource-group "$resource_group" --query "[?name=='${foundation_deployment_name}'] | length(@)" --output tsv --only-show-errors)"
@@ -416,7 +400,9 @@ if [[ "$group_exists" == true ]]; then
   existing_tags="$(az group show --name "$resource_group" --query tags --output json --only-show-errors)"
   [[ "$(jq -r '.proof // empty' <<<"$existing_tags")" == 108 && "$(jq -r '.owner // empty' <<<"$existing_tags")" == elsa-control && "$(jq -r '."proof-name" // empty' <<<"$existing_tags")" == "$proof_name" ]] || { echo "Refusing to adopt unrelated resource group" >&2; exit 3; }
   existing_bootstrap_object_id="$(jq -r '.sqlBootstrapObjectId // empty' <<<"$existing_tags")"
-  [[ -z "$existing_bootstrap_object_id" || "$existing_bootstrap_object_id" == "$sql_bootstrap_object_id" ]] || {
+  existing_bootstrap_object_id_lower="$(printf '%s' "$existing_bootstrap_object_id" | tr '[:upper:]' '[:lower:]')"
+  sql_bootstrap_object_id_lower="$(printf '%s' "$sql_bootstrap_object_id" | tr '[:upper:]' '[:lower:]')"
+  [[ -z "$existing_bootstrap_object_id" || "$existing_bootstrap_object_id_lower" == "$sql_bootstrap_object_id_lower" ]] || {
     echo "Refusing to replace the proof group with a different bootstrap identity" >&2
     exit 3
   }
@@ -437,7 +423,7 @@ temporary_firewall_created=0
 bootstrap_admin_removed=0
 temp_dir=""
 ensure_sql_bootstrap_admin_for_reapply() {
-  local admin_count admin_state server_count
+  local admin_count admin_state server_count actual_admin_object_id_lower expected_admin_object_id_lower
   server_count="$(az sql server list --subscription "$proof_subscription_id" --resource-group "$resource_group" --query "[?name=='${sql_server_name}'] | length(@)" --output tsv --only-show-errors)" || return 1
   if (( server_count == 0 )); then return 0; fi
   (( server_count == 1 )) || { echo "Expected at most one proof SQL server named $sql_server_name" >&2; return 1; }
@@ -449,7 +435,9 @@ ensure_sql_bootstrap_admin_for_reapply() {
       --display-name "$sql_bootstrap_login" --object-id "$sql_bootstrap_object_id" --only-show-errors >/dev/null || return 1
   fi
   admin_state="$(az sql server ad-admin list --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" --query '[0].{login:login,sid:sid}' --output json --only-show-errors)" || return 1
-  [[ "$(jq -r .login <<<"$admin_state")" == "$sql_bootstrap_login" && "$(jq -r .sid <<<"$admin_state")" == "$sql_bootstrap_object_id" ]] || { echo "Refusing to replace an unexpected SQL server administrator" >&2; return 1; }
+  actual_admin_object_id_lower="$(jq -r .sid <<<"$admin_state" | tr '[:upper:]' '[:lower:]')"
+  expected_admin_object_id_lower="$(printf '%s' "$sql_bootstrap_object_id" | tr '[:upper:]' '[:lower:]')"
+  [[ "$(jq -r .login <<<"$admin_state")" == "$sql_bootstrap_login" && "$actual_admin_object_id_lower" == "$expected_admin_object_id_lower" ]] || { echo "Refusing to replace an unexpected SQL server administrator" >&2; return 1; }
   az sql server ad-only-auth enable --subscription "$proof_subscription_id" --resource-group "$resource_group" --name "$sql_server_name" --only-show-errors >/dev/null || return 1
   bootstrap_admin_removed=0
 }
@@ -460,7 +448,8 @@ remove_sql_bootstrap_admin() {
 }
 cleanup_apply() {
   if (( temporary_firewall_created )); then
-    az sql server firewall-rule delete --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --only-show-errors >/dev/null 2>&1 || true
+    delete_and_verify_firewall_rule "$proof_subscription_id" "$resource_group" "$sql_server_name" "$temporary_firewall_rule" ||
+      echo "CRITICAL: temporary SQL firewall rule cleanup could not be verified" >&2
   fi
   if (( bootstrap_admin_removed == 0 )); then
     remove_sql_bootstrap_admin >/dev/null 2>&1 || echo "CRITICAL: temporary SQL bootstrap administrator cleanup could not be verified" >&2
@@ -482,12 +471,13 @@ foundation_outputs="$(az deployment group create \
 identity_id="$(jq -r '.workloadIdentityId.value' <<<"$foundation_outputs")"
 identity_client_id="$(jq -r '.workloadIdentityClientId.value' <<<"$foundation_outputs")"
 identity_principal_id="$(jq -r '.workloadIdentityPrincipalId.value' <<<"$foundation_outputs")"
+identity_principal_id="$(printf '%s' "$identity_principal_id" | tr '[:upper:]' '[:lower:]')"
 key_vault_name="${proof_name}-kv"
 sql_fqdn="$(jq -r '.sqlServerFqdn.value' <<<"$foundation_outputs")"
 plan_fingerprint="$(jq -r '.planFingerprint.value' <<<"$foundation_outputs")"
 
 workload_revision_suffix="$(resolve_workload_revision_suffix "$plan_fingerprint")"
-stable_traffic_revision="$(resolve_stable_traffic_revision)"
+stable_traffic_revision="$(resolve_stable_traffic_revision "$resource_group" "${proof_name}-app")"
 
 # The ACR is intentionally outside the disposable group. This idempotent role
 # assignment is the only proof mutation outside the supplied proof group.
@@ -504,7 +494,7 @@ az deployment group create \
 acr_role_ready=0
 registry_id="$(az acr show --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors)"
 for _ in {1..12}; do
-  if [[ "$(az role assignment list --scope "$registry_id" --assignee-object-id "$identity_principal_id" --role AcrPull --query 'length(@)' --output tsv --only-show-errors 2>/dev/null || echo 0)" -gt 0 ]]; then
+  if [[ "$(az role assignment list --all --scope "$registry_id" --assignee-object-id "$identity_principal_id" --role AcrPull --query 'length(@)' --output tsv --only-show-errors 2>/dev/null || echo 0)" -gt 0 ]]; then
     acr_role_ready=1
     break
   fi
@@ -564,7 +554,10 @@ for _ in {1..12}; do
   sleep 10
 done
 (( bootstrap_ok == 1 )) || { echo "SQL bootstrap did not become ready" >&2; exit 5; }
-az sql server firewall-rule delete --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --only-show-errors >/dev/null
+delete_and_verify_firewall_rule "$proof_subscription_id" "$resource_group" "$sql_server_name" "$temporary_firewall_rule" || {
+  echo "Temporary SQL firewall rule cleanup could not be verified" >&2
+  exit 5
+}
 temporary_firewall_created=0
 
 az deployment group create \

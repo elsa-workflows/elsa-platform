@@ -517,6 +517,11 @@ public sealed class AzureProviderExecutor
         var resources = preserveStableTrafficRevision
             ? runnerResult.Resources with { StableTrafficRevisionName = null }
             : runnerResult.Resources;
+        // Reference-only checkpoints are partial by contract. A runner may omit observations when
+        // a lifecycle step does not own them, so preserve the last authoritative values rather
+        // than turning an omitted endpoint/Unknown health into a destructive overwrite.
+        var endpoint = runnerResult.Endpoint ?? operation.Endpoint;
+        var health = runnerResult.Health == AzureProviderHealth.Unknown ? operation.Health : runnerResult.Health;
         return await CheckpointAsync(
             operation,
             leaseToken,
@@ -525,8 +530,8 @@ public sealed class AzureProviderExecutor
                 "azure.step.references",
                 "Provider resource references were retained for recovery.",
                 resources,
-                runnerResult.Endpoint,
-                runnerResult.Health,
+                endpoint,
+                health,
                 SafeDiagnostics(runnerResult.Diagnostics)),
             cancellationToken);
     }
