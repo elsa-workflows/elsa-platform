@@ -41,12 +41,12 @@ Commercial image/version authority → resolved Elsa application model → typed
 
 Native GitHub sub-issues define the Program → Epic → Feature → Task/Spike hierarchy and provide roll-up progress. Issue bodies retain explicit `Part of`, `Blocked by`, and `Blocks` sections for readable context and cross-cutting dependencies. GitHub Project: https://github.com/orgs/valence-works/projects/7.
 
-The Project uses the native GitHub issue types that are available to the organization (`Feature`, `Task`, and `Bug`) and a required `Work item type` Project field for the richer program taxonomy (`Program`, `Epic`, `Feature`, `Task`, `Bug`, `Spike`, and `ADR`). This preserves native issue semantics while making the full hierarchy queryable.
+The Project uses the native GitHub issue types that are available to the organization (`Feature`, `Task`, and `Bug`) and a required `Work item type` Project field for the richer program taxonomy (`Program`, `Epic`, `Feature`, `Task`, `Bug`, `Spike`, and `ADR`). Program/Epic/Feature items use native `Feature`; Tasks, Spikes and ADR work use native `Task`; Bugs use native `Bug`. This preserves native issue semantics while making the full hierarchy queryable.
 
 The six operational views are:
 
 - **Execution:** board grouped by Status, excluding Done.
-- **Roadmap:** roadmap grouped by Phase.
+- **Roadmap:** roadmap grouped by Phase, using Start date and Target date.
 - **Critical Path:** P0 work.
 - **Agent Queue:** Agent Ready work whose Status is Ready.
 - **Workstreams:** board grouped by Area.

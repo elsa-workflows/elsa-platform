@@ -42,7 +42,23 @@ Harden provisioning/recovery; add entitlement/subscription lifecycle, backup/res
 
 ### Later phases
 
-Professional environment/promotion features, Dedicated, Private/custom code, Elsa Control Cloud customer agent and enterprise expansion follow demonstrated demand and milestone evidence.
+Professional environment/promotion features (#131), Dedicated isolation hardening (#132), Private/custom-code delivery (#133), the Elsa Control Cloud customer-agent model (#103), and enterprise federation/governance (#134) remain deliberately coarse until the preceding milestone evidence is available.
+
+## Schedule Baseline
+
+These are planning targets, not unconditional delivery promises. Native dependency evidence and milestone exit criteria take precedence over dates. The GitHub Project Roadmap carries the same Start date and Target date fields for every current program item.
+
+| Phase | Planned window |
+|-------|----------------|
+| Architecture | 2026-08-29 through 2026-09-18 |
+| Deployment Proof | 2026-09-14 through 2026-10-30 |
+| Walking Skeleton | 2026-11-02 through 2026-12-18 |
+| MVP | 2027-01-04 through 2027-03-31 |
+| Professional | 2027-04-01 through 2027-05-31 |
+| Dedicated | 2027-06-01 through 2027-07-30 |
+| Private | 2027-08-02 through 2027-09-30 |
+| Elsa Control Cloud | 2027-10-01 through 2027-12-17 |
+| Enterprise | 2028-01-03 through 2028-03-31 |
 
 ## Critical Path
 
