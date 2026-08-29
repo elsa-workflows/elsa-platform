@@ -138,6 +138,7 @@ module vault 'modules/key-vault.bicep' = {
     bootstrapObjectId: sqlBootstrapObjectId
     sqlConnectionSecretName: sqlConnectionSecretName
     signingKeySecretName: signingKeySecretName
+    adminPasswordSecretName: adminPasswordSecretName
     tags: tags
   }
 }
@@ -166,7 +167,7 @@ module workload 'modules/container-app.bicep' = if (deployWorkload) {
     workloadIdentityId: workloadIdentity.outputs.id
     sqlConnectionSecretUri: vault.outputs.sqlConnectionSecretUri
     signingKeySecretUri: vault.outputs.signingKeySecretUri
-    adminPasswordSecretUri: '${vault.outputs.uri}secrets/${adminPasswordSecretName}'
+    adminPasswordSecretUri: vault.outputs.adminCredentialUri
     sqlRef: take(sqlConnectionSecretName, 63)
     signingRef: take(signingKeySecretName, 63)
     adminCredentialRef: take(adminPasswordSecretName, 63)
