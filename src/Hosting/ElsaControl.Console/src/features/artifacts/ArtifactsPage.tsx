@@ -375,8 +375,7 @@ function ArtifactUploadCard({
       const session = await createArtifactUpload(workspaceId, {
         fileName: selectedFile.name,
         contentType: selectedFile.type || "application/zip",
-        sizeBytes: selectedFile.size,
-        idempotencyKey: `${selectedFile.name}:${selectedFile.size}:${selectedFile.lastModified}`
+        sizeBytes: selectedFile.size
       });
       uploadId = session.uploadId;
       setPhase("uploading");

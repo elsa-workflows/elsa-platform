@@ -303,8 +303,7 @@ export function WizardArtifactStep({
       const session = await createArtifactUpload(workspaceId, {
         fileName: selectedFile.name,
         contentType: selectedFile.type || "application/zip",
-        sizeBytes: selectedFile.size,
-        idempotencyKey: `${selectedFile.name}:${selectedFile.size}:${selectedFile.lastModified}`
+        sizeBytes: selectedFile.size
       });
       setPhase("uploading");
       await uploadArtifactContent(workspaceId, session.uploadId, selectedFile, setProgress);

@@ -45,7 +45,9 @@ describe("artifact API", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await createArtifactUpload("workspace-1", { fileName: "recipe.zip", contentType: "application/zip", sizeBytes: 3, idempotencyKey: "recipe-1" });
+    await createArtifactUpload("workspace-1", { fileName: "recipe.zip", contentType: "application/zip", sizeBytes: 3 });
+    const createCall = fetchMock.mock.calls[0];
+    expect(JSON.parse(String(createCall[1]?.body))).not.toHaveProperty("idempotencyKey");
     const progress: number[] = [];
     const payload = new Blob(["zip"], { type: "application/zip" });
     await uploadArtifactContent("workspace-1", uploadId, payload, (value) => progress.push(value));
