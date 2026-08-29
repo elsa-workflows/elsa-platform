@@ -266,7 +266,7 @@ if [[ "$mode" == cleanup ]]; then
     }
   fi
   if [[ -n "$role_assignment_id" ]]; then
-    if ! assignment_list_json="$(az role assignment list --all --scope "$registry_id" --output json --only-show-errors)"; then
+    if ! assignment_list_json="$(az role assignment list --all --output json --only-show-errors)"; then
       echo "Refusing resource-group deletion: ACR role assignments could not be read" >&2
       exit 3
     fi
@@ -289,7 +289,7 @@ if [[ "$mode" == cleanup ]]; then
       delete_and_verify_group_deployment "$registry_resource_group" "$stored_deployment_name" || cleanup_status=1
     fi
   elif [[ -n "$cleanup_principal_id" && -n "$registry_id" ]]; then
-    if ! role_assignments_json="$(az role assignment list --all --scope "$registry_id" --assignee-object-id "$cleanup_principal_id" --role AcrPull --output json --only-show-errors)"; then
+    if ! role_assignments_json="$(az role assignment list --all --assignee-object-id "$cleanup_principal_id" --role AcrPull --output json --only-show-errors)"; then
       echo "Refusing resource-group deletion: identity-scoped ACR assignments could not be read" >&2
       exit 3
     fi
@@ -299,7 +299,7 @@ if [[ "$mode" == cleanup ]]; then
     }
     while IFS= read -r assignment_json; do
       role_id="$(jq -r '.id // empty' <<<"$assignment_json")"
-      validate_direct_acr_pull_assignment "$registry_id" "$assignment_json" || {
+      validate_direct_acr_pull_assignment "$registry_id" "$assignment_json" "$cleanup_principal_id" || {
         echo "Refusing resource-group deletion: fallback ACR assignment is not directly scoped to the governed registry" >&2
         exit 3
       }
@@ -503,7 +503,8 @@ az deployment group create \
 acr_role_ready=0
 registry_id="$(az acr show --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors)"
 for _ in {1..12}; do
-  if [[ "$(az role assignment list --all --scope "$registry_id" --assignee-object-id "$identity_principal_id" --role AcrPull --query 'length(@)' --output tsv --only-show-errors 2>/dev/null || echo 0)" -gt 0 ]]; then
+  if role_assignments_json="$(az role assignment list --all --assignee-object-id "$identity_principal_id" --role AcrPull --output json --only-show-errors 2>/dev/null)" &&
+    has_direct_acr_pull_assignment "$registry_id" "$identity_principal_id" "$role_assignments_json"; then
     acr_role_ready=1
     break
   fi
