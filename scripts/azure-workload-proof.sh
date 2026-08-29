@@ -391,6 +391,40 @@ else
   exit 5
 fi
 
+sql_server_name="${proof_name}-sql"
+temporary_firewall_rule="elsa108-bootstrap"
+temporary_firewall_created=0
+bootstrap_admin_removed=0
+temp_dir=""
+remove_sql_bootstrap_admin() {
+  local admin_count server_count
+  server_count="$(az sql server list --subscription "$proof_subscription_id" --resource-group "$resource_group" --query "[?name=='${sql_server_name}'] | length(@)" --output tsv --only-show-errors 2>/dev/null)" || return 1
+  if (( server_count == 0 )); then bootstrap_admin_removed=1; return 0; fi
+  (( server_count == 1 )) || { echo "Expected at most one proof SQL server named $sql_server_name" >&2; return 1; }
+  admin_count="$(az sql server ad-admin list --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" --query 'length(@)' --output tsv --only-show-errors 2>/dev/null)" || return 1
+  if (( admin_count > 0 )); then
+    az sql server ad-only-auth disable --subscription "$proof_subscription_id" --resource-group "$resource_group" --name "$sql_server_name" --only-show-errors >/dev/null || return 1
+    az sql server ad-admin delete --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" --only-show-errors >/dev/null || return 1
+  fi
+  for _ in {1..12}; do
+    admin_count="$(az sql server ad-admin list --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" --query 'length(@)' --output tsv --only-show-errors 2>/dev/null)" || return 1
+    if (( admin_count == 0 )); then bootstrap_admin_removed=1; return 0; fi
+    sleep 5
+  done
+  echo "Temporary SQL bootstrap administrator remained configured" >&2
+  return 1
+}
+cleanup_apply() {
+  if (( temporary_firewall_created )); then
+    az sql server firewall-rule delete --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --only-show-errors >/dev/null 2>&1 || true
+  fi
+  if (( bootstrap_admin_removed == 0 )); then
+    remove_sql_bootstrap_admin >/dev/null 2>&1 || echo "CRITICAL: temporary SQL bootstrap administrator cleanup could not be verified" >&2
+  fi
+  [[ -z "$temp_dir" ]] || rm -rf -- "$temp_dir"
+}
+trap cleanup_apply EXIT
+
 deployment_name="elsa108-${proof_name}-${deployment_suffix}"
 foundation_outputs="$(az deployment group create \
   --resource-group "$resource_group" \
@@ -408,18 +442,6 @@ plan_fingerprint="$(jq -r '.planFingerprint.value' <<<"$foundation_outputs")"
 
 workload_revision_suffix="$(resolve_workload_revision_suffix "$plan_fingerprint")"
 stable_traffic_revision="$(resolve_stable_traffic_revision)"
-
-sql_server_name="${proof_name}-sql"
-temporary_firewall_rule="elsa108-bootstrap"
-temporary_firewall_created=0
-temp_dir=""
-cleanup_apply() {
-  if (( temporary_firewall_created )); then
-    az sql server firewall-rule delete --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --only-show-errors >/dev/null 2>&1 || true
-  fi
-  [[ -z "$temp_dir" ]] || rm -rf -- "$temp_dir"
-}
-trap cleanup_apply EXIT
 
 # The ACR is intentionally outside the disposable group. This idempotent role
 # assignment is the only proof mutation outside the supplied proof group.
@@ -505,6 +527,8 @@ az deployment group create \
   --template-file "$proof_dir/main.bicep" \
   --parameters "${parameters[@]}" deployWorkload=true workloadRevisionSuffix="$workload_revision_suffix" stableTrafficRevisionName="$stable_traffic_revision" \
   --query properties.outputs --output none --only-show-errors
+
+remove_sql_bootstrap_admin || { echo "Temporary SQL bootstrap administrator cleanup failed" >&2; exit 5; }
 
 endpoint="$(az deployment group show --resource-group "$resource_group" --name "${deployment_name}-workload" --query 'properties.outputs.containerAppEndpoint.value' --output tsv --only-show-errors)"
 candidate_revision="${proof_name}-app--${workload_revision_suffix}"

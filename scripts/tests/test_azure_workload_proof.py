@@ -146,6 +146,12 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("--authentication-method ActiveDirectoryDefault", source)
         self.assertIn("sqlcmd '-?'", source)
         self.assertIn("temporary_firewall_rule", source)
+        self.assertIn("remove_sql_bootstrap_admin", source)
+        self.assertIn("az sql server ad-admin delete", source)
+        self.assertIn("az sql server ad-admin list", source)
+        self.assertIn("az sql server ad-only-auth disable", source)
+        self.assertIn("Temporary SQL bootstrap administrator cleanup failed", source)
+        self.assertIn("CRITICAL: temporary SQL bootstrap administrator cleanup could not be verified", source)
         self.assertIn("openssl rand -base64 48 | tr -d '\\r\\n'", source)
         self.assertIn('seed_secret_if_missing admin-password "$temp_dir/admin-password"', source)
         firewall_deletes = [
