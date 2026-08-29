@@ -118,4 +118,5 @@ public sealed record AzureProviderCheckpoint(
     AzureProviderResourceReferences Resources,
     string? Endpoint,
     AzureProviderHealth Health,
-    IReadOnlyList<AzureProviderDiagnostic> Diagnostics);
+    IReadOnlyList<AzureProviderDiagnostic> Diagnostics,
+    bool ReplaceResources = false);

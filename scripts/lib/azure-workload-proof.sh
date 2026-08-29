@@ -44,6 +44,9 @@ promote_workload_revision() {
     --revision-weight "${candidate_revision}=100" --only-show-errors --output none; then
     echo "Candidate traffic promotion failed or returned an uncertain result" >&2
     promotion_failed=1
+  elif ! verify_single_revision_traffic "$resource_group" "$app_name" "$candidate_revision"; then
+    echo "Candidate traffic promotion did not reach the required 100% postcondition" >&2
+    promotion_failed=1
   elif ! curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 5 --max-time 10 "$endpoint/health" >/dev/null; then
     echo "Candidate failed external health after traffic promotion" >&2
     promotion_failed=1
@@ -52,7 +55,8 @@ promote_workload_revision() {
   (( promotion_failed == 1 )) || return 0
   if [[ -n "$stable_revision" && "$stable_revision" != "$candidate_revision" ]]; then
     if az containerapp ingress traffic set --resource-group "$resource_group" --name "$app_name" \
-      --revision-weight "${stable_revision}=100" "${candidate_revision}=0" --only-show-errors --output none; then
+      --revision-weight "$stable_revision=100" "$candidate_revision=0" --only-show-errors --output none &&
+      verify_workload_traffic "$resource_group" "$app_name" "$stable_revision" "$candidate_revision"; then
       echo "Restored stable traffic to $stable_revision after failed promotion" >&2
     else
       echo "CRITICAL: failed to restore stable traffic to $stable_revision after failed promotion" >&2
@@ -61,6 +65,38 @@ promote_workload_revision() {
     echo "No prior stable revision was available for rollback" >&2
   fi
   return 5
+}
+
+verify_single_revision_traffic() {
+  local resource_group="$1"
+  local app_name="$2"
+  local desired_revision="$3"
+  local traffic_json
+
+  traffic_json="$(az containerapp show --resource-group "$resource_group" --name "$app_name" \
+    --query properties.configuration.ingress.traffic --output json --only-show-errors)" || return 1
+  jq -e --arg desired "$desired_revision" '
+    type == "array" and
+    ([.[] | select(.revisionName == $desired and ((.weight // 0) | tonumber) == 100)] | length) == 1 and
+    (([.[] | ((.weight // 0) | tonumber)] | add) == 100)
+  ' <<<"$traffic_json" >/dev/null
+}
+
+verify_workload_traffic() {
+  local resource_group="$1"
+  local app_name="$2"
+  local stable_revision="$3"
+  local candidate_revision="$4"
+  local traffic_json
+
+  traffic_json="$(az containerapp show --resource-group "$resource_group" --name "$app_name" \
+    --query properties.configuration.ingress.traffic --output json --only-show-errors)" || return 1
+  jq -e --arg stable "$stable_revision" --arg candidate "$candidate_revision" '
+    type == "array" and
+    ([.[] | select(.revisionName == $stable and ((.weight // 0) | tonumber) == 100)] | length) == 1 and
+    ([.[] | select(.revisionName == $candidate and ((.weight // 0) | tonumber) != 0)] | length) == 0 and
+    (([.[] | ((.weight // 0) | tonumber)] | add) == 100)
+  ' <<<"$traffic_json" >/dev/null
 }
 
 # Remove only the temporary SQL Entra administrator owned by this proof. The
@@ -170,6 +206,68 @@ wait_for_resource_group_absence() {
   done
   echo "Proof resource group remained observable after the bounded deletion window" >&2
   return 1
+}
+
+# The proof group is disposable, but its ownership must still be exact. A
+# matching tag is not sufficient: every live resource must be rooted in one of
+# the resources emitted by the checked-in proof template, and the vault may
+# contain only the two expected direct RBAC assignments. Mixed groups are
+# rejected before any external assignment or group deletion is attempted.
+verify_proof_resource_inventory() {
+  local subscription_id="$1"
+  local resource_group="$2"
+  local proof_name="$3"
+  local identity_principal_id="$4"
+  local bootstrap_object_id="$5"
+  local group_id resource_json vault_id assignments_json direct_group_assignments
+
+  group_id="/subscriptions/$subscription_id/resourceGroups/$resource_group"
+  resource_json="$(az resource list --subscription "$subscription_id" --resource-group "$resource_group" \
+    --output json --only-show-errors)" || return 1
+  jq -e --arg base "$group_id" --arg proof "$proof_name" '
+    def root($provider; $type; $name):
+      ($base + "/providers/" + $provider + "/" + $type + "/" + $name);
+    def owned_root($id):
+      ($id | ascii_downcase) as $lower_id |
+      any([
+        root("Microsoft.ManagedIdentity"; "userAssignedIdentities"; ($proof + "-identity")),
+        root("Microsoft.KeyVault"; "vaults"; ($proof + "-kv")),
+        root("Microsoft.Sql"; "servers"; ($proof + "-sql")),
+        root("Microsoft.OperationalInsights"; "workspaces"; ($proof + "-logs")),
+        root("Microsoft.App"; "managedEnvironments"; ($proof + "-aca")),
+        root("Microsoft.App"; "containerApps"; ($proof + "-app"))
+      ][]; . as $root | ($lower_id == ($root | ascii_downcase) or
+        ($lower_id | startswith(($root | ascii_downcase) + "/"))));
+    def owned_vault_role($id):
+      ($id | ascii_downcase | startswith(
+        (root("Microsoft.KeyVault"; "vaults"; ($proof + "-kv")) |
+          ascii_downcase) + "/providers/microsoft.authorization/roleassignments/"));
+    all(.[]; ((.type | ascii_downcase) == "microsoft.authorization/roleassignments"
+      and owned_vault_role(.id))
+      or ((.type | ascii_downcase) != "microsoft.authorization/roleassignments"
+        and owned_root(.id)))
+  ' <<<"$resource_json" >/dev/null || {
+    echo "Refusing cleanup: resource inventory contains an unowned resource" >&2
+    return 1
+  }
+
+  vault_id="$group_id/providers/Microsoft.KeyVault/vaults/$proof_name-kv"
+  assignments_json="$(az role assignment list --scope "$vault_id" --output json --only-show-errors)" || return 1
+  jq -e --arg scope "$vault_id" --arg workload "$identity_principal_id" --arg bootstrap "$bootstrap_object_id" '
+    [.[] | select((.scope // "" | ascii_downcase) == ($scope | ascii_downcase))] as $direct |
+    ($direct | length) == 2 and
+    (any($direct[]; (.principalId // "") == $workload and ((.roleDefinitionId // "" | split("/") | last) | ascii_downcase) == "4633458b-17de-408a-b874-0445c86b69e6")) and
+    (any($direct[]; (.principalId // "") == $bootstrap and ((.roleDefinitionId // "" | split("/") | last) | ascii_downcase) == "b86a8fe4-44ce-4948-aee5-eccb2c155cd7"))
+  ' <<<"$assignments_json" >/dev/null || {
+    echo "Refusing cleanup: proof vault RBAC inventory is not exact" >&2
+    return 1
+  }
+
+  direct_group_assignments="$(az role assignment list --scope "$group_id" --output json --only-show-errors)" || return 1
+  jq -e --arg scope "$group_id" '[.[] | select((.scope // "" | ascii_downcase) == ($scope | ascii_downcase))] | length == 0' <<<"$direct_group_assignments" >/dev/null || {
+    echo "Refusing cleanup: resource group has an unexpected direct role assignment" >&2
+    return 1
+  }
 }
 
 purge_and_verify_deleted_vault() {

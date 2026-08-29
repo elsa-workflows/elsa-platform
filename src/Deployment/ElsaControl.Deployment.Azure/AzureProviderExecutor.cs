@@ -111,9 +111,22 @@ public sealed class AzureProviderExecutor
                 "The Azure operation is owned by another worker or changed concurrently.");
         }
 
-        return claimed.Action == AzureProviderOperationAction.Delete
-            ? await ExecuteDeleteAsync(request.Plan, claimed, leaseToken, cancellationToken)
-            : await ExecuteReconcileAsync(request.Plan, claimed, leaseToken, cancellationToken);
+        if (claimed.Action == AzureProviderOperationAction.Delete)
+        {
+            // Delete is a separate idempotent operation from reconcile. Carry the latest
+            // provider-owned resource snapshot into it so cleanup cannot silently become a
+            // vacuous no-op after a successful apply.
+            var latestReconcile = await _store.GetLatestReconcileAsync(
+                claimed.WorkspaceId,
+                claimed.TargetKey,
+                CancellationToken.None);
+            if (latestReconcile is not null)
+                claimed = claimed with { Resources = latestReconcile.Resources };
+
+            return await ExecuteDeleteAsync(request.Plan, claimed, leaseToken, cancellationToken);
+        }
+
+        return await ExecuteReconcileAsync(request.Plan, claimed, leaseToken, cancellationToken);
     }
 
     private async Task<AzureProviderExecutionResult> ExecuteReconcileAsync(
@@ -141,6 +154,9 @@ public sealed class AzureProviderExecutor
 
             foreach (var (step, phase) in next)
             {
+                if (cancellationToken.IsCancellationRequested)
+                    return await MarkRecoveryAsync(operation, leaseToken, "azure.step.cancelled", "The Azure lifecycle step was cancelled before the next remote mutation.");
+
                 var command = new AzureProviderRunnerCommand(
                     step,
                     plan,
@@ -183,25 +199,58 @@ public sealed class AzureProviderExecutor
 
                 if (runnerResult.Outcome is AzureProviderRunnerOutcome.Failed or AzureProviderRunnerOutcome.Uncertain)
                 {
+                    var failureOperation = await PersistRunnerReferencesAsync(
+                        operation,
+                        leaseToken,
+                        runnerResult,
+                        CancellationToken.None,
+                        preserveStableTrafficRevision: step == AzureProviderRunnerStep.Promotion);
+                    if (failureOperation is null)
+                        return await GetConcurrentResultAsync(operation);
+                    operation = failureOperation;
                     if (step == AzureProviderRunnerStep.Promotion)
-                        return await HandlePromotionFailureAsync(plan, operation, leaseToken, runnerResult, cancellationToken);
+                        return await HandlePromotionFailureAsync(plan, operation, leaseToken, runnerResult, CancellationToken.None);
 
                     return await FinalizeResultAsync(
                         operation,
                         leaseToken,
                         runnerResult.Outcome == AzureProviderRunnerOutcome.Uncertain ? AzureProviderOperationStatus.RecoveryRequired : AzureProviderOperationStatus.Failed,
                         SafeStepCode(step, runnerResult.Outcome),
-                        SafeStepMessage(step, runnerResult.Outcome));
+                        SafeStepMessage(step, runnerResult.Outcome),
+                        CancellationToken.None);
                 }
 
                 if (step == AzureProviderRunnerStep.Health &&
                     (runnerResult.Health == AzureProviderHealth.Unknown || string.IsNullOrWhiteSpace(runnerResult.Endpoint)))
                 {
-                    return await MarkRecoveryAsync(operation, leaseToken, "azure.health.incomplete", "The provider did not return a complete health result for the candidate.");
+                    var incomplete = await PersistRunnerReferencesAsync(operation, leaseToken, runnerResult, CancellationToken.None);
+                    if (incomplete is null)
+                        return await GetConcurrentResultAsync(operation);
+                    return await FinalizeResultAsync(
+                        incomplete,
+                        leaseToken,
+                        AzureProviderOperationStatus.RecoveryRequired,
+                        "azure.health.incomplete",
+                        "The provider did not return a complete health result for the candidate.",
+                        CancellationToken.None);
                 }
                 if (step == AzureProviderRunnerStep.Health && runnerResult.Health != AzureProviderHealth.Healthy)
                 {
-                    return await FinalizeResultAsync(operation, leaseToken, AzureProviderOperationStatus.Failed, SafeStepCode(step, runnerResult.Outcome), SafeStepMessage(step, runnerResult.Outcome));
+                    var unhealthy = await CheckpointAsync(
+                        operation,
+                        leaseToken,
+                        new AzureProviderCheckpoint(
+                            phase,
+                            "azure.health.unhealthy",
+                            "The candidate did not pass health verification.",
+                            runnerResult.Resources,
+                            runnerResult.Endpoint,
+                            runnerResult.Health,
+                            SafeDiagnostics(runnerResult.Diagnostics)),
+                        CancellationToken.None);
+                    if (unhealthy is null)
+                        return await GetConcurrentResultAsync(operation);
+                    return await FinalizeResultAsync(unhealthy, leaseToken, AzureProviderOperationStatus.Failed, "azure.health.unhealthy", "The candidate did not pass health verification.");
                 }
 
                 var checkpoint = new AzureProviderCheckpoint(
@@ -212,10 +261,20 @@ public sealed class AzureProviderExecutor
                     runnerResult.Endpoint,
                     runnerResult.Health,
                     SafeDiagnostics(runnerResult.Diagnostics));
-                var checkpointed = await CheckpointAsync(operation, leaseToken, checkpoint, cancellationToken);
+                AzureProviderOperation? checkpointed;
+                try
+                {
+                    checkpointed = await CheckpointAsync(operation, leaseToken, checkpoint, CancellationToken.None);
+                }
+                catch (OperationCanceledException)
+                {
+                    return await MarkRecoveryAsync(operation, leaseToken, "azure.step.cancelled", "The Azure lifecycle step completed but its checkpoint could not be confirmed.");
+                }
                 if (checkpointed is null)
                     return await GetConcurrentResultAsync(operation);
                 operation = checkpointed;
+                if (cancellationToken.IsCancellationRequested)
+                    return await MarkRecoveryAsync(operation, leaseToken, "azure.step.cancelled", "The Azure lifecycle step completed but the operation was cancelled before the next remote mutation.");
             }
         }
     }
@@ -239,11 +298,14 @@ public sealed class AzureProviderExecutor
                     null,
                     AzureProviderHealth.Unknown,
                     []),
-                cancellationToken);
+                CancellationToken.None);
             if (submitted is null)
                 return await GetConcurrentResultAsync(operation);
             operation = submitted;
         }
+
+        if (cancellationToken.IsCancellationRequested)
+            return await MarkRecoveryAsync(operation, leaseToken, "azure.cleanup.cancelled", "Owned-resource cleanup was cancelled before the remote cleanup step.");
 
         if (operation.Phase == AzureProviderOperationPhase.CleanupVerified)
             return await FinalizeResultAsync(operation, leaseToken, AzureProviderOperationStatus.Succeeded, "azure.cleanup.succeeded", "Exact owned-resource cleanup was verified.");
@@ -292,34 +354,55 @@ public sealed class AzureProviderExecutor
 
         if (runnerResult.Outcome is AzureProviderRunnerOutcome.Failed or AzureProviderRunnerOutcome.Uncertain)
         {
+            var failureOperation = await PersistRunnerReferencesAsync(operation, leaseToken, runnerResult, CancellationToken.None);
+            if (failureOperation is null)
+                return await GetConcurrentResultAsync(operation);
+            operation = failureOperation;
             return await FinalizeResultAsync(
                 operation,
                 leaseToken,
                 runnerResult.Outcome == AzureProviderRunnerOutcome.Uncertain ? AzureProviderOperationStatus.RecoveryRequired : AzureProviderOperationStatus.Failed,
                 SafeStepCode(AzureProviderRunnerStep.Cleanup, runnerResult.Outcome),
-                SafeStepMessage(AzureProviderRunnerStep.Cleanup, runnerResult.Outcome));
+                SafeStepMessage(AzureProviderRunnerStep.Cleanup, runnerResult.Outcome),
+                CancellationToken.None);
         }
 
-        if (runnerResult.Resources != new AzureProviderResourceReferences() || runnerResult.Endpoint is not null || runnerResult.Health != AzureProviderHealth.Unknown)
+        if (!runnerResult.OwnedResourcesAbsent || runnerResult.Resources != new AzureProviderResourceReferences() || runnerResult.Endpoint is not null || runnerResult.Health != AzureProviderHealth.Unknown)
         {
             return await FinalizeResultAsync(operation, leaseToken, AzureProviderOperationStatus.Failed, "azure.cleanup.ownership.unverified", "The provider did not prove exact owned-resource absence.");
         }
 
-        var verified = await CheckpointAsync(
-            operation,
-            leaseToken,
-            new AzureProviderCheckpoint(
-                AzureProviderOperationPhase.CleanupVerified,
-                SafeStepCode(AzureProviderRunnerStep.Cleanup, runnerResult.Outcome),
-                SafeStepMessage(AzureProviderRunnerStep.Cleanup, runnerResult.Outcome),
-                new(),
-                null,
-                AzureProviderHealth.Unknown,
-                SafeDiagnostics(runnerResult.Diagnostics)),
-            cancellationToken);
+        AzureProviderOperation? verified;
+        try
+        {
+            verified = await CheckpointAsync(
+                operation,
+                leaseToken,
+                new AzureProviderCheckpoint(
+                    AzureProviderOperationPhase.CleanupVerified,
+                    SafeStepCode(AzureProviderRunnerStep.Cleanup, runnerResult.Outcome),
+                    SafeStepMessage(AzureProviderRunnerStep.Cleanup, runnerResult.Outcome),
+                    new(),
+                    null,
+                    AzureProviderHealth.Unknown,
+                    SafeDiagnostics(runnerResult.Diagnostics),
+                    ReplaceResources: true),
+                CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+            return await MarkRecoveryAsync(operation, leaseToken, "azure.cleanup.cancelled", "Owned-resource cleanup completed but its absence checkpoint could not be confirmed.");
+        }
         if (verified is null)
             return await GetConcurrentResultAsync(operation);
-        return await FinalizeResultAsync(verified, leaseToken, AzureProviderOperationStatus.Succeeded, "azure.cleanup.succeeded", "Exact owned-resource cleanup was verified.");
+        try
+        {
+            return await FinalizeResultAsync(verified, leaseToken, AzureProviderOperationStatus.Succeeded, "azure.cleanup.succeeded", "Exact owned-resource cleanup was verified.", CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+            return await MarkRecoveryAsync(verified, leaseToken, "azure.cleanup.cancelled", "Owned-resource cleanup completed but its final state could not be confirmed.");
+        }
     }
 
     private async Task<AzureProviderExecutionResult> HandlePromotionFailureAsync(
@@ -359,6 +442,7 @@ public sealed class AzureProviderExecutor
             operation = run.Operation;
             ValidateRunnerResult(rollback, AzureProviderOperationPhase.HealthVerified, requiresHealthyEndpoint: false);
             if ((rollback.Outcome == AzureProviderRunnerOutcome.Completed || rollback.Outcome == AzureProviderRunnerOutcome.NoOp) &&
+                rollback.StableTrafficRestored &&
                 string.Equals(rollback.Resources.StableTrafficRevisionName, operation.Resources.StableTrafficRevisionName, StringComparison.Ordinal))
             {
                 var restored = await CheckpointAsync(
@@ -372,7 +456,7 @@ public sealed class AzureProviderExecutor
                         rollback.Endpoint,
                         rollback.Health,
                         SafeDiagnostics(rollback.Diagnostics)),
-                    cancellationToken);
+                    CancellationToken.None);
                 if (restored is not null)
                     operation = restored;
                 return await FinalizeResultAsync(
@@ -384,7 +468,8 @@ public sealed class AzureProviderExecutor
                     promotion.Outcome == AzureProviderRunnerOutcome.Uncertain ? "azure.promotion.uncertain" : SafeStepCode(AzureProviderRunnerStep.Promotion, promotion.Outcome),
                     promotion.Outcome == AzureProviderRunnerOutcome.Uncertain
                         ? "Candidate promotion was uncertain; stable traffic was restored but operator recovery is required."
-                        : SafeStepMessage(AzureProviderRunnerStep.Promotion, promotion.Outcome));
+                        : SafeStepMessage(AzureProviderRunnerStep.Promotion, promotion.Outcome),
+                    CancellationToken.None);
             }
         }
         catch (RunnerExecutionException exception)
@@ -417,6 +502,33 @@ public sealed class AzureProviderExecutor
             checkpoint,
             _timeProvider.GetUtcNow(),
             operation.Version,
+            cancellationToken);
+    }
+
+    private async Task<AzureProviderOperation?> PersistRunnerReferencesAsync(
+        AzureProviderOperation operation,
+        string leaseToken,
+        AzureProviderRunnerResult runnerResult,
+        CancellationToken cancellationToken,
+        bool preserveStableTrafficRevision = false)
+    {
+        // A failed or uncertain provider result can still contain the only durable handles to
+        // resources created before the result was produced. Keep the current phase monotonic and
+        // merge these handles in the store so recovery and delete can continue safely.
+        var resources = preserveStableTrafficRevision
+            ? runnerResult.Resources with { StableTrafficRevisionName = null }
+            : runnerResult.Resources;
+        return await CheckpointAsync(
+            operation,
+            leaseToken,
+            new AzureProviderCheckpoint(
+                operation.Phase,
+                "azure.step.references",
+                "Provider resource references were retained for recovery.",
+                resources,
+                runnerResult.Endpoint,
+                runnerResult.Health,
+                SafeDiagnostics(runnerResult.Diagnostics)),
             cancellationToken);
     }
 
@@ -648,6 +760,8 @@ public sealed class AzureProviderExecutor
             throw new ArgumentException("The provider plan must include verified release-manifest digests.", nameof(request));
         if (plan.ImageDigest.Length != 64 || !plan.ImageDigest.All(Uri.IsHexDigit))
             throw new ArgumentException("The provider plan image digest must be exactly 64 hexadecimal characters.", nameof(request));
+        if (!plan.ImageRepository.StartsWith($"{AzureWorkloadPlanTranslator.SupportedRegistryHost}/", StringComparison.Ordinal))
+            throw new ArgumentException("The provider plan image must use the governed Azure registry authority.", nameof(request));
 
         if (plan.SecretReferences is null || plan.SecretReferences.Count > 64)
             throw new ArgumentException("Secret references are required and bounded.", nameof(request));

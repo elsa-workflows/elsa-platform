@@ -77,6 +77,12 @@ The proof uses consumption compute, a one-vCore serverless SQL database with aut
 
 After evidence, delete the entire proof group and verify it is gone:
 
+Cleanup first inventories the live group and requires every resource to be rooted in the
+checked-in proof template's identity, vault, SQL, logs, Container Apps environment or app.
+It also requires the vault's two expected direct role assignments and no direct
+resource-group assignment. A tagged group with an extra or unproven resource is refused
+before external role cleanup or resource-group deletion.
+
 ```bash
 scripts/azure-workload-proof.sh cleanup --resource-group <disposable-proof-group> \
   --proof-name <unique-suffix> \

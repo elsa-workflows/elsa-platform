@@ -88,6 +88,25 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
     public async Task<AzureProviderOperation?> GetAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) =>
         await db.AzureProviderOperations.AsNoTracking().SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == operationId, cancellationToken) is { } entity ? ToModel(entity) : null;
 
+    public async Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(targetKey))
+            throw new ArgumentException("Target key is required.", nameof(targetKey));
+
+        var normalizedTargetKey = targetKey.Trim().ToLowerInvariant();
+        var entity = await db.AzureProviderOperations.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.TargetKey == normalizedTargetKey &&
+                        x.Action == AzureProviderOperationAction.Reconcile &&
+                        (x.ResourceGroupName != null || x.FoundationDeploymentId != null ||
+                         x.WorkloadDeploymentId != null || x.WorkloadResourceId != null ||
+                         x.WorkloadRevisionName != null || x.StableTrafficRevisionName != null))
+            .OrderByDescending(x => x.UpdatedAt)
+            .ThenByDescending(x => x.CreatedAt)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        return entity is null ? null : ToModel(entity);
+    }
+
     public Task<AzureProviderOperation?> ClaimAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
         ClaimCoreAsync(workspaceId, operationId, workerId, leaseToken, leaseDuration, now, expectedVersion, allowRecovery: false, cancellationToken);
 
@@ -151,13 +170,16 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             .Select(x => new AzureProviderDiagnostic(x.Code, x.Code))
             .ToArray();
         var diagnosticsJson = JsonSerializer.Serialize(safeDiagnostics);
+        var resources = checkpoint.ReplaceResources
+            ? checkpoint.Resources
+            : MergeResources(entity, checkpoint.Resources);
         if (entity.Phase == checkpoint.Phase && entity.Endpoint == checkpoint.Endpoint && entity.Health == checkpoint.Health &&
-            entity.DiagnosticsJson == diagnosticsJson && ResourcesEqual(entity, checkpoint.Resources))
+            entity.DiagnosticsJson == diagnosticsJson && ResourcesEqual(entity, resources))
             return ToModel(entity);
         entity.Phase = checkpoint.Phase; entity.CheckpointSequence++; entity.Version++; entity.UpdatedAt = now;
-        entity.ResourceGroupName = checkpoint.Resources.ResourceGroupName; entity.FoundationDeploymentId = checkpoint.Resources.FoundationDeploymentId;
-        entity.WorkloadDeploymentId = checkpoint.Resources.WorkloadDeploymentId; entity.WorkloadResourceId = checkpoint.Resources.WorkloadResourceId;
-        entity.WorkloadRevisionName = checkpoint.Resources.WorkloadRevisionName; entity.StableTrafficRevisionName = checkpoint.Resources.StableTrafficRevisionName;
+        entity.ResourceGroupName = resources.ResourceGroupName; entity.FoundationDeploymentId = resources.FoundationDeploymentId;
+        entity.WorkloadDeploymentId = resources.WorkloadDeploymentId; entity.WorkloadResourceId = resources.WorkloadResourceId;
+        entity.WorkloadRevisionName = resources.WorkloadRevisionName; entity.StableTrafficRevisionName = resources.StableTrafficRevisionName;
         entity.Endpoint = checkpoint.Endpoint; entity.Health = checkpoint.Health;
         entity.DiagnosticsJson = diagnosticsJson;
         AddTransition(entity, checkpoint.Code, checkpoint.Message, now);
@@ -244,6 +266,17 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         entity.ResourceGroupName == resources.ResourceGroupName && entity.FoundationDeploymentId == resources.FoundationDeploymentId &&
         entity.WorkloadDeploymentId == resources.WorkloadDeploymentId && entity.WorkloadResourceId == resources.WorkloadResourceId &&
         entity.WorkloadRevisionName == resources.WorkloadRevisionName && entity.StableTrafficRevisionName == resources.StableTrafficRevisionName;
+
+    private static AzureProviderResourceReferences MergeResources(
+        AzureProviderOperationEntity entity,
+        AzureProviderResourceReferences incoming) =>
+        new(
+            incoming.ResourceGroupName ?? entity.ResourceGroupName,
+            incoming.FoundationDeploymentId ?? entity.FoundationDeploymentId,
+            incoming.WorkloadDeploymentId ?? entity.WorkloadDeploymentId,
+            incoming.WorkloadResourceId ?? entity.WorkloadResourceId,
+            incoming.WorkloadRevisionName ?? entity.WorkloadRevisionName,
+            incoming.StableTrafficRevisionName ?? entity.StableTrafficRevisionName);
 
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 

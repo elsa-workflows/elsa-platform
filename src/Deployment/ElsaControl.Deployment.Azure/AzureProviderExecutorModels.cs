@@ -51,7 +51,9 @@ public sealed record AzureProviderRunnerResult(
     string? Endpoint,
     IReadOnlyList<AzureProviderDiagnostic> Diagnostics,
     string Code,
-    string Message);
+    string Message,
+    bool OwnedResourcesAbsent = false,
+    bool StableTrafficRestored = false);
 
 public sealed record AzureProviderExecutionRequest(
     AzureProviderOperationRequest Operation,

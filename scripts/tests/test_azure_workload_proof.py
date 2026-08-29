@@ -169,6 +169,7 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertTrue(all("--yes" not in line for line in firewall_deletes))
         self.assertIn("keyvault purge", combined_source)
         self.assertIn("Refusing to adopt unrelated resource group", source)
+        self.assertIn("different bootstrap identity", source)
         self.assertIn("external ACR cleanup cannot be proven", source)
         self.assertIn("external ACR cleanup was incomplete", source)
         self.assertIn("registry-subscription", source)
@@ -199,11 +200,15 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("candidate_healthy", source)
         self.assertIn("stable traffic was preserved", source)
         self.assertIn("promote_workload_revision", library)
+        self.assertIn("verify_single_revision_traffic", library)
+        self.assertIn("verify_workload_traffic", library)
         self.assertIn("remove_owned_sql_bootstrap_admin", library)
         self.assertIn("delete_and_verify_role_assignment", library)
         self.assertIn("valid_role_assignment_id", library)
         self.assertIn("delete_and_verify_group_deployment", library)
         self.assertIn("wait_for_resource_group_absence", library)
+        self.assertIn("verify_proof_resource_inventory", combined_source)
+        self.assertIn("unowned resource", library)
         self.assertIn("purge_and_verify_deleted_vault", library)
         self.assertIn("stored ACR deployment has no valid role-assignment output", source)
         self.assertLess(
@@ -248,9 +253,23 @@ class AzureWorkloadProofTests(unittest.TestCase):
     def test_failed_promotion_restores_stable_traffic(self) -> None:
         script = r'''
 source "$1"
+traffic_state=stable
 az() {
-  printf 'az:%s\n' "$*"
-  return 0
+  case "$*" in
+    *"containerapp show"*)
+      if [[ "$traffic_state" == candidate ]]; then
+        printf '[{"revisionName":"candidate-revision","weight":100}]\n'
+      else
+        printf '[{"revisionName":"stable-revision","weight":100},{"revisionName":"candidate-revision","weight":0}]\n'
+      fi
+      ;;
+    *)
+      printf 'az:%s\n' "$*"
+      [[ "$*" == *"candidate-revision=100"* ]] && traffic_state=candidate
+      [[ "$*" == *"stable-revision=100"* ]] && traffic_state=stable
+      return 0
+      ;;
+  esac
 }
 curl() { return 1; }
 promote_workload_revision proof-rg proof-app stable-revision candidate-revision https://proof.invalid
@@ -268,14 +287,77 @@ promote_workload_revision proof-rg proof-app stable-revision candidate-revision 
         self.assertIn("stable-revision=100 candidate-revision=0", calls[1])
         self.assertIn("Restored stable traffic", result.stderr)
 
+    def test_inventory_rejects_mixed_resource_groups(self) -> None:
+        base = "/subscriptions/proof-sub/resourceGroups/proof-rg"
+        owned = [
+            {"id": f"{base}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/proof-identity",
+             "type": "Microsoft.ManagedIdentity/userAssignedIdentities"},
+            {"id": f"{base}/providers/Microsoft.KeyVault/vaults/proof-kv",
+             "type": "Microsoft.KeyVault/vaults"},
+            {"id": f"{base}/providers/Microsoft.Sql/servers/proof-sql",
+             "type": "Microsoft.Sql/servers"},
+            {"id": f"{base}/providers/Microsoft.OperationalInsights/workspaces/proof-logs",
+             "type": "Microsoft.OperationalInsights/workspaces"},
+            {"id": f"{base}/providers/Microsoft.App/managedEnvironments/proof-aca",
+             "type": "Microsoft.App/managedEnvironments"},
+            {"id": f"{base}/providers/Microsoft.App/containerApps/proof-app",
+             "type": "Microsoft.App/containerApps"},
+        ]
+        vault_id = f"{base}/providers/Microsoft.KeyVault/vaults/proof-kv"
+        assignments = [
+            {"scope": vault_id, "principalId": "11111111-1111-1111-1111-111111111111",
+             "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/4633458b-17de-408a-b874-0445c86b69e6"},
+            {"scope": vault_id, "principalId": "22222222-2222-2222-2222-222222222222",
+             "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/b86a8fe4-44ce-4948-aee5-eccb2c155cd7"},
+        ]
+        script = r'''
+source "$1"
+RESOURCE_JSON="$2"
+ASSIGNMENTS_JSON="$3"
+az() {
+  case "$*" in
+    *"resource list"*) printf '%s\n' "$RESOURCE_JSON" ;;
+    *"vaults/proof-kv"*) printf '%s\n' "$ASSIGNMENTS_JSON" ;;
+    *"resourceGroups/proof-rg"*) printf '[]\n' ;;
+    *) return 1 ;;
+  esac
+}
+verify_proof_resource_inventory proof-sub proof-rg proof 11111111-1111-1111-1111-111111111111 22222222-2222-2222-2222-222222222222
+'''
+        exact = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB), json.dumps(owned), json.dumps(assignments)],
+            capture_output=True, text=True, check=False)
+        self.assertEqual(0, exact.returncode, exact.stderr)
+
+        mixed = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB), json.dumps(owned + [
+                {"id": f"{base}/providers/Microsoft.Storage/storageAccounts/unrelated",
+                 "type": "Microsoft.Storage/storageAccounts"}]), json.dumps(assignments)],
+            capture_output=True, text=True, check=False)
+        self.assertNotEqual(0, mixed.returncode)
+        self.assertIn("unowned resource", mixed.stderr)
+
     def test_uncertain_traffic_set_result_also_rolls_back(self) -> None:
         script = r'''
 source "$1"
 attempt=0
+traffic_state=stable
 az() {
-  attempt=$((attempt + 1))
-  printf 'az:%s\n' "$*"
-  (( attempt > 1 ))
+  case "$*" in
+    *"containerapp show"*)
+      if [[ "$traffic_state" == stable ]]; then
+        printf '[{"revisionName":"stable-revision","weight":100},{"revisionName":"candidate-revision","weight":0}]\n'
+      else
+        printf '[{"revisionName":"candidate-revision","weight":100}]\n'
+      fi
+      ;;
+    *)
+      attempt=$((attempt + 1))
+      printf 'az:%s\n' "$*"
+      [[ "$*" == *"stable-revision=100"* ]] && traffic_state=stable
+      (( attempt > 1 ))
+      ;;
+  esac
 }
 curl() { echo 'curl must not run' >&2; return 99; }
 promote_workload_revision proof-rg proof-app stable-revision candidate-revision https://proof.invalid

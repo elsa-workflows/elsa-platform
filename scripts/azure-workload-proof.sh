@@ -94,6 +94,22 @@ validate_repository() {
     echo "image repository must not contain a tag or digest" >&2
     exit 2
   }
+  [[ "$1" == valenceruntimeimages.azurecr.io/* ]] || {
+    echo "image repository must use the governed valenceruntimeimages.azurecr.io authority" >&2
+    exit 2
+  }
+  local repository_path="${1#valenceruntimeimages.azurecr.io/}"
+  [[ "$repository_path" =~ ^[a-z0-9]+([._-][a-z0-9]+)*(\/[a-z0-9]+([._-][a-z0-9]+)*)*$ ]] || {
+    echo "image repository path contains unsupported characters" >&2
+    exit 2
+  }
+}
+
+validate_registry_name() {
+  [[ "$1" == valenceruntimeimages ]] || {
+    echo "registry name must be the governed valenceruntimeimages ACR" >&2
+    exit 2
+  }
 }
 
 validate_guid() {
@@ -203,6 +219,7 @@ if [[ "$mode" == cleanup ]]; then
   : "${proof_name:?cleanup requires --proof-name so the external ACR role can be removed safely}"
   : "${registry_resource_group:?cleanup requires --registry-resource-group so the external ACR role can be removed safely}"
   validate_name "$proof_name"
+  validate_registry_name "$registry_name"
   command -v jq >/dev/null || { echo "jq is required for ownership-safe cleanup" >&2; exit 2; }
   [[ -z "$subscription_id" ]] || az account set --subscription "$subscription_id"
   group_tags="$(az group show --name "$resource_group" --query tags --output json --only-show-errors 2>/dev/null || true)"
@@ -213,6 +230,20 @@ if [[ "$mode" == cleanup ]]; then
   cleanup_status=0
   identity_principal_id="$(az identity show --resource-group "$resource_group" --name "${proof_name}-identity" --query principalId --output tsv --only-show-errors 2>/dev/null || true)"
   proof_subscription_id="$(az account show --query id --output tsv --only-show-errors)"
+  stored_bootstrap_object_id="$(jq -r '.sqlBootstrapObjectId // empty' <<<"$group_tags")"
+  [[ "$stored_bootstrap_object_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || {
+    echo "Refusing cleanup: proof bootstrap identity provenance is missing" >&2
+    exit 3
+  }
+  [[ "$identity_principal_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || {
+    echo "Refusing cleanup: proof workload identity could not be resolved" >&2
+    exit 3
+  }
+  verify_proof_resource_inventory "$proof_subscription_id" "$resource_group" "$proof_name" \
+    "$identity_principal_id" "$stored_bootstrap_object_id" || {
+    echo "Refusing cleanup: exact proof resource ownership could not be verified" >&2
+    exit 3
+  }
   registry_subscription_id="${registry_subscription_id:-$proof_subscription_id}"
   az account set --subscription "$registry_subscription_id"
   if ! registry_id="$(az acr show --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors)"; then
@@ -308,6 +339,7 @@ fi
 validate_name "$proof_name"
 validate_digest "$image_digest"
 validate_repository "$image_repository"
+validate_registry_name "$registry_name"
 validate_guid "$sql_bootstrap_object_id"
 validate_login "$sql_bootstrap_login"
 validate_ipv4 "$sql_bootstrap_ip"
@@ -383,12 +415,17 @@ group_exists="$(az group exists --name "$resource_group" --output tsv --only-sho
 if [[ "$group_exists" == true ]]; then
   existing_tags="$(az group show --name "$resource_group" --query tags --output json --only-show-errors)"
   [[ "$(jq -r '.proof // empty' <<<"$existing_tags")" == 108 && "$(jq -r '.owner // empty' <<<"$existing_tags")" == elsa-control && "$(jq -r '."proof-name" // empty' <<<"$existing_tags")" == "$proof_name" ]] || { echo "Refusing to adopt unrelated resource group" >&2; exit 3; }
+  existing_bootstrap_object_id="$(jq -r '.sqlBootstrapObjectId // empty' <<<"$existing_tags")"
+  [[ -z "$existing_bootstrap_object_id" || "$existing_bootstrap_object_id" == "$sql_bootstrap_object_id" ]] || {
+    echo "Refusing to replace the proof group with a different bootstrap identity" >&2
+    exit 3
+  }
   az tag update --resource-id "/subscriptions/${proof_subscription_id}/resourceGroups/${resource_group}" \
-    --operation Merge --tags proof=108 owner=elsa-control proof-name="$proof_name" expiry="$expiry_utc" \
+    --operation Merge --tags proof=108 owner=elsa-control proof-name="$proof_name" expiry="$expiry_utc" sqlBootstrapObjectId="$sql_bootstrap_object_id" \
     --only-show-errors >/dev/null
 elif [[ "$group_exists" == false ]]; then
   az group create --name "$resource_group" --location westeurope \
-    --tags proof=108 owner=elsa-control proof-name="$proof_name" expiry="$expiry_utc" --only-show-errors >/dev/null
+    --tags proof=108 owner=elsa-control proof-name="$proof_name" expiry="$expiry_utc" sqlBootstrapObjectId="$sql_bootstrap_object_id" --only-show-errors >/dev/null
 else
   echo "Could not determine whether the proof resource group exists" >&2
   exit 5

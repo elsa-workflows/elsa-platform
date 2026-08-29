@@ -76,6 +76,39 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Cancellation_after_a_completed_remote_step_is_durably_recoverable()
+    {
+        var store = new FakeOperationStore();
+        using var cancellation = new CancellationTokenSource();
+        var runner = new RecordingRunner
+        {
+            CancelSource = cancellation,
+            CancelAfterStep = AzureProviderRunnerStep.Foundation
+        };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan(), cancellation.Token);
+
+        Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal(AzureProviderOperationPhase.FoundationSubmitted, result.Operation.Phase);
+        Assert.Single(runner.Steps, AzureProviderRunnerStep.Foundation);
+    }
+
+    [Fact]
+    public async Task Failed_remote_results_retain_provider_resource_references()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner { FoundationOutcome = AzureProviderRunnerOutcome.Uncertain };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal("proof-rg", result.Operation.Resources.ResourceGroupName);
+        Assert.Equal("foundation-1", result.Operation.Resources.FoundationDeploymentId);
+    }
+
+    [Fact]
     public async Task Failed_or_uncertain_promotion_restores_the_prior_stable_revision()
     {
         var store = new FakeOperationStore();
@@ -103,6 +136,24 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Promotion_rollback_without_a_traffic_postcondition_stays_in_recovery()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner
+        {
+            PromotionOutcome = AzureProviderRunnerOutcome.Failed,
+            StableTrafficRestored = false
+        };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal(AzureProviderOperationPhase.HealthVerified, result.Operation.Phase);
+        Assert.Equal(AzureProviderRunnerStep.RestoreStableTraffic, runner.Steps[^1]);
+    }
+
+    [Fact]
     public async Task Unhealthy_candidate_never_reaches_promotion()
     {
         var store = new FakeOperationStore();
@@ -113,6 +164,8 @@ public sealed class AzureProviderExecutorTests
 
         Assert.Equal(AzureProviderExecutionOutcome.Failed, result.Outcome);
         Assert.Equal(AzureProviderOperationStatus.Failed, result.Operation.Status);
+        Assert.Equal("proof-rg", result.Operation.Resources.ResourceGroupName);
+        Assert.Equal(AzureProviderHealth.Degraded, result.Operation.Health);
         Assert.DoesNotContain(AzureProviderRunnerStep.Promotion, runner.Steps);
     }
 
@@ -127,6 +180,17 @@ public sealed class AzureProviderExecutorTests
 
         Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, result.Outcome);
         Assert.DoesNotContain(AzureProviderRunnerStep.RestoreStableTraffic, runner.Steps);
+    }
+
+    [Fact]
+    public async Task Execution_rejects_a_plan_outside_the_governed_registry_authority()
+    {
+        var store = new FakeOperationStore();
+        var executor = new AzureProviderExecutor(store, new RecordingRunner(), new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var request = CreateRequest() with { ImageRepository = "other.azurecr.io/runtime-combined" };
+        var plan = CreatePlan() with { ImageRepository = request.ImageRepository };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => executor.ApplyAsync(request, plan));
     }
 
     [Fact]
@@ -318,6 +382,27 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Delete_reuses_the_latest_reconcile_resource_snapshot()
+    {
+        var store = new FakeOperationStore
+        {
+            LatestReconcileResources = new(
+                ResourceGroupName: "proof-rg",
+                FoundationDeploymentId: "foundation-1",
+                WorkloadDeploymentId: "workload-1",
+                WorkloadResourceId: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app",
+                WorkloadRevisionName: "app--candidate",
+                StableTrafficRevisionName: "stable-revision")
+        };
+        var runner = new RecordingRunner { CleanupResources = new(ResourceGroupName: "still-present") };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        await executor.DeleteAsync(CreateRequest(AzureProviderOperationAction.Delete), CreatePlan());
+
+        Assert.Equal(store.LatestReconcileResources, runner.Commands.Single().Resources);
+    }
+
+    [Fact]
     public async Task Delete_happy_path_is_idempotent()
     {
         var store = new FakeOperationStore();
@@ -331,6 +416,7 @@ public sealed class AzureProviderExecutorTests
 
         Assert.Equal(AzureProviderExecutionOutcome.Succeeded, first.Outcome);
         Assert.Equal(AzureProviderExecutionOutcome.NoOp, second.Outcome);
+        Assert.Equal(new AzureProviderResourceReferences(), first.Operation.Resources);
         Assert.Single(runner.Steps, AzureProviderRunnerStep.Cleanup);
     }
 
@@ -440,8 +526,10 @@ public sealed class AzureProviderExecutorTests
         public List<AzureProviderRunnerCommand> Commands { get; } = [];
         public bool FailFoundationOnce { get; init; }
         public bool FailCleanupOnce { get; init; }
+        public AzureProviderRunnerOutcome FoundationOutcome { get; init; } = AzureProviderRunnerOutcome.Completed;
         public AzureProviderRunnerOutcome PromotionOutcome { get; init; } = AzureProviderRunnerOutcome.Completed;
         public AzureProviderHealth Health { get; init; } = AzureProviderHealth.Healthy;
+        public bool StableTrafficRestored { get; init; } = true;
         public AzureProviderResourceReferences CleanupResources { get; init; } = new(ResourceGroupName: "proof-rg");
         public string? StableTrafficRevisionName { get; init; } = "stable-revision";
         public AzureProviderRunnerStep? DelayOnlyStep { get; init; }
@@ -454,6 +542,8 @@ public sealed class AzureProviderExecutorTests
         public AzureProviderRunnerStep? WaitForCancellationStep { get; init; }
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource CancellationObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public CancellationTokenSource? CancelSource { get; init; }
+        public AzureProviderRunnerStep? CancelAfterStep { get; init; }
 
         public Task<AzureProviderRunnerResult> RunAsync(AzureProviderRunnerCommand command, CancellationToken cancellationToken = default)
         {
@@ -470,7 +560,10 @@ public sealed class AzureProviderExecutorTests
 
             if (Delay > TimeSpan.Zero && (!DelayOnlyStep.HasValue || DelayOnlyStep == command.Step))
                 return DelayedResultAsync(command);
-            return Task.FromResult(CreateResult(command));
+            var result = CreateResult(command);
+            if (CancelAfterStep == command.Step)
+                CancelSource?.Cancel();
+            return Task.FromResult(result);
         }
 
         private async Task<AzureProviderRunnerResult> WaitForCancellationAsync(CancellationToken cancellationToken)
@@ -500,11 +593,14 @@ public sealed class AzureProviderExecutorTests
             if (command.Step == AzureProviderRunnerStep.Promotion)
                 return Result(PromotionOutcome, AzureProviderOperationPhase.TrafficPromoted);
             if (command.Step == AzureProviderRunnerStep.RestoreStableTraffic)
-                return Result(AzureProviderRunnerOutcome.Completed, AzureProviderOperationPhase.HealthVerified);
+                return Result(AzureProviderRunnerOutcome.Completed, AzureProviderOperationPhase.HealthVerified, stableTrafficRestored: StableTrafficRestored);
             if (command.Step == AzureProviderRunnerStep.Cleanup)
-                return Result(AzureProviderRunnerOutcome.Completed, AzureProviderOperationPhase.CleanupVerified, CleanupResources);
+                return Result(AzureProviderRunnerOutcome.Completed, AzureProviderOperationPhase.CleanupVerified, CleanupResources,
+                    ownedResourcesAbsent: CleanupResources == new AzureProviderResourceReferences());
             if (command.Step == AzureProviderRunnerStep.Health)
                 return Result(AzureProviderRunnerOutcome.Completed, AzureProviderOperationPhase.HealthVerified, health: Health);
+            if (command.Step == AzureProviderRunnerStep.Foundation)
+                return Result(FoundationOutcome, AzureProviderOperationPhase.FoundationSubmitted);
             return Result(
                 AzureProviderRunnerOutcome.Completed,
                 command.Step is AzureProviderRunnerStep.Foundation or AzureProviderRunnerStep.AcrPull or AzureProviderRunnerStep.SeedSecrets
@@ -518,7 +614,9 @@ public sealed class AzureProviderExecutorTests
             AzureProviderRunnerOutcome outcome,
             AzureProviderOperationPhase phase,
             AzureProviderResourceReferences? resources = null,
-            AzureProviderHealth health = AzureProviderHealth.Unknown) => new(
+            AzureProviderHealth health = AzureProviderHealth.Unknown,
+            bool ownedResourcesAbsent = false,
+            bool stableTrafficRestored = false) => new(
             outcome,
             phase,
             resources ?? ResourcesOverride ?? new(ResourceGroupName: "proof-rg", FoundationDeploymentId: "foundation-1", WorkloadDeploymentId: "workload-1", WorkloadResourceId: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app", WorkloadRevisionName: "app--candidate", StableTrafficRevisionName: StableTrafficRevisionName),
@@ -528,7 +626,10 @@ public sealed class AzureProviderExecutorTests
                 ? [new AzureProviderDiagnostic("azure.provider.detail", "password=do-not-persist\r\nraw response")]
                 : [],
             "azure.step.completed",
-            RunnerMessage);
+            RunnerMessage,
+            ownedResourcesAbsent,
+            stableTrafficRestored);
+
     }
 
     private sealed class FakeOperationStore : IAzureProviderOperationStore
@@ -539,6 +640,7 @@ public sealed class AzureProviderExecutorTests
         public AzureProviderOperationStatus? RejectClaimWithStatus { get; init; }
         public AzureProviderOperationStatus? RejectCheckpointWithStatus { get; init; }
         public bool LoseLeaseOnHeartbeat { get; init; }
+        public AzureProviderResourceReferences? LatestReconcileResources { get; init; }
 
         public Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default)
         {
@@ -590,6 +692,12 @@ public sealed class AzureProviderExecutorTests
         public Task<AzureProviderOperation?> GetAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_operation is { WorkspaceId: var id, Id: var operationIdValue } && id == workspaceId && operationIdValue == operationId ? _operation : null);
 
+        public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default) =>
+            Task.FromResult<AzureProviderOperation?>(
+                LatestReconcileResources is not null && _operation is not null
+                    ? _operation with { Action = AzureProviderOperationAction.Reconcile, Resources = LatestReconcileResources }
+                    : _operation?.Action == AzureProviderOperationAction.Reconcile ? _operation : null);
+
         public Task<AzureProviderOperation?> ClaimAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => ClaimCore(workerId, leaseToken, leaseDuration, now, expectedVersion, false);
 
         public Task<AzureProviderOperation?> ClaimRecoveryAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => ClaimCore(workerId, leaseToken, leaseDuration, now, expectedVersion, true);
@@ -636,12 +744,13 @@ public sealed class AzureProviderExecutorTests
             }
             if (_operation is null || _operation.Status != AzureProviderOperationStatus.Running || expectedVersion.HasValue && _operation.Version != expectedVersion.Value)
                 return Task.FromResult<AzureProviderOperation?>(null);
+            var resources = checkpoint.ReplaceResources ? checkpoint.Resources : MergeResources(_operation.Resources, checkpoint.Resources);
             _operation = _operation with
             {
                 Phase = checkpoint.Phase,
                 CheckpointSequence = _operation.CheckpointSequence + 1,
                 Version = _operation.Version + 1,
-                Resources = checkpoint.Resources,
+                Resources = resources,
                 Endpoint = checkpoint.Endpoint,
                 Health = checkpoint.Health,
                 Diagnostics = checkpoint.Diagnostics,
@@ -649,6 +758,17 @@ public sealed class AzureProviderExecutorTests
             };
             return Task.FromResult<AzureProviderOperation?>(_operation);
         }
+
+        private static AzureProviderResourceReferences MergeResources(
+            AzureProviderResourceReferences existing,
+            AzureProviderResourceReferences incoming) =>
+            new(
+                incoming.ResourceGroupName ?? existing.ResourceGroupName,
+                incoming.FoundationDeploymentId ?? existing.FoundationDeploymentId,
+                incoming.WorkloadDeploymentId ?? existing.WorkloadDeploymentId,
+                incoming.WorkloadResourceId ?? existing.WorkloadResourceId,
+                incoming.WorkloadRevisionName ?? existing.WorkloadRevisionName,
+                incoming.StableTrafficRevisionName ?? existing.StableTrafficRevisionName);
 
         public Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, string message, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
         {
