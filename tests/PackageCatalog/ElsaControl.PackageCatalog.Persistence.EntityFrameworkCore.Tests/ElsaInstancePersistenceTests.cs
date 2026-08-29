@@ -248,6 +248,18 @@ public sealed class ElsaInstancePersistenceTests
             ChangedAt = DateTimeOffset.UtcNow
         });
         await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+        db.ChangeTracker.Clear();
+
+        db.ElsaInstanceIdentityBindings.Add(new ElsaInstanceIdentityBindingEntity
+        {
+            InstanceId = instance.Id,
+            Audience = $"urn:elsa:instance:{instance.Id:D}",
+            CanonicalCallbackUri = "http://localhost/managed-elsa/handoff/callback",
+            VerifiedEndpointOrigin = "http://localhost",
+            BindingVersion = 1,
+            ChangedAt = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync();
     }
 
     [Fact]
@@ -293,6 +305,25 @@ public sealed class ElsaInstancePersistenceTests
 
         await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => second.SaveChangesAsync());
         Assert.Equal(2, firstCopy.Version);
+    }
+
+    [Fact]
+    public async Task Instance_slug_is_immutable_after_creation()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Immutable slug workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        db.ElsaInstances.Add(instance);
+        await db.SaveChangesAsync();
+
+        instance.Slug = "replacement-slug";
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
     }
 
     [Fact]
@@ -367,7 +398,7 @@ public sealed class ElsaInstancePersistenceTests
         db.ChangeTracker.Clear();
         var tombstoneTarget = await db.ElsaInstances.SingleAsync(x => x.Id == instance.Id);
         db.ElsaInstances.Remove(tombstoneTarget);
-        await Assert.ThrowsAnyAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
     }
 
     [Fact]
@@ -526,6 +557,15 @@ public sealed class ElsaInstancePersistenceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
         db.ChangeTracker.Clear();
 
+        var trailingPlan = NewInstance(workspace.OrganizationId, workspace.Id);
+        trailingPlan.ResolvedPlanId = "plan-2";
+        trailingPlan.ResolvedPlanSchemaVersion = 1;
+        trailingPlan.ResolvedPlanContentHash = "sha256:" + new string('a', 64);
+        trailingPlan.ResolvedPlanUri = PlanUri(workspace.Id, trailingPlan.Id, "plan-2") + "/";
+        db.ElsaInstances.Add(trailingPlan);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+        db.ChangeTracker.Clear();
+
         var operation = NewOperation(workspace, null, ElsaInstanceOperationState.Succeeded, "unsafe-lease");
         operation.LeaseTokenHash = "bearer-token";
         operation.FailureSummary = "provider secret and stack trace";
@@ -617,7 +657,9 @@ public sealed class ElsaInstancePersistenceTests
             InstanceId = instance?.Id,
             OrganizationId = workspace.OrganizationId,
             WorkspaceId = workspace.Id,
-            Action = state == ElsaInstanceOperationState.WaitingForPriorOperation
+            Action = instance is null
+                ? ElsaInstanceOperationAction.Create
+                : state == ElsaInstanceOperationState.WaitingForPriorOperation
                 ? ElsaInstanceOperationAction.Delete
                 : ElsaInstanceOperationAction.Reconcile,
             IdempotencyScope = $"instance/{instance?.Id.ToString("N") ?? "workspace"}",
@@ -669,6 +711,7 @@ public sealed class ElsaInstancePersistenceTests
 
     private static void SetMigrationReferences(ElsaInstanceMigrationEntity migration, Guid workspaceId, Guid instanceId)
     {
+        migration.WorkspaceId = workspaceId;
         migration.SourcePlanId = "source-plan";
         migration.SourcePlanUri = PlanUri(workspaceId, instanceId, migration.SourcePlanId);
         migration.SourceReleaseLine = "3.10";

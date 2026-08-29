@@ -319,18 +319,13 @@ internal sealed class DeploymentEnvironmentConfiguration : IEntityTypeConfigurat
         builder.HasIndex(x => x.ElsaInstanceId)
             .IsUnique()
             .HasFilter("ElsaInstanceId IS NOT NULL");
+        builder.HasAlternateKey(x => new { x.WorkspaceId, x.Id });
         builder.HasOne(x => x.TierDefinition).WithMany(x => x.Environments).HasForeignKey(x => x.TierId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Application)
             .WithMany(x => x.Environments)
-            .HasForeignKey(x => x.ApplicationId)
-            .OnDelete(DeleteBehavior.Cascade);
-        // Preserve the legacy navigation/FK while adding a navigation-free
-        // ownership guard for managed attachment.
-        builder.HasOne<DeploymentApplicationEntity>()
-            .WithMany()
             .HasForeignKey(x => new { x.WorkspaceId, x.ApplicationId })
             .HasPrincipalKey(x => new { x.WorkspaceId, x.Id })
-            .OnDelete(DeleteBehavior.Restrict);
+            .OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(x => x.ElsaInstance)
             .WithMany()
             .HasForeignKey(x => new { x.WorkspaceId, x.ElsaInstanceId })
@@ -660,7 +655,10 @@ internal sealed class DeploymentRunConfiguration : IEntityTypeConfiguration<Depl
         builder.HasIndex(x => new { x.WorkspaceId, x.EnvironmentId })
             .IsUnique()
             .HasFilter("ElsaInstanceId IS NOT NULL AND Status IN ('Queued', 'Running', 'RecoveryRequired')");
-        builder.HasOne(x => x.Environment).WithMany().HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.Environment).WithMany()
+            .HasForeignKey(x => new { x.WorkspaceId, x.EnvironmentId })
+            .HasPrincipalKey(x => new { x.WorkspaceId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
         builder.HasMany(x => x.History).WithOne(x => x.Run).HasForeignKey(x => x.RunId).OnDelete(DeleteBehavior.Cascade);
     }
 }
@@ -832,7 +830,10 @@ internal sealed class ElsaInstanceConfiguration : IEntityTypeConfiguration<ElsaI
             .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId, x.InstanceId })
             .HasPrincipalKey(x => new { x.OrganizationId, x.WorkspaceId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
-        builder.HasMany(x => x.Migrations).WithOne(x => x.Instance).HasForeignKey(x => x.InstanceId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasMany(x => x.Migrations).WithOne(x => x.Instance)
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId, x.InstanceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.WorkspaceId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 
@@ -840,6 +841,7 @@ internal sealed class ElsaInstanceOperationConfiguration : IEntityTypeConfigurat
 {
     public void Configure(EntityTypeBuilder<ElsaInstanceOperationEntity> builder)
     {
+        builder.ToTable("ElsaInstanceOperations", t => t.HasCheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'"));
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Action).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.IdempotencyScope).HasMaxLength(256).IsRequired();
@@ -874,7 +876,10 @@ internal sealed class ElsaInstanceOperationConfiguration : IEntityTypeConfigurat
             .IsUnique()
             .HasFilter("InstanceId IS NOT NULL AND State = 'WaitingForPriorOperation'");
         builder.HasIndex(x => new { x.WorkspaceId, x.State, x.AcceptedAt });
-        builder.HasOne<Workspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Workspace>().WithMany()
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
     }
 }
@@ -910,6 +915,7 @@ internal sealed class ElsaInstanceIdentityBindingConfiguration : IEntityTypeConf
         builder.Property(x => x.CanonicalCallbackUri).HasMaxLength(2048).IsRequired();
         builder.Property(x => x.VerifiedEndpointOrigin).HasMaxLength(2048).IsRequired();
         builder.Property(x => x.BindingVersion).IsRequired();
+        builder.Property(x => x.BindingVersion).IsConcurrencyToken();
         builder.Property(x => x.ChangedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => x.Audience).IsUnique();
         builder.HasIndex(x => x.CanonicalCallbackUri).IsUnique().HasFilter("CanonicalCallbackUri IS NOT NULL");
@@ -943,5 +949,10 @@ internal sealed class ElsaInstanceMigrationConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.InstanceId, x.Phase });
         builder.HasIndex(x => new { x.InstanceId, x.SourceRetainUntil });
+        builder.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Workspace>().WithMany()
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

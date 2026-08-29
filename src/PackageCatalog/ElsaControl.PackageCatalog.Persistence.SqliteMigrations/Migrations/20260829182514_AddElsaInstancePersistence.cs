@@ -184,6 +184,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 {
                     MigrationId = table.Column<Guid>(type: "TEXT", nullable: false),
                     InstanceId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    OrganizationId = table.Column<Guid>(type: "TEXT", nullable: false),
+                    WorkspaceId = table.Column<Guid>(type: "TEXT", nullable: false),
                     SourcePlanId = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true),
                     SourcePlanUri = table.Column<string>(type: "TEXT", maxLength: 2048, nullable: true),
                     SourceReleaseLine = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true),
@@ -210,10 +212,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 {
                     table.PrimaryKey("PK_ElsaInstanceMigrations", x => x.MigrationId);
                     table.ForeignKey(
-                        name: "FK_ElsaInstanceMigrations_ElsaInstances_InstanceId",
-                        column: x => x.InstanceId,
+                        name: "FK_ElsaInstanceMigrations_ElsaInstances_OrganizationId_WorkspaceId_InstanceId",
+                        columns: x => new { x.OrganizationId, x.WorkspaceId, x.InstanceId },
                         principalTable: "ElsaInstances",
-                        principalColumn: "Id",
+                        principalColumns: new[] { "OrganizationId", "WorkspaceId", "Id" },
                         onDelete: ReferentialAction.Restrict);
                 });
 
@@ -371,7 +373,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 columns: new[] { "WorkspaceId", "ApplicationId" },
                 principalTable: "DeploymentApplications",
                 principalColumns: new[] { "WorkspaceId", "Id" },
-                onDelete: ReferentialAction.Restrict);
+                onDelete: ReferentialAction.Cascade);
 
             migrationBuilder.AddForeignKey(
                 name: "FK_DeploymentEnvironments_ElsaInstances_WorkspaceId_ElsaInstanceId",

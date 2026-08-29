@@ -182,6 +182,8 @@ internal sealed class ElsaInstanceMigrationEntity
 {
     public Guid MigrationId { get; set; }
     public Guid InstanceId { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid WorkspaceId { get; set; }
     public ElsaInstanceEntity? Instance { get; set; }
     public string? SourcePlanId { get; set; }
     public string? SourcePlanUri { get; set; }

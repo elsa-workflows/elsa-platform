@@ -134,6 +134,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     {
         EnsureWorkspacePermissionAuditIsAppendOnly();
         EnsureElsaInstanceAuditIsAppendOnly();
+        EnsureElsaInstanceDurableRowsAreNotDeleted();
         ValidateElsaInstancePersistence();
         EnsureOrganizationsForNewWorkspaces();
         return base.SaveChanges();
@@ -143,6 +144,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     {
         EnsureWorkspacePermissionAuditIsAppendOnly();
         EnsureElsaInstanceAuditIsAppendOnly();
+        EnsureElsaInstanceDurableRowsAreNotDeleted();
         ValidateElsaInstancePersistence();
         EnsureOrganizationsForNewWorkspaces();
         return base.SaveChangesAsync(cancellationToken);
@@ -164,6 +166,14 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             throw new InvalidOperationException("Elsa instance audit events are append-only.");
     }
 
+    private void EnsureElsaInstanceDurableRowsAreNotDeleted()
+    {
+        if (ChangeTracker.Entries<Models.ElsaInstanceEntity>().Any(x => x.State == EntityState.Deleted))
+            throw new InvalidOperationException("Elsa instances are tombstoned and cannot be deleted.");
+        if (ChangeTracker.Entries<Models.ElsaInstanceMigrationEntity>().Any(x => x.State == EntityState.Deleted))
+            throw new InvalidOperationException("Elsa instance migrations are durable and cannot be deleted.");
+    }
+
     private void ValidateElsaInstancePersistence()
     {
         foreach (var entry in ChangeTracker.Entries<Models.ElsaInstanceEntity>()
@@ -174,6 +184,9 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                 throw new InvalidOperationException("An Elsa instance requires stable ownership identifiers.");
             RequireDisplayName(instance.Name, nameof(instance.Name), 256);
             instance.Slug = RequireSlug(instance.Slug);
+            if (entry.State == EntityState.Modified &&
+                !string.Equals(instance.Slug, entry.Property(x => x.Slug).OriginalValue, StringComparison.Ordinal))
+                throw new InvalidOperationException("An Elsa instance slug is immutable.");
             instance.DistributionId = RequireCatalogValue(instance.DistributionId, nameof(instance.DistributionId));
             instance.ReleaseLine = RequireCatalogValue(instance.ReleaseLine, nameof(instance.ReleaseLine));
             instance.RequestedVersion = OptionalCatalogValue(instance.RequestedVersion, nameof(instance.RequestedVersion));
@@ -216,7 +229,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
 
             instance.CurrentReleaseDistributionId = OptionalCatalogValue(instance.CurrentReleaseDistributionId, nameof(instance.CurrentReleaseDistributionId));
             instance.CurrentReleaseLine = OptionalCatalogValue(instance.CurrentReleaseLine, nameof(instance.CurrentReleaseLine));
-            instance.CurrentReleaseVersion = OptionalSafeReference(instance.CurrentReleaseVersion, nameof(instance.CurrentReleaseVersion), 128);
+            instance.CurrentReleaseVersion = OptionalCatalogValue(instance.CurrentReleaseVersion, nameof(instance.CurrentReleaseVersion));
             instance.CurrentReleaseManifestDigest = OptionalSha256Digest(instance.CurrentReleaseManifestDigest, nameof(instance.CurrentReleaseManifestDigest));
             var currentRelease = new string?[]
             {
@@ -283,6 +296,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                 (string.IsNullOrWhiteSpace(operation.FailureSummary) ? null : "operation.failure");
             if (operation.InstanceId is not null && operation.InstanceId == Guid.Empty)
                 throw new InvalidOperationException("An instance operation requires organization ownership.");
+            if (operation.InstanceId is null && operation.Action != ElsaInstanceOperationAction.Create)
+                throw new InvalidOperationException("Only create operations may omit an instance ID.");
         }
 
         foreach (var entry in ChangeTracker.Entries<Models.ElsaInstanceIdentityBindingEntity>()
@@ -295,6 +310,15 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             binding.Audience = RequireExactAudience(binding.Audience, expectedAudience);
             binding.VerifiedEndpointOrigin = RequireVerifiedOrigin(binding.VerifiedEndpointOrigin);
             binding.CanonicalCallbackUri = RequireCallbackUri(binding.CanonicalCallbackUri, binding.VerifiedEndpointOrigin);
+            if (entry.State == EntityState.Modified)
+            {
+                if (binding.BindingVersion != (int)entry.Property(x => x.BindingVersion).OriginalValue + 1)
+                    throw new InvalidOperationException("Identity binding versions must advance exactly one step.");
+                if (binding.ChangedAt <= (DateTimeOffset)entry.Property(x => x.ChangedAt).OriginalValue)
+                    throw new InvalidOperationException("Identity binding changes must be strictly later.");
+                if (!string.Equals(binding.Audience, entry.Property(x => x.Audience).OriginalValue, StringComparison.Ordinal))
+                    throw new InvalidOperationException("Identity binding audience is immutable.");
+            }
         }
 
         foreach (var entry in ChangeTracker.Entries<Models.ElsaInstanceAuditEventEntity>()
@@ -349,17 +373,29 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             migration.SourcePlanId = OptionalSafeReference(migration.SourcePlanId, nameof(migration.SourcePlanId), 128);
             migration.SourcePlanUri = OptionalPlanUri(migration.SourcePlanUri, nameof(migration.SourcePlanUri));
             migration.SourceReleaseLine = OptionalCatalogValue(migration.SourceReleaseLine, nameof(migration.SourceReleaseLine));
-            migration.SourceVersion = OptionalSafeReference(migration.SourceVersion, nameof(migration.SourceVersion), 128);
+            migration.SourceVersion = OptionalCatalogValue(migration.SourceVersion, nameof(migration.SourceVersion));
             migration.SourceManifestDigest = OptionalSha256Digest(migration.SourceManifestDigest, nameof(migration.SourceManifestDigest));
             migration.SourceDeploymentId = OptionalSafeReference(migration.SourceDeploymentId, nameof(migration.SourceDeploymentId), 128);
             migration.TargetPlanId = OptionalSafeReference(migration.TargetPlanId, nameof(migration.TargetPlanId), 128);
             migration.TargetPlanUri = OptionalPlanUri(migration.TargetPlanUri, nameof(migration.TargetPlanUri));
             migration.TargetReleaseLine = OptionalCatalogValue(migration.TargetReleaseLine, nameof(migration.TargetReleaseLine));
-            migration.TargetVersion = OptionalSafeReference(migration.TargetVersion, nameof(migration.TargetVersion), 128);
+            migration.TargetVersion = OptionalCatalogValue(migration.TargetVersion, nameof(migration.TargetVersion));
             migration.TargetManifestDigest = OptionalSha256Digest(migration.TargetManifestDigest, nameof(migration.TargetManifestDigest));
             migration.TargetDeploymentId = OptionalSafeReference(migration.TargetDeploymentId, nameof(migration.TargetDeploymentId), 128);
-            RequireInstancePlanUri(migration.SourcePlanUri!, nameof(migration.SourcePlanUri), null, migration.InstanceId, migration.SourcePlanId!);
-            RequireInstancePlanUri(migration.TargetPlanUri!, nameof(migration.TargetPlanUri), null, migration.InstanceId, migration.TargetPlanId!);
+            var instance = ChangeTracker.Entries<Models.ElsaInstanceEntity>().Select(x => x.Entity).FirstOrDefault(x => x.Id == migration.InstanceId);
+            instance ??= ElsaInstances.Find(migration.InstanceId);
+            if (instance is not null)
+            {
+                migration.OrganizationId = instance.OrganizationId;
+                migration.WorkspaceId = instance.WorkspaceId;
+            }
+            if (migration.OrganizationId == Guid.Empty)
+                migration.OrganizationId = ChangeTracker.Entries<Workspace>().Select(x => x.Entity)
+                    .FirstOrDefault(x => x.Id == migration.WorkspaceId)?.OrganizationId ?? Guid.Empty;
+            if (migration.OrganizationId == Guid.Empty || migration.WorkspaceId == Guid.Empty)
+                throw new InvalidOperationException("Migration ownership is required.");
+            RequireInstancePlanUri(migration.SourcePlanUri!, nameof(migration.SourcePlanUri), migration.WorkspaceId, migration.InstanceId, migration.SourcePlanId!);
+            RequireInstancePlanUri(migration.TargetPlanUri!, nameof(migration.TargetPlanUri), migration.WorkspaceId, migration.InstanceId, migration.TargetPlanId!);
         }
     }
 
@@ -416,8 +452,15 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     private static string? OptionalSafeToken(string? value, string name, int maxLength) =>
         string.IsNullOrWhiteSpace(value) ? null : RequireSafeToken(value, name, maxLength);
 
-    private static string RequireCatalogValue(string? value, string name) =>
-        RequireSafeToken(value, name, 128);
+    private static string RequireCatalogValue(string? value, string name)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized) || normalized.Length > 128 ||
+            !char.IsAsciiLetterOrDigit(normalized[0]) ||
+            normalized.Any(ch => !(char.IsAsciiLetterOrDigit(ch) || ch is '.' or '_' or '-' or '+')))
+            throw new InvalidOperationException($"{name} must be a bounded safe catalog value.");
+        return normalized.ToLowerInvariant();
+    }
 
     private static string? OptionalCatalogValue(string? value, string name) =>
         string.IsNullOrWhiteSpace(value) ? null : RequireCatalogValue(value, name);
@@ -461,6 +504,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     {
         var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
         return segments.Length == 7
+            && path.EndsWith('/' + segments[6], StringComparison.Ordinal)
             && string.Equals(segments[0], "api", StringComparison.Ordinal)
             && string.Equals(segments[1], "workspaces", StringComparison.Ordinal)
             && Guid.TryParseExact(segments[2], "D", out _)
@@ -501,6 +545,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         if (normalized.Length > 2048 || normalized.Any(char.IsControl) || !Uri.TryCreate(normalized, UriKind.Absolute, out var uri) ||
             string.IsNullOrWhiteSpace(uri.Host) || uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0)
             throw new InvalidOperationException($"{name} must be a safe absolute URI.");
+        if (uri.Host.Contains('*', StringComparison.Ordinal))
+            throw new InvalidOperationException($"{name} must not use wildcard hosts.");
         if (!allowLocalHttp && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"{name} must be HTTPS.");
         if (HasUnsafeUriPath(uri.AbsolutePath))
@@ -543,8 +589,13 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     private static string RequireVerifiedOrigin(string? value)
     {
         var normalized = OptionalEndpointUri(value, nameof(Models.ElsaInstanceIdentityBindingEntity.VerifiedEndpointOrigin));
-        if (normalized is null || !Uri.TryCreate(normalized, UriKind.Absolute, out var uri) || uri.AbsolutePath is not ("" or "/"))
-            throw new InvalidOperationException("A verified endpoint origin must have no path.");
+        if (normalized is null || !Uri.TryCreate(normalized, UriKind.Absolute, out var uri) ||
+            ((!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
+              !(string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+                (string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+                 System.Net.IPAddress.TryParse(uri.Host, out var address) && System.Net.IPAddress.IsLoopback(address))))) ||
+            uri.AbsolutePath is not ("" or "/"))
+            throw new InvalidOperationException("A verified endpoint origin must be HTTPS and have no path.");
         return uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
     }
 

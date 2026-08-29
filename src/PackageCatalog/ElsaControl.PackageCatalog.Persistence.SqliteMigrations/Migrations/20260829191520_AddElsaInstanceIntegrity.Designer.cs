@@ -3,6 +3,7 @@ using System;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 {
     [DbContext(typeof(CatalogDbContext))]
-    partial class CatalogDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260829191520_AddElsaInstanceIntegrity")]
+    partial class AddElsaInstanceIntegrity
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
@@ -1957,7 +1960,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int>("BindingVersion")
-                        .IsConcurrencyToken()
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("CanonicalCallbackUri")
@@ -2203,10 +2205,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.HasIndex("WorkspaceId", "State", "AcceptedAt");
 
-                    b.ToTable("ElsaInstanceOperations", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'");
-                        });
+                    b.ToTable("ElsaInstanceOperations");
                 });
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.EngineCapabilityEntity", b =>

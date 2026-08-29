@@ -365,7 +365,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 columns: new[] { "WorkspaceId", "ApplicationId" },
                 principalTable: "DeploymentApplications",
                 principalColumns: new[] { "WorkspaceId", "Id" },
-                onDelete: ReferentialAction.Restrict);
+                onDelete: ReferentialAction.Cascade);
 
             migrationBuilder.AddForeignKey(
                 name: "FK_DeploymentEnvironments_ElsaInstances_WorkspaceId_ElsaInstanceId",
