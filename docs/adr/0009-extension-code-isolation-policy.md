@@ -42,3 +42,11 @@ Rejected as the managed default because reproducibility, rollback and provenance
 - Initial Shared profiles have a constrained extension surface.
 - Private/custom-code launch requires a threat model, provenance/build pipeline and isolation tests.
 - Entitlements can grant access only to policies that the selected provider/profile actually enforces.
+
+## Evidence and profile gates
+
+The [isolation threat model](../product/isolation-threat-model.md) records the
+assets, trust boundaries, explicit profile claims/non-claims, hostile-package
+attack paths, Dedicated launch claim matrix and executable promotion gates. It
+is the required security evidence register; this ADR does not imply that any
+profile or custom-code path has already passed those gates.
