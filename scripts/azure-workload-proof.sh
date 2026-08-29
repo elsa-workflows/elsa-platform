@@ -414,22 +414,9 @@ ensure_sql_bootstrap_admin_for_reapply() {
   bootstrap_admin_removed=0
 }
 remove_sql_bootstrap_admin() {
-  local admin_count server_count
-  server_count="$(az sql server list --subscription "$proof_subscription_id" --resource-group "$resource_group" --query "[?name=='${sql_server_name}'] | length(@)" --output tsv --only-show-errors 2>/dev/null)" || return 1
-  if (( server_count == 0 )); then bootstrap_admin_removed=1; return 0; fi
-  (( server_count == 1 )) || { echo "Expected at most one proof SQL server named $sql_server_name" >&2; return 1; }
-  admin_count="$(az sql server ad-admin list --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" --query 'length(@)' --output tsv --only-show-errors 2>/dev/null)" || return 1
-  if (( admin_count > 0 )); then
-    az sql server ad-only-auth disable --subscription "$proof_subscription_id" --resource-group "$resource_group" --name "$sql_server_name" --only-show-errors >/dev/null || return 1
-    az sql server ad-admin delete --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" --only-show-errors >/dev/null || return 1
-  fi
-  for _ in {1..12}; do
-    admin_count="$(az sql server ad-admin list --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" --query 'length(@)' --output tsv --only-show-errors 2>/dev/null)" || return 1
-    if (( admin_count == 0 )); then bootstrap_admin_removed=1; return 0; fi
-    sleep 5
-  done
-  echo "Temporary SQL bootstrap administrator remained configured" >&2
-  return 1
+  remove_owned_sql_bootstrap_admin "$proof_subscription_id" "$resource_group" "$sql_server_name" \
+    "$sql_bootstrap_login" "$sql_bootstrap_object_id" || return 1
+  bootstrap_admin_removed=1
 }
 cleanup_apply() {
   if (( temporary_firewall_created )); then

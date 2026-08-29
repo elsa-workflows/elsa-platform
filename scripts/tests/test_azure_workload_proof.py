@@ -139,6 +139,8 @@ class AzureWorkloadProofTests(unittest.TestCase):
 
     def test_runbook_is_fail_closed(self) -> None:
         source = RUNBOOK.read_text()
+        library = RUNBOOK_LIB.read_text()
+        combined_source = source + "\n" + library
         self.assertIn("DISPOSABLE_PROOF_APPLY:-", source)
         self.assertIn("what-if requires an existing resource group", source)
         self.assertIn("az group delete", source)
@@ -151,9 +153,10 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("az sql server ad-admin create", source)
         self.assertIn("az sql server ad-only-auth enable", source)
         self.assertIn("Refusing to replace an unexpected SQL server administrator", source)
-        self.assertIn("az sql server ad-admin delete", source)
-        self.assertIn("az sql server ad-admin list", source)
-        self.assertIn("az sql server ad-only-auth disable", source)
+        self.assertIn("az sql server ad-admin delete", combined_source)
+        self.assertIn("az sql server ad-admin list", combined_source)
+        self.assertIn("az sql server ad-only-auth disable", combined_source)
+        self.assertIn("Refusing to remove an unexpected SQL server administrator", library)
         self.assertIn("Temporary SQL bootstrap administrator cleanup failed", source)
         self.assertIn("CRITICAL: temporary SQL bootstrap administrator cleanup could not be verified", source)
         self.assertIn("openssl rand -base64 48 | tr -d '\\r\\n'", source)
@@ -195,8 +198,8 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("resolve_stable_traffic_revision", source)
         self.assertIn("candidate_healthy", source)
         self.assertIn("stable traffic was preserved", source)
-        library = RUNBOOK_LIB.read_text()
         self.assertIn("promote_workload_revision", library)
+        self.assertIn("remove_owned_sql_bootstrap_admin", library)
         self.assertIn("--retry-all-errors", library)
         self.assertIn("/revisions?api-version=2024-03-01", source)
         self.assertIn(".nextLink // empty", source)
@@ -279,6 +282,32 @@ promote_workload_revision proof-rg proof-app stable-revision candidate-revision 
         self.assertNotIn("curl must not run", result.stderr)
         self.assertIn("uncertain result", result.stderr)
         self.assertIn("Restored stable traffic", result.stderr)
+
+    def test_unexpected_sql_admin_is_preserved_by_cleanup(self) -> None:
+        script = r'''
+source "$1"
+az() {
+  printf 'az:%s\n' "$*" >&2
+  case "$*" in
+    *"sql server list"*) printf '1\n' ;;
+    *"ad-admin list"*"length(@)"*) printf '1\n' ;;
+    *"ad-admin list"*) printf '{"login":"unrelated-admin","sid":"00000000-0000-0000-0000-000000000099"}\n' ;;
+    *"ad-only-auth disable"*|*"ad-admin delete"*) return 97 ;;
+    *) return 98 ;;
+  esac
+}
+remove_owned_sql_bootstrap_admin proof-sub proof-rg proof-sql proof-admin 00000000-0000-0000-0000-000000000001
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(1, result.returncode)
+        self.assertIn("Refusing to remove an unexpected SQL server administrator", result.stderr)
+        self.assertNotIn("ad-only-auth disable", result.stderr)
+        self.assertNotIn("ad-admin delete", result.stderr)
 
     def test_invalid_vault_derived_proof_names_fail_before_azure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
