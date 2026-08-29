@@ -140,6 +140,7 @@ class AzureWorkloadProofTests(unittest.TestCase):
     def test_runbook_is_fail_closed(self) -> None:
         source = RUNBOOK.read_text()
         library = RUNBOOK_LIB.read_text()
+        bootstrap = (ROOT / "scripts" / "bootstrap-github-azure.sh").read_text()
         combined_source = source + "\n" + library
         self.assertIn("DISPOSABLE_PROOF_APPLY:-", source)
         self.assertIn("what-if requires an existing resource group", source)
@@ -191,6 +192,23 @@ class AzureWorkloadProofTests(unittest.TestCase):
         ]
         self.assertGreaterEqual(len(role_list_lines), 6)
         self.assertTrue(all("--all" in line for line in role_list_lines), role_list_lines)
+        self.assertTrue(
+            all(not ("--all" in line and "--scope" in line) for line in role_list_lines),
+            role_list_lines,
+        )
+        self.assertIn('validate_direct_acr_pull_assignment "$registry_id" "$assignment_json" "$cleanup_principal_id"', source)
+        self.assertIn('has_direct_acr_pull_assignment "$registry_id" "$identity_principal_id" "$role_assignments_json"', source)
+        self.assertIn('[[ "$assignment_scope_lower" == "$registry_id_lower" ]]', library)
+        self.assertIn('valid_role_assignment_id "$registry_id" "$assignment_id"', library)
+        bootstrap_role_list_lines = [
+            line.strip()
+            for line in bootstrap.splitlines()
+            if "az role assignment list" in line
+        ]
+        self.assertEqual(1, len(bootstrap_role_list_lines))
+        self.assertIn("--all", bootstrap_role_list_lines[0])
+        self.assertNotIn("--scope", bootstrap_role_list_lines[0])
+        self.assertIn("[?scope=='$scope']", bootstrap_role_list_lines[0])
         self.assertIn("tags.acrPrincipal", source)
         self.assertIn("tags.acrRegistryId", source)
         self.assertIn("properties.outputs.roleAssignmentId.value", source)
@@ -391,7 +409,7 @@ ASSIGNMENTS_JSON="$3"
 az() {
   case "$*" in
     *"resource list"*) printf '%s\n' "$RESOURCE_JSON" ;;
-    *"vaults/proof-kv"*) printf '%s\n' "$ASSIGNMENTS_JSON" ;;
+    *"role assignment list"*) printf '%s\n' "$ASSIGNMENTS_JSON" ;;
     *"resourceGroups/proof-rg"*) printf '[]\n' ;;
     *) return 1 ;;
   esac
@@ -443,7 +461,7 @@ ASSIGNMENTS_JSON="$3"
 az() {
   case "$*" in
     *"resource list"*) printf '%s\n' "$RESOURCE_JSON" ;;
-    *"vaults/proof-kv"*) printf '%s\n' "$ASSIGNMENTS_JSON" ;;
+    *"role assignment list"*) printf '%s\n' "$ASSIGNMENTS_JSON" ;;
     *"resourceGroups/proof-rg"*) printf '[]\n' ;;
     *) return 1 ;;
   esac
@@ -462,16 +480,18 @@ verify_proof_resource_inventory proof-sub proof-rg proof a1111111-aaaa-aaaa-aaaa
         direct = json.dumps({
             "id": role,
             "scope": registry,
+            "principalId": "A1111111-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
             "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/7f951dda-4ed3-4680-a7ca-43fe172d538d",
         })
         inherited = json.dumps({
             "id": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleAssignments/00000000-0000-0000-0000-000000000002",
             "scope": "/subscriptions/proof-sub",
+            "principalId": "A1111111-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
             "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/7f951dda-4ed3-4680-a7ca-43fe172d538d",
         })
         script = r'''
 source "$1"
-validate_direct_acr_pull_assignment "$2" "$3"
+validate_direct_acr_pull_assignment "$2" "$3" A1111111-AAAA-AAAA-AAAA-AAAAAAAAAAAA
 '''
         self.assertEqual(
             0,
@@ -483,6 +503,27 @@ validate_direct_acr_pull_assignment "$2" "$3"
             subprocess.run(
                 ["bash", "-c", script, "test", str(RUNBOOK_LIB), registry, inherited],
                 capture_output=True, text=True, check=False).returncode)
+
+    def test_acr_readiness_accepts_only_direct_matching_assignment(self) -> None:
+        registry = "/subscriptions/proof-sub/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/acr"
+        principal = "A1111111-AAAA-AAAA-AAAA-AAAAAAAAAAAA"
+        role = "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/7f951dda-4ed3-4680-a7ca-43fe172d538d"
+        direct = {"scope": registry, "principalId": principal, "roleDefinitionId": role}
+        inherited = {"scope": "/subscriptions/proof-sub", "principalId": principal, "roleDefinitionId": role}
+        wrong_principal = {"scope": registry, "principalId": "B2222222-BBBB-BBBB-BBBB-BBBBBBBBBBBB", "roleDefinitionId": role}
+        script = r'''
+source "$1"
+has_direct_acr_pull_assignment "$2" "$3" "$4"
+'''
+
+        def check(assignments: list[dict[str, str]]) -> int:
+            return subprocess.run(
+                ["bash", "-c", script, "test", str(RUNBOOK_LIB), registry, principal, json.dumps(assignments)],
+                capture_output=True, text=True, check=False).returncode
+
+        self.assertEqual(0, check([inherited, direct]))
+        self.assertNotEqual(0, check([inherited]))
+        self.assertNotEqual(0, check([wrong_principal]))
 
     def test_uncertain_traffic_set_result_also_rolls_back(self) -> None:
         script = r'''

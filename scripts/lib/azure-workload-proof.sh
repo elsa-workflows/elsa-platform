@@ -203,7 +203,7 @@ delete_and_verify_role_assignment() {
 
   az role assignment delete --ids "$assignment_id" --only-show-errors >/dev/null 2>&1 || true
   for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
-    if assignments_json="$(az role assignment list --all --scope "$registry_id" --output json --only-show-errors 2>/dev/null)" &&
+    if assignments_json="$(az role assignment list --all --output json --only-show-errors 2>/dev/null)" &&
       jq -e --arg id "$assignment_id" '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | length == 0' <<<"$assignments_json" >/dev/null; then
       return 0
     fi
@@ -216,16 +216,34 @@ delete_and_verify_role_assignment() {
 validate_direct_acr_pull_assignment() {
   local registry_id="$1"
   local assignment_json="$2"
-  local assignment_id assignment_scope assignment_role_id registry_id_lower assignment_scope_lower
+  local expected_principal_id="${3:-}"
+  local assignment_id assignment_scope assignment_role_id assignment_principal_id registry_id_lower assignment_scope_lower
 
   assignment_id="$(jq -r '.id // empty' <<<"$assignment_json")"
   assignment_scope="$(jq -r '.scope // empty' <<<"$assignment_json")"
   assignment_role_id="$(jq -r '.roleDefinitionId // empty | split("/") | last' <<<"$assignment_json")"
+  assignment_principal_id="$(jq -r '.principalId // empty' <<<"$assignment_json")"
   registry_id_lower="$(printf '%s' "$registry_id" | tr '[:upper:]' '[:lower:]')"
   assignment_scope_lower="$(printf '%s' "$assignment_scope" | tr '[:upper:]' '[:lower:]')"
   [[ "$assignment_scope_lower" == "$registry_id_lower" ]] || return 1
   [[ "$(printf '%s' "$assignment_role_id" | tr '[:upper:]' '[:lower:]')" == 7f951dda-4ed3-4680-a7ca-43fe172d538d ]] || return 1
+  if [[ -n "$expected_principal_id" ]]; then
+    [[ "$(printf '%s' "$assignment_principal_id" | tr '[:upper:]' '[:lower:]')" == "$(printf '%s' "$expected_principal_id" | tr '[:upper:]' '[:lower:]')" ]] || return 1
+  fi
   valid_role_assignment_id "$registry_id" "$assignment_id"
+}
+
+has_direct_acr_pull_assignment() {
+  local registry_id="$1"
+  local principal_id="$2"
+  local assignments_json="$3"
+
+  jq -e --arg scope "$registry_id" --arg principal "$principal_id" '
+    type == "array" and
+    any(.[]; ((.scope // "") | ascii_downcase) == ($scope | ascii_downcase) and
+      ((.principalId // "") | ascii_downcase) == ($principal | ascii_downcase) and
+      (((.roleDefinitionId // "") | split("/") | last) | ascii_downcase) == "7f951dda-4ed3-4680-a7ca-43fe172d538d")
+  ' <<<"$assignments_json" >/dev/null
 }
 
 delete_and_verify_firewall_rule() {
@@ -329,7 +347,7 @@ verify_proof_resource_inventory() {
   }
 
   vault_id="$group_id/providers/Microsoft.KeyVault/vaults/$proof_name-kv"
-  assignments_json="$(az role assignment list --all --scope "$vault_id" --output json --only-show-errors)" || return 1
+  assignments_json="$(az role assignment list --all --output json --only-show-errors)" || return 1
   jq -e --arg scope "$vault_id" --arg workload "$identity_principal_id" --arg bootstrap "$bootstrap_object_id" '
     ($workload | ascii_downcase) as $workload_lower |
     ($bootstrap | ascii_downcase) as $bootstrap_lower |
@@ -347,7 +365,7 @@ verify_proof_resource_inventory() {
     return 1
   }
 
-  direct_group_assignments="$(az role assignment list --all --scope "$group_id" --output json --only-show-errors)" || return 1
+  direct_group_assignments="$(az role assignment list --all --output json --only-show-errors)" || return 1
   jq -e --arg scope "$group_id" '[.[] | select((.scope // "" | ascii_downcase) == ($scope | ascii_downcase))] | length == 0' <<<"$direct_group_assignments" >/dev/null || {
     echo "Refusing cleanup: resource group has an unexpected direct role assignment" >&2
     return 1
