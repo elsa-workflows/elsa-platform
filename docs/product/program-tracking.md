@@ -69,4 +69,4 @@ The six operational views are:
 
 ## Program acceptance
 
-This issue remains open until all public product milestones explicitly accepted by Valence Works are complete or formally descoped.
+The top-level Program tracking item remains open until all public product milestones explicitly accepted by Valence Works are complete or formally descoped.
