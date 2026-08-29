@@ -248,6 +248,20 @@ public sealed class ReleaseManifestAdmissionTests
     }
 
     [Fact]
+    public async Task Https_scheme_image_reference_is_rejected()
+    {
+        var artifact = WithPayload(
+            Artifact(Digest('b')),
+            ManifestJson(imageReference: $"https://runtime/runtime@{Digest('b')}", imageDigest: Digest('b')));
+        var admission = await Admit(artifact);
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, x => x.Code == "image.reference.invalid");
+        Assert.Null(admission.Manifest);
+        Assert.Null(admission.SignatureEvidence);
+    }
+
+    [Fact]
     public async Task Hostless_image_reference_is_rejected()
     {
         var artifact = WithPayload(
