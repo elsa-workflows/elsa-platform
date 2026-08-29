@@ -1,5 +1,6 @@
 using ElsaControl.Deployment.Azure;
 using ElsaControl.RuntimeBuilder.Abstractions.Plans;
+using ElsaControl.RuntimeBuilder.Abstractions.ReleaseManifests;
 
 namespace ElsaControl.Deployment.Azure.Tests;
 
@@ -182,7 +183,7 @@ public sealed class AzureWorkloadPlanTranslatorTests
             CreatePlan() with { Evidence = [] },
             new("workload-a", "westeurope"));
         var mismatch = AzureWorkloadPlanTranslator.Translate(
-            CreatePlan() with { Evidence = [new("release-manifest", "oci://other", ManifestDigest, "Verified release manifest")] },
+            CreatePlan() with { Evidence = [new(ReleaseManifestEvidenceKinds.Manifest, "oci://other", ManifestDigest, "Verified release manifest")] },
             new("workload-a", "westeurope"));
 
         Assert.Contains(missing.Findings, x => x.Code == "azure.releaseManifestEvidence.required");
@@ -194,10 +195,10 @@ public sealed class AzureWorkloadPlanTranslatorTests
     {
         var missing = CreatePlan() with
         {
-            Evidence = CreatePlan().Evidence.Where(x => x.Kind != "release-manifest-signature").ToArray()
+            Evidence = CreatePlan().Evidence.Where(x => x.Kind != ReleaseManifestEvidenceKinds.Signature).ToArray()
         };
         var unsafeEvidence = CreatePlan().Evidence
-            .Select(x => x.Kind == "release-manifest-signature" ? x with { Reference = "https://user:token@example.com/signature?token=secret" } : x)
+            .Select(x => x.Kind == ReleaseManifestEvidenceKinds.Signature ? x with { Reference = "https://user:token@example.com/signature?token=secret" } : x)
             .ToArray();
 
         var missingResult = AzureWorkloadPlanTranslator.Translate(missing, new("workload-a", "westeurope"));
@@ -308,7 +309,7 @@ public sealed class AzureWorkloadPlanTranslatorTests
                         }
                     }]
                 },
-                Evidence = plan.Evidence.Select(x => x.Kind == "release-manifest" ? x with { Reference = unsafeManifest } : x).ToArray()
+                Evidence = plan.Evidence.Select(x => x.Kind == ReleaseManifestEvidenceKinds.Manifest ? x with { Reference = unsafeManifest } : x).ToArray()
             },
             new("workload-a", "westeurope"));
 
@@ -415,8 +416,8 @@ public sealed class AzureWorkloadPlanTranslatorTests
             new("preview", "Preview", "internal", "automatic-within-minor", "explicit-approval", "explicit-migration"),
             [new("managed-runtime", "Run the resolved runtime components.", true, ["container", "persistent-storage"])],
             [
-                new("release-manifest", "oci://release-manifest", ManifestDigest, "Verified release manifest"),
-                new("release-manifest-signature", "oci://release-manifest.signature", ImageDigest, "Verified release manifest signature"),
+                new(ReleaseManifestEvidenceKinds.Manifest, "oci://release-manifest", ManifestDigest, "Verified release manifest"),
+                new(ReleaseManifestEvidenceKinds.Signature, "oci://release-manifest.signature", ImageDigest, "Verified release manifest signature"),
                 new("catalog", "catalog://snapshot", null, "Resolved catalog snapshot")
             ]);
     }
