@@ -111,7 +111,6 @@ corresponding tests pass in the production provider path.
 | Data-isolated | Deferred pooled compute with a dedicated database/data boundary per instance | Must prove pooled compute cannot cross data, secret, network or telemetry boundaries and that one tenant cannot starve another | Built-in only unless sandbox evidence exists; arbitrary packages prohibited | A separate database does not prove process or noisy-neighbor isolation; all `DI-*` gates required |
 | Dedicated | First paid profile: one managed Elsa runtime application and one database per instance; physical host remains provider-managed | Instance-scoped workload identity, secret references, explicit ingress/egress, tenant-scoped telemetry, tested backup/restore | Producer-built and Valence-approved extensions only at launch; arbitrary packages prohibited | Not a physical-host, private-network or arbitrary-code sandbox; all `D-*` launch gates required |
 | Private | Customer-specific isolated compute, persistence, secret and advanced network boundary; exact placement must be provider/customer-agent evidence | Dedicated identity and secret store, customer-controlled or explicitly isolated network, tenant-scoped operations and backups | Arbitrary packages permitted only through reproducible immutable image/artifact and provenance pipeline | No promise until `P-*` attack tests, rollback and operational review pass; a stronger claim requires explicit ADR |
-| Sovereign | Future dedicated stamp/subscription and regulatory controls | Future region and compliance evidence | Future policy | Deferred; no current launch claim |
 
 The Dedicated baseline is intentionally narrower than “all custom code works.”
 It provides an operable managed runtime while the Private workstream proves the
@@ -232,12 +231,12 @@ rows must be `Pass` in the provider's production-like environment; `Planned`,
 | Claim ID | Launch claim | Concrete control | Required executable evidence | Current disposition |
 |---|---|---|---|---|
 | D-01 | Runtime ownership is per instance | Provider creates one workload app/revision set per instance and scopes commands by instance ID | Two instances provisioned; inspect resource IDs, command authorization and deletion behavior | Not proven; provider work pending |
-| D-02 | Persistent Elsa state is per instance | Dedicated database and instance-scoped database identity; no shared launch database | Cross-instance query/credential attempts fail; migration, backup and restore-to-new-instance pass | Blocked by current SQLite-only image / #108 |
+| D-02 | Persistent Elsa state is per instance | Dedicated database and instance-scoped database identity; no shared launch database | Cross-instance query/credential attempts fail; migration, backup and restore-to-new-instance pass | Blocked by [`elsa-production-image#26`](https://github.com/valence-works/elsa-production-image/issues/26) and #108 |
 | D-03 | Arbitrary package code cannot affect the launch fleet | Admission rejects arbitrary package class; only built-in/approved immutable build is deployable | Negative package-policy test plus canary package is rejected before runtime | Policy decided; enforcement/proof pending |
 | D-04 | Secrets are not exposed through control-plane records | Secret references only, managed identity/Key Vault resolution, redaction | Seed canary secret; inspect DB/history/logs/telemetry and attempt wrong-instance read | Existing guidance; provider execution pending |
 | D-05 | Organization/workspace/instance data is authorization-scoped | Server-derived identity, centralized authorization and provider/runtime scope checks | Two-organization API, runtime, artifact, backup, telemetry and support negative matrix | Workspace tests exist; managed-instance path pending |
 | D-06 | One instance cannot consume unbounded shared capacity | CPU/memory/replica/storage/timeouts and database quotas plus alerting | Bounded exhaustion test with cost and recovery evidence | Not proven; #108/provider design required |
-| D-07 | The deployed release is the approved release | Signed release manifest, immutable image/package digests, provenance/SBOM/scan verification | Tamper/mutable-tag/wrong-signer rejection and successful known-good verification | Blocked on release-manifest follow-up from #105 |
+| D-07 | The deployed release is the approved release | Signed release manifest, immutable image/package digests, provenance/SBOM/scan verification | Tamper/mutable-tag/wrong-signer rejection and successful known-good verification | Blocked on [`elsa-production-image#27`](https://github.com/valence-works/elsa-production-image/issues/27) from #105 |
 | D-08 | Network exposure is deliberate | HTTPS ingress, authenticated control path, deny-by-default private dependencies and controlled egress | Ingress/egress matrix, TLS/auth check, no metadata/lateral access | Hypothesis only; #108/provider proof required |
 | D-09 | Health failure does not silently cut traffic | Readiness/liveness probes, revision readiness gate, traffic protection and rollback | Deploy known-bad revision; prove old good revision remains serving; restore and verify | Azure capability documented; Elsa provider proof pending |
 | D-10 | Operations are recoverable and auditable | Mandatory backup, restore-to-new-instance, retention, safe diagnostics, scoped support elevation | Backup/restore exercise meets 24-hour RPO and 4-hour RTO targets where claimed; inspect audit trail | Product target; implementation/evidence pending |
@@ -376,13 +375,16 @@ the provider contract and customer terms before launch.
 This threat model deliberately produces gates rather than speculative sandbox
 code. The following work must close before the associated promise is made:
 
-- **#105 / `elsa-production-image` release manifest:** bind immutable image,
-  topology, component, SBOM, provenance, signature and scan evidence.
-- **#108 / provider proof:** prove the actual Azure network, identity, database,
-  revision, cost and cleanup behavior; current proof is blocked by the
-  SQLite-only Combined image.
-- **#114:** implement the provider-neutral resolved application model with
-  package class and isolation entitlement as validation inputs.
+- **[`elsa-production-image#27`](https://github.com/valence-works/elsa-production-image/issues/27):**
+  publish the release manifest that binds immutable image, topology, component,
+  SBOM, provenance, signature and scan evidence identified by #105.
+- **[`elsa-production-image#26`](https://github.com/valence-works/elsa-production-image/issues/26)
+  and #108:** add SQL Server persistence to the Combined distribution, then prove
+  the actual Azure network, identity, database, revision, cost and cleanup behavior.
+- **#106:** define the provider-neutral resolved application plan with package
+  class and isolation entitlement as validation inputs.
+- **#114:** persist the resolved release/topology/profile identity in the Elsa
+  Instance lifecycle model without weakening the plan's admission decisions.
 - **#125/#126:** implement and prove the Azure provider lifecycle and first
   Dedicated endpoint/workflow smoke path.
 - **#132:** close Dedicated hardening gates, including resource placement,
