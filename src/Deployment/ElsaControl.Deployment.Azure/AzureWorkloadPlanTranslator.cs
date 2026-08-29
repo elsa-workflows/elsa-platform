@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Collections.ObjectModel;
 using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 
@@ -225,13 +226,17 @@ public static class AzureWorkloadPlanTranslator
             && string.IsNullOrEmpty(uri.Fragment);
     }
 
-    private static bool IsSafeImageRepository(string repository) =>
-        !string.IsNullOrWhiteSpace(repository) &&
-        string.Equals(repository, repository.ToLowerInvariant(), StringComparison.Ordinal) &&
-        char.IsAsciiLetterOrDigit(repository[0]) &&
-        char.IsAsciiLetterOrDigit(repository[^1]) &&
-        repository.All(x => char.IsAsciiLetterOrDigit(x) || x is '.' or '_' or '-' or '/') &&
-        !repository.Contains("//", StringComparison.Ordinal);
+    private static bool IsSafeImageRepository(string repository)
+    {
+        var prefix = $"{SupportedRegistryHost}/";
+        if (string.IsNullOrWhiteSpace(repository) || !repository.StartsWith(prefix, StringComparison.Ordinal))
+            return false;
+
+        return Regex.IsMatch(
+            repository[prefix.Length..],
+            "^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*$",
+            RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+    }
 
     private static bool ImageReferenceMatchesRepository(ResolvedImageIdentity image)
     {
