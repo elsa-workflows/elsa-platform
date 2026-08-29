@@ -233,7 +233,7 @@ if [[ "$mode" == cleanup ]]; then
   cleanup_principal_id="${stored_principal_id:-$identity_principal_id}"
   role_assignment_id=""
   if [[ -n "$stored_deployment_name" ]]; then
-    [[ "$stored_deployment_name" =~ ^elsa108-[a-z0-9-]+-[0-9a-f]{12}-acr$ ]] || {
+    [[ "$stored_deployment_name" =~ ^elsa108-${proof_name}-[0-9a-f]{12}-acr$ ]] || {
       echo "Refusing resource-group deletion: stored ACR deployment name is invalid" >&2
       exit 3
     }
@@ -242,6 +242,10 @@ if [[ "$mode" == cleanup ]]; then
       exit 3
     fi
     role_assignment_id="$(jq -r --arg name "$stored_deployment_name" '[.[] | select(.name == $name)][0].properties.outputs.roleAssignmentId.value // empty' <<<"$deployment_list_json")"
+    valid_role_assignment_id "$registry_id" "$role_assignment_id" || {
+      echo "Refusing resource-group deletion: stored ACR deployment has no valid role-assignment output" >&2
+      exit 3
+    }
   fi
   if [[ -n "$role_assignment_id" ]]; then
     if ! assignment_list_json="$(az role assignment list --scope "$registry_id" --output json --only-show-errors)"; then
@@ -260,7 +264,7 @@ if [[ "$mode" == cleanup ]]; then
     fi
     delete_and_verify_role_assignment "$registry_id" "$role_assignment_id" || cleanup_status=1
     if (( cleanup_status == 0 )); then
-      az deployment group delete --resource-group "$registry_resource_group" --name "$stored_deployment_name" --only-show-errors || cleanup_status=1
+      delete_and_verify_group_deployment "$registry_resource_group" "$stored_deployment_name" || cleanup_status=1
     fi
   elif [[ -n "$cleanup_principal_id" && -n "$registry_id" ]]; then
     if ! role_ids="$(az role assignment list --scope "$registry_id" --assignee-object-id "$cleanup_principal_id" --role AcrPull --query '[].id' --output tsv --only-show-errors)"; then
@@ -282,14 +286,7 @@ if [[ "$mode" == cleanup ]]; then
   az group delete --name "$resource_group" --yes --no-wait --only-show-errors || cleanup_status=1
   wait_for_resource_group_absence "$resource_group" || cleanup_status=1
   vault_name="${proof_name}-kv"
-  if az keyvault show-deleted --name "$vault_name" --location westeurope --only-show-errors >/dev/null 2>&1; then
-    az keyvault purge --name "$vault_name" --location westeurope --only-show-errors || cleanup_status=1
-    for _ in {1..30}; do
-      az keyvault show-deleted --name "$vault_name" --location westeurope --only-show-errors >/dev/null 2>&1 || break
-      sleep 5
-    done
-    az keyvault show-deleted --name "$vault_name" --location westeurope --only-show-errors >/dev/null 2>&1 && cleanup_status=1
-  fi
+  purge_and_verify_deleted_vault "$vault_name" westeurope || cleanup_status=1
   (( cleanup_status == 0 )) && echo "Proof group deleted, external AcrPull removed, and proof vault purge verified." || echo "Cleanup incomplete; inspect exact proof targets." >&2
   exit "$cleanup_status"
 fi
