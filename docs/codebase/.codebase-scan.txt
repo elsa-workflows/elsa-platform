@@ -1,0 +1,392 @@
+
+=== DIRECTORY TREE (max depth 3, source files only) ===
+.agents
+.agents/skills
+.agents/skills/speckit-analyze
+.agents/skills/speckit-analyze/SKILL.md
+.agents/skills/speckit-checklist
+.agents/skills/speckit-checklist/SKILL.md
+.agents/skills/speckit-clarify
+.agents/skills/speckit-clarify/SKILL.md
+.agents/skills/speckit-constitution
+.agents/skills/speckit-constitution/SKILL.md
+.agents/skills/speckit-git-commit
+.agents/skills/speckit-git-commit/SKILL.md
+.agents/skills/speckit-git-feature
+.agents/skills/speckit-git-feature/SKILL.md
+.agents/skills/speckit-git-initialize
+.agents/skills/speckit-git-initialize/SKILL.md
+.agents/skills/speckit-git-remote
+.agents/skills/speckit-git-remote/SKILL.md
+.agents/skills/speckit-git-validate
+.agents/skills/speckit-git-validate/SKILL.md
+.agents/skills/speckit-implement
+.agents/skills/speckit-implement/SKILL.md
+.agents/skills/speckit-plan
+.agents/skills/speckit-plan/SKILL.md
+.agents/skills/speckit-specify
+.agents/skills/speckit-specify/SKILL.md
+.agents/skills/speckit-tasks
+.agents/skills/speckit-tasks/SKILL.md
+.agents/skills/speckit-taskstoissues
+.agents/skills/speckit-taskstoissues/SKILL.md
+.dockerignore
+.github
+.github/workflows
+.github/workflows/azure-api-deploy.yml
+.github/workflows/ci.yml
+.gitignore
+.specify
+.specify/extensions
+.specify/extensions/.registry
+.specify/extensions/git
+.specify/extensions/git/README.md
+.specify/extensions/git/commands
+.specify/extensions/git/config-template.yml
+.specify/extensions/git/extension.yml
+.specify/extensions/git/git-config.yml
+.specify/extensions/git/scripts
+.specify/extensions.yml
+.specify/feature.json
+.specify/init-options.json
+.specify/integration.json
+.specify/integrations
+.specify/integrations/codex
+.specify/integrations/codex/scripts
+.specify/integrations/codex.manifest.json
+.specify/integrations/speckit.manifest.json
+.specify/memory
+.specify/memory/constitution.md
+.specify/scripts
+.specify/scripts/bash
+.specify/scripts/bash/check-prerequisites.sh
+.specify/scripts/bash/common.sh
+.specify/scripts/bash/create-new-feature.sh
+.specify/scripts/bash/setup-plan.sh
+.specify/scripts/bash/setup-tasks.sh
+.specify/scripts/bash/update-agent-context.sh
+.specify/templates
+.specify/templates/agent-file-template.md
+.specify/templates/checklist-template.md
+.specify/templates/constitution-template.md
+.specify/templates/plan-template.md
+.specify/templates/spec-template.md
+.specify/templates/tasks-template.md
+.specify/workflows
+.specify/workflows/speckit
+.specify/workflows/speckit/workflow.yml
+.specify/workflows/workflow-registry.json
+AGENTS.md
+CONTEXT.md
+CONTRIBUTING.md
+Directory.Build.props
+Directory.Packages.props
+EXTENSION_POINTS.md
+ElsaControl.sln
+LICENSE
+LICENSING.md
+NOTICE.md
+NuGet.config
+README.md
+THIRD-PARTY-INVENTORY.md
+azure.yaml
+design-mockups
+design-mockups/elsa-control-homepage
+design-mockups/elsa-control-homepage/index.html
+design-mockups/elsa-control-homepage/lovable-handoff.md
+design-mockups/elsa-control-homepage/lovable-handoff.zip
+design-mockups/elsa-control-homepage/preview-desktop.jpg
+design-mockups/elsa-control-homepage/preview-mobile.jpg
+design-mockups/elsa-control-homepage/review.md
+design-mockups/elsa-control-homepage/script.js
+design-mockups/elsa-control-homepage/styles.css
+dev
+dev/keycloak
+dev/keycloak/elsa-control-realm.json
+dev/regenerate-infra.sh
+docker-compose.identity.yml
+docs
+docs/adr
+docs/adr/0001-package-catalog-control-consolidation.md
+docs/adr/0002-package-identity-compatibility.md
+docs/adr/0003-package-catalog-repository-deprecation.md
+docs/adr/0004-deployment-engine-typed-reconciliation-hybrid.md
+docs/adr/0005-clean-break-for-product-owned-identifiers.md
+docs/codebase
+docs/codebase/.codebase-scan.txt
+docs/commercial-transition-audit.md
+docs/commercial-transition-summary.md
+docs/dependency-security-review.md
+docs/deployment
+docs/deployment/azure-app-service.md
+docs/deployment/azure-elsa-control-deployment-plan.md
+docs/deployment/keycloak-saas.md
+docs/elsa-control-artifact-deployment-execution-plan.md
+docs/elsa-control-artifact-workflow-e2e-smoke.md
+docs/elsa-control-console-direction.md
+docs/elsa-control-deployment-phased-strategy.md
+docs/elsa-control-integration-packaging.md
+docs/elsa-hub-runtime-builder-prompt.md
+docs/migration-to-elsa-control.md
+docs/relicensing-checklist.md
+docs/repository-transfer-checklist.md
+docs/runtime-transport-trust-policy.md
+docs/third-party-licence-review.md
+docs/weaver-configuration.md
+global.json
+infra
+infra/api
+infra/api/api-website.module.bicep
+infra/api-identity
+infra/api-identity/api-identity.module.bicep
+infra/control-sql
+infra/control-sql/control-sql.module.bicep
+infra/elsa-control
+infra/elsa-control/elsa-control.module.bicep
+infra/elsa-control-acr
+infra/elsa-control-acr/elsa-control-acr.module.bicep
+infra/main.bicep
+infra/main.parameters.json
+infra-legacy
+infra-legacy/main.bicep
+infra-legacy/modules
+infra-legacy/modules/control-api-webapp.bicep
+infra-legacy/modules/keycloak-webapp.bicep
+infra-legacy/modules/observability.bicep
+infra-legacy/modules/sql-catalog.bicep
+infra-legacy/parameters
+infra-legacy/parameters/prod.example.json
+legal
+legal/README.md
+samples
+samples/README.md
+samples/elsa-control-integrated-studio
+samples/elsa-control-integrated-studio/README.md
+samples/elsa-control-integrated-studio/appsettings.example.json
+samples/workflow-runtime-applier
+samples/workflow-runtime-applier/README.md
+samples/workflow-runtime-applier/appsettings.example.json
+scripts
+scripts/bootstrap-github-azure.sh
+scripts/bootstrap-keycloak-realm.sh
+scripts/create-local-elsa-control-jwt.sh
+scripts/deploy-azure-elsa-control.sh
+scripts/generate-third-party-inventory.mjs
+scripts/quickstart-verify.sh
+specs
+specs/001-elsa-control-package-catalog-consolidation
+specs/001-elsa-control-package-catalog-consolidation/checklists
+specs/001-elsa-control-package-catalog-consolidation/checklists/requirements.md
+specs/001-elsa-control-package-catalog-consolidation/contracts
+specs/001-elsa-control-package-catalog-consolidation/contracts/dependency-boundaries.md
+specs/001-elsa-control-package-catalog-consolidation/contracts/migration-map.md
+specs/001-elsa-control-package-catalog-consolidation/contracts/progress-tracking.md
+specs/001-elsa-control-package-catalog-consolidation/data-model.md
+specs/001-elsa-control-package-catalog-consolidation/plan.md
+specs/001-elsa-control-package-catalog-consolidation/quickstart.md
+specs/001-elsa-control-package-catalog-consolidation/research.md
+specs/001-elsa-control-package-catalog-consolidation/spec.md
+specs/001-elsa-control-package-catalog-consolidation/tasks.md
+specs/001-package-catalog
+specs/001-package-catalog/checklists
+specs/001-package-catalog/checklists/requirements.md
+specs/001-package-catalog/contracts
+specs/001-package-catalog/contracts/openapi.yaml
+specs/001-package-catalog/data-model.md
+specs/001-package-catalog/plan.md
+specs/001-package-catalog/quickstart.md
+specs/001-package-catalog/research.md
+specs/001-package-catalog/spec.md
+specs/001-package-catalog/tasks.md
+specs/002-package-manifest-generator
+specs/002-package-manifest-generator/checklists
+
+=== STACK DETECTION (manifest files) ===
+
+--- ElsaControl.sln ---
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "solution", "solution", "{9F488F1B-06A0-4D45-928C-FAB6321BCEAD}"
+	ProjectSection(SolutionItems) = preProject
+		Directory.Packages.props = Directory.Packages.props
+		Directory.Build.props = Directory.Build.props
+		LICENSE = LICENSE
+		README.md = README.md
+		AGENTS.md = AGENTS.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Deployment", "Deployment", "{964F1FA4-A6EB-A446-41C3-2CF0CA476F8C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.Deployment.Abstractions", "src\Deployment\ElsaControl.Deployment.Abstractions\ElsaControl.Deployment.Abstractions.csproj", "{55636E45-66A4-4520-978A-C9AFE52BC939}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.Deployment.Artifacts", "src\Deployment\ElsaControl.Deployment.Artifacts\ElsaControl.Deployment.Artifacts.csproj", "{45304C4B-4047-4267-8AEE-807BA196A986}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.Deployment.Manifest", "src\Deployment\ElsaControl.Deployment.Manifest\ElsaControl.Deployment.Manifest.csproj", "{271FDD2D-03B5-4A18-83D8-9274F068B777}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.Deployment.Core", "src\Deployment\ElsaControl.Deployment.Core\ElsaControl.Deployment.Core.csproj", "{8ADF2296-BFA2-4D46-9D9D-86BAB5392FFD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.Deployment.Engine", "src\Deployment\ElsaControl.Deployment.Engine\ElsaControl.Deployment.Engine.csproj", "{71CCC997-233F-40AF-B58A-FEB2140D615C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Hosting", "Hosting", "{F489E2D5-C65D-9AA9-2B96-C7DF79630172}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.Api", "src\Hosting\ElsaControl.Api\ElsaControl.Api.csproj", "{5AA21CCB-7D88-4CFE-AAC7-E8364AF14DAC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.PackageCatalog.Abstractions", "src\PackageCatalog\ElsaControl.PackageCatalog.Abstractions\ElsaControl.PackageCatalog.Abstractions.csproj", "{9DD03983-E68B-4292-A233-5648AD4816D3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.PackageCatalog.Core", "src\PackageCatalog\ElsaControl.PackageCatalog.Core\ElsaControl.PackageCatalog.Core.csproj", "{C27149CE-CE0C-4A73-BD79-4B5AC3DE4672}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore", "src\PackageCatalog\ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore\ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.csproj", "{B6076939-9CEF-4FF0-A9BA-7C9D64823FE2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.RuntimeBuilder.Abstractions", "src\RuntimeBuilder\ElsaControl.RuntimeBuilder.Abstractions\ElsaControl.RuntimeBuilder.Abstractions.csproj", "{3A12ADD9-91EF-4363-BB8A-EC90CED6098A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.Weaver.Core", "src\Weaver\ElsaControl.Weaver.Core\ElsaControl.Weaver.Core.csproj", "{D817BFAA-1A28-4E5C-8509-86BA8EC7216E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.PackageCatalog.Persistence.SqliteMigrations", "src\PackageCatalog\ElsaControl.PackageCatalog.Persistence.SqliteMigrations\ElsaControl.PackageCatalog.Persistence.SqliteMigrations.csproj", "{8B49AFCB-47CE-4BB3-8C9D-8F098D773E60}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.PackageCatalog.Persistence.SqlServerMigrations", "src\PackageCatalog\ElsaControl.PackageCatalog.Persistence.SqlServerMigrations\ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.csproj", "{6E1B0D9D-D0AA-4227-857B-A4B33ABF49CB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.PackageCatalog.Sources.NuGet", "src\PackageCatalog\ElsaControl.PackageCatalog.Sources.NuGet\ElsaControl.PackageCatalog.Sources.NuGet.csproj", "{95F47396-8AE4-46FD-8C5A-82FAC9588F12}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.ServiceDefaults", "src\Hosting\ElsaControl.ServiceDefaults\ElsaControl.ServiceDefaults.csproj", "{3825D060-8F19-4EDA-9D7F-8ADAB60F28FB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.RuntimeBuilder.Core", "src\RuntimeBuilder\ElsaControl.RuntimeBuilder.Core\ElsaControl.RuntimeBuilder.Core.csproj", "{4E51D0A4-BD50-4CCE-AA76-8BD845C5DFBF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.RuntimeBuilder.DeploymentTemplates", "src\RuntimeBuilder\ElsaControl.RuntimeBuilder.DeploymentTemplates\ElsaControl.RuntimeBuilder.DeploymentTemplates.csproj", "{A674D673-81B6-4E21-8A2E-E04D65FDF458}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.AppHost", "src\Hosting\ElsaControl.AppHost\ElsaControl.AppHost.csproj", "{7F2CD1F4-8335-4E39-A998-36739A278FB6}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "PackageCatalog", "PackageCatalog", "{67D072D0-5960-36DD-62EE-E86F26EB70B5}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "RuntimeBuilder", "RuntimeBuilder", "{DF6BE8B2-2D07-966B-2358-367643AFBACF}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Studio", "Studio", "{2B4E54AC-7DEF-1549-9779-3DE57D644187}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.Studio.Submit", "src\Studio\ElsaControl.Studio.Submit\ElsaControl.Studio.Submit.csproj", "{2F003956-7C23-4129-A891-06ADF8DB403F}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Weaver", "Weaver", "{0CFFCF7B-7EE3-F8D0-1ECE-D64A1E3809D3}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Workflows", "Workflows", "{F0A602FC-B6B3-0309-A4D0-A7C9FDC897AA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.Workflows.RuntimeApplier", "src\Workflows\ElsaControl.Workflows.RuntimeApplier\ElsaControl.Workflows.RuntimeApplier.csproj", "{BFF45C7B-4EFC-4DD3-8B7E-C558C6E52742}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Deployment", "Deployment", "{5A0DE6C7-07AA-9AAA-1A56-6E721FFE2664}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.Deployment.Abstractions.Tests", "tests\Deployment\ElsaControl.Deployment.Abstractions.Tests\ElsaControl.Deployment.Abstractions.Tests.csproj", "{78CF743A-01B7-4EC9-A1FD-3F5AE0B2780D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.Deployment.Artifacts.Tests", "tests\Deployment\ElsaControl.Deployment.Artifacts.Tests\ElsaControl.Deployment.Artifacts.Tests.csproj", "{0B1AE97B-9BA3-4CFB-8654-510E598E27F0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElsaControl.Deployment.Core.Tests", "tests\Deployment\ElsaControl.Deployment.Core.Tests\ElsaControl.Deployment.Core.Tests.csproj", "{942554AF-92AB-4942-9A0D-9D07DDBA3B36}"
+EndProject
+
+[TRUNCATED] Showing first 80 of 602 lines.
+--- global.json ---
+{
+  "sdk": {
+    "version": "10.0.300",
+    "rollForward": "latestFeature"
+  }
+}
+
+
+=== ENTRY POINTS ===
+No common entry points found. Check 'main' or 'scripts.start' in manifest files above.
+
+=== LINTING AND FORMATTING CONFIG ===
+No linting or formatting config files found in project root.
+
+=== ENVIRONMENT VARIABLE TEMPLATES ===
+No .env.example or .env.template found. Identify required environment variables by searching the code and config for environment variable reads.
+
+=== TODO / FIXME / HACK (production code only, test dirs excluded) ===
+None found.
+
+=== GIT RECENT COMMITS (last 20) ===
+e11676a Merge pull request #82 from valence-works/codex/elsa-control-migration
+6b2c6d8 docs: refresh Elsa Control design previews
+b762341 refactor: rename control repository and consume specifications package
+e06a5f9 chore(console): update audited dependencies
+0171a40 fix runtime builder plan latency and bundle roundtrip
+d8a32ad Merge branch 'codex/valence-control-migration'
+b4cf4ad Merge branch 'feat/azure-deployment-entra-and-sqlserver'
+7f310a8 Fix production console authorization and identity refresh (#81)
+0b7c2dc Serve console root with forwarded trailing slash
+7e08637 Handle App Service path base for console root
+0b06f87 Serve the console root from an explicit endpoint
+97631ed Fix production console authorization and identity refresh
+91073fb fix: build the admin console into the API publish output
+d0d9c91 Deploy Valence Control to Azure with Entra ID and SQL Server (#80)
+a97476f docs: add Elsa Hub runtime builder configurator prompt
+473c675 feat: deploy Valence Control to Azure with Entra ID and SQL Server
+a70dca7 feat: add runtime images configuration for Elsa Professional Server, Studio, and Combined
+d2a8c9c refactor: rename files and update paths for consistency
+b34c24b refactor: remove Healing component and related configurations
+4a34c1b Rename Elsa Platform to Valence Control (#79)
+
+=== HIGH-CHURN FILES (last 90 days, top 20) ===
+  18 src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.test.tsx
+  18 src/Elsa.Platform.Console/src/features/deployments/DeploymentsPage.tsx
+  16 AGENTS.md
+  15 src/Elsa.Platform.Api/Program.cs
+  14 src/Elsa.Platform.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs
+  13 src/Elsa.Platform.Console/src/app/routes.tsx
+  12 .specify/feature.json
+  10 Directory.Packages.props
+  10 README.md
+   9 .gitignore
+   9 src/Elsa.Platform.Console/src/app/AppShell.test.tsx
+   9 src/Elsa.Platform.Console/src/lib/query/queryClient.tsx
+   8 src/Hosting/ValenceControl.Api/Program.cs
+   8 src/Elsa.Platform.Console/src/features/artifacts/ArtifactsPage.tsx
+   8 src/Elsa.Platform.Console/src/app/AppShell.tsx
+   8 src/Elsa.Platform.Deployment.Core/Workspace/IWorkspaceDeploymentStore.cs
+   7 docs/commercial-transition-audit.md
+   7 docs/commercial-transition-summary.md
+   7 specs/039-platform-self-healing/tasks.md
+   7 src/Elsa.Platform.Api/Workspace/WorkspaceDeploymentEndpoints.cs
+
+=== MONOREPO SIGNALS ===
+No monorepo signals detected.
+
+=== CODE METRICS ===
+Total files scanned: 1182
+Total lines of code: 170525
+
+Files by language:
+  C#: 548
+  Other: 542
+  TypeScript/React: 46
+  TypeScript: 44
+  JavaScript: 2
+
+Top 10 largest files:
+THIRD-PARTY-INVENTORY.md: 299.6KB
+design-mockups/elsa-control-homepage/lovable-handoff.zip: 279.8KB
+src/Hosting/ElsaControl.Console/src/features/deployments/DeploymentsPage.tsx: 249.1KB
+design-mockups/elsa-control-homepage/preview-desktop.jpg: 181.7KB
+src/PackageCatalog/ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore/DeploymentWorkspaceStore.cs: 153.7KB
+src/Hosting/ElsaControl.Console/package-lock.json: 152.8KB
+src/PackageCatalog/ElsaControl.PackageCatalog.Persistence.SqlServerMigrations/Migrations/20260716031333_AddWorkspacePermissionLifecycle.Designer.cs: 125.6KB
+src/PackageCatalog/ElsaControl.PackageCatalog.Persistence.SqlServerMigrations/Migrations/CatalogDbContextModelSnapshot.cs: 125.5KB
+src/PackageCatalog/ElsaControl.PackageCatalog.Persistence.SqlServerMigrations/Migrations/20260607190000_AddDeploymentSecretStores.Designer.cs: 123.2KB
+src/PackageCatalog/ElsaControl.PackageCatalog.Persistence.SqliteMigrations/Migrations/20260716031322_AddWorkspacePermissionLifecycle.Designer.cs: 121.4KB
+
+=== CI/CD PIPELINES ===
+CI/CD: GitHub Actions
+
+=== CONTAINERS & ORCHESTRATION ===
+No containerization configs detected.
+
+=== SECURITY & COMPLIANCE ===
+No security configs detected.
+
+=== PERFORMANCE & TESTING ===
+No performance testing configs detected.
+
+=== SCAN COMPLETE ===
