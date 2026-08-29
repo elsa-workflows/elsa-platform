@@ -354,8 +354,13 @@ public sealed class ElsaInstancePlanResolver(
                         findings.Add(Error("configuration.default.invalid", "A catalog configuration default is invalid.", "configuration"));
                     }
                 }
-                if (setting.Required && value is null && setting.Secret)
-                    findings.Add(Error("configuration.requiredValue.missing", "Required configuration needs an external secret reference.", "configuration"));
+                if (setting.Required && value is null)
+                    findings.Add(Error(
+                        "configuration.requiredValue.missing",
+                        setting.Secret
+                            ? "Required configuration needs an external secret reference."
+                            : "Required configuration needs a governed value.",
+                        "configuration"));
 
                 entries.Add(new(setting.Name, setting.JsonType, setting.Required, setting.Secret, setting.RestartRequired, setting.EnvironmentVariable, value, null, feature.FeatureId));
             }
@@ -564,7 +569,7 @@ public sealed class ElsaInstancePlanResolver(
             findings.Add(Error("plan.id.required", "An immutable plan identity is required.", "plan"));
         if (string.IsNullOrWhiteSpace(request.PlanUri))
             findings.Add(Error("plan.uri.required", "A dereferenceable plan API URI is required.", "plan"));
-        else if (!IsInstancePlanUri(request.PlanUri))
+        else if (!IsInstancePlanUri(request.PlanUri, request.PlanId, request.WorkspaceId))
             findings.Add(Error("plan.uri.invalid", "The plan URI must be the control-plane instance resolved-plan route.", "plan"));
     }
 
@@ -800,15 +805,30 @@ public sealed class ElsaInstancePlanResolver(
         && value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)
         && value[7..].All(Uri.IsHexDigit);
 
-    private static bool IsInstancePlanUri(string value) =>
-        Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri)
-        && uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-        && uri.AbsolutePath.StartsWith("/api/workspaces/", StringComparison.OrdinalIgnoreCase)
-        && uri.AbsolutePath.Contains("/instances/", StringComparison.OrdinalIgnoreCase)
-        && uri.AbsolutePath.Contains("/resolved-plans/", StringComparison.OrdinalIgnoreCase)
-        && string.IsNullOrEmpty(uri.Query)
-        && string.IsNullOrEmpty(uri.Fragment)
-        && string.IsNullOrEmpty(uri.UserInfo);
+    private static bool IsInstancePlanUri(string value, string planId, Guid? expectedWorkspaceId)
+    {
+        if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri)
+            || !uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(uri.Host)
+            || !string.IsNullOrEmpty(uri.Query)
+            || !string.IsNullOrEmpty(uri.Fragment)
+            || !string.IsNullOrEmpty(uri.UserInfo))
+            return false;
+
+        var segments = uri.GetComponents(UriComponents.Path, UriFormat.UriEscaped)
+            .Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length != 7
+            || !segments[0].Equals("api", StringComparison.OrdinalIgnoreCase)
+            || !segments[1].Equals("workspaces", StringComparison.OrdinalIgnoreCase)
+            || !Guid.TryParseExact(segments[2], "D", out var workspaceId)
+            || !segments[3].Equals("instances", StringComparison.OrdinalIgnoreCase)
+            || !Guid.TryParseExact(segments[4], "D", out _)
+            || !segments[5].Equals("resolved-plans", StringComparison.OrdinalIgnoreCase)
+            || !segments[6].Equals(Uri.EscapeDataString(planId), StringComparison.Ordinal))
+            return false;
+
+        return expectedWorkspaceId is null || workspaceId == expectedWorkspaceId.Value;
+    }
 
     private static bool IsSafeSecretReference(string? value)
     {

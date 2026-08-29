@@ -353,6 +353,33 @@ public sealed class ElsaInstancePlanResolverTests
     }
 
     [Fact]
+    public async Task Rejects_missing_required_non_secret_setting_without_a_governed_default()
+    {
+        var sourceId = Guid.NewGuid();
+        var source = new PublicPackageSourceProjection(sourceId, "source", "https://packages.example.test/index.json");
+        var feature = new PublicFeatureProjection(
+            "email", "Elsa.Email", "2.0.0", source, "Elsa.Email.Feature", "Email", null, null, [], [], ["elsa.server"], [], [], [], false, false, "{}",
+            [new("smtpHost", "System.String", "string", true, null, "SMTP host", null, null, "{}", false, false, "SMTP_HOST", "{}", "{}")]);
+        var version = new PublicPackageVersionProjection(
+            "Elsa.Email", "2.0.0", source, "1.0", ["elsa.server"], null, [feature],
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        var baseline = CreateRequest();
+        var request = baseline with
+        {
+            BuilderIntent = baseline.BuilderIntent with
+            {
+                Packages = [new(sourceId, "Elsa.Email", "2.0.0", ["email"], null)]
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([version]), new FakeCompatibility()).ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Findings, finding => finding.Code == "configuration.requiredValue.missing");
+        Assert.Null(result.Plan);
+    }
+
+    [Fact]
     public async Task Produces_same_content_hash_for_reordered_safe_inputs()
     {
         var first = CreateRequest() with
@@ -372,10 +399,13 @@ public sealed class ElsaInstancePlanResolverTests
         Assert.Equal(firstResult.Reference!.ContentHash, secondResult.Reference!.ContentHash);
     }
 
-    [Fact]
-    public async Task Rejects_non_control_plan_uri_before_projection()
+    [Theory]
+    [InlineData("https://provider.example.test/api/workspaces/x/instances/y/plan")]
+    [InlineData("https://control.example.test/api/workspaces/00000000-0000-0000-0000-000000000001/extra/instances/00000000-0000-0000-0000-000000000002/resolved-plans/plan_01J5FUTURE")]
+    [InlineData("https://control.example.test/api/workspaces/00000000-0000-0000-0000-000000000001/instances/00000000-0000-0000-0000-000000000002/resolved-plans/a-different-plan")]
+    public async Task Rejects_non_control_plan_uri_before_projection(string planUri)
     {
-        var request = CreateRequest() with { PlanUri = "https://provider.example.test/api/workspaces/x/instances/y/plan" };
+        var request = CreateRequest() with { PlanUri = planUri };
 
         var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility()).ResolveAsync(request);
 
