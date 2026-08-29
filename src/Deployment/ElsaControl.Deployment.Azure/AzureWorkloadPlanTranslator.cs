@@ -229,7 +229,7 @@ public static class AzureWorkloadPlanTranslator
     private static bool IsSafeImageRepository(string repository)
     {
         var prefix = $"{SupportedRegistryHost}/";
-        if (string.IsNullOrWhiteSpace(repository) || !repository.StartsWith(prefix, StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(repository) || repository.Length > 255 || !repository.StartsWith(prefix, StringComparison.Ordinal))
             return false;
 
         return Regex.IsMatch(

@@ -346,6 +346,28 @@ public sealed class AzureWorkloadPlanTranslatorTests
         Assert.Contains(result.Findings, x => x.Code == "azure.imageRepository.invalid");
     }
 
+    [Fact]
+    public void Rejects_repository_names_over_the_Oci_length_limit()
+    {
+        var plan = CreatePlan();
+        var component = plan.Topology.Components[0];
+        var repository = $"valenceruntimeimages.azurecr.io/{new string('a', 256)}";
+        var result = AzureWorkloadPlanTranslator.Translate(
+            plan with
+            {
+                Topology = plan.Topology with
+                {
+                    Components = [component with
+                    {
+                        Image = component.Image with { Repository = repository, Reference = $"{repository}@{ImageDigest}" }
+                    }]
+                }
+            },
+            new("workload-a", "westeurope"));
+
+        Assert.Contains(result.Findings, x => x.Code == "azure.imageRepository.invalid");
+    }
+
     [Theory]
     [InlineData("--bad")]
     [InlineData("bad-")]
