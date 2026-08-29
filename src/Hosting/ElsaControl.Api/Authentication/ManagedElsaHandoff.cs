@@ -111,8 +111,10 @@ public sealed class ManagedElsaHandoffKeyRing : IDisposable
 
         ArgumentNullException.ThrowIfNull(activeKey);
         var keys = (validationKeys ?? []).ToList();
-        if (!keys.Any(x => string.Equals(x.KeyId, activeKeyId, StringComparison.Ordinal)))
-            keys.Add((activeKeyId, activeKey));
+        if (keys.Any(x => string.Equals(x.KeyId, activeKeyId, StringComparison.Ordinal)))
+            throw new ArgumentException("Validation keys must not duplicate the active key id.", nameof(validationKeys));
+
+        keys.Add((activeKeyId, activeKey));
 
         _keys = keys
             .Select(x => new RsaSecurityKey(x.Key) { KeyId = x.KeyId })
@@ -249,7 +251,7 @@ public sealed class ManagedElsaHandoffIssuer(
         if (!string.Equals(request.Audience, authorization.Audience, StringComparison.Ordinal) ||
             request.OrganizationId != authorization.OrganizationId ||
             request.InstanceId != authorization.InstanceId ||
-            request.RedirectUri != authorization.RedirectUri ||
+            !HasExactRedirectBinding(request.RedirectUri, authorization.RedirectUri) ||
             !string.Equals(request.CodeChallenge, authorization.CodeChallenge, StringComparison.Ordinal) ||
             !IsSafeRedirectUri(request.RedirectUri) ||
             !IsValidCodeChallenge(request.CodeChallenge) ||
@@ -317,10 +319,18 @@ public sealed class ManagedElsaHandoffIssuer(
         !redirectUri.Fragment.Any() &&
         !redirectUri.UserInfo.Any();
 
+    internal static bool HasExactRedirectBinding(Uri left, Uri right) =>
+        string.Equals(left.OriginalString, right.OriginalString, StringComparison.Ordinal);
+
     internal static bool IsValidCodeChallenge(string? codeChallenge) =>
         codeChallenge is { Length: 43 } &&
         codeChallenge.All(character =>
             character is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9' or '-' or '_');
+
+    internal static bool IsValidCodeVerifier(string? codeVerifier) =>
+        codeVerifier is { Length: >= 43 and <= 128 } &&
+        codeVerifier.All(character =>
+            character is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9' or '-' or '.' or '_' or '~');
 
     internal static string CreateCodeChallenge(string verifier) =>
         Convert.ToBase64String(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)))
@@ -349,7 +359,7 @@ public sealed class ManagedElsaHandoffRedeemer(
         if (string.IsNullOrWhiteSpace(token) ||
             string.IsNullOrWhiteSpace(expectedAudience) ||
             !ManagedElsaHandoffIssuer.IsSafeRedirectUri(expectedRedirectUri) ||
-            string.IsNullOrWhiteSpace(codeVerifier))
+            !ManagedElsaHandoffIssuer.IsValidCodeVerifier(codeVerifier))
             return await InvalidAsync(cancellationToken);
 
         ManagedElsaHandoffClaims claims;
@@ -447,7 +457,7 @@ public sealed class ManagedElsaHandoffRedeemer(
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToHashSet(StringComparer.Ordinal);
         if (scopes.Count != 1 || !scopes.Contains(ManagedElsaHandoffDefaults.RuntimeSessionScope) ||
-            !redirectUri.Equals(expectedRedirectUri) ||
+            !ManagedElsaHandoffIssuer.HasExactRedirectBinding(redirectUri, expectedRedirectUri) ||
             !ManagedElsaHandoffIssuer.IsSafeRedirectUri(redirectUri))
             throw new SecurityTokenException("The handoff token is not bound to the requested target.");
 

@@ -14,6 +14,7 @@ namespace ElsaControl.Api.Tests;
 public sealed class ManagedElsaHandoffTests
 {
     private const string CodeVerifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+    private const string WrongCodeVerifier = "aBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
     [Fact]
     public async Task Existing_control_identity_can_issue_and_redeem_one_time_handoff()
     {
@@ -115,11 +116,22 @@ public sealed class ManagedElsaHandoffTests
         var token = fixture.Issue();
 
         var missing = await fixture.RedeemAsync(token, codeVerifier: "");
-        var wrong = await fixture.RedeemAsync(fixture.Issue(), codeVerifier: "wrong-verifier");
+        var wrong = await fixture.RedeemAsync(fixture.Issue(), codeVerifier: WrongCodeVerifier);
 
         Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, missing.Failure);
         Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, wrong.Failure);
         Assert.Equal(2, fixture.Audit.Events.Count(audit => audit.Action == "redeem.invalid"));
+    }
+
+    [Fact]
+    public async Task Malformed_verifier_is_rejected_before_hashing()
+    {
+        using var fixture = CreateFixture();
+
+        var result = await fixture.RedeemAsync(fixture.Issue(), codeVerifier: "too-short");
+
+        Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, result.Failure);
+        Assert.Contains(fixture.Audit.Events, audit => audit.Action == "redeem.invalid");
     }
 
     [Fact]
@@ -192,6 +204,43 @@ public sealed class ManagedElsaHandoffTests
         Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, result.Failure);
     }
 
+    [Fact]
+    public void Issue_rejects_uri_normalization_differences()
+    {
+        using var fixture = CreateFixture();
+        var request = fixture.Request with
+        {
+            RedirectUri = new Uri(fixture.Authorizer.RedirectUri.OriginalString.Replace(
+                "https://managed.example.test/",
+                "https://managed.example.test:443/"))
+        };
+
+        Assert.Throws<InvalidOperationException>(() => fixture.Issue(request));
+    }
+
+    [Fact]
+    public async Task Redeem_rejects_uri_normalization_differences()
+    {
+        using var fixture = CreateFixture();
+        var normalizedDifferent = new Uri($"https://managed.example.test:443/instances/{fixture.Authorizer.InstanceId:D}/auth/callback");
+
+        var result = await fixture.RedeemAsync(fixture.Issue(), expectedRedirectUri: normalizedDifferent);
+
+        Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, result.Failure);
+    }
+
+    [Fact]
+    public void Key_ring_rejects_validation_key_that_duplicates_active_id()
+    {
+        using var active = RSA.Create(2048);
+        using var duplicate = RSA.Create(2048);
+
+        Assert.Throws<ArgumentException>(() => new ManagedElsaHandoffKeyRing(
+            "active",
+            active,
+            [("active", duplicate)]));
+    }
+
     private static ControlApiTestApplication CreateApplication(FakeHandoffAuthorizer authorizer) =>
         new(new Dictionary<string, string?>
         {
@@ -245,6 +294,11 @@ public sealed class ManagedElsaHandoffTests
         public string Issue() => Issuer.Issue(
             new TrustedWorkspaceIdentity("https://idp.example.test", "subject", "User", "user@example.test"),
             Request,
+            Authorizer.Authorization).Token;
+
+        public string Issue(ManagedElsaHandoffRequest request) => Issuer.Issue(
+            new TrustedWorkspaceIdentity("https://idp.example.test", "subject", "User", "user@example.test"),
+            request,
             Authorizer.Authorization).Token;
 
         public string IssueWithTokenType(string tokenType)
