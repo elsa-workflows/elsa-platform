@@ -227,7 +227,7 @@ Launch scope may begin with a smaller subset. Marketing names must not imply gua
 - Use Combined as the Elsa 3.8 deployment-proof and initial managed default while preserving Server plus Studio as a first-class topology.
 - Treat checked-in Bicep/provider modules as production infrastructure source of truth; Aspire remains local orchestration and developer experience.
 - Keep Nuplane runtime/image-side for the first proof. Elsa Control owns package intent, metadata and compatibility; direct Control-to-Nuplane orchestration is deferred to the Private/custom-package workstream.
-- Validate Azure Container Apps, Azure SQL, Front Door, Key Vault, managed identity and stamps through bounded spikes and a deployment proof before accepting production ADRs.
+- Use the accepted ADR-0010 Azure Container Apps, Azure SQL, Key Vault, managed-identity and checked-in-Bicep boundary for the initial Dedicated provider. Validate Front Door, private networking, HA and later stamp/profile promises through their own bounded proofs before accepting them.
 
 ## Testing Decisions and Milestone Seams
 
@@ -277,7 +277,7 @@ External behavior is the primary test boundary. Unit tests support domain rules,
 
 ## Open Product Decisions
 
-No Phase 0 product-owner decision remains open. The decision log records the selected launch policies. Azure Container Apps and the future customer deployment agent remain evidence-gated architecture hypotheses, while public launch still requires executable security, availability, recovery, support and legal acceptance evidence.
+No Phase 0 product-owner decision remains open. The decision log records the selected launch policies. Azure Container Apps is accepted for the initial Dedicated provider by ADR-0010 and the completed #108 proof. The future customer deployment agent remains an evidence-gated architecture hypothesis, while public launch still requires executable security, availability, recovery, support and legal acceptance evidence.
 
 ## Further Notes
 

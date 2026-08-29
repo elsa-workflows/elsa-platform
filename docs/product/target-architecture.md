@@ -71,15 +71,15 @@ A provider should:
 
 Generated output, direct execution and continuous reconciliation are distinct provider modes. Docker Compose can generate artifacts; an Azure provider can reconcile managed resources; a customer agent can reconcile within a customer trust boundary.
 
-## Azure Hypothesis to Validate
+## Accepted Initial Azure Realization and Deferred Hypotheses
 
-- Azure Front Door for public edge, WAF, TLS and hostname routing.
-- Azure Container Apps for initial shared/dedicated Elsa compute, subject to networking/revision/economics spike.
-- Azure SQL with database/pool topology selected by isolation profile.
+- Direct Container Apps managed HTTPS ingress for the initial provider slice. Azure Front Door, custom domains, WAF policy and advanced edge routing remain deferred hypotheses.
+- Azure Container Apps for initial Dedicated Elsa compute, accepted by ADR-0010 and the #108 deployment proof; later isolation profiles remain evidence-gated.
+- Azure SQL with one database per Dedicated instance initially; pooled and later isolation-profile topologies remain evidence-gated.
 - Key Vault and managed identities for platform-managed secrets.
-- Azure Monitor/Application Insights/OpenTelemetry for platform and tenant-scoped telemetry.
-- Storage for artifacts/backups where required.
-- Declarative IaC driven by the provider; deployment stamps/cells bound region and failure/capacity.
+- Log Analytics as the proven proof-time diagnostics foundation; production Azure Monitor/Application Insights/OpenTelemetry, tenant scoping, retention and alerting remain a separate observability acceptance gate.
+- Artifact and backup storage remain provider/productization choices; backup/restore is a separate acceptance gate and was not accepted by the #108 proof.
+- Checked-in Bicep driven by the provider; the initial West Europe Dedicated boundary is accepted, while multi-region, private-network, HA and broader stamp/cell behavior require separate evidence.
 - AKS remains a future provider/profile where requirements prove it necessary.
 
 ## Frontend Architecture

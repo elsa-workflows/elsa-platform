@@ -35,7 +35,7 @@ Elsa Control owns provider-neutral desired Elsa configuration. A resolved applic
 
 ## Critical path
 
-Commercial image/version authority → resolved Elsa application model → typed reconciliation prerequisite → Azure provider/IaC spike → Azure provider vertical slice → healthy endpoint/workflow proof → durable Elsa Instance lifecycle → SaaS onboarding walking skeleton.
+Completed foundations: commercial image/version authority → resolved Elsa application model → typed reconciliation prerequisite → accepted Azure provider/IaC proof. Active path: durable Elsa Instance lifecycle (#114) and Azure provider vertical slice (#125) → provider-executed healthy endpoint/workflow proof → SaaS onboarding walking skeleton.
 
 ## Tracking
 
