@@ -257,16 +257,18 @@ if [[ "$mode" == cleanup ]]; then
         echo "Refusing resource-group deletion: stored ACR assignment does not match this proof identity, scope, and role" >&2
         exit 3
       }
-      az role assignment delete --ids "$role_assignment_id" --only-show-errors || cleanup_status=1
     fi
-    az deployment group delete --resource-group "$registry_resource_group" --name "$stored_deployment_name" --only-show-errors || cleanup_status=1
+    delete_and_verify_role_assignment "$registry_id" "$role_assignment_id" || cleanup_status=1
+    if (( cleanup_status == 0 )); then
+      az deployment group delete --resource-group "$registry_resource_group" --name "$stored_deployment_name" --only-show-errors || cleanup_status=1
+    fi
   elif [[ -n "$cleanup_principal_id" && -n "$registry_id" ]]; then
     if ! role_ids="$(az role assignment list --scope "$registry_id" --assignee-object-id "$cleanup_principal_id" --role AcrPull --query '[].id' --output tsv --only-show-errors)"; then
       echo "Refusing resource-group deletion: identity-scoped ACR assignments could not be read" >&2
       exit 3
     fi
     while IFS= read -r role_id; do
-      [[ -z "$role_id" ]] || az role assignment delete --ids "$role_id" --only-show-errors || cleanup_status=1
+      [[ -z "$role_id" ]] || delete_and_verify_role_assignment "$registry_id" "$role_id" || cleanup_status=1
     done <<<"$role_ids"
   else
     echo "Refusing resource-group deletion: external ACR cleanup cannot be proven from the proof identity or deployment record" >&2
@@ -278,11 +280,7 @@ if [[ "$mode" == cleanup ]]; then
     exit 3
   fi
   az group delete --name "$resource_group" --yes --no-wait --only-show-errors || cleanup_status=1
-  for _ in {1..60}; do
-    [[ "$(az group exists --name "$resource_group" --only-show-errors 2>/dev/null || echo false)" == true ]] || break
-    sleep 5
-  done
-  [[ "$(az group exists --name "$resource_group" --only-show-errors 2>/dev/null || echo false)" == true ]] && cleanup_status=1
+  wait_for_resource_group_absence "$resource_group" || cleanup_status=1
   vault_name="${proof_name}-kv"
   if az keyvault show-deleted --name "$vault_name" --location westeurope --only-show-errors >/dev/null 2>&1; then
     az keyvault purge --name "$vault_name" --location westeurope --only-show-errors || cleanup_status=1

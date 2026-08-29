@@ -105,3 +105,40 @@ remove_owned_sql_bootstrap_admin() {
   echo "Temporary SQL bootstrap administrator remained configured" >&2
   return 1
 }
+
+# Azure role-assignment deletion is eventually consistent and may commit even
+# when the CLI returns an error. Verify the exact owned assignment is absent
+# before its deployment record (the cleanup provenance) can be removed.
+delete_and_verify_role_assignment() {
+  local registry_id="$1"
+  local assignment_id="$2"
+  local max_attempts="${3:-24}"
+  local delay_seconds="${4:-5}"
+  local assignments_json attempt
+
+  az role assignment delete --ids "$assignment_id" --only-show-errors >/dev/null 2>&1 || true
+  for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
+    if assignments_json="$(az role assignment list --scope "$registry_id" --output json --only-show-errors 2>/dev/null)" &&
+      jq -e --arg id "$assignment_id" '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | length == 0' <<<"$assignments_json" >/dev/null; then
+      return 0
+    fi
+    (( attempt == max_attempts )) || sleep "$delay_seconds"
+  done
+  echo "Proof-owned ACR role assignment remained observable after deletion" >&2
+  return 1
+}
+
+wait_for_resource_group_absence() {
+  local resource_group="$1"
+  local max_attempts="${2:-240}"
+  local delay_seconds="${3:-5}"
+  local group_exists attempt
+
+  for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
+    group_exists="$(az group exists --name "$resource_group" --output tsv --only-show-errors 2>/dev/null || echo unknown)"
+    [[ "$group_exists" == false ]] && return 0
+    (( attempt == max_attempts )) || sleep "$delay_seconds"
+  done
+  echo "Proof resource group remained observable after the bounded deletion window" >&2
+  return 1
+}

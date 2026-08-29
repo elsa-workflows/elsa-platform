@@ -84,4 +84,4 @@ scripts/azure-workload-proof.sh cleanup --resource-group <disposable-proof-group
 az group exists --name <disposable-proof-group>  # must return false
 ```
 
-Cleanup verifies exact proof ownership tags, removes only the workload identity's AcrPull assignment, waits for resource-group deletion, purges the exact proof vault's soft-deleted record, and verifies absence. It tolerates a partial foundation but refuses to adopt or delete an unrelated group.
+Cleanup verifies exact proof ownership tags, removes only the workload identity's AcrPull assignment, and polls until that exact assignment is no longer observable before deleting its external deployment record. It then waits up to 20 minutes for resource-group deletion because Container Apps managed environments can remain `ScheduledForDelete` well beyond five minutes, purges the exact proof vault's soft-deleted record, and verifies absence. It tolerates a partial foundation but refuses to adopt or delete an unrelated group. A timeout reports incomplete and leaves the remaining exact targets available for inspection; it never broadens cleanup to unrelated resources.

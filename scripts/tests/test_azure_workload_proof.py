@@ -200,6 +200,12 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("stable traffic was preserved", source)
         self.assertIn("promote_workload_revision", library)
         self.assertIn("remove_owned_sql_bootstrap_admin", library)
+        self.assertIn("delete_and_verify_role_assignment", library)
+        self.assertIn("wait_for_resource_group_absence", library)
+        self.assertLess(
+            source.index('delete_and_verify_role_assignment "$registry_id" "$role_assignment_id"'),
+            source.index('az deployment group delete --resource-group "$registry_resource_group"'),
+        )
         self.assertIn("--retry-all-errors", library)
         self.assertIn("/revisions?api-version=2024-03-01", source)
         self.assertIn(".nextLink // empty", source)
@@ -308,6 +314,101 @@ remove_owned_sql_bootstrap_admin proof-sub proof-rg proof-sql proof-admin 000000
         self.assertIn("Refusing to remove an unexpected SQL server administrator", result.stderr)
         self.assertNotIn("ad-only-auth disable", result.stderr)
         self.assertNotIn("ad-admin delete", result.stderr)
+
+    def test_role_cleanup_waits_for_eventual_absence_after_uncertain_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = Path(temp_dir) / "state"
+            calls = Path(temp_dir) / "calls"
+            state.write_text("0")
+            script = r'''
+source "$1"
+STATE_FILE="$2"
+CALLS_FILE="$3"
+az() {
+  printf '%s\n' "$*" >>"$CALLS_FILE"
+  if [[ "$*" == *"role assignment delete"* ]]; then return 1; fi
+  count="$(cat "$STATE_FILE")"
+  count=$((count + 1))
+  printf '%s' "$count" >"$STATE_FILE"
+  if (( count < 3 )); then
+    printf '[{"id":"/subscriptions/proof/providers/Microsoft.Authorization/roleAssignments/ABC"}]\n'
+  else
+    printf '[]\n'
+  fi
+}
+sleep() { :; }
+delete_and_verify_role_assignment /subscriptions/proof/registries/acr /subscriptions/proof/providers/Microsoft.Authorization/roleAssignments/abc 4 0
+'''
+            result = subprocess.run(
+                ["bash", "-c", script, "test", str(RUNBOOK_LIB), str(state), str(calls)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            call_lines = calls.read_text().splitlines()
+            self.assertEqual(1, sum("role assignment delete" in line for line in call_lines))
+            self.assertEqual(3, sum("role assignment list" in line for line in call_lines))
+
+    def test_role_cleanup_fails_when_assignment_never_disappears(self) -> None:
+        script = r'''
+source "$1"
+az() {
+  if [[ "$*" == *"role assignment delete"* ]]; then return 0; fi
+  printf '[{"id":"proof-role"}]\n'
+}
+sleep() { :; }
+delete_and_verify_role_assignment proof-registry proof-role 2 0
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(1, result.returncode)
+        self.assertIn("remained observable", result.stderr)
+
+    def test_group_cleanup_waits_through_slow_scheduled_deletion(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = Path(temp_dir) / "state"
+            state.write_text("0")
+            script = r'''
+source "$1"
+STATE_FILE="$2"
+az() {
+  count="$(cat "$STATE_FILE")"
+  count=$((count + 1))
+  printf '%s' "$count" >"$STATE_FILE"
+  (( count < 4 )) && printf 'true\n' || printf 'false\n'
+}
+sleep() { :; }
+wait_for_resource_group_absence proof-rg 5 0
+'''
+            result = subprocess.run(
+                ["bash", "-c", script, "test", str(RUNBOOK_LIB), str(state)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("4", state.read_text())
+
+    def test_group_cleanup_reports_bounded_timeout(self) -> None:
+        script = r'''
+source "$1"
+az() { printf 'true\n'; }
+sleep() { :; }
+wait_for_resource_group_absence proof-rg 2 0
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(1, result.returncode)
+        self.assertIn("bounded deletion window", result.stderr)
 
     def test_invalid_vault_derived_proof_names_fail_before_azure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
