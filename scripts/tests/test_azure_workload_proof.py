@@ -125,6 +125,8 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("keyvault purge", source)
         self.assertIn("Refusing to adopt unrelated resource group", source)
         self.assertIn("registry-subscription", source)
+        self.assertIn('proof-name="$proof_name"', source)
+        self.assertIn("acr_role_ready", source)
         self.assertIn("az group exists", source)
         self.assertIn("show-deleted", source)
         self.assertRegex(source, r"\[\[ \"\$\{DISPOSABLE_PROOF_APPLY:-\}\" == YES \]\]")

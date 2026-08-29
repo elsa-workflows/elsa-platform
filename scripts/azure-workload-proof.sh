@@ -136,8 +136,8 @@ if [[ "$mode" == cleanup ]]; then
   command -v jq >/dev/null || { echo "jq is required for ownership-safe cleanup" >&2; exit 2; }
   [[ -z "$subscription_id" ]] || az account set --subscription "$subscription_id"
   group_tags="$(az group show --name "$resource_group" --query tags --output json --only-show-errors 2>/dev/null || true)"
-  [[ "$(jq -r '.proof // empty' <<<"$group_tags")" == 108 && "$(jq -r '.owner // empty' <<<"$group_tags")" == elsa-control ]] || {
-    echo "Refusing cleanup: resource group is absent or lacks expected proof ownership tags" >&2
+  [[ "$(jq -r '.proof // empty' <<<"$group_tags")" == 108 && "$(jq -r '.owner // empty' <<<"$group_tags")" == elsa-control && "$(jq -r '."proof-name" // empty' <<<"$group_tags")" == "$proof_name" ]] || {
+    echo "Refusing cleanup: resource group is absent or does not belong to this exact proof" >&2
     exit 3
   }
   cleanup_status=0
@@ -208,7 +208,7 @@ parameters=(
 )
 
 image_digest_lower="$(printf '%s' "$image_digest" | tr '[:upper:]' '[:lower:]')"
-plan_input="proof=108|name=${proof_name}|location=westeurope|image=${image_repository}@sha256:${image_digest_lower}|elsa=3.8|sql-workflow=3.8.0-preview.5413|sql-quartz=3.8.0-preview.342|topology=combined|acr=${registry_resource_group}/${registry_name}|sql-bootstrap=${sql_bootstrap_object_id}/${sql_bootstrap_login}|secrets=sql-connection/identity-signing-key|expiry=${expiry_utc}"
+plan_input="proof=108|name=${proof_name}|location=westeurope|image=${image_repository}@sha256:${image_digest_lower}|elsa=3.8|sql-workflow=3.8.0-preview.5413|sql-quartz=3.8.0-preview.342|topology=combined|acr=${registry_subscription_id}/${registry_resource_group}/${registry_name}|sql-bootstrap=${sql_bootstrap_object_id}/${sql_bootstrap_login}|secrets=sql-connection/identity-signing-key|expiry=${expiry_utc}"
 deployment_suffix="$(sha256_text "$plan_input" | cut -c1-12)"
 
 [[ -z "$subscription_id" ]] || az account set --subscription "$subscription_id"
@@ -234,10 +234,10 @@ fi
 
 existing_tags="$(az group show --name "$resource_group" --query tags --output json --only-show-errors 2>/dev/null || true)"
 if [[ -n "$existing_tags" ]]; then
-  [[ "$(jq -r '.proof // empty' <<<"$existing_tags")" == 108 && "$(jq -r '.owner // empty' <<<"$existing_tags")" == elsa-control ]] || { echo "Refusing to adopt unrelated resource group" >&2; exit 3; }
+  [[ "$(jq -r '.proof // empty' <<<"$existing_tags")" == 108 && "$(jq -r '.owner // empty' <<<"$existing_tags")" == elsa-control && "$(jq -r '."proof-name" // empty' <<<"$existing_tags")" == "$proof_name" ]] || { echo "Refusing to adopt unrelated resource group" >&2; exit 3; }
 fi
 az group create --name "$resource_group" --location westeurope \
-  --tags proof=108 owner=elsa-control expiry="$expiry_utc" --only-show-errors >/dev/null
+  --tags proof=108 owner=elsa-control proof-name="$proof_name" expiry="$expiry_utc" --only-show-errors >/dev/null
 
 deployment_name="elsa108-${proof_name}-${deployment_suffix}"
 foundation_outputs="$(az deployment group create \
@@ -274,6 +274,16 @@ az deployment group create \
   --template-file "$proof_dir/acr-pull-role.bicep" \
   --parameters registryName="$registry_name" workloadIdentityId="$identity_id" workloadPrincipalId="$identity_principal_id" \
   --query properties.outputs --output none --only-show-errors
+acr_role_ready=0
+registry_id="$(az acr show --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors)"
+for _ in {1..12}; do
+  if [[ "$(az role assignment list --scope "$registry_id" --assignee-object-id "$identity_principal_id" --role AcrPull --query 'length(@)' --output tsv --only-show-errors 2>/dev/null || echo 0)" -gt 0 ]]; then
+    acr_role_ready=1
+    break
+  fi
+  sleep 5
+done
+(( acr_role_ready == 1 )) || { echo "AcrPull role assignment did not become observable" >&2; exit 5; }
 az account set --subscription "$proof_subscription_id"
 
 command -v sqlcmd >/dev/null || {
