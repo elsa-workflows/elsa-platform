@@ -82,14 +82,23 @@ param owner string = 'elsa-control'
 @description('Create the externally reachable Container App. Set false for the foundation phase while the runbook seeds Key Vault secrets.')
 param deployWorkload bool = true
 
+@description('SHA-256 of the compiled main template. The runbook supplies this so IaC changes produce a new plan and revision identity.')
+@minLength(64)
+@maxLength(64)
+param templateFingerprint string
+
+@description('Runbook-selected Container Apps revision suffix. Empty uses the plan fingerprint for direct template consumers.')
+@maxLength(63)
+param workloadRevisionSuffix string = ''
+
 @description('Additional tags. Required proof/owner/expiry/fingerprint tags always win.')
 param additionalTags object = {}
 
-var planInput = 'proof=108|name=${proofName}|location=${location}|image=${imageRepository}@sha256:${toLower(imageDigest)}|elsa=${elsaVersion}|sql-workflow=${sqlWorkflowPackageVersion}|sql-quartz=${sqlQuartzPackageVersion}|topology=combined|acr=${registrySubscriptionId}/${registryResourceGroupName}/${registryName}|sql-bootstrap=${sqlBootstrapObjectId}/${sqlBootstrapLogin}|admin=${adminUsername}|secrets=${sqlConnectionSecretName}/${signingKeySecretName}/${adminPasswordSecretName}|expiry=${expiryUtc}'
+var planInput = 'proof=108|template=${toLower(templateFingerprint)}|name=${proofName}|location=${location}|image=${imageRepository}@sha256:${toLower(imageDigest)}|elsa=${elsaVersion}|sql-workflow=${sqlWorkflowPackageVersion}|sql-quartz=${sqlQuartzPackageVersion}|topology=combined|acr=${registrySubscriptionId}/${registryResourceGroupName}/${registryName}|sql-bootstrap=${sqlBootstrapObjectId}/${sqlBootstrapLogin}|admin=${adminUsername}|secrets=${sqlConnectionSecretName}/${signingKeySecretName}/${adminPasswordSecretName}|expiry=${expiryUtc}'
 // Bicep 0.43 has no SHA-256 function. uniqueString is deterministic for the
-// canonical input; external evidence may additionally hash the compiled template.
+// canonical input, including the externally computed compiled-template hash.
 var planFingerprint = uniqueString(planInput)
-var revisionSuffix = take(planFingerprint, 24)
+var revisionSuffix = empty(workloadRevisionSuffix) ? take(planFingerprint, 24) : workloadRevisionSuffix
 var requiredTags = {
   proof: '108'
   owner: owner

@@ -66,7 +66,9 @@ Front Door, custom domains, private networking, VNet integration and production 
 
 ## Determinism, cost and cleanup
 
-Names are derived from the caller's unique `proofName`. The plan input includes proof ID, image digest, Elsa version, topology, ACR location, bootstrap identity, secret names and expiry. Bicep derives a stable `uniqueString` fingerprint and revision suffix; the runbook uses a stable deployment name. Repeating the same inputs is therefore safe and should produce no resource changes. Evidence can additionally record a SHA-256 of the compiled template.
+Names are derived from the caller's unique `proofName`. The plan input includes the compiled-template SHA-256, proof ID, image digest, Elsa version, topology, ACR location, bootstrap identity, secret names and expiry. Bicep derives a stable `uniqueString` fingerprint and revision suffix; the runbook uses a stable deployment name. Repeating the exact template and inputs is therefore safe and should produce no resource changes.
+
+Container Apps revision suffixes are immutable. If a diagnostic or fault-injection revision changes the app outside Bicep, the runbook cannot reuse the older suffix to restore the desired template. It detects that drift, retains the plan fingerprint, and selects the first free deterministic `-rN` recovery suffix. Subsequent unchanged applies reuse that recovery suffix; a compiled-template or input change produces a new plan fingerprint.
 
 The proof uses consumption compute, a one-vCore serverless SQL database with auto-pause, and the minimum 30-day Log Analytics retention. Keep the run inside a short time box, scale to zero when idle, and inspect current subscription pricing before applying. Azure has no instantaneous hard spend cap; the controlling guardrail is immediate deletion.
 

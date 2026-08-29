@@ -103,7 +103,9 @@ class AzureWorkloadProofTests(unittest.TestCase):
     def test_deterministic_fingerprint_and_required_tags(self) -> None:
         source = MAIN.read_text()
         self.assertIn("var planInput =", source)
+        self.assertIn("template=${toLower(templateFingerprint)}", source)
         self.assertIn("var planFingerprint = uniqueString(planInput)", source)
+        self.assertIn("empty(workloadRevisionSuffix)", source)
         self.assertIn("'plan-fingerprint': planFingerprint", source)
         self.assertIn("deploymentName string = take('elsa108-${proofName}-${take(planFingerprint, 12)}', 64)", source)
         self.assertIn("proof: '108'", source)
@@ -171,6 +173,12 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertRegex(source, r"\[\[ \"\$\{DISPOSABLE_PROOF_APPLY:-\}\" == YES \]\]")
         validation = (ROOT / "scripts" / "validate-azure-workload-proof.sh").read_text()
         self.assertIn("Compiled main template SHA-256", validation)
+        self.assertIn('templateFingerprint="$compiled_fingerprint"', validation)
+        self.assertIn('template_fingerprint="$(az bicep build', source)
+        self.assertIn('"templateFingerprint=$template_fingerprint"', source)
+        self.assertIn('workloadRevisionSuffix="$workload_revision_suffix"', source)
+        self.assertIn('candidate="${plan_fingerprint}-r${recovery_ordinal}"', source)
+        self.assertIn("/revisions?api-version=2024-03-01", source)
 
     def test_invalid_vault_derived_proof_names_fail_before_azure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

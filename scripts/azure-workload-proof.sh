@@ -128,6 +128,14 @@ sha256_text() {
   fi
 }
 
+sha256_stream() {
+  if command -v sha256sum >/dev/null; then
+    sha256sum | awk '{print $1}'
+  else
+    shasum -a 256 | awk '{print $1}'
+  fi
+}
+
 if [[ "$mode" == cleanup ]]; then
   : "${resource_group:?cleanup requires --resource-group}"
   : "${proof_name:?cleanup requires --proof-name so the external ACR role can be removed safely}"
@@ -246,6 +254,11 @@ command -v jq >/dev/null || { echo "jq is required to read safe deployment outpu
 
 "$repo_root/scripts/validate-azure-workload-proof.sh"
 
+# Bind the deployment/revision identity to the exact compiled IaC, not only to
+# its data parameters. This prevents a code-only template change from being
+# mistaken for an unchanged plan.
+template_fingerprint="$(az bicep build --file "$proof_dir/main.bicep" --stdout | sha256_stream)"
+
 [[ -z "$subscription_id" ]] || az account set --subscription "$subscription_id"
 proof_subscription_id="$(az account show --query id --output tsv --only-show-errors)"
 registry_subscription_id="${registry_subscription_id:-$proof_subscription_id}"
@@ -260,10 +273,11 @@ parameters=(
   "sqlBootstrapObjectId=$sql_bootstrap_object_id"
   "sqlBootstrapLogin=$sql_bootstrap_login"
   "expiryUtc=$expiry_utc"
+  "templateFingerprint=$template_fingerprint"
 )
 
 image_digest_lower="$(printf '%s' "$image_digest" | tr '[:upper:]' '[:lower:]')"
-plan_input="proof=108|name=${proof_name}|location=westeurope|image=${image_repository}@sha256:${image_digest_lower}|elsa=3.8|sql-workflow=3.8.0-preview.5413|sql-quartz=3.8.0-preview.342|topology=combined|acr=${registry_subscription_id}/${registry_resource_group}/${registry_name}|sql-bootstrap=${sql_bootstrap_object_id}/${sql_bootstrap_login}|admin=proof-admin|secrets=sql-connection/identity-signing-key/admin-password|expiry=${expiry_utc}"
+plan_input="proof=108|template=${template_fingerprint}|name=${proof_name}|location=westeurope|image=${image_repository}@sha256:${image_digest_lower}|elsa=3.8|sql-workflow=3.8.0-preview.5413|sql-quartz=3.8.0-preview.342|topology=combined|acr=${registry_subscription_id}/${registry_resource_group}/${registry_name}|sql-bootstrap=${sql_bootstrap_object_id}/${sql_bootstrap_login}|admin=proof-admin|secrets=sql-connection/identity-signing-key/admin-password|expiry=${expiry_utc}"
 deployment_suffix="$(sha256_text "$plan_input" | cut -c1-12)"
 
 [[ -z "$subscription_id" ]] || az account set --subscription "$subscription_id"
@@ -307,6 +321,37 @@ identity_client_id="$(jq -r '.workloadIdentityClientId.value' <<<"$foundation_ou
 identity_principal_id="$(jq -r '.workloadIdentityPrincipalId.value' <<<"$foundation_outputs")"
 key_vault_name="${proof_name}-kv"
 sql_fqdn="$(jq -r '.sqlServerFqdn.value' <<<"$foundation_outputs")"
+plan_fingerprint="$(jq -r '.planFingerprint.value' <<<"$foundation_outputs")"
+
+# Container Apps revision suffixes are immutable. If an out-of-band diagnostic
+# revision changed the app's latest template, ARM cannot roll back by reusing an
+# older suffix. Reuse our current plan suffix when it is still latest; otherwise
+# select the first deterministic recovery suffix not present in revision history.
+app_name="${proof_name}-app"
+app_id="/subscriptions/${proof_subscription_id}/resourceGroups/${resource_group}/providers/Microsoft.App/containerApps/${app_name}"
+app_count="$(az resource list --resource-group "$resource_group" --resource-type Microsoft.App/containerApps --query "[?name=='${app_name}'] | length(@)" --output tsv --only-show-errors)"
+workload_revision_suffix="$plan_fingerprint"
+if (( app_count == 1 )); then
+  current_revision_suffix="$(az resource show --ids "$app_id" --api-version 2024-03-01 --query properties.template.revisionSuffix --output tsv --only-show-errors)"
+  if [[ "$current_revision_suffix" == "$plan_fingerprint" || "$current_revision_suffix" =~ ^${plan_fingerprint}-r[0-9]+$ ]]; then
+    workload_revision_suffix="$current_revision_suffix"
+  else
+    revisions_json="$(az rest --method get --url "${app_id}/revisions?api-version=2024-03-01" --only-show-errors)"
+    if jq -e --arg name "${app_name}--${workload_revision_suffix}" '.value[] | select(.name == $name)' <<<"$revisions_json" >/dev/null; then
+      for recovery_ordinal in {1..999}; do
+        candidate="${plan_fingerprint}-r${recovery_ordinal}"
+        if ! jq -e --arg name "${app_name}--${candidate}" '.value[] | select(.name == $name)' <<<"$revisions_json" >/dev/null; then
+          workload_revision_suffix="$candidate"
+          break
+        fi
+      done
+      [[ "$workload_revision_suffix" != "$plan_fingerprint" ]] || { echo "No free deterministic recovery revision suffix was available" >&2; exit 5; }
+    fi
+  fi
+elif (( app_count != 0 )); then
+  echo "Expected at most one proof Container App named $app_name" >&2
+  exit 5
+fi
 
 sql_server_name="${proof_name}-sql"
 temporary_firewall_rule="elsa108-bootstrap"
@@ -402,7 +447,7 @@ az deployment group create \
   --resource-group "$resource_group" \
   --name "${deployment_name}-workload" \
   --template-file "$proof_dir/main.bicep" \
-  --parameters "${parameters[@]}" deployWorkload=true \
+  --parameters "${parameters[@]}" deployWorkload=true workloadRevisionSuffix="$workload_revision_suffix" \
   --query properties.outputs --output none --only-show-errors
 
 endpoint="$(az deployment group show --resource-group "$resource_group" --name "${deployment_name}-workload" --query 'properties.outputs.containerAppEndpoint.value' --output tsv --only-show-errors)"

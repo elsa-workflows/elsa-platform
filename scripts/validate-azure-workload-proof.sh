@@ -38,6 +38,7 @@ if [[ "${AZURE_WORKLOAD_PROOF_WHAT_IF:-}" == "1" ]]; then
     --parameters \
       proofName="$AZURE_WORKLOAD_PROOF_NAME" \
       imageDigest="$AZURE_WORKLOAD_PROOF_IMAGE_DIGEST" \
+      templateFingerprint="$compiled_fingerprint" \
       registryResourceGroupName="$AZURE_WORKLOAD_PROOF_ACR_RESOURCE_GROUP" \
       sqlBootstrapObjectId="$AZURE_WORKLOAD_PROOF_SQL_BOOTSTRAP_OBJECT_ID" \
       sqlBootstrapLogin="$AZURE_WORKLOAD_PROOF_SQL_BOOTSTRAP_LOGIN" \
