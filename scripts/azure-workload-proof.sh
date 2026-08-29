@@ -143,17 +143,40 @@ if [[ "$mode" == cleanup ]]; then
   cleanup_status=0
   identity_principal_id="$(az identity show --resource-group "$resource_group" --name "${proof_name}-identity" --query principalId --output tsv --only-show-errors 2>/dev/null || true)"
   proof_subscription_id="$(az account show --query id --output tsv --only-show-errors)"
-  [[ -z "$registry_subscription_id" ]] || az account set --subscription "$registry_subscription_id"
+  registry_subscription_id="${registry_subscription_id:-$proof_subscription_id}"
+  az account set --subscription "$registry_subscription_id"
   registry_id="$(az acr show --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors 2>/dev/null || true)"
-  external_deployment_name="elsa108-${proof_name}-acr-pull"
-  role_assignment_id="$(az deployment group show --resource-group "$registry_resource_group" --name "$external_deployment_name" --query properties.outputs.roleAssignmentId.value --output tsv --only-show-errors 2>/dev/null || true)"
+  stored_deployment_name="$(jq -r '.acrDeployment // empty' <<<"$group_tags")"
+  stored_principal_id="$(jq -r '.acrPrincipal // empty' <<<"$group_tags")"
+  stored_registry_id="$(jq -r '.acrRegistryId // empty' <<<"$group_tags")"
+  if [[ -n "$stored_principal_id" && -n "$identity_principal_id" && "$stored_principal_id" != "$identity_principal_id" ]]; then
+    echo "Refusing resource-group deletion: stored and live proof identities do not match" >&2
+    exit 3
+  fi
+  if [[ -n "$stored_registry_id" && "$stored_registry_id" != "$registry_id" ]]; then
+    echo "Refusing resource-group deletion: stored and requested ACR scopes do not match" >&2
+    exit 3
+  fi
+  cleanup_principal_id="${stored_principal_id:-$identity_principal_id}"
+  role_assignment_id=""
+  if [[ -n "$stored_deployment_name" ]]; then
+    role_assignment_id="$(az deployment group show --resource-group "$registry_resource_group" --name "$stored_deployment_name" --query properties.outputs.roleAssignmentId.value --output tsv --only-show-errors 2>/dev/null || true)"
+  fi
   if [[ -n "$role_assignment_id" ]]; then
-    if az role assignment show --ids "$role_assignment_id" --only-show-errors >/dev/null 2>&1; then
+    assignment_json="$(az role assignment show --ids "$role_assignment_id" --output json --only-show-errors 2>/dev/null || true)"
+    if [[ -n "$assignment_json" ]]; then
+      assignment_principal_id="$(jq -r '.principalId // empty' <<<"$assignment_json")"
+      assignment_scope="$(jq -r '.scope // empty' <<<"$assignment_json")"
+      assignment_role_id="$(jq -r '.roleDefinitionId // empty | split("/") | last' <<<"$assignment_json")"
+      [[ "$assignment_principal_id" == "$cleanup_principal_id" && "$assignment_scope" == "$registry_id" && "$assignment_role_id" == 7f951dda-4ed3-4680-a7ca-43fe172d538d ]] || {
+        echo "Refusing resource-group deletion: stored ACR assignment does not match this proof identity, scope, and role" >&2
+        exit 3
+      }
       az role assignment delete --ids "$role_assignment_id" --only-show-errors || cleanup_status=1
     fi
-    az deployment group delete --resource-group "$registry_resource_group" --name "$external_deployment_name" --only-show-errors || cleanup_status=1
-  elif [[ -n "$identity_principal_id" && -n "$registry_id" ]]; then
-    role_ids="$(az role assignment list --scope "$registry_id" --assignee-object-id "$identity_principal_id" --role AcrPull --query '[].id' --output tsv --only-show-errors 2>/dev/null || true)"
+    az deployment group delete --resource-group "$registry_resource_group" --name "$stored_deployment_name" --only-show-errors || cleanup_status=1
+  elif [[ -n "$cleanup_principal_id" && -n "$registry_id" ]]; then
+    role_ids="$(az role assignment list --scope "$registry_id" --assignee-object-id "$cleanup_principal_id" --role AcrPull --query '[].id' --output tsv --only-show-errors 2>/dev/null || true)"
     while IFS= read -r role_id; do
       [[ -z "$role_id" ]] || az role assignment delete --ids "$role_id" --only-show-errors || cleanup_status=1
     done <<<"$role_ids"
@@ -282,7 +305,9 @@ trap cleanup_apply EXIT
 # The ACR is intentionally outside the disposable group. This idempotent role
 # assignment is the only proof mutation outside the supplied proof group.
 az account set --subscription "$registry_subscription_id"
-external_deployment_name="elsa108-${proof_name}-acr-pull"
+external_context="${proof_subscription_id}/${resource_group}/${identity_principal_id}/${registry_subscription_id}/${registry_resource_group}/${registry_name}"
+external_deployment_suffix="$(sha256_text "$external_context" | cut -c1-12)"
+external_deployment_name="elsa108-${proof_name}-${external_deployment_suffix}-acr"
 az deployment group create \
   --resource-group "$registry_resource_group" \
   --name "$external_deployment_name" \
@@ -300,6 +325,9 @@ for _ in {1..12}; do
 done
 (( acr_role_ready == 1 )) || { echo "AcrPull role assignment did not become observable" >&2; exit 5; }
 az account set --subscription "$proof_subscription_id"
+az group update --name "$resource_group" \
+  --set tags.acrDeployment="$external_deployment_name" tags.acrPrincipal="$identity_principal_id" tags.acrRegistryId="$registry_id" \
+  --only-show-errors >/dev/null
 
 command -v sqlcmd >/dev/null || {
   echo "Go sqlcmd is required; install github.com/microsoft/go-sqlcmd and ensure --authentication-method is supported" >&2
