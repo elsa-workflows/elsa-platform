@@ -239,6 +239,52 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Execution_rejects_plan_evidence_references_that_do_not_match_the_operation()
+    {
+        var store = new FakeOperationStore();
+        var executor = new AzureProviderExecutor(store, new RecordingRunner(), new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var plan = CreatePlan() with
+        {
+            ReleaseManifestReference = "oci://different.example/manifest",
+            ReleaseManifestSignatureReference = "oci://different.example/signature"
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => executor.ApplyAsync(CreateRequest(), plan));
+    }
+
+    [Fact]
+    public async Task Execution_rejects_plan_secret_references_that_do_not_match_the_operation()
+    {
+        var store = new FakeOperationStore();
+        var executor = new AzureProviderExecutor(store, new RecordingRunner(), new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var plan = CreatePlan() with
+        {
+            SecretReferences = new Dictionary<string, string>
+            {
+                ["database:connectionstring"] = "secret://different-vault/database"
+            }
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => executor.ApplyAsync(CreateRequest(), plan));
+    }
+
+    [Fact]
+    public async Task Execution_rejects_noncanonical_plan_secret_reference_keys()
+    {
+        var store = new FakeOperationStore();
+        var executor = new AzureProviderExecutor(store, new RecordingRunner(), new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var plan = CreatePlan() with
+        {
+            SecretReferences = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Database:ConnectionString"] = "secret://database"
+            }
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => executor.ApplyAsync(CreateRequest(), plan));
+    }
+
+    [Fact]
     public async Task Renews_the_durable_lease_while_a_remote_step_is_running()
     {
         var store = new FakeOperationStore();
@@ -531,7 +577,13 @@ public sealed class AzureProviderExecutorTests
         "valenceruntimeimages.azurecr.io/runtime-combined",
         "sha256:" + new string('c', 64),
         "sha256:" + new string('d', 64),
-        "sha256:" + new string('e', 64));
+        "sha256:" + new string('e', 64),
+        "oci://release-manifest.example/manifest",
+        "oci://release-manifest.example/signature",
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["database:connectionstring"] = "secret://database"
+        });
 
     private static AzureWorkloadPlan CreatePlan() => new(
         "workload-a",

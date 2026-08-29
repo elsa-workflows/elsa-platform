@@ -37,7 +37,15 @@ public sealed class AzureProviderOperationWorker(
         foreach (var operation in operations)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var plan = planSource.Resolve(operation);
+            AzureWorkloadPlan? plan;
+            try
+            {
+                plan = planSource.Resolve(operation);
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+            {
+                plan = null;
+            }
             if (plan is null)
             {
                 // A malformed or legacy persisted plan must not remain runnable forever. The
@@ -53,33 +61,29 @@ public sealed class AzureProviderOperationWorker(
             }
 
             var request = new AzureProviderExecutionRequest(
-                CreateRequest(operation),
+                AzureProviderOperationService.CreateOperationRequest(operation),
                 plan);
-            await executor.ExecuteAsync(request, cancellationToken);
+            try
+            {
+                await executor.ExecuteAsync(request, cancellationToken);
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+            {
+                // Validation is performed before the executor claims the operation or invokes
+                // the provider. Persisted data that fails a defense-in-depth check must take the
+                // same versioned terminal path as an unrestorable plan, so it cannot starve the
+                // queue on every polling interval.
+                await store.MarkUnrestorableAsync(
+                    operation.WorkspaceId,
+                    operation.Id,
+                    now,
+                    operation.Version,
+                    cancellationToken);
+                continue;
+            }
             processed++;
         }
 
         return processed;
     }
-
-    private static AzureProviderOperationRequest CreateRequest(AzureProviderOperation operation) =>
-        new(
-            operation.WorkspaceId,
-            operation.TargetKey,
-            operation.Action,
-            operation.IdempotencyKey,
-            operation.PlanFingerprint,
-            operation.TemplateFingerprint,
-            operation.ElsaVersion,
-            operation.ReleaseLine,
-            operation.Topology,
-            operation.Isolation,
-            operation.Location,
-            operation.ImageRepository,
-            operation.ImageDigest,
-            operation.ReleaseManifestDigest,
-            operation.ReleaseManifestSignatureDigest,
-            operation.ReleaseManifestReference,
-            operation.ReleaseManifestSignatureReference,
-            operation.SafeSecretReferences);
 }

@@ -729,7 +729,7 @@ public sealed class AzureProviderExecutor
         public Exception Cause { get; } = cause;
     }
 
-    private static void ValidateExecutionRequest(AzureProviderExecutionRequest request)
+    internal static void ValidateExecutionRequest(AzureProviderExecutionRequest request)
     {
         if (request is null)
             throw new ArgumentNullException(nameof(request));
@@ -754,7 +754,10 @@ public sealed class AzureProviderExecutor
             !string.Equals(plan.ImageRepository, operation.ImageRepository, StringComparison.Ordinal) ||
             !string.Equals($"sha256:{plan.ImageDigest}", operation.ImageDigest, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(plan.ReleaseManifestDigest, operation.ReleaseManifestDigest, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(plan.ReleaseManifestSignatureDigest, operation.ReleaseManifestSignatureDigest, StringComparison.OrdinalIgnoreCase))
+            !string.Equals(plan.ReleaseManifestSignatureDigest, operation.ReleaseManifestSignatureDigest, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(plan.ReleaseManifestReference, operation.ReleaseManifestReference, StringComparison.Ordinal) ||
+            !string.Equals(plan.ReleaseManifestSignatureReference, operation.ReleaseManifestSignatureReference, StringComparison.Ordinal) ||
+            !SecretReferencesMatch(plan.SecretReferences, operation.SecretReferences))
             throw new ArgumentException("The provider plan does not match the operation request.", nameof(request));
 
         if (!AzureProviderOperationValidation.IsSafeImmutableEvidenceReference(plan.ReleaseManifestReference, plan.ReleaseManifestDigest) ||
@@ -804,6 +807,16 @@ public sealed class AzureProviderExecutor
     private static bool IsSha256Digest(string? value) =>
         value is not null && value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) &&
         value.Length == "sha256:".Length + 64 && value["sha256:".Length..].All(Uri.IsHexDigit);
+
+    private static bool SecretReferencesMatch(
+        IReadOnlyDictionary<string, string>? planReferences,
+        IReadOnlyDictionary<string, string>? operationReferences) =>
+        planReferences is not null && operationReferences is not null &&
+        planReferences.Count == operationReferences.Count &&
+        planReferences.All(pair => string.Equals(pair.Key, pair.Key.Trim().ToLowerInvariant(), StringComparison.Ordinal)) &&
+        operationReferences.All(pair =>
+            planReferences.TryGetValue(pair.Key, out var value) &&
+            string.Equals(value, pair.Value, StringComparison.Ordinal));
 
     private static bool IsFingerprint(string? value) => value is not null && value.Length == 64 && value.All(Uri.IsHexDigit);
 

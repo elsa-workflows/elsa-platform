@@ -139,34 +139,73 @@ public sealed class AzureProviderOperationService(
                 pair => pair.Value,
                 StringComparer.OrdinalIgnoreCase)));
 
-    internal static AzureWorkloadPlan? TryRestorePlan(AzureProviderOperation operation)
-    {
-        if (operation is null || string.IsNullOrWhiteSpace(operation.ReleaseManifestReference) ||
-            string.IsNullOrWhiteSpace(operation.ReleaseManifestSignatureReference) ||
-            string.IsNullOrWhiteSpace(operation.ImageDigest) ||
-            operation.ImageDigest.Length != "sha256:".Length + 64 ||
-            !operation.ImageDigest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) ||
-            !operation.ImageDigest["sha256:".Length..].All(Uri.IsHexDigit) ||
-            !AzureProviderOperationValidation.IsSafeImmutableEvidenceReference(operation.ReleaseManifestReference, operation.ReleaseManifestDigest) ||
-            !AzureProviderOperationValidation.IsSafeImmutableEvidenceReference(operation.ReleaseManifestSignatureReference, operation.ReleaseManifestSignatureDigest) ||
-            !AzureProviderOperationValidation.IsSafeSecretReferences(operation.SafeSecretReferences))
-            return null;
-
-        return new AzureWorkloadPlan(
+    internal static AzureProviderOperationRequest CreateOperationRequest(AzureProviderOperation operation) =>
+        new(
+            operation.WorkspaceId,
             operation.TargetKey,
-            operation.Location,
+            operation.Action,
+            operation.IdempotencyKey,
+            operation.PlanFingerprint,
+            operation.TemplateFingerprint,
             operation.ElsaVersion,
             operation.ReleaseLine,
             operation.Topology,
             operation.Isolation,
+            operation.Location,
             operation.ImageRepository,
-            operation.ImageDigest["sha256:".Length..],
+            operation.ImageDigest,
+            operation.ReleaseManifestDigest,
+            operation.ReleaseManifestSignatureDigest,
             operation.ReleaseManifestReference,
-            operation.ReleaseManifestDigest!,
             operation.ReleaseManifestSignatureReference,
-            operation.ReleaseManifestSignatureDigest!,
-            operation.SafeSecretReferences,
-            operation.PlanFingerprint);
+            operation.SafeSecretReferences);
+
+    internal static AzureWorkloadPlan? TryRestorePlan(AzureProviderOperation operation)
+    {
+        if (operation is null || operation.Id == Guid.Empty)
+            return null;
+
+        try
+        {
+            var operationRequest = AzureProviderOperationValidation.Normalize(CreateOperationRequest(operation));
+            if (!string.Equals(
+                    operation.RequestHash,
+                    AzureProviderOperationValidation.ComputeRequestHash(operationRequest),
+                    StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(
+                    operation.OperationIdentity,
+                    AzureProviderOperationValidation.ComputeOperationIdentity(operationRequest),
+                    StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            var plan = new AzureWorkloadPlan(
+                operationRequest.TargetKey,
+                operationRequest.Location,
+                operationRequest.ElsaVersion,
+                operationRequest.ReleaseLine,
+                operationRequest.Topology,
+                operationRequest.Isolation,
+                operationRequest.ImageRepository,
+                operationRequest.ImageDigest["sha256:".Length..],
+                operationRequest.ReleaseManifestReference!,
+                operationRequest.ReleaseManifestDigest!,
+                operationRequest.ReleaseManifestSignatureReference!,
+                operationRequest.ReleaseManifestSignatureDigest!,
+                operationRequest.SecretReferences!,
+                operationRequest.PlanFingerprint);
+
+            AzureProviderExecutor.ValidateExecutionRequest(
+                new AzureProviderExecutionRequest(operationRequest, plan));
+            return plan;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     private static void ValidateSubmissionPlan(AzureWorkloadPlan plan, string parameterName)
