@@ -217,19 +217,18 @@ public sealed class WorkspaceDeploymentService(IWorkspaceDeploymentStore store)
 
     public static string ComputeDesiredStateHash(string desiredStateJson)
     {
-        var canonicalJson = CanonicalizeJson(desiredStateJson);
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonicalJson));
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        using var document = JsonDocument.Parse(desiredStateJson);
+        return ComputeDesiredStateHash(document.RootElement);
     }
 
-    private static string CanonicalizeJson(string json)
+    public static string ComputeDesiredStateHash(JsonElement json)
     {
-        using var document = JsonDocument.Parse(json);
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
-            WriteCanonicalJson(writer, document.RootElement);
+            WriteCanonicalJson(writer, json);
 
-        return Encoding.UTF8.GetString(stream.ToArray());
+        var hash = SHA256.HashData(stream.ToArray());
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     private static void WriteCanonicalJson(Utf8JsonWriter writer, JsonElement element)

@@ -46,6 +46,25 @@ public sealed class DeploymentValidationServiceTests
     }
 
     [Fact]
+    public async Task Uses_semantic_resource_hashes_for_promotion_diff()
+    {
+        _store.Revisions[_sourceRevisionId] = Revision(_sourceRevisionId, _sourceEnvironmentId, 13, """
+            {"records":[{"kind":"Workflow","name":"Payment Retry","payload":{"version":8,"enabled":true}}]}
+            """);
+        _store.LatestByEnvironment[_targetEnvironmentId] = Revision(_targetRevisionId, _targetEnvironmentId, 10, """
+            { "records": [ { "payload": { "enabled": true, "version": 8 }, "name": "Payment Retry", "kind": "Workflow" } ] }
+            """);
+        _store.Engines[_targetEngineId] = Engine(_targetEngineId, _targetEnvironmentId);
+        var service = new DeploymentValidationService(_store);
+
+        var comparison = await service.PreviewPromotionAsync(
+            _workspaceId,
+            new WorkspacePromotionPreviewRequest(_sourceEnvironmentId, _targetEnvironmentId, _sourceRevisionId, _targetEngineId));
+
+        Assert.Empty(comparison.Diff);
+    }
+
+    [Fact]
     public async Task Blocks_preview_when_required_secret_reference_is_missing()
     {
         _store.Revisions[_sourceRevisionId] = Revision(_sourceRevisionId, _sourceEnvironmentId, 3, """

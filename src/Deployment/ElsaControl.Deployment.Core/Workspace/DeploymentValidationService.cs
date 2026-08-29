@@ -20,8 +20,8 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
         if (source is null)
             return Blocked(request, "deployment.preview.source-missing", "Source revision is not visible in this workspace.");
 
-        var sourceRecords = ParseRecords(source.DesiredStateJson);
-        var targetRecords = target is null ? [] : ParseRecords(target.DesiredStateJson);
+        var sourceRecords = DesiredStateResourceReader.Read(source.DesiredStateJson);
+        var targetRecords = target is null ? [] : DesiredStateResourceReader.Read(target.DesiredStateJson);
         var (sourceEnvironment, targetEnvironment, targetEngineRegistration) = await GetPromotionContextAsync(workspaceId, request, cancellationToken);
         var diff = Diff(sourceRecords, targetRecords);
         var artifactComparisons = CompareArtifacts(sourceRecords, targetRecords, engine, targetEngineRegistration);
@@ -68,34 +68,9 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
             null,
             null);
 
-    private static IReadOnlyList<DesiredRecord> ParseRecords(string json)
-    {
-        using var document = JsonDocument.Parse(json);
-        var records = document.RootElement.TryGetProperty("records", out var recordsElement) && recordsElement.ValueKind == JsonValueKind.Array
-            ? recordsElement
-            : document.RootElement;
-
-        if (records.ValueKind != JsonValueKind.Array)
-            return [];
-
-        return records.EnumerateArray()
-            .Select(record =>
-            {
-                var payload = record.TryGetProperty("payload", out var payloadElement) && payloadElement.ValueKind == JsonValueKind.Object
-                    ? payloadElement
-                    : record;
-                var kindValue = record.TryGetProperty("kind", out var kind) ? GetString(kind) ?? "" : "";
-                return new DesiredRecord(
-                    kindValue,
-                    record.TryGetProperty("name", out var name) ? GetString(name) ?? "" : "",
-                    record.TryGetProperty("payload", out var payloadValue) ? payloadValue.GetRawText() : "{}",
-                    string.Equals(kindValue, "ArtifactReference", StringComparison.OrdinalIgnoreCase) ? ParseArtifactDescriptor(payload) : null);
-            })
-            .Where(record => !string.IsNullOrWhiteSpace(record.Kind) && !string.IsNullOrWhiteSpace(record.Name))
-            .ToList();
-    }
-
-    private static IReadOnlyList<DeploymentDiffItem> Diff(IReadOnlyList<DesiredRecord> source, IReadOnlyList<DesiredRecord> target)
+    private static IReadOnlyList<DeploymentDiffItem> Diff(
+        IReadOnlyList<DesiredStateResource> source,
+        IReadOnlyList<DesiredStateResource> target)
     {
         var sourceByKey = source.ToDictionary(x => x.Key, StringComparer.Ordinal);
         var targetByKey = target.ToDictionary(x => x.Key, StringComparer.Ordinal);
@@ -108,15 +83,15 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
                 targetByKey.TryGetValue(key, out var targetRecord);
                 var impact = targetRecord is null ? DiffImpact.Added :
                     sourceRecord is null ? DiffImpact.Removed :
-                    string.Equals(sourceRecord.Payload, targetRecord.Payload, StringComparison.Ordinal) ? (DiffImpact?)null : DiffImpact.Changed;
+                    sourceRecord.Resource.DesiredStateHash == targetRecord.Resource.DesiredStateHash ? (DiffImpact?)null : DiffImpact.Changed;
                 return impact is null
                     ? null
                     : new DeploymentDiffItem(
                         key,
                         Category(sourceRecord?.Kind ?? targetRecord!.Kind),
                         sourceRecord?.Name ?? targetRecord!.Name,
-                        sourceRecord?.Payload ?? "",
-                        targetRecord?.Payload ?? "",
+                        sourceRecord?.PayloadJson ?? "{}",
+                        targetRecord?.PayloadJson ?? "{}",
                         impact.Value);
             })
             .Where(item => item is not null)
@@ -125,16 +100,16 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
     }
 
     private static IReadOnlyList<PromotionArtifactComparison> CompareArtifacts(
-        IReadOnlyList<DesiredRecord> source,
-        IReadOnlyList<DesiredRecord> target,
+        IReadOnlyList<DesiredStateResource> source,
+        IReadOnlyList<DesiredStateResource> target,
         WorkspaceWorkflowEngine? engine,
         WorkflowEngineRegistration? engineRegistration)
     {
         var sourceByName = source
-            .Where(x => x.Artifact is not null)
+            .Where(x => x.IsKind(DesiredStateRecordKind.ArtifactReference))
             .ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
         var targetByName = target
-            .Where(x => x.Artifact is not null)
+            .Where(x => x.IsKind(DesiredStateRecordKind.ArtifactReference))
             .ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
 
         return sourceByName.Keys.Concat(targetByName.Keys)
@@ -144,8 +119,8 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
             {
                 sourceByName.TryGetValue(name, out var sourceRecord);
                 targetByName.TryGetValue(name, out var targetRecord);
-                var sourceArtifact = sourceRecord?.Artifact;
-                var targetArtifact = targetRecord?.Artifact;
+                var sourceArtifact = sourceRecord is null ? null : ParseArtifactDescriptor(sourceRecord.ArtifactPayload);
+                var targetArtifact = targetRecord is null ? null : ParseArtifactDescriptor(targetRecord.ArtifactPayload);
                 var impact = targetArtifact is null ? PromotionArtifactImpact.Added :
                     sourceArtifact is null ? PromotionArtifactImpact.Removed :
                     SameArtifact(sourceArtifact, targetArtifact) ? PromotionArtifactImpact.Unchanged : PromotionArtifactImpact.Changed;
@@ -328,7 +303,7 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
     }
 
     private static IReadOnlyList<DeploymentValidation> Validate(
-        IReadOnlyList<DesiredRecord> source,
+        IReadOnlyList<DesiredStateResource> source,
         WorkspaceWorkflowEngine? engine,
         EnvironmentSummary? sourceEnvironment,
         EnvironmentSummary? targetEnvironment,
@@ -352,16 +327,18 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
 
         if (targetEnvironment is null || DeploymentTierService.RequiresSecretVerification(targetEnvironment))
         {
-            foreach (var secret in source.Where(x => string.Equals(x.Kind, "SecretReference", StringComparison.OrdinalIgnoreCase)))
+            foreach (var secret in source.Where(x => x.IsKind(DesiredStateRecordKind.SecretReference)))
             {
-                using var payload = JsonDocument.Parse(secret.Payload);
-                var reference = payload.RootElement.TryGetProperty("reference", out var value) ? GetString(value) : null;
+                var reference = secret.Payload.ValueKind == JsonValueKind.Object
+                    && secret.Payload.TryGetProperty("reference", out var value)
+                        ? GetString(value)
+                        : null;
                 validations.Add(string.IsNullOrWhiteSpace(reference)
                     ? new DeploymentValidation($"secret-{secret.Name}", ValidationSeverity.Blocker, "Secret references", $"{secret.Name} secret reference is missing.")
                     : new DeploymentValidation($"secret-{secret.Name}", ValidationSeverity.Pass, "Secret references", $"{secret.Name} secret reference is present."));
             }
         }
-        if (targetEnvironment is not null && DeploymentTierService.RequiresObservability(targetEnvironment) && !source.Any(x => string.Equals(x.Kind, "ObservabilityBinding", StringComparison.OrdinalIgnoreCase)))
+        if (targetEnvironment is not null && DeploymentTierService.RequiresObservability(targetEnvironment) && !source.Any(x => x.IsKind(DesiredStateRecordKind.ObservabilityBinding)))
             validations.Add(new DeploymentValidation("deployment.tier.observability-required", ValidationSeverity.Blocker, "Observability", $"{TierLabel(targetEnvironment)} requires at least one observability binding."));
 
         return validations.Count == 0
@@ -386,8 +363,4 @@ public sealed class DeploymentValidationService(IWorkspaceDeploymentStore? store
             _ => DiffCategory.RuntimeConfiguration
         };
 
-    private sealed record DesiredRecord(string Kind, string Name, string Payload, PromotionArtifactDescriptor? Artifact)
-    {
-        public string Key => $"{Kind}:{Name}";
-    }
 }
