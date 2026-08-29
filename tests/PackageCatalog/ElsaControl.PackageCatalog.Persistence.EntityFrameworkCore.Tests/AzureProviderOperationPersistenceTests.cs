@@ -119,6 +119,46 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.Null(await store.MarkUnrestorableAsync(_workspaceId, operation.Id, now, operation.Version));
     }
 
+    [Theory]
+    [InlineData("DiagnosticsJson", "{")]
+    [InlineData("DiagnosticsJson", "null")]
+    [InlineData("SecretReferencesJson", "{")]
+    [InlineData("SecretReferencesJson", "null")]
+    [InlineData("SecretReferencesJson", "{\"database\":null}")]
+    public async Task Malformed_persisted_metadata_is_marked_unrestorable_without_escaping(string column, string json)
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request() with
+        {
+            ReleaseManifestDigest = "sha256:" + new string('d', 64),
+            ReleaseManifestSignatureDigest = "sha256:" + new string('e', 64),
+            ReleaseManifestReference = "oci://release-manifest.example/manifest",
+            ReleaseManifestSignatureReference = "oci://release-manifest.example/signature"
+        }, now);
+        if (column == "DiagnosticsJson")
+            await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE AzureProviderOperations SET DiagnosticsJson = {json} WHERE Id = {operation.Id}");
+        else
+            await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE AzureProviderOperations SET SecretReferencesJson = {json} WHERE Id = {operation.Id}");
+
+        var runnable = Assert.Single(await store.ListRunnableAsync(now, 10));
+        Assert.True(runnable.PersistedMetadataInvalid);
+        Assert.Null(new PersistedAzureProviderPlanSource().Resolve(runnable));
+
+        var worker = new AzureProviderOperationWorker(
+            store,
+            new AzureProviderExecutor(store, new NeverCalledRunner()),
+            new PersistedAzureProviderPlanSource(),
+            new FixedTimeProvider(now));
+        Assert.Equal(0, await worker.ProcessOnceAsync());
+
+        var failed = await store.GetAsync(_workspaceId, operation.Id);
+        Assert.Equal(AzureProviderOperationStatus.Failed, failed?.Status);
+        var transition = Assert.Single(await store.ListTransitionsAsync(_workspaceId, operation.Id), x => x.Code == "azure.plan.unrestorable");
+        Assert.Equal("azure.plan.unrestorable", transition.Message);
+    }
+
     [Fact]
     public async Task Concurrent_claim_has_one_winner()
     {
@@ -174,6 +214,17 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         _workspaceId, "workload-a", AzureProviderOperationAction.Reconcile, "request-1",
         new('a', 64), new('b', 64), "3.8.0", "3.8", "combined", "Dedicated", "westeurope",
         "valenceruntimeimages.azurecr.io/runtime-combined", "sha256:" + new string('c', 64));
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class NeverCalledRunner : IAzureProviderRunner
+    {
+        public Task<AzureProviderRunnerResult> RunAsync(AzureProviderRunnerCommand command, CancellationToken cancellationToken = default) =>
+            throw new Xunit.Sdk.XunitException("The provider runner must not be called for malformed persisted metadata.");
+    }
 
     public void Dispose() => _connection.Dispose();
 }

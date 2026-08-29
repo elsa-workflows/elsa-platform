@@ -162,7 +162,7 @@ public sealed class AzureProviderOperationService(
 
     internal static AzureWorkloadPlan? TryRestorePlan(AzureProviderOperation operation)
     {
-        if (operation is null || operation.Id == Guid.Empty)
+        if (operation is null || operation.Id == Guid.Empty || operation.PersistedMetadataInvalid)
             return null;
 
         try

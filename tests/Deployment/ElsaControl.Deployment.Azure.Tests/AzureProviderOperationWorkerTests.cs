@@ -71,16 +71,49 @@ public sealed class AzureProviderOperationWorkerTests
             ReleaseManifestReference = $"oci://evidence.example/manifest@{digest}",
             ReleaseManifestSignatureReference = $"oci://evidence.example/signature@{digest}"
         });
-        var later = WithComputedMetadata(Operation() with { Id = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"), TargetKey = "later" });
+        var later = WithComputedMetadata(Operation() with
+        {
+            Id = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            TargetKey = "later",
+            ReleaseManifestDigest = digest,
+            ReleaseManifestSignatureDigest = digest,
+            ReleaseManifestReference = "oci://evidence.example/manifest",
+            ReleaseManifestSignatureReference = "oci://evidence.example/signature"
+        });
         var store = new MultiOperationWorkerStore(malformed, later);
-        var executor = new AzureProviderExecutor(store, new NeverCalledRunner());
+        var runner = new CompletingRunner();
+        var executor = new AzureProviderExecutor(store, runner);
         var worker = new AzureProviderOperationWorker(store, executor, new PersistedAzureProviderPlanSource(), new FixedTimeProvider());
 
         var processed = await worker.ProcessOnceAsync();
 
-        Assert.Equal(0, processed);
-        Assert.Equal(2, store.MarkUnrestorableCount);
-        Assert.All(store.Operations, operation => Assert.Equal(AzureProviderOperationStatus.Failed, operation.Status));
+        Assert.Equal(1, processed);
+        Assert.Equal(1, store.MarkUnrestorableCount);
+        Assert.Equal(AzureProviderOperationStatus.Failed, store.Operations[0].Status);
+        Assert.Equal(AzureProviderOperationStatus.Succeeded, store.Operations[1].Status);
+        Assert.Equal(1, store.Operations[1].AttemptNumber);
+        Assert.Equal(7, runner.Steps.Count);
+    }
+
+    [Fact]
+    public async Task Asynchronous_executor_failure_after_claim_is_not_misclassified_as_unrestorable()
+    {
+        var digest = "sha256:" + new string('f', 64);
+        var operation = WithComputedMetadata(Operation() with
+        {
+            ReleaseManifestDigest = digest,
+            ReleaseManifestSignatureDigest = digest,
+            ReleaseManifestReference = "oci://evidence.example/manifest",
+            ReleaseManifestSignatureReference = "oci://evidence.example/signature"
+        });
+        var store = new WorkerStore(operation, failAfterClaim: true);
+        var executor = new AzureProviderExecutor(store, new NeverCalledRunner());
+        var worker = new AzureProviderOperationWorker(store, executor, new PersistedAzureProviderPlanSource(), new FixedTimeProvider());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => worker.ProcessOnceAsync());
+
+        Assert.Equal(0, store.MarkUnrestorableCount);
+        Assert.Equal(AzureProviderOperationStatus.Running, store.Operation.Status);
     }
 
     private static AzureProviderOperation Operation()
@@ -164,7 +197,37 @@ public sealed class AzureProviderOperationWorkerTests
             throw new Xunit.Sdk.XunitException("The provider runner must not be called for an unrestorable plan.");
     }
 
-    private sealed class WorkerStore(AzureProviderOperation operation) : IAzureProviderOperationStore
+    private sealed class CompletingRunner : IAzureProviderRunner
+    {
+        public List<AzureProviderRunnerStep> Steps { get; } = [];
+
+        public Task<AzureProviderRunnerResult> RunAsync(AzureProviderRunnerCommand command, CancellationToken cancellationToken = default)
+        {
+            Steps.Add(command.Step);
+            var phase = command.Step switch
+            {
+                AzureProviderRunnerStep.Foundation => AzureProviderOperationPhase.FoundationSubmitted,
+                AzureProviderRunnerStep.AcrPull or AzureProviderRunnerStep.SeedSecrets => AzureProviderOperationPhase.FoundationSubmitted,
+                AzureProviderRunnerStep.SqlBootstrap => AzureProviderOperationPhase.FoundationReady,
+                AzureProviderRunnerStep.Workload => AzureProviderOperationPhase.WorkloadReady,
+                AzureProviderRunnerStep.Health => AzureProviderOperationPhase.HealthVerified,
+                AzureProviderRunnerStep.Promotion => AzureProviderOperationPhase.TrafficPromoted,
+                _ => AzureProviderOperationPhase.CleanupVerified
+            };
+            var hasEndpoint = command.Step is AzureProviderRunnerStep.Health or AzureProviderRunnerStep.Promotion;
+            return Task.FromResult(new AzureProviderRunnerResult(
+                AzureProviderRunnerOutcome.Completed,
+                phase,
+                new(),
+                hasEndpoint ? AzureProviderHealth.Healthy : AzureProviderHealth.Unknown,
+                hasEndpoint ? "https://workload.example.test" : null,
+                [],
+                "azure.step.completed",
+                "Completed."));
+        }
+    }
+
+    private sealed class WorkerStore(AzureProviderOperation operation, bool failAfterClaim = false) : IAzureProviderOperationStore
     {
         public AzureProviderOperation Operation { get; private set; } = operation;
         public List<AzureProviderOperationTransition> Transitions { get; } = [];
@@ -193,8 +256,14 @@ public sealed class AzureProviderOperationWorkerTests
             return Task.FromResult<AzureProviderOperation?>(Operation);
         }
 
-        public Task<AzureProviderOperation?> ClaimAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
-            Task.FromResult<AzureProviderOperation?>(null);
+        public Task<AzureProviderOperation?> ClaimAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
+        {
+            if (!failAfterClaim)
+                return Task.FromResult<AzureProviderOperation?>(null);
+
+            Operation = Operation with { Status = AzureProviderOperationStatus.Running, Version = Operation.Version + 1 };
+            return Task.FromException<AzureProviderOperation?>(new InvalidOperationException("The persisted claim failed after ownership was recorded."));
+        }
 
         public Task<AzureProviderOperation?> ClaimRecoveryAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
             Task.FromResult<AzureProviderOperation?>(null);
@@ -252,23 +321,82 @@ public sealed class AzureProviderOperationWorkerTests
         }
 
         public Task<AzureProviderOperation?> ClaimAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
-            Task.FromResult<AzureProviderOperation?>(null);
+            ClaimCoreAsync(workspaceId, operationId, workerId, leaseToken, leaseDuration, now, expectedVersion, allowRecovery: false);
 
         public Task<AzureProviderOperation?> ClaimRecoveryAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
-            Task.FromResult<AzureProviderOperation?>(null);
+            ClaimCoreAsync(workspaceId, operationId, workerId, leaseToken, leaseDuration, now, expectedVersion, allowRecovery: true);
 
         public Task<AzureProviderOperation?> HeartbeatAsync(Guid workspaceId, Guid operationId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
-            Task.FromResult<AzureProviderOperation?>(null);
+            Task.FromResult<AzureProviderOperation?>(Operations.SingleOrDefault(operation => operation.Id == operationId));
 
-        public Task<AzureProviderOperation?> CheckpointAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderCheckpoint checkpoint, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
-            Task.FromResult<AzureProviderOperation?>(null);
+        public Task<AzureProviderOperation?> CheckpointAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderCheckpoint checkpoint, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
+        {
+            var index = Operations.FindIndex(operation => operation.Id == operationId && operation.Status == AzureProviderOperationStatus.Running &&
+                (!expectedVersion.HasValue || operation.Version == expectedVersion.Value));
+            if (index < 0)
+                return Task.FromResult<AzureProviderOperation?>(null);
 
-        public Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, string message, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
-            Task.FromResult<AzureProviderOperation?>(null);
+            var updated = Operations[index] with
+            {
+                Phase = checkpoint.Phase,
+                Resources = checkpoint.Resources,
+                Endpoint = checkpoint.Endpoint,
+                Health = checkpoint.Health,
+                Diagnostics = checkpoint.Diagnostics,
+                CheckpointSequence = Operations[index].CheckpointSequence + 1,
+                UpdatedAt = now,
+                Version = Operations[index].Version + 1
+            };
+            Operations[index] = updated;
+            return Task.FromResult<AzureProviderOperation?>(updated);
+        }
+
+        public Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, string message, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
+        {
+            var index = Operations.FindIndex(operation => operation.Id == operationId && operation.Status == AzureProviderOperationStatus.Running &&
+                (!expectedVersion.HasValue || operation.Version == expectedVersion.Value));
+            if (index < 0)
+                return Task.FromResult<AzureProviderOperation?>(null);
+
+            var updated = Operations[index] with
+            {
+                Status = status,
+                CompletedAt = status == AzureProviderOperationStatus.RecoveryRequired ? null : now,
+                UpdatedAt = now,
+                Version = Operations[index].Version + 1,
+                WorkerId = null,
+                LeaseExpiresAt = null
+            };
+            Operations[index] = updated;
+            return Task.FromResult<AzureProviderOperation?>(updated);
+        }
 
         public Task<int> RecoverStaleAsync(DateTimeOffset now, CancellationToken cancellationToken = default) => Task.FromResult(0);
 
         public Task<IReadOnlyList<AzureProviderOperationTransition>> ListTransitionsAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<AzureProviderOperationTransition>>([]);
+
+        private Task<AzureProviderOperation?> ClaimCoreAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion, bool allowRecovery)
+        {
+            var index = Operations.FindIndex(operation => operation.WorkspaceId == workspaceId && operation.Id == operationId &&
+                (operation.Status == AzureProviderOperationStatus.Accepted || operation.Status == AzureProviderOperationStatus.Queued ||
+                 allowRecovery && operation.Status == AzureProviderOperationStatus.RecoveryRequired) &&
+                (!expectedVersion.HasValue || operation.Version == expectedVersion.Value));
+            if (index < 0)
+                return Task.FromResult<AzureProviderOperation?>(null);
+
+            var updated = Operations[index] with
+            {
+                Status = AzureProviderOperationStatus.Running,
+                AttemptNumber = Operations[index].AttemptNumber + 1,
+                Version = Operations[index].Version + 1,
+                WorkerId = workerId,
+                LeaseExpiresAt = now.Add(leaseDuration),
+                HeartbeatAt = now,
+                UpdatedAt = now
+            };
+            Operations[index] = updated;
+            return Task.FromResult<AzureProviderOperation?>(updated);
+        }
     }
 }

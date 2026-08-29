@@ -65,7 +65,11 @@ public sealed class AzureProviderOperationWorker(
                 plan);
             try
             {
-                await executor.ExecuteAsync(request, cancellationToken);
+                // Keep malformed persisted inputs on the pre-execution side of the executor's
+                // claim boundary. ExecuteAsync performs this check too, but the worker must not
+                // classify an exception from the asynchronous execution path as an unrestorable
+                // plan after a lease or remote step may already have been started.
+                AzureProviderExecutor.ValidateExecutionRequest(request);
             }
             catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
             {
@@ -81,6 +85,8 @@ public sealed class AzureProviderOperationWorker(
                     cancellationToken);
                 continue;
             }
+
+            await executor.ExecuteAsync(request, cancellationToken);
             processed++;
         }
 

@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -346,15 +347,80 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
 
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
-    private static AzureProviderOperation ToModel(AzureProviderOperationEntity x) => new(
-        x.Id, x.WorkspaceId, x.TargetKey, x.Action, x.IdempotencyKey, x.RequestHash, x.OperationIdentity,
-        x.PlanFingerprint, x.TemplateFingerprint, x.ElsaVersion, x.ReleaseLine, x.Topology, x.Isolation,
-        x.Location, x.ImageRepository, x.ImageDigest, x.ReleaseManifestDigest, x.ReleaseManifestSignatureDigest,
-        x.Status, x.Phase, x.CheckpointSequence, x.AttemptNumber, x.Version,
-        new(x.ResourceGroupName, x.FoundationDeploymentId, x.WorkloadDeploymentId, x.WorkloadResourceId, x.WorkloadRevisionName, x.StableTrafficRevisionName),
-        x.Endpoint, x.Health, JsonSerializer.Deserialize<IReadOnlyList<AzureProviderDiagnostic>>(x.DiagnosticsJson) ?? [],
-        x.WorkerId, x.LeaseExpiresAt, x.HeartbeatAt, x.CreatedAt, x.UpdatedAt, x.CompletedAt,
-        x.ReleaseManifestReference, x.ReleaseManifestSignatureReference,
-        JsonSerializer.Deserialize<IReadOnlyDictionary<string, string>>(x.SecretReferencesJson) ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+    private static AzureProviderOperation ToModel(AzureProviderOperationEntity x)
+    {
+        var (diagnostics, diagnosticsInvalid) = ReadDiagnostics(x.DiagnosticsJson);
+        var (secretReferences, secretReferencesInvalid) = ReadSecretReferences(x.SecretReferencesJson);
+        return new(
+            x.Id, x.WorkspaceId, x.TargetKey, x.Action, x.IdempotencyKey, x.RequestHash, x.OperationIdentity,
+            x.PlanFingerprint, x.TemplateFingerprint, x.ElsaVersion, x.ReleaseLine, x.Topology, x.Isolation,
+            x.Location, x.ImageRepository, x.ImageDigest, x.ReleaseManifestDigest, x.ReleaseManifestSignatureDigest,
+            x.Status, x.Phase, x.CheckpointSequence, x.AttemptNumber, x.Version,
+            new(x.ResourceGroupName, x.FoundationDeploymentId, x.WorkloadDeploymentId, x.WorkloadResourceId, x.WorkloadRevisionName, x.StableTrafficRevisionName),
+            x.Endpoint, x.Health, diagnostics,
+            x.WorkerId, x.LeaseExpiresAt, x.HeartbeatAt, x.CreatedAt, x.UpdatedAt, x.CompletedAt,
+            x.ReleaseManifestReference, x.ReleaseManifestSignatureReference,
+            secretReferences,
+            diagnosticsInvalid || secretReferencesInvalid);
+    }
+
+    private static (IReadOnlyList<AzureProviderDiagnostic> Diagnostics, bool Invalid) ReadDiagnostics(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return ([], true);
+
+        try
+        {
+            var diagnostics = JsonSerializer.Deserialize<List<AzureProviderDiagnostic?>>(json);
+            if (diagnostics is null || diagnostics.Any(x => x is null || string.IsNullOrWhiteSpace(x.Code) || string.IsNullOrWhiteSpace(x.Message)))
+                return ([], true);
+
+            return (diagnostics.Select(x => new AzureProviderDiagnostic(x!.Code, x.Message)).ToArray(), false);
+        }
+        catch (JsonException)
+        {
+            return ([], true);
+        }
+        catch (NotSupportedException)
+        {
+            return ([], true);
+        }
+    }
+
+    private static (IReadOnlyDictionary<string, string> SecretReferences, bool Invalid) ReadSecretReferences(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return (new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), true);
+
+        try
+        {
+            var values = JsonSerializer.Deserialize<Dictionary<string, string?>>(json);
+            if (values is null)
+                return (new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), true);
+
+            var normalizedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var references = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in values)
+            {
+                if (pair.Key is null || pair.Value is null ||
+                    !string.Equals(pair.Key, pair.Key.Trim().ToLowerInvariant(), StringComparison.Ordinal) ||
+                    !normalizedKeys.Add(pair.Key.Trim()))
+                    return (new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), true);
+
+                references.Add(pair.Key, pair.Value);
+            }
+
+            return (new ReadOnlyDictionary<string, string>(references), false);
+        }
+        catch (JsonException)
+        {
+            return (new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), true);
+        }
+        catch (NotSupportedException)
+        {
+            return (new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), true);
+        }
+    }
+
     private static AzureProviderOperationTransition ToTransition(AzureProviderOperationTransitionEntity x) => new(x.Id, x.OperationId, x.Sequence, x.Status, x.Phase, x.Code, x.Message, x.OccurredAt);
 }
