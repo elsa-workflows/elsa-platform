@@ -7,8 +7,7 @@
 
 ```bash
 dotnet test ElsaControl.sln
-cd src/Hosting/ElsaControl.Console && npm test
-cd src/Hosting/ElsaControl.Console && npm run typecheck && npm run build
+cd src/Hosting/ElsaControl.Console && npm ci && npm test && npm run typecheck && npm run build
 cd tests/Hosting/ElsaControl.Console.E2E && npm ci && npm run e2e
 ```
 
@@ -35,7 +34,10 @@ cd tests/Hosting/ElsaControl.Console.E2E && npm ci && npm run e2e
 ## 5) Coverage and Quality Signals
 
 - Coverlet is referenced, but no minimum coverage threshold or published coverage gate was found. The commercial-platform decision is to gate relevant behavior explicitly instead of introducing an arbitrary percentage target.
-- CI builds and runs the full solution; it does not currently run npm console checks as separate explicit steps in `.github/workflows/ci.yml`.
+- CI builds and runs the full solution plus a separate `Console quality gates`
+  job. The console job installs from `package-lock.json`, runs unit tests,
+  TypeScript typechecking, and produces the production bundle as independent
+  required steps.
 - Known gaps: real Azure workload provisioning, managed-instance walking skeleton, restore/DR, multi-region/stamp behavior, and browser coverage for SaaS onboarding.
 
 ## 6) Evidence

@@ -19,7 +19,7 @@
 | Static runtime-image catalog | initial Runtime Builder bootstrap | `appsettings.json` | ungoverned lifecycle/compatibility | move to product-owned catalog/service |
 | Nuplane is described but not integrated | integration was deferred pending stable APIs | Runtime Builder metadata/docs; no Nuplane client reference | managed package installation/reconciliation assumptions are unproven | define Nuplane boundary after repository/API discovery |
 | Historical specs remain `Draft` despite implemented behavior | Spec Kit used as delivery workspace without lifecycle closure | `specs/001`–`039` | planning ambiguity | audit implemented vs planned and mark/archive accurately |
-| CI lacks explicit frontend stages | solution build currently carries some frontend integration implicitly | `.github/workflows/ci.yml` | frontend regressions may be missed | add npm test/typecheck/build jobs |
+| ~~CI lacks explicit frontend stages~~ | ~~solution build currently carries some frontend integration implicitly~~ | `.github/workflows/ci.yml` | **Resolved by #128:** the required `Console quality gates` job runs locked install, unit tests, TypeScript typecheck, and production build. | Keep the job required for pull requests. |
 
 ## 3) Security Concerns
 

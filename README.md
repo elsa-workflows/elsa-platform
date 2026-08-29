@@ -200,6 +200,7 @@ Run console checks:
 
 ```bash
 cd src/Hosting/ElsaControl.Console
+npm ci
 npm test
 npm run typecheck
 npm run build
