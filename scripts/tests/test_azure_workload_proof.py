@@ -137,6 +137,7 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("--authentication-method ActiveDirectoryDefault", source)
         self.assertIn("sqlcmd '-?'", source)
         self.assertIn("temporary_firewall_rule", source)
+        self.assertIn("openssl rand -base64 48 | tr -d '\\r\\n'", source)
         firewall_deletes = [
             line for line in source.splitlines()
             if "az sql server firewall-rule delete" in line

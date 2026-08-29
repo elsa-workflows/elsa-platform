@@ -369,7 +369,7 @@ umask 077
 
 sql_connection="Server=tcp:${sql_fqdn},1433;Initial Catalog=Elsa;Encrypt=True;Authentication=\"Active Directory Managed Identity\";User Id=${identity_client_id};TrustServerCertificate=False;Connection Timeout=30;"
 printf '%s' "$sql_connection" >"$temp_dir/sql-connection"
-openssl rand -base64 48 >"$temp_dir/identity-signing-key"
+openssl rand -base64 48 | tr -d '\r\n' >"$temp_dir/identity-signing-key"
 seed_secret_if_missing() {
   local name="$1" file="$2"
   if az keyvault secret show --vault-name "$key_vault_name" --name "$name" --only-show-errors >/dev/null 2>&1; then return 0; fi
