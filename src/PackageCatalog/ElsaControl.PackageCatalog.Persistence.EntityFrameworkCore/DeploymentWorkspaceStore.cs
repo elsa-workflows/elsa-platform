@@ -630,6 +630,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         {
             Id = runId,
             WorkspaceId = workspaceId,
+            ElsaInstanceId = environment.ElsaInstanceId,
             ApplicationId = sourceRevision.ApplicationId,
             EnvironmentId = request.TargetEnvironmentId,
             EngineId = request.TargetEngineId,
@@ -2151,9 +2152,57 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             UpdatedAt = now
         };
 
+        // This store is also used by the tier backfill path while a database is
+        // still at the last pre-instance migration. The instance binding is
+        // additive, so preserve the legacy insert shape until that column has
+        // been applied rather than asking EF to write a column that is not there.
+        if (!await HasManagedEnvironmentBindingColumnAsync(cancellationToken))
+        {
+            await dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO DeploymentEnvironments
+                    (Id, WorkspaceId, ApplicationId, Name, Tier, TierId, TierRequiresReview,
+                     DesiredRevisionId, DeployedRevisionId, DeploymentStatus, DriftStatus, CreatedAt, UpdatedAt)
+                VALUES ({entity.Id}, {entity.WorkspaceId}, {entity.ApplicationId}, {entity.Name},
+                        {entity.Tier.ToString()}, {entity.TierId}, {entity.TierRequiresReview},
+                        {entity.DesiredRevisionId}, {entity.DeployedRevisionId},
+                        {entity.DeploymentStatus.ToString()}, {entity.DriftStatus.ToString()},
+                        {entity.CreatedAt.UtcTicks}, {entity.UpdatedAt.UtcTicks})
+                """, cancellationToken);
+            return ToWorkspaceDeploymentEnvironment(entity);
+        }
+
         await dbContext.DeploymentEnvironments.AddAsync(entity, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToWorkspaceDeploymentEnvironment(entity);
+    }
+
+    private async Task<bool> HasManagedEnvironmentBindingColumnAsync(CancellationToken cancellationToken)
+    {
+        if (!string.Equals(dbContext.Database.ProviderName, "Microsoft.EntityFrameworkCore.Sqlite", StringComparison.Ordinal))
+            return true;
+
+        var connection = dbContext.Database.GetDbConnection();
+        var closeConnection = connection.State != System.Data.ConnectionState.Open;
+        if (closeConnection)
+            await connection.OpenAsync(cancellationToken);
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA table_info('DeploymentEnvironments')";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                if (string.Equals(reader.GetString(1), nameof(DeploymentEnvironmentEntity.ElsaInstanceId), StringComparison.Ordinal))
+                    return true;
+            }
+
+            return false;
+        }
+        finally
+        {
+            if (closeConnection)
+                await connection.CloseAsync();
+        }
     }
 
     private static EnvironmentSummary ToEnvironmentSummary(DeploymentEnvironmentEntity environment, IReadOnlyList<WorkflowEngineEntity> engines)
@@ -3244,9 +3293,41 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         IReadOnlyList<DeploymentTierDefinitionEntity> tiers,
         CancellationToken cancellationToken)
     {
-        var environments = await dbContext.DeploymentEnvironments
+        // Project only the historical tier columns. This method is also used by
+        // migration/backfill tests at a pre-instance schema boundary, where the
+        // additive ElsaInstanceId column does not exist yet. Attaching a narrow
+        // stub keeps the update additive and avoids selecting the new column.
+        var environmentRows = await dbContext.DeploymentEnvironments
             .Where(x => x.WorkspaceId == workspaceId && x.TierId == null)
+            .Select(x => new
+            {
+                x.Id,
+                x.WorkspaceId,
+                x.ApplicationId,
+                x.Name,
+                x.Tier,
+                x.TierId,
+                x.TierRequiresReview
+            })
             .ToListAsync(cancellationToken);
+        var environments = environmentRows.Select(row =>
+        {
+            var tracked = dbContext.DeploymentEnvironments.Local.SingleOrDefault(x => x.Id == row.Id);
+            if (tracked is not null)
+                return tracked;
+            var stub = new DeploymentEnvironmentEntity
+            {
+                Id = row.Id,
+                WorkspaceId = row.WorkspaceId,
+                ApplicationId = row.ApplicationId,
+                Name = row.Name,
+                Tier = row.Tier,
+                TierId = row.TierId,
+                TierRequiresReview = row.TierRequiresReview
+            };
+            dbContext.DeploymentEnvironments.Attach(stub);
+            return stub;
+        }).ToList();
         if (environments.Count == 0)
             return;
 
@@ -3264,6 +3345,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
                 environment.TierId = fallbackTier.Id;
                 environment.TierRequiresReview = true;
             }
+            dbContext.Entry(environment).Property(x => x.TierId).IsModified = true;
+            dbContext.Entry(environment).Property(x => x.TierRequiresReview).IsModified = true;
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
