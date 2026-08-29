@@ -45,6 +45,7 @@ public sealed class DeploymentDeployabilityServiceTests
         Assert.All(
             new[] { "artifact.capability.missing", "engine.capabilities.missing", "engine.capabilities.stale" },
             id => Assert.Contains(id, result.Blockers.Select(x => x.Id)));
+        Assert.Single(result.Blockers, x => x.Id == "artifact.capability.missing" && x.Scope == DeploymentBlockerScope.EngineCapabilities);
         Assert.All(result.Blockers, x => Assert.True(!string.IsNullOrWhiteSpace(x.Remediation)));
     }
 
@@ -71,6 +72,7 @@ public sealed class DeploymentDeployabilityServiceTests
         Assert.All(
             new[] { "artifact.archived", "artifact.type.unsupported", "artifact.inspection.invalid", "artifact.payload.unavailable" },
             id => Assert.Contains(id, result.Blockers.Select(x => x.Id)));
+        Assert.Single(result.Blockers, x => x.Id == "artifact.payload.unavailable" && x.Scope == DeploymentBlockerScope.Payload);
         Assert.All(result.Blockers, x => Assert.True(!string.IsNullOrWhiteSpace(x.Remediation)));
     }
 

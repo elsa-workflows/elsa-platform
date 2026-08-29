@@ -82,25 +82,10 @@ public sealed class DeploymentDeployabilityService(
 
     public static IReadOnlyList<DesiredStateArtifactReference> ParseArtifactReferences(string desiredStateJson)
     {
-        try
-        {
-            using var document = JsonDocument.Parse(desiredStateJson);
-            var records = document.RootElement.TryGetProperty("records", out var recordsElement) && recordsElement.ValueKind == JsonValueKind.Array
-                ? recordsElement
-                : document.RootElement;
-            if (records.ValueKind != JsonValueKind.Array)
-                return [];
-
-            return records.EnumerateArray()
-                .Select(ParseArtifactReference)
-                .Where(reference => reference is not null)
-                .Cast<DesiredStateArtifactReference>()
-                .ToList();
-        }
-        catch (JsonException)
-        {
-            return [];
-        }
+        return DesiredStateResourceReader.Read(desiredStateJson)
+            .Where(record => record.IsKind(DesiredStateRecordKind.ArtifactReference))
+            .Select(record => ParseArtifactReference(record.Name, record.ArtifactPayload))
+            .ToList();
     }
 
     public static IReadOnlyList<string> RequiredCapabilities(WorkspaceArtifact artifact, ArtifactTypeDefinition? artifactType)
@@ -220,20 +205,8 @@ public sealed class DeploymentDeployabilityService(
             diagnostics);
     }
 
-    private static DesiredStateArtifactReference? ParseArtifactReference(JsonElement record)
+    private static DesiredStateArtifactReference ParseArtifactReference(string name, JsonElement payload)
     {
-        var kind = record.TryGetProperty("kind", out var kindElement) && kindElement.ValueKind == JsonValueKind.String
-            ? kindElement.GetString()
-            : null;
-        if (!string.Equals(kind, DesiredStateRecordKind.ArtifactReference.ToString(), StringComparison.OrdinalIgnoreCase))
-            return null;
-
-        var name = record.TryGetProperty("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String
-            ? nameElement.GetString() ?? "Artifact"
-            : "Artifact";
-        var payload = record.TryGetProperty("payload", out var payloadElement) && payloadElement.ValueKind == JsonValueKind.Object
-            ? payloadElement
-            : record;
         var artifactRecordId = payload.TryGetProperty("artifactRecordId", out var artifactRecordIdElement)
             && artifactRecordIdElement.ValueKind == JsonValueKind.String
             && Guid.TryParse(artifactRecordIdElement.GetString(), out var parsedArtifactRecordId)
@@ -275,9 +248,9 @@ public sealed class DeploymentDeployabilityService(
     private static DeploymentBlockerScope ScopeFor(string id) =>
         id switch
         {
-            var value when value.Contains("capability", StringComparison.OrdinalIgnoreCase) => DeploymentBlockerScope.EngineCapabilities,
-            var value when value.Contains("payload", StringComparison.OrdinalIgnoreCase) => DeploymentBlockerScope.Payload,
-            var value when value.Contains("engine", StringComparison.OrdinalIgnoreCase) => DeploymentBlockerScope.Engine,
+            "artifact.capability.missing" or "engine.capabilities.missing" or "engine.capabilities.stale" => DeploymentBlockerScope.EngineCapabilities,
+            "artifact.payload.unavailable" => DeploymentBlockerScope.Payload,
+            "deployment.engine.missing" or "deployment.engine.environment-mismatch" => DeploymentBlockerScope.Engine,
             _ => DeploymentBlockerScope.Artifact
         };
 
