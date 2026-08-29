@@ -208,21 +208,12 @@ public static class AzureWorkloadPlanTranslator
             return;
         }
 
-        if (evidence.Length != 1 || evidence[0].Digest is null || !IsSafeEvidenceReference(evidence[0].Reference))
+        if (evidence.Length != 1 || evidence[0].Digest is null || !IsSafeEvidenceReference(evidence[0].Reference, evidence[0].Digest))
             findings.Add(new("azure.releaseManifestSignatureEvidence.invalid", "Release-manifest signature evidence must have one safe immutable reference and digest.", "evidence"));
     }
 
-    private static bool IsSafeEvidenceReference(string reference)
-    {
-        if (!Uri.TryCreate(reference, UriKind.Absolute, out var uri))
-            return false;
-
-        return (uri.Scheme.Equals("oci", StringComparison.OrdinalIgnoreCase) || uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
-            && !string.IsNullOrWhiteSpace(uri.Host)
-            && string.IsNullOrEmpty(uri.UserInfo)
-            && string.IsNullOrEmpty(uri.Query)
-            && string.IsNullOrEmpty(uri.Fragment);
-    }
+    private static bool IsSafeEvidenceReference(string reference, string? digest)
+        => AzureProviderOperationValidation.IsSafeImmutableEvidenceReference(reference, digest);
 
     private static bool IsSafeImageRepository(string repository)
     {
@@ -264,7 +255,7 @@ public static class AzureWorkloadPlanTranslator
         if (evidence.Length != 1 ||
             !string.Equals(evidence[0].Reference, plan.Release.ReleaseManifestReference, StringComparison.Ordinal) ||
             !string.Equals(evidence[0].Digest, plan.Release.ReleaseManifestDigest, StringComparison.OrdinalIgnoreCase) ||
-            !IsSafeEvidenceReference(evidence[0].Reference))
+            !IsSafeEvidenceReference(evidence[0].Reference, evidence[0].Digest))
         {
             findings.Add(new("azure.releaseManifestEvidence.mismatch", "Release-manifest evidence must uniquely match the admitted release reference and digest.", "evidence"));
         }

@@ -29,6 +29,32 @@ workload intent and normalized Azure target facts. Equivalent plans therefore
 produce the same fingerprint, and changes to resource-affecting governed inputs
 produce a different one. The unhashed canonical input is not exposed.
 
+## Durable provider execution
+
+`AzureProviderExecutor` is the durable orchestration seam for the accepted
+workload profile. It creates or reuses an operation by its idempotency key,
+claims it with a lease, and checkpoints the following runner steps:
+
+1. foundation deployment from `infra/azure-workload-proof/main.bicep`;
+2. exact ACR pull assignment from `acr-pull-role.bicep`;
+3. Key Vault reference seeding;
+4. the contained-identity SQL bootstrap from `sql-bootstrap.sql`;
+5. workload deployment, candidate health verification and traffic promotion.
+
+The runner receives only the typed plan, safe resource references and secret
+locators. Secret values and raw ARM/Bicep payloads are not representable in the
+executor contract. Evidence references are absolute OCI/HTTPS locators with a
+separately retained strict `sha256` digest; embedded OCI digests, when present,
+must match. Foundation substeps are idempotent by contract, so an
+interruption safely repeats the current substep group from its durable
+checkpoint. A lease heartbeat runs while a remote step is active; loss of the
+lease stops local mutation and leaves the operation for its current owner.
+
+Promotion failures invoke the runner's stable-traffic restoration step. An
+uncertain promotion or cleanup remains `RecoveryRequired` until its external
+effect is confirmed. Cleanup only succeeds when the runner reports exact
+proof-owned resource absence (no resource references, endpoint or health fact).
+
 See [ADR-0004](../../../docs/adr/0004-deployment-engine-typed-reconciliation-hybrid.md),
 [ADR-0007](../../../docs/adr/0007-provider-neutral-elsa-application-desired-state.md)
 and [ADR-0010](../../../docs/adr/0010-initial-azure-workload-platform.md).

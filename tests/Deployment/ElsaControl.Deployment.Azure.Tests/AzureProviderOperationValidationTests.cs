@@ -65,6 +65,29 @@ public sealed class AzureProviderOperationValidationTests
         Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateEndpoint(endpoint));
     }
 
+    [Theory]
+    [InlineData("oci://registry.example/manifest", true)]
+    [InlineData("https://registry.example/evidence/signature", true)]
+    [InlineData("oci://registry.example", false)]
+    [InlineData("https://user:token@registry.example/evidence", false)]
+    [InlineData("https://registry.example/evidence?token=value", false)]
+    [InlineData("https://registry.example/../evidence", false)]
+    public void Evidence_locators_are_absolute_non_root_and_credential_free(string locator, bool expected)
+    {
+        Assert.Equal(expected, AzureProviderOperationValidation.IsSafeImmutableLocator(locator));
+    }
+
+    [Fact]
+    public void Evidence_locator_digest_must_be_present_and_match_embedded_digest()
+    {
+        var digest = "sha256:" + new string('a', 64);
+        Assert.True(AzureProviderOperationValidation.IsSafeImmutableEvidenceReference("oci://registry.example/manifest", digest));
+        Assert.True(AzureProviderOperationValidation.IsSafeImmutableEvidenceReference($"oci://registry.example/manifest@{digest}", digest));
+        Assert.False(AzureProviderOperationValidation.IsSafeImmutableEvidenceReference("oci://registry.example/manifest", null));
+        Assert.False(AzureProviderOperationValidation.IsSafeImmutableEvidenceReference($"oci://registry.example/manifest@{digest}", "sha256:" + new string('b', 64)));
+        Assert.False(AzureProviderOperationValidation.IsSafeImmutableEvidenceReference("oci://registry.example/manifest@not-a-digest", digest));
+    }
+
     [Fact]
     public void Hash_and_identity_are_stable_for_case_normalization()
     {
