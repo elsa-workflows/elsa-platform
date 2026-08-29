@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
 
 namespace ElsaControl.Deployment.Azure;
@@ -79,7 +80,7 @@ public sealed class AzureProviderExecutor
         CancellationToken cancellationToken = default)
     {
         ValidateExecutionRequest(request);
-        return ExecuteCoreAsync(request, cancellationToken);
+        return ExecuteCoreAsync(request with { Plan = CopySafePlan(request.Plan) }, cancellationToken);
     }
 
     private async Task<AzureProviderExecutionResult> ExecuteCoreAsync(
@@ -673,5 +674,17 @@ public sealed class AzureProviderExecutor
     {
         var ticks = Math.Min(TimeSpan.FromMinutes(1).Ticks, leaseDuration.Ticks / 3);
         return TimeSpan.FromTicks(Math.Min(Math.Max(1, ticks), leaseDuration.Ticks - 1));
+    }
+
+    private static AzureWorkloadPlan CopySafePlan(AzureWorkloadPlan plan)
+    {
+        var references = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in plan.SecretReferences)
+        {
+            if (!references.TryAdd(pair.Key, pair.Value))
+                throw new ArgumentException("Secret references must have unique keys.", nameof(plan));
+        }
+
+        return plan with { SecretReferences = new ReadOnlyDictionary<string, string>(references) };
     }
 }
