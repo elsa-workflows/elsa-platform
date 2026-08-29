@@ -157,6 +157,27 @@ public sealed class ResolvedElsaApplicationPlanTests
         Assert.Empty(ResolvedElsaApplicationPlanValidator.Validate(CreatePlan()));
     }
 
+    [Theory]
+    [InlineData("https://attacker.example.test/callback")]
+    [InlineData("/elsa/api?token=secret")]
+    [InlineData("/elsa/api/../admin")]
+    public void Validator_rejects_unsafe_topology_endpoint_paths(string path)
+    {
+        var baseline = CreatePlan();
+        var component = baseline.Topology.Components[0];
+        var plan = baseline with
+        {
+            Topology = new("combined", [component with
+            {
+                Endpoints = [component.Endpoints[0] with { Path = path }, component.Endpoints[1]]
+            }])
+        };
+
+        var findings = ResolvedElsaApplicationPlanValidator.Validate(plan);
+
+        Assert.Contains(findings, x => x.Code == "endpoint.path.invalid");
+    }
+
     [Fact]
     public void Duplicate_platform_keys_are_reported_and_normalization_rejects_them_deterministically()
     {

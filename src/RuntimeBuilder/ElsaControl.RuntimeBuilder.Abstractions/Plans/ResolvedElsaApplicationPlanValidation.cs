@@ -293,6 +293,8 @@ public static class ResolvedElsaApplicationPlanValidator
             findings.Add(new("endpoint.port.invalid", "Endpoint port must be between 1 and 65535.", scope));
         if (string.IsNullOrWhiteSpace(endpoint.Visibility))
             findings.Add(new("endpoint.visibility.required", "Endpoint visibility is required.", scope));
+        if (!string.IsNullOrWhiteSpace(endpoint.Path) && !EndpointPathPolicy.IsSafe(endpoint.Path))
+            findings.Add(new("endpoint.path.invalid", "Endpoint paths must be safe relative paths.", scope));
     }
 
     private static void ValidateEndpoint(ResolvedNetworkEndpoint? endpoint, List<ResolvedPlanValidationFinding> findings, string scope)

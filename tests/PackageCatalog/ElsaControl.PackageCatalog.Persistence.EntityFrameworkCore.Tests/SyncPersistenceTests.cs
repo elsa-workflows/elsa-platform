@@ -1,3 +1,4 @@
+using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Core.Manifests;
 using ElsaControl.PackageCatalog.Core.Packaging;
 using ElsaControl.PackageCatalog.Core.Packages;
@@ -151,6 +152,35 @@ public sealed class SyncPersistenceTests
         Assert.Equal(new[] { "elsa.server", "acme.custom-host" }.Order(), projectedVersion.Features.Single(x => x.FeatureId == "server").RuntimeKinds.Order());
 
         Assert.Equal("elsa.studio", Assert.Single(projectedVersion.Features.Single(x => x.FeatureId == "studio").RuntimeKinds));
+    }
+
+    [Fact]
+    public async Task Workspace_catalog_hides_sources_owned_by_soft_deleted_workspaces()
+    {
+        await using var db = await CreateOpenDbContextAsync();
+        var organization = new Organization { Name = "Deleted organization" };
+        var workspace = new Workspace
+        {
+            Name = "Deleted workspace",
+            Organization = organization,
+            SoftDeletedAt = DateTimeOffset.UtcNow
+        };
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        source.Visibility = PackageSourceVisibility.Workspace;
+        source.OwnerWorkspaceId = workspace.Id;
+        source.OwnerWorkspace = workspace;
+        var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Private");
+        var version = PublicCatalogSeedData.AddVersion(package);
+        db.AddRange(organization, workspace, source);
+        await db.SaveChangesAsync();
+
+        var projection = await new PublicCatalogQueries(db).GetVersionForWorkspaceAsync(
+            workspace.Id,
+            source.Id,
+            package.PackageId,
+            version.Version);
+
+        Assert.Null(projection);
     }
 
     [Fact]

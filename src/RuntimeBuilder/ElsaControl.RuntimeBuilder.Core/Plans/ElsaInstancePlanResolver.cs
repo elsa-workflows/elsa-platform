@@ -40,7 +40,7 @@ public sealed class ElsaInstancePlanResolver(
             return ElsaInstancePlanResolutionResult.Failed(findings);
 
         var manifest = request.ReleaseManifest.Manifest!;
-        ValidateManifestEvidence(manifest, findings);
+        ValidateManifestEvidence(manifest, request.ReleaseManifest, findings);
         ValidateManifestImages(manifest, findings);
         ValidateReleaseSelection(request.InstanceIntent, request.ReleaseManifest, manifest, findings);
         ValidatePlacement(request.InstanceIntent.Placement, findings);
@@ -135,6 +135,9 @@ public sealed class ElsaInstancePlanResolver(
         var featureMetadata = new List<PublicFeatureProjection>();
         var compatibilitySelections = new List<SelectedPackageVersion>(selections.Count);
         var selectedFeatureIds = new List<string>();
+        var topologyRuntimeKinds = request.ReleaseManifest.Manifest!.Topologies
+            .First(topology => string.Equals(topology.Id, request.InstanceIntent.Application.TopologyId, StringComparison.OrdinalIgnoreCase))
+            .RuntimeKinds;
 
         foreach (var selection in selections)
         {
@@ -167,6 +170,9 @@ public sealed class ElsaInstancePlanResolver(
                 findings.Add(Error("package.manifestDigest.invalid", "A selected package is missing an immutable manifest digest.", "packages"));
                 continue;
             }
+
+            if (!RuntimeKindCompatibilityPolicy.IsCompatible(version.RuntimeKinds, topologyRuntimeKinds))
+                findings.Add(Error("package.runtimeKindUnsupported", "A selected package is incompatible with the selected topology runtime kinds.", "packages"));
 
             var requestedFeatures = (selection.SelectedFeatures ?? [])
                 .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -599,8 +605,14 @@ public sealed class ElsaInstancePlanResolver(
             findings.Add(Error("topology.selection.mismatch", "The admitted topology selection does not match instance intent.", "topology"));
     }
 
-    private static void ValidateManifestEvidence(CommercialReleaseManifest manifest, List<ElsaInstancePlanResolutionFinding> findings)
+    private static void ValidateManifestEvidence(
+        CommercialReleaseManifest manifest,
+        ReleaseManifestAdmissionResult admission,
+        List<ElsaInstancePlanResolutionFinding> findings)
     {
+        if (admission.SignatureEvidence is null)
+            findings.Add(Error("supplyChain.signatures.required", "Retained release signature evidence is required.", "releaseManifest.evidence"));
+
         foreach (var topology in manifest.Topologies ?? [])
         {
             if (topology is null)
@@ -626,15 +638,6 @@ public sealed class ElsaInstancePlanResolver(
             else if (!ReleaseManifestAdmissionService.IsSafeEvidenceReference(supplyChain.Provenance.Uri, supplyChain.Provenance.Digest))
                 findings.Add(Error("supplyChain.provenance.invalid", "Release provenance evidence must be a safe immutable locator with a sha256 digest.", "releaseManifest.evidence"));
 
-            if (supplyChain.Signatures is null || supplyChain.Signatures.Count == 0)
-                findings.Add(Error("supplyChain.signatures.required", "Retained release signature evidence is required.", "releaseManifest.evidence"));
-            else
-            {
-                foreach (var signature in supplyChain.Signatures)
-                    if (signature is null || !ReleaseManifestAdmissionService.IsSafeEvidenceReference(signature.Uri, signature.Digest))
-                        findings.Add(Error("supplyChain.signature.invalid", "Release signature evidence must be a safe immutable locator with a sha256 digest.", "releaseManifest.evidence"));
-            }
-
             if (supplyChain.VulnerabilityScan is null)
                 findings.Add(Error("supplyChain.vulnerabilityScan.required", "Retained release vulnerability-scan evidence is required.", "releaseManifest.evidence"));
             else if (!ReleaseManifestAdmissionService.IsSafeEvidenceReference(supplyChain.VulnerabilityScan.Report, supplyChain.VulnerabilityScan.Digest))
@@ -654,7 +657,9 @@ public sealed class ElsaInstancePlanResolver(
                     || !ReleaseManifestAdmissionService.IsImmutableImageReference(image.Reference)
                     || !string.Equals(ReleaseManifestAdmissionService.ExtractDigest(image.Reference), image.IndexDigest, StringComparison.OrdinalIgnoreCase)
                     || (image.PlatformDigests?.Any(x => !ReleaseManifestAdmissionService.IsDigest(x.Value)) ?? false)
-                    || (image.Endpoints?.Where(x => x is not null).GroupBy(x => x!.Name, StringComparer.OrdinalIgnoreCase).Any(x => x.Count() > 1) ?? false))
+                    || (image.Endpoints?.Where(x => x is not null).GroupBy(x => x!.Name, StringComparer.OrdinalIgnoreCase).Any(x => x.Count() > 1) ?? false)
+                    || (image.Endpoints?.Any(endpoint => endpoint is null
+                        || (endpoint.Path is not null && !EndpointPathPolicy.IsSafe(endpoint.Path))) ?? false))
                     findings.Add(Error("releaseManifest.image.invalid", "Topology components must use safe immutable image references and sha256 digests.", "releaseManifest.images"));
             }
         }
@@ -805,9 +810,10 @@ public sealed class ElsaInstancePlanResolver(
         && value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)
         && value[7..].All(Uri.IsHexDigit);
 
-    private static bool IsInstancePlanUri(string value, string planId, Guid? expectedWorkspaceId)
+    private static bool IsInstancePlanUri(string value, string? planId, Guid? expectedWorkspaceId)
     {
-        if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri)
+        if (string.IsNullOrWhiteSpace(planId)
+            || !Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri)
             || !uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
             || string.IsNullOrWhiteSpace(uri.Host)
             || !string.IsNullOrEmpty(uri.Query)
@@ -825,6 +831,9 @@ public sealed class ElsaInstancePlanResolver(
             || !Guid.TryParseExact(segments[4], "D", out _)
             || !segments[5].Equals("resolved-plans", StringComparison.OrdinalIgnoreCase)
             || !segments[6].Equals(Uri.EscapeDataString(planId), StringComparison.Ordinal))
+            return false;
+
+        if (!uri.AbsolutePath.EndsWith('/' + segments[6], StringComparison.Ordinal))
             return false;
 
         return expectedWorkspaceId is null || workspaceId == expectedWorkspaceId.Value;

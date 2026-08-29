@@ -302,8 +302,7 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
             {
                 Required(endpoint.Key, "topology.endpoint.name.required", "Endpoint name is required.", "topology.endpoints", findings);
                 Required(endpoint.Value, "topology.endpoint.path.required", "Endpoint path is required.", "topology.endpoints", findings);
-                if (!string.IsNullOrWhiteSpace(endpoint.Value)
-                    && (!endpoint.Value.StartsWith("/", StringComparison.Ordinal) || endpoint.Value.Any(char.IsWhiteSpace) || endpoint.Value.Contains('?', StringComparison.Ordinal) || endpoint.Value.Contains('#', StringComparison.Ordinal)))
+                if (!string.IsNullOrWhiteSpace(endpoint.Value) && !EndpointPathPolicy.IsSafe(endpoint.Value))
                     findings.Add(new("topology.endpoint.path.invalid", "Endpoint paths must be safe relative paths.", "topology.endpoints"));
             }
         }
@@ -396,6 +395,8 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
                 Required(endpoint.Visibility, "image.endpoint.visibility.required", "Endpoint visibility is required.", "image.endpoints", findings);
                 if (endpoint.Port is < 1 or > 65535)
                     findings.Add(new("image.endpoint.port.invalid", "Endpoint port must be between 1 and 65535.", "image.endpoints"));
+                if (!string.IsNullOrWhiteSpace(endpoint.Path) && !EndpointPathPolicy.IsSafe(endpoint.Path))
+                    findings.Add(new("image.endpoint.path.invalid", "Endpoint paths must be safe relative paths.", "image.endpoints"));
             }
         }
     }

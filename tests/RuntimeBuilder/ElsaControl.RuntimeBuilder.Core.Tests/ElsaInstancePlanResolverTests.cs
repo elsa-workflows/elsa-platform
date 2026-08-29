@@ -5,6 +5,7 @@ using ElsaControl.RuntimeBuilder.Abstractions;
 using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 using ElsaControl.RuntimeBuilder.Abstractions.ReleaseManifests;
 using ElsaControl.RuntimeBuilder.Core.Plans;
+using ElsaControl.RuntimeBuilder.Core.ReleaseManifests;
 
 namespace ElsaControl.RuntimeBuilder.Core.Tests;
 
@@ -51,6 +52,22 @@ public sealed class ElsaInstancePlanResolverTests
         Assert.Equal("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", result.Plan.Packages[0].ManifestDigest);
         Assert.Equal("sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", Assert.Single(result.CurrentResolvedRelease.ComponentDigests).Digest);
         Assert.Equal(result.Reference.ContentHash, ComputeHash(result.Plan));
+    }
+
+    [Fact]
+    public async Task Resolves_actual_admission_result_after_signature_identity_is_sanitized()
+    {
+        var baseline = CreateRequest();
+        var admission = await AdmitManifest(baseline.ReleaseManifest.Manifest!);
+
+        Assert.True(admission.Accepted, string.Join("; ", admission.Findings.Select(x => x.Code + ":" + x.Message)));
+        Assert.Empty(admission.Manifest!.Topologies[0].SupplyChain!.Signatures);
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility())
+            .ResolveAsync(baseline with { ReleaseManifest = admission });
+
+        Assert.True(result.Succeeded, string.Join("; ", result.Findings.Select(x => x.Code)));
+        Assert.Contains(result.Plan!.Evidence, evidence => evidence.Kind == ReleaseManifestEvidenceKinds.Signature);
     }
 
     [Theory]
@@ -221,7 +238,6 @@ public sealed class ElsaInstancePlanResolverTests
     [Theory]
     [InlineData("sbom")]
     [InlineData("provenance")]
-    [InlineData("signatures")]
     [InlineData("vulnerabilityScan")]
     public async Task Rejects_missing_required_supply_chain_evidence(string missingKind)
     {
@@ -231,7 +247,6 @@ public sealed class ElsaInstancePlanResolverTests
         {
             Sbom = missingKind == "sbom" ? null : topology.SupplyChain!.Sbom,
             Provenance = missingKind == "provenance" ? null : topology.SupplyChain!.Provenance,
-            Signatures = missingKind == "signatures" ? [] : topology.SupplyChain!.Signatures,
             VulnerabilityScan = missingKind == "vulnerabilityScan" ? null : topology.SupplyChain!.VulnerabilityScan
         };
         var request = baseline with
@@ -252,6 +267,55 @@ public sealed class ElsaInstancePlanResolverTests
     }
 
     [Fact]
+    public async Task Rejects_missing_retained_signature_evidence()
+    {
+        var baseline = CreateRequest();
+        var request = baseline with
+        {
+            ReleaseManifest = baseline.ReleaseManifest with { SignatureEvidence = null }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility()).ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Findings, finding => finding.Code == "releaseManifest.notAdmitted");
+    }
+
+    [Fact]
+    public async Task Rejects_package_runtime_incompatible_with_topology_without_selected_features()
+    {
+        var sourceId = Guid.NewGuid();
+        var source = new PublicPackageSourceProjection(sourceId, "source", "https://packages.example.test/index.json");
+        var version = new PublicPackageVersionProjection(
+            "Elsa.StudioOnly",
+            "2.0.0",
+            source,
+            "1.0",
+            ["elsa.studio"],
+            null,
+            [],
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        var baseline = CreateRequest();
+        var topology = baseline.ReleaseManifest.Manifest!.Topologies[0] with { RuntimeKinds = ["elsa.server"] };
+        var request = baseline with
+        {
+            BuilderIntent = baseline.BuilderIntent with
+            {
+                Packages = [new(sourceId, "Elsa.StudioOnly", "2.0.0", null, null)]
+            },
+            ReleaseManifest = baseline.ReleaseManifest with
+            {
+                Manifest = baseline.ReleaseManifest.Manifest with { Topologies = [topology] }
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([version]), new FakeCompatibility()).ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Findings, finding => finding.Code == "package.runtimeKindUnsupported");
+    }
+
+    [Fact]
     public async Task Rejects_topology_runtime_incompatibility_before_projection()
     {
         var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility(compatible: false)).ResolveAsync(CreateRequest());
@@ -268,6 +332,35 @@ public sealed class ElsaInstancePlanResolverTests
         var baseline = CreateRequest();
         var topology = baseline.ReleaseManifest.Manifest!.Topologies[0];
         var image = topology.Images[0]! with { Reference = imageReference };
+        var request = baseline with
+        {
+            ReleaseManifest = baseline.ReleaseManifest with
+            {
+                Manifest = baseline.ReleaseManifest.Manifest with
+                {
+                    Topologies = [topology with { Images = [image] }]
+                }
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility()).ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Findings, finding => finding.Code == "releaseManifest.image.invalid");
+    }
+
+    [Theory]
+    [InlineData("https://attacker.example.test/callback")]
+    [InlineData("/api?token=secret")]
+    [InlineData("/api/../admin")]
+    public async Task Rejects_unsafe_image_endpoint_path(string path)
+    {
+        var baseline = CreateRequest();
+        var topology = baseline.ReleaseManifest.Manifest!.Topologies[0];
+        var image = topology.Images[0]! with
+        {
+            Endpoints = [topology.Images[0]!.Endpoints![0] with { Path = path }]
+        };
         var request = baseline with
         {
             ReleaseManifest = baseline.ReleaseManifest with
@@ -403,6 +496,7 @@ public sealed class ElsaInstancePlanResolverTests
     [InlineData("https://provider.example.test/api/workspaces/x/instances/y/plan")]
     [InlineData("https://control.example.test/api/workspaces/00000000-0000-0000-0000-000000000001/extra/instances/00000000-0000-0000-0000-000000000002/resolved-plans/plan_01J5FUTURE")]
     [InlineData("https://control.example.test/api/workspaces/00000000-0000-0000-0000-000000000001/instances/00000000-0000-0000-0000-000000000002/resolved-plans/a-different-plan")]
+    [InlineData("https://control.example.test/api/workspaces/00000000-0000-0000-0000-000000000001/instances/00000000-0000-0000-0000-000000000002/resolved-plans/plan_01J5FUTURE/")]
     public async Task Rejects_non_control_plan_uri_before_projection(string planUri)
     {
         var request = CreateRequest() with { PlanUri = planUri };
@@ -415,6 +509,8 @@ public sealed class ElsaInstancePlanResolverTests
 
     private static string ComputeHash(ResolvedElsaApplicationPlan plan) =>
         $"sha256:{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ResolvedElsaApplicationPlanSerialization.Serialize(plan)))).ToLowerInvariant()}";
+
+    private static string Digest(char value) => $"sha256:{new string(value, 64)}";
 
     private static ElsaInstancePlanResolutionRequest CreateRequest() => new(
         new ElsaInstanceIntent(
@@ -452,6 +548,23 @@ public sealed class ElsaInstancePlanResolverTests
         topologyId,
         []);
 
+    private static async Task<ReleaseManifestAdmissionResult> AdmitManifest(CommercialReleaseManifest manifest)
+    {
+        var payload = System.Text.Json.JsonSerializer.Serialize(manifest, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        var digest = $"sha256:{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(payload))).ToLowerInvariant()}";
+        var signatureDigest = Digest('f');
+        var verifier = new StaticSignatureVerifier(new(
+            true,
+            "subject",
+            digest,
+            $"oci://future-runtime/signature@{signatureDigest}",
+            signatureDigest));
+        var artifact = new ReleaseManifestArtifact($"oci://future-runtime/release-manifest@{digest}", digest, payload);
+        return await new ReleaseManifestAdmissionService(verifier).AdmitAsync(
+            artifact,
+            new("subject", "paid", manifest.Topologies[0].Id));
+    }
+
     private sealed class FakeCatalog(IReadOnlyList<PublicPackageVersionProjection> versions) : IPublicCatalogQueries
     {
         public Task<IReadOnlyList<PublicPackageProjection>> ListPackagesAsync(IReadOnlyList<Guid> sourceIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -470,5 +583,13 @@ public sealed class ElsaInstancePlanResolverTests
     {
         public Task<CompatibilityCheckResult> CheckAsync(CompatibilityCheckRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(new CompatibilityCheckResult(compatible, []));
+    }
+
+    private sealed class StaticSignatureVerifier(ReleaseManifestSignatureVerification verification) : IReleaseManifestSignatureVerifier
+    {
+        public ValueTask<ReleaseManifestSignatureVerification> VerifyAsync(
+            ReleaseManifestArtifact artifact,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(verification);
     }
 }

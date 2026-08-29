@@ -346,6 +346,22 @@ public sealed class ReleaseManifestAdmissionTests
         Assert.DoesNotContain(admission.Findings, x => x.Code == "supplyChain.sbom.invalid.required");
     }
 
+    [Theory]
+    [InlineData("https://attacker.example.test/callback")]
+    [InlineData("/elsa/api?token=secret")]
+    [InlineData("/elsa/api/../admin")]
+    public async Task Unsafe_topology_endpoint_paths_are_rejected(string path)
+    {
+        var payload = ManifestJson().Replace(
+            "\"api\": \"/elsa/api\"",
+            $"\"api\": \"{path}\"",
+            StringComparison.Ordinal);
+        var admission = await Admit(WithPayload(Artifact(Digest('b')), payload));
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, x => x.Code == "topology.endpoint.path.invalid");
+    }
+
     [Fact]
     public async Task Unmodeled_payload_fields_do_not_cross_the_admission_boundary()
     {
