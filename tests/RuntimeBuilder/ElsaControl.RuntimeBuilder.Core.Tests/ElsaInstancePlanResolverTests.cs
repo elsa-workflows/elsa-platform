@@ -302,6 +302,22 @@ public sealed class ElsaInstancePlanResolverTests
         Assert.Contains(result.Findings, finding => finding.Code == "topology.selection.mismatch");
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task Blank_admission_topology_selection_defaults_to_the_first_topology(string topologyId)
+    {
+        var baseline = CreateRequest();
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility())
+            .ResolveAsync(baseline with
+            {
+                ReleaseManifest = baseline.ReleaseManifest with { TopologyId = topologyId }
+            });
+
+        Assert.True(result.Succeeded, string.Join("; ", result.Findings.Select(finding => finding.Code)));
+        Assert.Equal(baseline.InstanceIntent.Application.TopologyId, result.Plan!.Topology.Id);
+    }
+
     [Fact]
     public async Task Rejects_malformed_explicit_evidence_digest_even_when_reference_embeds_a_digest()
     {

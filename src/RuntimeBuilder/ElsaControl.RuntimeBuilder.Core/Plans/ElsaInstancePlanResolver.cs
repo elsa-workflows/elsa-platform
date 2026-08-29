@@ -601,7 +601,9 @@ public sealed class ElsaInstancePlanResolver(
         var topology = manifest.Topologies?.FirstOrDefault(x => x is not null && string.Equals(x.Id, intent.Application.TopologyId, StringComparison.OrdinalIgnoreCase));
         if (topology is null)
             findings.Add(Error("topology.notFound", "The selected topology is not present in the admitted release manifest.", "topology"));
-        var admittedTopologyId = admission.TopologyId ?? manifest.Topologies?.FirstOrDefault(x => x is not null)?.Id;
+        var admittedTopologyId = string.IsNullOrWhiteSpace(admission.TopologyId)
+            ? manifest.Topologies?.FirstOrDefault(x => x is not null)?.Id
+            : admission.TopologyId;
         if (!string.Equals(admittedTopologyId, intent.Application.TopologyId, StringComparison.OrdinalIgnoreCase))
             findings.Add(Error("topology.selection.mismatch", "The admitted topology selection does not match instance intent.", "topology"));
     }
