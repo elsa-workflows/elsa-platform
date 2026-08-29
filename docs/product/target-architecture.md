@@ -6,7 +6,7 @@
 elsa-specifications + commercial image metadata
                      |
                      v
-             Elsa Control control plane
+                 Elsa Control plane
  identity -> organization -> Elsa instance desired state -> placement/provider
                      |                              |
                      |                              +-> Valence Azure stamps (Elsa Cloud)

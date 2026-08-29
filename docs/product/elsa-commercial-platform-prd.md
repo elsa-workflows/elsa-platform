@@ -260,8 +260,8 @@ External behavior is the primary test boundary. Unit tests support domain rules,
 | Walking skeleton | user signs in, creates organization/instance and opens healthy Elsa | browser-to-runtime end-to-end test |
 | Internal alpha | Valence runs meaningful workloads on the same product path | SLO, runbooks, upgrade/restore exercises |
 | Private beta | selected customers operate real workloads | support, security and incident feedback closure |
-| Public Elsa Cloud | billing, backup, operations, security and support are production-ready | launch checklist and signed operational acceptance |
-| Dedicated/Private | stronger isolation and custom code without control-plane redesign | isolation and provenance validation |
+| Public Elsa Cloud | billing, backup, operations, security and support are production-ready on the launch Dedicated runtime-and-database baseline | launch checklist and signed operational acceptance |
+| Dedicated hardening/Private | expand the launch Dedicated baseline with materially stronger placement/isolation guarantees, then add isolated custom code without control-plane redesign | isolation and provenance validation |
 | Elsa Control Cloud | hosted control plane safely manages customer infrastructure | customer-agent/BYOC end-to-end proof |
 
 ## Product Success Measures

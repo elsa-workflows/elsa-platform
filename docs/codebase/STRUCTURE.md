@@ -19,7 +19,7 @@
 
 - Main API runtime: `src/Hosting/ElsaControl.Api/Program.cs`.
 - Local/publish orchestrator: `src/Hosting/ElsaControl.AppHost/AppHost.cs`.
-- Console bootstrap: `src/Hosting/ElsaControl.Console/src/main.tsx` and `src/app/routes.tsx`.
+- Console bootstrap: `src/Hosting/ElsaControl.Console/src/main.tsx` and `src/Hosting/ElsaControl.Console/src/app/routes.tsx`.
 - Runtime command consumer: `src/Workflows/ElsaControl.Workflows.RuntimeApplier/`.
 - Entry selection is through `dotnet run --project ...`, Aspire, Vite scripts, or host package registration.
 

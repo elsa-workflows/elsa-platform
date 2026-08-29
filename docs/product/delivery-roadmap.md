@@ -11,7 +11,7 @@
 | E — Internal alpha | Valence dogfoods meaningful workloads | SLO dashboard, runbooks, upgrade and restore exercises |
 | F — Private beta | selected customers run real workloads | security/support acceptance and feedback closure |
 | G — Public Elsa Cloud | billing, backup, operations, security and support are launch-ready | signed launch checklist |
-| H — Dedicated Elsa | materially stronger isolation on the same control plane | isolation proof and cost model |
+| H — Dedicated Elsa hardening | materially stronger guarantees beyond the public launch's dedicated runtime-and-database baseline, on the same control plane | isolation proof and cost model |
 | I — Elsa Private | arbitrary packages in an approved isolated/provenance pipeline | malicious-package threat tests and rollback |
 | J — Elsa Control Cloud | hosted control safely manages customer infrastructure | outbound-agent end-to-end proof |
 
