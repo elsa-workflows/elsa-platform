@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <ProjectReference Include="..\..\Deployment\ElsaControl.Deployment.Azure\ElsaControl.Deployment.Azure.csproj" />
     <ProjectReference Include="..\..\Deployment\ElsaControl.Deployment.Core\ElsaControl.Deployment.Core.csproj" />
     <ProjectReference Include="..\ElsaControl.PackageCatalog.Core\ElsaControl.PackageCatalog.Core.csproj" />
     <ProjectReference Include="..\..\RuntimeBuilder\ElsaControl.RuntimeBuilder.Abstractions\ElsaControl.RuntimeBuilder.Abstractions.csproj" />

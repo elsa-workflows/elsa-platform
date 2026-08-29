@@ -51,6 +51,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.DeploymentRunHistoryEventEntity> DeploymentRunHistoryEvents => Set<Models.DeploymentRunHistoryEventEntity>();
     internal DbSet<Models.DeploymentCommandEntity> DeploymentCommands => Set<Models.DeploymentCommandEntity>();
     internal DbSet<Models.DeploymentCommandEventEntity> DeploymentCommandEvents => Set<Models.DeploymentCommandEventEntity>();
+    internal DbSet<Models.AzureProviderOperationEntity> AzureProviderOperations => Set<Models.AzureProviderOperationEntity>();
+    internal DbSet<Models.AzureProviderOperationTransitionEntity> AzureProviderOperationTransitions => Set<Models.AzureProviderOperationTransitionEntity>();
     internal DbSet<Models.DeploymentCommandWebhookNotificationEntity> DeploymentCommandWebhookNotifications => Set<Models.DeploymentCommandWebhookNotificationEntity>();
     internal DbSet<Models.ObservabilityBindingEntity> ObservabilityBindings => Set<Models.ObservabilityBindingEntity>();
     internal DbSet<Models.DriftReportItemEntity> DriftReportItems => Set<Models.DriftReportItemEntity>();
@@ -105,6 +107,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.DeploymentRunHistoryEventConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DeploymentCommandConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DeploymentCommandEventConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.AzureProviderOperationConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.AzureProviderOperationTransitionConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DeploymentCommandWebhookNotificationConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ObservabilityBindingConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DriftReportItemConfiguration());
@@ -119,6 +123,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     public override int SaveChanges()
     {
         EnsureWorkspacePermissionAuditIsAppendOnly();
+        EnsureAzureOperationTransitionsAreAppendOnly();
         EnsureOrganizationsForNewWorkspaces();
         return base.SaveChanges();
     }
@@ -126,6 +131,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         EnsureWorkspacePermissionAuditIsAppendOnly();
+        EnsureAzureOperationTransitionsAreAppendOnly();
         EnsureOrganizationsForNewWorkspaces();
         return base.SaveChangesAsync(cancellationToken);
     }
@@ -136,6 +142,14 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             .FirstOrDefault(entry => entry.State is EntityState.Modified or EntityState.Deleted);
         if (mutatedAuditRecord is not null)
             throw new InvalidOperationException("Workspace permission audit records are append-only.");
+    }
+
+    private void EnsureAzureOperationTransitionsAreAppendOnly()
+    {
+        var mutatedTransition = ChangeTracker.Entries<Models.AzureProviderOperationTransitionEntity>()
+            .FirstOrDefault(entry => entry.State is EntityState.Modified or EntityState.Deleted);
+        if (mutatedTransition is not null)
+            throw new InvalidOperationException("Azure provider operation transitions are append-only.");
     }
 
     private void EnsureOrganizationsForNewWorkspaces()

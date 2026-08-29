@@ -691,6 +691,76 @@ internal sealed class DeploymentCommandEventConfiguration : IEntityTypeConfigura
     }
 }
 
+internal sealed class AzureProviderOperationConfiguration : IEntityTypeConfiguration<AzureProviderOperationEntity>
+{
+    public void Configure(EntityTypeBuilder<AzureProviderOperationEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Action).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.Phase).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.Health).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.TargetKey).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.IdempotencyKey).HasMaxLength(512).IsRequired();
+        builder.Property(x => x.RequestHash).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.OperationIdentity).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.PlanFingerprint).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.TemplateFingerprint).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.ElsaVersion).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.ReleaseLine).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.Topology).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.Isolation).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.Location).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.ImageRepository).HasMaxLength(512).IsRequired();
+        builder.Property(x => x.ImageDigest).HasMaxLength(71).IsRequired();
+        builder.Property(x => x.ReleaseManifestDigest).HasMaxLength(71);
+        builder.Property(x => x.ReleaseManifestSignatureDigest).HasMaxLength(71);
+        builder.Property(x => x.ResourceGroupName).HasMaxLength(128);
+        builder.Property(x => x.FoundationDeploymentId).HasMaxLength(512);
+        builder.Property(x => x.WorkloadDeploymentId).HasMaxLength(512);
+        builder.Property(x => x.WorkloadResourceId).HasMaxLength(1024);
+        builder.Property(x => x.WorkloadRevisionName).HasMaxLength(128);
+        builder.Property(x => x.StableTrafficRevisionName).HasMaxLength(128);
+        builder.Property(x => x.Endpoint).HasMaxLength(2048);
+        builder.Property(x => x.DiagnosticsJson).HasMaxLength(10000).IsRequired();
+        builder.Property(x => x.WorkerId).HasMaxLength(256);
+        builder.Property(x => x.LeaseTokenHash).HasMaxLength(64);
+        ConfigureDateTime(builder.Property(x => x.CreatedAt));
+        ConfigureDateTime(builder.Property(x => x.UpdatedAt));
+        ConfigureNullableDateTime(builder.Property(x => x.CompletedAt));
+        ConfigureNullableDateTime(builder.Property(x => x.LeaseExpiresAt));
+        ConfigureNullableDateTime(builder.Property(x => x.HeartbeatAt));
+        builder.HasIndex(x => new { x.WorkspaceId, x.TargetKey, x.IdempotencyKey }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.TargetKey, x.OperationIdentity })
+            .IsUnique().HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
+        builder.HasIndex(x => new { x.WorkspaceId, x.Status, x.LeaseExpiresAt, x.UpdatedAt });
+        builder.HasIndex(x => new { x.WorkspaceId, x.TargetKey, x.CreatedAt });
+        builder.HasMany(x => x.Transitions).WithOne(x => x.Operation).HasForeignKey(x => x.OperationId).OnDelete(DeleteBehavior.Restrict);
+    }
+
+    private static void ConfigureDateTime(PropertyBuilder<DateTimeOffset> property) =>
+        property.HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+
+    private static void ConfigureNullableDateTime(PropertyBuilder<DateTimeOffset?> property) =>
+        property.HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null,
+            value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+}
+
+internal sealed class AzureProviderOperationTransitionConfiguration : IEntityTypeConfiguration<AzureProviderOperationTransitionEntity>
+{
+    public void Configure(EntityTypeBuilder<AzureProviderOperationTransitionEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.Phase).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.Code).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.Message).HasMaxLength(2000).IsRequired();
+        builder.Property(x => x.OccurredAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.OperationId, x.Sequence }).IsUnique();
+        builder.HasIndex(x => new { x.OperationId, x.OccurredAt });
+    }
+}
+
 internal sealed class DeploymentCommandWebhookNotificationConfiguration : IEntityTypeConfiguration<DeploymentCommandWebhookNotificationEntity>
 {
     public void Configure(EntityTypeBuilder<DeploymentCommandWebhookNotificationEntity> builder)
