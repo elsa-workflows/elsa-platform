@@ -1,0 +1,408 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Disposable proof runner. Validation is the default and never creates a
+# resource group or resource. Apply is deliberately opt-in and all resources
+# are scoped to the supplied disposable resource group.
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/azure-workload-proof.sh validate [options]
+  scripts/azure-workload-proof.sh what-if [options]
+  scripts/azure-workload-proof.sh apply [options]
+  scripts/azure-workload-proof.sh cleanup --resource-group <name> --proof-name <suffix> --registry-resource-group <name>
+
+Required apply/what-if options:
+  --proof-name <suffix>                 Lowercase unique suffix, e.g. weu-20260829a
+  --resource-group <name>              Disposable proof resource group
+  --image-repository <repository>      Repository without a tag or digest
+  --image-digest <64 hex characters>   Immutable image digest without sha256:
+  --registry-resource-group <name>     Resource group containing valenceruntimeimages
+  --sql-bootstrap-object-id <GUID>     Entra object ID for temporary SQL administrator
+  --sql-bootstrap-login <name>         Entra login/display name for temporary SQL administrator
+  --sql-bootstrap-ip <IPv4 address>    Exact operator IP for the temporary SQL firewall rule
+
+Optional:
+  --subscription <id>                  Azure subscription to use
+  --registry-subscription <id>         Subscription containing the existing ACR (default: --subscription)
+  --registry-name <name>               Existing ACR (default: valenceruntimeimages)
+  --expiry-utc <YYYY-MM-DD>            Proof expiry tag (default: 2026-09-02)
+EOF
+}
+
+mode="${1:-}"
+case "$mode" in
+  validate|what-if|apply|cleanup) shift ;;
+  *) usage >&2; exit 2 ;;
+esac
+
+proof_name=""
+resource_group=""
+image_repository="valenceruntimeimages.azurecr.io/runtime-combined"
+image_digest=""
+registry_name="valenceruntimeimages"
+registry_resource_group=""
+sql_bootstrap_object_id=""
+sql_bootstrap_login=""
+sql_bootstrap_ip=""
+subscription_id=""
+registry_subscription_id=""
+expiry_utc="2026-09-02"
+
+while (($#)); do
+  case "$1" in
+    --proof-name) proof_name="${2:?Missing value for --proof-name}"; shift 2 ;;
+    --resource-group) resource_group="${2:?Missing value for --resource-group}"; shift 2 ;;
+    --image-repository) image_repository="${2:?Missing value for --image-repository}"; shift 2 ;;
+    --image-digest) image_digest="${2:?Missing value for --image-digest}"; shift 2 ;;
+    --registry-name) registry_name="${2:?Missing value for --registry-name}"; shift 2 ;;
+    --registry-resource-group) registry_resource_group="${2:?Missing value for --registry-resource-group}"; shift 2 ;;
+    --sql-bootstrap-object-id) sql_bootstrap_object_id="${2:?Missing value for --sql-bootstrap-object-id}"; shift 2 ;;
+    --sql-bootstrap-login) sql_bootstrap_login="${2:?Missing value for --sql-bootstrap-login}"; shift 2 ;;
+    --sql-bootstrap-ip) sql_bootstrap_ip="${2:?Missing value for --sql-bootstrap-ip}"; shift 2 ;;
+    --subscription) subscription_id="${2:?Missing value for --subscription}"; shift 2 ;;
+    --registry-subscription) registry_subscription_id="${2:?Missing value for --registry-subscription}"; shift 2 ;;
+    --expiry-utc) expiry_utc="${2:?Missing value for --expiry-utc}"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/.." && pwd)"
+proof_dir="$repo_root/infra/azure-workload-proof"
+
+validate_name() {
+  [[ "$1" =~ ^[a-z][a-z0-9-]{1,14}[a-z0-9]$ && "$1" != *--* ]] || {
+    echo "proof name must be 3-16 lowercase letters, numbers or single hyphens; it must start with a letter and end with a letter or number" >&2
+    exit 2
+  }
+}
+
+validate_digest() {
+  [[ "$1" =~ ^[a-fA-F0-9]{64}$ ]] || {
+    echo "image digest must be exactly 64 hexadecimal characters; tags are not accepted" >&2
+    exit 2
+  }
+}
+
+validate_repository() {
+  [[ "$1" =~ ^[a-z0-9./_-]+$ && "$1" != *:* && "$1" != *@* ]] || {
+    echo "image repository must not contain a tag or digest" >&2
+    exit 2
+  }
+}
+
+validate_guid() {
+  [[ "$1" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || {
+    echo "SQL bootstrap object ID must be a GUID" >&2
+    exit 2
+  }
+}
+
+validate_login() {
+  [[ "$1" =~ ^[a-zA-Z0-9._@-]{1,128}$ ]] || {
+    echo "SQL bootstrap login contains unsupported characters" >&2
+    exit 2
+  }
+}
+
+validate_ipv4() {
+  local ip="$1" octet
+  [[ "$ip" =~ ^[0-9]+(\.[0-9]+){3}$ && "$ip" != 0.0.0.0 ]] || {
+    echo "--sql-bootstrap-ip must be a non-zero IPv4 address (CIDR and 0.0.0.0 are not accepted)" >&2
+    exit 2
+  }
+  IFS=. read -r -a octets <<<"$ip"
+  for octet in "${octets[@]}"; do
+    (( octet <= 255 )) || { echo "--sql-bootstrap-ip contains an invalid octet" >&2; exit 2; }
+  done
+}
+
+sha256_text() {
+  if command -v sha256sum >/dev/null; then
+    printf '%s' "$1" | sha256sum | awk '{print $1}'
+  else
+    printf '%s' "$1" | shasum -a 256 | awk '{print $1}'
+  fi
+}
+
+if [[ "$mode" == cleanup ]]; then
+  : "${resource_group:?cleanup requires --resource-group}"
+  : "${proof_name:?cleanup requires --proof-name so the external ACR role can be removed safely}"
+  : "${registry_resource_group:?cleanup requires --registry-resource-group so the external ACR role can be removed safely}"
+  validate_name "$proof_name"
+  command -v jq >/dev/null || { echo "jq is required for ownership-safe cleanup" >&2; exit 2; }
+  [[ -z "$subscription_id" ]] || az account set --subscription "$subscription_id"
+  group_tags="$(az group show --name "$resource_group" --query tags --output json --only-show-errors 2>/dev/null || true)"
+  [[ "$(jq -r '.proof // empty' <<<"$group_tags")" == 108 && "$(jq -r '.owner // empty' <<<"$group_tags")" == elsa-control && "$(jq -r '."proof-name" // empty' <<<"$group_tags")" == "$proof_name" ]] || {
+    echo "Refusing cleanup: resource group is absent or does not belong to this exact proof" >&2
+    exit 3
+  }
+  cleanup_status=0
+  identity_principal_id="$(az identity show --resource-group "$resource_group" --name "${proof_name}-identity" --query principalId --output tsv --only-show-errors 2>/dev/null || true)"
+  proof_subscription_id="$(az account show --query id --output tsv --only-show-errors)"
+  registry_subscription_id="${registry_subscription_id:-$proof_subscription_id}"
+  az account set --subscription "$registry_subscription_id"
+  if ! registry_id="$(az acr show --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors)"; then
+    echo "Refusing resource-group deletion: the requested ACR scope could not be resolved" >&2
+    exit 3
+  fi
+  stored_deployment_name="$(jq -r '.acrDeployment // empty' <<<"$group_tags")"
+  stored_principal_id="$(jq -r '.acrPrincipal // empty' <<<"$group_tags")"
+  stored_registry_id="$(jq -r '.acrRegistryId // empty' <<<"$group_tags")"
+  if [[ -n "$stored_principal_id" && -n "$identity_principal_id" && "$stored_principal_id" != "$identity_principal_id" ]]; then
+    echo "Refusing resource-group deletion: stored and live proof identities do not match" >&2
+    exit 3
+  fi
+  if [[ -n "$stored_registry_id" && "$stored_registry_id" != "$registry_id" ]]; then
+    echo "Refusing resource-group deletion: stored and requested ACR scopes do not match" >&2
+    exit 3
+  fi
+  cleanup_principal_id="${stored_principal_id:-$identity_principal_id}"
+  role_assignment_id=""
+  if [[ -n "$stored_deployment_name" ]]; then
+    [[ "$stored_deployment_name" =~ ^elsa108-[a-z0-9-]+-[0-9a-f]{12}-acr$ ]] || {
+      echo "Refusing resource-group deletion: stored ACR deployment name is invalid" >&2
+      exit 3
+    }
+    if ! deployment_list_json="$(az deployment group list --resource-group "$registry_resource_group" --output json --only-show-errors)"; then
+      echo "Refusing resource-group deletion: ACR deployment records could not be read" >&2
+      exit 3
+    fi
+    role_assignment_id="$(jq -r --arg name "$stored_deployment_name" '[.[] | select(.name == $name)][0].properties.outputs.roleAssignmentId.value // empty' <<<"$deployment_list_json")"
+  fi
+  if [[ -n "$role_assignment_id" ]]; then
+    if ! assignment_list_json="$(az role assignment list --scope "$registry_id" --output json --only-show-errors)"; then
+      echo "Refusing resource-group deletion: ACR role assignments could not be read" >&2
+      exit 3
+    fi
+    assignment_json="$(jq -c --arg id "$role_assignment_id" '[.[] | select(.id == $id)][0] // empty' <<<"$assignment_list_json")"
+    if [[ -n "$assignment_json" ]]; then
+      assignment_principal_id="$(jq -r '.principalId // empty' <<<"$assignment_json")"
+      assignment_scope="$(jq -r '.scope // empty' <<<"$assignment_json")"
+      assignment_role_id="$(jq -r '.roleDefinitionId // empty | split("/") | last' <<<"$assignment_json")"
+      [[ "$assignment_principal_id" == "$cleanup_principal_id" && "$assignment_scope" == "$registry_id" && "$assignment_role_id" == 7f951dda-4ed3-4680-a7ca-43fe172d538d ]] || {
+        echo "Refusing resource-group deletion: stored ACR assignment does not match this proof identity, scope, and role" >&2
+        exit 3
+      }
+      az role assignment delete --ids "$role_assignment_id" --only-show-errors || cleanup_status=1
+    fi
+    az deployment group delete --resource-group "$registry_resource_group" --name "$stored_deployment_name" --only-show-errors || cleanup_status=1
+  elif [[ -n "$cleanup_principal_id" && -n "$registry_id" ]]; then
+    if ! role_ids="$(az role assignment list --scope "$registry_id" --assignee-object-id "$cleanup_principal_id" --role AcrPull --query '[].id' --output tsv --only-show-errors)"; then
+      echo "Refusing resource-group deletion: identity-scoped ACR assignments could not be read" >&2
+      exit 3
+    fi
+    while IFS= read -r role_id; do
+      [[ -z "$role_id" ]] || az role assignment delete --ids "$role_id" --only-show-errors || cleanup_status=1
+    done <<<"$role_ids"
+  else
+    echo "Refusing resource-group deletion: external ACR cleanup cannot be proven from the proof identity or deployment record" >&2
+    exit 3
+  fi
+  az account set --subscription "$proof_subscription_id"
+  if (( cleanup_status != 0 )); then
+    echo "Refusing resource-group deletion because external ACR cleanup was incomplete" >&2
+    exit 3
+  fi
+  az group delete --name "$resource_group" --yes --no-wait --only-show-errors || cleanup_status=1
+  for _ in {1..60}; do
+    [[ "$(az group exists --name "$resource_group" --only-show-errors 2>/dev/null || echo false)" == true ]] || break
+    sleep 5
+  done
+  [[ "$(az group exists --name "$resource_group" --only-show-errors 2>/dev/null || echo false)" == true ]] && cleanup_status=1
+  vault_name="${proof_name}-kv"
+  if az keyvault show-deleted --name "$vault_name" --location westeurope --only-show-errors >/dev/null 2>&1; then
+    az keyvault purge --name "$vault_name" --location westeurope --only-show-errors || cleanup_status=1
+    for _ in {1..30}; do
+      az keyvault show-deleted --name "$vault_name" --location westeurope --only-show-errors >/dev/null 2>&1 || break
+      sleep 5
+    done
+    az keyvault show-deleted --name "$vault_name" --location westeurope --only-show-errors >/dev/null 2>&1 && cleanup_status=1
+  fi
+  (( cleanup_status == 0 )) && echo "Proof group deleted, external AcrPull removed, and proof vault purge verified." || echo "Cleanup incomplete; inspect exact proof targets." >&2
+  exit "$cleanup_status"
+fi
+
+if [[ "$mode" == validate ]]; then
+  "$repo_root/scripts/validate-azure-workload-proof.sh"
+  echo "Bicep and static checks passed; no Azure resource was created or changed."
+  exit 0
+fi
+
+validate_name "$proof_name"
+validate_digest "$image_digest"
+validate_repository "$image_repository"
+validate_guid "$sql_bootstrap_object_id"
+validate_login "$sql_bootstrap_login"
+validate_ipv4 "$sql_bootstrap_ip"
+: "${resource_group:?$mode requires --resource-group}"
+: "${registry_resource_group:?$mode requires --registry-resource-group}"
+: "${sql_bootstrap_object_id:?$mode requires --sql-bootstrap-object-id}"
+: "${sql_bootstrap_login:?$mode requires --sql-bootstrap-login}"
+command -v jq >/dev/null || { echo "jq is required to read safe deployment outputs" >&2; exit 2; }
+
+"$repo_root/scripts/validate-azure-workload-proof.sh"
+
+[[ -z "$subscription_id" ]] || az account set --subscription "$subscription_id"
+proof_subscription_id="$(az account show --query id --output tsv --only-show-errors)"
+registry_subscription_id="${registry_subscription_id:-$proof_subscription_id}"
+
+parameters=(
+  "proofName=$proof_name"
+  "imageRepository=$image_repository"
+  "imageDigest=$image_digest"
+  "registryName=$registry_name"
+  "registrySubscriptionId=$registry_subscription_id"
+  "registryResourceGroupName=$registry_resource_group"
+  "sqlBootstrapObjectId=$sql_bootstrap_object_id"
+  "sqlBootstrapLogin=$sql_bootstrap_login"
+  "expiryUtc=$expiry_utc"
+)
+
+image_digest_lower="$(printf '%s' "$image_digest" | tr '[:upper:]' '[:lower:]')"
+plan_input="proof=108|name=${proof_name}|location=westeurope|image=${image_repository}@sha256:${image_digest_lower}|elsa=3.8|sql-workflow=3.8.0-preview.5413|sql-quartz=3.8.0-preview.342|topology=combined|acr=${registry_subscription_id}/${registry_resource_group}/${registry_name}|sql-bootstrap=${sql_bootstrap_object_id}/${sql_bootstrap_login}|secrets=sql-connection/identity-signing-key|expiry=${expiry_utc}"
+deployment_suffix="$(sha256_text "$plan_input" | cut -c1-12)"
+
+[[ -z "$subscription_id" ]] || az account set --subscription "$subscription_id"
+
+if [[ "$mode" == what-if ]]; then
+  if ! az group show --name "$resource_group" --only-show-errors >/dev/null 2>&1; then
+    echo "what-if requires an existing resource group; no group was created" >&2
+    exit 3
+  fi
+  az deployment group what-if \
+    --resource-group "$resource_group" \
+    --name "elsa108-${proof_name}-${deployment_suffix}-whatif" \
+    --template-file "$proof_dir/main.bicep" \
+    --parameters "${parameters[@]}" \
+    --only-show-errors
+  exit 0
+fi
+
+[[ "${DISPOSABLE_PROOF_APPLY:-}" == YES ]] || {
+  echo "apply requires DISPOSABLE_PROOF_APPLY=YES; validation and what-if remain non-mutating" >&2
+  exit 3
+}
+
+existing_tags="$(az group show --name "$resource_group" --query tags --output json --only-show-errors 2>/dev/null || true)"
+if [[ -n "$existing_tags" ]]; then
+  [[ "$(jq -r '.proof // empty' <<<"$existing_tags")" == 108 && "$(jq -r '.owner // empty' <<<"$existing_tags")" == elsa-control && "$(jq -r '."proof-name" // empty' <<<"$existing_tags")" == "$proof_name" ]] || { echo "Refusing to adopt unrelated resource group" >&2; exit 3; }
+fi
+az group create --name "$resource_group" --location westeurope \
+  --tags proof=108 owner=elsa-control proof-name="$proof_name" expiry="$expiry_utc" --only-show-errors >/dev/null
+
+deployment_name="elsa108-${proof_name}-${deployment_suffix}"
+foundation_outputs="$(az deployment group create \
+  --resource-group "$resource_group" \
+  --name "${deployment_name}-foundation" \
+  --template-file "$proof_dir/main.bicep" \
+  --parameters "${parameters[@]}" deployWorkload=false \
+  --query properties.outputs --output json --only-show-errors)"
+
+identity_id="$(jq -r '.workloadIdentityId.value' <<<"$foundation_outputs")"
+identity_client_id="$(jq -r '.workloadIdentityClientId.value' <<<"$foundation_outputs")"
+identity_principal_id="$(jq -r '.workloadIdentityPrincipalId.value' <<<"$foundation_outputs")"
+key_vault_name="${proof_name}-kv"
+sql_fqdn="$(jq -r '.sqlServerFqdn.value' <<<"$foundation_outputs")"
+
+sql_server_name="${proof_name}-sql"
+temporary_firewall_rule="elsa108-bootstrap"
+temporary_firewall_created=0
+temp_dir=""
+cleanup_apply() {
+  if (( temporary_firewall_created )); then
+    az sql server firewall-rule delete --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --yes --only-show-errors >/dev/null 2>&1 || true
+  fi
+  [[ -z "$temp_dir" ]] || rm -rf -- "$temp_dir"
+}
+trap cleanup_apply EXIT
+
+# The ACR is intentionally outside the disposable group. This idempotent role
+# assignment is the only proof mutation outside the supplied proof group.
+az account set --subscription "$registry_subscription_id"
+external_context="${proof_subscription_id}/${resource_group}/${identity_principal_id}/${registry_subscription_id}/${registry_resource_group}/${registry_name}"
+external_deployment_suffix="$(sha256_text "$external_context" | cut -c1-12)"
+external_deployment_name="elsa108-${proof_name}-${external_deployment_suffix}-acr"
+az deployment group create \
+  --resource-group "$registry_resource_group" \
+  --name "$external_deployment_name" \
+  --template-file "$proof_dir/acr-pull-role.bicep" \
+  --parameters registryName="$registry_name" workloadIdentityId="$identity_id" workloadPrincipalId="$identity_principal_id" \
+  --query properties.outputs --output none --only-show-errors
+acr_role_ready=0
+registry_id="$(az acr show --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors)"
+for _ in {1..12}; do
+  if [[ "$(az role assignment list --scope "$registry_id" --assignee-object-id "$identity_principal_id" --role AcrPull --query 'length(@)' --output tsv --only-show-errors 2>/dev/null || echo 0)" -gt 0 ]]; then
+    acr_role_ready=1
+    break
+  fi
+  sleep 5
+done
+(( acr_role_ready == 1 )) || { echo "AcrPull role assignment did not become observable" >&2; exit 5; }
+az account set --subscription "$proof_subscription_id"
+az group update --name "$resource_group" \
+  --set tags.acrDeployment="$external_deployment_name" tags.acrPrincipal="$identity_principal_id" tags.acrRegistryId="$registry_id" \
+  --only-show-errors >/dev/null
+
+command -v sqlcmd >/dev/null || {
+  echo "Go sqlcmd is required; install github.com/microsoft/go-sqlcmd and ensure --authentication-method is supported" >&2
+  exit 4
+}
+sqlcmd_compat_help="$(sqlcmd '-?' 2>&1)" || {
+  echo "sqlcmd compatibility help could not be read" >&2
+  exit 4
+}
+grep -q -- '--authentication-method' <<<"$sqlcmd_compat_help" || {
+  echo "sqlcmd must be the Go sqlcmd with --authentication-method support; ODBC sqlcmd is not supported" >&2
+  exit 4
+}
+
+az sql server firewall-rule create --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" \
+  --start-ip-address "$sql_bootstrap_ip" --end-ip-address "$sql_bootstrap_ip" --only-show-errors >/dev/null
+temporary_firewall_created=1
+
+temp_dir="$(mktemp -d)"
+umask 077
+
+sql_connection="Server=tcp:${sql_fqdn},1433;Initial Catalog=Elsa;Encrypt=True;Authentication=\"Active Directory Managed Identity\";User Id=${identity_client_id};TrustServerCertificate=False;Connection Timeout=30;"
+printf '%s' "$sql_connection" >"$temp_dir/sql-connection"
+openssl rand -base64 48 >"$temp_dir/identity-signing-key"
+seed_secret_if_missing() {
+  local name="$1" file="$2"
+  if az keyvault secret show --vault-name "$key_vault_name" --name "$name" --only-show-errors >/dev/null 2>&1; then return 0; fi
+  for _ in {1..12}; do
+    if az keyvault secret set --vault-name "$key_vault_name" --name "$name" --file "$file" --only-show-errors >/dev/null; then return 0; fi
+    sleep 5
+  done
+  echo "Key Vault RBAC propagation did not complete for secret $name" >&2
+  return 1
+}
+seed_secret_if_missing sql-connection "$temp_dir/sql-connection"
+seed_secret_if_missing identity-signing-key "$temp_dir/identity-signing-key"
+
+sed \
+  -e "s/__WORKLOAD_IDENTITY_NAME__/${proof_name}-identity/g" \
+  -e "s/__WORKLOAD_IDENTITY_CLIENT_ID__/${identity_client_id}/g" \
+  "$proof_dir/sql-bootstrap.sql" >"$temp_dir/sql-bootstrap.sql"
+bootstrap_ok=0
+for _ in {1..12}; do
+  if sqlcmd -S "tcp:${sql_fqdn},1433" -d Elsa --authentication-method ActiveDirectoryDefault -i "$temp_dir/sql-bootstrap.sql"; then bootstrap_ok=1; break; fi
+  sleep 10
+done
+(( bootstrap_ok == 1 )) || { echo "SQL bootstrap did not become ready" >&2; exit 5; }
+az sql server firewall-rule delete --resource-group "$resource_group" --server "$sql_server_name" --name "$temporary_firewall_rule" --yes --only-show-errors >/dev/null
+temporary_firewall_created=0
+
+az deployment group create \
+  --resource-group "$resource_group" \
+  --name "${deployment_name}-workload" \
+  --template-file "$proof_dir/main.bicep" \
+  --parameters "${parameters[@]}" deployWorkload=true \
+  --query properties.outputs --output none --only-show-errors
+
+endpoint="$(az deployment group show --resource-group "$resource_group" --name "${deployment_name}-workload" --query 'properties.outputs.containerAppEndpoint.value' --output tsv --only-show-errors)"
+curl --fail --silent --show-error --retry 20 --retry-delay 10 "$endpoint/health" >/dev/null
+echo "Workload is healthy at $endpoint; capture only redacted IDs, endpoint and immutable digest as evidence."

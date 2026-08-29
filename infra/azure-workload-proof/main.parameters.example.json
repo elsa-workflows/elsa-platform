@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "proofName": {
+      "value": "weu-20260829a"
+    },
+    "imageRepository": {
+      "value": "valenceruntimeimages.azurecr.io/runtime-combined"
+    },
+    "imageDigest": {
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "registryResourceGroupName": {
+      "value": "<existing-acr-resource-group>"
+    },
+    "sqlBootstrapObjectId": {
+      "value": "00000000-0000-4000-8000-000000000000"
+    },
+    "sqlBootstrapLogin": {
+      "value": "operator@example.invalid"
+    },
+    "expiryUtc": {
+      "value": "2026-09-02"
+    }
+  }
+}
