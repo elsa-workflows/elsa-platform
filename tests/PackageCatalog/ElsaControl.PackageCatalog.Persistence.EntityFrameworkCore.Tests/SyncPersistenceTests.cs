@@ -130,6 +130,7 @@ public sealed class SyncPersistenceTests
         var source = PublicCatalogSeedData.CreatePackageSource();
         var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Mixed");
         var version = PublicCatalogSeedData.AddVersion(package);
+        version.ManifestHash = new string('A', 64);
         version.ManifestJson = new ManifestFixtureBuilder()
             .WithPackage("Elsa.Mixed", "1.0.0")
             .WithRuntimeKinds("elsa.server", "acme.custom-host")
@@ -145,6 +146,7 @@ public sealed class SyncPersistenceTests
 
         var projectedVersion = Assert.Single(Assert.Single(packages).Versions);
         Assert.Equal(new[] { "elsa.server", "acme.custom-host" }.Order(), projectedVersion.RuntimeKinds.Order());
+        Assert.Equal($"sha256:{new string('a', 64)}", projectedVersion.ManifestDigest);
 
         Assert.Equal(new[] { "elsa.server", "acme.custom-host" }.Order(), projectedVersion.Features.Single(x => x.FeatureId == "server").RuntimeKinds.Order());
 

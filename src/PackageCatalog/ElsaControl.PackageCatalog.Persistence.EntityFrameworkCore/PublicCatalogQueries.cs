@@ -170,7 +170,22 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
             version.SchemaVersion,
             versionRuntimeKinds,
             version.PublishedAt,
-            version.Features.Select(feature => ToFeatureProjection(feature, version, compatibility, featureCategories)).ToList());
+            version.Features.Select(feature => ToFeatureProjection(feature, version, compatibility, featureCategories)).ToList(),
+            NormalizeManifestDigest(version.ManifestHash));
+    }
+
+    private static string? NormalizeManifestDigest(string? manifestHash)
+    {
+        if (string.IsNullOrWhiteSpace(manifestHash))
+            return null;
+
+        var normalized = manifestHash.Trim();
+        if (normalized.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized["sha256:".Length..];
+
+        return normalized.Length == 64 && normalized.All(Uri.IsHexDigit)
+            ? $"sha256:{normalized.ToLowerInvariant()}"
+            : null;
     }
 
     private static PublicFeatureProjection ToFeatureProjection(

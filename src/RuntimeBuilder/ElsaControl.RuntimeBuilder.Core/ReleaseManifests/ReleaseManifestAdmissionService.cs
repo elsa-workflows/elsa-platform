@@ -592,8 +592,11 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
                 || string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static bool IsImmutableImageReference(string reference)
+    internal static bool IsImmutableImageReference(string? reference)
     {
+        if (string.IsNullOrWhiteSpace(reference))
+            return false;
+
         if (reference.Any(char.IsWhiteSpace) || reference.Contains('?', StringComparison.Ordinal) || reference.Contains('#', StringComparison.Ordinal))
             return false;
 
@@ -612,8 +615,11 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
         return name[(lastSlash + 1)..].IndexOf(':') < 0;
     }
 
-    private static bool IsSafeImageReference(string reference)
+    internal static bool IsSafeImageReference(string? reference)
     {
+        if (string.IsNullOrWhiteSpace(reference))
+            return false;
+
         if (reference.Any(char.IsWhiteSpace) || reference.Contains('?', StringComparison.Ordinal) || reference.Contains('#', StringComparison.Ordinal))
             return false;
 
