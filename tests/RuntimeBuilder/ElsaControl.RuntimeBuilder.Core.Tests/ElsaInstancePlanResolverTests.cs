@@ -353,6 +353,9 @@ public sealed class ElsaInstancePlanResolverTests
     [InlineData("https://attacker.example.test/callback")]
     [InlineData("/api?token=secret")]
     [InlineData("/api/../admin")]
+    [InlineData("/api/%2e%2e/admin")]
+    [InlineData("/api\\admin")]
+    [InlineData("/api//admin")]
     public async Task Rejects_unsafe_image_endpoint_path(string path)
     {
         var baseline = CreateRequest();
