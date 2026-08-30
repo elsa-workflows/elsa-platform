@@ -134,7 +134,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             }
             db.ChangeTracker.Clear();
             var entity = await db.AzureProviderOperations.SingleAsync(x => x.Id == operationId, cancellationToken);
-            AddTransition(entity, allowRecovery ? "operation.recoveryClaimed" : "operation.claimed", allowRecovery ? "Recovery reconciliation claimed." : "Azure provider operation claimed.", now);
+            AddTransition(entity, allowRecovery ? "operation.recovery.claimed" : "operation.claimed", allowRecovery ? "Recovery reconciliation claimed." : "Azure provider operation claimed.", now);
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             result = ToModel(entity);
@@ -229,7 +229,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
                 recovered++;
                 candidate.Status = AzureProviderOperationStatus.RecoveryRequired;
                 candidate.Version++;
-                AddTransition(candidate, "operation.recoveryRequired", "The operation lease expired before completion.", now);
+                AddTransition(candidate, "operation.recovery.required", "The operation lease expired before completion.", now);
             }
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
