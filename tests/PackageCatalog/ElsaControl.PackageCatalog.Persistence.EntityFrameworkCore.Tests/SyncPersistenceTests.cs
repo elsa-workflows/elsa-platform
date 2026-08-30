@@ -1,3 +1,5 @@
+using System.Data.Common;
+using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Core.Manifests;
 using ElsaControl.PackageCatalog.Core.Packaging;
 using ElsaControl.PackageCatalog.Core.Packages;
@@ -7,6 +9,7 @@ using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using ElsaControl.PackageCatalog.Testing;
 using Elsa.Specifications.PackageManifests.Validation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
 
@@ -130,6 +133,7 @@ public sealed class SyncPersistenceTests
         var source = PublicCatalogSeedData.CreatePackageSource();
         var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Mixed");
         var version = PublicCatalogSeedData.AddVersion(package);
+        version.ManifestHash = new string('A', 64);
         version.ManifestJson = new ManifestFixtureBuilder()
             .WithPackage("Elsa.Mixed", "1.0.0")
             .WithRuntimeKinds("elsa.server", "acme.custom-host")
@@ -145,10 +149,70 @@ public sealed class SyncPersistenceTests
 
         var projectedVersion = Assert.Single(Assert.Single(packages).Versions);
         Assert.Equal(new[] { "elsa.server", "acme.custom-host" }.Order(), projectedVersion.RuntimeKinds.Order());
+        Assert.Equal($"sha256:{new string('a', 64)}", projectedVersion.ManifestDigest);
 
         Assert.Equal(new[] { "elsa.server", "acme.custom-host" }.Order(), projectedVersion.Features.Single(x => x.FeatureId == "server").RuntimeKinds.Order());
 
         Assert.Equal("elsa.studio", Assert.Single(projectedVersion.Features.Single(x => x.FeatureId == "studio").RuntimeKinds));
+    }
+
+    [Fact]
+    public async Task Public_catalog_listing_does_not_depend_on_owner_workspace_join()
+    {
+        var commandRecorder = new CommandRecorder();
+        var options = new DbContextOptionsBuilder<CatalogDbContext>()
+            .UseSqlite("Data Source=:memory:")
+            .AddInterceptors(commandRecorder)
+            .Options;
+
+        await using var db = new CatalogDbContext(options);
+        await db.Database.OpenConnectionAsync();
+        await db.Database.EnsureCreatedAsync();
+
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Public");
+        PublicCatalogSeedData.AddVersion(package);
+        db.PackageSources.Add(source);
+        await db.SaveChangesAsync();
+        commandRecorder.Commands.Clear();
+
+        var packages = await new PublicCatalogQueries(db).ListPackagesAsync([]);
+
+        Assert.Single(packages);
+        var catalogQuery = Assert.Single(
+            commandRecorder.Commands,
+            command => command.Contains("FROM \"Packages\"", StringComparison.Ordinal));
+        Assert.DoesNotContain("Workspaces", catalogQuery, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Workspace_catalog_hides_sources_owned_by_soft_deleted_workspaces()
+    {
+        await using var db = await CreateOpenDbContextAsync();
+        var organization = new Organization { Name = "Deleted organization" };
+        var workspace = new Workspace
+        {
+            Name = "Deleted workspace",
+            Organization = organization,
+            SoftDeletedAt = DateTimeOffset.UtcNow
+        };
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        source.Visibility = PackageSourceVisibility.Workspace;
+        source.OwnerWorkspaceId = workspace.Id;
+        source.OwnerWorkspace = workspace;
+        var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Private");
+        var version = PublicCatalogSeedData.AddVersion(package);
+        db.AddRange(organization, workspace, source);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var projection = await new PublicCatalogQueries(db).GetVersionForWorkspaceAsync(
+            workspace.Id,
+            source.Id,
+            package.PackageId,
+            version.Version);
+
+        Assert.Null(projection);
     }
 
     [Fact]
@@ -304,6 +368,21 @@ public sealed class SyncPersistenceTests
             run.Items.Add(new SyncRunItem { SyncRun = run, SyncRunId = run.Id, Status = SyncRunItemStatus.Indexed });
 
         return run;
+    }
+
+    private sealed class CommandRecorder : DbCommandInterceptor
+    {
+        public List<string> Commands { get; } = [];
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            Commands.Add(command.CommandText);
+            return ValueTask.FromResult(result);
+        }
     }
 
     private sealed class FakeDiscovery(IReadOnlyList<DiscoveredPackageVersion> versions) : IPackageVersionDiscoveryClient

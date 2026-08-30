@@ -29,7 +29,8 @@ public sealed record PublicPackageVersionProjection(
     string? SchemaVersion,
     IReadOnlyList<string> RuntimeKinds,
     DateTimeOffset? PublishedAt,
-    IReadOnlyList<PublicFeatureProjection> Features);
+    IReadOnlyList<PublicFeatureProjection> Features,
+    string? ManifestDigest = null);
 
 public sealed record PublicPackageSourceProjection(
     Guid Id,

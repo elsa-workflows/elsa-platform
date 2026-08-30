@@ -49,7 +49,7 @@ public sealed class AzureWorkloadPlanTranslatorTests
         Assert.Equal(ManifestDigest, first.Plan.ReleaseManifestDigest);
         Assert.Equal("oci://release-manifest.signature", first.Plan.ReleaseManifestSignatureReference);
         Assert.Equal(ImageDigest, first.Plan.ReleaseManifestSignatureDigest);
-        Assert.Equal("secret://database", first.Plan.SecretReferences["Database:ConnectionString"]);
+        Assert.Equal("secret://vault/database-connection", first.Plan.SecretReferences["Database:ConnectionString"]);
         Assert.Equal("database:connectionstring", Assert.Single(first.Plan.SecretReferences).Key);
         Assert.Matches("^[a-f0-9]{64}$", first.Plan.Fingerprint);
     }
@@ -409,7 +409,7 @@ public sealed class AzureWorkloadPlanTranslatorTests
             new("valence-runtime", releaseLine, version, "https://github.com/valence-works/elsa-production-image", "1aeee8df455b21cf3bf3d2b26dfbd512d76da27b", "oci://release-manifest", ManifestDigest),
             new("combined", [component]),
             [new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", version, ImageDigest, ["elsa.server"], [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])])],
-            new([new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, "secret://database", null)]),
+            new([new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, "secret://vault/database-connection", null)]),
             new([new("runtime", 1, 1, 500, 1024)], [new("elsa-data", "relational", "persistent", "exclusive", 10)]),
             new("public", "unrestricted", false, [], [new("runtime", "api", "https", 443, "public", true, "/elsa/api")]),
             "Dedicated",

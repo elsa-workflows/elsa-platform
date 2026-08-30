@@ -97,7 +97,7 @@ public static class ResolvedElsaApplicationPlanValidator
             findings.Add(new("configuration.required", "Configuration shape is required.", "configuration"));
         else
         {
-            Duplicate(plan.Configuration.Entries, x => x.Key, "configuration.key.duplicate", "configuration.entries");
+            var validConfigurationKeys = new List<string>();
             foreach (var entry in plan.Configuration.Entries ?? [])
             {
                 if (entry is null)
@@ -106,17 +106,34 @@ public static class ResolvedElsaApplicationPlanValidator
                     continue;
                 }
 
-                Required(entry.Key, "configuration.key.required", "Configuration key is required.", "configuration.entries");
+                if (string.IsNullOrWhiteSpace(entry.Key))
+                {
+                    findings.Add(new("configuration.key.required", "Configuration key is required.", "configuration.entries"));
+                    continue;
+                }
+
+                if (!ConfigurationKeyPolicy.IsSafe(entry.Key))
+                {
+                    findings.Add(new("configuration.key.invalid", "Configuration key must be a canonical safe identifier.", "configuration.entries"));
+                    continue;
+                }
+
+                validConfigurationKeys.Add(entry.Key);
                 Required(entry.JsonType, "configuration.type.required", "Configuration JSON type is required.", $"configuration:{entry.Key}");
                 if (entry.Secret && entry.Value is not null)
                     findings.Add(new("configuration.secretValue.forbidden", "Secret configuration values must not be embedded in a resolved plan.", $"configuration:{entry.Key}"));
                 if (entry.SecretReference is not null && !entry.Secret)
                     findings.Add(new("configuration.nonSecretReference.invalid", "Only secret configuration entries may use a secret reference.", $"configuration:{entry.Key}"));
-                if (entry.Secret && entry.SecretReference is not null && !IsSafeSecretReference(entry.SecretReference))
-                    findings.Add(new("configuration.secretReference.invalid", "Secret references must be absolute secret:// locators without credentials, query strings or fragments.", $"configuration:{entry.Key}"));
+                if (entry.Secret && entry.SecretReference is not null && !SecretReferencePolicy.IsSafe(entry.SecretReference))
+                    findings.Add(new("configuration.secretReference.invalid", SecretReferencePolicy.InvalidReferenceMessage, $"configuration:{entry.Key}"));
                 if (entry.Required && entry.Value is null && entry.SecretReference is null)
                     findings.Add(new("configuration.requiredValue.missing", "Required configuration needs a value or secret reference.", $"configuration:{entry.Key}"));
             }
+
+            foreach (var group in validConfigurationKeys
+                .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .Where(x => x.Count() > 1))
+                findings.Add(new("configuration.key.duplicate", "Configuration contains duplicate setting identities.", "configuration.entries"));
         }
 
         if (plan.Capacity is null)
@@ -293,6 +310,8 @@ public static class ResolvedElsaApplicationPlanValidator
             findings.Add(new("endpoint.port.invalid", "Endpoint port must be between 1 and 65535.", scope));
         if (string.IsNullOrWhiteSpace(endpoint.Visibility))
             findings.Add(new("endpoint.visibility.required", "Endpoint visibility is required.", scope));
+        if (!string.IsNullOrWhiteSpace(endpoint.Path) && !EndpointPathPolicy.IsSafe(endpoint.Path))
+            findings.Add(new("endpoint.path.invalid", "Endpoint paths must be safe relative paths.", scope));
     }
 
     private static void ValidateEndpoint(ResolvedNetworkEndpoint? endpoint, List<ResolvedPlanValidationFinding> findings, string scope)
@@ -312,18 +331,6 @@ public static class ResolvedElsaApplicationPlanValidator
     {
         if (string.IsNullOrWhiteSpace(value) || value.Length != 71 || !value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) || value[7..].Any(x => !Uri.IsHexDigit(x)))
             findings.Add(new(code, "A sha256 digest is required.", scope));
-    }
-
-    private static bool IsSafeSecretReference(string value)
-    {
-        if (value.Any(char.IsWhiteSpace) || !Uri.TryCreate(value, UriKind.Absolute, out var uri))
-            return false;
-
-        return string.Equals(uri.Scheme, "secret", StringComparison.OrdinalIgnoreCase)
-            && !string.IsNullOrWhiteSpace(uri.Host)
-            && string.IsNullOrEmpty(uri.UserInfo)
-            && string.IsNullOrEmpty(uri.Query)
-            && string.IsNullOrEmpty(uri.Fragment);
     }
 
 }
