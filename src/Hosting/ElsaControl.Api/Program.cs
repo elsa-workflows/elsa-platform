@@ -6,6 +6,7 @@ using ConsoleLogStreaming.Core.DependencyInjection;
 using Microsoft.AspNetCore.DataProtection;
 using ElsaControl.Deployment.Artifacts;
 using ElsaControl.Deployment.Core.Cockpit;
+using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.Deployment.Core.Workspace;
 using ElsaControl.Deployment.Azure;
 using ElsaControl.PackageCatalog.Abstractions.Catalog;
@@ -195,9 +196,11 @@ builder.Services.AddSingleton<ManagedElsaHandoffKeyRing>(services =>
         ? ManagedElsaHandoffKeyRing.CreateEphemeral()
         : ManagedElsaHandoffKeyRing.CreateConfigured(options);
 });
-builder.Services.AddSingleton<IManagedElsaHandoffReplayStore, InMemoryManagedElsaHandoffReplayStore>();
-builder.Services.AddSingleton<IManagedElsaHandoffAuthorizer, UnconfiguredManagedElsaHandoffAuthorizer>();
-builder.Services.AddSingleton<IManagedElsaHandoffAuditSink, NullManagedElsaHandoffAuditSink>();
+builder.Services.AddScoped<EfCoreManagedElsaHandoffStore>();
+builder.Services.AddScoped<IManagedElsaHandoffReplayStore, EfCoreManagedElsaHandoffReplayStore>();
+builder.Services.AddScoped<IManagedElsaInstanceIdentityStore, EfCoreManagedElsaInstanceIdentityStore>();
+builder.Services.AddScoped<IManagedElsaHandoffAuthorizer, ManagedElsaInstanceHandoffAuthorizer>();
+builder.Services.AddScoped<IManagedElsaHandoffAuditSink, EfCoreManagedElsaHandoffAuditSink>();
 builder.Services.AddScoped<ManagedElsaHandoffIssuer>();
 builder.Services.AddScoped<ManagedElsaHandoffRedeemer>();
 builder.Services.AddScoped<ManagedElsaHandoffService>();
