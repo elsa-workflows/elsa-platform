@@ -23,6 +23,9 @@ public sealed class ManagedElsaHandoffOptions
     public bool Enabled { get; init; }
     public string Issuer { get; init; } = "https://cloud.elsaworkflows.io";
     public TimeSpan TokenLifetime { get; init; } = ManagedElsaHandoffDefaults.DefaultLifetime;
+    public string? ActiveKeyId { get; init; }
+    public string? ActivePrivateKeyPem { get; init; }
+    public Dictionary<string, string> PreviousPublicKeys { get; init; } = new(StringComparer.Ordinal);
 }
 
 public sealed class ManagedElsaHandoffConfigurationValidator(
@@ -32,9 +35,10 @@ public sealed class ManagedElsaHandoffConfigurationValidator(
     public Task StartAsync(CancellationToken cancellationToken)
     {
         var validated = ManagedElsaHandoffIssuer.ValidateOptions(options.Value);
-        if (environment.IsProduction() && validated.Enabled)
+        if (environment.IsProduction() && validated.Enabled &&
+            (string.IsNullOrWhiteSpace(validated.ActiveKeyId) || string.IsNullOrWhiteSpace(validated.ActivePrivateKeyPem)))
             throw new InvalidOperationException(
-                "ManagedElsa:Handoff:Enabled cannot be enabled in Production until the ephemeral prototype key ring is replaced with a configured rotating key provider.");
+                "Managed Elsa handoff requires a configured active signing key in Production.");
 
         return Task.CompletedTask;
     }
@@ -54,7 +58,8 @@ public sealed record ManagedElsaHandoffAuthorization(
     string Audience,
     Uri RedirectUri,
     string CodeChallenge,
-    IReadOnlySet<string> Scopes);
+    IReadOnlySet<string> Scopes,
+    int BindingVersion = 1);
 
 public sealed record ManagedElsaHandoffRequest(
     Guid OrganizationId,
@@ -134,6 +139,48 @@ public sealed class ManagedElsaHandoffKeyRing : IDisposable
     public static ManagedElsaHandoffKeyRing CreateEphemeral() =>
         new("prototype", RSA.Create(2048));
 
+    public static ManagedElsaHandoffKeyRing CreateConfigured(ManagedElsaHandoffOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.ActiveKeyId) || string.IsNullOrWhiteSpace(options.ActivePrivateKeyPem))
+            throw new InvalidOperationException("Managed Elsa handoff active signing-key configuration is incomplete.");
+
+        var active = RSA.Create();
+        var previous = new List<(string KeyId, RSA Key)>();
+        try
+        {
+            active.ImportFromPem(options.ActivePrivateKeyPem);
+            _ = active.ExportParameters(includePrivateParameters: true);
+            if (active.KeySize < 2048)
+                throw new InvalidOperationException("Managed Elsa handoff signing keys must be at least 2048 bits.");
+
+            foreach (var configured in options.PreviousPublicKeys)
+            {
+                var key = RSA.Create();
+                try
+                {
+                    key.ImportFromPem(configured.Value);
+                    if (key.KeySize < 2048)
+                        throw new InvalidOperationException("Managed Elsa handoff validation keys must be at least 2048 bits.");
+                    previous.Add((configured.Key, key));
+                }
+                catch
+                {
+                    key.Dispose();
+                    throw;
+                }
+            }
+
+            return new ManagedElsaHandoffKeyRing(options.ActiveKeyId, active, previous);
+        }
+        catch
+        {
+            active.Dispose();
+            foreach (var (_, key) in previous)
+                key.Dispose();
+            throw;
+        }
+    }
+
     public void Dispose()
     {
         foreach (var key in _keys.Values)
@@ -163,7 +210,8 @@ public sealed record ManagedElsaHandoffClaims(
     string CodeChallenge,
     IReadOnlySet<string> Scopes,
     DateTimeOffset IssuedAt,
-    DateTimeOffset ExpiresAt)
+    DateTimeOffset ExpiresAt,
+    int BindingVersion = 1)
 {
     public TrustedWorkspaceIdentity ToTrustedWorkspaceIdentity() =>
         new(ControlIssuer, ControlSubject, null, null);
@@ -255,6 +303,7 @@ public sealed class ManagedElsaHandoffIssuer(
             !string.Equals(request.CodeChallenge, authorization.CodeChallenge, StringComparison.Ordinal) ||
             !IsSafeRedirectUri(request.RedirectUri) ||
             !IsValidCodeChallenge(request.CodeChallenge) ||
+            authorization.BindingVersion < 1 ||
             string.IsNullOrWhiteSpace(identity.Issuer) ||
             string.IsNullOrWhiteSpace(identity.Subject) ||
             !request.RequestedScopes.SetEquals([ManagedElsaHandoffDefaults.RuntimeSessionScope]) ||
@@ -271,6 +320,7 @@ public sealed class ManagedElsaHandoffIssuer(
             new("control_sub", identity.Subject),
             new("org_id", authorization.OrganizationId.ToString("D")),
             new("instance_id", authorization.InstanceId.ToString("D")),
+            new("binding_version", authorization.BindingVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             new("redirect_uri", authorization.RedirectUri.OriginalString),
             new("code_challenge", authorization.CodeChallenge),
             new("scope", string.Join(' ', request.RequestedScopes.Order(StringComparer.Ordinal))),
@@ -450,6 +500,7 @@ public sealed class ManagedElsaHandoffRedeemer(
         var controlSubject = RequiredClaim(principal, "control_sub");
         var organizationId = RequiredGuid(principal, "org_id");
         var instanceId = RequiredGuid(principal, "instance_id");
+        var bindingVersion = RequiredPositiveInt(principal, "binding_version");
         var codeChallenge = RequiredClaim(principal, "code_challenge");
         var audience = RequiredClaim(principal, JwtRegisteredClaimNames.Aud);
         var redirectUri = new Uri(RequiredClaim(principal, "redirect_uri"), UriKind.Absolute);
@@ -475,7 +526,8 @@ public sealed class ManagedElsaHandoffRedeemer(
             codeChallenge,
             scopes,
             issuedAt,
-            expiresAt);
+            expiresAt,
+            bindingVersion);
     }
 
     private async Task<ManagedElsaHandoffRedeemResult> InvalidAsync(CancellationToken cancellationToken)
@@ -505,6 +557,12 @@ public sealed class ManagedElsaHandoffRedeemer(
         long.TryParse(RequiredClaim(principal, claimType), out var seconds)
             ? DateTimeOffset.FromUnixTimeSeconds(seconds)
             : throw new SecurityTokenException($"Handoff claim '{claimType}' is not a numeric date.");
+
+    private static int RequiredPositiveInt(ClaimsPrincipal principal, string claimType) =>
+        int.TryParse(RequiredClaim(principal, claimType), System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out var value) && value > 0
+            ? value
+            : throw new SecurityTokenException($"Handoff claim '{claimType}' is not a positive integer.");
 }
 
 public sealed class ManagedElsaHandoffService(

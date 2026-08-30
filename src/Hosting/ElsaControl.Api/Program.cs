@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using ConsoleLogStreaming.AspNetCore.DependencyInjection;
 using ConsoleLogStreaming.Core.DependencyInjection;
 using Microsoft.AspNetCore.DataProtection;
@@ -169,12 +170,31 @@ builder.Services.AddCors(options => options.AddPolicy(PublicBuilderCors.PolicyNa
         .WithMethods(HttpMethods.Get, HttpMethods.Post, HttpMethods.Options)
         .WithHeaders("Content-Type", ApiKeyAuthenticationDefaults.HeaderName);
 }));
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("managed-elsa-handoff", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 20,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
+});
 builder.Services.AddCatalogAuthorization();
 builder.Services.AddBuilderClientAuthorization();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AdminApiKeyValidator>();
 builder.Services.AddSingleton<BuilderClientApiKeyValidator>();
-builder.Services.AddSingleton<ManagedElsaHandoffKeyRing>(_ => ManagedElsaHandoffKeyRing.CreateEphemeral());
+builder.Services.AddSingleton<ManagedElsaHandoffKeyRing>(services =>
+{
+    var options = services.GetRequiredService<IOptions<ManagedElsaHandoffOptions>>().Value;
+    return string.IsNullOrWhiteSpace(options.ActiveKeyId) && string.IsNullOrWhiteSpace(options.ActivePrivateKeyPem)
+        ? ManagedElsaHandoffKeyRing.CreateEphemeral()
+        : ManagedElsaHandoffKeyRing.CreateConfigured(options);
+});
 builder.Services.AddSingleton<IManagedElsaHandoffReplayStore, InMemoryManagedElsaHandoffReplayStore>();
 builder.Services.AddSingleton<IManagedElsaHandoffAuthorizer, UnconfiguredManagedElsaHandoffAuthorizer>();
 builder.Services.AddSingleton<IManagedElsaHandoffAuditSink, NullManagedElsaHandoffAuditSink>();
@@ -182,6 +202,7 @@ builder.Services.AddScoped<ManagedElsaHandoffIssuer>();
 builder.Services.AddScoped<ManagedElsaHandoffRedeemer>();
 builder.Services.AddScoped<ManagedElsaHandoffService>();
 builder.Services.AddHostedService<ManagedElsaHandoffConfigurationValidator>();
+builder.Services.AddSingleton<IWorkspacePermissionContribution, ManagedElsaInstancePermissionContribution>();
 builder.Services.AddCatalogDbContext(builder.Configuration);
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
 builder.Services.AddScoped<IPublicCatalogQueries, PublicCatalogQueries>();
@@ -410,6 +431,7 @@ app.Use(async (context, next) =>
 app.UseAdminDashboardRequestForgeryGuard();
 app.UseStaticFiles();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapOpenApi();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));

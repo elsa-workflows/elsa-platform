@@ -7,7 +7,8 @@ public static class ManagedElsaHandoffEndpoints
     public static IEndpointRouteBuilder MapManagedElsaHandoffEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/managed-elsa/handoff")
-            .WithTags("Managed Elsa Identity Handoff");
+            .WithTags("Managed Elsa Identity Handoff")
+            .RequireRateLimiting("managed-elsa-handoff");
 
         group.MapPost("/issue", async (
             HttpContext context,
@@ -23,14 +24,18 @@ public static class ManagedElsaHandoffEndpoints
                     statusCode: StatusCodes.Status503ServiceUnavailable);
 
             if (!request.TryCreate(out var handoffRequest))
-                return Results.BadRequest(new { error = "A valid HTTPS audience-bound redirect URI is required." });
+                return Results.BadRequest(new
+                {
+                    error = "handoff.request.invalid",
+                    correlationId = context.TraceIdentifier
+                });
 
             if (await identityReader.ReadAsync(context) is null)
                 return WorkspaceIdentityHttpContextExtensions.UnauthorizedWorkspaceIdentity();
 
             var result = await handoff.IssueAsync(context, handoffRequest!, cancellationToken);
             return result is null
-                ? Results.Forbid()
+                ? Failure(StatusCodes.Status403Forbidden, "handoff.denied", context)
                 : Results.Ok(new ManagedElsaHandoffIssueResponse(
                     result.Token,
                     result.TokenType,
@@ -41,6 +46,7 @@ public static class ManagedElsaHandoffEndpoints
         });
 
         group.MapPost("/redeem", async (
+            HttpContext context,
             ManagedElsaHandoffRedeemRequest request,
             IOptions<ManagedElsaHandoffOptions> options,
             ManagedElsaHandoffService handoff,
@@ -52,14 +58,24 @@ public static class ManagedElsaHandoffEndpoints
                     statusCode: StatusCodes.Status503ServiceUnavailable);
 
             if (!request.TryCreate(out var audience, out var redirectUri))
-                return Results.BadRequest(new { error = "A valid audience and HTTPS redirect URI are required." });
+                return Results.BadRequest(new
+                {
+                    error = "handoff.request.invalid",
+                    correlationId = context.TraceIdentifier
+                });
 
             var result = await handoff.RedeemAsync(request.Token, audience!, redirectUri!, request.CodeVerifier, cancellationToken);
             return result.Failure switch
             {
-                ManagedElsaHandoffRedeemFailure.Replay => Results.Conflict(new { error = "This handoff has already been used." }),
-                ManagedElsaHandoffRedeemFailure.AuthorizationRevoked => Results.Forbid(),
-                ManagedElsaHandoffRedeemFailure.InvalidToken => Results.Unauthorized(),
+                ManagedElsaHandoffRedeemFailure.Replay => Results.Conflict(new
+                {
+                    error = "handoff.replay",
+                    correlationId = context.TraceIdentifier
+                }),
+                ManagedElsaHandoffRedeemFailure.AuthorizationRevoked =>
+                    Failure(StatusCodes.Status403Forbidden, "handoff.denied", context),
+                ManagedElsaHandoffRedeemFailure.InvalidToken =>
+                    Failure(StatusCodes.Status401Unauthorized, "handoff.invalid", context),
                 _ => Results.Ok(new ManagedElsaHandoffRedeemResponse(
                     result.Claims!.AccountId,
                     result.Claims.OrganizationId,
@@ -71,6 +87,16 @@ public static class ManagedElsaHandoffEndpoints
 
         return endpoints;
     }
+
+    private static IResult Failure(int statusCode, string code, HttpContext context) =>
+        Results.Problem(
+            statusCode: statusCode,
+            title: "Managed Elsa identity handoff was denied.",
+            extensions: new Dictionary<string, object?>
+            {
+                ["code"] = code,
+                ["correlationId"] = context.TraceIdentifier
+            });
 }
 
 public sealed record ManagedElsaHandoffIssueRequest(

@@ -142,6 +142,7 @@ public sealed class ManagedElsaHandoffTests
 
         Assert.Equal(ManagedElsaHandoffDefaults.TokenType, jwt.Header.Typ);
         Assert.Equal("prototype", jwt.Header.Kid);
+        Assert.Equal(fixture.Authorizer.BindingVersion.ToString(), jwt.Claims.Single(x => x.Type == "binding_version").Value);
     }
 
     [Fact]
@@ -193,6 +194,18 @@ public sealed class ManagedElsaHandoffTests
     }
 
     [Fact]
+    public async Task Rotated_instance_binding_invalidates_an_issued_handoff()
+    {
+        using var fixture = CreateFixture();
+        var token = fixture.Issue();
+        fixture.Authorizer.BindingVersion++;
+
+        var result = await fixture.RedeemAsync(token);
+
+        Assert.Equal(ManagedElsaHandoffRedeemFailure.AuthorizationRevoked, result.Failure);
+    }
+
+    [Fact]
     public async Task Redirect_binding_is_exact_and_rejects_a_different_callback()
     {
         using var fixture = CreateFixture();
@@ -239,6 +252,28 @@ public sealed class ManagedElsaHandoffTests
             "active",
             active,
             [("active", duplicate)]));
+    }
+
+    [Fact]
+    public void Configured_key_ring_supports_active_and_previous_key_overlap()
+    {
+        using var active = RSA.Create(2048);
+        using var previous = RSA.Create(2048);
+        var options = new ManagedElsaHandoffOptions
+        {
+            ActiveKeyId = "active-2026-09",
+            ActivePrivateKeyPem = active.ExportRSAPrivateKeyPem(),
+            PreviousPublicKeys = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["previous-2026-08"] = previous.ExportRSAPublicKeyPem()
+            }
+        };
+
+        using var keyRing = ManagedElsaHandoffKeyRing.CreateConfigured(options);
+
+        Assert.Equal("active-2026-09", keyRing.ActiveKeyId);
+        Assert.True(keyRing.ContainsKey("active-2026-09"));
+        Assert.True(keyRing.ContainsKey("previous-2026-08"));
     }
 
     private static ControlApiTestApplication CreateApplication(FakeHandoffAuthorizer authorizer) =>
@@ -340,6 +375,7 @@ public sealed class ManagedElsaHandoffTests
         public string Audience { get; } = $"urn:elsa:instance:{instanceId:D}";
         public Uri RedirectUri { get; } = new($"https://managed.example.test/instances/{instanceId:D}/auth/callback");
         public string CodeChallenge { get; } = ManagedElsaHandoffIssuer.CreateCodeChallenge(CodeVerifier);
+        public int BindingVersion { get; set; } = 7;
         public bool IsAuthorized { get; set; } = true;
 
         public ManagedElsaHandoffAuthorization Authorization => new(
@@ -349,7 +385,8 @@ public sealed class ManagedElsaHandoffTests
             Audience,
             RedirectUri,
             CodeChallenge,
-            new HashSet<string>([ManagedElsaHandoffDefaults.RuntimeSessionScope], StringComparer.Ordinal));
+            new HashSet<string>([ManagedElsaHandoffDefaults.RuntimeSessionScope], StringComparer.Ordinal),
+            BindingVersion);
 
         public ValueTask<ManagedElsaHandoffAuthorization?> AuthorizeAsync(
             TrustedWorkspaceIdentity identity,
@@ -367,7 +404,8 @@ public sealed class ManagedElsaHandoffTests
         public ValueTask<bool> IsStillAuthorizedAsync(
             ManagedElsaHandoffClaims claims,
             CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(IsAuthorized && claims.OrganizationId == OrganizationId && claims.InstanceId == InstanceId);
+            ValueTask.FromResult(IsAuthorized && claims.OrganizationId == OrganizationId && claims.InstanceId == InstanceId &&
+                                 claims.BindingVersion == BindingVersion);
     }
 
     private sealed class RecordingAuditSink : IManagedElsaHandoffAuditSink
