@@ -611,16 +611,16 @@ public sealed class AzureProviderExecutor
 
                 if (cancellationToken.IsCancellationRequested)
                 {
-                    runnerCancellation.Cancel();
                     try
                     {
-                        await runnerTask;
+                        runnerCancellation.Cancel();
                     }
-                    catch (OperationCanceledException)
+                    catch (AggregateException)
                     {
-                        // The cancellation path must report durable recovery rather than
-                        // leaking a provider-specific cancellation exception.
+                        // Cancellation is best-effort for provider implementations whose
+                        // callbacks may fail while cancellation is being signalled.
                     }
+                    ObserveCompletion(runnerTask);
                     throw new OperationCanceledException(cancellationToken);
                 }
                 var renewed = await _store.HeartbeatAsync(
@@ -642,7 +642,7 @@ public sealed class AzureProviderExecutor
                         // Cancellation is best-effort. The runner contract still requires
                         // every remote step to be idempotent when the external job cannot stop.
                     }
-                    _ = runnerTask.ContinueWith(static task => _ = task.Exception, TaskScheduler.Default);
+                    ObserveCompletion(runnerTask);
                     throw new LeaseLostException();
                 }
                 operation = renewed;
@@ -657,6 +657,13 @@ public sealed class AzureProviderExecutor
             throw new RunnerExecutionException(operation, exception);
         }
     }
+
+    private static void ObserveCompletion(Task task) =>
+        _ = task.ContinueWith(
+            static completed => _ = completed.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
 
     private static IReadOnlyList<(AzureProviderRunnerStep Step, AzureProviderOperationPhase Phase)> NextReconcileStep(AzureProviderOperationPhase phase) =>
         phase switch

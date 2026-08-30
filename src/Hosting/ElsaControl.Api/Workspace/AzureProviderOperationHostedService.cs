@@ -25,6 +25,12 @@ public sealed class AzureProviderOperationHostedService(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var configured = options.Value;
+        if (!configured.WorkerEnabled)
+        {
+            logger.LogInformation("Azure provider operation worker is disabled.");
+            return;
+        }
+
         var interval = configured.PollInterval > TimeSpan.Zero
             ? configured.PollInterval
             : TimeSpan.FromSeconds(5);

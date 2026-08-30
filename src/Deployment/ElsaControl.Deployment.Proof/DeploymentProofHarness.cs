@@ -368,9 +368,7 @@ public sealed class DeploymentProofHarness(
         if (at < 0)
             return false;
 
-        return authorityStart > 0 ||
-            authority.LastIndexOf('@') != at ||
-            !authority[(at + 1)..].StartsWith("sha256:", StringComparison.OrdinalIgnoreCase);
+        return true;
     }
 
     private static bool IsSha256Digest(string digest) =>

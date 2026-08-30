@@ -439,6 +439,28 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Cancellation_does_not_wait_for_a_non_cooperative_runner()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner { NonCooperativeStep = AzureProviderRunnerStep.Foundation };
+        var executor = new AzureProviderExecutor(
+            store,
+            runner,
+            new StaticTimeProvider(Now),
+            TimeSpan.FromMilliseconds(100),
+            heartbeatInterval: TimeSpan.FromMilliseconds(5));
+        using var cancellation = new CancellationTokenSource();
+
+        var execution = executor.ApplyAsync(CreateRequest(), CreatePlan(), cancellation.Token);
+        await runner.Started.Task;
+        cancellation.Cancel();
+        var result = await execution.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, result.Operation.Status);
+    }
+
+    [Fact]
     public async Task Unsafe_runner_endpoint_fails_closed_without_leaking_runner_text()
     {
         var store = new FakeOperationStore();
@@ -674,6 +696,7 @@ public sealed class AzureProviderExecutorTests
         public string RunnerMessage { get; init; } = "Azure lifecycle step completed.";
         public bool ThrowAfterDelay { get; init; }
         public AzureProviderRunnerStep? WaitForCancellationStep { get; init; }
+        public AzureProviderRunnerStep? NonCooperativeStep { get; init; }
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource CancellationObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public CancellationTokenSource? CancelSource { get; init; }
@@ -691,6 +714,8 @@ public sealed class AzureProviderExecutorTests
 
             if (WaitForCancellationStep == command.Step)
                 return WaitForCancellationAsync(cancellationToken);
+            if (NonCooperativeStep == command.Step)
+                return new TaskCompletionSource<AzureProviderRunnerResult>().Task;
 
             if (Delay > TimeSpan.Zero && (!DelayOnlyStep.HasValue || DelayOnlyStep == command.Step))
                 return DelayedResultAsync(command);
