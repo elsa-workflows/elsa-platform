@@ -93,9 +93,9 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_AzureProviderOperations_Status_LeaseExpiresAt_UpdatedAt_Id",
+                name: "IX_AzureProviderOperations_WorkspaceId_Status_LeaseExpiresAt_UpdatedAt",
                 table: "AzureProviderOperations",
-                columns: new[] { "Status", "LeaseExpiresAt", "UpdatedAt", "Id" });
+                columns: new[] { "WorkspaceId", "Status", "LeaseExpiresAt", "UpdatedAt" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_AzureProviderOperations_WorkspaceId_TargetKey_CreatedAt",
