@@ -23,6 +23,9 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 CREATE TRIGGER TR_ElsaInstances_NoDelete
                 BEFORE DELETE ON ElsaInstances
                 BEGIN SELECT RAISE(ABORT, 'Elsa instances are tombstones'); END;
+                CREATE TRIGGER TR_ElsaInstanceOperations_NoDelete
+                BEFORE DELETE ON ElsaInstanceOperations
+                BEGIN SELECT RAISE(ABORT, 'Elsa instance operations are durable'); END;
                 CREATE TRIGGER TR_DeploymentRuns_ManagedInstanceBinding_Insert
                 BEFORE INSERT ON DeploymentRuns
                 WHEN NEW.ElsaInstanceId IS NOT NULL AND NOT EXISTS (
@@ -62,6 +65,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 DROP TRIGGER IF EXISTS TR_DeploymentEnvironments_ManagedInstanceBinding_Update;
                 DROP TRIGGER IF EXISTS TR_DeploymentRuns_ManagedInstanceBinding_Update;
                 DROP TRIGGER IF EXISTS TR_DeploymentRuns_ManagedInstanceBinding_Insert;
+                DROP TRIGGER IF EXISTS TR_ElsaInstanceOperations_NoDelete;
                 DROP TRIGGER IF EXISTS TR_ElsaInstances_NoDelete;
                 DROP TRIGGER IF EXISTS TR_ElsaInstanceMigrations_NoDelete;
                 DROP TRIGGER IF EXISTS TR_ElsaInstanceAuditEvents_AppendOnly_Delete;

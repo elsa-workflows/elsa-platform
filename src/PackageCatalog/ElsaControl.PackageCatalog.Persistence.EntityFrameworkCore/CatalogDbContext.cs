@@ -182,6 +182,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             throw new InvalidOperationException("Elsa instances are tombstoned and cannot be deleted.");
         if (ChangeTracker.Entries<Models.ElsaInstanceMigrationEntity>().Any(x => x.State == EntityState.Deleted))
             throw new InvalidOperationException("Elsa instance migrations are durable and cannot be deleted.");
+        if (ChangeTracker.Entries<Models.ElsaInstanceOperationEntity>().Any(x => x.State == EntityState.Deleted))
+            throw new InvalidOperationException("Elsa instance operations are durable and cannot be deleted.");
     }
 
     private void ValidateElsaInstancePersistence()
@@ -486,13 +488,24 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         }
 
         var trackedRuns = trackedRunEntries.Select(entry => entry.Entity).ToArray();
+        var managedEnvironmentIds = trackedRuns
+            .Where(run => run.ElsaInstanceId is not null)
+            .Select(run => run.EnvironmentId)
+            .ToHashSet();
+        var localEnvironments = DeploymentEnvironments.Local
+            .Where(environment => managedEnvironmentIds.Contains(environment.Id))
+            .ToDictionary(environment => environment.Id, environment => environment);
+        var persistedEnvironments = managedEnvironmentIds.Count == 0
+            ? new Dictionary<Guid, Models.DeploymentEnvironmentEntity>()
+            : DeploymentEnvironments.AsNoTracking()
+                .Where(environment => managedEnvironmentIds.Contains(environment.Id))
+                .ToDictionary(environment => environment.Id, environment => environment);
 
         foreach (var run in trackedRuns.Where(run => run.ElsaInstanceId is not null))
         {
-            var environment = trackedEnvironments.TryGetValue(run.EnvironmentId, out var changedEnvironment)
-                ? changedEnvironment
-                : DeploymentEnvironments.Local.FirstOrDefault(environment => environment.Id == run.EnvironmentId)
-                  ?? DeploymentEnvironments.AsNoTracking().SingleOrDefault(environment => environment.Id == run.EnvironmentId);
+            var environment = trackedEnvironments.GetValueOrDefault(run.EnvironmentId)
+                ?? localEnvironments.GetValueOrDefault(run.EnvironmentId)
+                ?? persistedEnvironments.GetValueOrDefault(run.EnvironmentId);
 
             if (environment is null || environment.WorkspaceId != run.WorkspaceId || environment.ElsaInstanceId != run.ElsaInstanceId)
                 throw new InvalidOperationException("A managed deployment run must match its environment instance binding.");

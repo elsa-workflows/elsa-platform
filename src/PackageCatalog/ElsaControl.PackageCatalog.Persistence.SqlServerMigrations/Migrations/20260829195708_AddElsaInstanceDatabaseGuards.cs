@@ -35,6 +35,14 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 END;');
                 """);
             migrationBuilder.Sql("""
+                EXEC(N'CREATE TRIGGER TR_ElsaInstanceOperations_NoDelete
+                ON ElsaInstanceOperations
+                INSTEAD OF DELETE
+                AS BEGIN
+                    THROW 51005, ''Elsa instance operations are durable'', 1;
+                END;');
+                """);
+            migrationBuilder.Sql("""
                 EXEC(N'CREATE TRIGGER TR_DeploymentRuns_ManagedInstanceBinding
                 ON DeploymentRuns
                 AFTER INSERT, UPDATE
@@ -85,6 +93,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
         {
             migrationBuilder.Sql("DROP TRIGGER IF EXISTS TR_DeploymentEnvironments_ManagedInstanceBinding;");
             migrationBuilder.Sql("DROP TRIGGER IF EXISTS TR_DeploymentRuns_ManagedInstanceBinding;");
+            migrationBuilder.Sql("DROP TRIGGER IF EXISTS TR_ElsaInstanceOperations_NoDelete;");
             migrationBuilder.Sql("DROP TRIGGER IF EXISTS TR_ElsaInstances_NoDelete;");
             migrationBuilder.Sql("DROP TRIGGER IF EXISTS TR_ElsaInstanceMigrations_NoDelete;");
             migrationBuilder.Sql("DROP TRIGGER IF EXISTS TR_ElsaInstanceAuditEvents_AppendOnly;");

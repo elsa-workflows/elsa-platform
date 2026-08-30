@@ -25,6 +25,7 @@ public sealed class SqlServerMigrationScriptTests
         Assert.Contains("EXEC(N'UPDATE StructuredDesiredStateRecords", script, StringComparison.Ordinal);
         Assert.Contains("EXEC(N'INSERT INTO Organizations", script, StringComparison.Ordinal);
         Assert.Contains("EXEC(N'INSERT INTO WorkspacePermissionAuditRecords", script, StringComparison.Ordinal);
+        Assert.Contains("TR_ElsaInstanceOperations_NoDelete", script, StringComparison.Ordinal);
         var normalizedScript = script.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
         Assert.DoesNotContain("BEGIN\n    UPDATE [SyncRuns]\n    SET [CompletedAtTicks]", normalizedScript, StringComparison.Ordinal);
     }

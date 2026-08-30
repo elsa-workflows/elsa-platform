@@ -700,6 +700,12 @@ public sealed class ElsaInstancePersistenceTests
         db.ElsaInstanceOperations.Add(create);
         db.ElsaInstanceMigrations.Add(migration);
         await db.SaveChangesAsync();
+
+        db.ElsaInstanceOperations.Remove(create);
+        var deleteException = await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+        Assert.Equal("Elsa instance operations are durable and cannot be deleted.", deleteException.Message);
+        db.ChangeTracker.Clear();
+
         var deleteAction = "Delete";
 
         await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
@@ -718,6 +724,8 @@ public sealed class ElsaInstancePersistenceTests
             $"UPDATE DeploymentEnvironments SET ElsaInstanceId = {second.Id} WHERE Id = {environment.Id}"));
         await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
             $"UPDATE ElsaInstanceOperations SET Action = {deleteAction} WHERE Id = {create.Id}"));
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE FROM ElsaInstanceOperations WHERE Id = {create.Id}"));
         await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
             $"DELETE FROM ElsaInstanceMigrations WHERE MigrationId = {migration.MigrationId}"));
         await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(

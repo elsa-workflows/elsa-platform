@@ -583,7 +583,9 @@ EF Core store and produce both SQLite and SQL Server migrations.
 - unique `(WorkspaceId, IdempotencyScope, IdempotencyKey)` and a filtered
   active-operation index per instance. Active includes `Accepted`, `Queued`, `Running`
   and `RecoveryRequired`; the unique index is the final protection against two
-  workers accepting the same instance operation.
+  workers accepting the same instance operation. Operation rows are durable
+  idempotency/audit records and cannot be deleted; the EF save guard and both
+  provider migrations enforce retention at the database boundary.
 
 `DeploymentEnvironment` managed binding and `DeploymentRun` reservation constraints:
 
