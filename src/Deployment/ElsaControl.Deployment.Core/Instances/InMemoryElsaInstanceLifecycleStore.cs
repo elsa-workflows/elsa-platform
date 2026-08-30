@@ -474,13 +474,16 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                 if (!_operations.TryGetValue(outbox.OperationId, out var operation) ||
                     !_instances.TryGetValue(outbox.InstanceId, out var instance))
                     continue;
+                var uncertainRun = _deploymentRuns.Values.Any(x => x.InstanceId == instance.Id &&
+                    x.Run.Status is WorkspaceDeploymentRunStatus.Queued or WorkspaceDeploymentRunStatus.Running or
+                        WorkspaceDeploymentRunStatus.RecoveryRequired);
+                if (uncertainRun)
+                    continue;
                 if (operation.State == ElsaInstanceOperationState.WaitingForPriorOperation)
                 {
                     var priorBlocking = _operations.Values.Any(x => x.Id != operation.Id &&
                         x.InstanceId == instance.Id && ElsaInstanceOperationGuard.IsBlocking(x.State));
-                    var uncertainRun = _deploymentRuns.Values.Any(x => x.InstanceId == instance.Id &&
-                        x.Run.Status is WorkspaceDeploymentRunStatus.Queued or WorkspaceDeploymentRunStatus.Running or WorkspaceDeploymentRunStatus.RecoveryRequired);
-                    if (priorBlocking || uncertainRun)
+                    if (priorBlocking)
                         continue;
                     operation = operation.TransitionTo(ElsaInstanceOperationState.Accepted);
                     _operations[operation.Id] = operation;
