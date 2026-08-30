@@ -268,11 +268,12 @@ public sealed class ElsaInstanceLifecycleServiceTests
             priorWork.LeaseToken,
             priorWork.LeaseVersion));
 
-        var claimed = await store.TryClaimNextAsync("lifecycle-worker-1", Now);
+        var claimed = await store.TryClaimNextDeletionAsync("deletion-worker-1", Now);
 
         Assert.NotNull(claimed);
         Assert.Equal(deletion.Operation.Id, claimed!.Operation.Id);
         Assert.Equal(ElsaInstanceOperationState.Accepted, claimed.Operation.State);
+        Assert.True(claimed.CanFinalizeLocally);
     }
 
     private static ElsaInstanceIntent Intent(ElsaDesiredLifecycle lifecycle = ElsaDesiredLifecycle.Running) => new(

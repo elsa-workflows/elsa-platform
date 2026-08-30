@@ -102,7 +102,7 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
     }
 
     [Fact]
-    public async Task Confirmed_deleted_state_converges_a_deleting_instance()
+    public async Task Read_only_deleted_observation_cannot_tombstone_a_deleting_instance()
     {
         var (store, accepted) = await RecoveryTargetAsync(ElsaDesiredLifecycle.Deleting);
         var observation = new ElsaInstanceProviderObservation(
@@ -113,10 +113,10 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
 
         var result = await Service(store, new RecordingPort(observation)).ReconcileAsync(WorkspaceId, accepted.Operation.Id);
 
-        Assert.Equal(ElsaInstanceProviderReconciliationOutcome.Converged, result.Outcome);
-        Assert.Equal(ElsaObservedLifecycle.Deleted, result.Projection.ObservedLifecycle);
-        Assert.Equal(ElsaInstanceOperationState.Succeeded, result.Projection.OperationState);
-        Assert.Equal(Now, store.Instances.Single().DeletedAt);
+        Assert.Equal(ElsaInstanceProviderReconciliationOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal(ElsaObservedLifecycle.Unknown, result.Projection.ObservedLifecycle);
+        Assert.Equal(ElsaInstanceOperationState.RecoveryRequired, result.Projection.OperationState);
+        Assert.Null(store.Instances.Single().DeletedAt);
     }
 
     [Fact]

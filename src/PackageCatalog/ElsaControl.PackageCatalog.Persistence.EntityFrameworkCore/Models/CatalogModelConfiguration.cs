@@ -951,6 +951,10 @@ internal sealed class ElsaInstanceOperationConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.ReconciledObservedLifecycle).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.ReconciledHealth).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.ReconciledAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.DeletionEvidenceFingerprint).HasMaxLength(64);
+        builder.Property(x => x.DeletionEvidenceReference).HasMaxLength(2048);
+        builder.Property(x => x.DeletionEvidenceDigest).HasMaxLength(71);
+        builder.Property(x => x.DeletionDiagnosticCode).HasMaxLength(128);
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.WorkspaceId, x.IdempotencyScope, x.IdempotencyKey }).IsUnique();

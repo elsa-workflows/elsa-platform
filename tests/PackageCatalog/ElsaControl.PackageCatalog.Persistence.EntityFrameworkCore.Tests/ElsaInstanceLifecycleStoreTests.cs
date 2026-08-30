@@ -482,7 +482,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
-    public async Task Waiting_delete_is_promoted_and_claimed_after_its_prior_operation_completes()
+    public async Task Pending_delete_without_owned_resources_finalizes_locally_after_prior_operation_completes()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -492,15 +492,185 @@ public sealed class ElsaInstanceLifecycleStoreTests
         var service = new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now));
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             workspace.OrganizationId, workspace.Id, "Worker Elsa", "waiting-delete-elsa", WorkerIntent(), "waiting-delete-create"));
+        var (_, environmentId) = await AddManagedEnvironmentAsync(db, workspace, created.Instance.Id);
         var deletion = await service.DeleteAsync(new ElsaInstanceLifecycleRequest(
             workspace.Id, created.Instance.Id, created.Instance.Version, "waiting-delete"));
         await CompleteOperationAsync(db, created.Operation.Id);
 
-        var claimed = await CreateStore(db).TryClaimNextAsync("worker-one", Now);
+        var result = await new ElsaInstanceDeletionWorker(
+                new EfCoreElsaInstanceLifecycleStore(db, EmptyResolutionInputSource.Instance,
+                    new FixedTimeProvider(Now.AddMinutes(1))),
+                new ThrowingCleanupPort(), new FixedTimeProvider(Now.AddMinutes(1)))
+            .ProcessAvailableAsync("deletion-worker");
 
-        Assert.NotNull(claimed);
-        Assert.Equal(deletion.Operation.Id, claimed!.Operation.Id);
-        Assert.Equal(ElsaInstanceOperationState.Accepted, claimed.Operation.State);
+        Assert.Equal(0, result.ProviderInvocations);
+        var storedInstance = await db.ElsaInstances.SingleAsync(x => x.Id == deletion.Instance.Id);
+        var storedOperation = await db.ElsaInstanceOperations.SingleAsync(x => x.Id == deletion.Operation.Id);
+        Assert.Equal(ElsaObservedLifecycle.Deleted, storedInstance.ObservedLifecycle);
+        Assert.Equal(Now.AddMinutes(1), storedInstance.DeletedAt);
+        Assert.Equal(ElsaInstanceOperationState.Succeeded, storedOperation.State);
+        Assert.Equal("deletion.local.absent", storedOperation.DeletionDiagnosticCode);
+        Assert.Equal(64, storedOperation.DeletionEvidenceFingerprint!.Length);
+        Assert.Null((await db.DeploymentEnvironments.SingleAsync(x => x.Id == environmentId)).ElsaInstanceId);
+        Assert.Equal(1, await db.ElsaInstanceAuditEvents.CountAsync(x =>
+            x.InstanceId == deletion.Instance.Id && x.EventType == "lifecycle.deleted"));
+
+        db.ChangeTracker.Clear();
+        var tombstone = await CreateStore(db).GetInstanceAsync(workspace.Id, deletion.Instance.Id);
+        var repeated = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now.AddMinutes(2)))
+            .DeleteAsync(new(workspace.Id, deletion.Instance.Id, tombstone!.Version, "delete-again"));
+        var afterReplay = await new ElsaInstanceDeletionWorker(
+                new EfCoreElsaInstanceLifecycleStore(db, EmptyResolutionInputSource.Instance,
+                    new FixedTimeProvider(Now.AddMinutes(2))), new ThrowingCleanupPort(),
+                new FixedTimeProvider(Now.AddMinutes(2)))
+            .ProcessAvailableAsync("deletion-worker-replay");
+        Assert.Equal(ElsaInstanceOperationState.Succeeded, repeated.Operation.State);
+        Assert.Empty(afterReplay.Results);
+        Assert.Equal(1, await db.ElsaInstanceAuditEvents.CountAsync(x =>
+            x.InstanceId == deletion.Instance.Id && x.EventType == "lifecycle.deleted"));
+    }
+
+    [Fact]
+    public async Task Ambiguous_provider_cleanup_remains_recovery_required_and_never_tombstones()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Ambiguous deletion workspace");
+        await CompleteManagedRunAsync(db, accepted.Operation.Id, accepted.Instance.Id);
+        var current = await CreateStore(db).GetInstanceAsync(workspace.Id, accepted.Instance.Id);
+        var deletion = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now.AddMinutes(2)))
+            .DeleteAsync(new(workspace.Id, accepted.Instance.Id, current!.Version, "ambiguous-delete"));
+        var port = new QueueCleanupPort(new ElsaInstanceCleanupObservation(
+            ElsaInstanceCleanupObservationKind.Ambiguous, deletion.Operation.Id,
+            deletion.Operation.AttemptNumber, "deletion.provider.ambiguous"));
+
+        var result = await new ElsaInstanceDeletionWorker(
+                new EfCoreElsaInstanceLifecycleStore(db, EmptyResolutionInputSource.Instance,
+                    new FixedTimeProvider(Now.AddMinutes(3))), port, new FixedTimeProvider(Now.AddMinutes(3)))
+            .ProcessAvailableAsync("deletion-worker");
+
+        Assert.Equal(1, result.ProviderInvocations);
+        var storedInstance = await db.ElsaInstances.SingleAsync(x => x.Id == accepted.Instance.Id);
+        var storedOperation = await db.ElsaInstanceOperations.SingleAsync(x => x.Id == deletion.Operation.Id);
+        Assert.NotEqual(ElsaObservedLifecycle.Deleted, storedInstance.ObservedLifecycle);
+        Assert.Null(storedInstance.DeletedAt);
+        Assert.Equal(ElsaInstanceOperationState.RecoveryRequired, storedOperation.State);
+        Assert.Equal("deletion.provider.ambiguous", storedOperation.DeletionDiagnosticCode);
+
+    }
+
+    [Fact]
+    public async Task Unknown_instance_rejects_a_forged_local_deletion_proof_at_the_store_boundary()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Unknown deletion proof workspace");
+        var service = new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now));
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            workspace.OrganizationId, workspace.Id, "Unknown Elsa", "unknown-delete-elsa", WorkerIntent(), "unknown-create"));
+        await CompleteOperationAsync(db, created.Operation.Id);
+        var entity = await db.ElsaInstances.SingleAsync(x => x.Id == created.Instance.Id);
+        entity.ObservedLifecycle = ElsaObservedLifecycle.Unknown;
+        entity.Health = ElsaInstanceHealth.Unknown;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var current = await CreateStore(db).GetInstanceAsync(workspace.Id, created.Instance.Id);
+        var deletion = await service.DeleteAsync(new(
+            workspace.Id, created.Instance.Id, current!.Version, "unknown-delete"));
+        var store = new EfCoreElsaInstanceLifecycleStore(db, EmptyResolutionInputSource.Instance,
+            new FixedTimeProvider(Now.AddMinutes(1)));
+        var item = await store.TryClaimNextDeletionAsync("deletion-worker", Now.AddMinutes(1));
+        Assert.NotNull(item);
+        Assert.False(item!.CanFinalizeLocally);
+        var observation = new ElsaInstanceCleanupObservation(ElsaInstanceCleanupObservationKind.ConfirmedAbsent,
+            deletion.Operation.Id, deletion.Operation.AttemptNumber, "deletion.local.absent");
+        var commit = new ElsaInstanceDeletionCommit(workspace.Id, created.Instance.Id, deletion.Operation.Id,
+            item.Outbox.Id, item.Instance.Version, item.Operation.AttemptNumber, item.CorrelatedRunId,
+            "deletion-worker", item.LeaseToken, item.LeaseVersion, observation.ComputeFingerprint(),
+            ElsaInstanceDeletionProofKind.LocalNoOwnedResources, observation.DiagnosticCode, null, null,
+            ElsaInstanceStateMachine.FinalizeDeletion(item.Instance, Now.AddMinutes(2)),
+            item.Operation.TransitionTo(ElsaInstanceOperationState.Succeeded), Now.AddMinutes(2));
+
+        await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() => store.CommitDeletionAsync(commit));
+        Assert.Equal(ElsaObservedLifecycle.Unknown,
+            (await db.ElsaInstances.AsNoTracking().SingleAsync(x => x.Id == created.Instance.Id)).ObservedLifecycle);
+    }
+
+    [Fact]
+    public async Task Confirmed_absence_finalization_replays_without_duplicate_audit_or_version_increment()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Deletion replay workspace");
+        await CompleteManagedRunAsync(db, accepted.Operation.Id, accepted.Instance.Id);
+        var current = await CreateStore(db).GetInstanceAsync(workspace.Id, accepted.Instance.Id);
+        var deletion = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now.AddMinutes(2)))
+            .DeleteAsync(new(workspace.Id, accepted.Instance.Id, current!.Version, "replay-delete"));
+        var store = new EfCoreElsaInstanceLifecycleStore(db, EmptyResolutionInputSource.Instance,
+            new FixedTimeProvider(Now.AddMinutes(3)));
+        var item = await store.TryClaimNextDeletionAsync("deletion-worker", Now.AddMinutes(3));
+        Assert.NotNull(item);
+        var deletedAt = Now.AddMinutes(4);
+        var evidence = new ElsaInstanceCleanupEvidence("https://evidence.example/deletions/replay", Digest('e'));
+        var observation = new ElsaInstanceCleanupObservation(ElsaInstanceCleanupObservationKind.ConfirmedAbsent,
+            deletion.Operation.Id, deletion.Operation.AttemptNumber, "deletion.provider.absent", evidence);
+        var commit = new ElsaInstanceDeletionCommit(workspace.Id, accepted.Instance.Id, deletion.Operation.Id,
+            item!.Outbox.Id, item.Instance.Version, item.Operation.AttemptNumber, item.CorrelatedRunId,
+            "deletion-worker", item.LeaseToken, item.LeaseVersion, observation.ComputeFingerprint(),
+            ElsaInstanceDeletionProofKind.ProviderConfirmedAbsent, observation.DiagnosticCode, evidence.Reference, evidence.Digest,
+            ElsaInstanceStateMachine.FinalizeDeletion(item.Instance, deletedAt),
+            item.Operation.TransitionTo(ElsaInstanceOperationState.Succeeded), deletedAt);
+
+        var first = await store.CommitDeletionAsync(commit);
+        var replay = await store.CommitDeletionAsync(commit);
+
+        Assert.Equal(ElsaInstanceDeletionOutcome.Deleted, first.Outcome);
+        Assert.Equal(ElsaInstanceDeletionOutcome.AlreadyCompleted, replay.Outcome);
+        Assert.True(replay.Replayed);
+        Assert.Equal(first.Instance.Version, replay.Instance.Version);
+        var run = await db.DeploymentRuns.SingleAsync(x => x.Id == item.CorrelatedRunId!.Value);
+        var environment = await db.DeploymentEnvironments.SingleAsync(x => x.Id == run.EnvironmentId);
+        Assert.Null(environment.ElsaInstanceId);
+        Assert.Null(environment.DesiredRevisionId);
+        Assert.Null(environment.DeployedRevisionId);
+        Assert.Equal(1, await db.ElsaInstanceAuditEvents.CountAsync(x =>
+            x.InstanceId == accepted.Instance.Id && x.EventType == "lifecycle.deleted"));
+    }
+
+    [Fact]
+    public async Task Expired_deletion_claim_rotates_lease_without_provider_or_duplicate_operation()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Deletion lease workspace");
+        var service = new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now));
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            workspace.OrganizationId, workspace.Id, "Lease Elsa", "lease-elsa", WorkerIntent(), "lease-create"));
+        var deletion = await service.DeleteAsync(new(workspace.Id, created.Instance.Id, created.Instance.Version, "lease-delete"));
+        await CompleteOperationAsync(db, created.Operation.Id);
+        var store = new EfCoreElsaInstanceLifecycleStore(db, EmptyResolutionInputSource.Instance,
+            new FixedTimeProvider(Now.AddMinutes(6)));
+
+        var first = await store.TryClaimNextDeletionAsync("worker-one", Now);
+        var blocked = await store.TryClaimNextDeletionAsync("worker-two", Now.AddMinutes(4));
+        var reclaimed = await store.TryClaimNextDeletionAsync("worker-two", Now.AddMinutes(6));
+
+        Assert.NotNull(first);
+        Assert.Null(blocked);
+        Assert.NotNull(reclaimed);
+        Assert.Equal(first!.Operation.Id, reclaimed!.Operation.Id);
+        Assert.Equal(deletion.Operation.Id, reclaimed.Operation.Id);
+        Assert.Equal(first.LeaseVersion + 1, reclaimed.LeaseVersion);
+        Assert.NotEqual(first.LeaseToken, reclaimed.LeaseToken);
+        Assert.Equal(1, await db.ElsaInstanceOperations.CountAsync(x => x.Id == deletion.Operation.Id));
     }
 
     [Fact]
@@ -872,6 +1042,26 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await db.SaveChangesAsync();
     }
 
+    private static async Task CompleteManagedRunAsync(CatalogDbContext db, Guid operationId, Guid instanceId)
+    {
+        db.ChangeTracker.Clear();
+        var operation = await db.ElsaInstanceOperations.SingleAsync(x => x.Id == operationId);
+        operation.State = ElsaInstanceOperationState.Running;
+        await db.SaveChangesAsync();
+        operation.State = ElsaInstanceOperationState.Succeeded;
+        operation.CompletedAt = Now.AddMinutes(1);
+        var run = await db.DeploymentRuns.SingleAsync(x => x.ElsaInstanceId == instanceId);
+        run.Status = WorkspaceDeploymentRunStatus.Succeeded;
+        run.CompletedAt = Now.AddMinutes(1);
+        var instance = await db.ElsaInstances.SingleAsync(x => x.Id == instanceId);
+        instance.CurrentDeploymentId = "deployment-safe";
+        instance.PlacementAssignmentId = "placement-safe";
+        instance.ObservedLifecycle = ElsaObservedLifecycle.Ready;
+        instance.Health = ElsaInstanceHealth.Healthy;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+    }
+
     private static ElsaInstanceLifecycleOutboxMessage NewOutbox(
         ElsaInstanceTransitionResult transition) => new(
         Guid.NewGuid(),
@@ -884,6 +1074,8 @@ public sealed class ElsaInstanceLifecycleStoreTests
 
     private static string RequestHash(string value) =>
         Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value)));
+
+    private static string Digest(char value) => "sha256:" + new string(value, 64);
 
     private static async Task<Captured<T>> CaptureAsync<T>(Func<Task<T>> action)
     {
@@ -1079,6 +1271,25 @@ public sealed class ElsaInstanceLifecycleStoreTests
             Calls++;
             return Task.FromResult(_observations.Dequeue().Correlate(request));
         }
+    }
+
+    private sealed class ThrowingCleanupPort : IElsaInstanceProviderCleanupPort
+    {
+        public Task<ElsaInstanceCleanupObservation> CleanupAsync(
+            ElsaInstanceCleanupRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Provider cleanup must not run for a local tombstone.");
+    }
+
+    private sealed class QueueCleanupPort(params ElsaInstanceCleanupObservation[] observations)
+        : IElsaInstanceProviderCleanupPort
+    {
+        private readonly Queue<ElsaInstanceCleanupObservation> _observations = new(observations);
+
+        public Task<ElsaInstanceCleanupObservation> CleanupAsync(
+            ElsaInstanceCleanupRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(_observations.Dequeue());
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

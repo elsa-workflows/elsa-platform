@@ -27,7 +27,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
     TimeProvider? timeProvider = null) :
     IElsaInstanceLifecycleStore,
     IElsaInstanceLifecycleWorkerStore,
-    IElsaInstanceProviderReconciliationStore
+    IElsaInstanceProviderReconciliationStore,
+    IElsaInstanceDeletionStore
 {
     private readonly IElsaInstanceLifecycleResolutionInputSource _resolutionInputSource =
         resolutionInputSource ?? throw new ArgumentNullException(nameof(resolutionInputSource));
@@ -478,6 +479,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 var candidate = await dbContext.ElsaInstanceLifecycleOutbox
                     .AsNoTracking()
                     .Where(x => x.Operation != null &&
+                                x.Operation.Action != ElsaInstanceOperationAction.Delete &&
                                 x.QuarantinedAt == null &&
                                 !skippedCandidateIds.Contains(x.Id) &&
                                 (x.Operation.State == ElsaInstanceOperationState.Accepted ||
@@ -653,6 +655,272 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             resolution!,
             leaseToken,
             leaseVersion);
+    }
+
+    public async Task<ElsaInstanceDeletionWorkItem?> TryClaimNextDeletionAsync(
+        string workerId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        dbContext.ChangeTracker.Clear();
+        if (string.IsNullOrWhiteSpace(workerId))
+            throw new ArgumentException("Deletion worker identity is required.", nameof(workerId));
+        workerId = workerId.Trim();
+        if (workerId.Length > 256 || workerId.Any(char.IsControl))
+            throw new ArgumentException("Deletion worker identity is invalid.", nameof(workerId));
+
+        try
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+            var nowUtc = now.ToUniversalTime();
+            var candidate = await dbContext.ElsaInstanceLifecycleOutbox
+                .AsNoTracking()
+                .Where(x => x.Action == ElsaInstanceOperationAction.Delete && x.Operation != null && x.QuarantinedAt == null &&
+                            (x.Operation.State == ElsaInstanceOperationState.Accepted ||
+                             x.Operation.State == ElsaInstanceOperationState.Queued ||
+                             (x.Operation.State == ElsaInstanceOperationState.WaitingForPriorOperation &&
+                              !dbContext.ElsaInstanceOperations.Any(prior => prior.Id != x.OperationId &&
+                                  prior.WorkspaceId == x.WorkspaceId &&
+                                  prior.InstanceId == x.InstanceId &&
+                                  (prior.State == ElsaInstanceOperationState.Accepted ||
+                                   prior.State == ElsaInstanceOperationState.WaitingForPriorOperation ||
+                                   prior.State == ElsaInstanceOperationState.Queued ||
+                                   prior.State == ElsaInstanceOperationState.Running ||
+                                   prior.State == ElsaInstanceOperationState.RecoveryRequired)))) &&
+                            !dbContext.DeploymentRuns.Any(run => run.WorkspaceId == x.WorkspaceId &&
+                                run.ElsaInstanceId == x.InstanceId &&
+                                (run.Status == WorkspaceDeploymentRunStatus.Queued ||
+                                 run.Status == WorkspaceDeploymentRunStatus.Running ||
+                                 run.Status == WorkspaceDeploymentRunStatus.RecoveryRequired)) &&
+                            (x.Operation.WorkerId == null || x.Operation.LeaseExpiresAt == null || x.Operation.LeaseExpiresAt <= nowUtc))
+                .OrderBy(x => x.CreatedAt).ThenBy(x => x.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (candidate is null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return null;
+            }
+
+            var operation = await dbContext.ElsaInstanceOperations.SingleAsync(x => x.Id == candidate.OperationId, cancellationToken);
+            var instance = await LoadTrackedInstanceAsync(candidate.InstanceId, cancellationToken)
+                ?? throw Conflict("Deletion instance no longer exists.");
+            if (operation.State == ElsaInstanceOperationState.WaitingForPriorOperation)
+                operation.State = ElsaInstanceOperationState.Accepted;
+            if (operation.State is not (ElsaInstanceOperationState.Accepted or ElsaInstanceOperationState.Queued) ||
+                operation.Action != ElsaInstanceOperationAction.Delete)
+                throw Conflict("Deletion operation is not claimable.");
+
+            var leaseToken = CreateLeaseToken();
+            var leaseVersion = checked(operation.LeaseVersion + 1);
+            operation.WorkerId = workerId;
+            operation.LeaseTokenHash = HashLeaseToken(leaseToken);
+            operation.LeaseVersion = leaseVersion;
+            operation.LeaseExpiresAt = nowUtc.Add(WorkerLeaseDuration);
+            operation.HeartbeatAt = nowUtc;
+            operation.StartedAt ??= nowUtc;
+            operation.UpdatedAt = nowUtc;
+            if (operation.State == ElsaInstanceOperationState.Queued)
+                operation.State = ElsaInstanceOperationState.Running;
+
+            var latestRunId = await dbContext.DeploymentRuns
+                .AsNoTracking()
+                .Where(x => x.WorkspaceId == candidate.WorkspaceId && x.ElsaInstanceId == candidate.InstanceId)
+                .OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id)
+                .Select(x => (Guid?)x.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+            var mappedInstance = MapInstance(instance);
+            var local = mappedInstance.ObservedLifecycle != ElsaObservedLifecycle.Unknown &&
+                mappedInstance.CurrentDeploymentReference is null && mappedInstance.PlacementAssignmentReference is null &&
+                mappedInstance.ElsaTenantReference is null;
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new ElsaInstanceDeletionWorkItem(MapOutbox(candidate), MapOperation(operation), mappedInstance,
+                local, latestRunId, leaseToken, leaseVersion);
+        }
+        catch (ElsaInstanceLifecycleConflictException)
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+        catch (Exception exception) when (exception is DbUpdateConcurrencyException or DbUpdateException or DbException)
+        {
+            dbContext.ChangeTracker.Clear();
+            return null;
+        }
+    }
+
+    public async Task<ElsaInstanceDeletionResult> CommitDeletionAsync(
+        ElsaInstanceDeletionCommit commit,
+        CancellationToken cancellationToken = default)
+    {
+        dbContext.ChangeTracker.Clear();
+        ArgumentNullException.ThrowIfNull(commit);
+        commit.Validate();
+        try
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+            var operation = await dbContext.ElsaInstanceOperations.SingleOrDefaultAsync(x => x.Id == commit.OperationId, cancellationToken);
+            var instance = await LoadTrackedInstanceAsync(commit.InstanceId, cancellationToken);
+            var outbox = await dbContext.ElsaInstanceLifecycleOutbox.SingleOrDefaultAsync(x => x.Id == commit.OutboxId, cancellationToken);
+            if (operation is null || instance is null || outbox is null)
+                throw Conflict("Deletion work item no longer exists.");
+            if (operation.State == ElsaInstanceOperationState.Succeeded && instance.ObservedLifecycle == ElsaObservedLifecycle.Deleted)
+            {
+                if (!string.Equals(operation.DeletionEvidenceFingerprint, commit.EvidenceFingerprint, StringComparison.Ordinal))
+                    throw Conflict("Deletion evidence conflicts with the terminal result.");
+                await transaction.CommitAsync(cancellationToken);
+                return DeletionResult(operation, instance, true);
+            }
+            EnsureDeletionLease(operation, instance, outbox, commit.WorkspaceId, commit.InstanceId, commit.OperationId,
+                commit.ExpectedInstanceVersion, commit.ExpectedAttemptNumber, commit.WorkerId, commit.LeaseToken, commit.LeaseVersion);
+            var currentAggregate = MapInstance(instance);
+            if (commit.ProofKind == ElsaInstanceDeletionProofKind.LocalNoOwnedResources &&
+                (currentAggregate.ObservedLifecycle == ElsaObservedLifecycle.Unknown ||
+                 currentAggregate.CurrentDeploymentReference is not null ||
+                 currentAggregate.PlacementAssignmentReference is not null ||
+                 currentAggregate.ElsaTenantReference is not null))
+                throw Conflict("Local deletion proof is not valid for this instance.");
+            var correlatedRun = await EnsureTerminalDeletionRunAsync(
+                commit.ExpectedRunId, commit.WorkspaceId, commit.InstanceId, cancellationToken);
+            var environment = await dbContext.DeploymentEnvironments.SingleOrDefaultAsync(x =>
+                x.WorkspaceId == commit.WorkspaceId && x.ElsaInstanceId == commit.InstanceId, cancellationToken);
+            if (correlatedRun is not null && (environment is null || environment.Id != correlatedRun.EnvironmentId))
+                throw Conflict("Deletion environment binding is inconsistent.");
+
+            var priorState = instance.ObservedLifecycle;
+            ApplyAggregate(instance, commit.Instance);
+            instance.UpdatedAt = commit.DeletedAt.ToUniversalTime();
+            operation.State = ElsaInstanceOperationState.Succeeded;
+            operation.CompletedAt = commit.DeletedAt.ToUniversalTime();
+            operation.WorkerId = null;
+            operation.LeaseTokenHash = null;
+            operation.LeaseExpiresAt = null;
+            operation.HeartbeatAt = null;
+            operation.DeletionEvidenceFingerprint = commit.EvidenceFingerprint;
+            operation.DeletionEvidenceReference = commit.EvidenceReference;
+            operation.DeletionEvidenceDigest = commit.EvidenceDigest;
+            operation.DeletionDiagnosticCode = commit.DiagnosticCode;
+            operation.UpdatedAt = commit.DeletedAt.ToUniversalTime();
+            if (environment is not null)
+            {
+                // Persist the tombstone inside this transaction before releasing the
+                // environment reservation so database guards can verify the release.
+                await dbContext.SaveChangesAsync(cancellationToken);
+                environment.ElsaInstanceId = null;
+                environment.DesiredRevisionId = null;
+                environment.DeployedRevisionId = null;
+                environment.DeploymentStatus = DeploymentStatus.Blocked;
+                environment.UpdatedAt = commit.DeletedAt.ToUniversalTime();
+            }
+            await dbContext.ElsaInstanceAuditEvents.AddAsync(await CreateAuditEventAsync(instance, operation, priorState,
+                commit.DeletedAt, cancellationToken, "lifecycle.deleted", commit.ExpectedRunId,
+                diagnosticCode: commit.DiagnosticCode, summary: "Instance deletion was positively confirmed."), cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return DeletionResult(operation, instance, false);
+        }
+        catch (ElsaInstanceLifecycleConflictException) { dbContext.ChangeTracker.Clear(); throw; }
+        catch (DbUpdateConcurrencyException) { dbContext.ChangeTracker.Clear(); throw Conflict("Deletion conflicted with a newer instance version."); }
+        catch (Exception exception) when (exception is DbUpdateException or DbException)
+        { dbContext.ChangeTracker.Clear(); throw Conflict("Deletion finalization conflicted with another worker."); }
+    }
+
+    public async Task<ElsaInstanceDeletionResult> RequireDeletionRecoveryAsync(
+        ElsaInstanceDeletionFailure failure,
+        CancellationToken cancellationToken = default)
+    {
+        dbContext.ChangeTracker.Clear();
+        ArgumentNullException.ThrowIfNull(failure);
+        failure.Validate();
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var operation = await dbContext.ElsaInstanceOperations.SingleOrDefaultAsync(x => x.Id == failure.OperationId, cancellationToken);
+        var instance = await LoadTrackedInstanceAsync(failure.InstanceId, cancellationToken);
+        var outbox = await dbContext.ElsaInstanceLifecycleOutbox.SingleOrDefaultAsync(x => x.Id == failure.OutboxId, cancellationToken);
+        if (operation is null || instance is null || outbox is null)
+            throw Conflict("Deletion work item no longer exists.");
+        EnsureDeletionLease(operation, instance, outbox, failure.WorkspaceId, failure.InstanceId, failure.OperationId,
+            failure.ExpectedInstanceVersion, failure.ExpectedAttemptNumber, failure.WorkerId, failure.LeaseToken, failure.LeaseVersion);
+        _ = await EnsureTerminalDeletionRunAsync(
+            failure.ExpectedRunId, failure.WorkspaceId, failure.InstanceId, cancellationToken);
+        if (operation.State == ElsaInstanceOperationState.Accepted)
+        {
+            operation.State = ElsaInstanceOperationState.Queued;
+            operation.UpdatedAt = failure.FailedAt.ToUniversalTime();
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        operation.State = ElsaInstanceOperationState.RecoveryRequired;
+        operation.FailureCode = failure.DiagnosticCode;
+        operation.FailureSummary = failure.DiagnosticCode;
+        operation.WorkerId = null;
+        operation.LeaseTokenHash = null;
+        operation.LeaseExpiresAt = null;
+        operation.HeartbeatAt = null;
+        operation.DeletionEvidenceFingerprint = failure.EvidenceFingerprint;
+        operation.DeletionDiagnosticCode = failure.DiagnosticCode;
+        operation.UpdatedAt = failure.FailedAt.ToUniversalTime();
+        await dbContext.ElsaInstanceAuditEvents.AddAsync(await CreateAuditEventAsync(instance, operation,
+            instance.ObservedLifecycle, failure.FailedAt, cancellationToken, "lifecycle.deletion-recovery-required",
+            failure.ExpectedRunId, diagnosticCode: failure.DiagnosticCode), cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return DeletionResult(operation, instance, false);
+    }
+
+    private void EnsureDeletionLease(
+        ElsaInstanceOperationEntity operation,
+        ElsaInstanceEntity instance,
+        ElsaInstanceLifecycleOutboxEntity outbox,
+        Guid workspaceId,
+        Guid instanceId,
+        Guid operationId,
+        int expectedVersion,
+        int expectedAttempt,
+        string workerId,
+        string leaseToken,
+        int leaseVersion)
+    {
+        if (operation.WorkspaceId != workspaceId || operation.InstanceId != instanceId || operation.Id != operationId ||
+            operation.Action != ElsaInstanceOperationAction.Delete ||
+            operation.State is not (ElsaInstanceOperationState.Accepted or ElsaInstanceOperationState.Running) ||
+            operation.AttemptNumber != expectedAttempt || instance.WorkspaceId != workspaceId || instance.Id != instanceId ||
+            instance.Version != expectedVersion || outbox.OperationId != operationId || outbox.InstanceId != instanceId ||
+            !string.Equals(operation.WorkerId, workerId, StringComparison.Ordinal) ||
+            !string.Equals(operation.LeaseTokenHash, HashLeaseToken(leaseToken), StringComparison.Ordinal) ||
+            operation.LeaseVersion != leaseVersion || operation.LeaseExpiresAt <= _timeProvider.GetUtcNow())
+            throw Conflict("Deletion work item is no longer owned by this worker.");
+    }
+
+    private async Task<DeploymentRunEntity?> EnsureTerminalDeletionRunAsync(
+        Guid? runId,
+        Guid workspaceId,
+        Guid instanceId,
+        CancellationToken cancellationToken)
+    {
+        if (runId is null)
+            return null;
+        var run = await dbContext.DeploymentRuns.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == runId && x.WorkspaceId == workspaceId && x.ElsaInstanceId == instanceId,
+                cancellationToken);
+        if (run is null || run.Status is WorkspaceDeploymentRunStatus.Queued or
+            WorkspaceDeploymentRunStatus.Running or WorkspaceDeploymentRunStatus.RecoveryRequired)
+            throw Conflict("Deletion run correlation is not terminal.");
+        return run;
+    }
+
+    private static ElsaInstanceDeletionResult DeletionResult(
+        ElsaInstanceOperationEntity operation,
+        ElsaInstanceEntity instance,
+        bool replayed)
+    {
+        if (operation.DeletionEvidenceFingerprint is null || operation.DeletionDiagnosticCode is null)
+            throw Conflict("Deletion result is incomplete.");
+        return new ElsaInstanceDeletionResult(
+            operation.State == ElsaInstanceOperationState.Succeeded
+                ? (replayed ? ElsaInstanceDeletionOutcome.AlreadyCompleted : ElsaInstanceDeletionOutcome.Deleted)
+                : ElsaInstanceDeletionOutcome.RecoveryRequired,
+            MapOperation(operation), MapInstance(instance), operation.DeletionDiagnosticCode,
+            operation.DeletionEvidenceFingerprint, replayed);
     }
 
     public async Task<ElsaInstanceLifecycleWorkerResult> CommitResolvedAsync(

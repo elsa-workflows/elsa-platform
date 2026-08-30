@@ -210,6 +210,7 @@ internal static class ElsaInstanceLifecycleLease
 public enum ElsaInstanceLifecycleWorkerOutcome
 {
     Queued,
+    Deleted,
     Failed,
     AlreadyCompleted,
     WaitingForPriorOperation,

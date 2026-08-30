@@ -196,7 +196,7 @@ public sealed class ElsaInstanceContractTests
         Assert.Equal(ElsaObservedLifecycle.Deleting, requested.Instance.ObservedLifecycle);
         Assert.Equal(ElsaInstanceOperationState.Accepted, requested.Operation.State);
 
-        var deleted = ElsaInstanceStateMachine.Report(requested.Instance, ElsaObservedLifecycle.Deleted);
+        var deleted = ElsaInstanceStateMachine.FinalizeDeletion(requested.Instance, DateTimeOffset.UtcNow);
 
         Assert.Equal(ElsaObservedLifecycle.Deleted, deleted.ObservedLifecycle);
         Assert.Throws<InvalidOperationException>(() => ElsaInstanceStateMachine.Request(
@@ -354,7 +354,7 @@ public sealed class ElsaInstanceContractTests
     {
         var ready = CreateInstance(ElsaObservedLifecycle.Ready);
 
-        Assert.Throws<InvalidOperationException>(() => ElsaInstanceStateMachine.Report(ready, ElsaObservedLifecycle.Deleted));
+        Assert.Throws<InvalidOperationException>(() => ElsaInstanceStateMachine.FinalizeDeletion(ready, DateTimeOffset.UtcNow));
     }
 
     [Fact]
@@ -711,9 +711,36 @@ public sealed class ElsaInstanceContractTests
             deletedAt: DateTimeOffset.UtcNow));
 
         var deleting = ElsaInstanceStateMachine.Request(instance, ElsaInstanceOperationAction.Delete).Instance;
-        var deleted = ElsaInstanceStateMachine.Report(deleting, ElsaObservedLifecycle.Deleted);
+        var deleted = ElsaInstanceStateMachine.FinalizeDeletion(deleting, DateTimeOffset.UtcNow);
         Assert.NotNull(deleted.DeletedAt);
         Assert.False(typeof(ElsaInstance).GetProperty(nameof(ElsaInstance.DeletedAt))!.SetMethod!.IsPublic);
+    }
+
+    [Fact]
+    public void Generic_observation_cannot_project_a_deleted_tombstone()
+    {
+        var deleting = ElsaInstanceStateMachine.Request(
+            CreateInstance(ElsaObservedLifecycle.Ready),
+            ElsaInstanceOperationAction.Delete).Instance;
+
+        Assert.Throws<InvalidOperationException>(() =>
+            ElsaInstanceStateMachine.Report(deleting, ElsaObservedLifecycle.Deleted));
+    }
+
+    [Fact]
+    public void Unknown_deletion_requires_the_explicit_finalization_boundary()
+    {
+        var unknown = ElsaInstanceStateMachine.Request(
+            CreateInstance(ElsaObservedLifecycle.Unknown),
+            ElsaInstanceOperationAction.Delete).Instance;
+
+        Assert.False(ElsaInstanceStateMachine.CanTransition(
+            ElsaObservedLifecycle.Unknown,
+            ElsaObservedLifecycle.Deleted));
+        var deletedAt = DateTimeOffset.UtcNow;
+        var tombstone = ElsaInstanceStateMachine.FinalizeDeletion(unknown, deletedAt);
+        Assert.Equal(ElsaObservedLifecycle.Deleted, tombstone.ObservedLifecycle);
+        Assert.Equal(deletedAt, tombstone.DeletedAt);
     }
 
     [Fact]
