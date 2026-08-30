@@ -84,6 +84,6 @@ public static partial class DeploymentProofEvidence
     [GeneratedRegex("(?<scheme>[a-z][a-z0-9+.-]*://)[^/@\\s]+@", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex UserInfoRegex();
 
-    [GeneratedRegex("(?:(?<=^)|(?<=[\\s,;]))[^/@\\s,;]+@(?=[^/\\s,;]+(?:/|$|[\\s,;]))", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex("(?<![^\\s,;])[^/@\\s,;]+@(?=[^/\\s,;]+(?:/|$|[\\s,;]))", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex BareUserInfoRegex();
 }
