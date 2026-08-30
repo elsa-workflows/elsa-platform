@@ -341,6 +341,24 @@ public sealed class ManagedElsaHandoffPersistenceTests
         }
     }
 
+    [Fact]
+    public async Task Identity_store_does_not_create_binding_while_instance_is_deleting()
+    {
+        await using var connection = NewConnection();
+        await connection.OpenAsync();
+        await using var db = CreateContext(connection);
+        await db.Database.MigrateAsync();
+        var instance = await SeedInstanceAsync(db);
+        instance.ObservedLifecycle = ElsaObservedLifecycle.Deleting;
+        await db.SaveChangesAsync();
+
+        var identity = await new EfCoreManagedElsaInstanceIdentityStore(db)
+            .EnsureAsync(instance.OrganizationId, instance.Id);
+
+        Assert.Null(identity);
+        Assert.Empty(await db.ElsaInstanceIdentityBindings.ToListAsync());
+    }
+
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;

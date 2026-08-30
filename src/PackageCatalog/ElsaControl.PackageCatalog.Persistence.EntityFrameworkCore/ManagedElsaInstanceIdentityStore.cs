@@ -57,6 +57,7 @@ public sealed class EfCoreManagedElsaInstanceIdentityStore(CatalogDbContext dbCo
             .SingleOrDefaultAsync(cancellationToken);
         if (projected is null ||
             projected.DesiredLifecycle == ElsaDesiredLifecycle.Deleting ||
+            projected.ObservedLifecycle == ElsaObservedLifecycle.Deleting ||
             projected.ObservedLifecycle == ElsaObservedLifecycle.Deleted ||
             projected.DeletedAt is not null ||
             !Uri.TryCreate(projected.CurrentDeploymentEndpointUri, UriKind.Absolute, out var endpoint))
