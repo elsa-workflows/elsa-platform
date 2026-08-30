@@ -56,6 +56,35 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Rejects_a_plan_for_a_different_reserved_target_before_claiming()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner();
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            executor.ApplyAsync(CreateRequest(), CreatePlan() with { WorkloadName = "workload-b" }));
+
+        Assert.Empty(runner.Steps);
+    }
+
+    [Fact]
+    public async Task Requires_a_durable_workload_resource_identity_before_succeeding()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner
+        {
+            ResourcesOverride = new AzureProviderResourceReferences(ResourceGroupName: "proof-rg")
+        };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, result.Operation.Status);
+    }
+
+    [Fact]
     public async Task An_interrupted_remote_step_is_recovery_required_and_can_resume_idempotently()
     {
         var store = new FakeOperationStore();
@@ -239,6 +268,52 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Execution_rejects_plan_evidence_references_that_do_not_match_the_operation()
+    {
+        var store = new FakeOperationStore();
+        var executor = new AzureProviderExecutor(store, new RecordingRunner(), new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var plan = CreatePlan() with
+        {
+            ReleaseManifestReference = "oci://different.example/manifest",
+            ReleaseManifestSignatureReference = "oci://different.example/signature"
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => executor.ApplyAsync(CreateRequest(), plan));
+    }
+
+    [Fact]
+    public async Task Execution_rejects_plan_secret_references_that_do_not_match_the_operation()
+    {
+        var store = new FakeOperationStore();
+        var executor = new AzureProviderExecutor(store, new RecordingRunner(), new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var plan = CreatePlan() with
+        {
+            SecretReferences = new Dictionary<string, string>
+            {
+                ["database:connectionstring"] = "secret://different-vault/database"
+            }
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => executor.ApplyAsync(CreateRequest(), plan));
+    }
+
+    [Fact]
+    public async Task Execution_rejects_noncanonical_plan_secret_reference_keys()
+    {
+        var store = new FakeOperationStore();
+        var executor = new AzureProviderExecutor(store, new RecordingRunner(), new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var plan = CreatePlan() with
+        {
+            SecretReferences = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Database:ConnectionString"] = "secret://database"
+            }
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => executor.ApplyAsync(CreateRequest(), plan));
+    }
+
+    [Fact]
     public async Task Renews_the_durable_lease_while_a_remote_step_is_running()
     {
         var store = new FakeOperationStore();
@@ -361,6 +436,28 @@ public sealed class AzureProviderExecutorTests
         Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, result.Outcome);
         Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, result.Operation.Status);
         Assert.True(result.Operation.Version > 2);
+    }
+
+    [Fact]
+    public async Task Cancellation_does_not_wait_for_a_non_cooperative_runner()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner { NonCooperativeStep = AzureProviderRunnerStep.Foundation };
+        var executor = new AzureProviderExecutor(
+            store,
+            runner,
+            new StaticTimeProvider(Now),
+            TimeSpan.FromMilliseconds(100),
+            heartbeatInterval: TimeSpan.FromMilliseconds(5));
+        using var cancellation = new CancellationTokenSource();
+
+        var execution = executor.ApplyAsync(CreateRequest(), CreatePlan(), cancellation.Token);
+        await runner.Started.Task;
+        cancellation.Cancel();
+        var result = await execution.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, result.Operation.Status);
     }
 
     [Fact]
@@ -545,7 +642,13 @@ public sealed class AzureProviderExecutorTests
         "valenceruntimeimages.azurecr.io/runtime-combined",
         "sha256:" + new string('c', 64),
         "sha256:" + new string('d', 64),
-        "sha256:" + new string('e', 64));
+        "sha256:" + new string('e', 64),
+        "oci://release-manifest.example/manifest",
+        "oci://release-manifest.example/signature",
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["database:connectionstring"] = "secret://database"
+        });
 
     private static AzureWorkloadPlan CreatePlan() => new(
         "workload-a",
@@ -593,6 +696,7 @@ public sealed class AzureProviderExecutorTests
         public string RunnerMessage { get; init; } = "Azure lifecycle step completed.";
         public bool ThrowAfterDelay { get; init; }
         public AzureProviderRunnerStep? WaitForCancellationStep { get; init; }
+        public AzureProviderRunnerStep? NonCooperativeStep { get; init; }
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource CancellationObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public CancellationTokenSource? CancelSource { get; init; }
@@ -610,6 +714,8 @@ public sealed class AzureProviderExecutorTests
 
             if (WaitForCancellationStep == command.Step)
                 return WaitForCancellationAsync(cancellationToken);
+            if (NonCooperativeStep == command.Step)
+                return new TaskCompletionSource<AzureProviderRunnerResult>().Task;
 
             if (Delay > TimeSpan.Zero && (!DelayOnlyStep.HasValue || DelayOnlyStep == command.Step))
                 return DelayedResultAsync(command);
@@ -757,11 +863,17 @@ public sealed class AzureProviderExecutorTests
         public Task<AzureProviderOperation?> GetAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_operation is { WorkspaceId: var id, Id: var operationIdValue } && id == workspaceId && operationIdValue == operationId ? _operation : null);
 
+        public Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<AzureProviderOperation>>([]);
+
         public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default) =>
             Task.FromResult<AzureProviderOperation?>(
                 LatestReconcileResources is not null && _operation is not null
                     ? _operation with { Action = AzureProviderOperationAction.Reconcile, Resources = LatestReconcileResources }
                     : _operation?.Action == AzureProviderOperationAction.Reconcile ? _operation : null);
+
+        public Task<AzureProviderOperation?> MarkUnrestorableAsync(Guid workspaceId, Guid operationId, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult<AzureProviderOperation?>(null);
 
         public Task<AzureProviderOperation?> ClaimAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => ClaimCore(workerId, leaseToken, leaseDuration, now, expectedVersion, false);
 

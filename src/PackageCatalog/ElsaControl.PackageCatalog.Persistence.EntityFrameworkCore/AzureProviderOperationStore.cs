@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +10,10 @@ namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 
 public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzureProviderOperationStore
 {
+    private static readonly IReadOnlyDictionary<string, string> EmptySecretReferences =
+        new ReadOnlyDictionary<string, string>(
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
     public async Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default)
     {
         var normalized = AzureProviderOperationValidation.Normalize(request);
@@ -27,6 +32,10 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         var activeTargetEntity = await FindActiveTargetAsync(normalized, cancellationToken);
         if (activeTargetEntity is not null)
             throw new AzureProviderOperationConflictException(ToModel(activeTargetEntity));
+        var previousResources = await GetLatestReconcileAsync(
+            normalized.WorkspaceId,
+            normalized.TargetKey,
+            cancellationToken);
 
         var entity = new AzureProviderOperationEntity
         {
@@ -48,6 +57,9 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             ImageDigest = normalized.ImageDigest,
             ReleaseManifestDigest = normalized.ReleaseManifestDigest,
             ReleaseManifestSignatureDigest = normalized.ReleaseManifestSignatureDigest,
+            ReleaseManifestReference = normalized.ReleaseManifestReference,
+            ReleaseManifestSignatureReference = normalized.ReleaseManifestSignatureReference,
+            SecretReferencesJson = JsonSerializer.Serialize(normalized.SecretReferences),
             Status = AzureProviderOperationStatus.Accepted,
             Phase = AzureProviderOperationPhase.Planned,
             CheckpointSequence = 0,
@@ -55,7 +67,13 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             Version = 1,
             Health = AzureProviderHealth.Unknown,
             CreatedAt = now,
-            UpdatedAt = now
+            UpdatedAt = now,
+            ResourceGroupName = previousResources?.Resources.ResourceGroupName,
+            FoundationDeploymentId = previousResources?.Resources.FoundationDeploymentId,
+            WorkloadDeploymentId = previousResources?.Resources.WorkloadDeploymentId,
+            WorkloadResourceId = previousResources?.Resources.WorkloadResourceId,
+            WorkloadRevisionName = previousResources?.Resources.WorkloadRevisionName,
+            StableTrafficRevisionName = previousResources?.Resources.StableTrafficRevisionName
         };
         entity.Transitions.Add(new AzureProviderOperationTransitionEntity
         {
@@ -95,6 +113,26 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
     public async Task<AzureProviderOperation?> GetAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) =>
         await db.AzureProviderOperations.AsNoTracking().SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == operationId, cancellationToken) is { } entity ? ToModel(entity) : null;
 
+    public async Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(
+        DateTimeOffset now,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (limit is < 1 or > 100)
+            throw new ArgumentOutOfRangeException(nameof(limit));
+
+        var operations = await db.AzureProviderOperations.AsNoTracking()
+            .Where(x => (x.Status == AzureProviderOperationStatus.Accepted ||
+                         x.Status == AzureProviderOperationStatus.Queued) &&
+                        x.CompletedAt == null &&
+                        (x.LeaseExpiresAt == null || x.LeaseExpiresAt <= now))
+            .OrderBy(x => x.UpdatedAt)
+            .ThenBy(x => x.Id)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+        return operations.Select(ToModel).ToList();
+    }
+
     public async Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(targetKey))
@@ -112,6 +150,51 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             .ThenByDescending(x => x.Id)
             .FirstOrDefaultAsync(cancellationToken);
         return entity is null ? null : ToModel(entity);
+    }
+
+    public async Task<AzureProviderOperation?> MarkUnrestorableAsync(
+        Guid workspaceId,
+        Guid operationId,
+        DateTimeOffset now,
+        long? expectedVersion = null,
+        CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var changed = await db.AzureProviderOperations
+            .Where(x => x.WorkspaceId == workspaceId && x.Id == operationId &&
+                        (x.Status == AzureProviderOperationStatus.Accepted ||
+                         x.Status == AzureProviderOperationStatus.Queued ||
+                         x.Status == AzureProviderOperationStatus.RecoveryRequired) &&
+                        (!expectedVersion.HasValue || x.Version == expectedVersion.Value))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, x => x.Status == AzureProviderOperationStatus.RecoveryRequired
+                    ? AzureProviderOperationStatus.RecoveryRequired
+                    : AzureProviderOperationStatus.Failed)
+                .SetProperty(x => x.CompletedAt, x => x.Status == AzureProviderOperationStatus.RecoveryRequired ? null : now)
+                .SetProperty(x => x.UpdatedAt, now)
+                .SetProperty(x => x.Version, x => x.Version + 1)
+                .SetProperty(x => x.LeaseTokenHash, (string?)null)
+                .SetProperty(x => x.LeaseExpiresAt, (DateTimeOffset?)null)
+                .SetProperty(x => x.WorkerId, (string?)null)
+                .SetProperty(x => x.CompletionLeaseTokenHash, (string?)null)
+                .SetProperty(x => x.CompletionFingerprint, (string?)null), cancellationToken);
+        if (changed == 0)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        db.ChangeTracker.Clear();
+        var entity = await db.AzureProviderOperations
+            .SingleAsync(x => x.WorkspaceId == workspaceId && x.Id == operationId, cancellationToken);
+        AddTransition(
+            entity,
+            "azure.plan.unrestorable",
+            "The persisted provider plan cannot be restored.",
+            now);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return ToModel(entity);
     }
 
     public Task<AzureProviderOperation?> ClaimAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
@@ -204,7 +287,9 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             .OrderByDescending(x => x.Sequence)
             .Select(x => x.Code)
             .FirstOrDefaultAsync(cancellationToken);
-        if (entity.Phase == checkpoint.Phase && entity.Endpoint == checkpoint.Endpoint && entity.Health == checkpoint.Health &&
+        var endpoint = checkpoint.Endpoint ?? entity.Endpoint;
+        var health = checkpoint.Health == AzureProviderHealth.Unknown ? entity.Health : checkpoint.Health;
+        if (entity.Phase == checkpoint.Phase && entity.Endpoint == endpoint && entity.Health == health &&
             entity.DiagnosticsJson == diagnosticsJson && ResourcesEqual(entity, resources) &&
             lastTransitionCode == checkpoint.Code)
             return ToModel(entity);
@@ -212,7 +297,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         entity.ResourceGroupName = resources.ResourceGroupName; entity.FoundationDeploymentId = resources.FoundationDeploymentId;
         entity.WorkloadDeploymentId = resources.WorkloadDeploymentId; entity.WorkloadResourceId = resources.WorkloadResourceId;
         entity.WorkloadRevisionName = resources.WorkloadRevisionName; entity.StableTrafficRevisionName = resources.StableTrafficRevisionName;
-        entity.Endpoint = checkpoint.Endpoint; entity.Health = checkpoint.Health;
+        entity.Endpoint = endpoint; entity.Health = health;
         entity.DiagnosticsJson = diagnosticsJson;
         AddTransition(entity, checkpoint.Code, checkpoint.Code, now);
         try { await db.SaveChangesAsync(cancellationToken); } catch (DbUpdateConcurrencyException) { db.ChangeTracker.Clear(); return null; }
@@ -230,7 +315,10 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         var completionFingerprint = Hash($"{status}|{code}");
         if (entity.Status == status) return entity.CompletionLeaseTokenHash == Hash(leaseToken) && entity.CompletionFingerprint == completionFingerprint ? ToModel(entity) : null;
         if (entity.Status != AzureProviderOperationStatus.Running || !LeaseMatches(entity, leaseToken, now) || expectedVersion.HasValue && entity.Version != expectedVersion.Value) return null;
-        entity.Status = status; entity.UpdatedAt = now; entity.CompletedAt = status == AzureProviderOperationStatus.RecoveryRequired ? null : now; entity.Version++;
+        entity.Status = status; entity.UpdatedAt = now; entity.Version++;
+        // Recovery-required operations stay reservable for operator reconciliation, so they are
+        // never stamped as completed regardless of which transition produced the status.
+        entity.CompletedAt = status == AzureProviderOperationStatus.RecoveryRequired ? null : now;
         entity.CompletionLeaseTokenHash = entity.LeaseTokenHash;
         entity.CompletionFingerprint = completionFingerprint;
         entity.LeaseTokenHash = null; entity.LeaseExpiresAt = null; entity.WorkerId = null;
@@ -337,6 +425,81 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
 
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
-    private static AzureProviderOperation ToModel(AzureProviderOperationEntity x) => new(x.Id, x.WorkspaceId, x.TargetKey, x.Action, x.IdempotencyKey, x.RequestHash, x.OperationIdentity, x.PlanFingerprint, x.TemplateFingerprint, x.ElsaVersion, x.ReleaseLine, x.Topology, x.Isolation, x.Location, x.ImageRepository, x.ImageDigest, x.ReleaseManifestDigest, x.ReleaseManifestSignatureDigest, x.Status, x.Phase, x.CheckpointSequence, x.AttemptNumber, x.Version, new(x.ResourceGroupName, x.FoundationDeploymentId, x.WorkloadDeploymentId, x.WorkloadResourceId, x.WorkloadRevisionName, x.StableTrafficRevisionName), x.Endpoint, x.Health, JsonSerializer.Deserialize<IReadOnlyList<AzureProviderDiagnostic>>(x.DiagnosticsJson) ?? [], x.WorkerId, x.LeaseExpiresAt, x.HeartbeatAt, x.CreatedAt, x.UpdatedAt, x.CompletedAt);
+    private static AzureProviderOperation ToModel(AzureProviderOperationEntity x)
+    {
+        var (diagnostics, diagnosticsInvalid) = ReadDiagnostics(x.DiagnosticsJson);
+        var (secretReferences, secretReferencesInvalid) = ReadSecretReferences(x.SecretReferencesJson);
+        return new(
+            x.Id, x.WorkspaceId, x.TargetKey, x.Action, x.IdempotencyKey, x.RequestHash, x.OperationIdentity,
+            x.PlanFingerprint, x.TemplateFingerprint, x.ElsaVersion, x.ReleaseLine, x.Topology, x.Isolation,
+            x.Location, x.ImageRepository, x.ImageDigest, x.ReleaseManifestDigest, x.ReleaseManifestSignatureDigest,
+            x.Status, x.Phase, x.CheckpointSequence, x.AttemptNumber, x.Version,
+            new(x.ResourceGroupName, x.FoundationDeploymentId, x.WorkloadDeploymentId, x.WorkloadResourceId, x.WorkloadRevisionName, x.StableTrafficRevisionName),
+            x.Endpoint, x.Health, diagnostics,
+            x.WorkerId, x.LeaseExpiresAt, x.HeartbeatAt, x.CreatedAt, x.UpdatedAt, x.CompletedAt,
+            x.ReleaseManifestReference, x.ReleaseManifestSignatureReference,
+            secretReferences,
+            diagnosticsInvalid || secretReferencesInvalid);
+    }
+
+    private static (IReadOnlyList<AzureProviderDiagnostic> Diagnostics, bool Invalid) ReadDiagnostics(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return ([], true);
+
+        try
+        {
+            var diagnostics = JsonSerializer.Deserialize<List<AzureProviderDiagnostic>>(json);
+            if (diagnostics is null || !AzureProviderOperationValidation.IsSafeDiagnostics(diagnostics))
+                return ([], true);
+
+            return (diagnostics.Select(x => new AzureProviderDiagnostic(x.Code, x.Message)).ToArray(), false);
+        }
+        catch (JsonException)
+        {
+            return ([], true);
+        }
+        catch (NotSupportedException)
+        {
+            return ([], true);
+        }
+    }
+
+    private static (IReadOnlyDictionary<string, string> SecretReferences, bool Invalid) ReadSecretReferences(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return (EmptySecretReferences, true);
+
+        try
+        {
+            var values = JsonSerializer.Deserialize<Dictionary<string, string?>>(json);
+            if (values is null)
+                return (EmptySecretReferences, true);
+
+            var normalizedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var references = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in values)
+            {
+                if (pair.Key is null || pair.Value is null ||
+                    !string.Equals(pair.Key, pair.Key.Trim().ToLowerInvariant(), StringComparison.Ordinal) ||
+                    !normalizedKeys.Add(pair.Key.Trim()) ||
+                    !AzureProviderOperationValidation.IsSafeSecretReference(pair.Value))
+                    return (EmptySecretReferences, true);
+
+                references.Add(pair.Key, pair.Value);
+            }
+
+            return (new ReadOnlyDictionary<string, string>(references), false);
+        }
+        catch (JsonException)
+        {
+            return (EmptySecretReferences, true);
+        }
+        catch (NotSupportedException)
+        {
+            return (EmptySecretReferences, true);
+        }
+    }
+
     private static AzureProviderOperationTransition ToTransition(AzureProviderOperationTransitionEntity x) => new(x.Id, x.OperationId, x.Sequence, x.Status, x.Phase, x.Code, x.Message, x.OccurredAt);
 }

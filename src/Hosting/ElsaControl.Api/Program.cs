@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.DataProtection;
 using ElsaControl.Deployment.Artifacts;
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Workspace;
+using ElsaControl.Deployment.Azure;
 using ElsaControl.PackageCatalog.Abstractions.Catalog;
 using ElsaControl.PackageCatalog.Abstractions.Compatibility;
 using ElsaControl.Api.Admin.Application;
@@ -223,6 +224,13 @@ builder.Services.AddScoped<IWorkspacePermissionStore, DeploymentWorkspaceStore>(
 builder.Services.AddScoped<IWorkspaceDeploymentMutationStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<IWorkspaceDeploymentCommandStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<WorkspaceDeploymentService>();
+builder.Services.AddScoped<IAzureProviderOperationStore, AzureProviderOperationStore>();
+builder.Services.AddScoped<IAzureProviderRunner, UnconfiguredAzureProviderRunner>();
+builder.Services.AddScoped<AzureProviderExecutor>();
+builder.Services.AddScoped<IAzureProviderOperationService, AzureProviderOperationService>();
+builder.Services.AddScoped<AzureProviderOperationWorker>();
+builder.Services.AddScoped<IAzureProviderPlanSource, PersistedAzureProviderPlanSource>();
+builder.Services.Configure<AzureProviderOperationOptions>(builder.Configuration.GetSection(AzureProviderOperationOptions.ConfigurationSection));
 var dataProtection = builder.Services.AddDataProtection()
     .SetApplicationName("ElsaControl.Api");
 var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"];
@@ -300,6 +308,9 @@ builder.Services.AddHostedService<WeaverConfigurationHostedService>();
 var deploymentQueueWorkerEnabled = builder.Configuration.GetValue("Deployment:QueueWorker:Enabled", false);
 if (deploymentQueueWorkerEnabled && !builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<DeploymentQueueHostedService>();
+var azureProviderWorkerEnabled = builder.Configuration.GetValue("Deployment:AzureProvider:WorkerEnabled", false);
+if (azureProviderWorkerEnabled && !builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddHostedService<AzureProviderOperationHostedService>();
 var webhookDispatchEnabled = builder.Configuration.GetValue("Deployment:WebhookDispatch:Enabled", false);
 if (webhookDispatchEnabled && !builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<DeploymentWebhookDispatchHostedService>();

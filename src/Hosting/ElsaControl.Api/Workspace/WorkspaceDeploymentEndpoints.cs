@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Workspace;
+using ElsaControl.Deployment.Azure;
 using ElsaControl.Api.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 
@@ -30,6 +31,18 @@ public static class WorkspaceDeploymentEndpoints
             CancellationToken cancellationToken) =>
             Results.Ok(await cockpit.GetCockpitAsync(workspaceId, cancellationToken)))
             .RequireDeploymentPermission(WorkspaceDeploymentPermissions.Read);
+
+        group.MapGet("/azure-operations/{operationId:guid}", async (
+            Guid workspaceId,
+            Guid operationId,
+            IAzureProviderOperationService operations,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await operations.GetStatusAsync(workspaceId, operationId, cancellationToken);
+            return result is null
+                ? Results.NotFound()
+                : Results.Ok(new AzureProviderOperationResponse(result.Operation, result.Transitions));
+        }).RequireDeploymentPermission(WorkspaceDeploymentPermissions.Read);
 
         group.MapGet("/tier-capabilities", (DeploymentTierService tiers) =>
             Results.Ok(new WorkspaceDeploymentTierCapabilitiesResponse(tiers.GetCapabilityCatalog())))

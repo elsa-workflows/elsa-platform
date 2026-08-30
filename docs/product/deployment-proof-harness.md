@@ -5,7 +5,8 @@ Tracking issue: [#109](https://github.com/valence-works/elsa-control/issues/109)
 The deployment-proof harness is the repeatable highest-seam contract for Milestone B. It starts
 with an exact Elsa release selection and ends with a healthy, usable endpoint, a basic workflow
 result, a repeated apply/no-op check, and verified cleanup. The orchestration is provider-neutral;
-the fake provider proves the contract now and a real Azure adapter can be substituted by #126.
+the fake provider proves the contract now and the durable `AzureProviderProofAdapter` provides
+the real-provider seam for #126.
 
 ## Run the fake-provider proof
 
@@ -16,6 +17,11 @@ dotnet test tests/Deployment/ElsaControl.Deployment.Proof.Tests/ElsaControl.Depl
 The tests are deliberately disposable and do not call Azure, create resources, or require
 credentials. The fake provider exercises the same `IDeploymentProofProvider` seam that a real
 provider must implement.
+
+The Azure adapter is intentionally not enabled by this test command. A live proof host must
+register an admitted `IAzureProviderProofPlanFactory`, a concrete `IAzureProviderRunner`, and an
+`IAzureProviderProofWorkflowProbe`; the API worker remains disabled until that host has supplied
+those dependencies and the disposable Azure prerequisites below.
 
 ## Inputs and prerequisites
 

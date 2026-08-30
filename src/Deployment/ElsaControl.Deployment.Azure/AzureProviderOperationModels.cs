@@ -1,3 +1,6 @@
+using System.Collections.ObjectModel;
+using System.Text.Json.Serialization;
+
 namespace ElsaControl.Deployment.Azure;
 
 public enum AzureProviderOperationAction
@@ -54,7 +57,10 @@ public sealed record AzureProviderOperationRequest(
     string ImageRepository,
     string ImageDigest,
     string? ReleaseManifestDigest = null,
-    string? ReleaseManifestSignatureDigest = null);
+    string? ReleaseManifestSignatureDigest = null,
+    string? ReleaseManifestReference = null,
+    string? ReleaseManifestSignatureReference = null,
+    IReadOnlyDictionary<string, string>? SecretReferences = null);
 
 public sealed record AzureProviderResourceReferences(
     string? ResourceGroupName = null,
@@ -99,7 +105,19 @@ public sealed record AzureProviderOperation(
     DateTimeOffset? HeartbeatAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    DateTimeOffset? CompletedAt);
+    DateTimeOffset? CompletedAt,
+    string? ReleaseManifestReference = null,
+    string? ReleaseManifestSignatureReference = null,
+    [property: JsonIgnore] IReadOnlyDictionary<string, string>? SecretReferences = null,
+    [property: JsonIgnore] bool PersistedMetadataInvalid = false)
+{
+    [JsonIgnore]
+    public IReadOnlyDictionary<string, string> SafeSecretReferences => SecretReferences ?? EmptySecretReferences;
+
+    private static readonly IReadOnlyDictionary<string, string> EmptySecretReferences =
+        new ReadOnlyDictionary<string, string>(
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+}
 
 public sealed class AzureProviderOperationConflictException(AzureProviderOperation operation)
     : InvalidOperationException("Another active Azure operation already owns this target.")

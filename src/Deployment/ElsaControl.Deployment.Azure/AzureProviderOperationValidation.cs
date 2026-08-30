@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Collections.ObjectModel;
 
 namespace ElsaControl.Deployment.Azure;
 
@@ -16,15 +17,40 @@ public static class AzureProviderOperationValidation
         if (string.IsNullOrWhiteSpace(checkpoint.Message) || checkpoint.Message.Length > 2000 || checkpoint.Message.Any(char.IsControl) || ContainsSensitiveMarker(checkpoint.Message))
             throw new ArgumentException("Checkpoint message is unsafe.", nameof(checkpoint));
         ValidateEndpoint(checkpoint.Endpoint);
-        if (checkpoint.Diagnostics is null || checkpoint.Diagnostics.Count > 20) throw new ArgumentException("Diagnostics are required and bounded.", nameof(checkpoint));
-        if (JsonSerializer.Serialize(checkpoint.Diagnostics).Length > 10000) throw new ArgumentException("Diagnostics are too large.", nameof(checkpoint));
-        foreach (var diagnostic in checkpoint.Diagnostics)
-        {
-            if (diagnostic is null || !IsSafeCode(diagnostic.Code) ||
-                string.IsNullOrWhiteSpace(diagnostic.Message) || diagnostic.Message.Length > 2000 || diagnostic.Message.Any(char.IsControl) || ContainsSensitiveMarker(diagnostic.Message))
-                throw new ArgumentException("Diagnostic is unsafe.", nameof(checkpoint));
-        }
+        if (!IsSafeDiagnostics(checkpoint.Diagnostics)) throw new ArgumentException("Diagnostics are required and bounded.", nameof(checkpoint));
         ValidateReferences(checkpoint.Resources);
+    }
+
+    /// <summary>
+    /// Applies the same bounded, value-free diagnostics contract to persisted values that are
+    /// read back from storage. Invalid stored diagnostics must not be returned through status
+    /// responses, even when their JSON is syntactically valid.
+    /// </summary>
+    public static bool IsSafeDiagnostics(IReadOnlyList<AzureProviderDiagnostic>? diagnostics)
+    {
+        if (diagnostics is null || diagnostics.Count > 20)
+            return false;
+
+        try
+        {
+            if (JsonSerializer.Serialize(diagnostics).Length > 10000)
+                return false;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            return false;
+        }
+
+        return diagnostics.All(diagnostic => diagnostic is not null &&
+            IsSafeCode(diagnostic.Code) &&
+            !string.IsNullOrWhiteSpace(diagnostic.Message) &&
+            diagnostic.Message.Length <= 2000 &&
+            !diagnostic.Message.Any(char.IsControl) &&
+            !ContainsSensitiveMarker(diagnostic.Message));
     }
 
     public static void ValidateCode(string code)
@@ -166,7 +192,10 @@ public static class AzureProviderOperationValidation
             ReleaseLine = request.ReleaseLine.Trim(),
             ElsaVersion = request.ElsaVersion.Trim(),
             ImageRepository = request.ImageRepository.Trim().ToLowerInvariant(),
-            IdempotencyKey = request.IdempotencyKey.Trim()
+            IdempotencyKey = request.IdempotencyKey.Trim(),
+            ReleaseManifestReference = NormalizeOptionalReference(request.ReleaseManifestReference),
+            ReleaseManifestSignatureReference = NormalizeOptionalReference(request.ReleaseManifestSignatureReference),
+            SecretReferences = NormalizeSecretReferences(request.SecretReferences)
         };
     }
 
@@ -192,6 +221,10 @@ public static class AzureProviderOperationValidation
         if (!IsDigest(request.ImageDigest)) errors.Add("imageDigest.invalid");
         if (request.ReleaseManifestDigest is not null && !IsDigest(request.ReleaseManifestDigest)) errors.Add("releaseManifestDigest.invalid");
         if (request.ReleaseManifestSignatureDigest is not null && !IsDigest(request.ReleaseManifestSignatureDigest)) errors.Add("releaseManifestSignatureDigest.invalid");
+        if (request.ReleaseManifestReference is not null && !IsSafeImmutableEvidenceReference(request.ReleaseManifestReference, request.ReleaseManifestDigest)) errors.Add("releaseManifestReference.invalid");
+        if (request.ReleaseManifestSignatureReference is not null && !IsSafeImmutableEvidenceReference(request.ReleaseManifestSignatureReference, request.ReleaseManifestSignatureDigest)) errors.Add("releaseManifestSignatureReference.invalid");
+        if ((request.ReleaseManifestReference is null) != (request.ReleaseManifestSignatureReference is null)) errors.Add("releaseManifestReferences.incomplete");
+        ValidateSecretReferences(request.SecretReferences, errors);
 
         BoundedSafe(request.TargetKey, 128, "target", errors);
         BoundedSafe(request.IdempotencyKey, 512, "idempotency", errors);
@@ -230,7 +263,10 @@ public static class AzureProviderOperationValidation
             normalized.ImageRepository,
             normalized.ImageDigest,
             normalized.ReleaseManifestDigest,
-            normalized.ReleaseManifestSignatureDigest
+            normalized.ReleaseManifestSignatureDigest,
+            normalized.ReleaseManifestReference,
+            normalized.ReleaseManifestSignatureReference,
+            secretReferences = normalized.SecretReferences
         });
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
     }
@@ -255,6 +291,73 @@ public static class AzureProviderOperationValidation
     private static string NormalizeFingerprint(string value) => value.Trim().ToLowerInvariant();
     private static string NormalizeDigest(string value) => $"sha256:{value.Trim()[7..].ToLowerInvariant()}";
     private static string? NormalizeOptionalDigest(string? value) => value is null ? null : NormalizeDigest(value);
+    private static string? NormalizeOptionalReference(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static IReadOnlyDictionary<string, string> NormalizeSecretReferences(IReadOnlyDictionary<string, string>? values) =>
+        new ReadOnlyDictionary<string, string>((values ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase))
+            .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key.Trim().ToLowerInvariant(), x => x.Value.Trim(), StringComparer.OrdinalIgnoreCase));
+
+    private static void ValidateSecretReferences(IReadOnlyDictionary<string, string>? values, ICollection<string> errors)
+    {
+        if (values is null)
+            return;
+        if (values.Count > 64)
+            errors.Add("secretReferences.tooMany");
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in values)
+        {
+            if (string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 256 || pair.Key.Any(char.IsControl) || !keys.Add(pair.Key.Trim()))
+                errors.Add("secretReferences.key.invalid");
+            if (!IsSafeSecretReference(pair.Value))
+                errors.Add("secretReferences.value.invalid");
+        }
+    }
+
+    public static bool IsSafeSecretReferences(IReadOnlyDictionary<string, string>? values)
+    {
+        if (values is null || values.Count > 64)
+            return false;
+
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return values.All(pair =>
+            !string.IsNullOrWhiteSpace(pair.Key) && pair.Key.Length <= 256 &&
+            !pair.Key.Any(char.IsControl) &&
+            string.Equals(pair.Key, pair.Key.Trim().ToLowerInvariant(), StringComparison.Ordinal) &&
+            keys.Add(pair.Key) && IsSafeSecretReference(pair.Value));
+    }
+
+    /// <summary>
+    /// Secret references are opaque provider locators. They are never dereferenced by the
+    /// control plane and intentionally reject URI features that could make a locator behave
+    /// like a filesystem path or carry credentials.
+    /// </summary>
+    public static bool IsSafeSecretReference(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 512 || value.Any(char.IsWhiteSpace) || value.Any(char.IsControl) ||
+            value.Contains('\\') || value.Contains('%') || value.Contains('?') || value.Contains('#') ||
+            value.Contains("/../", StringComparison.Ordinal) || value.Contains("/./", StringComparison.Ordinal) ||
+            value.EndsWith("/..", StringComparison.Ordinal) || value.EndsWith("/.", StringComparison.Ordinal) ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != "secret" ||
+            string.IsNullOrWhiteSpace(uri.Host) || !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) ||
+            uri.AbsolutePath.Contains("//", StringComparison.Ordinal))
+            return false;
+
+        // A host-only locator (for example secret://database) is a valid opaque provider key.
+        // A trailing slash, empty segment or dot segment is rejected because it makes the
+        // locator ambiguous if a downstream provider ever maps it to a hierarchical key.
+        if (uri.AbsolutePath.Length == 0 ||
+            (uri.AbsolutePath == "/" && !value.EndsWith("/", StringComparison.Ordinal)))
+            return true;
+
+        if (!uri.AbsolutePath.StartsWith("/", StringComparison.Ordinal))
+            return false;
+
+        var segments = uri.AbsolutePath[1..].Split('/', StringSplitOptions.None);
+        return segments.All(segment => !string.IsNullOrEmpty(segment) && segment is not "." and not "..");
+    }
+
     private static bool ContainsSensitiveMarker(string value) =>
         value.Contains("password", StringComparison.OrdinalIgnoreCase) ||
         value.Contains("token", StringComparison.OrdinalIgnoreCase) ||

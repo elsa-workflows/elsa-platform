@@ -4,7 +4,20 @@ public interface IAzureProviderOperationStore
 {
     Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default);
     Task<AzureProviderOperation?> GetAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default);
     Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Transitions an operation whose persisted provider plan cannot be restored to a value-free
+    /// failure. Recovery-required operations retain their recovery status and target reservation
+    /// for explicit operator reconciliation. The compare-and-set version prevents a stale worker
+    /// from changing a concurrently claimed or completed operation.
+    /// </summary>
+    Task<AzureProviderOperation?> MarkUnrestorableAsync(
+        Guid workspaceId,
+        Guid operationId,
+        DateTimeOffset now,
+        long? expectedVersion = null,
+        CancellationToken cancellationToken = default);
     Task<AzureProviderOperation?> ClaimAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default);
     Task<AzureProviderOperation?> ClaimRecoveryAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default);
     Task<AzureProviderOperation?> HeartbeatAsync(Guid workspaceId, Guid operationId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default);

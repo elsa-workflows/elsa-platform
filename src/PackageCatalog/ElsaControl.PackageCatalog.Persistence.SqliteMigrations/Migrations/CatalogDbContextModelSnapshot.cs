@@ -985,8 +985,16 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasMaxLength(71)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ReleaseManifestReference")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ReleaseManifestSignatureDigest")
                         .HasMaxLength(71)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReleaseManifestSignatureReference")
+                        .HasMaxLength(2048)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RequestHash")
@@ -996,6 +1004,11 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.Property<string>("ResourceGroupName")
                         .HasMaxLength(90)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SecretReferencesJson")
+                        .IsRequired()
+                        .HasMaxLength(10000)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("StableTrafficRevisionName")
@@ -1063,7 +1076,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .IsUnique()
                         .HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
 
-                    b.HasIndex("WorkspaceId", "Status", "LeaseExpiresAt", "UpdatedAt");
+                    b.HasIndex("Status", "LeaseExpiresAt", "UpdatedAt", "Id");
 
                     b.ToTable("AzureProviderOperations");
                 });

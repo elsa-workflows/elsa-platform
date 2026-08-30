@@ -1,6 +1,7 @@
 using ElsaControl.Deployment.Azure;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
+using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,6 +19,18 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         db.Database.EnsureCreated();
         db.Workspaces.Add(new Workspace { Id = _workspaceId, Name = "Azure operation workspace" });
         db.SaveChanges();
+    }
+
+    [Fact]
+    public void Runnable_queue_has_a_global_polling_index()
+    {
+        using var db = CreateContext();
+        var entity = db.Model.FindEntityType(typeof(AzureProviderOperationEntity))!;
+        var index = Assert.Single(entity.GetIndexes(), candidate =>
+            candidate.Properties.Select(property => property.Name).SequenceEqual(
+                ["Status", "LeaseExpiresAt", "UpdatedAt", "Id"]));
+
+        Assert.Equal("IX_AzureProviderOperations_Status_LeaseExpiresAt_UpdatedAt_Id", index.GetDatabaseName());
     }
 
     [Fact]
@@ -201,6 +214,206 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Unrestorable_plan_is_terminal_and_value_free_with_compare_and_set()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+
+        var failed = await store.MarkUnrestorableAsync(_workspaceId, operation.Id, now, operation.Version);
+
+        Assert.Equal(AzureProviderOperationStatus.Failed, failed?.Status);
+        Assert.Equal(now, failed?.CompletedAt);
+        var transition = Assert.Single(await store.ListTransitionsAsync(_workspaceId, operation.Id), x => x.Code == "azure.plan.unrestorable");
+        Assert.Equal("The persisted provider plan cannot be restored.", transition.Message);
+        Assert.Empty(await store.ListRunnableAsync(now, 10));
+        Assert.Null(await store.MarkUnrestorableAsync(_workspaceId, operation.Id, now, operation.Version));
+    }
+
+    [Fact]
+    public async Task Unrestorable_recovery_operation_remains_reserved_for_operator_reconciliation()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+        Assert.NotNull(await store.ClaimAsync(_workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+        Assert.Equal(1, await store.RecoverStaleAsync(now.AddMinutes(2)));
+        var recovery = Assert.IsType<AzureProviderOperation>(await store.GetAsync(_workspaceId, operation.Id));
+
+        var blocked = await store.MarkUnrestorableAsync(_workspaceId, operation.Id, now.AddMinutes(2), recovery.Version);
+
+        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, blocked?.Status);
+        Assert.Null(blocked?.CompletedAt);
+        Assert.Empty(await store.ListRunnableAsync(now.AddMinutes(2), 10));
+        await Assert.ThrowsAsync<AzureProviderOperationConflictException>(() =>
+            store.CreateOrGetAsync(Request() with { IdempotencyKey = "different-plan", PlanFingerprint = new('f', 64) }, now.AddMinutes(2)));
+    }
+
+    [Fact]
+    public async Task Recovery_required_finalization_stays_reserved_and_unpollable()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId,
+            operation.Id,
+            "worker",
+            "lease",
+            TimeSpan.FromMinutes(1),
+            now));
+
+        var finalized = await store.FinalizeAsync(
+            _workspaceId,
+            operation.Id,
+            "lease",
+            AzureProviderOperationStatus.RecoveryRequired,
+            "azure.operation.recovery-required",
+            now,
+            claimed.Version);
+
+        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, finalized?.Status);
+        Assert.Null(finalized?.CompletedAt);
+        Assert.Empty(await store.ListRunnableAsync(now.AddMinutes(2), 10));
+        Assert.NotNull(await store.ClaimRecoveryAsync(
+            _workspaceId,
+            operation.Id,
+            "worker",
+            "recovery-lease",
+            TimeSpan.FromMinutes(1),
+            now.AddMinutes(2),
+            finalized!.Version));
+    }
+
+    [Fact]
+    public async Task Recovery_required_operation_is_not_returned_for_automatic_polling()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId,
+            operation.Id,
+            "worker",
+            "lease",
+            TimeSpan.FromMinutes(1),
+            now));
+        Assert.NotNull(await store.FinalizeAsync(
+            _workspaceId,
+            operation.Id,
+            "lease",
+            AzureProviderOperationStatus.RecoveryRequired,
+            "azure.operation.recovery-required",
+            now,
+            claimed.Version));
+
+        Assert.Empty(await store.ListRunnableAsync(now.AddMinutes(2), 10));
+    }
+
+    [Fact]
+    public async Task New_reconcile_inherits_the_latest_durable_resource_snapshot()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var first = await store.CreateOrGetAsync(Request(), now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, first.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+        var checkpoint = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+            _workspaceId, first.Id, "lease",
+            new(AzureProviderOperationPhase.WorkloadReady, "workload.ready", "Ready.",
+                new(ResourceGroupName: "rg-safe", WorkloadResourceId: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app"),
+                "https://workload.example.test", AzureProviderHealth.Healthy, []),
+            now, claimed.Version));
+        Assert.NotNull(await store.FinalizeAsync(
+            _workspaceId, first.Id, "lease", AzureProviderOperationStatus.Succeeded, "operation.succeeded", now, checkpoint.Version));
+
+        var next = await store.CreateOrGetAsync(
+            Request() with { IdempotencyKey = "next-reconcile", PlanFingerprint = new('f', 64) },
+            now.AddMinutes(1));
+
+        Assert.Equal("rg-safe", next.Resources.ResourceGroupName);
+        Assert.Equal("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app", next.Resources.WorkloadResourceId);
+    }
+
+    [Fact]
+    public async Task Reference_only_checkpoint_preserves_existing_endpoint_and_health()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+        var observed = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+            _workspaceId, operation.Id, "lease",
+            new(AzureProviderOperationPhase.HealthVerified, "health.verified", "Verified.", new(),
+                "https://workload.example.test", AzureProviderHealth.Healthy, []),
+            now, claimed.Version));
+
+        var preserved = await store.CheckpointAsync(
+            _workspaceId, operation.Id, "lease",
+            new(AzureProviderOperationPhase.TrafficPromoted, "traffic.restored", "Restored.", new(),
+                null, AzureProviderHealth.Unknown, []),
+            now.AddSeconds(1), observed.Version);
+
+        Assert.Equal("https://workload.example.test", preserved?.Endpoint);
+        Assert.Equal(AzureProviderHealth.Healthy, preserved?.Health);
+    }
+
+    [Theory]
+    [InlineData("DiagnosticsJson", "{")]
+    [InlineData("DiagnosticsJson", "null")]
+    [InlineData("DiagnosticsJson", "[{\"Code\":\"azure.step\",\"Message\":\"password=top-secret\"}]")]
+    [InlineData("DiagnosticsJson", "[{\"Code\":\"azure.step\",\"Message\":\"line1\\nline2\"}]")]
+    [InlineData("SecretReferencesJson", "{")]
+    [InlineData("SecretReferencesJson", "null")]
+    [InlineData("SecretReferencesJson", "{\"database\":null}")]
+    [InlineData("SecretReferencesJson", "{\"database\":\"secret://vault/database?token=unsafe\"}")]
+    public async Task Malformed_persisted_metadata_is_marked_unrestorable_without_escaping(string column, string json)
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request() with
+        {
+            ReleaseManifestDigest = "sha256:" + new string('d', 64),
+            ReleaseManifestSignatureDigest = "sha256:" + new string('e', 64),
+            ReleaseManifestReference = "oci://release-manifest.example/manifest",
+            ReleaseManifestSignatureReference = "oci://release-manifest.example/signature"
+        }, now);
+        if (column == "DiagnosticsJson")
+            await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE AzureProviderOperations SET DiagnosticsJson = {json} WHERE Id = {operation.Id}");
+        else
+            await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE AzureProviderOperations SET SecretReferencesJson = {json} WHERE Id = {operation.Id}");
+
+        var runnable = Assert.Single(await store.ListRunnableAsync(now, 10));
+        Assert.True(runnable.PersistedMetadataInvalid);
+        Assert.Empty(runnable.Diagnostics);
+        var mutableReferences = Assert.IsAssignableFrom<IDictionary<string, string>>(runnable.SafeSecretReferences);
+        Assert.Throws<NotSupportedException>(() => mutableReferences.Add("database", "secret://vault/database"));
+        Assert.Null(new PersistedAzureProviderPlanSource().Resolve(runnable));
+
+        var worker = new AzureProviderOperationWorker(
+            store,
+            new AzureProviderExecutor(store, new NeverCalledRunner()),
+            new PersistedAzureProviderPlanSource(),
+            new FixedTimeProvider(now));
+        Assert.Equal(0, await worker.ProcessOnceAsync());
+
+        var failed = await store.GetAsync(_workspaceId, operation.Id);
+        Assert.Equal(AzureProviderOperationStatus.Failed, failed?.Status);
+        Assert.NotNull(failed);
+        Assert.Empty(failed!.Diagnostics);
+        var transition = Assert.Single(await store.ListTransitionsAsync(_workspaceId, operation.Id), x => x.Code == "azure.plan.unrestorable");
+        Assert.Equal("The persisted provider plan cannot be restored.", transition.Message);
+    }
+
+    [Fact]
     public async Task Concurrent_claim_has_one_winner()
     {
         var path = Path.Combine(Path.GetTempPath(), $"elsa-azure-operation-{Guid.NewGuid():N}.db");
@@ -276,6 +489,17 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         _workspaceId, "workload-a", AzureProviderOperationAction.Reconcile, "request-1",
         new('a', 64), new('b', 64), "3.8.0", "3.8", "combined", "Dedicated", "westeurope",
         "valenceruntimeimages.azurecr.io/runtime-combined", "sha256:" + new string('c', 64));
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class NeverCalledRunner : IAzureProviderRunner
+    {
+        public Task<AzureProviderRunnerResult> RunAsync(AzureProviderRunnerCommand command, CancellationToken cancellationToken = default) =>
+            throw new Xunit.Sdk.XunitException("The provider runner must not be called for malformed persisted metadata.");
+    }
 
     public void Dispose() => _connection.Dispose();
 }

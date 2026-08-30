@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Text.RegularExpressions;
 
 namespace ElsaControl.Deployment.Azure;
 
@@ -161,7 +160,11 @@ public sealed class AzureProviderExecutor
                 return await FinalizeResultAsync(operation, leaseToken, AzureProviderOperationStatus.Failed, "azure.operation.phase.invalid", "The reconcile operation has an invalid lifecycle phase.");
             }
             if (next.Count == 0)
+            {
+                if (string.IsNullOrWhiteSpace(operation.Resources.WorkloadResourceId))
+                    return await MarkRecoveryAsync(operation, leaseToken, "azure.workload.identity.missing", "The provider did not retain an owned workload resource identity.");
                 return await FinalizeResultAsync(operation, leaseToken, AzureProviderOperationStatus.Succeeded, "azure.operation.succeeded", "Azure workload reconciliation completed.");
+            }
 
             foreach (var (step, phase) in next)
             {
@@ -606,7 +609,20 @@ public sealed class AzureProviderExecutor
                 if (completed == runnerTask)
                     return (await runnerTask, operation);
 
-                cancellationToken.ThrowIfCancellationRequested();
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    try
+                    {
+                        runnerCancellation.Cancel();
+                    }
+                    catch (AggregateException)
+                    {
+                        // Cancellation is best-effort for provider implementations whose
+                        // callbacks may fail while cancellation is being signalled.
+                    }
+                    ObserveCompletion(runnerTask);
+                    throw new OperationCanceledException(cancellationToken);
+                }
                 var renewed = await _store.HeartbeatAsync(
                     operation.WorkspaceId,
                     operation.Id,
@@ -626,7 +642,7 @@ public sealed class AzureProviderExecutor
                         // Cancellation is best-effort. The runner contract still requires
                         // every remote step to be idempotent when the external job cannot stop.
                     }
-                    _ = runnerTask.ContinueWith(static task => _ = task.Exception, TaskScheduler.Default);
+                    ObserveCompletion(runnerTask);
                     throw new LeaseLostException();
                 }
                 operation = renewed;
@@ -641,6 +657,13 @@ public sealed class AzureProviderExecutor
             throw new RunnerExecutionException(operation, exception);
         }
     }
+
+    private static void ObserveCompletion(Task task) =>
+        _ = task.ContinueWith(
+            static completed => _ = completed.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
 
     private static IReadOnlyList<(AzureProviderRunnerStep Step, AzureProviderOperationPhase Phase)> NextReconcileStep(AzureProviderOperationPhase phase) =>
         phase switch
@@ -739,7 +762,7 @@ public sealed class AzureProviderExecutor
         public Exception Cause { get; } = cause;
     }
 
-    private static void ValidateExecutionRequest(AzureProviderExecutionRequest request)
+    internal static void ValidateExecutionRequest(AzureProviderExecutionRequest request)
     {
         if (request is null)
             throw new ArgumentNullException(nameof(request));
@@ -756,6 +779,8 @@ public sealed class AzureProviderExecutor
             !char.IsAsciiLetterOrDigit(plan.WorkloadName[0]) || !char.IsAsciiLetterOrDigit(plan.WorkloadName[^1]) ||
             plan.WorkloadName.Any(x => !char.IsAsciiLetterOrDigit(x) && x != '-'))
             throw new ArgumentException("The provider plan workload name is required.", nameof(request));
+        if (!string.Equals(plan.WorkloadName, operation.TargetKey, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("The provider plan workload name does not match the operation target.", nameof(request));
         if (!string.Equals(plan.Location, operation.Location, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(plan.ElsaVersion, operation.ElsaVersion, StringComparison.Ordinal) ||
             !string.Equals(plan.ReleaseLine, operation.ReleaseLine, StringComparison.Ordinal) ||
@@ -764,7 +789,10 @@ public sealed class AzureProviderExecutor
             !string.Equals(plan.ImageRepository, operation.ImageRepository, StringComparison.Ordinal) ||
             !string.Equals($"sha256:{plan.ImageDigest}", operation.ImageDigest, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(plan.ReleaseManifestDigest, operation.ReleaseManifestDigest, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(plan.ReleaseManifestSignatureDigest, operation.ReleaseManifestSignatureDigest, StringComparison.OrdinalIgnoreCase))
+            !string.Equals(plan.ReleaseManifestSignatureDigest, operation.ReleaseManifestSignatureDigest, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(plan.ReleaseManifestReference, operation.ReleaseManifestReference, StringComparison.Ordinal) ||
+            !string.Equals(plan.ReleaseManifestSignatureReference, operation.ReleaseManifestSignatureReference, StringComparison.Ordinal) ||
+            !SecretReferencesMatch(plan.SecretReferences, operation.SecretReferences))
             throw new ArgumentException("The provider plan does not match the operation request.", nameof(request));
 
         if (!AzureProviderOperationValidation.IsSafeImmutableEvidenceReference(plan.ReleaseManifestReference, plan.ReleaseManifestDigest) ||
@@ -772,20 +800,14 @@ public sealed class AzureProviderExecutor
             throw new ArgumentException("Provider evidence references must be safe immutable locators.", nameof(request));
         if (!IsSha256Digest(plan.ReleaseManifestDigest) || !IsSha256Digest(plan.ReleaseManifestSignatureDigest))
             throw new ArgumentException("The provider plan must include verified release-manifest digests.", nameof(request));
-        if (plan.ImageDigest.Length != 64 || !plan.ImageDigest.All(Uri.IsHexDigit))
+        if (string.IsNullOrWhiteSpace(plan.ImageDigest) || plan.ImageDigest.Length != 64 || !plan.ImageDigest.All(Uri.IsHexDigit))
             throw new ArgumentException("The provider plan image digest must be exactly 64 hexadecimal characters.", nameof(request));
-        if (!plan.ImageRepository.StartsWith($"{AzureWorkloadPlanTranslator.SupportedRegistryHost}/", StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(plan.ImageRepository) ||
+            !plan.ImageRepository.StartsWith($"{AzureWorkloadPlanTranslator.SupportedRegistryHost}/", StringComparison.Ordinal))
             throw new ArgumentException("The provider plan image must use the governed Azure registry authority.", nameof(request));
 
-        if (plan.SecretReferences is null || plan.SecretReferences.Count > 64)
-            throw new ArgumentException("Secret references are required and bounded.", nameof(request));
-        foreach (var pair in plan.SecretReferences)
-        {
-            if (string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 256 || pair.Key.Any(char.IsControl) ||
-                string.IsNullOrWhiteSpace(pair.Value) || pair.Value.Length > 512 || pair.Value.Any(char.IsControl) ||
-                !Regex.IsMatch(pair.Value, "^secret://[A-Za-z0-9._/-]+$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
-                throw new ArgumentException("Secret references must be safe provider locators.", nameof(request));
-        }
+        if (!AzureProviderOperationValidation.IsSafeSecretReferences(plan.SecretReferences))
+            throw new ArgumentException("Secret references must be safe provider locators.", nameof(request));
     }
 
     private static AzureProviderExecutionOutcome MapOutcome(AzureProviderOperationStatus status) =>
@@ -821,6 +843,16 @@ public sealed class AzureProviderExecutor
     private static bool IsSha256Digest(string? value) =>
         value is not null && value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) &&
         value.Length == "sha256:".Length + 64 && value["sha256:".Length..].All(Uri.IsHexDigit);
+
+    private static bool SecretReferencesMatch(
+        IReadOnlyDictionary<string, string>? planReferences,
+        IReadOnlyDictionary<string, string>? operationReferences) =>
+        planReferences is not null && operationReferences is not null &&
+        planReferences.Count == operationReferences.Count &&
+        planReferences.All(pair => string.Equals(pair.Key, pair.Key.Trim().ToLowerInvariant(), StringComparison.Ordinal)) &&
+        operationReferences.All(pair =>
+            planReferences.TryGetValue(pair.Key, out var value) &&
+            string.Equals(value, pair.Value, StringComparison.Ordinal));
 
     private static bool IsFingerprint(string? value) => value is not null && value.Length == 64 && value.All(Uri.IsHexDigit);
 
