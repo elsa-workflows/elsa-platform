@@ -7,6 +7,7 @@ using ElsaControl.Api.Authentication;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace ElsaControl.Api.Tests;
@@ -278,6 +279,22 @@ public sealed class ManagedElsaHandoffTests
         Assert.True(keyRing.ContainsKey("previous-2026-08"));
     }
 
+    [Fact]
+    public async Task Production_configuration_validator_rejects_malformed_signing_key_at_startup()
+    {
+        var validator = new ManagedElsaHandoffConfigurationValidator(
+            new TestHostEnvironment(Environments.Production),
+            Options.Create(new ManagedElsaHandoffOptions
+            {
+                Enabled = true,
+                Issuer = "https://cloud.example.test",
+                ActiveKeyId = "active-2026-09",
+                ActivePrivateKeyPem = "not a pem"
+            }));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => validator.StartAsync(CancellationToken.None));
+    }
+
     private static ControlApiTestApplication CreateApplication(FakeHandoffAuthorizer authorizer) =>
         new(new Dictionary<string, string?>
         {
@@ -424,5 +441,14 @@ public sealed class ManagedElsaHandoffTests
     private sealed class TestTimeProvider(DateTimeOffset current) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => current;
+    }
+
+    private sealed class TestHostEnvironment(string environmentName) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+        public string ApplicationName { get; set; } = nameof(ManagedElsaHandoffTests);
+        public string ContentRootPath { get; set; } = "";
+        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } =
+            new Microsoft.Extensions.FileProviders.NullFileProvider();
     }
 }

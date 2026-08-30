@@ -39,6 +39,12 @@ public sealed class ManagedElsaHandoffConfigurationValidator(
             (string.IsNullOrWhiteSpace(validated.ActiveKeyId) || string.IsNullOrWhiteSpace(validated.ActivePrivateKeyPem)))
             throw new InvalidOperationException(
                 "Managed Elsa handoff requires a configured active signing key in Production.");
+        if (validated.Enabled &&
+            !string.IsNullOrWhiteSpace(validated.ActiveKeyId) &&
+            !string.IsNullOrWhiteSpace(validated.ActivePrivateKeyPem))
+        {
+            using var _ = ManagedElsaHandoffKeyRing.CreateConfigured(validated);
+        }
 
         return Task.CompletedTask;
     }
