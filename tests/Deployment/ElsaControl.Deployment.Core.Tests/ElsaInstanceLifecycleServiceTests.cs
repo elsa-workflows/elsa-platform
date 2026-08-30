@@ -160,6 +160,23 @@ public sealed class ElsaInstanceLifecycleServiceTests
         Assert.Single(store.Operations);
     }
 
+    [Fact]
+    public async Task Active_reservation_is_selected_before_a_waiting_delete_successor()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore();
+        var service = new ElsaInstanceLifecycleService(store);
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+        var deletion = await service.DeleteAsync(new ElsaInstanceLifecycleRequest(
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1"));
+
+        Assert.Equal(ElsaInstanceOperationState.WaitingForPriorOperation, deletion.Operation.State);
+        var active = await store.GetActiveOperationAsync(WorkspaceId, created.Instance.Id);
+        Assert.NotNull(active);
+        Assert.Equal(created.Operation.Id, active!.Id);
+        Assert.True(active.HoldsReservation);
+    }
+
     private static ElsaInstanceIntent Intent(ElsaDesiredLifecycle lifecycle = ElsaDesiredLifecycle.Running) => new(
         new ElsaReleaseIntent("valence-runtime", "3.8", channel: "stable"),
         new ElsaApplicationIntent("combined", "starter", packagePolicy: "approved"),

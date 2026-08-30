@@ -356,7 +356,10 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
 
                 var originalState = (ElsaInstanceOperationState)entry.Property(nameof(Models.ElsaInstanceOperationEntity.State)).OriginalValue!;
                 EnsureDefined(originalState, nameof(Models.ElsaInstanceOperationEntity.State));
-                if (!ElsaInstanceOperation.CanTransition(originalState, operation.State))
+                var isRecoveryResume = originalState == ElsaInstanceOperationState.RecoveryRequired &&
+                    operation.State == ElsaInstanceOperationState.Queued &&
+                    operation.AttemptNumber == (int)entry.Property(nameof(Models.ElsaInstanceOperationEntity.AttemptNumber)).OriginalValue! + 1;
+                if (!ElsaInstanceOperation.CanTransition(originalState, operation.State) && !isRecoveryResume)
                     throw new InvalidOperationException("Instance operation state transition is not allowed.");
                 var originalAttemptNumber = (int)entry.Property(nameof(Models.ElsaInstanceOperationEntity.AttemptNumber)).OriginalValue!;
                 if (operation.AttemptNumber < originalAttemptNumber)

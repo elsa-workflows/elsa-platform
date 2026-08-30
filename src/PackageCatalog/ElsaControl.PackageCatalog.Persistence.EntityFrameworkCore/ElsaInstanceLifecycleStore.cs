@@ -1,0 +1,887 @@
+using System.Data;
+using System.Data.Common;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Core.Instances;
+using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+
+namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
+
+/// <summary>
+/// Relational implementation of the lifecycle acceptance boundary. The aggregate,
+/// immutable intent revision, operation and outbox are committed in one transaction;
+/// all ownership, version and reservation checks are repeated while that transaction
+/// is open so the preflight reads in the application service are not trusted as a
+/// concurrency boundary.
+/// </summary>
+public sealed class EfCoreElsaInstanceLifecycleStore(CatalogDbContext dbContext) : IElsaInstanceLifecycleStore
+{
+    private static readonly JsonDocumentOptions SafeJsonOptions = new()
+    {
+        MaxDepth = 16,
+        AllowTrailingCommas = false,
+        CommentHandling = JsonCommentHandling.Disallow
+    };
+
+    public async Task<ElsaInstance?> GetInstanceAsync(
+        Guid workspaceId,
+        Guid instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (workspaceId == Guid.Empty || instanceId == Guid.Empty)
+            return null;
+
+        var entity = await dbContext.ElsaInstances
+            .AsNoTracking()
+            .Include(x => x.IdentityBinding)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == instanceId, cancellationToken);
+        return entity is null ? null : MapInstance(entity);
+    }
+
+    public async Task<ElsaInstanceOperation?> GetActiveOperationAsync(
+        Guid workspaceId,
+        Guid instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (workspaceId == Guid.Empty || instanceId == Guid.Empty)
+            return null;
+
+        var entity = await dbContext.ElsaInstanceOperations
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.InstanceId == instanceId)
+            .Where(x => x.State == ElsaInstanceOperationState.Accepted ||
+                        x.State == ElsaInstanceOperationState.WaitingForPriorOperation ||
+                        x.State == ElsaInstanceOperationState.Queued ||
+                        x.State == ElsaInstanceOperationState.Running ||
+                        x.State == ElsaInstanceOperationState.RecoveryRequired)
+            .OrderByDescending(x => x.State != ElsaInstanceOperationState.WaitingForPriorOperation)
+            .ThenByDescending(x => x.AcceptedAt)
+            .ThenByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+        return entity is null ? null : MapOperation(entity);
+    }
+
+    public async Task<ElsaInstanceOperation?> FindOperationByKeyAsync(
+        Guid workspaceId,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (workspaceId == Guid.Empty)
+            return null;
+        idempotencyKey = RequireIdempotencyKey(idempotencyKey);
+
+        var entity = await dbContext.ElsaInstanceOperations
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.IdempotencyKey == idempotencyKey)
+            .OrderByDescending(x => x.AcceptedAt)
+            .ThenByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+        return entity is null ? null : MapOperation(entity);
+    }
+
+    public async Task<ElsaInstanceLifecycleAcceptance> CommitAcceptedAsync(
+        ElsaInstance? expectedInstance,
+        ElsaInstance instance,
+        ElsaInstanceOperation operation,
+        ElsaInstanceLifecycleOutboxMessage outbox,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        ArgumentNullException.ThrowIfNull(operation);
+        ArgumentNullException.ThrowIfNull(outbox);
+        ValidateEnvelope(instance, operation, outbox);
+
+        try
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable, cancellationToken);
+
+            // Check the operation ID first. This handles an exact retry and also
+            // prevents a caller from reusing an operation ID for another envelope.
+            var existingOperation = await dbContext.ElsaInstanceOperations
+                .SingleOrDefaultAsync(x => x.Id == operation.Id, cancellationToken);
+            if (existingOperation is not null)
+            {
+                var existingInstance = await LoadTrackedInstanceAsync(existingOperation.InstanceId, cancellationToken);
+                var existingOutbox = await dbContext.ElsaInstanceLifecycleOutbox
+                    .SingleOrDefaultAsync(x => x.OperationId == existingOperation.Id, cancellationToken);
+                ValidateExistingOperation(existingOperation, instance, operation, outbox);
+                return await CompleteExistingOperationAsync(
+                    transaction,
+                    expectedInstance,
+                    instance,
+                    operation,
+                    existingOperation,
+                    existingInstance,
+                    existingOutbox,
+                    outbox.CreatedAt,
+                    cancellationToken);
+            }
+
+            // The service intentionally looks up by key before creating an ID, but
+            // two first requests can race between that read and this transaction.
+            // Treat the workspace/key row as the idempotency authority even though
+            // the operation route scope is also persisted for downstream consumers.
+            var existingKeyOperation = await dbContext.ElsaInstanceOperations
+                .OrderByDescending(x => x.AcceptedAt)
+                .ThenByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(
+                    x => x.WorkspaceId == instance.WorkspaceId &&
+                         x.IdempotencyScope == operation.IdempotencyScope &&
+                         x.IdempotencyKey == operation.IdempotencyKey,
+                    cancellationToken);
+            if (existingKeyOperation is not null)
+            {
+                if (existingKeyOperation.Action != operation.Action ||
+                    !string.Equals(existingKeyOperation.RequestHash, operation.RequestHash, StringComparison.Ordinal))
+                    throw Conflict("Idempotency key was already used for a different request.");
+
+                var keyInstance = await LoadTrackedInstanceAsync(existingKeyOperation.InstanceId, cancellationToken);
+                var keyOutbox = await dbContext.ElsaInstanceLifecycleOutbox
+                    .SingleOrDefaultAsync(x => x.OperationId == existingKeyOperation.Id, cancellationToken);
+                return await ReplayAsync(transaction, keyInstance, existingKeyOperation, keyOutbox, cancellationToken);
+            }
+
+            var storedInstance = await LoadTrackedInstanceAsync(instance.Id, cancellationToken);
+            if (expectedInstance is null)
+            {
+                if (storedInstance is not null)
+                    throw Conflict("Elsa instance identity is already in use.");
+                if (operation.Action != ElsaInstanceOperationAction.Create)
+                    throw Conflict("A lifecycle operation requires an existing instance.");
+            }
+            else
+            {
+                ValidateExpectedInstance(expectedInstance, instance, storedInstance);
+            }
+
+            var activeOperation = storedInstance is null
+                ? null
+                : await dbContext.ElsaInstanceOperations
+                    .AsNoTracking()
+                    .Where(x => x.WorkspaceId == instance.WorkspaceId && x.InstanceId == instance.Id)
+                    .Where(x => x.State == ElsaInstanceOperationState.Accepted ||
+                                x.State == ElsaInstanceOperationState.WaitingForPriorOperation ||
+                                x.State == ElsaInstanceOperationState.Queued ||
+                                x.State == ElsaInstanceOperationState.Running ||
+                                x.State == ElsaInstanceOperationState.RecoveryRequired)
+                    .OrderByDescending(x => x.AcceptedAt)
+                    .ThenByDescending(x => x.CreatedAt)
+                    .FirstOrDefaultAsync(cancellationToken);
+            if (activeOperation is not null)
+            {
+                var isDeleteSuccessor = operation.Action == ElsaInstanceOperationAction.Delete &&
+                    operation.State == ElsaInstanceOperationState.WaitingForPriorOperation &&
+                    activeOperation.Action != ElsaInstanceOperationAction.Delete;
+                if (!isDeleteSuccessor)
+                    throw Conflict("An instance operation is already active.");
+            }
+
+            var priorObservedLifecycle = storedInstance?.ObservedLifecycle;
+            var instanceEntity = storedInstance ?? ToEntity(instance, outbox.CreatedAt);
+            if (storedInstance is null)
+                await dbContext.ElsaInstances.AddAsync(instanceEntity, cancellationToken);
+            else
+            {
+                ApplyAggregate(instanceEntity, instance);
+                instanceEntity.UpdatedAt = outbox.CreatedAt.ToUniversalTime();
+            }
+
+            await AddIntentRevisionIfNeededAsync(
+                instanceEntity,
+                instance,
+                outbox.CreatedAt,
+                cancellationToken);
+
+            var operationEntity = ToEntity(operation, instance, outbox.CreatedAt);
+            // Every accepted operation points at the immutable intent revision that
+            // was current for this transaction, including a mutation whose intent
+            // hash happens to match the latest revision.
+            operationEntity.DesiredStateRevisionId = instanceEntity.DesiredStateRevisionId;
+            await dbContext.ElsaInstanceOperations.AddAsync(operationEntity, cancellationToken);
+
+            var outboxEntity = ToEntity(outbox, instance);
+            await dbContext.ElsaInstanceLifecycleOutbox.AddAsync(outboxEntity, cancellationToken);
+            await dbContext.ElsaInstanceAuditEvents.AddAsync(
+                await CreateAuditEventAsync(
+                    instanceEntity,
+                    operationEntity,
+                    priorObservedLifecycle,
+                    occurredAt: outbox.CreatedAt,
+                    cancellationToken: cancellationToken),
+                cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return new ElsaInstanceLifecycleAcceptance(
+                MapInstance(instanceEntity),
+                MapOperation(operationEntity),
+                MapOutbox(outboxEntity),
+                Replayed: false);
+        }
+        catch (ElsaInstanceLifecycleConflictException)
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            dbContext.ChangeTracker.Clear();
+            throw Conflict("Lifecycle acceptance conflicted with a newer instance version.");
+        }
+        catch (DbUpdateException)
+        {
+            dbContext.ChangeTracker.Clear();
+            throw Conflict("Lifecycle acceptance conflicted with another request.");
+        }
+        catch (DbException)
+        {
+            dbContext.ChangeTracker.Clear();
+            throw Conflict("Lifecycle acceptance could not obtain the persistence reservation.");
+        }
+    }
+
+    private async Task<ElsaInstanceLifecycleAcceptance> CompleteExistingOperationAsync(
+        IDbContextTransaction transaction,
+        ElsaInstance? expectedInstance,
+        ElsaInstance requestedInstance,
+        ElsaInstanceOperation requestedOperation,
+        ElsaInstanceOperationEntity existingOperation,
+        ElsaInstanceEntity? existingInstance,
+        ElsaInstanceLifecycleOutboxEntity? existingOutbox,
+        DateTimeOffset requestedAt,
+        CancellationToken cancellationToken)
+    {
+        if (existingInstance is null || existingOutbox is null)
+            throw Conflict("Lifecycle operation outbox record is missing.");
+
+        if (existingOperation.State == requestedOperation.State &&
+            existingOperation.AttemptNumber == requestedOperation.AttemptNumber)
+            return await ReplayAsync(transaction, existingInstance, existingOperation, existingOutbox, cancellationToken);
+
+        if (expectedInstance is null)
+            throw Conflict("Lifecycle operation state transition is not valid.");
+        ValidateExpectedInstance(expectedInstance, requestedInstance, existingInstance);
+
+        var canTransition = ElsaInstanceOperation.CanTransition(existingOperation.State, requestedOperation.State);
+        var isRecoveryResume = existingOperation.State == ElsaInstanceOperationState.RecoveryRequired &&
+            requestedOperation.State == ElsaInstanceOperationState.Queued &&
+            requestedOperation.AttemptNumber == existingOperation.AttemptNumber + 1;
+        if ((!canTransition && !isRecoveryResume) || requestedOperation.AttemptNumber < existingOperation.AttemptNumber)
+            throw Conflict("Lifecycle operation state transition is not valid.");
+
+        // Outbox rows are immutable and unique per operation. Recovery resumes the
+        // existing durable work item instead of appending a second row for it.
+        var priorObservedLifecycle = existingInstance.ObservedLifecycle;
+        ApplyAggregate(existingInstance, requestedInstance);
+        existingInstance.UpdatedAt = requestedAt.ToUniversalTime();
+        existingOperation.State = requestedOperation.State;
+        existingOperation.AttemptNumber = requestedOperation.AttemptNumber;
+        existingOperation.UpdatedAt = requestedAt.ToUniversalTime();
+        await dbContext.ElsaInstanceAuditEvents.AddAsync(
+            await CreateAuditEventAsync(
+                existingInstance,
+                existingOperation,
+                priorObservedLifecycle,
+                requestedAt,
+                cancellationToken,
+                eventType: "lifecycle.operation-updated"),
+            cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new ElsaInstanceLifecycleAcceptance(
+            MapInstance(existingInstance),
+            MapOperation(existingOperation),
+            MapOutbox(existingOutbox),
+            Replayed: false);
+    }
+
+    private async Task<ElsaInstanceLifecycleAcceptance> ReplayAsync(
+        IDbContextTransaction transaction,
+        ElsaInstanceEntity? instance,
+        ElsaInstanceOperationEntity operation,
+        ElsaInstanceLifecycleOutboxEntity? outbox,
+        CancellationToken cancellationToken)
+    {
+        if (instance is null || outbox is null)
+            throw Conflict("Lifecycle operation outbox record is missing.");
+        if (operation.InstanceId is null ||
+            operation.InstanceId != instance.Id ||
+            outbox.OperationId != operation.Id ||
+            outbox.InstanceId != instance.Id ||
+            outbox.WorkspaceId != operation.WorkspaceId ||
+            outbox.Action != operation.Action ||
+            !string.Equals(outbox.RequestHash, operation.RequestHash, StringComparison.Ordinal) ||
+            operation.OrganizationId != instance.OrganizationId ||
+            operation.WorkspaceId != instance.WorkspaceId)
+            throw Conflict("Lifecycle operation outbox record is inconsistent.");
+        await transaction.CommitAsync(cancellationToken);
+        return new ElsaInstanceLifecycleAcceptance(
+            MapInstance(instance),
+            MapOperation(operation),
+            MapOutbox(outbox),
+            Replayed: true);
+    }
+
+    private async Task<ElsaInstanceEntity?> LoadTrackedInstanceAsync(
+        Guid? instanceId,
+        CancellationToken cancellationToken)
+    {
+        if (instanceId is null || instanceId == Guid.Empty)
+            return null;
+        return await dbContext.ElsaInstances
+            .Include(x => x.IdentityBinding)
+            .SingleOrDefaultAsync(x => x.Id == instanceId, cancellationToken);
+    }
+
+    private async Task AddIntentRevisionIfNeededAsync(
+        ElsaInstanceEntity entity,
+        ElsaInstance instance,
+        DateTimeOffset authoredAt,
+        CancellationToken cancellationToken)
+    {
+        var contentHash = instance.ComputeCanonicalIntentHash();
+        var latest = await dbContext.ElsaInstanceIntentRevisions
+            .Where(x => x.InstanceId == instance.Id)
+            .OrderByDescending(x => x.RevisionNumber)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (latest is not null && string.Equals(latest.ContentHash, contentHash, StringComparison.Ordinal))
+        {
+            entity.DesiredStateRevisionId = latest.Id.ToString("D");
+            return;
+        }
+
+        var revision = ToEntity(instance.Intent, instance, authoredAt, latest?.RevisionNumber + 1 ?? 1);
+        await dbContext.ElsaInstanceIntentRevisions.AddAsync(revision, cancellationToken);
+        entity.DesiredStateRevisionId = revision.Id.ToString("D");
+    }
+
+    private async Task<ElsaInstanceAuditEventEntity> CreateAuditEventAsync(
+        ElsaInstanceEntity instance,
+        ElsaInstanceOperationEntity operation,
+        ElsaObservedLifecycle? priorObservedLifecycle,
+        DateTimeOffset occurredAt,
+        CancellationToken cancellationToken,
+        string eventType = "lifecycle.accepted")
+    {
+        var lastSequence = await dbContext.ElsaInstanceAuditEvents
+            .Where(x => x.InstanceId == instance.Id)
+            .Select(x => (long?)x.Sequence)
+            .MaxAsync(cancellationToken) ?? 0;
+        return new ElsaInstanceAuditEventEntity
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = instance.OrganizationId,
+            WorkspaceId = instance.WorkspaceId,
+            InstanceId = instance.Id,
+            Sequence = checked(lastSequence + 1),
+            EventType = eventType,
+            OperationId = operation.Id,
+            PriorState = priorObservedLifecycle?.ToString(),
+            NewState = instance.ObservedLifecycle.ToString(),
+            DesiredStateRevisionId = instance.DesiredStateRevisionId,
+            RequestKeyHash = HashIdempotencyKey(operation.IdempotencyKey),
+            OccurredAt = occurredAt.ToUniversalTime()
+        };
+    }
+
+    private static void ValidateEnvelope(
+        ElsaInstance instance,
+        ElsaInstanceOperation operation,
+        ElsaInstanceLifecycleOutboxMessage outbox)
+    {
+        if (instance.Id == Guid.Empty || instance.OrganizationId == Guid.Empty || instance.WorkspaceId == Guid.Empty)
+            throw Conflict("Lifecycle instance ownership is invalid.");
+        if (operation.InstanceId != instance.Id || outbox.InstanceId != instance.Id ||
+            outbox.OperationId != operation.Id || outbox.WorkspaceId != instance.WorkspaceId ||
+            outbox.Action != operation.Action ||
+            !string.Equals(outbox.RequestHash, operation.RequestHash, StringComparison.Ordinal))
+            throw Conflict("Lifecycle operation identity is inconsistent.");
+        if (string.IsNullOrWhiteSpace(operation.IdempotencyKey) ||
+            string.IsNullOrWhiteSpace(operation.IdempotencyScope))
+            throw Conflict("Lifecycle operation scope is invalid.");
+    }
+
+    private static void ValidateExistingOperation(
+        ElsaInstanceOperationEntity existing,
+        ElsaInstance instance,
+        ElsaInstanceOperation operation,
+        ElsaInstanceLifecycleOutboxMessage outbox)
+    {
+        if (existing.InstanceId != operation.InstanceId || existing.InstanceId != instance.Id ||
+            existing.OrganizationId != instance.OrganizationId || existing.WorkspaceId != instance.WorkspaceId ||
+            existing.Action != operation.Action || existing.ExpectedVersion != operation.ExpectedVersion ||
+            !string.Equals(existing.IdempotencyScope, operation.IdempotencyScope, StringComparison.Ordinal) ||
+            !string.Equals(existing.IdempotencyKey, operation.IdempotencyKey, StringComparison.Ordinal) ||
+            !string.Equals(existing.RequestHash, operation.RequestHash, StringComparison.Ordinal) ||
+            outbox.OperationId != existing.Id)
+            throw Conflict("Lifecycle operation identity is already in use.");
+    }
+
+    private static void ValidateExpectedInstance(
+        ElsaInstance expected,
+        ElsaInstance requested,
+        ElsaInstanceEntity? stored)
+    {
+        if (stored is null || expected.Id != requested.Id || expected.OrganizationId != requested.OrganizationId ||
+            expected.WorkspaceId != requested.WorkspaceId || stored.OrganizationId != expected.OrganizationId ||
+            stored.WorkspaceId != expected.WorkspaceId || stored.Version != expected.Version ||
+            !string.Equals(stored.Slug, expected.Slug, StringComparison.Ordinal))
+            throw Conflict(stored is null || stored.Version != expected.Version
+                ? "Instance version conflict."
+                : "Elsa instance does not exist in the workspace.");
+    }
+
+    private static ElsaInstanceEntity ToEntity(ElsaInstance instance, DateTimeOffset now)
+    {
+        var entity = new ElsaInstanceEntity
+        {
+            Id = instance.Id,
+            OrganizationId = instance.OrganizationId,
+            WorkspaceId = instance.WorkspaceId,
+            Name = instance.Name,
+            Slug = instance.Slug,
+            Version = instance.Version,
+            CreatedAt = now.ToUniversalTime(),
+            UpdatedAt = now.ToUniversalTime()
+        };
+        ApplyAggregate(entity, instance);
+        return entity;
+    }
+
+    private static void ApplyAggregate(ElsaInstanceEntity entity, ElsaInstance instance)
+    {
+        if (!string.Equals(entity.Slug, instance.Slug, StringComparison.Ordinal) && entity.Id != Guid.Empty)
+            throw Conflict("An Elsa instance slug is immutable.");
+
+        var release = instance.Intent.Release;
+        var application = instance.Intent.Application;
+        var placement = instance.Intent.Placement;
+        entity.Name = instance.Name;
+        entity.Slug = instance.Slug;
+        entity.DistributionId = release.DistributionId;
+        entity.ReleaseLine = release.ReleaseLine;
+        entity.RequestedVersion = release.RequestedVersion;
+        entity.Channel = release.Channel;
+        entity.PatchUpdates = release.PatchUpdates;
+        entity.MinorUpdates = release.MinorUpdates;
+        entity.MajorMigrations = release.MajorMigrations;
+        entity.TopologyId = application.TopologyId;
+        entity.FeaturePresetId = application.FeaturePresetId;
+        entity.FeatureOverridesJson = SerializeFeatureOverrides(application.FeatureOverrides);
+        entity.PackagePolicy = application.PackagePolicy;
+        entity.ConfigurationShapeRevisionId = application.ConfigurationShapeRevisionId;
+        entity.TargetMode = placement.TargetMode;
+        entity.RegionCode = placement.RegionCode;
+        entity.IsolationProfile = placement.IsolationProfile;
+        entity.CapacityProfile = placement.CapacityProfile;
+        entity.NetworkOutcome = placement.NetworkOutcome;
+        entity.DomainOutcome = placement.DomainOutcome;
+        entity.DesiredLifecycle = instance.DesiredLifecycle;
+        entity.ObservedLifecycle = instance.ObservedLifecycle;
+        entity.Health = instance.Health;
+        entity.DesiredStateRevisionId = instance.DesiredStateRevisionId?.Value;
+        entity.ResolvedPlanId = instance.ResolvedPlanReference?.PlanId;
+        entity.ResolvedPlanSchemaVersion = instance.ResolvedPlanReference?.SchemaVersion;
+        entity.ResolvedPlanContentHash = instance.ResolvedPlanReference?.ContentHash;
+        entity.ResolvedPlanUri = instance.ResolvedPlanReference?.PlanUri;
+        entity.CurrentReleaseDistributionId = instance.CurrentResolvedRelease?.DistributionId;
+        entity.CurrentReleaseLine = instance.CurrentResolvedRelease?.ReleaseLine;
+        entity.CurrentReleaseVersion = instance.CurrentResolvedRelease?.Version;
+        entity.CurrentReleaseManifestDigest = instance.CurrentResolvedRelease?.ManifestDigest;
+        entity.CurrentReleaseComponentDigestsJson = instance.CurrentResolvedRelease is null
+            ? null
+            : SerializeComponentDigests(instance.CurrentResolvedRelease.ComponentDigests);
+        entity.CurrentDeploymentId = instance.CurrentDeploymentReference?.DeploymentId;
+        entity.CurrentDeploymentRevisionId = instance.CurrentDeploymentReference?.RevisionId;
+        entity.CurrentDeploymentEndpointUri = instance.CurrentDeploymentReference?.EndpointUri;
+        entity.PlacementAssignmentId = instance.PlacementAssignmentReference?.AssignmentId;
+        entity.ElsaTenantId = instance.ElsaTenantReference?.TenantId;
+        entity.ElsaTenantAudience = instance.ElsaTenantReference?.Audience;
+        entity.LastOperationId = instance.LastOperationId?.Value;
+        entity.DeletedAt = instance.DeletedAt;
+        // Version is part of the aggregate snapshot even when a valid intent
+        // mutation leaves all normalized fields equal (for example, an explicit
+        // no-op intent update). CatalogDbContext still validates the increment
+        // against the tracked original version before saving.
+        entity.Version = instance.Version;
+    }
+
+    private static ElsaInstanceOperationEntity ToEntity(
+        ElsaInstanceOperation operation,
+        ElsaInstance instance,
+        DateTimeOffset now) => new()
+        {
+            Id = operation.Id,
+            InstanceId = operation.InstanceId,
+            OrganizationId = instance.OrganizationId,
+            WorkspaceId = instance.WorkspaceId,
+            Action = operation.Action,
+            IdempotencyScope = operation.IdempotencyScope,
+            IdempotencyKey = operation.IdempotencyKey,
+            RequestHash = operation.RequestHash,
+            ExpectedVersion = operation.ExpectedVersion,
+            State = operation.State,
+            AttemptNumber = operation.AttemptNumber,
+            AcceptedAt = operation.AcceptedAt,
+            CreatedAt = now.ToUniversalTime(),
+            UpdatedAt = now.ToUniversalTime()
+        };
+
+    private static ElsaInstanceLifecycleOutboxEntity ToEntity(
+        ElsaInstanceLifecycleOutboxMessage outbox,
+        ElsaInstance instance) => new()
+        {
+            Id = outbox.Id,
+            OrganizationId = instance.OrganizationId,
+            WorkspaceId = outbox.WorkspaceId,
+            InstanceId = outbox.InstanceId,
+            OperationId = outbox.OperationId,
+            Action = outbox.Action,
+            RequestHash = outbox.RequestHash,
+            CreatedAt = outbox.CreatedAt.ToUniversalTime()
+        };
+
+    private static ElsaInstanceIntentRevisionEntity ToEntity(
+        ElsaInstanceIntent intent,
+        ElsaInstance instance,
+        DateTimeOffset authoredAt,
+        int revisionNumber)
+    {
+        var release = intent.Release;
+        var application = intent.Application;
+        var placement = intent.Placement;
+        return new ElsaInstanceIntentRevisionEntity
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = instance.OrganizationId,
+            WorkspaceId = instance.WorkspaceId,
+            InstanceId = instance.Id,
+            RevisionNumber = revisionNumber,
+            ContentHash = intent.ComputeCanonicalHash(),
+            DistributionId = release.DistributionId,
+            ReleaseLine = release.ReleaseLine,
+            RequestedVersion = release.RequestedVersion,
+            Channel = release.Channel,
+            PatchUpdates = release.PatchUpdates,
+            MinorUpdates = release.MinorUpdates,
+            MajorMigrations = release.MajorMigrations,
+            TopologyId = application.TopologyId,
+            FeaturePresetId = application.FeaturePresetId,
+            FeatureOverridesJson = SerializeFeatureOverrides(application.FeatureOverrides),
+            PackagePolicy = application.PackagePolicy,
+            ConfigurationShapeRevisionId = application.ConfigurationShapeRevisionId,
+            TargetMode = placement.TargetMode,
+            RegionCode = placement.RegionCode,
+            IsolationProfile = placement.IsolationProfile,
+            CapacityProfile = placement.CapacityProfile,
+            NetworkOutcome = placement.NetworkOutcome,
+            DomainOutcome = placement.DomainOutcome,
+            DesiredLifecycle = intent.DesiredLifecycle,
+            AuthoredAt = authoredAt.ToUniversalTime(),
+            CreatedAt = authoredAt.ToUniversalTime()
+        };
+    }
+
+    private static ElsaInstanceLifecycleOutboxMessage MapOutbox(ElsaInstanceLifecycleOutboxEntity entity)
+    {
+        if (entity.Id == Guid.Empty || entity.WorkspaceId == Guid.Empty || entity.InstanceId == Guid.Empty ||
+            entity.OperationId == Guid.Empty || !Enum.IsDefined(entity.Action) || !IsCanonicalHash(entity.RequestHash))
+            throw new InvalidOperationException("Persisted lifecycle outbox record is invalid.");
+        return new ElsaInstanceLifecycleOutboxMessage(
+            entity.Id, entity.WorkspaceId, entity.InstanceId, entity.OperationId, entity.Action,
+            entity.RequestHash, entity.CreatedAt);
+    }
+
+    private static ElsaInstanceOperation MapOperation(ElsaInstanceOperationEntity entity)
+    {
+        try
+        {
+            if (entity.InstanceId is null)
+                throw new InvalidOperationException();
+            return ElsaInstanceOperation.Hydrate(
+                entity.Id,
+                entity.InstanceId.Value,
+                entity.Action,
+                entity.IdempotencyScope,
+                entity.IdempotencyKey,
+                entity.RequestHash,
+                entity.ExpectedVersion,
+                entity.State,
+                entity.AttemptNumber,
+                entity.AcceptedAt);
+        }
+        catch (Exception exception) when (exception is ArgumentException or ArgumentOutOfRangeException or InvalidOperationException)
+        {
+            throw new InvalidOperationException("Persisted lifecycle operation is invalid.");
+        }
+    }
+
+    private static ElsaInstance MapInstance(ElsaInstanceEntity entity)
+    {
+        try
+        {
+            var intent = MapIntent(
+                entity.DistributionId,
+                entity.ReleaseLine,
+                entity.RequestedVersion,
+                entity.Channel,
+                entity.PatchUpdates,
+                entity.MinorUpdates,
+                entity.MajorMigrations,
+                entity.TopologyId,
+                entity.FeaturePresetId,
+                entity.FeatureOverridesJson,
+                entity.PackagePolicy,
+                entity.ConfigurationShapeRevisionId,
+                entity.TargetMode,
+                entity.RegionCode,
+                entity.IsolationProfile,
+                entity.CapacityProfile,
+                entity.NetworkOutcome,
+                entity.DomainOutcome,
+                entity.DesiredLifecycle);
+
+            var plan = MapPlan(entity);
+            var currentRelease = MapCurrentRelease(entity, plan);
+            var identityBinding = MapIdentityBinding(entity);
+            return ElsaInstance.Hydrate(
+                entity.Id,
+                entity.OrganizationId,
+                entity.WorkspaceId,
+                entity.Name,
+                entity.Slug,
+                intent,
+                entity.ObservedLifecycle,
+                entity.Health,
+                entity.Version,
+                identityBinding,
+                OptionalRevision(entity.DesiredStateRevisionId),
+                plan,
+                currentRelease,
+                MapDeployment(entity),
+                entity.PlacementAssignmentId is null ? null : new ElsaPlacementAssignmentReference(entity.PlacementAssignmentId),
+                MapTenant(entity),
+                entity.LastOperationId is null ? null : new ElsaLastOperationId(entity.LastOperationId),
+                entity.DeletedAt);
+        }
+        catch (Exception exception) when (exception is ArgumentException or ArgumentOutOfRangeException or InvalidOperationException or JsonException)
+        {
+            throw new InvalidOperationException("Persisted Elsa instance is invalid.");
+        }
+    }
+
+    private static ElsaInstanceIntent MapIntent(
+        string distributionId,
+        string releaseLine,
+        string? requestedVersion,
+        string channel,
+        string patchUpdates,
+        string minorUpdates,
+        string majorMigrations,
+        string topologyId,
+        string? featurePresetId,
+        string featureOverridesJson,
+        string? packagePolicy,
+        string? configurationShapeRevisionId,
+        string targetMode,
+        string regionCode,
+        string isolationProfile,
+        string capacityProfile,
+        string networkOutcome,
+        string domainOutcome,
+        ElsaDesiredLifecycle desiredLifecycle) => new(
+        new ElsaReleaseIntent(distributionId, releaseLine, requestedVersion, channel, patchUpdates, minorUpdates, majorMigrations),
+        new ElsaApplicationIntent(topologyId, featurePresetId, ParseFeatureOverrides(featureOverridesJson), packagePolicy, configurationShapeRevisionId),
+        new ElsaPlacementIntent(targetMode, regionCode, isolationProfile, capacityProfile, networkOutcome, domainOutcome),
+        desiredLifecycle);
+
+    private static ElsaResolvedPlanReference? MapPlan(ElsaInstanceEntity entity)
+    {
+        var values = new object?[] { entity.ResolvedPlanId, entity.ResolvedPlanSchemaVersion, entity.ResolvedPlanContentHash, entity.ResolvedPlanUri };
+        if (values.All(x => x is null))
+            return null;
+        if (values.Any(x => x is null) || entity.ResolvedPlanId is null || entity.ResolvedPlanContentHash is null || entity.ResolvedPlanUri is null || entity.ResolvedPlanSchemaVersion is null)
+            throw new InvalidOperationException();
+        return new ElsaResolvedPlanReference(entity.ResolvedPlanId, entity.ResolvedPlanSchemaVersion.Value,
+            entity.ResolvedPlanContentHash, entity.ResolvedPlanUri);
+    }
+
+    private static ElsaCurrentResolvedRelease? MapCurrentRelease(ElsaInstanceEntity entity, ElsaResolvedPlanReference? plan)
+    {
+        var values = new string?[]
+        {
+            entity.CurrentReleaseDistributionId, entity.CurrentReleaseLine, entity.CurrentReleaseVersion,
+            entity.CurrentReleaseManifestDigest, entity.CurrentReleaseComponentDigestsJson
+        };
+        if (values.All(string.IsNullOrWhiteSpace))
+            return null;
+        if (plan is null || values.Any(string.IsNullOrWhiteSpace))
+            throw new InvalidOperationException();
+        return new ElsaCurrentResolvedRelease(
+            plan,
+            entity.CurrentReleaseDistributionId!,
+            entity.CurrentReleaseLine!,
+            entity.CurrentReleaseVersion!,
+            entity.CurrentReleaseManifestDigest!,
+            ParseComponentDigests(entity.CurrentReleaseComponentDigestsJson!));
+    }
+
+    private static ElsaCurrentDeploymentReference? MapDeployment(ElsaInstanceEntity entity)
+    {
+        if (entity.CurrentDeploymentId is null)
+        {
+            if (entity.CurrentDeploymentRevisionId is not null || entity.CurrentDeploymentEndpointUri is not null)
+                throw new InvalidOperationException();
+            return null;
+        }
+        return new ElsaCurrentDeploymentReference(entity.CurrentDeploymentId, entity.CurrentDeploymentRevisionId, entity.CurrentDeploymentEndpointUri);
+    }
+
+    private static ElsaTenantReference? MapTenant(ElsaInstanceEntity entity)
+    {
+        if (entity.ElsaTenantId is null)
+        {
+            if (entity.ElsaTenantAudience is not null)
+                throw new InvalidOperationException();
+            return null;
+        }
+        return new ElsaTenantReference(entity.ElsaTenantId, entity.ElsaTenantAudience);
+    }
+
+    private static ElsaInstanceIdentityBinding? MapIdentityBinding(ElsaInstanceEntity entity)
+    {
+        var binding = entity.IdentityBinding;
+        if (binding is null)
+            return null;
+        var expectedAudience = ElsaInstanceIdentityBinding.AudienceFor(entity.Id);
+        var expectedCallback = ElsaInstanceIdentityBinding.CanonicalizeCallbackUri(binding.VerifiedEndpointOrigin);
+        if (!string.Equals(binding.Audience, expectedAudience, StringComparison.Ordinal) ||
+            !string.Equals(binding.CanonicalCallbackUri, expectedCallback, StringComparison.Ordinal))
+            throw new InvalidOperationException();
+        return ElsaInstanceIdentityBinding.Hydrate(entity.Id, binding.VerifiedEndpointOrigin, binding.BindingVersion, binding.ChangedAt);
+    }
+
+    private static ElsaDesiredStateRevisionId? OptionalRevision(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : new ElsaDesiredStateRevisionId(value);
+
+    private static IReadOnlyDictionary<string, ElsaFeatureOverride> ParseFeatureOverrides(string json)
+    {
+        using var document = JsonDocument.Parse(json, SafeJsonOptions);
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+            throw new InvalidOperationException();
+        if (document.RootElement.EnumerateObject().Count() > 256)
+            throw new InvalidOperationException();
+        var values = new Dictionary<string, ElsaFeatureOverride>(StringComparer.Ordinal);
+        foreach (var property in document.RootElement.EnumerateObject())
+        {
+            if (!IsSafeJsonName(property.Name) || property.Value.ValueKind != JsonValueKind.Object)
+                throw new InvalidOperationException();
+            string? kind = null;
+            string? value = null;
+            var fields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var field in property.Value.EnumerateObject())
+            {
+                if (!fields.Add(field.Name) || field.Value.ValueKind != JsonValueKind.String)
+                    throw new InvalidOperationException();
+                if (field.Name == "kind") kind = field.Value.GetString();
+                else if (field.Name == "value") value = field.Value.GetString();
+                else throw new InvalidOperationException();
+            }
+            if (kind is null || value is null || !IsSafeFeatureValue(value) ||
+                !Enum.TryParse<ElsaFeatureOverrideKind>(kind, true, out var parsedKind) || !Enum.IsDefined(parsedKind))
+                throw new InvalidOperationException();
+            values.Add(property.Name, ParseFeatureOverride(parsedKind, value));
+        }
+        return values;
+    }
+
+    private static ElsaFeatureOverride ParseFeatureOverride(ElsaFeatureOverrideKind kind, string value) => kind switch
+    {
+        ElsaFeatureOverrideKind.Boolean when bool.TryParse(value, out var parsed) => ElsaFeatureOverride.FromBoolean(parsed),
+        ElsaFeatureOverrideKind.Number => ElsaFeatureOverride.FromNumber(value),
+        ElsaFeatureOverrideKind.Catalog => ElsaFeatureOverride.FromCatalog(value),
+        _ => throw new InvalidOperationException()
+    };
+
+    private static IReadOnlyList<ElsaComponentDigest> ParseComponentDigests(string json)
+    {
+        using var document = JsonDocument.Parse(json, SafeJsonOptions);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+            throw new InvalidOperationException();
+        var values = new List<ElsaComponentDigest>();
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+                throw new InvalidOperationException();
+            string? componentId = null;
+            string? digest = null;
+            var fields = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var field in item.EnumerateObject())
+            {
+                if (!fields.Add(field.Name))
+                    throw new InvalidOperationException();
+                if (field.Name == "componentId" && field.Value.ValueKind == JsonValueKind.String) componentId = field.Value.GetString();
+                else if (field.Name == "digest" && field.Value.ValueKind == JsonValueKind.String) digest = field.Value.GetString();
+                else throw new InvalidOperationException();
+            }
+            if (componentId is null || digest is null)
+                throw new InvalidOperationException();
+            values.Add(new ElsaComponentDigest(componentId, digest));
+        }
+        return values;
+    }
+
+    private static string SerializeFeatureOverrides(IReadOnlyDictionary<string, ElsaFeatureOverride> values) =>
+        JsonSerializer.Serialize(values.ToDictionary(
+            x => x.Key,
+            x => (object?)new SortedDictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["kind"] = x.Value.Kind.ToString(),
+                ["value"] = x.Value.Value
+            },
+            StringComparer.Ordinal));
+
+    private static string SerializeComponentDigests(IReadOnlyList<ElsaComponentDigest> values) =>
+        JsonSerializer.Serialize(values.Select(x => new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["componentId"] = x.ComponentId,
+            ["digest"] = x.Digest
+        }));
+
+    private static string RequireIdempotencyKey(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            throw new ArgumentException("Idempotency key is required.", nameof(value));
+        return value.Trim();
+    }
+
+    private static string HashIdempotencyKey(string value) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+
+    private static bool IsCanonicalHash(string? value) =>
+        value is { Length: 64 } && value.All(char.IsAsciiHexDigit) && value == value.ToLowerInvariant();
+
+    private static bool IsSafeJsonName(string value) =>
+        value.Length is > 0 and <= 128 && value.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '.' or '-' or '_');
+
+    private static bool IsSafeFeatureValue(string value) =>
+        value.Length is > 0 and <= 512 && !value.Any(char.IsControl) && !ContainsSensitiveMarker(value);
+
+    private static bool ContainsSensitiveMarker(string value) =>
+        value.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains("token", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains("credential", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains("connectionstring", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains("workflow", StringComparison.OrdinalIgnoreCase);
+
+    private static ElsaInstanceLifecycleConflictException Conflict(string message) =>
+        new(message);
+}

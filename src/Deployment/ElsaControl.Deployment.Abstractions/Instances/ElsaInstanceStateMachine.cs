@@ -110,6 +110,51 @@ public sealed record ElsaInstanceOperation
             (acceptedAt ?? DateTimeOffset.UtcNow).ToUniversalTime());
     }
 
+    /// <summary>
+    /// Rehydrates an operation from a durable store after the store has validated
+    /// its ownership and envelope. The operation state and attempt are restored as
+    /// one value so a worker can safely observe recovery attempts without replaying
+    /// an artificial in-memory transition sequence.
+    /// </summary>
+    public static ElsaInstanceOperation Hydrate(
+        Guid id,
+        Guid instanceId,
+        ElsaInstanceOperationAction action,
+        string idempotencyScope,
+        string idempotencyKey,
+        string requestHash,
+        int expectedVersion,
+        ElsaInstanceOperationState state,
+        int attemptNumber,
+        DateTimeOffset acceptedAt)
+    {
+        if (id == Guid.Empty)
+            throw new ArgumentException("Operation ID is required.", nameof(id));
+        if (instanceId == Guid.Empty)
+            throw new ArgumentException("Instance ID is required.", nameof(instanceId));
+        ElsaInstanceValue.RequireEnum(action, nameof(action));
+        ElsaInstanceValue.RequireEnum(state, nameof(state));
+        if (expectedVersion < 1)
+            throw new ArgumentOutOfRangeException(nameof(expectedVersion), "Expected version must be positive.");
+        if (attemptNumber < 1)
+            throw new ArgumentOutOfRangeException(nameof(attemptNumber), "Attempt number must be positive.");
+        if (state == ElsaInstanceOperationState.WaitingForPriorOperation &&
+            action != ElsaInstanceOperationAction.Delete)
+            throw new ArgumentException("Only delete operations can wait for a prior operation.", nameof(state));
+
+        return new ElsaInstanceOperation(
+            id,
+            instanceId,
+            action,
+            ElsaInstanceReferenceValue.RequireOperationScope(idempotencyScope, nameof(idempotencyScope)),
+            ElsaInstanceReferenceValue.RequireOperationKey(idempotencyKey, nameof(idempotencyKey)),
+            ElsaInstanceReferenceValue.RequireCanonicalHash(requestHash, nameof(requestHash)),
+            expectedVersion,
+            state,
+            attemptNumber,
+            acceptedAt.ToUniversalTime());
+    }
+
     public ElsaInstanceOperation TransitionTo(ElsaInstanceOperationState next)
     {
         if (!CanTransition(State, next))

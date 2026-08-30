@@ -65,7 +65,8 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
         {
             var operation = _operations.Values
                 .Where(x => x.InstanceId == instanceId && ElsaInstanceOperationGuard.IsBlocking(x.State))
-                .OrderByDescending(x => x.AcceptedAt)
+                .OrderByDescending(x => ElsaInstanceOperationGuard.IsActive(x.State))
+                .ThenByDescending(x => x.AcceptedAt)
                 .FirstOrDefault();
             return Task.FromResult<ElsaInstanceOperation?>(operation is not null &&
                 _instances.TryGetValue(instanceId, out var instance) && instance.WorkspaceId == workspaceId
