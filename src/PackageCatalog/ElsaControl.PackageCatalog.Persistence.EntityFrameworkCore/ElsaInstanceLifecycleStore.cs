@@ -144,11 +144,9 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             operation.FailureCode = commit.Operation.State == ElsaInstanceOperationState.RecoveryRequired && commit.RetrySafe
                 ? ElsaInstanceProviderReconciliationService.RetrySafeCode
                 : commit.Operation.State == ElsaInstanceOperationState.Failed ? commit.DiagnosticCode : null;
-            operation.FailureSummary = commit.Operation.State == ElsaInstanceOperationState.Failed
-                ? "Provider reconciliation established a terminal failure."
-                : commit.Operation.State == ElsaInstanceOperationState.RecoveryRequired && commit.RetrySafe
-                    ? "Provider reconciliation established that an explicit retry is safe."
-                : null;
+            // Persistence derives the safe summary from FailureCode; do not assign
+            // human-readable text here that the validation boundary will discard.
+            operation.FailureSummary = null;
             operation.CompletedAt = commit.Operation.State == ElsaInstanceOperationState.RecoveryRequired
                 ? null
                 : commit.ReconciledAt.ToUniversalTime();
