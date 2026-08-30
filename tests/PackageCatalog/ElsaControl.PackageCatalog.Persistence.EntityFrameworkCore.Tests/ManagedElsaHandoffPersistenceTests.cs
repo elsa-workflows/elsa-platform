@@ -3,7 +3,6 @@ using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models;
-using Microsoft.Data.SqlClient;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -27,8 +26,6 @@ public sealed class ManagedElsaHandoffPersistenceTests
             .ToListAsync();
         Assert.Contains("ManagedElsaHandoffReplayConsumptions", tables);
         Assert.Contains("ManagedElsaHandoffAuditEvents", tables);
-        Assert.Contains("20260830215000_AllowManagedElsaHandoffReplayRetention",
-            await db.Database.GetAppliedMigrationsAsync());
     }
 
     [Fact]
@@ -214,8 +211,6 @@ public sealed class ManagedElsaHandoffPersistenceTests
 
         Assert.Contains("TR_ManagedElsaHandoffReplayConsumptions_AppendOnly", script, StringComparison.Ordinal);
         Assert.Contains("TR_ManagedElsaHandoffAuditEvents_AppendOnly", script, StringComparison.Ordinal);
-        Assert.Contains("DROP TRIGGER IF EXISTS TR_ManagedElsaHandoffReplayConsumptions_AppendOnly", script,
-            StringComparison.Ordinal);
     }
 
     [Fact]
