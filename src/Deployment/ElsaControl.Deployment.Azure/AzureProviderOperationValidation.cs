@@ -32,6 +32,12 @@ public static class AzureProviderOperationValidation
         if (!IsSafeCode(code)) throw new ArgumentException("Operation event code is unsafe.", nameof(code));
     }
 
+    public static void ValidateMessage(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message) || message.Length > 2000 || message.Any(char.IsControl) || ContainsSensitiveMarker(message))
+            throw new ArgumentException("Operation event message is unsafe.", nameof(message));
+    }
+
     public static void ValidateLeaseToken(string leaseToken)
     {
         if (string.IsNullOrWhiteSpace(leaseToken) || leaseToken.Length > 512 || leaseToken.Any(char.IsControl))
