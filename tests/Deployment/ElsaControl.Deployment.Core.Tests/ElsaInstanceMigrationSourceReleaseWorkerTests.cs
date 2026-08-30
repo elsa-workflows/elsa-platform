@@ -64,6 +64,15 @@ public sealed class ElsaInstanceMigrationSourceReleaseWorkerTests
             "sha256:" + new string('d', 64)).Validate());
     }
 
+    [Fact]
+    public void Lease_duration_must_allow_a_positive_renewal_interval()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ElsaInstanceMigrationSourceReleaseWorker(
+            new Store(RetiringMigration()),
+            new Port(new(ElsaInstanceSourceReleaseOutcome.Ambiguous, "migration.source-release.ambiguous")),
+            TimeProvider.System, TimeSpan.FromTicks(1)));
+    }
+
     private static ElsaInstanceMigration RetiringMigration()
     {
         var source = Reference("source", "3.10", "3.10.4", 'a');

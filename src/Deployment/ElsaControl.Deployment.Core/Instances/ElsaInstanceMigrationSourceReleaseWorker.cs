@@ -59,7 +59,7 @@ public sealed class ElsaInstanceMigrationSourceReleaseWorker(
     TimeSpan? leaseDuration = null)
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
-    private readonly TimeSpan _leaseDuration = leaseDuration is null or { Ticks: > 0 }
+    private readonly TimeSpan _leaseDuration = leaseDuration is null or { Ticks: > 1 }
         ? leaseDuration ?? TimeSpan.FromMinutes(5)
         : throw new ArgumentOutOfRangeException(nameof(leaseDuration));
 
