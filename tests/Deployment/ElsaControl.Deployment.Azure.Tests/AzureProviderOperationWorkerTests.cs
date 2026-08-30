@@ -62,6 +62,24 @@ public sealed class AzureProviderOperationWorkerTests
     }
 
     [Fact]
+    public async Task Persisted_unsafe_resource_references_are_marked_terminal_before_execution()
+    {
+        var operation = Operation() with
+        {
+            Resources = new AzureProviderResourceReferences(WorkloadResourceId: "https://provider.example.test/resource?token=value")
+        };
+        var store = new WorkerStore(operation);
+        var executor = new AzureProviderExecutor(store, new NeverCalledRunner());
+        var worker = new AzureProviderOperationWorker(store, executor, new PersistedAzureProviderPlanSource(), new FixedTimeProvider());
+
+        var processed = await worker.ProcessOnceAsync();
+
+        Assert.Equal(0, processed);
+        Assert.Equal(1, store.MarkUnrestorableCount);
+        Assert.Equal(AzureProviderOperationStatus.Failed, store.Operation.Status);
+    }
+
+    [Fact]
     public async Task A_malformed_operation_does_not_starve_later_runnable_operations()
     {
         var digest = "sha256:" + new string('f', 64);

@@ -111,6 +111,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             .Where(x => (x.Status == AzureProviderOperationStatus.Accepted ||
                          x.Status == AzureProviderOperationStatus.Queued ||
                          x.Status == AzureProviderOperationStatus.RecoveryRequired) &&
+                        x.CompletedAt == null &&
                         (x.LeaseExpiresAt == null || x.LeaseExpiresAt <= now))
             .OrderBy(x => x.UpdatedAt)
             .ThenBy(x => x.Id)
@@ -153,7 +154,9 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
                          x.Status == AzureProviderOperationStatus.RecoveryRequired) &&
                         (!expectedVersion.HasValue || x.Version == expectedVersion.Value))
             .ExecuteUpdateAsync(setters => setters
-                .SetProperty(x => x.Status, AzureProviderOperationStatus.Failed)
+                .SetProperty(x => x.Status, x => x.Status == AzureProviderOperationStatus.RecoveryRequired
+                    ? AzureProviderOperationStatus.RecoveryRequired
+                    : AzureProviderOperationStatus.Failed)
                 .SetProperty(x => x.CompletedAt, now)
                 .SetProperty(x => x.UpdatedAt, now)
                 .SetProperty(x => x.Version, x => x.Version + 1)

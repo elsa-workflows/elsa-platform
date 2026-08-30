@@ -215,6 +215,26 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.Null(await store.MarkUnrestorableAsync(_workspaceId, operation.Id, now, operation.Version));
     }
 
+    [Fact]
+    public async Task Unrestorable_recovery_operation_remains_reserved_for_operator_reconciliation()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+        Assert.NotNull(await store.ClaimAsync(_workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+        Assert.Equal(1, await store.RecoverStaleAsync(now.AddMinutes(2)));
+        var recovery = Assert.IsType<AzureProviderOperation>(await store.GetAsync(_workspaceId, operation.Id));
+
+        var blocked = await store.MarkUnrestorableAsync(_workspaceId, operation.Id, now.AddMinutes(2), recovery.Version);
+
+        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, blocked?.Status);
+        Assert.NotNull(blocked?.CompletedAt);
+        Assert.Empty(await store.ListRunnableAsync(now.AddMinutes(2), 10));
+        await Assert.ThrowsAsync<AzureProviderOperationConflictException>(() =>
+            store.CreateOrGetAsync(Request() with { IdempotencyKey = "different-plan", PlanFingerprint = new('f', 64) }, now.AddMinutes(2)));
+    }
+
     [Theory]
     [InlineData("DiagnosticsJson", "{")]
     [InlineData("DiagnosticsJson", "null")]

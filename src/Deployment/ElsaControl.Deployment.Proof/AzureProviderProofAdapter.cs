@@ -191,7 +191,7 @@ public sealed class AzureProviderProofAdapter(
             submission.Plan,
             cancellationToken);
         _operations[plan.PlanId] = execution.Operation;
-        return new(execution.Outcome != AzureProviderExecutionOutcome.Failed,
+        return new(execution.Outcome == AzureProviderExecutionOutcome.Succeeded,
             execution.Outcome == AzureProviderExecutionOutcome.NoOp,
             plan.PlanId,
             new Dictionary<string, string>(StringComparer.Ordinal)

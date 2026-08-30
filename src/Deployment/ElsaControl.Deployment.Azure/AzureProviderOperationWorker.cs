@@ -70,6 +70,7 @@ public sealed class AzureProviderOperationWorker(
                 // classify an exception from the asynchronous execution path as an unrestorable
                 // plan after a lease or remote step may already have been started.
                 AzureProviderExecutor.ValidateExecutionRequest(request);
+                AzureProviderOperationValidation.ValidateReferences(operation.Resources);
             }
             catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
             {

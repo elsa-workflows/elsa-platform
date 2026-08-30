@@ -8,9 +8,10 @@ public interface IAzureProviderOperationStore
         Task.FromResult<IReadOnlyList<AzureProviderOperation>>([]);
     Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default);
     /// <summary>
-    /// Transitions an operation whose persisted provider plan cannot be restored to a terminal,
-    /// value-free failure. The compare-and-set version prevents a stale worker from changing a
-    /// concurrently claimed or completed operation.
+    /// Transitions an operation whose persisted provider plan cannot be restored to a value-free
+    /// failure. Recovery-required operations retain their recovery status and target reservation
+    /// for explicit operator reconciliation. The compare-and-set version prevents a stale worker
+    /// from changing a concurrently claimed or completed operation.
     /// </summary>
     Task<AzureProviderOperation?> MarkUnrestorableAsync(
         Guid workspaceId,
