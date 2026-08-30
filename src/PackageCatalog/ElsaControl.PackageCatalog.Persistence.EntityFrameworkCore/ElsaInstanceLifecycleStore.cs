@@ -165,7 +165,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 operation.ReconciliationRetryEvidenceDigest;
             operation.ReconciledObservedLifecycle = commit.Instance.ObservedLifecycle;
             operation.ReconciledHealth = commit.Instance.Health;
-            operation.ReconciledInstanceVersion = commit.Instance.Version;
+            operation.ReconciledInstanceVersion = checked(instance.Version + 1);
             operation.ReconciledAt = commit.ReconciledAt.ToUniversalTime();
 
             run.Status = commit.Operation.State switch

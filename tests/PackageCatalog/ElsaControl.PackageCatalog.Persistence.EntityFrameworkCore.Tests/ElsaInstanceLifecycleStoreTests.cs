@@ -583,6 +583,12 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal(ElsaInstanceOperationState.Succeeded, operation.State);
         Assert.Equal(WorkspaceDeploymentRunStatus.Succeeded, run.Status);
         Assert.Equal(Now.AddMinutes(11), operation.CompletedAt);
+        var persistedInstanceVersion = await db.ElsaInstances
+            .Where(x => x.Id == accepted.Instance.Id)
+            .Select(x => x.Version)
+            .SingleAsync();
+        Assert.Equal(persistedInstanceVersion, converged.Projection.InstanceVersion);
+        Assert.Equal(persistedInstanceVersion, operation.ReconciledInstanceVersion);
         Assert.Equal(2, await db.ElsaInstanceAuditEvents.CountAsync(x =>
             x.OperationId == accepted.Operation.Id && x.EventType == "lifecycle.reconciled"));
         Assert.Equal("https://evidence.example/retry/provider-observation-1",
