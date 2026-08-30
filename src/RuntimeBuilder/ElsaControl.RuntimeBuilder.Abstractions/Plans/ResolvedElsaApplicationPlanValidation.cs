@@ -113,7 +113,7 @@ public static class ResolvedElsaApplicationPlanValidator
                 if (entry.SecretReference is not null && !entry.Secret)
                     findings.Add(new("configuration.nonSecretReference.invalid", "Only secret configuration entries may use a secret reference.", $"configuration:{entry.Key}"));
                 if (entry.Secret && entry.SecretReference is not null && !SecretReferencePolicy.IsSafe(entry.SecretReference))
-                    findings.Add(new("configuration.secretReference.invalid", "Secret references must be absolute secret:// locators without credentials, query strings or fragments.", $"configuration:{entry.Key}"));
+                    findings.Add(new("configuration.secretReference.invalid", SecretReferencePolicy.InvalidReferenceMessage, $"configuration:{entry.Key}"));
                 if (entry.Required && entry.Value is null && entry.SecretReference is null)
                     findings.Add(new("configuration.requiredValue.missing", "Required configuration needs a value or secret reference.", $"configuration:{entry.Key}"));
             }

@@ -3,6 +3,8 @@ namespace ElsaControl.RuntimeBuilder.Abstractions.Plans;
 /// <summary>Validates provider-backed secret locators retained in a resolved plan.</summary>
 public static class SecretReferencePolicy
 {
+    public const string InvalidReferenceMessage = "Secret references must be canonical non-root secret:// locators without credentials, query strings, fragments, or ambiguous path forms.";
+
     public static bool IsSafe(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)

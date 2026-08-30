@@ -163,6 +163,9 @@ public sealed class ResolvedElsaApplicationPlanTests
         var findings = ResolvedElsaApplicationPlanValidator.Validate(plan);
 
         Assert.Equal(references.Length, findings.Count(x => x.Code == "configuration.secretReference.invalid"));
+        Assert.All(
+            findings.Where(x => x.Code == "configuration.secretReference.invalid"),
+            finding => Assert.Equal(SecretReferencePolicy.InvalidReferenceMessage, finding.Message));
         Assert.Empty(ResolvedElsaApplicationPlanValidator.Validate(CreatePlan()));
     }
 

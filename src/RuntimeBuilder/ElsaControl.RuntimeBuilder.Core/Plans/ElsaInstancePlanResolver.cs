@@ -967,7 +967,7 @@ public sealed class ElsaInstancePlanResolver(
         code switch
         {
             "configuration.secretValue.forbidden" => "Secret values cannot be embedded in a resolved plan.",
-            "configuration.secretReference.invalid" => "Secret references must be safe external locators.",
+            "configuration.secretReference.invalid" => SecretReferencePolicy.InvalidReferenceMessage,
             _ => "Resolved plan validation rejected a required contract value."
         };
 
