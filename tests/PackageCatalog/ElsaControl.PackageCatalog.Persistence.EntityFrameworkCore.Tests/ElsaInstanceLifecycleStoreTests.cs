@@ -298,7 +298,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         db.ChangeTracker.Clear();
 
         var source = new StaticResolutionInputSource(instance.Instance, target);
-        var store = new EfCoreElsaInstanceLifecycleStore(db, source);
+        var store = new EfCoreElsaInstanceLifecycleStore(db, source, new FixedTimeProvider(Now));
         var check = SuccessfulResolution(workspace.Id, instance.Instance.Id);
         Assert.Empty(ResolvedElsaApplicationPlanValidator.Validate(check.Plan!));
         var result = await new ElsaInstanceLifecycleWorker(
@@ -332,7 +332,10 @@ public sealed class ElsaInstanceLifecycleStoreTests
             .CreateAsync(new ElsaInstanceCreateRequest(
                 workspace.OrganizationId, workspace.Id, "Worker Elsa", "replay-worker-elsa", WorkerIntent(), "replay-worker-create"));
         var target = await AddManagedEnvironmentAsync(db, workspace, accepted.Instance.Id);
-        var store = new EfCoreElsaInstanceLifecycleStore(db, new StaticResolutionInputSource(accepted.Instance, target));
+        var store = new EfCoreElsaInstanceLifecycleStore(
+            db,
+            new StaticResolutionInputSource(accepted.Instance, target),
+            new FixedTimeProvider(Now.AddSeconds(1)));
         var item = await store.TryClaimNextAsync("worker-one", Now)
             ?? throw new InvalidOperationException("Expected a claimed work item.");
         var resolved = SuccessfulResolution(workspace.Id, accepted.Instance.Id);
@@ -452,7 +455,10 @@ public sealed class ElsaInstanceLifecycleStoreTests
             .CreateAsync(new ElsaInstanceCreateRequest(
                 workspace.OrganizationId, workspace.Id, "Worker Elsa", "expired-lease-elsa", WorkerIntent(), "expired-create"));
         var target = await AddManagedEnvironmentAsync(db, workspace, accepted.Instance.Id);
-        var store = new EfCoreElsaInstanceLifecycleStore(db, new StaticResolutionInputSource(accepted.Instance, target));
+        var store = new EfCoreElsaInstanceLifecycleStore(
+            db,
+            new StaticResolutionInputSource(accepted.Instance, target),
+            new FixedTimeProvider(Now.AddMinutes(7)));
 
         var first = await store.TryClaimNextAsync("worker-one", Now)
             ?? throw new InvalidOperationException("Expected the first worker claim.");
@@ -490,7 +496,10 @@ public sealed class ElsaInstanceLifecycleStoreTests
 
         await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE ElsaInstances SET FeatureOverridesJson = 'not-json' WHERE Id = {first.Instance.Id}");
         db.ChangeTracker.Clear();
-        var store = new EfCoreElsaInstanceLifecycleStore(db, new StaticResolutionInputSource(second.Instance, target));
+        var store = new EfCoreElsaInstanceLifecycleStore(
+            db,
+            new StaticResolutionInputSource(second.Instance, target),
+            new FixedTimeProvider(Now.AddMinutes(2)));
         var result = await new ElsaInstanceLifecycleWorker(
                 store,
                 new StaticResolver(SuccessfulResolution(workspace.Id, second.Instance.Id)),
@@ -529,7 +538,10 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await db.Database.ExecuteSqlInterpolatedAsync(
             $"UPDATE ElsaInstanceOperations SET IdempotencyKey = '' WHERE Id = {first.Operation.Id}");
         db.ChangeTracker.Clear();
-        var store = new EfCoreElsaInstanceLifecycleStore(db, new StaticResolutionInputSource(second.Instance, target));
+        var store = new EfCoreElsaInstanceLifecycleStore(
+            db,
+            new StaticResolutionInputSource(second.Instance, target),
+            new FixedTimeProvider(Now.AddMinutes(2)));
         var result = await new ElsaInstanceLifecycleWorker(
                 store,
                 new StaticResolver(SuccessfulResolution(workspace.Id, second.Instance.Id)),
@@ -574,7 +586,10 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await db.Database.ExecuteSqlInterpolatedAsync(
             $"UPDATE ElsaInstanceOperations SET LeaseVersion = {leaseVersion} WHERE Id = {first.Operation.Id}");
         db.ChangeTracker.Clear();
-        var store = new EfCoreElsaInstanceLifecycleStore(db, new StaticResolutionInputSource(second.Instance, target));
+        var store = new EfCoreElsaInstanceLifecycleStore(
+            db,
+            new StaticResolutionInputSource(second.Instance, target),
+            new FixedTimeProvider(Now.AddMinutes(2)));
         var result = await new ElsaInstanceLifecycleWorker(
                 store,
                 new StaticResolver(SuccessfulResolution(workspace.Id, second.Instance.Id)),
