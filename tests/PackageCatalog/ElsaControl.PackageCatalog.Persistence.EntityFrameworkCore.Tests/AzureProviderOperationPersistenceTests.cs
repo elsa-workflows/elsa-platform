@@ -30,7 +30,8 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         var second = await store.CreateOrGetAsync(request, DateTimeOffset.UtcNow.AddMinutes(1));
 
         Assert.Equal(first.Id, second.Id);
-        Assert.Single(await store.ListTransitionsAsync(_workspaceId, first.Id));
+        var accepted = Assert.Single(await store.ListTransitionsAsync(_workspaceId, first.Id));
+        Assert.Equal("Azure provider operation accepted.", accepted.Message);
     }
 
     [Fact]
