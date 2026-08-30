@@ -126,6 +126,16 @@ public sealed class AzureProviderOperationValidationTests
     }
 
     [Fact]
+    public void Rejects_whitespace_only_checkpoint_messages()
+    {
+        var checkpoint = new AzureProviderCheckpoint(
+            AzureProviderOperationPhase.Planned, "operation.planned", "   ", new(), null,
+            AzureProviderHealth.Unknown, []);
+
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateCheckpoint(checkpoint));
+    }
+
+    [Fact]
     public void Hash_and_identity_are_stable_for_case_normalization()
     {
         var first = ValidRequest();
