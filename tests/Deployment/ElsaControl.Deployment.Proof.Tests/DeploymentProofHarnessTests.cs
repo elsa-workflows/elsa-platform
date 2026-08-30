@@ -100,7 +100,7 @@ public sealed class DeploymentProofHarnessTests
             {
                 ["diagnostic"] = "provider returned token=do-not-leak",
                 ["password"] = "do-not-leak",
-                ["images"] = "push user:password@registry.example.test/runtime,other@registry.example.test/runtime"
+                ["images"] = "push user:password@registry.example.test/runtime,other@registry.example.test/runtime,//scheme:secret@registry.example.test/runtime"
             });
 
         var report = await new DeploymentProofHarness().RunAsync(Input, Environment, provider);
@@ -109,6 +109,7 @@ public sealed class DeploymentProofHarnessTests
         Assert.DoesNotContain("do-not-leak", evidence, StringComparison.Ordinal);
         Assert.DoesNotContain("user:password@", evidence, StringComparison.Ordinal);
         Assert.DoesNotContain("other@", evidence, StringComparison.Ordinal);
+        Assert.DoesNotContain("scheme:secret@", evidence, StringComparison.Ordinal);
         Assert.Contains("redacted", evidence, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("azure-workload-identity=", evidence, StringComparison.Ordinal);
 
@@ -146,6 +147,8 @@ public sealed class DeploymentProofHarnessTests
     [InlineData("user:password@registry.example.test/runtime-combined")]
     [InlineData("user:password@registry.example.test")]
     [InlineData("user:password@registry.example.test ")]
+    [InlineData("https://user@registry.example.test /runtime-combined")]
+    [InlineData("//user:password@registry.example.test/runtime-combined")]
     public async Task Credential_bearing_image_references_fail_at_selection(string imageReference)
     {
         var provider = new FakeDeploymentProofProvider();

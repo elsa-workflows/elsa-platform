@@ -354,13 +354,23 @@ public sealed class DeploymentProofHarness(
 
     private static bool HasCredentialBearingImageReference(string imageReference)
     {
-        if (Uri.TryCreate(imageReference, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.UserInfo))
+        var value = imageReference.Trim();
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.UserInfo))
             return true;
 
-        var firstSlash = imageReference.IndexOf('/');
-        var authority = firstSlash < 0 ? imageReference : imageReference[..firstSlash];
+        var schemeDelimiter = value.IndexOf("://", StringComparison.Ordinal);
+        var authorityStart = value.StartsWith("//", StringComparison.Ordinal)
+            ? 2
+            : schemeDelimiter >= 0 ? schemeDelimiter + "://".Length : 0;
+        var authorityEnd = value.IndexOfAny(['/', '\\', ' ', '\t', '\r', '\n', ',', ';'], authorityStart);
+        var authority = authorityEnd < 0 ? value[authorityStart..] : value[authorityStart..authorityEnd];
         var at = authority.IndexOf('@');
-        return at > 0;
+        if (at < 0)
+            return false;
+
+        return authorityStart > 0 ||
+            authority.LastIndexOf('@') != at ||
+            !authority[(at + 1)..].StartsWith("sha256:", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsSha256Digest(string digest) =>
