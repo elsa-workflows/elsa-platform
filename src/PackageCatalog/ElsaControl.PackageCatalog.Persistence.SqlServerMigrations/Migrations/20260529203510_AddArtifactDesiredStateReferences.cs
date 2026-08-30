@@ -46,14 +46,14 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 nullable: true);
 
             migrationBuilder.Sql("""
-                UPDATE StructuredDesiredStateRecords
-                SET ArtifactRecordId = TRY_CONVERT(uniqueidentifier, JSON_VALUE(PayloadJson, '$.artifactRecordId')),
-                    ArtifactId = NULLIF(JSON_VALUE(PayloadJson, '$.artifactId'), ''),
-                    ArtifactTypeId = NULLIF(JSON_VALUE(PayloadJson, '$.artifactTypeId'), ''),
-                    ArtifactDigestAlgorithm = NULLIF(JSON_VALUE(PayloadJson, '$.contentDigest.algorithm'), ''),
-                    ArtifactDigest = NULLIF(JSON_VALUE(PayloadJson, '$.contentDigest.value'), '')
-                WHERE Kind = 'ArtifactReference'
-                  AND ISJSON(PayloadJson) = 1;
+                EXEC(N'UPDATE StructuredDesiredStateRecords
+                SET ArtifactRecordId = TRY_CONVERT(uniqueidentifier, JSON_VALUE(PayloadJson, ''$.artifactRecordId'')),
+                    ArtifactId = NULLIF(JSON_VALUE(PayloadJson, ''$.artifactId''), ''''),
+                    ArtifactTypeId = NULLIF(JSON_VALUE(PayloadJson, ''$.artifactTypeId''), ''''),
+                    ArtifactDigestAlgorithm = NULLIF(JSON_VALUE(PayloadJson, ''$.contentDigest.algorithm''), ''''),
+                    ArtifactDigest = NULLIF(JSON_VALUE(PayloadJson, ''$.contentDigest.value''), '''')
+                WHERE Kind = ''ArtifactReference''
+                  AND ISJSON(PayloadJson) = 1;');
                 """);
 
             migrationBuilder.CreateIndex(

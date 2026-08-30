@@ -80,22 +80,22 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 columns: new[] { "WorkspaceId", "OccurredAt", "Id" });
 
             migrationBuilder.Sql("""
-                INSERT INTO WorkspacePermissionAuditRecords
+                EXEC(N'INSERT INTO WorkspacePermissionAuditRecords
                     (Id, WorkspaceId, GrantId, AccountId, Permission, Action, ActorAccountId, OccurredAt)
-                SELECT NEWID(), WorkspaceId, Id, AccountId, Permission, 'Granted', GrantedByAccountId, CreatedAt
+                SELECT NEWID(), WorkspaceId, Id, AccountId, Permission, ''Granted'', GrantedByAccountId, CreatedAt
                 FROM WorkspacePermissionGrants;
 
                 INSERT INTO WorkspacePermissionAuditRecords
                     (Id, WorkspaceId, GrantId, AccountId, Permission, Action, ActorAccountId, OccurredAt)
-                SELECT NEWID(), WorkspaceId, Id, AccountId, Permission, 'Revoked', NULL, RevokedAt
+                SELECT NEWID(), WorkspaceId, Id, AccountId, Permission, ''Revoked'', NULL, RevokedAt
                 FROM WorkspacePermissionGrants
-                WHERE RevokedAt IS NOT NULL;
+                WHERE RevokedAt IS NOT NULL;');
                 """);
 
             migrationBuilder.Sql("""
-                DECLARE @Now datetime2 = SYSUTCDATETIME();
+                EXEC(N'DECLARE @Now datetime2 = SYSUTCDATETIME();
                 DECLARE @NowTicks bigint =
-                    DATEDIFF_BIG(DAY, CONVERT(datetime2, '0001-01-01'), @Now) * 864000000000
+                    DATEDIFF_BIG(DAY, CONVERT(datetime2, ''0001-01-01''), @Now) * 864000000000
                     + DATEDIFF_BIG(NANOSECOND, CONVERT(date, @Now), @Now) / 100;
 
                 INSERT INTO WorkspacePermissionGrants
@@ -112,21 +112,21 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     NULL
                 FROM WorkspaceMemberships AS membership
                 CROSS JOIN (VALUES
-                    ('deployments.read'),
-                    ('deployments.setup.manage'),
-                    ('deployments.desired-state.manage'),
-                    ('deployments.promotion.preview'),
-                    ('deployments.run.execute'),
-                    ('deployments.rollback.execute'),
-                    ('deployments.controls.execute'),
-                    ('deployments.observability.manage'),
-                    ('healing.read'),
-                    ('healing.configure'),
-                    ('healing.evidence.elevate'),
-                    ('healing.repair.retry'),
-                    ('healing.repair.stop'),
-                    ('healing.verification.waive'),
-                    ('healing.automerge.configure')
+                    (''deployments.read''),
+                    (''deployments.setup.manage''),
+                    (''deployments.desired-state.manage''),
+                    (''deployments.promotion.preview''),
+                    (''deployments.run.execute''),
+                    (''deployments.rollback.execute''),
+                    (''deployments.controls.execute''),
+                    (''deployments.observability.manage''),
+                    (''healing.read''),
+                    (''healing.configure''),
+                    (''healing.evidence.elevate''),
+                    (''healing.repair.retry''),
+                    (''healing.repair.stop''),
+                    (''healing.verification.waive''),
+                    (''healing.automerge.configure'')
                 ) AS permission(Name)
                 WHERE membership.Role = 2
                   AND NOT EXISTS (
@@ -139,13 +139,13 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                 INSERT INTO WorkspacePermissionAuditRecords
                     (Id, WorkspaceId, GrantId, AccountId, Permission, Action, ActorAccountId, OccurredAt)
-                SELECT NEWID(), grantRow.WorkspaceId, grantRow.Id, grantRow.AccountId, grantRow.Permission, 'Granted', grantRow.GrantedByAccountId, grantRow.CreatedAt
+                SELECT NEWID(), grantRow.WorkspaceId, grantRow.Id, grantRow.AccountId, grantRow.Permission, ''Granted'', grantRow.GrantedByAccountId, grantRow.CreatedAt
                 FROM WorkspacePermissionGrants AS grantRow
                 WHERE NOT EXISTS (
                     SELECT 1
                     FROM WorkspacePermissionAuditRecords AS audit
-                    WHERE audit.GrantId = grantRow.Id AND audit.Action = 'Granted'
-                );
+                    WHERE audit.GrantId = grantRow.Id AND audit.Action = ''Granted''
+                );');
                 """);
         }
 

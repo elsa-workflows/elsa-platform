@@ -17,15 +17,18 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 type: "bigint",
                 nullable: true);
 
+            // Keep column references inside a dynamic batch. SQL Server compiles statements
+            // inside EF's idempotency guard even when the migration has already been applied;
+            // at that point CompletedAtTicks has already been renamed and no longer exists.
             migrationBuilder.Sql("""
-                UPDATE [SyncRuns]
+                EXEC(N'UPDATE [SyncRuns]
                 SET [CompletedAtTicks] =
-                    DATEDIFF_BIG(DAY, CONVERT(datetime2, '0001-01-01T00:00:00'), CAST(SWITCHOFFSET([CompletedAt], '+00:00') AS datetime2)) * CAST(864000000000 AS bigint)
+                    DATEDIFF_BIG(DAY, CONVERT(datetime2, ''0001-01-01T00:00:00''), CAST(SWITCHOFFSET([CompletedAt], ''+00:00'') AS datetime2)) * CAST(864000000000 AS bigint)
                     + DATEDIFF_BIG(
                         NANOSECOND,
-                        CAST(CAST(CAST(SWITCHOFFSET([CompletedAt], '+00:00') AS datetime2) AS date) AS datetime2),
-                        CAST(SWITCHOFFSET([CompletedAt], '+00:00') AS datetime2)) / 100
-                WHERE [CompletedAt] IS NOT NULL;
+                        CAST(CAST(CAST(SWITCHOFFSET([CompletedAt], ''+00:00'') AS datetime2) AS date) AS datetime2),
+                        CAST(SWITCHOFFSET([CompletedAt], ''+00:00'') AS datetime2)) / 100
+                WHERE [CompletedAt] IS NOT NULL;');
                 """);
 
             migrationBuilder.DropColumn(
@@ -48,7 +51,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 nullable: true);
 
             migrationBuilder.Sql("""
-                UPDATE [SyncRuns]
+                EXEC(N'UPDATE [SyncRuns]
                 SET [CompletedAtDateTime] = TODATETIMEOFFSET(
                     DATEADD(
                         MILLISECOND,
@@ -56,9 +59,9 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         DATEADD(
                             SECOND,
                             CAST(([CompletedAt] % 864000000000) / 10000000 AS int),
-                            DATEADD(DAY, CAST([CompletedAt] / 864000000000 AS int), CONVERT(datetime2, '0001-01-01T00:00:00')))),
-                    '+00:00')
-                WHERE [CompletedAt] IS NOT NULL;
+                            DATEADD(DAY, CAST([CompletedAt] / 864000000000 AS int), CONVERT(datetime2, ''0001-01-01T00:00:00'')))),
+                    ''+00:00'')
+                WHERE [CompletedAt] IS NOT NULL;');
                 """);
 
             migrationBuilder.DropColumn(

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Workspace;
 using ElsaControl.PackageCatalog.Core.Accounts;
@@ -160,6 +161,7 @@ internal sealed class WorkspaceConfiguration : IEntityTypeConfiguration<Workspac
     public void Configure(EntityTypeBuilder<Workspace> builder)
     {
         builder.HasKey(x => x.Id);
+        builder.HasAlternateKey(x => new { x.OrganizationId, x.Id });
         builder.Property(x => x.Name).HasMaxLength(256).IsRequired();
         builder.HasIndex(x => new { x.OrganizationId, x.SoftDeletedAt, x.Name });
         builder.HasOne(x => x.Organization).WithMany(x => x.Workspaces).HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
@@ -293,8 +295,10 @@ internal sealed class DeploymentApplicationConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.WorkspaceId, x.Name }).IsUnique();
+        // The alternate key is the principal for the environment ownership
+        // relationship; an index alone would not let the database enforce it.
+        builder.HasAlternateKey(x => new { x.WorkspaceId, x.Id });
         builder.HasOne<Workspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
-        builder.HasMany(x => x.Environments).WithOne(x => x.Application).HasForeignKey(x => x.ApplicationId).OnDelete(DeleteBehavior.Cascade);
     }
 }
 
@@ -312,7 +316,24 @@ internal sealed class DeploymentEnvironmentConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.WorkspaceId, x.ApplicationId, x.Name }).IsUnique();
         builder.HasIndex(x => new { x.WorkspaceId, x.TierId });
+        builder.HasIndex(x => x.ElsaInstanceId)
+            .IsUnique()
+            .HasFilter("ElsaInstanceId IS NOT NULL");
+        builder.HasAlternateKey(x => new { x.WorkspaceId, x.Id });
         builder.HasOne(x => x.TierDefinition).WithMany(x => x.Environments).HasForeignKey(x => x.TierId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.Application)
+            .WithMany(x => x.Environments)
+            .HasForeignKey(x => new { x.WorkspaceId, x.ApplicationId })
+            .HasPrincipalKey(x => new { x.WorkspaceId, x.Id })
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(x => x.ElsaInstance)
+            .WithMany()
+            .HasForeignKey(x => new { x.WorkspaceId, x.ElsaInstanceId })
+            .HasPrincipalKey(x => new { x.WorkspaceId, x.Id })
+            // The workspace key is non-null, so SQL Server cannot implement a
+            // composite SET NULL action. Unbinding is an explicit, authorized
+            // operation; deletion never silently detaches a managed target.
+            .OnDelete(DeleteBehavior.Restrict);
         builder.HasMany(x => x.Engines).WithOne(x => x.Environment).HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.Revisions).WithOne(x => x.Environment).HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Cascade);
         builder.HasMany(x => x.ObservabilityBindings).WithOne(x => x.Environment).HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Cascade);
@@ -619,6 +640,7 @@ internal sealed class DeploymentRunConfiguration : IEntityTypeConfiguration<Depl
     public void Configure(EntityTypeBuilder<DeploymentRunEntity> builder)
     {
         builder.HasKey(x => x.Id);
+        builder.Property(x => x.ElsaInstanceId);
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(64);
         builder.Property(x => x.ValidationOutcome).HasConversion<string>().HasMaxLength(64);
         builder.Property(x => x.QueuedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
@@ -630,7 +652,13 @@ internal sealed class DeploymentRunConfiguration : IEntityTypeConfiguration<Depl
         builder.Property(x => x.RecoveryReason).HasMaxLength(1000);
         builder.Property(x => x.FailureMessage).HasMaxLength(2000);
         builder.HasIndex(x => new { x.WorkspaceId, x.EnvironmentId, x.Status });
-        builder.HasOne(x => x.Environment).WithMany().HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => new { x.WorkspaceId, x.EnvironmentId })
+            .IsUnique()
+            .HasFilter("ElsaInstanceId IS NOT NULL AND Status IN ('Queued', 'Running', 'RecoveryRequired')");
+        builder.HasOne(x => x.Environment).WithMany()
+            .HasForeignKey(x => new { x.WorkspaceId, x.EnvironmentId })
+            .HasPrincipalKey(x => new { x.WorkspaceId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
         builder.HasMany(x => x.History).WithOne(x => x.Run).HasForeignKey(x => x.RunId).OnDelete(DeleteBehavior.Cascade);
     }
 }
@@ -804,5 +832,203 @@ internal sealed class DriftReportItemConfiguration : IEntityTypeConfiguration<Dr
         builder.Property(x => x.Action).HasConversion<string>().HasMaxLength(64);
         builder.Property(x => x.DetectedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.WorkspaceId, x.EnvironmentId, x.EngineId, x.DetectedAt });
+    }
+}
+
+internal sealed class ElsaInstanceConfiguration : IEntityTypeConfiguration<ElsaInstanceEntity>
+{
+    public void Configure(EntityTypeBuilder<ElsaInstanceEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.HasAlternateKey(x => new { x.OrganizationId, x.WorkspaceId, x.Id });
+        builder.Property(x => x.Name).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.Slug).HasMaxLength(128).IsRequired();
+        builder.HasIndex(x => new { x.WorkspaceId, x.Slug })
+            .IsUnique()
+            .HasFilter("DeletedAt IS NULL");
+
+        builder.Property(x => x.DistributionId).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.ReleaseLine).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.RequestedVersion).HasMaxLength(128);
+        builder.Property(x => x.Channel).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.PatchUpdates).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.MinorUpdates).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.MajorMigrations).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.TopologyId).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.FeaturePresetId).HasMaxLength(128);
+        builder.Property(x => x.FeatureOverridesJson).HasMaxLength(32768).IsRequired();
+        builder.Property(x => x.PackagePolicy).HasMaxLength(128);
+        builder.Property(x => x.ConfigurationShapeRevisionId).HasMaxLength(128);
+        builder.Property(x => x.TargetMode).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.RegionCode).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.IsolationProfile).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.CapacityProfile).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.NetworkOutcome).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.DomainOutcome).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.DesiredLifecycle).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(x => x.ObservedLifecycle).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(x => x.Health).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(x => x.DesiredStateRevisionId).HasMaxLength(128);
+        builder.Property(x => x.ResolvedPlanId).HasMaxLength(128);
+        builder.Property(x => x.ResolvedPlanContentHash).HasMaxLength(71);
+        builder.Property(x => x.ResolvedPlanUri).HasMaxLength(2048);
+        builder.Property(x => x.CurrentReleaseDistributionId).HasMaxLength(128);
+        builder.Property(x => x.CurrentReleaseLine).HasMaxLength(128);
+        builder.Property(x => x.CurrentReleaseVersion).HasMaxLength(128);
+        builder.Property(x => x.CurrentReleaseManifestDigest).HasMaxLength(71);
+        builder.Property(x => x.CurrentReleaseComponentDigestsJson).HasMaxLength(65536);
+        builder.Property(x => x.CurrentDeploymentId).HasMaxLength(128);
+        builder.Property(x => x.CurrentDeploymentRevisionId).HasMaxLength(128);
+        builder.Property(x => x.CurrentDeploymentEndpointUri).HasMaxLength(2048);
+        builder.Property(x => x.PlacementAssignmentId).HasMaxLength(128);
+        builder.Property(x => x.ElsaTenantId).HasMaxLength(128);
+        builder.Property(x => x.ElsaTenantAudience).HasMaxLength(256);
+        builder.Property(x => x.LastOperationId).HasMaxLength(128);
+        builder.Property(x => x.Version).IsConcurrencyToken();
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.DeletedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+
+        builder.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Workspace>()
+            .WithMany()
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.IdentityBinding).WithOne(x => x.Instance).HasForeignKey<ElsaInstanceIdentityBindingEntity>(x => x.InstanceId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasMany(x => x.Operations).WithOne(x => x.Instance)
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId, x.InstanceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.WorkspaceId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasMany(x => x.AuditEvents).WithOne(x => x.Instance)
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId, x.InstanceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.WorkspaceId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasMany(x => x.Migrations).WithOne(x => x.Instance)
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId, x.InstanceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.WorkspaceId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+internal sealed class ElsaInstanceOperationConfiguration : IEntityTypeConfiguration<ElsaInstanceOperationEntity>
+{
+    public void Configure(EntityTypeBuilder<ElsaInstanceOperationEntity> builder)
+    {
+        builder.ToTable("ElsaInstanceOperations", t => t.HasCheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'"));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Action).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.IdempotencyScope).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.IdempotencyKey).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.RequestHash).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.State).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.AcceptedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.StartedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.CompletedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.WorkerId).HasMaxLength(256);
+        builder.Property(x => x.LeaseTokenHash).HasMaxLength(64);
+        builder.Property(x => x.LeaseExpiresAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.HeartbeatAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.DesiredStateRevisionId).HasMaxLength(128);
+        builder.Property(x => x.ResolvedPlanId).HasMaxLength(128);
+        builder.Property(x => x.FailureCode).HasMaxLength(128);
+        // Kept as a compatibility-shaped projection for the future worker seam,
+        // but CatalogDbContext collapses it to a stable safe code at write time.
+        builder.Property(x => x.FailureSummary).HasMaxLength(128);
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.WorkspaceId, x.IdempotencyScope, x.IdempotencyKey }).IsUnique();
+        builder.HasIndex(x => x.InstanceId)
+            .HasDatabaseName("IX_ElsaInstanceOperations_ActiveInstanceId")
+            .IsUnique()
+            .HasFilter("InstanceId IS NOT NULL AND State IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
+        // EF Core merges two indexes with the same property list. Including the
+        // state column gives the waiting successor its own model index while the
+        // filtered uniqueness still enforces one waiting successor per instance.
+        builder.HasIndex(x => new { x.InstanceId, x.State })
+            .HasDatabaseName("IX_ElsaInstanceOperations_WaitingInstanceId")
+            .IsUnique()
+            .HasFilter("InstanceId IS NOT NULL AND State = 'WaitingForPriorOperation'");
+        builder.HasIndex(x => new { x.WorkspaceId, x.State, x.AcceptedAt });
+        builder.HasOne<Workspace>().WithMany()
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+internal sealed class ElsaInstanceAuditEventConfiguration : IEntityTypeConfiguration<ElsaInstanceAuditEventEntity>
+{
+    public void Configure(EntityTypeBuilder<ElsaInstanceAuditEventEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.EventType).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.OperatorSubject).HasMaxLength(71);
+        builder.Property(x => x.PriorState).HasMaxLength(64);
+        builder.Property(x => x.NewState).HasMaxLength(64);
+        builder.Property(x => x.DesiredStateRevisionId).HasMaxLength(128);
+        builder.Property(x => x.PlanReference).HasMaxLength(2048);
+        builder.Property(x => x.DiagnosticCode).HasMaxLength(128);
+        builder.Property(x => x.Summary).HasMaxLength(128);
+        builder.Property(x => x.RequestKeyHash).HasMaxLength(64);
+        builder.Property(x => x.OccurredAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.InstanceId, x.Sequence }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.OccurredAt });
+        builder.HasOne<Workspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+internal sealed class ElsaInstanceIdentityBindingConfiguration : IEntityTypeConfiguration<ElsaInstanceIdentityBindingEntity>
+{
+    public void Configure(EntityTypeBuilder<ElsaInstanceIdentityBindingEntity> builder)
+    {
+        builder.HasKey(x => x.InstanceId);
+        builder.Property(x => x.Audience).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.CanonicalCallbackUri).HasMaxLength(2048).IsRequired();
+        builder.Property(x => x.VerifiedEndpointOrigin).HasMaxLength(2048).IsRequired();
+        builder.Property(x => x.BindingVersion).IsRequired();
+        builder.Property(x => x.BindingVersion).IsConcurrencyToken();
+        builder.Property(x => x.ChangedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => x.Audience).IsUnique();
+        builder.HasIndex(x => x.CanonicalCallbackUri).IsUnique();
+    }
+}
+
+internal sealed class ElsaInstanceMigrationConfiguration : IEntityTypeConfiguration<ElsaInstanceMigrationEntity>
+{
+    public void Configure(EntityTypeBuilder<ElsaInstanceMigrationEntity> builder)
+    {
+        builder.HasKey(x => x.MigrationId);
+        foreach (var property in new[]
+        {
+            nameof(ElsaInstanceMigrationEntity.SourcePlanId), nameof(ElsaInstanceMigrationEntity.SourcePlanUri),
+            nameof(ElsaInstanceMigrationEntity.SourceReleaseLine), nameof(ElsaInstanceMigrationEntity.SourceVersion),
+            nameof(ElsaInstanceMigrationEntity.SourceManifestDigest), nameof(ElsaInstanceMigrationEntity.SourceDeploymentId),
+            nameof(ElsaInstanceMigrationEntity.TargetPlanId), nameof(ElsaInstanceMigrationEntity.TargetPlanUri),
+            nameof(ElsaInstanceMigrationEntity.TargetReleaseLine), nameof(ElsaInstanceMigrationEntity.TargetVersion),
+            nameof(ElsaInstanceMigrationEntity.TargetManifestDigest), nameof(ElsaInstanceMigrationEntity.TargetDeploymentId)
+        })
+            builder.Property<string?>(property).HasMaxLength(
+                property.EndsWith("Uri", StringComparison.Ordinal) ? 2048 :
+                property.EndsWith("ManifestDigest", StringComparison.Ordinal) ? 71 : 128);
+        builder.Property(x => x.Phase).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.SourceAccessMode).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.CutoverAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.SourceRetainUntil).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.EarlyReleaseApprovedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.SourceReleasedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt)
+            .HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero))
+            .IsConcurrencyToken();
+        builder.HasIndex(x => new { x.InstanceId, x.Phase });
+        builder.HasIndex(x => new { x.InstanceId, x.SourceRetainUntil });
+        builder.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Workspace>().WithMany()
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

@@ -135,7 +135,16 @@ public sealed class ResolvedElsaApplicationPlanTests
             "AzureKeyVault://vault/database",
             "secret:/database",
             "secret://vault/database?token=unsafe",
-            "secret://user:password@vault/database"
+            "secret://user:password@vault/database",
+            "secret://vault/database/../admin",
+            "secret://vault/database/./password",
+            "secret://vault/database//password",
+            "secret://vault/database%2f..%2fadmin",
+            "secret://vault/database\\password",
+            "secret://vault/database\0password",
+            "secret://host",
+            "secret://host/",
+            "secret://vault/database/"
         };
         var plan = CreatePlan() with
         {
@@ -154,7 +163,106 @@ public sealed class ResolvedElsaApplicationPlanTests
         var findings = ResolvedElsaApplicationPlanValidator.Validate(plan);
 
         Assert.Equal(references.Length, findings.Count(x => x.Code == "configuration.secretReference.invalid"));
+        Assert.All(
+            findings.Where(x => x.Code == "configuration.secretReference.invalid"),
+            finding => Assert.Equal(SecretReferencePolicy.InvalidReferenceMessage, finding.Message));
         Assert.Empty(ResolvedElsaApplicationPlanValidator.Validate(CreatePlan()));
+    }
+
+    [Theory]
+    [InlineData("secret://host")]
+    [InlineData("secret://host/")]
+    [InlineData("secret://host/database/")]
+    public void Rejects_secret_references_with_root_or_non_canonical_paths(string reference)
+    {
+        Assert.False(SecretReferencePolicy.IsSafe(reference));
+    }
+
+    [Theory]
+    [InlineData("invalid\nkey")]
+    [InlineData("invalid\0key")]
+    [InlineData(" invalid")]
+    [InlineData("invalid ")]
+    [InlineData("invalid/key")]
+    public void Validator_rejects_unsafe_configuration_keys_without_echoing_them(string key)
+    {
+        var plan = CreatePlan() with
+        {
+            Configuration = new([new(key, "string", false, false, false, null, JsonValue("\"safe\""), null, null)])
+        };
+
+        var findings = ResolvedElsaApplicationPlanValidator.Validate(plan);
+        var finding = Assert.Single(findings, x => x.Code == "configuration.key.invalid");
+
+        Assert.Equal("configuration.entries", finding.Scope);
+        Assert.DoesNotContain(key, JsonSerializer.Serialize(findings), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Validator_rejects_overlong_configuration_keys_without_echoing_them()
+    {
+        var key = new string('k', ConfigurationKeyPolicy.MaxLength + 1);
+        var plan = CreatePlan() with
+        {
+            Configuration = new([new(key, "string", false, false, false, null, JsonValue("\"safe\""), null, null)])
+        };
+
+        var findings = ResolvedElsaApplicationPlanValidator.Validate(plan);
+        var finding = Assert.Single(findings, x => x.Code == "configuration.key.invalid");
+
+        Assert.Equal("configuration.entries", finding.Scope);
+        Assert.DoesNotContain(key, JsonSerializer.Serialize(findings), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void Validator_reports_missing_configuration_keys_with_fixed_scope(string? key)
+    {
+        var plan = CreatePlan() with
+        {
+            Configuration = new([new(key!, "string", false, false, false, null, JsonValue("\"safe\""), null, null)])
+        };
+
+        var finding = Assert.Single(
+            ResolvedElsaApplicationPlanValidator.Validate(plan),
+            x => x.Code == "configuration.key.required");
+
+        Assert.Equal("configuration.entries", finding.Scope);
+    }
+
+    [Theory]
+    [InlineData("/", true)]
+    [InlineData("/api", true)]
+    [InlineData("/api/", false)]
+    [InlineData("//api", false)]
+    public void Enforces_canonical_endpoint_path_form(string path, bool expected)
+    {
+        Assert.Equal(expected, EndpointPathPolicy.IsSafe(path));
+    }
+
+    [Theory]
+    [InlineData("https://attacker.example.test/callback")]
+    [InlineData("/elsa/api?token=secret")]
+    [InlineData("/elsa/api/../admin")]
+    [InlineData("/elsa/api/")]
+    [InlineData("//api")]
+    public void Validator_rejects_unsafe_topology_endpoint_paths(string path)
+    {
+        var baseline = CreatePlan();
+        var component = baseline.Topology.Components[0];
+        var plan = baseline with
+        {
+            Topology = new("combined", [component with
+            {
+                Endpoints = [component.Endpoints[0] with { Path = path }, component.Endpoints[1]]
+            }])
+        };
+
+        var findings = ResolvedElsaApplicationPlanValidator.Validate(plan);
+
+        Assert.Contains(findings, x => x.Code == "endpoint.path.invalid");
     }
 
     [Fact]
@@ -263,7 +371,7 @@ public sealed class ResolvedElsaApplicationPlanTests
                 digestB),
             new(topologyId, components),
             reverseCollections ? [package with { Features = [package.Features[0] with { RequiredCapabilities = ["workflow.runtime"] }] }] : [package],
-            new([new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, "secret://database", null)]),
+            new([new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, "secret://database/connection", null)]),
             new([new(topologyId == "combined" ? "runtime" : "server", 1, 1, 500, 1024)], [new("elsa-data", "relational", "persistent", "exclusive", 10)]),
             new("public", "restricted", true, ["registry.example"], [new(topologyId == "combined" ? "runtime" : "server", "api", "https", 443, "public", true, "/elsa/api")]),
             "Dedicated",

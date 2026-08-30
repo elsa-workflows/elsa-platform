@@ -80,7 +80,7 @@ public sealed class ReleaseManifestAdmissionTests
         Assert.Null(admission.Manifest);
         Assert.Null(admission.SignatureEvidence);
         Assert.Contains(admission.Findings, x => x.Code == "manifest.schema.unsupported");
-        Assert.Throws<InvalidOperationException>(() => ReleaseManifestPlanProjector.Project(admission, CreatePlan()));
+        Assert.Throws<ReleaseManifestProjectionValidationException>(() => ReleaseManifestPlanProjector.Project(admission, CreatePlan()));
     }
 
     [Fact]
@@ -346,6 +346,22 @@ public sealed class ReleaseManifestAdmissionTests
         Assert.DoesNotContain(admission.Findings, x => x.Code == "supplyChain.sbom.invalid.required");
     }
 
+    [Theory]
+    [InlineData("https://attacker.example.test/callback")]
+    [InlineData("/elsa/api?token=secret")]
+    [InlineData("/elsa/api/../admin")]
+    public async Task Unsafe_topology_endpoint_paths_are_rejected(string path)
+    {
+        var payload = ManifestJson().Replace(
+            "\"api\": \"/elsa/api\"",
+            $"\"api\": \"{path}\"",
+            StringComparison.Ordinal);
+        var admission = await Admit(WithPayload(Artifact(Digest('b')), payload));
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, x => x.Code == "topology.endpoint.path.invalid");
+    }
+
     [Fact]
     public async Task Unmodeled_payload_fields_do_not_cross_the_admission_boundary()
     {
@@ -377,7 +393,47 @@ public sealed class ReleaseManifestAdmissionTests
         };
 
         Assert.True(admission.Accepted);
-        Assert.Throws<InvalidOperationException>(() => ReleaseManifestPlanProjector.Project(admission, plan));
+        Assert.Throws<ReleaseManifestProjectionValidationException>(() => ReleaseManifestPlanProjector.Project(admission, plan));
+    }
+
+    [Fact]
+    public async Task Projector_rejects_existing_evidence_with_mismatched_digest_binding()
+    {
+        var admission = await Admit(Artifact(Digest('b')));
+        var plan = CreatePlan() with
+        {
+            Evidence = [new("existing", $"https://evidence.example/a@{Digest('a')}", Digest('b'), "Retained immutable evidence.")]
+        };
+
+        Assert.True(admission.Accepted);
+        Assert.Throws<ReleaseManifestProjectionValidationException>(() => ReleaseManifestPlanProjector.Project(admission, plan));
+    }
+
+    [Fact]
+    public async Task Projector_rejects_existing_evidence_with_unallowlisted_description()
+    {
+        var admission = await Admit(Artifact(Digest('b')));
+        var plan = CreatePlan() with
+        {
+            Evidence = [new("existing", $"https://evidence.example/a@{Digest('a')}", Digest('a'), "Evidence supplied by customer.")]
+        };
+
+        Assert.True(admission.Accepted);
+        Assert.Throws<ReleaseManifestProjectionValidationException>(() => ReleaseManifestPlanProjector.Project(admission, plan));
+    }
+
+    [Fact]
+    public async Task Projector_retains_unrelated_evidence_with_fixed_description_and_digest_binding()
+    {
+        var admission = await Admit(Artifact(Digest('b')));
+        var plan = CreatePlan() with
+        {
+            Evidence = [new("existing", $"https://evidence.example/a@{Digest('a')}", Digest('a'), "Retained immutable evidence.")]
+        };
+
+        var projected = ReleaseManifestPlanProjector.Project(admission, plan);
+
+        Assert.Contains(projected.Evidence, evidence => evidence.Kind == "existing" && evidence.Digest == Digest('a'));
     }
 
     [Fact]
