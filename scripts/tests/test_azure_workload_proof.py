@@ -140,6 +140,7 @@ class AzureWorkloadProofTests(unittest.TestCase):
     def test_runbook_is_fail_closed(self) -> None:
         source = RUNBOOK.read_text()
         library = RUNBOOK_LIB.read_text()
+        bootstrap = (ROOT / "scripts" / "bootstrap-github-azure.sh").read_text()
         combined_source = source + "\n" + library
         self.assertIn("DISPOSABLE_PROOF_APPLY:-", source)
         self.assertIn("what-if requires an existing resource group", source)
@@ -165,10 +166,16 @@ class AzureWorkloadProofTests(unittest.TestCase):
             line for line in source.splitlines()
             if "az sql server firewall-rule delete" in line
         ]
-        self.assertEqual(2, len(firewall_deletes))
-        self.assertTrue(all("--yes" not in line for line in firewall_deletes))
+        self.assertEqual(0, len(firewall_deletes))
+        library_firewall_deletes = [
+            line for line in library.splitlines()
+            if "az sql server firewall-rule delete" in line
+        ]
+        self.assertEqual(1, len(library_firewall_deletes))
+        self.assertNotIn("--yes", library_firewall_deletes[0])
         self.assertIn("keyvault purge", combined_source)
         self.assertIn("Refusing to adopt unrelated resource group", source)
+        self.assertIn("different bootstrap identity", source)
         self.assertIn("external ACR cleanup cannot be proven", source)
         self.assertIn("external ACR cleanup was incomplete", source)
         self.assertIn("registry-subscription", source)
@@ -177,6 +184,31 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("external_context=", source)
         self.assertIn('external_deployment_suffix="$(sha256_text', source)
         self.assertIn("tags.acrDeployment", source)
+        self.assertIn("delete_and_verify_firewall_rule", combined_source)
+        role_list_lines = [
+            line.strip()
+            for line in combined_source.splitlines()
+            if "az role assignment list" in line
+        ]
+        self.assertGreaterEqual(len(role_list_lines), 6)
+        self.assertTrue(all("--all" in line for line in role_list_lines), role_list_lines)
+        self.assertTrue(
+            all(not ("--all" in line and "--scope" in line) for line in role_list_lines),
+            role_list_lines,
+        )
+        self.assertIn('validate_direct_acr_pull_assignment "$registry_id" "$assignment_json" "$cleanup_principal_id"', source)
+        self.assertIn('has_direct_acr_pull_assignment "$registry_id" "$identity_principal_id" "$role_assignments_json"', source)
+        self.assertIn('[[ "$assignment_scope_lower" == "$registry_id_lower" ]]', library)
+        self.assertIn('valid_role_assignment_id "$registry_id" "$assignment_id"', library)
+        bootstrap_role_list_lines = [
+            line.strip()
+            for line in bootstrap.splitlines()
+            if "az role assignment list" in line
+        ]
+        self.assertEqual(1, len(bootstrap_role_list_lines))
+        self.assertIn("--all", bootstrap_role_list_lines[0])
+        self.assertNotIn("--scope", bootstrap_role_list_lines[0])
+        self.assertIn("[?scope=='$scope']", bootstrap_role_list_lines[0])
         self.assertIn("tags.acrPrincipal", source)
         self.assertIn("tags.acrRegistryId", source)
         self.assertIn("properties.outputs.roleAssignmentId.value", source)
@@ -199,11 +231,16 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("candidate_healthy", source)
         self.assertIn("stable traffic was preserved", source)
         self.assertIn("promote_workload_revision", library)
+        self.assertIn("verify_single_revision_traffic", library)
+        self.assertIn("verify_workload_traffic", library)
         self.assertIn("remove_owned_sql_bootstrap_admin", library)
         self.assertIn("delete_and_verify_role_assignment", library)
         self.assertIn("valid_role_assignment_id", library)
+        self.assertIn("validate_direct_acr_pull_assignment", library)
         self.assertIn("delete_and_verify_group_deployment", library)
         self.assertIn("wait_for_resource_group_absence", library)
+        self.assertIn("verify_proof_resource_inventory", combined_source)
+        self.assertIn("unowned resource", library)
         self.assertIn("purge_and_verify_deleted_vault", library)
         self.assertIn("stored ACR deployment has no valid role-assignment output", source)
         self.assertLess(
@@ -245,12 +282,86 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertEqual(5, result.returncode)
         self.assertIn("No free deterministic recovery revision suffix", result.stderr)
 
+    def test_existing_split_traffic_fails_closed_without_latest_ready_fallback(self) -> None:
+        script = r'''
+source "$1"
+proof_name=proof
+resource_group=proof-rg
+az() {
+  case "$*" in
+    *"resource list"*) printf '1\n' ;;
+    *"configuration.ingress.traffic"*) printf '[{"revisionName":"stable-revision","weight":50},{"revisionName":"candidate-revision","weight":50}]\n' ;;
+    *"latestReadyRevisionName"*) printf 'candidate-revision\n' ;;
+    *) printf 'unexpected az call: %s\n' "$*" >&2; return 1 ;;
+  esac
+}
+resolve_stable_traffic_revision proof-rg proof-app
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertNotIn("command not found", result.stderr)
+        self.assertNotIn("latestReadyRevisionName", result.stderr)
+
+    def test_firewall_cleanup_waits_for_absence_after_uncertain_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = Path(temp_dir) / "state"
+            calls = Path(temp_dir) / "calls"
+            state.write_text("0")
+            script = r'''
+source "$1"
+STATE_FILE="$2"
+CALLS_FILE="$3"
+az() {
+  printf '%s\n' "$*" >>"$CALLS_FILE"
+  if [[ "$*" == *"firewall-rule delete"* ]]; then return 1; fi
+  count="$(<"$STATE_FILE")"
+  count=$((count + 1))
+  printf '%s' "$count" >"$STATE_FILE"
+  if (( count < 3 )); then
+    printf '[{"name":"temporary-rule"}]\n'
+  else
+    printf '[]\n'
+  fi
+}
+sleep() { :; }
+delete_and_verify_firewall_rule proof-sub proof-rg proof-sql temporary-rule 4 0
+'''
+            result = subprocess.run(
+                ["bash", "-c", script, "test", str(RUNBOOK_LIB), str(state), str(calls)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            call_lines = calls.read_text().splitlines()
+            self.assertEqual(1, sum("firewall-rule delete" in line for line in call_lines))
+            self.assertEqual(3, sum("firewall-rule list" in line for line in call_lines))
+
     def test_failed_promotion_restores_stable_traffic(self) -> None:
         script = r'''
 source "$1"
+traffic_state=stable
 az() {
-  printf 'az:%s\n' "$*"
-  return 0
+  case "$*" in
+    *"containerapp show"*)
+      if [[ "$traffic_state" == candidate ]]; then
+        printf '[{"revisionName":"candidate-revision","weight":100}]\n'
+      else
+        printf '[{"revisionName":"stable-revision","weight":100},{"revisionName":"candidate-revision","weight":0}]\n'
+      fi
+      ;;
+    *)
+      printf 'az:%s\n' "$*"
+      [[ "$*" == *"candidate-revision=100"* ]] && traffic_state=candidate
+      [[ "$*" == *"stable-revision=100"* ]] && traffic_state=stable
+      return 0
+      ;;
+  esac
 }
 curl() { return 1; }
 promote_workload_revision proof-rg proof-app stable-revision candidate-revision https://proof.invalid
@@ -268,14 +379,173 @@ promote_workload_revision proof-rg proof-app stable-revision candidate-revision 
         self.assertIn("stable-revision=100 candidate-revision=0", calls[1])
         self.assertIn("Restored stable traffic", result.stderr)
 
+    def test_inventory_rejects_mixed_resource_groups(self) -> None:
+        base = "/subscriptions/proof-sub/resourceGroups/proof-rg"
+        owned = [
+            {"id": f"{base}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/proof-identity",
+             "type": "Microsoft.ManagedIdentity/userAssignedIdentities"},
+            {"id": f"{base}/providers/Microsoft.KeyVault/vaults/proof-kv",
+             "type": "Microsoft.KeyVault/vaults"},
+            {"id": f"{base}/providers/Microsoft.Sql/servers/proof-sql",
+             "type": "Microsoft.Sql/servers"},
+            {"id": f"{base}/providers/Microsoft.OperationalInsights/workspaces/proof-logs",
+             "type": "Microsoft.OperationalInsights/workspaces"},
+            {"id": f"{base}/providers/Microsoft.App/managedEnvironments/proof-aca",
+             "type": "Microsoft.App/managedEnvironments"},
+            {"id": f"{base}/providers/Microsoft.App/containerApps/proof-app",
+             "type": "Microsoft.App/containerApps"},
+        ]
+        vault_id = f"{base}/providers/Microsoft.KeyVault/vaults/proof-kv"
+        assignments = [
+            {"scope": vault_id, "principalId": "A1111111-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+             "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/4633458b-17de-408a-b874-0445c86b69e6"},
+            {"scope": vault_id, "principalId": "B2222222-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+             "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/b86a8fe4-44ce-4948-aee5-eccb2c155cd7"},
+        ]
+        script = r'''
+source "$1"
+RESOURCE_JSON="$2"
+ASSIGNMENTS_JSON="$3"
+az() {
+  case "$*" in
+    *"resource list"*) printf '%s\n' "$RESOURCE_JSON" ;;
+    *"role assignment list"*) printf '%s\n' "$ASSIGNMENTS_JSON" ;;
+    *"resourceGroups/proof-rg"*) printf '[]\n' ;;
+    *) return 1 ;;
+  esac
+}
+verify_proof_resource_inventory proof-sub proof-rg proof a1111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa b2222222-bbbb-bbbb-bbbb-bbbbbbbbbbbb
+'''
+        exact = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB), json.dumps(owned), json.dumps(assignments)],
+            capture_output=True, text=True, check=False)
+        self.assertEqual(0, exact.returncode, exact.stderr)
+
+        mixed = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB), json.dumps(owned + [
+                {"id": f"{base}/providers/Microsoft.Storage/storageAccounts/unrelated",
+                 "type": "Microsoft.Storage/storageAccounts"}]), json.dumps(assignments)],
+            capture_output=True, text=True, check=False)
+        self.assertNotEqual(0, mixed.returncode)
+        self.assertIn("unowned resource", mixed.stderr)
+
+    def test_inventory_rejects_extra_child_scoped_vault_role_assignment(self) -> None:
+        base = "/subscriptions/proof-sub/resourceGroups/proof-rg"
+        owned = [
+            {"id": f"{base}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/proof-identity",
+             "type": "Microsoft.ManagedIdentity/userAssignedIdentities"},
+            {"id": f"{base}/providers/Microsoft.KeyVault/vaults/proof-kv",
+             "type": "Microsoft.KeyVault/vaults"},
+            {"id": f"{base}/providers/Microsoft.Sql/servers/proof-sql",
+             "type": "Microsoft.Sql/servers"},
+            {"id": f"{base}/providers/Microsoft.OperationalInsights/workspaces/proof-logs",
+             "type": "Microsoft.OperationalInsights/workspaces"},
+            {"id": f"{base}/providers/Microsoft.App/managedEnvironments/proof-aca",
+             "type": "Microsoft.App/managedEnvironments"},
+            {"id": f"{base}/providers/Microsoft.App/containerApps/proof-app",
+             "type": "Microsoft.App/containerApps"},
+        ]
+        vault_id = f"{base}/providers/Microsoft.KeyVault/vaults/proof-kv"
+        assignments = [
+            {"scope": vault_id, "principalId": "A1111111-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+             "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/4633458b-17de-408a-b874-0445c86b69e6"},
+            {"scope": vault_id, "principalId": "B2222222-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+             "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/b86a8fe4-44ce-4948-aee5-eccb2c155cd7"},
+            {"scope": f"{vault_id}/secrets/unrelated", "principalId": "C3333333-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+             "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/4633458b-17de-408a-b874-0445c86b69e6"},
+        ]
+        script = r'''
+source "$1"
+RESOURCE_JSON="$2"
+ASSIGNMENTS_JSON="$3"
+az() {
+  case "$*" in
+    *"resource list"*) printf '%s\n' "$RESOURCE_JSON" ;;
+    *"role assignment list"*) printf '%s\n' "$ASSIGNMENTS_JSON" ;;
+    *"resourceGroups/proof-rg"*) printf '[]\n' ;;
+    *) return 1 ;;
+  esac
+}
+verify_proof_resource_inventory proof-sub proof-rg proof a1111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa b2222222-bbbb-bbbb-bbbb-bbbbbbbbbbbb
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB), json.dumps(owned), json.dumps(assignments)],
+            capture_output=True, text=True, check=False)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("vault RBAC inventory is not exact", result.stderr)
+
+    def test_fallback_acr_cleanup_accepts_only_direct_registry_role_assignments(self) -> None:
+        registry = "/subscriptions/proof-sub/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/acr"
+        role = f"{registry}/providers/Microsoft.Authorization/roleAssignments/00000000-0000-0000-0000-000000000001"
+        direct = json.dumps({
+            "id": role,
+            "scope": registry,
+            "principalId": "A1111111-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/7f951dda-4ed3-4680-a7ca-43fe172d538d",
+        })
+        inherited = json.dumps({
+            "id": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleAssignments/00000000-0000-0000-0000-000000000002",
+            "scope": "/subscriptions/proof-sub",
+            "principalId": "A1111111-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+            "roleDefinitionId": "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/7f951dda-4ed3-4680-a7ca-43fe172d538d",
+        })
+        script = r'''
+source "$1"
+validate_direct_acr_pull_assignment "$2" "$3" A1111111-AAAA-AAAA-AAAA-AAAAAAAAAAAA
+'''
+        self.assertEqual(
+            0,
+            subprocess.run(
+                ["bash", "-c", script, "test", str(RUNBOOK_LIB), registry, direct],
+                capture_output=True, text=True, check=False).returncode)
+        self.assertNotEqual(
+            0,
+            subprocess.run(
+                ["bash", "-c", script, "test", str(RUNBOOK_LIB), registry, inherited],
+                capture_output=True, text=True, check=False).returncode)
+
+    def test_acr_readiness_accepts_only_direct_matching_assignment(self) -> None:
+        registry = "/subscriptions/proof-sub/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/acr"
+        principal = "A1111111-AAAA-AAAA-AAAA-AAAAAAAAAAAA"
+        role = "/subscriptions/proof-sub/providers/Microsoft.Authorization/roleDefinitions/7f951dda-4ed3-4680-a7ca-43fe172d538d"
+        direct = {"scope": registry, "principalId": principal, "roleDefinitionId": role}
+        inherited = {"scope": "/subscriptions/proof-sub", "principalId": principal, "roleDefinitionId": role}
+        wrong_principal = {"scope": registry, "principalId": "B2222222-BBBB-BBBB-BBBB-BBBBBBBBBBBB", "roleDefinitionId": role}
+        script = r'''
+source "$1"
+has_direct_acr_pull_assignment "$2" "$3" "$4"
+'''
+
+        def check(assignments: list[dict[str, str]]) -> int:
+            return subprocess.run(
+                ["bash", "-c", script, "test", str(RUNBOOK_LIB), registry, principal, json.dumps(assignments)],
+                capture_output=True, text=True, check=False).returncode
+
+        self.assertEqual(0, check([inherited, direct]))
+        self.assertNotEqual(0, check([inherited]))
+        self.assertNotEqual(0, check([wrong_principal]))
+
     def test_uncertain_traffic_set_result_also_rolls_back(self) -> None:
         script = r'''
 source "$1"
 attempt=0
+traffic_state=stable
 az() {
-  attempt=$((attempt + 1))
-  printf 'az:%s\n' "$*"
-  (( attempt > 1 ))
+  case "$*" in
+    *"containerapp show"*)
+      if [[ "$traffic_state" == stable ]]; then
+        printf '[{"revisionName":"stable-revision","weight":100},{"revisionName":"candidate-revision","weight":0}]\n'
+      else
+        printf '[{"revisionName":"candidate-revision","weight":100}]\n'
+      fi
+      ;;
+    *)
+      attempt=$((attempt + 1))
+      printf 'az:%s\n' "$*"
+      [[ "$*" == *"stable-revision=100"* ]] && traffic_state=stable
+      (( attempt > 1 ))
+      ;;
+  esac
 }
 curl() { echo 'curl must not run' >&2; return 99; }
 promote_workload_revision proof-rg proof-app stable-revision candidate-revision https://proof.invalid
@@ -318,6 +588,40 @@ remove_owned_sql_bootstrap_admin proof-sub proof-rg proof-sql proof-admin 000000
         self.assertIn("Refusing to remove an unexpected SQL server administrator", result.stderr)
         self.assertNotIn("ad-only-auth disable", result.stderr)
         self.assertNotIn("ad-admin delete", result.stderr)
+
+    def test_sql_admin_identity_comparison_is_case_insensitive(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = Path(temp_dir) / "state"
+            state.write_text("0")
+            script = r'''
+source "$1"
+STATE_FILE="$2"
+az() {
+  printf 'az:%s\n' "$*" >&2
+  case "$*" in
+    *"sql server list"*) printf '1\n' ;;
+    *"ad-admin list"*"length(@)"*)
+      count="$(<"$STATE_FILE")"
+      count=$((count + 1))
+      printf '%s' "$count" >"$STATE_FILE"
+      (( count == 1 )) && printf '1\n' || printf '0\n'
+      ;;
+    *"ad-admin list"*) printf '{"login":"proof-admin","sid":"A1111111-AAAA-AAAA-AAAA-AAAAAAAAAAAA"}\n' ;;
+    *"ad-only-auth disable"*|*"ad-admin delete"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+remove_owned_sql_bootstrap_admin proof-sub proof-rg proof-sql proof-admin a1111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+'''
+            result = subprocess.run(
+                ["bash", "-c", script, "test", str(RUNBOOK_LIB), str(state)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("ad-only-auth disable", result.stderr)
+            self.assertIn("ad-admin delete", result.stderr)
 
     def test_role_cleanup_waits_for_eventual_absence_after_uncertain_delete(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

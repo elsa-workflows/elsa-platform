@@ -151,7 +151,7 @@ ensure_role_assignment() {
   fi
 
   local existing
-  existing="$(az role assignment list --assignee "$assignee" --role "$role" --scope "$scope" --all --query '[0].id' -o tsv 2>/dev/null || true)"
+  existing="$(az role assignment list --assignee "$assignee" --role "$role" --all --query "[?scope=='$scope'] | [0].id" -o tsv 2>/dev/null || true)"
   if [[ -n "$existing" ]]; then
     return
   fi

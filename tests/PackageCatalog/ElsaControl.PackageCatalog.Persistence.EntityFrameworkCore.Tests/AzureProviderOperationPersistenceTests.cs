@@ -53,6 +53,42 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Different_active_plan_cannot_claim_the_same_target()
+    {
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var first = await store.CreateOrGetAsync(Request(), DateTimeOffset.UtcNow);
+
+        var conflict = await Assert.ThrowsAsync<AzureProviderOperationConflictException>(() =>
+            store.CreateOrGetAsync(Request() with
+            {
+                IdempotencyKey = "different-plan",
+                PlanFingerprint = new('f', 64)
+            }, DateTimeOffset.UtcNow));
+
+        Assert.Equal(first.Id, conflict.Operation.Id);
+        Assert.Equal(first.TargetKey, conflict.Operation.TargetKey);
+    }
+
+    [Fact]
+    public async Task Delete_cannot_be_created_while_reconcile_is_active_for_the_same_target()
+    {
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var first = await store.CreateOrGetAsync(Request(), DateTimeOffset.UtcNow);
+
+        var conflict = await Assert.ThrowsAsync<AzureProviderOperationConflictException>(() =>
+            store.CreateOrGetAsync(Request() with
+            {
+                Action = AzureProviderOperationAction.Delete,
+                IdempotencyKey = "delete-request"
+            }, DateTimeOffset.UtcNow));
+
+        Assert.Equal(first.Id, conflict.Operation.Id);
+        Assert.Equal(AzureProviderOperationAction.Reconcile, conflict.Operation.Action);
+    }
+
+    [Fact]
     public async Task Claim_checkpoint_finalize_and_stale_recovery_preserve_history()
     {
         var now = DateTimeOffset.UtcNow;

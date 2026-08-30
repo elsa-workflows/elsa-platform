@@ -101,6 +101,12 @@ public sealed record AzureProviderOperation(
     DateTimeOffset UpdatedAt,
     DateTimeOffset? CompletedAt);
 
+public sealed class AzureProviderOperationConflictException(AzureProviderOperation operation)
+    : InvalidOperationException("Another active Azure operation already owns this target.")
+{
+    public AzureProviderOperation Operation { get; } = operation;
+}
+
 public sealed record AzureProviderOperationTransition(
     Guid Id,
     Guid OperationId,
@@ -118,4 +124,5 @@ public sealed record AzureProviderCheckpoint(
     AzureProviderResourceReferences Resources,
     string? Endpoint,
     AzureProviderHealth Health,
-    IReadOnlyList<AzureProviderDiagnostic> Diagnostics);
+    IReadOnlyList<AzureProviderDiagnostic> Diagnostics,
+    bool ReplaceResources = false);

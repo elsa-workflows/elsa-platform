@@ -55,6 +55,54 @@ public static class AzureProviderOperationValidation
             throw new ArgumentException("Endpoint must be a safe HTTPS URI.", nameof(endpoint));
     }
 
+    /// <summary>
+    /// Validates an immutable evidence locator without resolving or dereferencing it. Evidence
+    /// references are metadata only; their digest is validated separately by the admission
+    /// contract. OCI and HTTPS are the only supported locator schemes.
+    /// </summary>
+    public static bool IsSafeImmutableLocator(string? reference)
+    {
+        if (string.IsNullOrWhiteSpace(reference) || reference.Length > 2048 ||
+            reference.Any(char.IsWhiteSpace) ||
+            reference.Contains("/../", StringComparison.Ordinal) ||
+            reference.Contains("/./", StringComparison.Ordinal) ||
+            reference.Contains('\\') ||
+            !Uri.TryCreate(reference, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != "oci" && uri.Scheme != Uri.UriSchemeHttps) ||
+            string.IsNullOrWhiteSpace(uri.Host) ||
+            uri.AbsolutePath is "/" or "" ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Query) ||
+            !string.IsNullOrEmpty(uri.Fragment) ||
+            uri.AbsolutePath.Any(char.IsControl) ||
+            uri.AbsolutePath.Contains("%2e", StringComparison.OrdinalIgnoreCase) ||
+            uri.AbsolutePath.Contains("%2f", StringComparison.OrdinalIgnoreCase) ||
+            uri.AbsolutePath.Contains("%5c", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var unescapedPath = Uri.UnescapeDataString(uri.AbsolutePath);
+        return !unescapedPath.Split('/').Any(segment => segment is "." or "..");
+    }
+
+    /// <summary>
+    /// Validates an evidence locator and binds an optional digest embedded in the locator to
+    /// the separately retained digest. Evidence without either digest form is not immutable.
+    /// </summary>
+    public static bool IsSafeImmutableEvidenceReference(string? reference, string? digest)
+    {
+        if (!IsSafeImmutableLocator(reference))
+            return false;
+
+        var at = reference!.IndexOf('@');
+        var embeddedDigest = at < 0 ? null : reference[(at + 1)..];
+        if (at >= 0 && (at != reference.LastIndexOf('@') || !IsSha256Digest(embeddedDigest)))
+            return false;
+        if (embeddedDigest is not null && IsSha256Digest(digest) &&
+            !string.Equals(embeddedDigest, digest, StringComparison.OrdinalIgnoreCase))
+            return false;
+        return IsSha256Digest(digest) || embeddedDigest is not null;
+    }
+
     public static void ValidateReferences(AzureProviderResourceReferences references)
     {
         if (references is null) throw new ArgumentNullException(nameof(references));
@@ -90,6 +138,9 @@ public static class AzureProviderOperationValidation
     }
 
     private static bool IsSafeCode(string? value) => value is not null && value.Length <= 128 && Regex.IsMatch(value, "^[a-z0-9]+(?:[._-][a-z0-9]+)*\\z");
+
+    private static bool IsSha256Digest(string? value) => value is not null && value.Length == "sha256:".Length + 64 &&
+        value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) && value["sha256:".Length..].All(Uri.IsHexDigit);
 
     private static bool IsSafeRepository(string? value) => value is not null && value.Length <= 512 &&
         Regex.IsMatch(value, "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?:/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*\\z",

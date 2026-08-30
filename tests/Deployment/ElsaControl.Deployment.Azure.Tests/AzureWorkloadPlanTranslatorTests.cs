@@ -45,9 +45,9 @@ public sealed class AzureWorkloadPlanTranslatorTests
         Assert.Equal("Dedicated", first.Plan.Isolation);
         Assert.Equal("valenceruntimeimages.azurecr.io/runtime-combined", first.Plan.ImageRepository);
         Assert.Equal(new string('a', 64), first.Plan.ImageDigest);
-        Assert.Equal("oci://release-manifest", first.Plan.ReleaseManifestReference);
+        Assert.Equal("oci://release-manifest.example/manifest", first.Plan.ReleaseManifestReference);
         Assert.Equal(ManifestDigest, first.Plan.ReleaseManifestDigest);
-        Assert.Equal("oci://release-manifest.signature", first.Plan.ReleaseManifestSignatureReference);
+        Assert.Equal("oci://release-manifest.example/signature", first.Plan.ReleaseManifestSignatureReference);
         Assert.Equal(ImageDigest, first.Plan.ReleaseManifestSignatureDigest);
         Assert.Equal("secret://vault/database-connection", first.Plan.SecretReferences["Database:ConnectionString"]);
         Assert.Equal("database:connectionstring", Assert.Single(first.Plan.SecretReferences).Key);
@@ -406,7 +406,7 @@ public sealed class AzureWorkloadPlanTranslatorTests
 
         return new(
             ResolvedElsaApplicationPlanSchema.CurrentVersion,
-            new("valence-runtime", releaseLine, version, "https://github.com/valence-works/elsa-production-image", "1aeee8df455b21cf3bf3d2b26dfbd512d76da27b", "oci://release-manifest", ManifestDigest),
+            new("valence-runtime", releaseLine, version, "https://github.com/valence-works/elsa-production-image", "1aeee8df455b21cf3bf3d2b26dfbd512d76da27b", "oci://release-manifest.example/manifest", ManifestDigest),
             new("combined", [component]),
             [new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", version, ImageDigest, ["elsa.server"], [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])])],
             new([new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, "secret://vault/database-connection", null)]),
@@ -416,8 +416,8 @@ public sealed class AzureWorkloadPlanTranslatorTests
             new("preview", "Preview", "internal", "automatic-within-minor", "explicit-approval", "explicit-migration"),
             [new("managed-runtime", "Run the resolved runtime components.", true, ["container", "persistent-storage"])],
             [
-                new(ReleaseManifestEvidenceKinds.Manifest, "oci://release-manifest", ManifestDigest, "Verified release manifest"),
-                new(ReleaseManifestEvidenceKinds.Signature, "oci://release-manifest.signature", ImageDigest, "Verified release manifest signature"),
+                new(ReleaseManifestEvidenceKinds.Manifest, "oci://release-manifest.example/manifest", ManifestDigest, "Verified release manifest"),
+                new(ReleaseManifestEvidenceKinds.Signature, "oci://release-manifest.example/signature", ImageDigest, "Verified release manifest signature"),
                 new("catalog", "catalog://snapshot", null, "Resolved catalog snapshot")
             ]);
     }
