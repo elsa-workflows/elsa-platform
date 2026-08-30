@@ -84,6 +84,23 @@ public sealed class AzureProviderOperationValidationTests
     }
 
     [Fact]
+    public void Rejects_newline_terminated_codes_and_worker_ids()
+    {
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateCode("operation.succeeded\n"));
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateWorkerId("worker-1\n"));
+    }
+
+    [Fact]
+    public void Rejects_undefined_checkpoint_health()
+    {
+        var checkpoint = new AzureProviderCheckpoint(
+            AzureProviderOperationPhase.Planned, "operation.planned", "Planned.", new(), null,
+            (AzureProviderHealth)999, []);
+
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateCheckpoint(checkpoint));
+    }
+
+    [Fact]
     public void Hash_and_identity_are_stable_for_case_normalization()
     {
         var first = ValidRequest();
