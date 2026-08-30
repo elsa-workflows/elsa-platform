@@ -759,7 +759,7 @@ public sealed class AzureProviderExecutor
             !string.Equals(plan.ElsaVersion, operation.ElsaVersion, StringComparison.Ordinal) ||
             !string.Equals(plan.ReleaseLine, operation.ReleaseLine, StringComparison.Ordinal) ||
             !string.Equals(plan.Topology, operation.Topology, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(plan.Isolation, operation.Isolation, StringComparison.Ordinal) ||
+            !string.Equals(plan.Isolation, operation.Isolation, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(plan.ImageRepository, operation.ImageRepository, StringComparison.Ordinal) ||
             !string.Equals($"sha256:{plan.ImageDigest}", operation.ImageDigest, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(plan.ReleaseManifestDigest, operation.ReleaseManifestDigest, StringComparison.OrdinalIgnoreCase) ||

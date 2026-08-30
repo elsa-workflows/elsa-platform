@@ -187,7 +187,7 @@ public static class AzureProviderOperationValidation
             ReleaseManifestSignatureDigest = NormalizeOptionalDigest(request.ReleaseManifestSignatureDigest),
             Location = request.Location.Trim().ToLowerInvariant(),
             Topology = request.Topology.Trim().ToLowerInvariant(),
-            Isolation = request.Isolation.Trim(),
+            Isolation = request.Isolation.Trim().ToLowerInvariant(),
             ReleaseLine = request.ReleaseLine.Trim(),
             ElsaVersion = request.ElsaVersion.Trim(),
             ImageRepository = request.ImageRepository.Trim().ToLowerInvariant(),

@@ -38,7 +38,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     CheckpointSequence = table.Column<long>(type: "bigint", nullable: false),
                     AttemptNumber = table.Column<int>(type: "int", nullable: false),
                     Version = table.Column<long>(type: "bigint", nullable: false),
-                    ResourceGroupName = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
+                    ResourceGroupName = table.Column<string>(type: "nvarchar(90)", maxLength: 90, nullable: true),
                     FoundationDeploymentId = table.Column<string>(type: "nvarchar(512)", maxLength: 512, nullable: true),
                     WorkloadDeploymentId = table.Column<string>(type: "nvarchar(512)", maxLength: 512, nullable: true),
                     WorkloadResourceId = table.Column<string>(type: "nvarchar(1024)", maxLength: 1024, nullable: true),

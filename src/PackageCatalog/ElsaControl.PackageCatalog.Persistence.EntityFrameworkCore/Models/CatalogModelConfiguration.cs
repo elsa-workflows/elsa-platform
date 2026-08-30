@@ -746,7 +746,7 @@ internal sealed class AzureProviderOperationConfiguration : IEntityTypeConfigura
         builder.Property(x => x.ReleaseManifestReference).HasMaxLength(2048);
         builder.Property(x => x.ReleaseManifestSignatureReference).HasMaxLength(2048);
         builder.Property(x => x.SecretReferencesJson).HasMaxLength(10000).IsRequired();
-        builder.Property(x => x.ResourceGroupName).HasMaxLength(128);
+        builder.Property(x => x.ResourceGroupName).HasMaxLength(90);
         builder.Property(x => x.FoundationDeploymentId).HasMaxLength(512);
         builder.Property(x => x.WorkloadDeploymentId).HasMaxLength(512);
         builder.Property(x => x.WorkloadResourceId).HasMaxLength(1024);

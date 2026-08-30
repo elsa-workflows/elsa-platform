@@ -1003,7 +1003,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ResourceGroupName")
-                        .HasMaxLength(128)
+                        .HasMaxLength(90)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("SecretReferencesJson")
