@@ -41,11 +41,6 @@ public sealed class EfCoreManagedElsaHandoffStore(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jti);
 
-        dbContext.ChangeTracker.Clear();
-        if (await dbContext.ManagedElsaHandoffReplays.AsNoTracking()
-                .AnyAsync(x => x.Jti == jti, cancellationToken))
-            return false;
-
         var entity = new ManagedElsaHandoffReplayEntity
         {
             Jti = jti,
@@ -60,9 +55,8 @@ public sealed class EfCoreManagedElsaHandoffStore(
         }
         catch (DbUpdateException exception) when (EfCoreDatabaseExceptionPolicy.IsUniqueViolation(exception))
         {
-            // A duplicate can leave the attempted entity tracked as Added. Clear
-            // it so the scoped context remains usable after a replay race.
-            dbContext.ChangeTracker.Clear();
+            // Keep unrelated scoped work intact when a concurrent consumer wins.
+            dbContext.Entry(entity).State = EntityState.Detached;
             return false;
         }
     }
