@@ -1071,7 +1071,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .IsUnique()
                         .HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
 
-                    b.HasIndex("Status", "LeaseExpiresAt", "UpdatedAt", "Id");
+                    b.HasIndex("WorkspaceId", "Status", "LeaseExpiresAt", "UpdatedAt");
 
                     b.ToTable("AzureProviderOperations");
                 });

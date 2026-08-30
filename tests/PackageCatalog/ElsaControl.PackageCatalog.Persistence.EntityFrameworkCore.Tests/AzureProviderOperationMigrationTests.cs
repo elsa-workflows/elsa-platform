@@ -24,6 +24,8 @@ public sealed class AzureProviderOperationMigrationTests
         Assert.Contains("AzureProviderOperationTransitions", tables);
         Assert.Contains("IX_AzureProviderOperations_WorkspaceId_TargetKey_OperationIdentity", indexes);
         Assert.Contains("IX_AzureProviderOperations_WorkspaceId_TargetKey", indexes);
+        Assert.Contains("IX_AzureProviderOperations_Status_LeaseExpiresAt_UpdatedAt_Id", indexes);
+        Assert.DoesNotContain("IX_AzureProviderOperations_WorkspaceId_Status_LeaseExpiresAt_UpdatedAt", indexes);
         Assert.Empty(await db.Database.GetPendingMigrationsAsync());
     }
 }
