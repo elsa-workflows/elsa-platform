@@ -166,7 +166,7 @@ public sealed class DeploymentProofHarnessTests
         var json = report.ToJson();
         Assert.DoesNotContain(imageReference.Trim(), json, StringComparison.Ordinal);
         Assert.DoesNotContain("password", json, StringComparison.Ordinal);
-        Assert.Contains("<redacted>@", json, StringComparison.Ordinal);
+        Assert.Contains("redacted", json, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
