@@ -23,12 +23,12 @@ namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 /// </summary>
 public sealed class EfCoreElsaInstanceLifecycleStore(
     CatalogDbContext dbContext,
-    IElsaInstanceLifecycleResolutionInputSource? resolutionInputSource = null) :
+    IElsaInstanceLifecycleResolutionInputSource resolutionInputSource) :
     IElsaInstanceLifecycleStore,
     IElsaInstanceLifecycleWorkerStore
 {
-    private static readonly IElsaInstanceLifecycleResolutionInputSource NoResolutionInputSource =
-        new MissingResolutionInputSource();
+    private readonly IElsaInstanceLifecycleResolutionInputSource _resolutionInputSource =
+        resolutionInputSource ?? throw new ArgumentNullException(nameof(resolutionInputSource));
     private static readonly TimeSpan WorkerLeaseDuration = TimeSpan.FromMinutes(5);
     private static readonly JsonDocumentOptions SafeJsonOptions = new()
     {
@@ -37,8 +37,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         CommentHandling = JsonCommentHandling.Disallow
     };
 
-    private IElsaInstanceLifecycleResolutionInputSource ResolutionInputSource =>
-        resolutionInputSource ?? NoResolutionInputSource;
+    private IElsaInstanceLifecycleResolutionInputSource ResolutionInputSource => _resolutionInputSource;
 
     public async Task<ElsaInstance?> GetInstanceAsync(
         Guid workspaceId,
@@ -948,15 +947,6 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
 
     private static string HashLeaseToken(string token) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
-
-    private sealed class MissingResolutionInputSource : IElsaInstanceLifecycleResolutionInputSource
-    {
-        public Task<ElsaInstanceLifecycleResolutionInput?> GetAsync(
-            ElsaInstance instance,
-            ElsaInstanceOperation operation,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult<ElsaInstanceLifecycleResolutionInput?>(null);
-    }
 
     private static void ValidateExistingOperation(
         ElsaInstanceOperationEntity existing,

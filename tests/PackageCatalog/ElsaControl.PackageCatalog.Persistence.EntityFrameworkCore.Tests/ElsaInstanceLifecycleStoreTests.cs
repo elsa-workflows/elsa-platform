@@ -17,6 +17,13 @@ public sealed class ElsaInstanceLifecycleStoreTests
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-08-30T10:00:00Z");
 
     [Fact]
+    public void Worker_store_requires_a_governed_resolution_source_at_composition()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new EfCoreElsaInstanceLifecycleStore(null!, null!));
+    }
+
+    [Fact]
     public async Task Create_commits_instance_revision_operation_and_outbox_and_replays_exactly()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -33,7 +40,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
             CreateIntent(),
             "create-lifecycle",
             instanceId);
-        var service = new ElsaInstanceLifecycleService(new EfCoreElsaInstanceLifecycleStore(db));
+        var service = new ElsaInstanceLifecycleService(CreateStore(db));
 
         var first = await service.CreateAsync(request);
         db.ChangeTracker.Clear();
@@ -51,7 +58,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal(1, await db.ElsaInstanceLifecycleOutbox.CountAsync());
         Assert.Equal(1, await db.ElsaInstanceAuditEvents.CountAsync());
 
-        var reloaded = await new EfCoreElsaInstanceLifecycleStore(db)
+        var reloaded = await CreateStore(db)
             .GetInstanceAsync(workspace.Id, instanceId);
         Assert.NotNull(reloaded);
         Assert.Equal("3.10", reloaded!.ReleaseIntent.ReleaseLine);
@@ -79,7 +86,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await using var db = CreateMigratedContext(connection);
         await db.Database.MigrateAsync();
         var workspace = await CreateWorkspaceAsync(db, "Revision link workspace");
-        var service = new ElsaInstanceLifecycleService(new EfCoreElsaInstanceLifecycleStore(db));
+        var service = new ElsaInstanceLifecycleService(CreateStore(db));
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             workspace.OrganizationId, workspace.Id, "Managed Elsa", "revision-link-elsa", CreateIntent(), "create-revision-link"));
         await CompleteOperationAsync(db, created.Operation.Id);
@@ -104,7 +111,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await using var setup = CreateMigratedContext(connection);
         await setup.Database.MigrateAsync();
         var workspace = await CreateWorkspaceAsync(setup, "Concurrent lifecycle workspace");
-        var createService = new ElsaInstanceLifecycleService(new EfCoreElsaInstanceLifecycleStore(setup));
+        var createService = new ElsaInstanceLifecycleService(CreateStore(setup));
         var created = await createService.CreateAsync(new ElsaInstanceCreateRequest(
             workspace.OrganizationId, workspace.Id, "Managed Elsa", "concurrent-elsa", CreateIntent(), "create-concurrent"));
         await CompleteOperationAsync(setup, created.Operation.Id);
@@ -115,8 +122,8 @@ public sealed class ElsaInstanceLifecycleStoreTests
             .Options;
         await using var firstDb = new CatalogDbContext(options);
         await using var secondDb = new CatalogDbContext(options);
-        var firstStore = new EfCoreElsaInstanceLifecycleStore(firstDb);
-        var secondStore = new EfCoreElsaInstanceLifecycleStore(secondDb);
+        var firstStore = CreateStore(firstDb);
+        var secondStore = CreateStore(secondDb);
         var firstExpected = await firstStore.GetInstanceAsync(workspace.Id, created.Instance.Id);
         var secondExpected = await secondStore.GetInstanceAsync(workspace.Id, created.Instance.Id);
         Assert.NotNull(firstExpected);
@@ -155,7 +162,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await using var setup = CreateMigratedContext(connection);
         await setup.Database.MigrateAsync();
         var workspace = await CreateWorkspaceAsync(setup, "Version lifecycle workspace");
-        var created = await new ElsaInstanceLifecycleService(new EfCoreElsaInstanceLifecycleStore(setup)).CreateAsync(
+        var created = await new ElsaInstanceLifecycleService(CreateStore(setup)).CreateAsync(
             new ElsaInstanceCreateRequest(workspace.OrganizationId, workspace.Id, "Managed Elsa", "version-elsa", CreateIntent(), "create-version"));
         await CompleteOperationAsync(setup, created.Operation.Id);
         setup.ChangeTracker.Clear();
@@ -165,8 +172,8 @@ public sealed class ElsaInstanceLifecycleStoreTests
             .Options;
         await using var firstDb = new CatalogDbContext(options);
         await using var secondDb = new CatalogDbContext(options);
-        var firstStore = new EfCoreElsaInstanceLifecycleStore(firstDb);
-        var secondStore = new EfCoreElsaInstanceLifecycleStore(secondDb);
+        var firstStore = CreateStore(firstDb);
+        var secondStore = CreateStore(secondDb);
         var expected = await firstStore.GetInstanceAsync(workspace.Id, created.Instance.Id);
         var secondExpected = await secondStore.GetInstanceAsync(workspace.Id, created.Instance.Id);
         Assert.NotNull(expected);
@@ -197,7 +204,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await using var db = CreateMigratedContext(connection);
         await db.Database.MigrateAsync();
         var workspace = await CreateWorkspaceAsync(db, "Recovery lifecycle workspace");
-        var service = new ElsaInstanceLifecycleService(new EfCoreElsaInstanceLifecycleStore(db));
+        var service = new ElsaInstanceLifecycleService(CreateStore(db));
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             workspace.OrganizationId, workspace.Id, "Managed Elsa", "recovery-elsa", CreateIntent(), "create-recovery"));
 
@@ -221,7 +228,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
 
-        var current = await new EfCoreElsaInstanceLifecycleStore(db)
+        var current = await CreateStore(db)
             .GetInstanceAsync(workspace.Id, created.Instance.Id);
         Assert.NotNull(current);
         var recovered = await service.RecoverAsync(new ElsaInstanceLifecycleRequest(
@@ -233,7 +240,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal(2, recovered.Operation.AttemptNumber);
         Assert.Equal(created.Outbox.Id, recovered.Outbox.Id);
         db.ChangeTracker.Clear();
-        var persisted = await new EfCoreElsaInstanceLifecycleStore(db)
+        var persisted = await CreateStore(db)
             .GetInstanceAsync(workspace.Id, created.Instance.Id);
         Assert.Equal(ElsaObservedLifecycle.Provisioning, persisted!.ObservedLifecycle);
         Assert.Equal(3, persisted.Version);
@@ -249,7 +256,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await using var db = CreateMigratedContext(connection);
         await db.Database.MigrateAsync();
         var workspace = await CreateWorkspaceAsync(db, "Worker workspace");
-        var instance = await new ElsaInstanceLifecycleService(new EfCoreElsaInstanceLifecycleStore(db), new FixedTimeProvider(Now))
+        var instance = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
             .CreateAsync(new ElsaInstanceCreateRequest(
                 workspace.OrganizationId, workspace.Id, "Worker Elsa", "worker-elsa", WorkerIntent(), "worker-create"));
         var target = await AddManagedEnvironmentAsync(db, workspace, instance.Instance.Id);
@@ -272,7 +279,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal(instance.Instance.Id, (await db.DeploymentRuns.SingleAsync()).ElsaInstanceId);
         Assert.Equal(target.EnvironmentId, completed.Run!.EnvironmentId);
         Assert.Equal(1, await db.ElsaInstanceResolvedPlans.CountAsync());
-        Assert.Equal(2, (await new EfCoreElsaInstanceLifecycleStore(db)
+        Assert.Equal(2, (await CreateStore(db)
             .GetInstanceAsync(workspace.Id, instance.Instance.Id))!.Version);
         Assert.Equal(2, await db.ElsaInstanceAuditEvents.CountAsync());
         Assert.Equal(0, result.ProviderInvocations);
@@ -286,7 +293,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await using var db = CreateMigratedContext(connection);
         await db.Database.MigrateAsync();
         var workspace = await CreateWorkspaceAsync(db, "Replay workspace");
-        var accepted = await new ElsaInstanceLifecycleService(new EfCoreElsaInstanceLifecycleStore(db), new FixedTimeProvider(Now))
+        var accepted = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
             .CreateAsync(new ElsaInstanceCreateRequest(
                 workspace.OrganizationId, workspace.Id, "Worker Elsa", "replay-worker-elsa", WorkerIntent(), "replay-worker-create"));
         var target = await AddManagedEnvironmentAsync(db, workspace, accepted.Instance.Id);
@@ -314,7 +321,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await using var db = CreateMigratedContext(connection);
         await db.Database.MigrateAsync();
         var workspace = await CreateWorkspaceAsync(db, "Stale lease workspace");
-        var accepted = await new ElsaInstanceLifecycleService(new EfCoreElsaInstanceLifecycleStore(db), new FixedTimeProvider(Now))
+        var accepted = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
             .CreateAsync(new ElsaInstanceCreateRequest(
                 workspace.OrganizationId, workspace.Id, "Worker Elsa", "stale-lease-elsa", WorkerIntent(), "stale-create"));
         var target = await AddManagedEnvironmentAsync(db, workspace, accepted.Instance.Id);
@@ -346,7 +353,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await using var setup = CreateMigratedContext(connection);
         await setup.Database.MigrateAsync();
         var workspace = await CreateWorkspaceAsync(setup, "Concurrent worker workspace");
-        var accepted = await new ElsaInstanceLifecycleService(new EfCoreElsaInstanceLifecycleStore(setup), new FixedTimeProvider(Now))
+        var accepted = await new ElsaInstanceLifecycleService(CreateStore(setup), new FixedTimeProvider(Now))
             .CreateAsync(new ElsaInstanceCreateRequest(
                 workspace.OrganizationId, workspace.Id, "Worker Elsa", "concurrent-worker-elsa", WorkerIntent(), "concurrent-worker-create"));
         var target = await AddManagedEnvironmentAsync(setup, workspace, accepted.Instance.Id);
@@ -376,6 +383,9 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await db.SaveChangesAsync();
         return workspace;
     }
+
+    private static EfCoreElsaInstanceLifecycleStore CreateStore(CatalogDbContext db) =>
+        new(db, EmptyResolutionInputSource.Instance);
 
     private static async Task CompleteOperationAsync(CatalogDbContext db, Guid operationId)
     {
@@ -557,6 +567,17 @@ public sealed class ElsaInstanceLifecycleStoreTests
             ElsaInstanceOperation operation,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<ElsaInstanceLifecycleResolutionInput?>(ResolutionInput(instance, target));
+    }
+
+    private sealed class EmptyResolutionInputSource : IElsaInstanceLifecycleResolutionInputSource
+    {
+        public static EmptyResolutionInputSource Instance { get; } = new();
+
+        public Task<ElsaInstanceLifecycleResolutionInput?> GetAsync(
+            ElsaInstance instance,
+            ElsaInstanceOperation operation,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<ElsaInstanceLifecycleResolutionInput?>(null);
     }
 
     private sealed class StaticResolver(ElsaInstancePlanResolutionResult result) : IElsaInstancePlanResolver
