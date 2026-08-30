@@ -80,7 +80,7 @@ public sealed class ReleaseManifestAdmissionTests
         Assert.Null(admission.Manifest);
         Assert.Null(admission.SignatureEvidence);
         Assert.Contains(admission.Findings, x => x.Code == "manifest.schema.unsupported");
-        Assert.Throws<InvalidOperationException>(() => ReleaseManifestPlanProjector.Project(admission, CreatePlan()));
+        Assert.Throws<ReleaseManifestProjectionValidationException>(() => ReleaseManifestPlanProjector.Project(admission, CreatePlan()));
     }
 
     [Fact]
@@ -393,7 +393,7 @@ public sealed class ReleaseManifestAdmissionTests
         };
 
         Assert.True(admission.Accepted);
-        Assert.Throws<InvalidOperationException>(() => ReleaseManifestPlanProjector.Project(admission, plan));
+        Assert.Throws<ReleaseManifestProjectionValidationException>(() => ReleaseManifestPlanProjector.Project(admission, plan));
     }
 
     [Fact]
@@ -406,7 +406,7 @@ public sealed class ReleaseManifestAdmissionTests
         };
 
         Assert.True(admission.Accepted);
-        Assert.Throws<InvalidOperationException>(() => ReleaseManifestPlanProjector.Project(admission, plan));
+        Assert.Throws<ReleaseManifestProjectionValidationException>(() => ReleaseManifestPlanProjector.Project(admission, plan));
     }
 
     [Fact]
@@ -419,7 +419,7 @@ public sealed class ReleaseManifestAdmissionTests
         };
 
         Assert.True(admission.Accepted);
-        Assert.Throws<InvalidOperationException>(() => ReleaseManifestPlanProjector.Project(admission, plan));
+        Assert.Throws<ReleaseManifestProjectionValidationException>(() => ReleaseManifestPlanProjector.Project(admission, plan));
     }
 
     [Fact]

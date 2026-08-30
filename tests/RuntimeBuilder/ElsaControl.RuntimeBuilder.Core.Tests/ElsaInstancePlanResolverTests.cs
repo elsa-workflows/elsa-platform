@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Reflection;
 using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.PackageCatalog.Abstractions.Catalog;
@@ -356,20 +357,54 @@ public sealed class ElsaInstancePlanResolverTests
         Assert.Contains(result.Findings, finding => finding.Code == "releaseManifest.notAdmitted");
     }
 
-    [Fact]
-    public async Task Does_not_mask_projection_null_reference_as_manifest_validation()
+    [Theory]
+    [InlineData("compatibility")]
+    [InlineData("runtimeKinds")]
+    [InlineData("images")]
+    public async Task Rejects_null_nested_manifest_structure_with_stable_projection_finding(string member)
     {
         var baseline = CreateRequest();
         var topology = baseline.ReleaseManifest.Manifest!.Topologies[0];
-        var image = topology.Images[0]! with { Capabilities = null };
+        var malformedTopology = member switch
+        {
+            "compatibility" => topology with { Compatibility = null! },
+            "runtimeKinds" => topology with { RuntimeKinds = null! },
+            "images" => topology with { Images = null! },
+            _ => throw new ArgumentOutOfRangeException(nameof(member), member, null)
+        };
         var request = baseline with
         {
             ReleaseManifest = baseline.ReleaseManifest with
             {
                 Manifest = baseline.ReleaseManifest.Manifest with
                 {
-                    Topologies = [topology with { Compatibility = null!, Images = [image] }]
+                    Topologies = [malformedTopology]
                 }
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility()).ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        var finding = Assert.Single(result.Findings);
+        Assert.Equal("manifest.projection.invalid", finding.Code);
+        Assert.Equal("The admitted release manifest cannot produce a valid application plan.", finding.Message);
+        Assert.DoesNotContain(member, finding.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Does_not_mask_unexpected_projection_null_reference()
+    {
+        var baseline = CreateRequest();
+        var topology = baseline.ReleaseManifest.Manifest!.Topologies[0] with
+        {
+            RuntimeKinds = new ThrowingReadOnlyList<string>()
+        };
+        var request = baseline with
+        {
+            ReleaseManifest = baseline.ReleaseManifest with
+            {
+                Manifest = baseline.ReleaseManifest.Manifest with { Topologies = [topology] }
             }
         };
 
@@ -936,5 +971,16 @@ public sealed class ElsaInstancePlanResolverTests
             ReleaseManifestArtifact artifact,
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(verification);
+    }
+
+    private sealed class ThrowingReadOnlyList<T> : IReadOnlyList<T>
+    {
+        public int Count => 1;
+
+        public T this[int index] => throw new NullReferenceException("Unexpected projection failure.");
+
+        public IEnumerator<T> GetEnumerator() => throw new NullReferenceException("Unexpected projection failure.");
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

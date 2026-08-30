@@ -31,10 +31,11 @@ public static class ReleaseManifestPlanProjector
             || admission.SignatureEvidence is null
             || admission.Reference is null
             || admission.Digest is null)
-            throw new InvalidOperationException("Only an admitted signed release manifest can be projected.");
+            throw new ReleaseManifestProjectionValidationException("Only an admitted signed release manifest can be projected.");
 
         ValidateExistingEvidence(plan.Evidence);
         var manifest = admission.Manifest;
+        ValidateProjectionShape(manifest);
         var topology = SelectTopology(manifest, admission.TopologyId);
         var components = SelectComponents(topology, admission.RegistryClass);
         var projected = plan with
@@ -53,9 +54,29 @@ public static class ReleaseManifestPlanProjector
 
         var findings = ResolvedElsaApplicationPlanValidator.Validate(projected);
         if (findings.Count > 0)
-            throw new InvalidOperationException($"Admitted release manifest produced an invalid resolved plan: {findings[0].Code}.");
+            throw new ReleaseManifestProjectionValidationException($"Admitted release manifest produced an invalid resolved plan: {findings[0].Code}.");
 
         return projected.Normalize();
+    }
+
+    internal static void ValidateProjectionShape(CommercialReleaseManifest manifest)
+    {
+        if (manifest.Distribution is null || manifest.Distribution.Source is null || manifest.Topologies is null)
+            throw new ReleaseManifestProjectionValidationException("The admitted release manifest is structurally incomplete.");
+
+        foreach (var topology in manifest.Topologies)
+        {
+            if (topology is null
+                || topology.RuntimeKinds is null
+                || topology.Images is null
+                || topology.Compatibility is null
+                || topology.Compatibility.RuntimeCapabilities is null
+                || topology.SupplyChain is null
+                || topology.SupplyChain.Sbom is null
+                || topology.SupplyChain.Provenance is null
+                || topology.SupplyChain.VulnerabilityScan is null)
+                throw new ReleaseManifestProjectionValidationException("The admitted release manifest is structurally incomplete.");
+        }
     }
 
     private static ReleaseManifestTopology SelectTopology(CommercialReleaseManifest manifest, string? topologyId)
@@ -63,7 +84,7 @@ public static class ReleaseManifestPlanProjector
         var topology = string.IsNullOrWhiteSpace(topologyId)
             ? manifest.Topologies.FirstOrDefault()
             : manifest.Topologies.FirstOrDefault(x => string.Equals(x.Id, topologyId, StringComparison.OrdinalIgnoreCase));
-        return topology ?? throw new InvalidOperationException("The admitted manifest does not contain the selected topology.");
+        return topology ?? throw new ReleaseManifestProjectionValidationException("The admitted manifest does not contain the selected topology.");
     }
 
     private static IReadOnlyList<ResolvedElsaComponent> SelectComponents(ReleaseManifestTopology topology, string registryClass)
@@ -77,7 +98,7 @@ public static class ReleaseManifestPlanProjector
         foreach (var group in groups)
         {
             var image = group.SingleOrDefault(x => string.Equals(x.RegistryClass, registryClass, StringComparison.OrdinalIgnoreCase))
-                ?? throw new InvalidOperationException($"Topology component {group.Key} has no image for registry class {registryClass}.");
+                ?? throw new ReleaseManifestProjectionValidationException($"Topology component {group.Key} has no image for registry class {registryClass}.");
             var runtimeKinds = topology.RuntimeKinds.ToArray();
             var roles = image.Roles is { Count: > 0 }
                 ? image.Roles.ToArray()
@@ -140,14 +161,14 @@ public static class ReleaseManifestPlanProjector
         ReleaseManifestAdmissionService.IsDigest(digest)
             ? digest!
             : ReleaseManifestAdmissionService.ExtractDigest(reference)
-              ?? throw new InvalidOperationException("Admitted evidence must retain a sha256 digest.");
+              ?? throw new ReleaseManifestProjectionValidationException("Admitted evidence must retain a sha256 digest.");
 
     private static void ValidateExistingEvidence(IReadOnlyList<ResolvedPlanEvidence>? existing)
     {
         foreach (var evidence in existing ?? [])
         {
             if (evidence is null)
-                throw new InvalidOperationException("Existing plan evidence cannot contain null items.");
+                throw new ReleaseManifestProjectionValidationException("Existing plan evidence cannot contain null items.");
 
             // Legacy entries without a kind are discarded by ProjectEvidence. They
             // cannot be retained, but remain tolerated so old plans can be upgraded.
@@ -159,7 +180,7 @@ public static class ReleaseManifestPlanProjector
                 || !string.Equals(embeddedDigest, evidence.Digest, StringComparison.OrdinalIgnoreCase)
                 || !ReleaseManifestAdmissionService.IsSafeEvidenceReference(evidence.Reference, evidence.Digest)
                 || !IsAllowedEvidenceDescription(evidence.Kind, evidence.Description))
-                throw new InvalidOperationException("Existing plan evidence must be a safe locator with a non-sensitive description.");
+                throw new ReleaseManifestProjectionValidationException("Existing plan evidence must be a safe locator with a non-sensitive description.");
         }
     }
 
@@ -187,5 +208,5 @@ public static class ReleaseManifestPlanProjector
 
     private static string StandardizeImageReference(string reference) =>
         $"{RepositoryFromReference(reference)}@{ReleaseManifestAdmissionService.ExtractDigest(reference)
-            ?? throw new InvalidOperationException("Admitted image references must retain a sha256 digest.")}";
+            ?? throw new ReleaseManifestProjectionValidationException("Admitted image references must retain a sha256 digest.")}";
 }

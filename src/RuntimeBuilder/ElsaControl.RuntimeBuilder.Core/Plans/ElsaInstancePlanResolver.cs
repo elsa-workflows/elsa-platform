@@ -54,6 +54,16 @@ public sealed class ElsaInstancePlanResolver(
         if (findings.Count > 0)
             return ElsaInstancePlanResolutionResult.Failed(findings);
 
+        try
+        {
+            ReleaseManifestPlanProjector.ValidateProjectionShape(manifest);
+        }
+        catch (ReleaseManifestProjectionValidationException)
+        {
+            findings.Add(Error("manifest.projection.invalid", "The admitted release manifest cannot produce a valid application plan.", "releaseManifest"));
+            return ElsaInstancePlanResolutionResult.Failed(findings);
+        }
+
         PackageResolution packageResolution;
         try
         {
@@ -83,7 +93,7 @@ public sealed class ElsaInstancePlanResolver(
         {
             plan = ReleaseManifestPlanProjector.Project(request.ReleaseManifest, basePlan);
         }
-        catch (InvalidOperationException)
+        catch (ReleaseManifestProjectionValidationException)
         {
             findings.Add(Error("manifest.projection.invalid", "The admitted release manifest cannot produce a valid application plan.", "releaseManifest"));
             return ElsaInstancePlanResolutionResult.Failed(findings);
