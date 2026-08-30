@@ -75,6 +75,36 @@ public sealed class DeploymentRunRecoveryConcurrencyTests
     }
 
     [Fact]
+    public async Task Direct_recovery_update_records_the_recovery_reason()
+    {
+        var database = await CreateDatabaseAsync();
+
+        try
+        {
+            await using var context = new CatalogDbContext(database.Options);
+            var store = new DeploymentWorkspaceStore(context);
+            const string recoveryReason = "Deployment command requires recovery after stale runtime heartbeat.";
+
+            await store.UpdateRunStatusAsync(
+                database.WorkspaceId,
+                database.RunId,
+                WorkspaceDeploymentRunStatus.RecoveryRequired,
+                recoveryReason,
+                Now.AddMinutes(10));
+
+            await using var verify = new CatalogDbContext(database.Options);
+            var run = await verify.DeploymentRuns.SingleAsync(x => x.Id == database.RunId);
+            Assert.Equal(WorkspaceDeploymentRunStatus.RecoveryRequired, run.Status);
+            Assert.Equal(recoveryReason, run.RecoveryReason);
+            Assert.Null(run.CompletedAt);
+        }
+        finally
+        {
+            DeleteDatabase(database.Path);
+        }
+    }
+
+    [Fact]
     public async Task Completed_run_is_not_marked_recovery_when_stale_sweep_runs_after_completion()
     {
         var database = await CreateDatabaseAsync();

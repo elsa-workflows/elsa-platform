@@ -1130,6 +1130,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         else if (status == WorkspaceDeploymentRunStatus.RecoveryRequired)
         {
             run.CompletedAt = null;
+            run.RecoveryReason = failureMessage ?? message;
             await ProjectManagedRecoveryRequiredAsync(run, now, cancellationToken);
         }
 
