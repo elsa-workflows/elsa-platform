@@ -84,6 +84,8 @@ public sealed class ElsaInstanceMigrationContractTests
         var migration = Plan();
 
         Assert.Equal(ElsaInstanceMigration.HashRequestKey("request-1"), migration.StartRequestHash);
+        Assert.Throws<ArgumentException>(() => ElsaInstanceMigration.HashRequestKey("contains spaces"));
+        Assert.Throws<ArgumentException>(() => ElsaInstanceMigration.HashRequestKey(new string('a', 129)));
         Assert.Equal("sha256:" + new string('a', 64), migration.Source.ManifestDigest);
         Assert.Equal("sha256:" + new string('b', 64), migration.Target.ManifestDigest);
         Assert.NotEqual(migration.Source, migration.Target);

@@ -158,7 +158,7 @@ public sealed class ElsaInstanceMigrationService(
         if (request.OrganizationId == Guid.Empty || request.WorkspaceId == Guid.Empty || request.InstanceId == Guid.Empty ||
             request.ExpectedInstanceVersion < 1 || request.Source is null || request.Target is null || request.ActorAccountId == Guid.Empty)
             throw new ArgumentException("Migration start request is invalid.", nameof(request));
-        ValidateKey(request.IdempotencyKey, nameof(request.IdempotencyKey));
+        _ = ElsaInstanceMigration.RequireRequestKey(request.IdempotencyKey);
     }
 
     private static void ValidateChange(ElsaInstanceMigrationChangeRequest request)
@@ -166,13 +166,6 @@ public sealed class ElsaInstanceMigrationService(
         if (request.WorkspaceId == Guid.Empty || request.MigrationId == Guid.Empty || request.ExpectedUpdatedAt == default ||
             request.ActorAccountId == Guid.Empty)
             throw new ArgumentException("Migration change request is invalid.", nameof(request));
-        ValidateKey(request.IdempotencyKey, nameof(request.IdempotencyKey));
-    }
-
-    private static void ValidateKey(string? value, string name)
-    {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 128 || value.Any(char.IsControl) ||
-            value.Any(character => !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.' or ':')))
-            throw new ArgumentException("Migration idempotency key is invalid.", name);
+        _ = ElsaInstanceMigration.RequireRequestKey(request.IdempotencyKey);
     }
 }

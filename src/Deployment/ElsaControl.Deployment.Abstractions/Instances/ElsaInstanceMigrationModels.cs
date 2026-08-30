@@ -215,9 +215,16 @@ public sealed record ElsaInstanceMigration
 
     public static string HashRequestKey(string requestKey)
     {
-        if (string.IsNullOrWhiteSpace(requestKey) || requestKey.Length > 256 || requestKey.Any(char.IsControl))
+        var normalized = RequireRequestKey(requestKey);
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)));
+    }
+
+    public static string RequireRequestKey(string? requestKey)
+    {
+        if (string.IsNullOrWhiteSpace(requestKey) || requestKey.Length > 128 ||
+            requestKey.Any(character => !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.' or ':')))
             throw new ArgumentException("Migration request key is invalid.", nameof(requestKey));
-        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(requestKey.Trim())));
+        return requestKey.Trim();
     }
 
     private DateTimeOffset RequireLater(DateTimeOffset value)
