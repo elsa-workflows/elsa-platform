@@ -113,17 +113,26 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
                 .ThenInclude(x => x.Features)
                 .ThenInclude(x => x.Settings)
             .Where(x => x.Source != null && x.Source.Enabled && x.Source.Browseable && x.Source.SoftDeletedAt == null)
-            .Where(x => (x.Source!.Visibility == PackageSourceVisibility.Public && x.Source.OwnerWorkspaceId == null) ||
-                        (workspaceId.HasValue &&
-                         x.Source.Visibility == PackageSourceVisibility.Workspace &&
-                         x.Source.OwnerWorkspaceId == workspaceId.Value &&
-                         x.Source.OwnerWorkspace!.SoftDeletedAt == null))
             .Where(x => x.Approved && x.Listed)
             .Where(x => x.Versions.Any(version =>
                 version.IsListed &&
                 version.ApprovalStatus == PackageApprovalStatus.Approved &&
                 version.ValidationStatus == ValidationStatus.Valid &&
                 !version.SuspiciousChangeDetected));
+
+        if (workspaceId is { } requestedWorkspaceId)
+        {
+            query = query.Where(x =>
+                (x.Source!.Visibility == PackageSourceVisibility.Public && x.Source.OwnerWorkspaceId == null) ||
+                (x.Source.Visibility == PackageSourceVisibility.Workspace &&
+                 x.Source.OwnerWorkspaceId == requestedWorkspaceId &&
+                 x.Source.OwnerWorkspace != null &&
+                 x.Source.OwnerWorkspace.SoftDeletedAt == null));
+        }
+        else
+        {
+            query = query.Where(x => x.Source!.Visibility == PackageSourceVisibility.Public && x.Source.OwnerWorkspaceId == null);
+        }
 
         return sourceIds is { Count: > 0 }
             ? query.Where(x => sourceIds.Contains(x.SourceId))

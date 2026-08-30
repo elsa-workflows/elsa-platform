@@ -1,3 +1,5 @@
+using System.Data.Common;
+using System.Reflection;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Core.Manifests;
 using ElsaControl.PackageCatalog.Core.Packaging;
@@ -8,6 +10,7 @@ using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using ElsaControl.PackageCatalog.Testing;
 using Elsa.Specifications.PackageManifests.Validation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
 
@@ -155,6 +158,39 @@ public sealed class SyncPersistenceTests
     }
 
     [Fact]
+    public async Task Public_catalog_listing_does_not_depend_on_owner_workspace_join()
+    {
+        var commandRecorder = new CommandRecorder();
+        var options = new DbContextOptionsBuilder<CatalogDbContext>()
+            .UseSqlite("Data Source=:memory:")
+            .AddInterceptors(commandRecorder)
+            .Options;
+
+        await using var db = new CatalogDbContext(options);
+        await db.Database.OpenConnectionAsync();
+        await db.Database.EnsureCreatedAsync();
+
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Public");
+        PublicCatalogSeedData.AddVersion(package);
+        db.PackageSources.Add(source);
+        await db.SaveChangesAsync();
+        commandRecorder.Commands.Clear();
+
+        var packages = await new PublicCatalogQueries(db).ListPackagesAsync([]);
+
+        Assert.Single(packages);
+        var catalogQuery = Assert.Single(
+            commandRecorder.Commands,
+            command => command.Contains("FROM \"Packages\"", StringComparison.Ordinal));
+        Assert.DoesNotContain("Workspaces", catalogQuery, StringComparison.OrdinalIgnoreCase);
+        var publicQuery = (IQueryable<Package>)typeof(PublicCatalogQueries)
+            .GetMethod("VisiblePackages", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(new PublicCatalogQueries(db), [Array.Empty<Guid>(), null])!;
+        Assert.DoesNotContain("OwnerWorkspace.", publicQuery.Expression.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Workspace_catalog_hides_sources_owned_by_soft_deleted_workspaces()
     {
         await using var db = await CreateOpenDbContextAsync();
@@ -173,6 +209,7 @@ public sealed class SyncPersistenceTests
         var version = PublicCatalogSeedData.AddVersion(package);
         db.AddRange(organization, workspace, source);
         await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
 
         var projection = await new PublicCatalogQueries(db).GetVersionForWorkspaceAsync(
             workspace.Id,
@@ -336,6 +373,21 @@ public sealed class SyncPersistenceTests
             run.Items.Add(new SyncRunItem { SyncRun = run, SyncRunId = run.Id, Status = SyncRunItemStatus.Indexed });
 
         return run;
+    }
+
+    private sealed class CommandRecorder : DbCommandInterceptor
+    {
+        public List<string> Commands { get; } = [];
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            Commands.Add(command.CommandText);
+            return ValueTask.FromResult(result);
+        }
     }
 
     private sealed class FakeDiscovery(IReadOnlyList<DiscoveredPackageVersion> versions) : IPackageVersionDiscoveryClient
