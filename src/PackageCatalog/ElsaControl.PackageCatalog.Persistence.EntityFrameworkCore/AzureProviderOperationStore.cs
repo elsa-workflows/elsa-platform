@@ -126,36 +126,50 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         AzureProviderOperationValidation.ValidateLeaseToken(leaseToken);
         if (leaseDuration <= TimeSpan.Zero || leaseDuration > TimeSpan.FromHours(1)) throw new ArgumentException("Lease duration is required and bounded.");
         var hash = Hash(leaseToken);
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         DateTimeOffset leaseExpires;
         try { leaseExpires = now.Add(leaseDuration); } catch (ArgumentOutOfRangeException) { throw new ArgumentException("Lease duration overflowed.", nameof(leaseDuration)); }
-        var changed = await db.AzureProviderOperations.Where(x => x.WorkspaceId == workspaceId && x.Id == operationId &&
-                (allowRecovery
-                    ? x.Status == AzureProviderOperationStatus.RecoveryRequired
-                    : x.Status == AzureProviderOperationStatus.Accepted || x.Status == AzureProviderOperationStatus.Queued) &&
-                (x.LeaseExpiresAt == null || x.LeaseExpiresAt <= now) && (!expectedVersion.HasValue || x.Version == expectedVersion.Value) &&
-                !db.AzureProviderOperations.Any(other => other.Id != operationId && other.WorkspaceId == workspaceId &&
-                    other.TargetKey == x.TargetKey &&
-                    (other.Status == AzureProviderOperationStatus.Accepted || other.Status == AzureProviderOperationStatus.Queued ||
-                     other.Status == AzureProviderOperationStatus.Running || other.Status == AzureProviderOperationStatus.RecoveryRequired)))
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(x => x.Status, AzureProviderOperationStatus.Running)
-                .SetProperty(x => x.WorkerId, workerId)
-                .SetProperty(x => x.LeaseTokenHash, hash)
-                .SetProperty(x => x.CompletionLeaseTokenHash, (string?)null)
-                .SetProperty(x => x.CompletionFingerprint, (string?)null)
-                .SetProperty(x => x.LeaseExpiresAt, leaseExpires)
-                .SetProperty(x => x.HeartbeatAt, now)
-                .SetProperty(x => x.AttemptNumber, x => x.AttemptNumber + 1)
-                .SetProperty(x => x.UpdatedAt, now)
-                .SetProperty(x => x.Version, x => x.Version + 1), cancellationToken);
-        if (changed == 0) return null;
-        db.ChangeTracker.Clear();
-        var entity = await db.AzureProviderOperations.SingleAsync(x => x.Id == operationId, cancellationToken);
-        AddTransition(entity, allowRecovery ? "operation.recoveryClaimed" : "operation.claimed", allowRecovery ? "Recovery reconciliation claimed." : "Azure provider operation claimed.", now);
-        await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return ToModel(entity);
+        AzureProviderOperation? result = null;
+        await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            db.ChangeTracker.Clear();
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            var changed = await db.AzureProviderOperations.Where(x => x.WorkspaceId == workspaceId && x.Id == operationId &&
+                     (allowRecovery
+                         ? x.Status == AzureProviderOperationStatus.RecoveryRequired
+                         : x.Status == AzureProviderOperationStatus.Accepted || x.Status == AzureProviderOperationStatus.Queued) &&
+                     (x.LeaseExpiresAt == null || x.LeaseExpiresAt <= now) && (!expectedVersion.HasValue || x.Version == expectedVersion.Value) &&
+                     !db.AzureProviderOperations.Any(other => other.Id != operationId && other.WorkspaceId == workspaceId &&
+                         other.TargetKey == x.TargetKey &&
+                         (other.Status == AzureProviderOperationStatus.Accepted || other.Status == AzureProviderOperationStatus.Queued ||
+                          other.Status == AzureProviderOperationStatus.Running || other.Status == AzureProviderOperationStatus.RecoveryRequired)))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.Status, AzureProviderOperationStatus.Running)
+                    .SetProperty(x => x.WorkerId, workerId)
+                    .SetProperty(x => x.LeaseTokenHash, hash)
+                    .SetProperty(x => x.CompletionLeaseTokenHash, (string?)null)
+                    .SetProperty(x => x.CompletionFingerprint, (string?)null)
+                    .SetProperty(x => x.LeaseExpiresAt, leaseExpires)
+                    .SetProperty(x => x.HeartbeatAt, now)
+                    .SetProperty(x => x.AttemptNumber, x => x.AttemptNumber + 1)
+                    .SetProperty(x => x.UpdatedAt, now)
+                    .SetProperty(x => x.Version, x => x.Version + 1), cancellationToken);
+            if (changed == 0)
+            {
+                var replay = await db.AzureProviderOperations.AsNoTracking().SingleOrDefaultAsync(x =>
+                    x.WorkspaceId == workspaceId && x.Id == operationId &&
+                    x.Status == AzureProviderOperationStatus.Running && x.WorkerId == workerId &&
+                    x.LeaseTokenHash == hash && x.LeaseExpiresAt > now, cancellationToken);
+                result = replay is null ? null : ToModel(replay);
+                return;
+            }
+            db.ChangeTracker.Clear();
+            var entity = await db.AzureProviderOperations.SingleAsync(x => x.Id == operationId, cancellationToken);
+            AddTransition(entity, allowRecovery ? "operation.recoveryClaimed" : "operation.claimed", allowRecovery ? "Recovery reconciliation claimed." : "Azure provider operation claimed.", now);
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            result = ToModel(entity);
+        });
+        return result;
     }
 
     public async Task<AzureProviderOperation?> HeartbeatAsync(Guid workspaceId, Guid operationId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
@@ -185,8 +199,14 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         var resources = checkpoint.ReplaceResources
             ? checkpoint.Resources
             : MergeResources(entity, checkpoint.Resources);
+        var lastTransitionCode = await db.AzureProviderOperationTransitions.AsNoTracking()
+            .Where(x => x.OperationId == entity.Id)
+            .OrderByDescending(x => x.Sequence)
+            .Select(x => x.Code)
+            .FirstOrDefaultAsync(cancellationToken);
         if (entity.Phase == checkpoint.Phase && entity.Endpoint == checkpoint.Endpoint && entity.Health == checkpoint.Health &&
-            entity.DiagnosticsJson == diagnosticsJson && ResourcesEqual(entity, resources))
+            entity.DiagnosticsJson == diagnosticsJson && ResourcesEqual(entity, resources) &&
+            lastTransitionCode == checkpoint.Code)
             return ToModel(entity);
         entity.Phase = checkpoint.Phase; entity.CheckpointSequence++; entity.Version++; entity.UpdatedAt = now;
         entity.ResourceGroupName = resources.ResourceGroupName; entity.FoundationDeploymentId = resources.FoundationDeploymentId;
@@ -221,29 +241,33 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
 
     public async Task<int> RecoverStaleAsync(DateTimeOffset now, CancellationToken cancellationToken = default)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var candidates = await db.AzureProviderOperations.AsNoTracking()
-            .Where(x => x.Status == AzureProviderOperationStatus.Running && x.LeaseExpiresAt != null && x.LeaseExpiresAt <= now)
-            .ToListAsync(cancellationToken);
-        var recovered = 0;
-        foreach (var candidate in candidates)
+        return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
         {
-            var changed = await db.AzureProviderOperations.Where(x => x.Id == candidate.Id && x.Status == AzureProviderOperationStatus.Running && x.Version == candidate.Version && x.LeaseExpiresAt != null && x.LeaseExpiresAt <= now)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, AzureProviderOperationStatus.RecoveryRequired)
-                    .SetProperty(x => x.UpdatedAt, now).SetProperty(x => x.Version, x => x.Version + 1)
-                    .SetProperty(x => x.LeaseTokenHash, (string?)null).SetProperty(x => x.LeaseExpiresAt, (DateTimeOffset?)null)
-                    .SetProperty(x => x.WorkerId, (string?)null)
-                    .SetProperty(x => x.CompletionLeaseTokenHash, (string?)null)
-                    .SetProperty(x => x.CompletionFingerprint, (string?)null), cancellationToken);
-            if (changed == 0) continue;
-            recovered++;
-            candidate.Status = AzureProviderOperationStatus.RecoveryRequired;
-            candidate.Version++;
-            AddTransition(candidate, "operation.recoveryRequired", "The operation lease expired before completion.", now);
-        }
-        await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return recovered;
+            db.ChangeTracker.Clear();
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            var candidates = await db.AzureProviderOperations.AsNoTracking()
+                .Where(x => x.Status == AzureProviderOperationStatus.Running && x.LeaseExpiresAt != null && x.LeaseExpiresAt <= now)
+                .ToListAsync(cancellationToken);
+            var recovered = 0;
+            foreach (var candidate in candidates)
+            {
+                var changed = await db.AzureProviderOperations.Where(x => x.Id == candidate.Id && x.Status == AzureProviderOperationStatus.Running && x.Version == candidate.Version && x.LeaseExpiresAt != null && x.LeaseExpiresAt <= now)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, AzureProviderOperationStatus.RecoveryRequired)
+                        .SetProperty(x => x.UpdatedAt, now).SetProperty(x => x.Version, x => x.Version + 1)
+                        .SetProperty(x => x.LeaseTokenHash, (string?)null).SetProperty(x => x.LeaseExpiresAt, (DateTimeOffset?)null)
+                        .SetProperty(x => x.WorkerId, (string?)null)
+                        .SetProperty(x => x.CompletionLeaseTokenHash, (string?)null)
+                        .SetProperty(x => x.CompletionFingerprint, (string?)null), cancellationToken);
+                if (changed == 0) continue;
+                recovered++;
+                candidate.Status = AzureProviderOperationStatus.RecoveryRequired;
+                candidate.Version++;
+                AddTransition(candidate, "operation.recoveryRequired", "The operation lease expired before completion.", now);
+            }
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return recovered;
+        });
     }
 
     public async Task<IReadOnlyList<AzureProviderOperationTransition>> ListTransitionsAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default)

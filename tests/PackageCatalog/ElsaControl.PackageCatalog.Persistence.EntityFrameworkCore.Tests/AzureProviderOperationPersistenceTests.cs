@@ -173,6 +173,31 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Checkpoints_with_distinct_codes_preserve_distinct_transitions()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+        var state = new AzureProviderResourceReferences(ResourceGroupName: "rg-safe");
+        var first = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+            _workspaceId, operation.Id, "lease",
+            new(AzureProviderOperationPhase.FoundationReady, "foundation.ready", "Ready.", state, null, AzureProviderHealth.Unknown, []),
+            now.AddSeconds(1), claimed.Version));
+        var second = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+            _workspaceId, operation.Id, "lease",
+            new(AzureProviderOperationPhase.FoundationReady, "foundation.verified", "Verified.", state, null, AzureProviderHealth.Unknown, []),
+            now.AddSeconds(2), first.Version));
+
+        var transitions = await store.ListTransitionsAsync(_workspaceId, operation.Id);
+        Assert.Contains(transitions, x => x.Code == "foundation.ready");
+        Assert.Contains(transitions, x => x.Code == "foundation.verified");
+        Assert.Equal(first.Version + 1, second.Version);
+    }
+
+    [Fact]
     public async Task Concurrent_claim_has_one_winner()
     {
         var path = Path.Combine(Path.GetTempPath(), $"elsa-azure-operation-{Guid.NewGuid():N}.db");
@@ -197,6 +222,27 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         {
             if (File.Exists(path)) File.Delete(path);
         }
+    }
+
+    [Fact]
+    public async Task Claim_replay_requires_the_same_unexpired_lease()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now, operation.Version));
+
+        var replay = await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now.AddSeconds(30), operation.Version);
+
+        Assert.Equal(claimed.Version, replay?.Version);
+        Assert.Null(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now.AddMinutes(2), operation.Version));
+        Assert.Null(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "different-lease", TimeSpan.FromMinutes(1), now.AddSeconds(30), operation.Version));
+        Assert.Equal(2, (await store.ListTransitionsAsync(_workspaceId, operation.Id)).Count);
     }
 
     [Fact]
