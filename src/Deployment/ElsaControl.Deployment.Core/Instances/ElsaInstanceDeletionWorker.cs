@@ -1,4 +1,6 @@
 using ElsaControl.Deployment.Abstractions.Instances;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace ElsaControl.Deployment.Core.Instances;
 
@@ -17,68 +19,120 @@ public sealed class ElsaInstanceDeletionWorker(
         var providerInvocations = 0;
         while (await store.TryClaimNextDeletionAsync(workerId.Trim(), _timeProvider.GetUtcNow(), cancellationToken) is { } item)
         {
-            item.Validate();
-            ElsaInstanceCleanupObservation observation;
-            if (item.CanFinalizeLocally)
+            try
             {
-                observation = new(ElsaInstanceCleanupObservationKind.ConfirmedAbsent, item.Operation.Id,
-                    item.Operation.AttemptNumber, "deletion.local.absent");
+                results.Add(Map(await ProcessClaimedAsync(
+                    item, workerId.Trim(), () => providerInvocations++, cancellationToken)));
             }
-            else
+            catch (OperationCanceledException)
             {
-                providerInvocations++;
-                var request = new ElsaInstanceCleanupRequest(item.Instance.WorkspaceId, item.Instance.Id,
-                    item.Operation.Id, item.Operation.AttemptNumber, item.Instance.CurrentDeploymentReference,
-                    item.Instance.PlacementAssignmentReference, item.Instance.ElsaTenantReference);
-                request.Validate();
+                throw;
+            }
+            catch (ElsaInstanceLifecycleConflictException)
+            {
+                results.Add(Conflict(item));
+            }
+            catch (Exception)
+            {
                 try
                 {
-                    observation = await cleanupPort.CleanupAsync(request, cancellationToken);
-                    observation.Validate();
+                    results.Add(Map(await store.RequireDeletionRecoveryAsync(InvalidFailure(item, workerId.Trim()), cancellationToken)));
                 }
-                catch (OperationCanceledException) { throw; }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch (Exception)
                 {
-                    observation = new(ElsaInstanceCleanupObservationKind.Unavailable, item.Operation.Id,
-                        item.Operation.AttemptNumber, "deletion.provider.unavailable");
+                    results.Add(Conflict(item));
                 }
             }
-
-            var correlated = observation.OperationId == item.Operation.Id &&
-                             observation.AttemptNumber == item.Operation.AttemptNumber;
-            var fingerprint = observation.ComputeFingerprint();
-            ElsaInstanceDeletionResult result;
-            if (correlated && observation.Kind == ElsaInstanceCleanupObservationKind.ConfirmedAbsent)
-            {
-                var deletedAt = _timeProvider.GetUtcNow();
-                result = await store.CommitDeletionAsync(new(
-                    item.Instance.WorkspaceId, item.Instance.Id, item.Operation.Id, item.Outbox.Id,
-                    item.Instance.Version, item.Operation.AttemptNumber, item.CorrelatedRunId, workerId.Trim(),
-                    item.LeaseToken, item.LeaseVersion, fingerprint,
-                    item.CanFinalizeLocally ? ElsaInstanceDeletionProofKind.LocalNoOwnedResources :
-                        ElsaInstanceDeletionProofKind.ProviderConfirmedAbsent,
-                    observation.DiagnosticCode,
-                    observation.Evidence?.Reference, observation.Evidence?.Digest,
-                    ElsaInstanceStateMachine.FinalizeDeletion(item.Instance, deletedAt),
-                    item.Operation.TransitionTo(ElsaInstanceOperationState.Succeeded), deletedAt), cancellationToken);
-            }
-            else
-            {
-                var code = correlated ? observation.DiagnosticCode : "deletion.correlation.invalid";
-                result = await store.RequireDeletionRecoveryAsync(new(
-                    item.Instance.WorkspaceId, item.Instance.Id, item.Operation.Id, item.Outbox.Id,
-                    item.Instance.Version, item.Operation.AttemptNumber, item.CorrelatedRunId, workerId.Trim(),
-                    item.LeaseToken, item.LeaseVersion, fingerprint, code, _timeProvider.GetUtcNow()), cancellationToken);
-            }
-
-            results.Add(new(result.Outcome switch
-            {
-                ElsaInstanceDeletionOutcome.Deleted => ElsaInstanceLifecycleWorkerOutcome.Deleted,
-                ElsaInstanceDeletionOutcome.AlreadyCompleted => ElsaInstanceLifecycleWorkerOutcome.AlreadyCompleted,
-                ElsaInstanceDeletionOutcome.RecoveryRequired => ElsaInstanceLifecycleWorkerOutcome.Failed,
-                _ => ElsaInstanceLifecycleWorkerOutcome.Conflict
-            }, result.Operation, result.Instance, FailureCode: result.DiagnosticCode));
         }
         return new(results, providerInvocations);
     }
+
+    private async Task<ElsaInstanceDeletionResult> ProcessClaimedAsync(
+        ElsaInstanceDeletionWorkItem item,
+        string workerId,
+        Action providerInvoked,
+        CancellationToken cancellationToken)
+    {
+        item.Validate();
+        ElsaInstanceCleanupObservation observation;
+        if (item.CanFinalizeLocally)
+        {
+            observation = new(ElsaInstanceCleanupObservationKind.ConfirmedAbsent, item.Operation.Id,
+                item.Operation.AttemptNumber, "deletion.local.absent");
+        }
+        else
+        {
+            var request = new ElsaInstanceCleanupRequest(item.Instance.WorkspaceId, item.Instance.Id,
+                item.Operation.Id, item.Operation.AttemptNumber, item.Instance.CurrentDeploymentReference,
+                item.Instance.PlacementAssignmentReference, item.Instance.ElsaTenantReference);
+            request.Validate();
+            try
+            {
+                providerInvoked();
+                observation = await cleanupPort.CleanupAsync(request, cancellationToken);
+                observation.Validate();
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception)
+            {
+                observation = new(ElsaInstanceCleanupObservationKind.Unavailable, item.Operation.Id,
+                    item.Operation.AttemptNumber, "deletion.provider.unavailable");
+            }
+        }
+
+        var correlated = observation.OperationId == item.Operation.Id &&
+                         observation.AttemptNumber == item.Operation.AttemptNumber;
+        var fingerprint = observation.ComputeFingerprint();
+        if (correlated && observation.Kind == ElsaInstanceCleanupObservationKind.ConfirmedAbsent)
+        {
+            var deletedAt = _timeProvider.GetUtcNow();
+            var result = await store.CommitDeletionAsync(new(
+                item.Instance.WorkspaceId, item.Instance.Id, item.Operation.Id, item.Outbox.Id,
+                item.Instance.Version, item.Operation.AttemptNumber, item.CorrelatedRunId, workerId,
+                item.LeaseToken, item.LeaseVersion, fingerprint,
+                item.CanFinalizeLocally ? ElsaInstanceDeletionProofKind.LocalNoOwnedResources :
+                    ElsaInstanceDeletionProofKind.ProviderConfirmedAbsent,
+                observation.DiagnosticCode,
+                observation.Evidence?.Reference, observation.Evidence?.Digest,
+                ElsaInstanceStateMachine.FinalizeDeletion(item.Instance, deletedAt),
+                item.Operation.TransitionTo(ElsaInstanceOperationState.Succeeded), deletedAt), cancellationToken);
+            return result;
+        }
+
+        var code = correlated ? observation.DiagnosticCode : "deletion.correlation.invalid";
+        return await store.RequireDeletionRecoveryAsync(new(
+            item.Instance.WorkspaceId, item.Instance.Id, item.Operation.Id, item.Outbox.Id,
+            item.Instance.Version, item.Operation.AttemptNumber, item.CorrelatedRunId, workerId,
+            item.LeaseToken, item.LeaseVersion, fingerprint, code, _timeProvider.GetUtcNow()), cancellationToken);
+    }
+
+    private ElsaInstanceDeletionFailure InvalidFailure(ElsaInstanceDeletionWorkItem item, string workerId)
+    {
+        var canonical = $"deletion.item.invalid\n{item.Outbox.Id:D}\n{item.Operation.Id:D}\n{item.Instance.Id:D}\n";
+        var fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        return new(item.Instance.WorkspaceId, item.Instance.Id, item.Operation.Id, item.Outbox.Id,
+            Math.Max(1, item.Instance.Version), Math.Max(1, item.Operation.AttemptNumber), item.CorrelatedRunId,
+            workerId, item.LeaseToken, Math.Max(1, item.LeaseVersion), fingerprint,
+            "deletion.item.invalid", _timeProvider.GetUtcNow());
+    }
+
+    private static ElsaInstanceLifecycleWorkerResult Map(ElsaInstanceDeletionResult result) => new(
+        result.Outcome switch
+        {
+            ElsaInstanceDeletionOutcome.Deleted => ElsaInstanceLifecycleWorkerOutcome.Deleted,
+            ElsaInstanceDeletionOutcome.AlreadyCompleted => ElsaInstanceLifecycleWorkerOutcome.AlreadyCompleted,
+            ElsaInstanceDeletionOutcome.RecoveryRequired => ElsaInstanceLifecycleWorkerOutcome.Failed,
+            _ => ElsaInstanceLifecycleWorkerOutcome.Conflict
+        }, result.Operation, result.Instance, FailureCode: result.DiagnosticCode);
+
+    private static ElsaInstanceLifecycleWorkerResult Conflict(ElsaInstanceDeletionWorkItem item) => new(
+        ElsaInstanceLifecycleWorkerOutcome.Conflict,
+        item.Operation,
+        item.Instance,
+        FailureCode: "deletion.claim.conflict",
+        FailureSummary: "Deletion work item ownership changed before completion.");
 }
