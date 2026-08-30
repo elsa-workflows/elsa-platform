@@ -252,7 +252,7 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
-    public async Task Recovery_required_finalization_is_treated_as_completed()
+    public async Task Recovery_required_finalization_stays_reserved_and_unpollable()
     {
         var now = DateTimeOffset.UtcNow;
         using var db = CreateContext();
@@ -276,8 +276,16 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
             claimed.Version);
 
         Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, finalized?.Status);
-        Assert.Equal(now, finalized?.CompletedAt);
+        Assert.Null(finalized?.CompletedAt);
         Assert.Empty(await store.ListRunnableAsync(now.AddMinutes(2), 10));
+        Assert.NotNull(await store.ClaimRecoveryAsync(
+            _workspaceId,
+            operation.Id,
+            "worker",
+            "recovery-lease",
+            TimeSpan.FromMinutes(1),
+            now.AddMinutes(2),
+            finalized!.Version));
     }
 
     [Fact]
