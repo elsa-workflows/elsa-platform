@@ -1090,6 +1090,7 @@ internal sealed class ElsaInstanceAuditEventConfiguration : IEntityTypeConfigura
         builder.Property(x => x.DiagnosticCode).HasMaxLength(128);
         builder.Property(x => x.Summary).HasMaxLength(128);
         builder.Property(x => x.RequestKeyHash).HasMaxLength(64);
+        builder.HasIndex(x => x.MigrationId);
         builder.Property(x => x.OccurredAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.InstanceId, x.Sequence }).IsUnique();
         builder.HasIndex(x => new { x.WorkspaceId, x.OccurredAt });
@@ -1133,20 +1134,33 @@ internal sealed class ElsaInstanceMigrationConfiguration : IEntityTypeConfigurat
                 property.EndsWith("ManifestDigest", StringComparison.Ordinal) ? 71 : 128);
         builder.Property(x => x.Phase).HasMaxLength(64).IsRequired();
         builder.Property(x => x.SourceAccessMode).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.StartRequestHash).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.LastRequestHash).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.SourceReleaseDiagnosticCode).HasMaxLength(128);
+        builder.Property(x => x.SourceReleaseProviderCorrelationId).HasMaxLength(128);
+        builder.Property(x => x.SourceReleaseEvidenceReference).HasMaxLength(2048);
+        builder.Property(x => x.SourceReleaseEvidenceDigest).HasMaxLength(71);
         builder.Property(x => x.CutoverAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
         builder.Property(x => x.SourceRetainUntil).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
         builder.Property(x => x.EarlyReleaseApprovedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
         builder.Property(x => x.SourceReleasedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.SourceReleaseClaimedUntil).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.Property(x => x.UpdatedAt)
             .HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero))
             .IsConcurrencyToken();
         builder.HasIndex(x => new { x.InstanceId, x.Phase });
         builder.HasIndex(x => new { x.InstanceId, x.SourceRetainUntil });
+        builder.HasIndex(x => new { x.Phase, x.SourceRetainUntil, x.SourceReleaseClaimedUntil });
+        builder.HasIndex(x => new { x.InstanceId, x.StartRequestHash }).IsUnique();
+        builder.HasIndex(x => x.OperationId).IsUnique();
+        builder.HasIndex(x => x.InstanceId).IsUnique()
+            .HasFilter("Phase NOT IN ('RolledBack', 'Released', 'Failed')");
         builder.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Workspace>().WithMany()
             .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId })
             .HasPrincipalKey(x => new { x.OrganizationId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<ElsaInstanceOperationEntity>().WithMany().HasForeignKey(x => x.OperationId).OnDelete(DeleteBehavior.Restrict);
     }
 }

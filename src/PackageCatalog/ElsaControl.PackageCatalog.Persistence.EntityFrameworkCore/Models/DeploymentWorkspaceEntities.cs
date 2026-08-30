@@ -257,6 +257,7 @@ internal sealed class ElsaInstanceAuditEventEntity
     public Guid? ActorAccountId { get; set; }
     public string? OperatorSubject { get; set; }
     public Guid? OperationId { get; set; }
+    public Guid? MigrationId { get; set; }
     public Guid? DeploymentRunId { get; set; }
     public string? PriorState { get; set; }
     public string? NewState { get; set; }
@@ -282,6 +283,7 @@ internal sealed class ElsaInstanceIdentityBindingEntity
 internal sealed class ElsaInstanceMigrationEntity
 {
     public Guid MigrationId { get; set; }
+    public Guid OperationId { get; set; }
     public Guid InstanceId { get; set; }
     public Guid OrganizationId { get; set; }
     public Guid WorkspaceId { get; set; }
@@ -298,6 +300,8 @@ internal sealed class ElsaInstanceMigrationEntity
     public string? TargetVersion { get; set; }
     public string? TargetManifestDigest { get; set; }
     public string? TargetDeploymentId { get; set; }
+    public string StartRequestHash { get; set; } = "";
+    public string LastRequestHash { get; set; } = "";
     public string Phase { get; set; } = "";
     public string SourceAccessMode { get; set; } = "";
     public DateTimeOffset? CutoverAt { get; set; }
@@ -305,6 +309,13 @@ internal sealed class ElsaInstanceMigrationEntity
     public Guid? EarlyReleaseApprovedByAccountId { get; set; }
     public DateTimeOffset? EarlyReleaseApprovedAt { get; set; }
     public DateTimeOffset? SourceReleasedAt { get; set; }
+    public Guid? SourceReleaseClaimToken { get; set; }
+    public DateTimeOffset? SourceReleaseClaimedUntil { get; set; }
+    public int SourceReleaseAttemptCount { get; set; }
+    public string? SourceReleaseDiagnosticCode { get; set; }
+    public string? SourceReleaseProviderCorrelationId { get; set; }
+    public string? SourceReleaseEvidenceReference { get; set; }
+    public string? SourceReleaseEvidenceDigest { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

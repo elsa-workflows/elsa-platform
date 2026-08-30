@@ -1,5 +1,6 @@
 using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Core.Cockpit;
+using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.Deployment.Core.Workspace;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
@@ -679,6 +680,7 @@ public sealed class ElsaInstancePersistenceTests
         db.ElsaInstances.Add(instance);
         await db.SaveChangesAsync();
         var migration = NewMigration(workspace, instance);
+        db.ElsaInstanceOperations.Add(NewMigrationOperation(workspace, instance, migration));
         db.ElsaInstanceMigrations.Add(migration);
         await db.SaveChangesAsync();
 
@@ -702,6 +704,7 @@ public sealed class ElsaInstancePersistenceTests
         setup.ElsaInstances.Add(instance);
         await setup.SaveChangesAsync();
         var migration = NewMigration(workspace, instance, "Preparing");
+        setup.ElsaInstanceOperations.Add(NewMigrationOperation(workspace, instance, migration));
         setup.ElsaInstanceMigrations.Add(migration);
         await setup.SaveChangesAsync();
 
@@ -761,6 +764,7 @@ public sealed class ElsaInstancePersistenceTests
         SetMigrationReferences(migration, workspace.Id, first.Id);
         db.DeploymentRuns.Add(run);
         db.ElsaInstanceOperations.Add(create);
+        db.ElsaInstanceOperations.Add(NewMigrationOperation(workspace, first, migration));
         db.ElsaInstanceMigrations.Add(migration);
         await db.SaveChangesAsync();
 
@@ -957,6 +961,11 @@ public sealed class ElsaInstancePersistenceTests
             TargetVersion = "4.0.1",
             TargetManifestDigest = "sha256:" + new string('d', 64),
             TargetDeploymentId = "target-deployment",
+            OperationId = Guid.NewGuid(),
+            StartRequestHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes("valid-migration"))),
+            LastRequestHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes("valid-migration"))),
             Phase = "Cutover",
             SourceAccessMode = "Stopped",
             CutoverAt = cutover,
@@ -964,13 +973,17 @@ public sealed class ElsaInstancePersistenceTests
             CreatedAt = cutover,
             UpdatedAt = cutover
         };
+        db.ElsaInstanceOperations.Add(NewMigrationOperation(workspace, instance, validMigration));
         db.ElsaInstanceMigrations.Add(validMigration);
         await db.SaveChangesAsync();
 
+        var earlyReleaseInstance = NewInstance(workspace.OrganizationId, workspace.Id);
+        db.ElsaInstances.Add(earlyReleaseInstance);
+        await db.SaveChangesAsync();
         var earlyRelease = new ElsaInstanceMigrationEntity
         {
             MigrationId = Guid.NewGuid(),
-            InstanceId = instance.Id,
+            InstanceId = earlyReleaseInstance.Id,
             Phase = "RetiringSource",
             SourceAccessMode = "Stopped",
             CutoverAt = cutover,
@@ -979,12 +992,13 @@ public sealed class ElsaInstancePersistenceTests
             CreatedAt = cutover,
             UpdatedAt = cutover
         };
-        SetMigrationReferences(earlyRelease, workspace.Id, instance.Id);
+        SetMigrationReferences(earlyRelease, workspace.Id, earlyReleaseInstance.Id);
         db.ElsaInstanceMigrations.Add(earlyRelease);
         await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
         db.ChangeTracker.Clear();
         earlyRelease.EarlyReleaseApprovedByAccountId = Guid.NewGuid();
         earlyRelease.EarlyReleaseApprovedAt = cutover.AddHours(1);
+        db.ElsaInstanceOperations.Add(NewMigrationOperation(workspace, earlyReleaseInstance, earlyRelease));
         db.ElsaInstanceMigrations.Add(earlyRelease);
         await db.SaveChangesAsync();
     }
@@ -1224,9 +1238,33 @@ public sealed class ElsaInstancePersistenceTests
         return migration;
     }
 
+    private static ElsaInstanceOperationEntity NewMigrationOperation(
+        Workspace workspace, ElsaInstanceEntity instance, ElsaInstanceMigrationEntity migration) => new()
+        {
+            Id = migration.OperationId,
+            InstanceId = instance.Id,
+            OrganizationId = workspace.OrganizationId,
+            WorkspaceId = workspace.Id,
+            Action = ElsaInstanceOperationAction.MajorMigration,
+            IdempotencyScope = $"instance/{instance.Id:D}/MajorMigration",
+            IdempotencyKey = $"migration-{migration.MigrationId:N}",
+            RequestHash = migration.StartRequestHash,
+            ExpectedVersion = instance.Version,
+            State = ElsaInstanceOperationState.Running,
+            AttemptNumber = 1,
+            AcceptedAt = migration.CreatedAt,
+            StartedAt = migration.CreatedAt,
+            CreatedAt = migration.CreatedAt,
+            UpdatedAt = migration.UpdatedAt
+        };
+
     private static void SetMigrationReferences(ElsaInstanceMigrationEntity migration, Guid workspaceId, Guid instanceId)
     {
         migration.WorkspaceId = workspaceId;
+        migration.OperationId = migration.OperationId == Guid.Empty ? Guid.NewGuid() : migration.OperationId;
+        migration.StartRequestHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(migration.MigrationId.ToString("D"))));
+        migration.LastRequestHash = migration.StartRequestHash;
         migration.SourcePlanId = "source-plan";
         migration.SourcePlanUri = PlanUri(workspaceId, instanceId, migration.SourcePlanId);
         migration.SourceReleaseLine = "3.10";
@@ -1250,5 +1288,221 @@ public sealed class ElsaInstancePersistenceTests
         while (await reader.ReadAsync())
             values.Add(reader.GetString(0));
         return values.ToArray();
+    }
+
+    [Fact]
+    public async Task Migration_service_persists_replays_and_audits_exact_source_target()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Migration service workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        SetCurrentRelease(instance, workspace.Id);
+        db.ElsaInstances.Add(instance);
+        await db.SaveChangesAsync();
+        await SeedTargetPlanAsync(db, workspace, instance);
+        var service = new ElsaInstanceMigrationService(new EfCoreElsaInstanceMigrationStore(db),
+            new AllowMigrationAuthorizer(), new FixedTimeProvider(new(2026, 8, 30, 12, 0, 0, TimeSpan.Zero)));
+        var request = new ElsaInstanceMigrationStartRequest(workspace.OrganizationId, workspace.Id, instance.Id, instance.Version,
+            MigrationReference(instance.ResolvedPlanId!, instance.ResolvedPlanUri!, "3.10", "3.10.4",
+                instance.CurrentReleaseManifestDigest!, instance.CurrentDeploymentId!),
+            MigrationReference("target-plan", PlanUri(workspace.Id, instance.Id, "target-plan"), "4.0", "4.0.1",
+                "sha256:" + new string('d', 64), "target-deployment"),
+            "migration-request-1", Guid.NewGuid());
+
+        var started = await service.StartAsync(request);
+        var replay = await service.StartAsync(request);
+
+        Assert.Equal(ElsaInstanceMigrationWriteOutcome.Applied, started.Outcome);
+        Assert.Equal(ElsaInstanceMigrationWriteOutcome.Replayed, replay.Outcome);
+        Assert.Equal(started.Migration!.Id, replay.Migration!.Id);
+        db.ChangeTracker.Clear();
+        var stored = await db.ElsaInstanceMigrations.SingleAsync();
+        Assert.Equal("3.10.4", stored.SourceVersion);
+        Assert.Equal("4.0.1", stored.TargetVersion);
+        var audit = await db.ElsaInstanceAuditEvents.SingleAsync();
+        Assert.Equal("MajorMigrationStarted", audit.EventType);
+        Assert.Equal(64, audit.RequestKeyHash!.Length);
+        Assert.Equal(started.Migration.Id, audit.MigrationId);
+        Assert.Equal(started.Migration.OperationId, audit.OperationId);
+        Assert.Equal("migration.event", audit.Summary);
+    }
+
+    [Fact]
+    public async Task Migration_start_fails_closed_for_stale_source_and_deletion()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Migration guard workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        SetCurrentRelease(instance, workspace.Id);
+        db.ElsaInstances.Add(instance);
+        await db.SaveChangesAsync();
+        var store = new EfCoreElsaInstanceMigrationStore(db);
+        var now = new DateTimeOffset(2026, 8, 30, 12, 0, 0, TimeSpan.Zero);
+        var stale = ElsaInstanceMigration.Plan(Guid.NewGuid(), workspace.OrganizationId, workspace.Id, instance.Id,
+            MigrationReference("stale-plan", PlanUri(workspace.Id, instance.Id, "stale-plan"), "3.10", "3.10.4",
+                instance.CurrentReleaseManifestDigest!, instance.CurrentDeploymentId!),
+            MigrationReference("target-plan", PlanUri(workspace.Id, instance.Id, "target-plan"), "4.0", "4.0.1",
+                "sha256:" + new string('d', 64), "target-deployment"),
+            ElsaInstanceMigration.HashRequestKey("stale"), now);
+        var audit = new ElsaInstanceMigrationAudit(stale.Id, stale.OperationId, "MajorMigrationStarted", null,
+            "Planned", Guid.NewGuid(), stale.StartRequestHash, now);
+
+        var staleResult = await store.CreateAsync(new(stale, instance.Version, "stale"), audit);
+        Assert.Equal("migration.source.stale", staleResult.DiagnosticCode);
+
+        instance = await db.ElsaInstances.SingleAsync(x => x.Id == instance.Id);
+        instance.DesiredLifecycle = ElsaDesiredLifecycle.Deleting;
+        instance.UpdatedAt = instance.UpdatedAt.AddMinutes(1);
+        await db.SaveChangesAsync();
+        var exact = stale with { };
+        exact = ElsaInstanceMigration.Plan(Guid.NewGuid(), workspace.OrganizationId, workspace.Id, instance.Id,
+            MigrationReference(instance.ResolvedPlanId!, instance.ResolvedPlanUri!, "3.10", "3.10.4",
+                instance.CurrentReleaseManifestDigest!, instance.CurrentDeploymentId!), stale.Target,
+            ElsaInstanceMigration.HashRequestKey("delete-conflict"), now);
+        var busy = await store.CreateAsync(new(exact, instance.Version, "delete-conflict"),
+            audit with { MigrationId = exact.Id, OperationId = exact.OperationId, RequestHash = exact.StartRequestHash });
+        Assert.Equal("migration.instance.busy", busy.DiagnosticCode);
+    }
+
+    [Fact]
+    public async Task Due_migration_source_release_requires_fenced_confirmation_and_persists_evidence()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Migration release workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        db.ElsaInstances.Add(instance);
+        await db.SaveChangesAsync();
+        var now = DateTimeOffset.UtcNow;
+        var migration = NewMigration(workspace, instance, "RetainingSource");
+        migration.CutoverAt = now.AddDays(-31);
+        migration.SourceRetainUntil = now.AddDays(-1);
+        migration.CreatedAt = now.AddDays(-32);
+        migration.UpdatedAt = now.AddDays(-31);
+        db.ElsaInstanceOperations.Add(NewMigrationOperation(workspace, instance, migration));
+        db.ElsaInstanceMigrations.Add(migration);
+        await db.SaveChangesAsync();
+        var store = new EfCoreElsaInstanceMigrationStore(db);
+
+        var claim = await store.TryClaimDueAsync(now, TimeSpan.FromMinutes(5));
+        Assert.NotNull(claim);
+        var completed = await store.CompleteAsync(claim!, new(ElsaInstanceSourceReleaseOutcome.Confirmed,
+            "migration.source-release.confirmed", "provider-operation-1",
+            "https://evidence.example/migrations/release-1", "sha256:" + new string('e', 64)), now.AddSeconds(1));
+
+        Assert.Equal(ElsaInstanceMigrationWriteOutcome.Applied, completed.Outcome);
+        Assert.Equal(ElsaInstanceMigrationPhase.Released, completed.Migration!.Phase);
+        db.ChangeTracker.Clear();
+        var persisted = await db.ElsaInstanceMigrations.SingleAsync(x => x.MigrationId == migration.MigrationId);
+        Assert.Equal("provider-operation-1", persisted.SourceReleaseProviderCorrelationId);
+        Assert.Equal("sha256:" + new string('e', 64), persisted.SourceReleaseEvidenceDigest);
+    }
+
+    [Fact]
+    public async Task Migration_upgrade_preserves_a_legacy_retained_source_under_an_active_reservation()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync("20260830171154_AddElsaInstanceDeletionEvidence");
+        var workspace = new Workspace { Name = "Legacy retained migration workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        db.ElsaInstances.Add(instance);
+        await db.SaveChangesAsync();
+        var migrationId = Guid.NewGuid();
+        var cutover = DateTimeOffset.UtcNow.AddDays(-31);
+        var sourcePlanId = "source-plan";
+        var sourceDigest = "sha256:" + new string('a', 64);
+        var targetDigest = "sha256:" + new string('b', 64);
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO ElsaInstanceMigrations
+                (MigrationId, InstanceId, OrganizationId, WorkspaceId,
+                 SourcePlanId, SourcePlanUri, SourceReleaseLine, SourceVersion, SourceManifestDigest, SourceDeploymentId,
+                 TargetPlanId, TargetPlanUri, TargetReleaseLine, TargetVersion, TargetManifestDigest, TargetDeploymentId,
+                 Phase, SourceAccessMode, CutoverAt, SourceRetainUntil, CreatedAt, UpdatedAt)
+            VALUES
+                ({migrationId}, {instance.Id}, {workspace.OrganizationId}, {workspace.Id},
+                 {sourcePlanId}, {PlanUri(workspace.Id, instance.Id, sourcePlanId)}, {"3.10"}, {"3.10.4"}, {sourceDigest}, {"source-deployment"},
+                 {"target-plan"}, {PlanUri(workspace.Id, instance.Id, "target-plan")}, {"5.0"}, {"5.0.0"}, {targetDigest}, {"target-deployment"},
+                 {"RetainingSource"}, {"Stopped"}, {cutover.UtcTicks}, {cutover.AddDays(30).UtcTicks}, {cutover.AddDays(-1).UtcTicks}, {cutover.UtcTicks})
+            """);
+
+        await db.Database.MigrateAsync();
+        db.ChangeTracker.Clear();
+
+        var retained = await db.ElsaInstanceMigrations.SingleAsync(x => x.MigrationId == migrationId);
+        var operation = await db.ElsaInstanceOperations.SingleAsync(x => x.Id == migrationId);
+        Assert.Equal("RetainingSource", retained.Phase);
+        Assert.Equal(64, retained.StartRequestHash.Length);
+        Assert.Equal(ElsaInstanceOperationState.Running, operation.State);
+    }
+
+    private static void SetCurrentRelease(ElsaInstanceEntity instance, Guid workspaceId)
+    {
+        instance.ObservedLifecycle = ElsaObservedLifecycle.Ready;
+        instance.Health = ElsaInstanceHealth.Healthy;
+        instance.ResolvedPlanId = "source-plan";
+        instance.ResolvedPlanSchemaVersion = 1;
+        instance.ResolvedPlanContentHash = "sha256:" + new string('a', 64);
+        instance.ResolvedPlanUri = PlanUri(workspaceId, instance.Id, instance.ResolvedPlanId);
+        instance.CurrentReleaseDistributionId = "valence-runtime";
+        instance.CurrentReleaseLine = "3.10";
+        instance.CurrentReleaseVersion = "3.10.4";
+        instance.CurrentReleaseManifestDigest = "sha256:" + new string('c', 64);
+        instance.CurrentReleaseComponentDigestsJson =
+            "[{\"componentId\":\"runtime\",\"digest\":\"sha256:" + new string('e', 64) + "\"}]";
+        instance.CurrentDeploymentId = "source-deployment";
+    }
+
+    private static ElsaInstanceMigrationReleaseReference MigrationReference(
+        string planId, string planUri, string line, string version, string digest, string deployment) =>
+        new(planId, planUri, line, version, digest, deployment);
+
+    private static Task SeedTargetPlanAsync(CatalogDbContext db, Workspace workspace, ElsaInstanceEntity instance)
+    {
+        var id = Guid.NewGuid();
+        var planId = "target-plan";
+        var planUri = PlanUri(workspace.Id, instance.Id, planId);
+        var hash = "sha256:" + new string('f', 64);
+        var manifestDigest = "sha256:" + new string('d', 64);
+        var serialized =
+            $"{{\"schemaVersion\":\"1\",\"release\":{{\"distributionId\":\"valence-runtime\",\"releaseLine\":\"4.0\",\"version\":\"4.0.1\",\"sourceRepository\":\"https://source.example/runtime\",\"sourceCommit\":\"0123456789abcdef\",\"releaseManifestReference\":\"https://artifacts.example/releases/4.0.1\",\"releaseManifestDigest\":\"{manifestDigest}\"}}}}";
+        var createdAt = DateTimeOffset.UtcNow.UtcTicks;
+        return db.Database.ExecuteSqlInterpolatedAsync($$"""
+            INSERT INTO ElsaInstanceResolvedPlans
+                (Id, OrganizationId, WorkspaceId, InstanceId, PlanId, SchemaVersion, ContentHash, PlanUri, SerializedPlan, CreatedAt)
+            VALUES ({{id}}, {{workspace.OrganizationId}}, {{workspace.Id}}, {{instance.Id}}, {{planId}}, 1,
+                {{hash}}, {{planUri}}, {{serialized}}, {{createdAt}})
+            """);
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class AllowMigrationAuthorizer : IElsaInstanceMigrationAuthorizer
+    {
+        public Task RequireExecutionAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task RequireEarlyReleaseAsync(Guid workspaceId, Guid accountId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 }
