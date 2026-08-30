@@ -597,6 +597,22 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal("sha256:" + new string('b', 64), operation.ReconciliationRetryEvidenceDigest);
         Assert.False(replay.RetrySafe);
 
+        await Assert.ThrowsAsync<InvalidOperationException>(() => lifecycleStore.CommitAsync(new(
+            accepted.Instance.WorkspaceId,
+            accepted.Instance.Id,
+            accepted.Operation.Id,
+            originalTarget.Instance.Version,
+            originalTarget.Operation.AttemptNumber,
+            originalTarget.ReconciliationVersion,
+            new string('A', 64),
+            originalTarget.Instance,
+            originalTarget.Operation,
+            ElsaInstanceProviderReconciliationService.ConvergedCode,
+            false,
+            null,
+            null,
+            Now.AddMinutes(12))));
+
         var concurrentReplay = await lifecycleStore.CommitAsync(new(
             accepted.Instance.WorkspaceId,
             accepted.Instance.Id,

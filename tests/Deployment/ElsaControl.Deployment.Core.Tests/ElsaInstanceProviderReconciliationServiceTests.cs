@@ -259,7 +259,8 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
         ElsaDesiredLifecycle desiredLifecycle = ElsaDesiredLifecycle.Running)
     {
         var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
-        var accepted = await new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now)).CreateAsync(new(
+        var lifecycle = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var accepted = await lifecycle.CreateAsync(new(
             OrganizationId,
             WorkspaceId,
             "reconciliation-test",
@@ -267,10 +268,25 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
             new(
                 new("commercial", "5.0", "5.0.1"),
                 new("server-studio"),
-                new("managed", "westeurope", "dedicated", "standard-small", "public", "managed"),
-                desiredLifecycle),
+                new("managed", "westeurope", "dedicated", "standard-small", "public", "managed")),
             "create-reconciliation-test"));
         store.MarkRecoveryRequired(accepted.Operation.Id);
+        if (desiredLifecycle == ElsaDesiredLifecycle.Deleting)
+        {
+            var ready = new ElsaInstanceProviderObservation(
+                ElsaInstanceProviderObservationKind.Confirmed,
+                ElsaObservedLifecycle.Ready,
+                ElsaInstanceProviderHealthGate.Passed,
+                "observation-ready");
+            await Service(store, new RecordingPort(ready)).ReconcileAsync(WorkspaceId, accepted.Operation.Id);
+            var instance = store.Instances.Single();
+            accepted = await lifecycle.DeleteAsync(new(
+                WorkspaceId,
+                instance.Id,
+                instance.Version,
+                "delete-reconciliation-test"));
+            store.MarkRecoveryRequired(accepted.Operation.Id);
+        }
         return (store, accepted);
     }
 

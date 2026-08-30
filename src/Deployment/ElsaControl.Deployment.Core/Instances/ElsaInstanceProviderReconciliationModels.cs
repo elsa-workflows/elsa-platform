@@ -173,7 +173,8 @@ public sealed record ElsaInstanceProviderReconciliationCommit(
     {
         if (WorkspaceId == Guid.Empty || InstanceId == Guid.Empty || OperationId == Guid.Empty ||
             ExpectedInstanceVersion < 1 || ExpectedAttemptNumber < 1 || ExpectedReconciliationVersion < 0 ||
-            EvidenceFingerprint.Length != 64 || EvidenceFingerprint.Any(x => !char.IsAsciiHexDigit(x)) ||
+            EvidenceFingerprint.Length != 64 ||
+            EvidenceFingerprint.Any(x => !(char.IsAsciiDigit(x) || x is >= 'a' and <= 'f')) ||
             string.IsNullOrWhiteSpace(DiagnosticCode) || DiagnosticCode.Length > 128 ||
             DiagnosticCode.Any(x => !(char.IsAsciiLetterLower(x) || char.IsAsciiDigit(x) || x is '.' or '-')))
             throw new InvalidOperationException("Provider reconciliation commit envelope is invalid.");
