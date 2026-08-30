@@ -479,6 +479,28 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
+    public async Task Waiting_delete_is_promoted_and_claimed_after_its_prior_operation_completes()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Waiting delete workspace");
+        var service = new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now));
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            workspace.OrganizationId, workspace.Id, "Worker Elsa", "waiting-delete-elsa", WorkerIntent(), "waiting-delete-create"));
+        var deletion = await service.DeleteAsync(new ElsaInstanceLifecycleRequest(
+            workspace.Id, created.Instance.Id, created.Instance.Version, "waiting-delete"));
+        await CompleteOperationAsync(db, created.Operation.Id);
+
+        var claimed = await CreateStore(db).TryClaimNextAsync("worker-one", Now);
+
+        Assert.NotNull(claimed);
+        Assert.Equal(deletion.Operation.Id, claimed!.Operation.Id);
+        Assert.Equal(ElsaInstanceOperationState.Accepted, claimed.Operation.State);
+    }
+
+    [Fact]
     public async Task Malformed_first_persisted_instance_is_quarantined_and_later_valid_work_continues()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

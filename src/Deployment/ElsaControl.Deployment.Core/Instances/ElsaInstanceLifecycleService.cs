@@ -140,15 +140,18 @@ public sealed class ElsaInstanceLifecycleService(
         var key = RequireKey(idempotencyKey);
         var instance = await store.GetInstanceAsync(workspaceId, instanceId, cancellationToken)
             ?? throw new KeyNotFoundException("Elsa instance does not exist in the workspace.");
-        var requestHash = ComputeRequestHash(
-            action,
-            expectedVersion,
-            requestedIntent?.ComputeCanonicalHash() ?? instance.ComputeCanonicalIntentHash());
         var existingOperation = await store.FindOperationByKeyAsync(workspaceId, key, cancellationToken);
         if (existingOperation is not null)
         {
-            if (existingOperation.InstanceId != instanceId || existingOperation.Action != action ||
-                !string.Equals(existingOperation.RequestHash, requestHash, StringComparison.Ordinal))
+            if (existingOperation.InstanceId != instanceId || existingOperation.Action != action)
+                throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
+
+            var requestHash = existingOperation.RequestHash;
+            if (requestedIntent is not null &&
+                !string.Equals(
+                    requestHash,
+                    ComputeRequestHash(action, existingOperation.ExpectedVersion, requestedIntent.ComputeCanonicalHash()),
+                    StringComparison.Ordinal))
                 throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
 
             // Supplying the existing operation to the state machine makes an exact
@@ -165,6 +168,10 @@ public sealed class ElsaInstanceLifecycleService(
             return await CommitAsync(instance, replayTransition, cancellationToken);
         }
 
+        var requestHash = ComputeRequestHash(
+            action,
+            expectedVersion,
+            requestedIntent?.ComputeCanonicalHash() ?? instance.ComputeCanonicalIntentHash());
         var activeOperation = await store.GetActiveOperationAsync(workspaceId, instanceId, cancellationToken);
         var transition = ElsaInstanceStateMachine.Request(
             instance,
