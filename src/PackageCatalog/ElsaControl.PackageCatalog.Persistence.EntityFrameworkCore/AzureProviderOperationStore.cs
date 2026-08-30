@@ -10,6 +10,10 @@ namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 
 public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzureProviderOperationStore
 {
+    private static readonly IReadOnlyDictionary<string, string> EmptySecretReferences =
+        new ReadOnlyDictionary<string, string>(
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
     public async Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default)
     {
         var normalized = AzureProviderOperationValidation.Normalize(request);
@@ -462,13 +466,13 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
     private static (IReadOnlyDictionary<string, string> SecretReferences, bool Invalid) ReadSecretReferences(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
-            return (new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), true);
+            return (EmptySecretReferences, true);
 
         try
         {
             var values = JsonSerializer.Deserialize<Dictionary<string, string?>>(json);
             if (values is null)
-                return (new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), true);
+                return (EmptySecretReferences, true);
 
             var normalizedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var references = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -478,7 +482,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
                     !string.Equals(pair.Key, pair.Key.Trim().ToLowerInvariant(), StringComparison.Ordinal) ||
                     !normalizedKeys.Add(pair.Key.Trim()) ||
                     !AzureProviderOperationValidation.IsSafeSecretReference(pair.Value))
-                    return (new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), true);
+                    return (EmptySecretReferences, true);
 
                 references.Add(pair.Key, pair.Value);
             }
@@ -487,11 +491,11 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         }
         catch (JsonException)
         {
-            return (new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), true);
+            return (EmptySecretReferences, true);
         }
         catch (NotSupportedException)
         {
-            return (new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), true);
+            return (EmptySecretReferences, true);
         }
     }
 

@@ -322,7 +322,9 @@ public static class AzureProviderOperationValidation
         var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         return values.All(pair =>
             !string.IsNullOrWhiteSpace(pair.Key) && pair.Key.Length <= 256 &&
-            !pair.Key.Any(char.IsControl) && keys.Add(pair.Key.Trim()) && IsSafeSecretReference(pair.Value));
+            !pair.Key.Any(char.IsControl) &&
+            string.Equals(pair.Key, pair.Key.Trim().ToLowerInvariant(), StringComparison.Ordinal) &&
+            keys.Add(pair.Key) && IsSafeSecretReference(pair.Value));
     }
 
     /// <summary>

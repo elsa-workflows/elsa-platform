@@ -47,6 +47,22 @@ public sealed class AzureProviderOperationServiceTests
     }
 
     [Fact]
+    public async Task Submit_rejects_noncanonical_secret_reference_keys()
+    {
+        var service = new AzureProviderOperationService(new CapturingStore(), new FixedTimeProvider(Now));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SubmitAsync(
+            WorkspaceId,
+            new AzureProviderOperationSubmission("request-1", new('b', 64), CreatePlan() with
+            {
+                SecretReferences = new Dictionary<string, string>
+                {
+                    ["Database:ConnectionString"] = "secret://vault/database"
+                }
+            })));
+    }
+
+    [Fact]
     public async Task Delete_submission_uses_the_same_idempotent_operation_contract()
     {
         var store = new CapturingStore();

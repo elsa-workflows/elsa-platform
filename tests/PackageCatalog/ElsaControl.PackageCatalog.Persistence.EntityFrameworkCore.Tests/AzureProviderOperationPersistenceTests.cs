@@ -318,6 +318,8 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         var runnable = Assert.Single(await store.ListRunnableAsync(now, 10));
         Assert.True(runnable.PersistedMetadataInvalid);
         Assert.Empty(runnable.Diagnostics);
+        var mutableReferences = Assert.IsAssignableFrom<IDictionary<string, string>>(runnable.SafeSecretReferences);
+        Assert.Throws<NotSupportedException>(() => mutableReferences.Add("database", "secret://vault/database"));
         Assert.Null(new PersistedAzureProviderPlanSource().Resolve(runnable));
 
         var worker = new AzureProviderOperationWorker(
