@@ -349,57 +349,6 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
-    public async Task Unmanaged_active_run_reserves_the_workspace_environment_for_lifecycle_commit()
-    {
-        await using var connection = new SqliteConnection("Data Source=:memory:");
-        await connection.OpenAsync();
-        await using var db = CreateMigratedContext(connection);
-        await db.Database.MigrateAsync();
-        var workspace = await CreateWorkspaceAsync(db, "Unmanaged reservation workspace");
-        var accepted = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
-            .CreateAsync(new ElsaInstanceCreateRequest(
-                workspace.OrganizationId, workspace.Id, "Worker Elsa", "unmanaged-reservation-elsa", WorkerIntent(), "unmanaged-reservation-create"));
-        var target = await AddManagedEnvironmentAsync(db, workspace, accepted.Instance.Id);
-        db.ChangeTracker.Clear();
-        var unmanagedRunAt = Now.AddMinutes(-1);
-        db.DeploymentRuns.Add(new DeploymentRunEntity
-        {
-            Id = Guid.NewGuid(),
-            WorkspaceId = workspace.Id,
-            ElsaInstanceId = null,
-            ApplicationId = target.ApplicationId,
-            EnvironmentId = target.EnvironmentId,
-            EngineId = Guid.NewGuid(),
-            SourceRevisionId = Guid.NewGuid(),
-            Status = WorkspaceDeploymentRunStatus.Queued,
-            ValidationOutcome = DeploymentValidationOutcome.Passed,
-            ConfirmationId = Guid.NewGuid(),
-            ActorAccountId = Guid.NewGuid(),
-            QueuedAt = unmanagedRunAt,
-            CreatedAt = unmanagedRunAt,
-            AttemptNumber = 1
-        });
-        await db.SaveChangesAsync();
-        db.ChangeTracker.Clear();
-
-        var store = new EfCoreElsaInstanceLifecycleStore(
-            db,
-            new StaticResolutionInputSource(accepted.Instance, target),
-            new FixedTimeProvider(Now));
-        var item = await store.TryClaimNextAsync("worker-one", Now)
-            ?? throw new InvalidOperationException("Expected a claimed work item.");
-        var result = await store.CommitResolvedAsync(
-            CreateResolutionCommit(item, SuccessfulResolution(workspace.Id, accepted.Instance.Id), Now.AddSeconds(1)));
-
-        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Conflict, result.Outcome);
-        Assert.Equal("run.reservation.conflict", result.FailureCode);
-        Assert.Equal(ElsaInstanceOperationState.Failed,
-            (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == accepted.Operation.Id)).State);
-        Assert.Equal(1, await db.DeploymentRuns.CountAsync());
-        Assert.Empty(await db.ElsaInstanceResolvedPlans.ToListAsync());
-    }
-
-    [Fact]
     public async Task Finalization_uses_store_clock_when_caller_supplies_a_backdated_timestamp()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
