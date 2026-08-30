@@ -136,6 +136,9 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.Null(await store.CheckpointAsync(_workspaceId, operation.Id, "lease-1", new(
             AzureProviderOperationPhase.FoundationReady, "late", "Late.", new(), null, AzureProviderHealth.Unknown, []), now.AddMinutes(2)));
         Assert.Null(recovered?.CompletedAt);
+        var transitions = await store.ListTransitionsAsync(_workspaceId, operation.Id);
+        Assert.Contains(transitions, x => x.Code == "operation.recovery.required");
+        Assert.Contains(transitions, x => x.Code == "operation.recovery.claimed");
     }
 
     [Fact]
