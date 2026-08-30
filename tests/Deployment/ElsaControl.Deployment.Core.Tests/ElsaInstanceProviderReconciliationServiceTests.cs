@@ -102,6 +102,38 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
     }
 
     [Fact]
+    public async Task Explicit_missing_deployment_projection_clears_stale_endpoint()
+    {
+        var (store, accepted) = await RecoveryTargetAsync();
+        var current = new ElsaCurrentDeploymentReference(
+            "deployment-1", endpointUri: "https://managed.example.test/runtime/health");
+        _ = await Service(store, new RecordingPort(new(
+                ElsaInstanceProviderObservationKind.Confirmed,
+                ElsaObservedLifecycle.Ready,
+                ElsaInstanceProviderHealthGate.Passed,
+                "observation-current",
+                retryEvidence: null,
+                currentDeploymentReference: current)))
+            .ReconcileAsync(WorkspaceId, accepted.Operation.Id);
+        var projected = store.Instances.Single();
+        Assert.Equal(current, projected.CurrentDeploymentReference);
+
+        var restarted = await new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now.AddMinutes(1)))
+            .RestartAsync(new(WorkspaceId, projected.Id, projected.Version, "restart-after-endpoint-removal"));
+        store.MarkRecoveryRequired(restarted.Operation.Id);
+        _ = await Service(store, new RecordingPort(new(
+                ElsaInstanceProviderObservationKind.Confirmed,
+                ElsaObservedLifecycle.Ready,
+                ElsaInstanceProviderHealthGate.Passed,
+                "observation-removed",
+                retryEvidence: null,
+                currentDeploymentReference: null)))
+            .ReconcileAsync(WorkspaceId, restarted.Operation.Id);
+
+        Assert.Null(store.Instances.Single().CurrentDeploymentReference);
+    }
+
+    [Fact]
     public async Task Read_only_deleted_observation_cannot_tombstone_a_deleting_instance()
     {
         var (store, accepted) = await RecoveryTargetAsync(ElsaDesiredLifecycle.Deleting);

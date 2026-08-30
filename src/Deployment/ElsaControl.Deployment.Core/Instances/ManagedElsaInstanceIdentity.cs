@@ -27,6 +27,11 @@ public sealed record ManagedElsaInstanceIdentityBindingWriteResult(
 
 public interface IManagedElsaInstanceIdentityStore
 {
+    Task<ManagedElsaInstanceIdentity?> EnsureAsync(
+        Guid organizationId,
+        Guid instanceId,
+        CancellationToken cancellationToken = default);
+
     Task<ManagedElsaInstanceIdentity?> FindAsync(
         Guid organizationId,
         Guid instanceId,

@@ -72,6 +72,36 @@ public sealed class ManagedElsaHandoffPersistenceTests
     }
 
     [Fact]
+    public async Task Replay_consumption_purges_only_rows_expired_beyond_retention()
+    {
+        await using var connection = NewConnection();
+        await connection.OpenAsync();
+        await using var db = CreateContext(connection);
+        await db.Database.MigrateAsync();
+        var now = new DateTimeOffset(2026, 8, 30, 21, 0, 0, TimeSpan.Zero);
+        db.ManagedElsaHandoffReplays.AddRange(
+            new ManagedElsaHandoffReplayEntity
+            {
+                Jti = "expired-old",
+                ExpiresAt = now.AddHours(-25),
+                ConsumedAt = now.AddHours(-26)
+            },
+            new ManagedElsaHandoffReplayEntity
+            {
+                Jti = "expired-recent",
+                ExpiresAt = now.AddHours(-1),
+                ConsumedAt = now.AddHours(-2)
+            });
+        await db.SaveChangesAsync();
+
+        Assert.True(await new EfCoreManagedElsaHandoffStore(db, new FixedTimeProvider(now))
+            .TryConsumeAsync("current", now.AddMinutes(1)));
+
+        var retained = await db.ManagedElsaHandoffReplays.Select(x => x.Jti).Order().ToListAsync();
+        Assert.Equal(["current", "expired-recent"], retained);
+    }
+
+    [Fact]
     public void Sqlite_non_unique_constraints_are_not_classified_as_replays()
     {
         var exception = new DbUpdateException(
@@ -229,6 +259,10 @@ public sealed class ManagedElsaHandoffPersistenceTests
             var invalid = await store.BindAsync(organizationId, workspaceId, instanceId,
                 "https://rotated.example.test", 0, changedAt.AddMinutes(1));
             Assert.Equal(ManagedElsaInstanceIdentityBindingWriteOutcome.Conflict, invalid.Outcome);
+
+            var instance = await rotateDb.ElsaInstances.SingleAsync();
+            instance.CurrentDeploymentEndpointUri = "https://rotated.example.test/runtime/health";
+            await rotateDb.SaveChangesAsync();
 
             var rotated = await store.BindAsync(organizationId, workspaceId, instanceId,
                 "https://rotated.example.test", 1, changedAt.AddMinutes(1));

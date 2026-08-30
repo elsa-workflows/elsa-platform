@@ -805,6 +805,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
                     "sha256:" + new string('b', 64))),
             new(ElsaInstanceProviderObservationKind.Confirmed, ElsaObservedLifecycle.Ready,
                 ElsaInstanceProviderHealthGate.Passed, "provider-observation-2",
+                retryEvidence: null,
                 currentDeploymentReference: new ElsaCurrentDeploymentReference(
                     "deployment-reconciled", endpointUri: "https://managed.example.test/runtime/health")));
         var lifecycleStore = new EfCoreElsaInstanceLifecycleStore(

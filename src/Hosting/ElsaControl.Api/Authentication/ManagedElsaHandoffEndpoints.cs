@@ -35,6 +35,11 @@ public static class ManagedElsaHandoffEndpoints
                 return WorkspaceIdentityHttpContextExtensions.UnauthorizedWorkspaceIdentity();
 
             var result = await handoff.IssueAsync(context, handoffRequest!, cancellationToken);
+            if (result is not null)
+            {
+                context.Response.Headers.CacheControl = "no-store";
+                context.Response.Headers.Pragma = "no-cache";
+            }
             return result is null
                 ? Failure(StatusCodes.Status403Forbidden, "handoff.denied", context)
                 : Results.Ok(new ManagedElsaHandoffIssueResponse(

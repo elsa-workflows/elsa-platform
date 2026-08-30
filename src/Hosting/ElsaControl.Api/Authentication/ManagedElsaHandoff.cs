@@ -36,6 +36,13 @@ public sealed class ManagedElsaHandoffConfigurationValidator(
     IOptions<ManagedElsaHandoffOptions> options,
     IServiceProvider services) : IHostedService
 {
+    public ManagedElsaHandoffConfigurationValidator(
+        IHostEnvironment environment,
+        IOptions<ManagedElsaHandoffOptions> options)
+        : this(environment, options, EmptyServiceProvider.Instance)
+    {
+    }
+
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         var validated = ManagedElsaHandoffIssuer.ValidateOptions(options.Value);
@@ -67,6 +74,13 @@ public sealed class ManagedElsaHandoffConfigurationValidator(
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    private sealed class EmptyServiceProvider : IServiceProvider
+    {
+        public static EmptyServiceProvider Instance { get; } = new();
+
+        public object? GetService(Type serviceType) => null;
+    }
 }
 
 /// <summary>
@@ -82,7 +96,20 @@ public sealed record ManagedElsaHandoffAuthorization(
     Uri RedirectUri,
     string CodeChallenge,
     IReadOnlySet<string> Scopes,
-    int BindingVersion = 1);
+    int BindingVersion)
+{
+    public ManagedElsaHandoffAuthorization(
+        Guid accountId,
+        Guid organizationId,
+        Guid instanceId,
+        string audience,
+        Uri redirectUri,
+        string codeChallenge,
+        IReadOnlySet<string> scopes)
+        : this(accountId, organizationId, instanceId, audience, redirectUri, codeChallenge, scopes, 1)
+    {
+    }
+}
 
 public sealed record ManagedElsaHandoffRequest(
     Guid OrganizationId,
@@ -234,8 +261,26 @@ public sealed record ManagedElsaHandoffClaims(
     IReadOnlySet<string> Scopes,
     DateTimeOffset IssuedAt,
     DateTimeOffset ExpiresAt,
-    int BindingVersion = 1)
+    int BindingVersion)
 {
+    public ManagedElsaHandoffClaims(
+        string jti,
+        Guid accountId,
+        string controlIssuer,
+        string controlSubject,
+        Guid organizationId,
+        Guid instanceId,
+        string audience,
+        Uri redirectUri,
+        string codeChallenge,
+        IReadOnlySet<string> scopes,
+        DateTimeOffset issuedAt,
+        DateTimeOffset expiresAt)
+        : this(jti, accountId, controlIssuer, controlSubject, organizationId, instanceId, audience,
+            redirectUri, codeChallenge, scopes, issuedAt, expiresAt, 1)
+    {
+    }
+
     public TrustedWorkspaceIdentity ToTrustedWorkspaceIdentity() =>
         new(ControlIssuer, ControlSubject, null, null);
 }
@@ -292,7 +337,20 @@ public sealed record ManagedElsaHandoffAuditEvent(
     string? Audience,
     DateTimeOffset OccurredAt,
     int? BindingVersion = null,
-    string? CorrelationId = null);
+    string? CorrelationId = null)
+{
+    public ManagedElsaHandoffAuditEvent(
+        string action,
+        string jti,
+        Guid? accountId,
+        Guid? organizationId,
+        Guid? instanceId,
+        string? audience,
+        DateTimeOffset occurredAt)
+        : this(action, jti, accountId, organizationId, instanceId, audience, occurredAt, null, null)
+    {
+    }
+}
 
 public interface IManagedElsaHandoffAuditSink
 {
@@ -424,13 +482,21 @@ public sealed class ManagedElsaHandoffRedeemer(
 {
     private readonly ManagedElsaHandoffOptions _options = ManagedElsaHandoffIssuer.ValidateOptions(options.Value);
 
+    public Task<ManagedElsaHandoffRedeemResult> RedeemAsync(
+        string token,
+        string expectedAudience,
+        Uri expectedRedirectUri,
+        string codeVerifier,
+        CancellationToken cancellationToken = default) =>
+        RedeemAsync(token, expectedAudience, expectedRedirectUri, codeVerifier, cancellationToken, null);
+
     public async Task<ManagedElsaHandoffRedeemResult> RedeemAsync(
         string token,
         string expectedAudience,
         Uri expectedRedirectUri,
         string codeVerifier,
-        CancellationToken cancellationToken = default,
-        string? correlationId = null)
+        CancellationToken cancellationToken,
+        string? correlationId)
     {
         if (string.IsNullOrWhiteSpace(token) ||
             string.IsNullOrWhiteSpace(expectedAudience) ||
@@ -656,7 +722,15 @@ public sealed class ManagedElsaHandoffService(
         string expectedAudience,
         Uri expectedRedirectUri,
         string codeVerifier,
-        CancellationToken cancellationToken = default,
-        string? correlationId = null) =>
+        CancellationToken cancellationToken = default) =>
+        redeemer.RedeemAsync(token, expectedAudience, expectedRedirectUri, codeVerifier, cancellationToken);
+
+    public Task<ManagedElsaHandoffRedeemResult> RedeemAsync(
+        string token,
+        string expectedAudience,
+        Uri expectedRedirectUri,
+        string codeVerifier,
+        CancellationToken cancellationToken,
+        string? correlationId) =>
         redeemer.RedeemAsync(token, expectedAudience, expectedRedirectUri, codeVerifier, cancellationToken, correlationId);
 }

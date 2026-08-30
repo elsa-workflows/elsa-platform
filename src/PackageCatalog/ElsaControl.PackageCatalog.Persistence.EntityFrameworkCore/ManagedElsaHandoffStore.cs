@@ -28,6 +28,7 @@ public sealed class EfCoreManagedElsaHandoffStore(
     CatalogDbContext dbContext,
     TimeProvider? timeProvider = null)
 {
+    private static readonly TimeSpan ReplayRetentionAfterExpiry = TimeSpan.FromHours(24);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     /// <summary>
@@ -43,6 +44,10 @@ public sealed class EfCoreManagedElsaHandoffStore(
 
         var normalizedExpiry = expiresAt.ToUniversalTime();
         var consumedAt = _timeProvider.GetUtcNow().ToUniversalTime();
+        var retentionCutoff = consumedAt.Subtract(ReplayRetentionAfterExpiry);
+        _ = await dbContext.ManagedElsaHandoffReplays
+            .Where(x => x.ExpiresAt < retentionCutoff)
+            .ExecuteDeleteAsync(cancellationToken);
         if (consumedAt >= normalizedExpiry)
             consumedAt = normalizedExpiry.AddTicks(-1);
 

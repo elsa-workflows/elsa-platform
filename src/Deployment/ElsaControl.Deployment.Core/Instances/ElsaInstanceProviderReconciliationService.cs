@@ -117,7 +117,7 @@ public sealed class ElsaInstanceProviderReconciliationService(
             if (observation.HealthGate == ElsaInstanceProviderHealthGate.Passed &&
                 instance.DesiredLifecycle == ElsaDesiredLifecycle.Running)
                 return (Project(instance, ElsaObservedLifecycle.Ready, ElsaInstanceHealth.Healthy,
-                        observation.CurrentDeploymentReference),
+                        observation.CurrentDeploymentReference, observation.HasCurrentDeploymentProjection),
                     operation.TransitionTo(ElsaInstanceOperationState.Succeeded), ConvergedCode, now);
 
             if (observation.HealthGate == ElsaInstanceProviderHealthGate.Failed)
@@ -154,6 +154,7 @@ public sealed class ElsaInstanceProviderReconciliationService(
         ElsaObservedLifecycle observed,
         ElsaInstanceHealth health,
         ElsaCurrentDeploymentReference? currentDeploymentReference = null,
+        bool replaceCurrentDeploymentReference = false,
         DateTimeOffset? deletedAt = null) =>
         ElsaInstance.Hydrate(
             instance.Id,
@@ -169,7 +170,7 @@ public sealed class ElsaInstanceProviderReconciliationService(
             instance.DesiredStateRevisionId,
             instance.ResolvedPlanReference,
             instance.CurrentResolvedRelease,
-            currentDeploymentReference ?? instance.CurrentDeploymentReference,
+            replaceCurrentDeploymentReference ? currentDeploymentReference : instance.CurrentDeploymentReference,
             instance.PlacementAssignmentReference,
             instance.ElsaTenantReference,
             instance.LastOperationId,

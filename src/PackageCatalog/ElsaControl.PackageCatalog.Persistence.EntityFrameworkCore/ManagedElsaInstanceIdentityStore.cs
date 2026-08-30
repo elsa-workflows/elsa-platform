@@ -13,6 +13,53 @@ namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 /// </summary>
 public sealed class EfCoreManagedElsaInstanceIdentityStore(CatalogDbContext dbContext) : IManagedElsaInstanceIdentityStore
 {
+    public async Task<ManagedElsaInstanceIdentity?> EnsureAsync(
+        Guid organizationId,
+        Guid instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await FindAsync(organizationId, instanceId, cancellationToken);
+        if (existing is not null)
+            return existing;
+        if (organizationId == Guid.Empty || instanceId == Guid.Empty)
+            return null;
+
+        dbContext.ChangeTracker.Clear();
+        var projected = await dbContext.ElsaInstances
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.Id == instanceId)
+            .Select(x => new
+            {
+                x.WorkspaceId,
+                x.CurrentDeploymentEndpointUri,
+                BindingVersion = x.IdentityBinding == null ? null : (int?)x.IdentityBinding.BindingVersion,
+                x.DesiredLifecycle,
+                x.ObservedLifecycle,
+                x.DeletedAt
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (projected is null ||
+            projected.DesiredLifecycle == ElsaDesiredLifecycle.Deleting ||
+            projected.ObservedLifecycle == ElsaObservedLifecycle.Deleted ||
+            projected.DeletedAt is not null ||
+            !Uri.TryCreate(projected.CurrentDeploymentEndpointUri, UriKind.Absolute, out var endpoint))
+            return null;
+
+        var created = await BindAsync(
+            organizationId,
+            projected.WorkspaceId,
+            instanceId,
+            endpoint.GetLeftPart(UriPartial.Authority),
+            projected.BindingVersion,
+            DateTimeOffset.UtcNow,
+            cancellationToken);
+        if (created.Succeeded)
+            return created.Identity;
+
+        // A concurrent issuer may have won the unique insert.
+        return await FindAsync(organizationId, instanceId, cancellationToken);
+    }
+
     public async Task<ManagedElsaInstanceIdentity?> FindAsync(
         Guid organizationId,
         Guid instanceId,
@@ -67,12 +114,18 @@ public sealed class EfCoreManagedElsaInstanceIdentityStore(CatalogDbContext dbCo
         ManagedElsaInstanceIdentityBindingWriteOutcome outcome;
         try
         {
+            var candidate = ElsaInstanceIdentityBinding.Create(instanceId, verifiedEndpointOrigin, changedAt);
+            if (!Uri.TryCreate(entity.CurrentDeploymentEndpointUri, UriKind.Absolute, out var currentEndpoint) ||
+                !string.Equals(currentEndpoint.GetLeftPart(UriPartial.Authority), candidate.VerifiedEndpointOrigin,
+                    StringComparison.Ordinal))
+                return Conflict();
+
             if (expectedBindingVersion is null)
             {
                 if (existing is not null)
                     return Conflict();
 
-                binding = ElsaInstanceIdentityBinding.Create(instanceId, verifiedEndpointOrigin, changedAt);
+                binding = candidate;
                 entity.IdentityBinding = new ElsaInstanceIdentityBindingEntity
                 {
                     InstanceId = instanceId,
@@ -96,7 +149,7 @@ public sealed class EfCoreManagedElsaInstanceIdentityStore(CatalogDbContext dbCo
                     existing.VerifiedEndpointOrigin,
                     existing.BindingVersion,
                     existing.ChangedAt);
-                binding = current.Rotate(verifiedEndpointOrigin, changedAt);
+                binding = current.Rotate(candidate.VerifiedEndpointOrigin, changedAt);
                 existing.Audience = binding.Audience;
                 existing.CanonicalCallbackUri = binding.CanonicalCallbackUri;
                 existing.VerifiedEndpointOrigin = binding.VerifiedEndpointOrigin;

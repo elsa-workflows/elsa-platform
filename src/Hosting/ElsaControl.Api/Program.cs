@@ -452,8 +452,8 @@ app.Use(async (context, next) =>
 });
 app.UseAdminDashboardRequestForgeryGuard();
 app.UseStaticFiles();
-app.UseAuthorization();
 app.UseRateLimiter();
+app.UseAuthorization();
 
 app.MapOpenApi();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));

@@ -41,6 +41,8 @@ public sealed class ManagedElsaHandoffTests
                 authorizer.CodeChallenge));
 
         Assert.Equal(HttpStatusCode.OK, issue.StatusCode);
+        Assert.Contains("no-store", issue.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
+        Assert.Contains("no-cache", issue.Headers.Pragma.Select(x => x.Name), StringComparer.OrdinalIgnoreCase);
         var issued = (await issue.Content.ReadControlJsonAsync<ManagedElsaHandoffIssueResponse>())!;
         Assert.Equal(ManagedElsaHandoffDefaults.TokenType, issued.TokenType);
         Assert.Equal(authorizer.Audience, issued.Audience);
@@ -74,7 +76,6 @@ public sealed class ManagedElsaHandoffTests
             var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
             var workspace = await db.Workspaces.SingleAsync(x => x.Id == workspaceId);
             organizationId = workspace.OrganizationId;
-            var now = DateTimeOffset.UtcNow;
             var lifecycle = new ElsaInstanceLifecycleService(
                 new EfCoreElsaInstanceLifecycleStore(db, new EmptyLifecycleResolutionInputSource()));
             await lifecycle.CreateAsync(new ElsaInstanceCreateRequest(
@@ -94,9 +95,6 @@ public sealed class ManagedElsaHandoffTests
             await db.Database.ExecuteSqlInterpolatedAsync(
                 $"UPDATE ElsaInstances SET CurrentDeploymentId = {deploymentId}, CurrentDeploymentEndpointUri = {endpointUri} WHERE Id = {instanceId}");
             db.ChangeTracker.Clear();
-            var identities = scope.ServiceProvider.GetRequiredService<IManagedElsaInstanceIdentityStore>();
-            Assert.True((await identities.BindAsync(
-                organizationId, workspaceId, instanceId, "https://managed.example.test", null, now)).Succeeded);
         }
 
         var audience = ElsaInstanceIdentityBinding.AudienceFor(instanceId);

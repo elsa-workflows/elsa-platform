@@ -65,7 +65,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
             migrationBuilder.Sql("""
                 EXEC(N'CREATE TRIGGER TR_ManagedElsaHandoffReplayConsumptions_AppendOnly
                 ON ManagedElsaHandoffReplayConsumptions
-                INSTEAD OF UPDATE, DELETE
+                INSTEAD OF UPDATE
                 AS BEGIN
                     THROW 51010, ''Managed Elsa handoff replay records are append-only'', 1;
                 END;');

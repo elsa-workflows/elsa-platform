@@ -63,9 +63,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 CREATE TRIGGER TR_ManagedElsaHandoffReplayConsumptions_AppendOnly_Update
                 BEFORE UPDATE ON ManagedElsaHandoffReplayConsumptions
                 BEGIN SELECT RAISE(ABORT, 'Managed Elsa handoff replay records are append-only'); END;
-                CREATE TRIGGER TR_ManagedElsaHandoffReplayConsumptions_AppendOnly_Delete
-                BEFORE DELETE ON ManagedElsaHandoffReplayConsumptions
-                BEGIN SELECT RAISE(ABORT, 'Managed Elsa handoff replay records are append-only'); END;
                 CREATE TRIGGER TR_ManagedElsaHandoffAuditEvents_AppendOnly_Update
                 BEFORE UPDATE ON ManagedElsaHandoffAuditEvents
                 BEGIN SELECT RAISE(ABORT, 'Managed Elsa handoff audit events are append-only'); END;
@@ -81,7 +78,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
             migrationBuilder.Sql("""
                 DROP TRIGGER IF EXISTS TR_ManagedElsaHandoffAuditEvents_AppendOnly_Delete;
                 DROP TRIGGER IF EXISTS TR_ManagedElsaHandoffAuditEvents_AppendOnly_Update;
-                DROP TRIGGER IF EXISTS TR_ManagedElsaHandoffReplayConsumptions_AppendOnly_Delete;
                 DROP TRIGGER IF EXISTS TR_ManagedElsaHandoffReplayConsumptions_AppendOnly_Update;
                 """);
 

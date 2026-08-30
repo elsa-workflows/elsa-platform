@@ -14,7 +14,7 @@ public sealed class ManagedElsaInstanceHandoffAuthorizer(
         ManagedElsaHandoffRequest request,
         CancellationToken cancellationToken = default)
     {
-        var target = await identities.FindAsync(request.OrganizationId, request.InstanceId, cancellationToken);
+        var target = await identities.EnsureAsync(request.OrganizationId, request.InstanceId, cancellationToken);
         if (target is null ||
             !string.Equals(target.Audience, request.Audience, StringComparison.Ordinal) ||
             !ManagedElsaHandoffIssuer.HasExactRedirectBinding(target.CallbackUri, request.RedirectUri))
