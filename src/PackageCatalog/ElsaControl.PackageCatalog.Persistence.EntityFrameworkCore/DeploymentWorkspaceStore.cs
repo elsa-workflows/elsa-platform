@@ -1231,7 +1231,9 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             return;
 
         var operation = await dbContext.ElsaInstanceOperations
-            .SingleOrDefaultAsync(x => x.DeploymentRunId == run.Id && x.InstanceId == instanceId,
+            .SingleOrDefaultAsync(x => x.WorkspaceId == run.WorkspaceId
+                && x.DeploymentRunId == run.Id
+                && x.InstanceId == instanceId,
                 cancellationToken);
         var instance = await dbContext.ElsaInstances
             .SingleOrDefaultAsync(x => x.Id == instanceId && x.WorkspaceId == run.WorkspaceId,
