@@ -14,7 +14,7 @@ public static class AzureProviderOperationValidation
         if (checkpoint.Resources is null) throw new ArgumentException("Resources are required.", nameof(checkpoint));
         if (!Enum.IsDefined(checkpoint.Phase) || !Enum.IsDefined(checkpoint.Health) || !IsSafeCode(checkpoint.Code))
             throw new ArgumentException("Checkpoint code, phase, and health are required.", nameof(checkpoint));
-        if (checkpoint.Message is null || checkpoint.Message.Length > 2000 || checkpoint.Message.Any(char.IsControl) || ContainsSensitiveMarker(checkpoint.Message))
+        if (string.IsNullOrWhiteSpace(checkpoint.Message) || checkpoint.Message.Length > 2000 || checkpoint.Message.Any(char.IsControl) || ContainsSensitiveMarker(checkpoint.Message))
             throw new ArgumentException("Checkpoint message is unsafe.", nameof(checkpoint));
         ValidateEndpoint(checkpoint.Endpoint);
         if (!IsSafeDiagnostics(checkpoint.Diagnostics)) throw new ArgumentException("Diagnostics are required and bounded.", nameof(checkpoint));
@@ -169,7 +169,8 @@ public static class AzureProviderOperationValidation
         value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) && value["sha256:".Length..].All(Uri.IsHexDigit);
 
     private static bool IsSafeRepository(string? value) => value is not null && value.Length <= 512 &&
-        Regex.IsMatch(value, "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?:/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*\\z", RegexOptions.IgnoreCase);
+        Regex.IsMatch(value, "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?:/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*\\z",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     public static AzureProviderOperationRequest Normalize(AzureProviderOperationRequest request)
     {
