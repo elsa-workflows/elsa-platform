@@ -7,11 +7,11 @@ namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
 public sealed class SqlServerMigrationScriptTests
 {
     [Fact]
-    public void Full_idempotent_script_defers_temporary_sync_run_column_binding()
+    public void Full_idempotent_script_uses_dynamic_binding_for_historical_backfills()
     {
         var options = new DbContextOptionsBuilder<CatalogDbContext>()
             .UseSqlServer(
-                "Server=localhost;Database=ElsaControlMigrationScript;Integrated Security=True;TrustServerCertificate=True",
+                @"Server=(localdb)\MSSQLLocalDB;Initial Catalog=ElsaControlMigrationScriptTests;Integrated Security=True;Encrypt=False",
                 sqlServer => sqlServer.MigrationsAssembly(CatalogDatabaseServiceCollectionExtensions.SqlServerMigrationsAssembly))
             .Options;
         using var db = new CatalogDbContext(options);
