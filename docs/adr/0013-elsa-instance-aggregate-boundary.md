@@ -52,7 +52,8 @@ Introduce `ElsaInstance` as a new aggregate root under `Organization` and `Works
   catalog admission evidence, not a schema or code change.
 - Placement intent contains only provider-neutral outcomes. Provider resource IDs,
   credentials, raw secrets and infrastructure topology stay in provider adapters.
-- Mutations use optimistic concurrency and durable idempotency records. One active
+- Mutations use optimistic concurrency and durable idempotency records. Operation
+  rows are retained as durable history and cannot be deleted. One active
   instance operation and one active or uncertain deployment run per mapped
   environment are permitted. The API commits intent/operation/outbox first; a worker
   later resolves asynchronously and atomically commits the resolved plan, operation

@@ -249,6 +249,10 @@ public sealed class DeploymentWorkspaceTierPersistenceTests : IDisposable
             environmentId);
         Assert.Equal(1, productionCapabilityCount);
 
+        // Current application services require the current schema. The historical
+        // assertions above prove the tier migration itself; advance the database
+        // before exercising today's store contract.
+        await migrator.MigrateAsync();
         var store = new DeploymentWorkspaceStore(db);
         var productionTier = (await store.ListTiersAsync(workspaceId)).Single(x => x.Name == EnvironmentTier.Production.ToString());
         var createdEnvironment = await store.CreateEnvironmentAsync(

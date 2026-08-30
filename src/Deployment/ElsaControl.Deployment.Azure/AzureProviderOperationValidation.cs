@@ -53,15 +53,15 @@ public static class AzureProviderOperationValidation
             !ContainsSensitiveMarker(diagnostic.Message));
     }
 
+    public static void ValidateCode(string code)
+    {
+        if (!IsSafeCode(code)) throw new ArgumentException("Operation event code is unsafe.", nameof(code));
+    }
+
     public static void ValidateMessage(string message)
     {
         if (string.IsNullOrWhiteSpace(message) || message.Length > 2000 || message.Any(char.IsControl) || ContainsSensitiveMarker(message))
-            throw new ArgumentException("Diagnostic message is unsafe.", nameof(message));
-    }
-
-    public static void ValidateCode(string code)
-    {
-        if (!IsSafeCode(code)) throw new ArgumentException("Diagnostic code is unsafe.", nameof(code));
+            throw new ArgumentException("Operation event message is unsafe.", nameof(message));
     }
 
     public static void ValidateLeaseToken(string leaseToken)
@@ -133,9 +133,9 @@ public static class AzureProviderOperationValidation
     {
         if (references is null) throw new ArgumentNullException(nameof(references));
         ValidateAzureName(references.ResourceGroupName, 90, "resourceGroupName");
-        ValidateAzureReference(references.FoundationDeploymentId, "foundationDeploymentId");
-        ValidateAzureReference(references.WorkloadDeploymentId, "workloadDeploymentId");
-        ValidateAzureReference(references.WorkloadResourceId, "workloadResourceId");
+        ValidateAzureReference(references.FoundationDeploymentId, 512, "foundationDeploymentId");
+        ValidateAzureReference(references.WorkloadDeploymentId, 512, "workloadDeploymentId");
+        ValidateAzureReference(references.WorkloadResourceId, 1024, "workloadResourceId");
         ValidateAzureName(references.WorkloadRevisionName, 128, "workloadRevisionName");
         ValidateAzureName(references.StableTrafficRevisionName, 128, "stableTrafficRevisionName");
     }
@@ -153,10 +153,10 @@ public static class AzureProviderOperationValidation
             throw new ArgumentException("Azure resource name is unsafe.", name);
     }
 
-    private static void ValidateAzureReference(string? value, string name)
+    private static void ValidateAzureReference(string? value, int maxLength, string name)
     {
         if (value is null) return;
-        if (value.Length > 1024 || value.Any(char.IsControl) || value.Any(char.IsWhiteSpace) ||
+        if (value.Length > maxLength || value.Any(char.IsControl) || value.Any(char.IsWhiteSpace) ||
             value.Contains("?", StringComparison.Ordinal) || value.Contains("#", StringComparison.Ordinal) ||
             value.Contains("@", StringComparison.Ordinal) || value.Contains("://", StringComparison.Ordinal) ||
             ContainsSensitiveMarker(value) || !Regex.IsMatch(value, "^[A-Za-z0-9._:/()\\-]+$"))

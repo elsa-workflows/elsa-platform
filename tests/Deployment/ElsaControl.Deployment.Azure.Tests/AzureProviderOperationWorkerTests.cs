@@ -274,7 +274,7 @@ public sealed class AzureProviderOperationWorkerTests
         public Task<AzureProviderOperation?> CheckpointAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderCheckpoint checkpoint, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
             Task.FromResult<AzureProviderOperation?>(null);
 
-        public Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, string message, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
+        public Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
             Task.FromResult<AzureProviderOperation?>(null);
 
         public Task<int> RecoverStaleAsync(DateTimeOffset now, CancellationToken cancellationToken = default) => Task.FromResult(0);
@@ -351,7 +351,7 @@ public sealed class AzureProviderOperationWorkerTests
             return Task.FromResult<AzureProviderOperation?>(updated);
         }
 
-        public Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, string message, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
+        public Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
         {
             var index = Operations.FindIndex(operation => operation.Id == operationId && operation.Status == AzureProviderOperationStatus.Running &&
                 (!expectedVersion.HasValue || operation.Version == expectedVersion.Value));

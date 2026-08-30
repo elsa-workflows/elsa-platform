@@ -17,6 +17,7 @@
     <ProjectReference Include="..\..\..\src\RuntimeBuilder\ElsaControl.RuntimeBuilder.Abstractions\ElsaControl.RuntimeBuilder.Abstractions.csproj" />
     <ProjectReference Include="..\..\..\src\RuntimeBuilder\ElsaControl.RuntimeBuilder.Core\ElsaControl.RuntimeBuilder.Core.csproj" />
     <ProjectReference Include="..\..\..\src\RuntimeBuilder\ElsaControl.RuntimeBuilder.DeploymentTemplates\ElsaControl.RuntimeBuilder.DeploymentTemplates.csproj" />
+    <ProjectReference Include="..\..\..\src\Deployment\ElsaControl.Deployment.Abstractions\ElsaControl.Deployment.Abstractions.csproj" />
     <ProjectReference Include="..\..\PackageCatalog\ElsaControl.PackageCatalog.Testing\ElsaControl.PackageCatalog.Testing.csproj" />
   </ItemGroup>
 

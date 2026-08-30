@@ -113,14 +113,26 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
                 .ThenInclude(x => x.Features)
                 .ThenInclude(x => x.Settings)
             .Where(x => x.Source != null && x.Source.Enabled && x.Source.Browseable && x.Source.SoftDeletedAt == null)
-            .Where(x => (x.Source!.Visibility == PackageSourceVisibility.Public && x.Source.OwnerWorkspaceId == null) ||
-                        (workspaceId.HasValue && x.Source.Visibility == PackageSourceVisibility.Workspace && x.Source.OwnerWorkspaceId == workspaceId.Value))
             .Where(x => x.Approved && x.Listed)
             .Where(x => x.Versions.Any(version =>
                 version.IsListed &&
                 version.ApprovalStatus == PackageApprovalStatus.Approved &&
                 version.ValidationStatus == ValidationStatus.Valid &&
                 !version.SuspiciousChangeDetected));
+
+        if (workspaceId is { } requestedWorkspaceId)
+        {
+            query = query.Where(x =>
+                (x.Source!.Visibility == PackageSourceVisibility.Public && x.Source.OwnerWorkspaceId == null) ||
+                (x.Source.Visibility == PackageSourceVisibility.Workspace &&
+                 x.Source.OwnerWorkspaceId == requestedWorkspaceId &&
+                 x.Source.OwnerWorkspace != null &&
+                 x.Source.OwnerWorkspace.SoftDeletedAt == null));
+        }
+        else
+        {
+            query = query.Where(x => x.Source!.Visibility == PackageSourceVisibility.Public && x.Source.OwnerWorkspaceId == null);
+        }
 
         return sourceIds is { Count: > 0 }
             ? query.Where(x => sourceIds.Contains(x.SourceId))
@@ -170,7 +182,22 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
             version.SchemaVersion,
             versionRuntimeKinds,
             version.PublishedAt,
-            version.Features.Select(feature => ToFeatureProjection(feature, version, compatibility, featureCategories)).ToList());
+            version.Features.Select(feature => ToFeatureProjection(feature, version, compatibility, featureCategories)).ToList(),
+            NormalizeManifestDigest(version.ManifestHash));
+    }
+
+    private static string? NormalizeManifestDigest(string? manifestHash)
+    {
+        if (string.IsNullOrWhiteSpace(manifestHash))
+            return null;
+
+        var normalized = manifestHash.Trim();
+        if (normalized.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized["sha256:".Length..];
+
+        return normalized.Length == 64 && normalized.All(Uri.IsHexDigit)
+            ? $"sha256:{normalized.ToLowerInvariant()}"
+            : null;
     }
 
     private static PublicFeatureProjection ToFeatureProjection(

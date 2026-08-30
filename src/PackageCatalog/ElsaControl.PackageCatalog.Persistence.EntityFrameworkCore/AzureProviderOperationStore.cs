@@ -260,15 +260,14 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         entity.WorkloadRevisionName = resources.WorkloadRevisionName; entity.StableTrafficRevisionName = resources.StableTrafficRevisionName;
         entity.Endpoint = checkpoint.Endpoint; entity.Health = checkpoint.Health;
         entity.DiagnosticsJson = diagnosticsJson;
-        AddTransition(entity, checkpoint.Code, checkpoint.Message, now);
+        AddTransition(entity, checkpoint.Code, checkpoint.Code, now);
         try { await db.SaveChangesAsync(cancellationToken); } catch (DbUpdateConcurrencyException) { db.ChangeTracker.Clear(); return null; }
         return ToModel(entity);
     }
 
-    public async Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, string message, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
+    public async Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
     {
         AzureProviderOperationValidation.ValidateLeaseToken(leaseToken);
-        AzureProviderOperationValidation.ValidateMessage(message);
         AzureProviderOperationValidation.ValidateCode(code);
         if (status is not (AzureProviderOperationStatus.Succeeded or AzureProviderOperationStatus.Failed or AzureProviderOperationStatus.Cancelled or AzureProviderOperationStatus.RecoveryRequired))
             throw new ArgumentException("Invalid final operation status.", nameof(status));
@@ -281,7 +280,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         entity.CompletionLeaseTokenHash = entity.LeaseTokenHash;
         entity.CompletionFingerprint = completionFingerprint;
         entity.LeaseTokenHash = null; entity.LeaseExpiresAt = null; entity.WorkerId = null;
-        AddTransition(entity, code, message, now);
+        AddTransition(entity, code, code, now);
         try { await db.SaveChangesAsync(cancellationToken); } catch (DbUpdateConcurrencyException) { db.ChangeTracker.Clear(); return null; }
         return ToModel(entity);
     }
@@ -346,7 +345,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             Status = entity.Status,
             Phase = entity.Phase,
             Code = code,
-            Message = code,
+            Message = message,
             OccurredAt = now
         });
     }

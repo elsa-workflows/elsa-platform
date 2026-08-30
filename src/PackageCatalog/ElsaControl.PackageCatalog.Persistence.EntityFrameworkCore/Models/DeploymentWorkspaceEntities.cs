@@ -1,5 +1,6 @@
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Workspace;
+using ElsaControl.Deployment.Abstractions.Instances;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models;
 
@@ -22,6 +23,12 @@ internal sealed class DeploymentEnvironmentEntity
     public Guid WorkspaceId { get; set; }
     public Guid ApplicationId { get; set; }
     public DeploymentApplicationEntity? Application { get; set; }
+    /// <summary>
+    /// Optional explicit managed-instance binding. A null value deliberately leaves
+    /// legacy/customer-owned environments unbound.
+    /// </summary>
+    public Guid? ElsaInstanceId { get; set; }
+    public ElsaInstanceEntity? ElsaInstance { get; set; }
     public string Name { get; set; } = "";
     public EnvironmentTier Tier { get; set; }
     public Guid? TierId { get; set; }
@@ -37,6 +44,168 @@ internal sealed class DeploymentEnvironmentEntity
     public List<DesiredStateRevisionEntity> Revisions { get; set; } = [];
     public List<ObservabilityBindingEntity> ObservabilityBindings { get; set; } = [];
     public List<DriftReportItemEntity> DriftReports { get; set; } = [];
+}
+
+/// <summary>
+/// Relational projection of the provider-neutral Elsa instance aggregate. Intent
+/// values are normalized so release lines and catalog values remain data, while
+/// bounded JSON is used only for typed extension values and component digests.
+/// </summary>
+internal sealed class ElsaInstanceEntity
+{
+    public Guid Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public string Name { get; set; } = "";
+    public string Slug { get; set; } = "";
+
+    public string DistributionId { get; set; } = "";
+    public string ReleaseLine { get; set; } = "";
+    public string? RequestedVersion { get; set; }
+    public string Channel { get; set; } = "";
+    public string PatchUpdates { get; set; } = "";
+    public string MinorUpdates { get; set; } = "";
+    public string MajorMigrations { get; set; } = "";
+
+    public string TopologyId { get; set; } = "";
+    public string? FeaturePresetId { get; set; }
+    public string FeatureOverridesJson { get; set; } = "{}";
+    public string? PackagePolicy { get; set; }
+    public string? ConfigurationShapeRevisionId { get; set; }
+
+    public string TargetMode { get; set; } = "";
+    public string RegionCode { get; set; } = "";
+    public string IsolationProfile { get; set; } = "";
+    public string CapacityProfile { get; set; } = "";
+    public string NetworkOutcome { get; set; } = "";
+    public string DomainOutcome { get; set; } = "";
+
+    public ElsaDesiredLifecycle DesiredLifecycle { get; set; }
+    public ElsaObservedLifecycle ObservedLifecycle { get; set; }
+    public ElsaInstanceHealth Health { get; set; }
+
+    public string? DesiredStateRevisionId { get; set; }
+    public string? ResolvedPlanId { get; set; }
+    public int? ResolvedPlanSchemaVersion { get; set; }
+    public string? ResolvedPlanContentHash { get; set; }
+    public string? ResolvedPlanUri { get; set; }
+    public string? CurrentReleaseDistributionId { get; set; }
+    public string? CurrentReleaseLine { get; set; }
+    public string? CurrentReleaseVersion { get; set; }
+    public string? CurrentReleaseManifestDigest { get; set; }
+    public string? CurrentReleaseComponentDigestsJson { get; set; }
+    public string? CurrentDeploymentId { get; set; }
+    public string? CurrentDeploymentRevisionId { get; set; }
+    public string? CurrentDeploymentEndpointUri { get; set; }
+    public string? PlacementAssignmentId { get; set; }
+    public string? ElsaTenantId { get; set; }
+    public string? ElsaTenantAudience { get; set; }
+    public string? LastOperationId { get; set; }
+
+    public int Version { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
+
+    public List<ElsaInstanceOperationEntity> Operations { get; set; } = [];
+    public List<ElsaInstanceAuditEventEntity> AuditEvents { get; set; } = [];
+    public List<ElsaInstanceMigrationEntity> Migrations { get; set; } = [];
+    public ElsaInstanceIdentityBindingEntity? IdentityBinding { get; set; }
+}
+
+internal sealed class ElsaInstanceOperationEntity
+{
+    public Guid Id { get; set; }
+    public Guid? InstanceId { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public ElsaInstanceEntity? Instance { get; set; }
+    public ElsaInstanceOperationAction Action { get; set; }
+    public string IdempotencyScope { get; set; } = "";
+    public string IdempotencyKey { get; set; } = "";
+    public string RequestHash { get; set; } = "";
+    public int ExpectedVersion { get; set; }
+    public ElsaInstanceOperationState State { get; set; }
+    public int AttemptNumber { get; set; }
+    public DateTimeOffset AcceptedAt { get; set; }
+    public DateTimeOffset? StartedAt { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
+    public string? WorkerId { get; set; }
+    /// <summary>One-way SHA-256 lease proof; the bearer token is never persisted.</summary>
+    public string? LeaseTokenHash { get; set; }
+    public DateTimeOffset? LeaseExpiresAt { get; set; }
+    public DateTimeOffset? HeartbeatAt { get; set; }
+    public string? DesiredStateRevisionId { get; set; }
+    public string? ResolvedPlanId { get; set; }
+    public Guid? DeploymentRunId { get; set; }
+    public string? FailureCode { get; set; }
+    public string? FailureSummary { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+internal sealed class ElsaInstanceAuditEventEntity
+{
+    public Guid Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid InstanceId { get; set; }
+    public ElsaInstanceEntity? Instance { get; set; }
+    public long Sequence { get; set; }
+    public string EventType { get; set; } = "";
+    public Guid? ActorAccountId { get; set; }
+    public string? OperatorSubject { get; set; }
+    public Guid? OperationId { get; set; }
+    public Guid? DeploymentRunId { get; set; }
+    public string? PriorState { get; set; }
+    public string? NewState { get; set; }
+    public string? DesiredStateRevisionId { get; set; }
+    public string? PlanReference { get; set; }
+    public string? DiagnosticCode { get; set; }
+    public string? Summary { get; set; }
+    public string? RequestKeyHash { get; set; }
+    public DateTimeOffset OccurredAt { get; set; }
+}
+
+internal sealed class ElsaInstanceIdentityBindingEntity
+{
+    public Guid InstanceId { get; set; }
+    public ElsaInstanceEntity? Instance { get; set; }
+    public string Audience { get; set; } = "";
+    public string CanonicalCallbackUri { get; set; } = "";
+    public string VerifiedEndpointOrigin { get; set; } = "";
+    public int BindingVersion { get; set; }
+    public DateTimeOffset ChangedAt { get; set; }
+}
+
+internal sealed class ElsaInstanceMigrationEntity
+{
+    public Guid MigrationId { get; set; }
+    public Guid InstanceId { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public ElsaInstanceEntity? Instance { get; set; }
+    public string? SourcePlanId { get; set; }
+    public string? SourcePlanUri { get; set; }
+    public string? SourceReleaseLine { get; set; }
+    public string? SourceVersion { get; set; }
+    public string? SourceManifestDigest { get; set; }
+    public string? SourceDeploymentId { get; set; }
+    public string? TargetPlanId { get; set; }
+    public string? TargetPlanUri { get; set; }
+    public string? TargetReleaseLine { get; set; }
+    public string? TargetVersion { get; set; }
+    public string? TargetManifestDigest { get; set; }
+    public string? TargetDeploymentId { get; set; }
+    public string Phase { get; set; } = "";
+    public string SourceAccessMode { get; set; } = "";
+    public DateTimeOffset? CutoverAt { get; set; }
+    public DateTimeOffset? SourceRetainUntil { get; set; }
+    public Guid? EarlyReleaseApprovedByAccountId { get; set; }
+    public DateTimeOffset? EarlyReleaseApprovedAt { get; set; }
+    public DateTimeOffset? SourceReleasedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
 }
 
 internal sealed class DeploymentTierDefinitionEntity
@@ -328,6 +497,12 @@ internal sealed class DeploymentRunEntity
 {
     public Guid Id { get; set; }
     public Guid WorkspaceId { get; set; }
+    /// <summary>
+    /// The managed instance reservation scope. Legacy/customer-owned deployment
+    /// runs remain null so adding managed-instance persistence does not change
+    /// their existing queue semantics.
+    /// </summary>
+    public Guid? ElsaInstanceId { get; set; }
     public Guid ApplicationId { get; set; }
     public Guid EnvironmentId { get; set; }
     public DeploymentEnvironmentEntity? Environment { get; set; }
