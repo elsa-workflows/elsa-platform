@@ -21,12 +21,12 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
             // Strips the "Elsa." prefix (5 chars). Keep in sync with PackageDisplayNamePolicy.ElsaPackagePrefix.
             migrationBuilder.Sql(
                 """
-                UPDATE Packages
+                EXEC(N'UPDATE Packages
                 SET DisplayName = CASE
-                    WHEN LOWER(LEFT(PackageId, 5)) = 'elsa.' THEN SUBSTRING(PackageId, 6, LEN(PackageId))
+                    WHEN LOWER(LEFT(PackageId, 5)) = ''elsa.'' THEN SUBSTRING(PackageId, 6, LEN(PackageId))
                     ELSE PackageId
                 END
-                WHERE DisplayName = ''
+                WHERE DisplayName = ''''');
                 """);
         }
 
