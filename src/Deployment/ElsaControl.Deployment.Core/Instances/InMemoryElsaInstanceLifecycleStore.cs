@@ -1,4 +1,6 @@
 using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Core.Cockpit;
+using ElsaControl.Deployment.Core.Workspace;
 
 namespace ElsaControl.Deployment.Core.Instances;
 
@@ -7,12 +9,17 @@ namespace ElsaControl.Deployment.Core.Instances;
 /// models the atomic boundary required of the relational implementation without
 /// introducing persistence or provider concerns into the lifecycle service.
 /// </summary>
-public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleStore
+public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleStore, IElsaInstanceLifecycleWorkerStore
 {
     private readonly object _gate = new();
     private readonly Dictionary<Guid, ElsaInstance> _instances = [];
     private readonly Dictionary<Guid, ElsaInstanceOperation> _operations = [];
     private readonly Dictionary<Guid, ElsaInstanceLifecycleOutboxMessage> _outbox = [];
+    private readonly Dictionary<Guid, ElsaInstanceLifecycleResolutionInput> _resolutionInputs = [];
+    private readonly Dictionary<Guid, string> _claims = [];
+    private readonly Dictionary<string, ElsaInstanceLifecycleResolvedPlan> _resolvedPlans = new(StringComparer.Ordinal);
+    private readonly Dictionary<Guid, ElsaInstanceLifecycleDeploymentRun> _deploymentRuns = [];
+    private readonly Dictionary<Guid, ElsaInstanceLifecycleRecordedFailure> _failures = [];
 
     public IReadOnlyCollection<ElsaInstance> Instances
     {
@@ -38,6 +45,51 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
         {
             lock (_gate)
                 return _outbox.Values.ToArray();
+        }
+    }
+
+    public IReadOnlyCollection<ElsaInstanceLifecycleDeploymentRun> DeploymentRuns
+    {
+        get
+        {
+            lock (_gate)
+                return _deploymentRuns.Values.ToArray();
+        }
+    }
+
+    public IReadOnlyCollection<ElsaInstanceLifecycleResolvedPlan> ResolvedPlans
+    {
+        get
+        {
+            lock (_gate)
+                return _resolvedPlans.Values.ToArray();
+        }
+    }
+
+    public IReadOnlyCollection<ElsaInstanceLifecycleRecordedFailure> Failures
+    {
+        get
+        {
+            lock (_gate)
+                return _failures.Values.ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Supplies safe, already-admitted resolution inputs to the worker seam. A real
+    /// adapter reconstructs these from governed persistence after reading the ID-only
+    /// outbox; this recording store keeps them explicit for core tests.
+    /// </summary>
+    public void RegisterResolutionInput(Guid operationId, ElsaInstanceLifecycleResolutionInput input)
+    {
+        if (operationId == Guid.Empty)
+            throw new ArgumentException("Operation ID is required.", nameof(operationId));
+        ArgumentNullException.ThrowIfNull(input);
+        lock (_gate)
+        {
+            if (!_operations.ContainsKey(operationId))
+                throw new KeyNotFoundException("Lifecycle operation does not exist.");
+            _resolutionInputs[operationId] = input;
         }
     }
 
@@ -186,6 +238,182 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
             _operations[operation.Id] = operation;
             _outbox[outbox.Id] = outbox;
             return Task.FromResult(new ElsaInstanceLifecycleAcceptance(instance, operation, outbox, false));
+        }
+    }
+
+    public Task<ElsaInstanceLifecycleWorkItem?> TryClaimNextAsync(
+        string workerId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(workerId))
+            throw new ArgumentException("Lifecycle worker identity is required.", nameof(workerId));
+
+        lock (_gate)
+        {
+            foreach (var outbox in _outbox.Values.OrderBy(x => x.CreatedAt).ThenBy(x => x.Id))
+            {
+                if (!_operations.TryGetValue(outbox.OperationId, out var operation) ||
+                    !_instances.TryGetValue(outbox.InstanceId, out var instance))
+                    continue;
+
+                // Waiting deletes are durable successors, not resolver work. They
+                // become eligible only through a separate continuation step after
+                // their prior operation reaches a terminal state.
+                if (operation.State == ElsaInstanceOperationState.WaitingForPriorOperation)
+                    continue;
+                if (operation.State != ElsaInstanceOperationState.Accepted)
+                    continue;
+
+                if (_claims.ContainsKey(operation.Id))
+                    continue;
+                _claims[operation.Id] = workerId.Trim();
+                var input = _resolutionInputs.GetValueOrDefault(operation.Id);
+                return Task.FromResult<ElsaInstanceLifecycleWorkItem?>(
+                    new ElsaInstanceLifecycleWorkItem(outbox, operation, instance, input!));
+            }
+
+            return Task.FromResult<ElsaInstanceLifecycleWorkItem?>(null);
+        }
+    }
+
+    public Task<ElsaInstanceLifecycleWorkerResult> CommitResolvedAsync(
+        ElsaInstanceLifecycleResolutionCommit commit,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(commit);
+        commit.Validate();
+
+        lock (_gate)
+        {
+            if (!_operations.TryGetValue(commit.OperationId, out var currentOperation) ||
+                !_instances.TryGetValue(commit.InstanceId, out var currentInstance) ||
+                !_outbox.Values.Any(x => x.Id == commit.OutboxId && x.OperationId == commit.OperationId))
+                throw new ElsaInstanceLifecycleConflictException("Lifecycle work item no longer exists.");
+
+            var currentOutbox = _outbox.Values.Single(x => x.Id == commit.OutboxId);
+            if (currentOutbox.WorkspaceId != commit.WorkspaceId || currentOutbox.InstanceId != commit.InstanceId ||
+                currentOutbox.Action != currentOperation.Action ||
+                !string.Equals(currentOutbox.RequestHash, commit.RequestHash, StringComparison.Ordinal))
+                throw new ElsaInstanceLifecycleConflictException("Lifecycle work item envelope is inconsistent.");
+
+            if (currentOperation.State == ElsaInstanceOperationState.Queued &&
+                _deploymentRuns.Values.FirstOrDefault(x => x.Operation.Id == commit.OperationId) is { } existingRun)
+                return Task.FromResult(new ElsaInstanceLifecycleWorkerResult(
+                    ElsaInstanceLifecycleWorkerOutcome.AlreadyCompleted,
+                    currentOperation,
+                    currentInstance,
+                    existingRun.Run));
+
+            if (currentOperation.State != ElsaInstanceOperationState.Accepted ||
+                !_claims.TryGetValue(commit.OperationId, out var claimWorker) ||
+                !string.Equals(claimWorker, commit.WorkerId, StringComparison.Ordinal) ||
+                currentOperation.InstanceId != commit.InstanceId ||
+                !string.Equals(currentOperation.RequestHash, commit.RequestHash, StringComparison.Ordinal))
+                throw new ElsaInstanceLifecycleConflictException("Lifecycle work item is no longer owned by this worker.");
+
+            var target = commit.DeploymentTarget;
+            var activeRun = _deploymentRuns.Values.FirstOrDefault(x =>
+                x.Run.WorkspaceId == commit.WorkspaceId &&
+                x.Run.EnvironmentId == target.EnvironmentId &&
+                x.Run.Status is WorkspaceDeploymentRunStatus.Queued or WorkspaceDeploymentRunStatus.Running or WorkspaceDeploymentRunStatus.RecoveryRequired);
+            if (activeRun is not null)
+            {
+                var failed = currentOperation.TransitionTo(ElsaInstanceOperationState.Failed);
+                _operations[commit.OperationId] = failed;
+                _failures[commit.OperationId] = new ElsaInstanceLifecycleRecordedFailure(
+                    commit.OperationId, "run.reservation.conflict", "Lifecycle target already has active work.", commit.CommittedAt);
+                _claims.Remove(commit.OperationId);
+                return Task.FromResult(new ElsaInstanceLifecycleWorkerResult(
+                    ElsaInstanceLifecycleWorkerOutcome.Conflict, failed, currentInstance,
+                    FailureCode: "run.reservation.conflict",
+                    FailureSummary: "Lifecycle target already has active work."));
+            }
+
+            if (_resolvedPlans.TryGetValue(commit.Plan.Reference.PlanId, out var existingPlan) &&
+                (!Equals(existingPlan.Reference, commit.Plan.Reference) ||
+                 !string.Equals(existingPlan.SerializedPlan, commit.Plan.SerializedPlan, StringComparison.Ordinal)))
+                throw new ElsaInstanceLifecycleConflictException("Resolved plan identity is already bound to different content.");
+
+            var runId = Guid.NewGuid();
+            var run = new WorkspaceDeploymentRun(
+                runId,
+                commit.WorkspaceId,
+                target.ApplicationId,
+                target.EnvironmentId,
+                target.EngineId,
+                target.SourceRevisionId,
+                PreviousDeployedRevisionId: null,
+                RollbackSourceRunId: null,
+                WorkspaceDeploymentRunStatus.Queued,
+                DeploymentValidationOutcome.Passed,
+                target.ConfirmationId,
+                target.ActorAccountId,
+                commit.CommittedAt,
+                StartedAt: null,
+                CompletedAt: null,
+                commit.CommittedAt,
+                WorkerId: null,
+                WorkerHeartbeatAt: null,
+                AttemptNumber: 1,
+                RecoveryReason: null,
+                FailureMessage: null);
+            var storedPlan = commit.Plan;
+            _resolvedPlans[commit.Plan.Reference.PlanId] = storedPlan;
+            _instances[commit.InstanceId] = commit.Instance;
+            _operations[commit.OperationId] = commit.Operation;
+            _deploymentRuns[runId] = new ElsaInstanceLifecycleDeploymentRun(run, commit.Operation, commit.InstanceId);
+            _claims.Remove(commit.OperationId);
+            return Task.FromResult(new ElsaInstanceLifecycleWorkerResult(
+                ElsaInstanceLifecycleWorkerOutcome.Queued,
+                commit.Operation,
+                commit.Instance,
+                run));
+        }
+    }
+
+    public Task<ElsaInstanceLifecycleWorkerResult> FailResolutionAsync(
+        ElsaInstanceLifecycleResolutionFailure failure,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(failure);
+        failure.Validate();
+
+        lock (_gate)
+        {
+            if (!_operations.TryGetValue(failure.OperationId, out var currentOperation) ||
+                !_instances.TryGetValue(failure.InstanceId, out var instance) ||
+                !_outbox.Values.Any(x => x.Id == failure.OutboxId && x.OperationId == failure.OperationId))
+                throw new ElsaInstanceLifecycleConflictException("Lifecycle work item no longer exists.");
+
+            if (currentOperation.State == ElsaInstanceOperationState.Failed &&
+                _failures.TryGetValue(failure.OperationId, out var existingFailure))
+                return Task.FromResult(new ElsaInstanceLifecycleWorkerResult(
+                    ElsaInstanceLifecycleWorkerOutcome.AlreadyCompleted,
+                    currentOperation,
+                    instance,
+                    FailureCode: existingFailure.Code,
+                    FailureSummary: existingFailure.Summary));
+            if (currentOperation.State != ElsaInstanceOperationState.Accepted ||
+                !_claims.TryGetValue(failure.OperationId, out var claimWorker) ||
+                !string.Equals(claimWorker, failure.WorkerId, StringComparison.Ordinal) ||
+                !string.Equals(currentOperation.RequestHash, failure.RequestHash, StringComparison.Ordinal))
+                throw new ElsaInstanceLifecycleConflictException("Lifecycle work item is no longer owned by this worker.");
+
+            var failed = currentOperation.TransitionTo(ElsaInstanceOperationState.Failed);
+            _operations[failure.OperationId] = failed;
+            _claims.Remove(failure.OperationId);
+            _failures[failure.OperationId] = new ElsaInstanceLifecycleRecordedFailure(
+                failure.OperationId, failure.Code, failure.Summary, failure.FailedAt);
+            return Task.FromResult(new ElsaInstanceLifecycleWorkerResult(
+                ElsaInstanceLifecycleWorkerOutcome.Failed,
+                failed,
+                instance,
+                FailureCode: failure.Code,
+                FailureSummary: failure.Summary));
         }
     }
 

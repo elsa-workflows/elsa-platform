@@ -21,7 +21,7 @@ namespace ElsaControl.RuntimeBuilder.Core.Plans;
 public sealed class ElsaInstancePlanResolver(
     IPublicCatalogQueries catalog,
     IPackageCompatibilityService compatibility,
-    ElsaInstancePlanResolutionOptions? options = null)
+    ElsaInstancePlanResolutionOptions? options = null) : IElsaInstancePlanResolver
 {
     private const int MaxPlanIdLength = 128;
     private static readonly Regex PlanIdPattern = new("^[A-Za-z0-9][A-Za-z0-9._-]*$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
@@ -886,10 +886,7 @@ public sealed class ElsaInstancePlanResolver(
         || version.StartsWith(releaseLine + ".", StringComparison.OrdinalIgnoreCase);
 
     private static string ComputePlanHash(ResolvedElsaApplicationPlan plan)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(ResolvedElsaApplicationPlanSerialization.Serialize(plan)));
-        return $"sha256:{Convert.ToHexString(bytes).ToLowerInvariant()}";
-    }
+        => ResolvedElsaApplicationPlanSerialization.ComputeContentHash(plan);
 
     private static bool IsSha256(string? value) =>
         !string.IsNullOrWhiteSpace(value)

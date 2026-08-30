@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Buffers;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace ElsaControl.RuntimeBuilder.Abstractions.Plans;
 
@@ -15,6 +17,12 @@ public static class ResolvedElsaApplicationPlanSerialization
     {
         ArgumentNullException.ThrowIfNull(plan);
         return JsonSerializer.Serialize(plan.Normalize(), Options);
+    }
+
+    public static string ComputeContentHash(ResolvedElsaApplicationPlan plan)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(Serialize(plan)));
+        return $"sha256:{Convert.ToHexString(bytes).ToLowerInvariant()}";
     }
 
     public static ResolvedElsaApplicationPlan Deserialize(string json)

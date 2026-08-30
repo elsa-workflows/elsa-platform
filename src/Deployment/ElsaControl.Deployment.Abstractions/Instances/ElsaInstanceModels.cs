@@ -711,6 +711,26 @@ public sealed record ElsaInstance
         return this with { IdentityBinding = binding };
     }
 
+    /// <summary>
+    /// Projects the immutable plan selected by the asynchronous lifecycle worker.
+    /// The plan reference and current release are accepted together so they cannot
+    /// diverge at the aggregate boundary.
+    /// </summary>
+    public ElsaInstance AttachResolvedPlan(
+        ElsaResolvedPlanReference reference,
+        ElsaCurrentResolvedRelease currentRelease)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+        ArgumentNullException.ThrowIfNull(currentRelease);
+        if (!Equals(reference, currentRelease.PlanReference))
+            throw new ArgumentException("Current release must identify the resolved plan.", nameof(currentRelease));
+        return this with
+        {
+            ResolvedPlanReference = reference,
+            CurrentResolvedRelease = currentRelease
+        };
+    }
+
     internal ElsaInstance ProjectObservation(
         ElsaObservedLifecycle observed,
         ElsaInstanceHealth health,
