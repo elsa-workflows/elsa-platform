@@ -756,18 +756,19 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
     {
         dbContext.ChangeTracker.Clear();
         var nowUtc = now.ToUniversalTime();
-        var operation = await dbContext.ElsaInstanceOperations.SingleOrDefaultAsync(x => x.Id == item.Operation.Id, cancellationToken);
-        if (operation is null || operation.State is not (ElsaInstanceOperationState.Accepted or ElsaInstanceOperationState.Running) ||
-            !string.Equals(operation.WorkerId, workerId, StringComparison.Ordinal) ||
-            !string.Equals(operation.LeaseTokenHash, HashLeaseToken(item.LeaseToken), StringComparison.Ordinal) ||
-            operation.LeaseVersion != item.LeaseVersion || operation.LeaseExpiresAt is null || operation.LeaseExpiresAt <= nowUtc)
-            return false;
-
-        operation.LeaseExpiresAt = nowUtc.Add(WorkerLeaseDuration);
-        operation.HeartbeatAt = nowUtc;
-        operation.UpdatedAt = nowUtc;
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return true;
+        var tokenHash = HashLeaseToken(item.LeaseToken);
+        var renewed = await dbContext.ElsaInstanceOperations
+            .Where(operation => operation.Id == item.Operation.Id &&
+                (operation.State == ElsaInstanceOperationState.Accepted ||
+                 operation.State == ElsaInstanceOperationState.Running) &&
+                operation.WorkerId == workerId && operation.LeaseTokenHash == tokenHash &&
+                operation.LeaseVersion == item.LeaseVersion && operation.LeaseExpiresAt != null &&
+                operation.LeaseExpiresAt > nowUtc)
+            .ExecuteUpdateAsync(updates => updates
+                .SetProperty(operation => operation.LeaseExpiresAt, nowUtc.Add(WorkerLeaseDuration))
+                .SetProperty(operation => operation.HeartbeatAt, nowUtc)
+                .SetProperty(operation => operation.UpdatedAt, nowUtc), cancellationToken);
+        return renewed == 1;
     }
 
     public async Task<ElsaInstanceDeletionResult> CommitDeletionAsync(

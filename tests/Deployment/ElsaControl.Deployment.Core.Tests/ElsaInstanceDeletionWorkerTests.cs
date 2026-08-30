@@ -319,6 +319,9 @@ public sealed class ElsaInstanceDeletionWorkerTests
             Task.FromResult(new ElsaInstanceDeletionResult(ElsaInstanceDeletionOutcome.Deleted,
                 commit.Operation, commit.Instance, commit.DiagnosticCode, commit.EvidenceFingerprint, false));
 
+        public Task<bool> RenewDeletionLeaseAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
+            CancellationToken cancellationToken = default) => Task.FromResult(true);
+
         public Task<ElsaInstanceDeletionResult> RequireDeletionRecoveryAsync(ElsaInstanceDeletionFailure failure,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
