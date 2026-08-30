@@ -39,14 +39,14 @@ public sealed class ManagedElsaHandoffConfigurationValidator(
         if (validated.Enabled)
         {
             var localEnvironment = environment.IsDevelopment() || environment.IsEnvironment("Testing");
+            var hasAnyConfiguredKey = !string.IsNullOrWhiteSpace(validated.ActiveKeyId) ||
+                                      !string.IsNullOrWhiteSpace(validated.ActivePrivateKeyPem);
             var hasConfiguredActiveKey = !string.IsNullOrWhiteSpace(validated.ActiveKeyId) &&
                                          !string.IsNullOrWhiteSpace(validated.ActivePrivateKeyPem);
             if (!localEnvironment && !hasConfiguredActiveKey)
                 throw new InvalidOperationException(
                     "Managed Elsa handoff requires a configured active signing key outside local environments.");
-            if (hasConfiguredActiveKey)
-                ManagedElsaHandoffKeyRing.ValidateConfigured(validated);
-            if (!localEnvironment)
+            if (hasAnyConfiguredKey || !localEnvironment)
                 _ = services.GetRequiredService<ManagedElsaHandoffKeyRing>().ActiveKeyId;
         }
 
@@ -148,11 +148,6 @@ public sealed class ManagedElsaHandoffKeyRing : IDisposable
 
     public static ManagedElsaHandoffKeyRing CreateEphemeral() =>
         new("prototype", RSA.Create(2048));
-
-    public static void ValidateConfigured(ManagedElsaHandoffOptions options)
-    {
-        using var _ = CreateConfigured(options);
-    }
 
     public static ManagedElsaHandoffKeyRing CreateConfigured(ManagedElsaHandoffOptions options)
     {
