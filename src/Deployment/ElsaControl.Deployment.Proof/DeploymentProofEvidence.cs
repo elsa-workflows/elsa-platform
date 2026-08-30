@@ -58,7 +58,9 @@ public static partial class DeploymentProofEvidence
         SanitizeScalar(message);
 
     private static string SanitizeScalar(string value) =>
-        UserInfoRegex().Replace(SecretAssignmentRegex().Replace(value, "$1<redacted>"), "$1<redacted>@");
+        BareUserInfoRegex().Replace(
+            UserInfoRegex().Replace(SecretAssignmentRegex().Replace(value, "$1<redacted>"), "$1<redacted>@"),
+            "${prefix}<redacted>@");
 
     private static DeploymentProofStageResult SanitizeStage(DeploymentProofStageResult stage) =>
         stage with
@@ -81,4 +83,7 @@ public static partial class DeploymentProofEvidence
 
     [GeneratedRegex("(?<scheme>[a-z][a-z0-9+.-]*://)[^/@\\s]+@", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex UserInfoRegex();
+
+    [GeneratedRegex("(?<prefix>^|[\\s,;])[^/@\\s,;]+@(?=[^/\\s,;]+/)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex BareUserInfoRegex();
 }

@@ -138,6 +138,7 @@ public sealed class DeploymentProofHarnessTests
     [Theory]
     [InlineData("oci://user@registry.example.test/runtime-combined")]
     [InlineData("https://user@example.test/runtime-combined")]
+    [InlineData("user@registry.example.test/runtime-combined")]
     [InlineData("user:password@registry.example.test/runtime-combined")]
     public async Task Credential_bearing_image_references_fail_at_selection(string imageReference)
     {
@@ -151,6 +152,8 @@ public sealed class DeploymentProofHarnessTests
         Assert.Equal("proof.selection.imageReferenceUnsafe", report.Failure.Code);
         Assert.All(report.Stages.Where(stage => stage.Stage != DeploymentProofStage.Selection), stage =>
             Assert.Equal(DeploymentProofStageStatus.Skipped, stage.Status));
+        Assert.DoesNotContain("user", report.ToJson(), StringComparison.Ordinal);
+        Assert.DoesNotContain("password", report.ToJson(), StringComparison.Ordinal);
     }
 
     [Fact]

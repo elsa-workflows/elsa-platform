@@ -360,7 +360,7 @@ public sealed class DeploymentProofHarness(
         var firstSlash = imageReference.IndexOf('/');
         var authority = firstSlash < 0 ? imageReference : imageReference[..firstSlash];
         var at = authority.IndexOf('@');
-        return at > 0 && authority[..at].Contains(':', StringComparison.Ordinal);
+        return at > 0 && !authority[(at + 1)..].StartsWith("sha256:", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsSha256Digest(string digest) =>
