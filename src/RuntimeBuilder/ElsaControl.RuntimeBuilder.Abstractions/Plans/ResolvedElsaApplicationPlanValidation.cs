@@ -112,7 +112,7 @@ public static class ResolvedElsaApplicationPlanValidator
                     findings.Add(new("configuration.secretValue.forbidden", "Secret configuration values must not be embedded in a resolved plan.", $"configuration:{entry.Key}"));
                 if (entry.SecretReference is not null && !entry.Secret)
                     findings.Add(new("configuration.nonSecretReference.invalid", "Only secret configuration entries may use a secret reference.", $"configuration:{entry.Key}"));
-                if (entry.Secret && entry.SecretReference is not null && !IsSafeSecretReference(entry.SecretReference))
+                if (entry.Secret && entry.SecretReference is not null && !SecretReferencePolicy.IsSafe(entry.SecretReference))
                     findings.Add(new("configuration.secretReference.invalid", "Secret references must be absolute secret:// locators without credentials, query strings or fragments.", $"configuration:{entry.Key}"));
                 if (entry.Required && entry.Value is null && entry.SecretReference is null)
                     findings.Add(new("configuration.requiredValue.missing", "Required configuration needs a value or secret reference.", $"configuration:{entry.Key}"));
@@ -314,23 +314,6 @@ public static class ResolvedElsaApplicationPlanValidator
     {
         if (string.IsNullOrWhiteSpace(value) || value.Length != 71 || !value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) || value[7..].Any(x => !Uri.IsHexDigit(x)))
             findings.Add(new(code, "A sha256 digest is required.", scope));
-    }
-
-    private static bool IsSafeSecretReference(string value)
-    {
-        if (value.Any(char.IsWhiteSpace) || value.Contains('%') || value.Contains('\\') ||
-            value.Contains("/../", StringComparison.Ordinal) || value.EndsWith("/..", StringComparison.Ordinal) ||
-            value.Contains("/./", StringComparison.Ordinal) || value.EndsWith("/.", StringComparison.Ordinal) ||
-            !Uri.TryCreate(value, UriKind.Absolute, out var uri))
-            return false;
-
-        return string.Equals(uri.Scheme, "secret", StringComparison.OrdinalIgnoreCase)
-            && !string.IsNullOrWhiteSpace(uri.Host)
-            && string.IsNullOrEmpty(uri.UserInfo)
-            && string.IsNullOrEmpty(uri.Query)
-            && string.IsNullOrEmpty(uri.Fragment)
-            && !uri.AbsolutePath.Contains("//", StringComparison.Ordinal)
-            && !uri.AbsolutePath.Split('/').Any(segment => segment is "." or "..");
     }
 
 }

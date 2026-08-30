@@ -140,7 +140,8 @@ public sealed class ResolvedElsaApplicationPlanTests
             "secret://vault/database/./password",
             "secret://vault/database//password",
             "secret://vault/database%2f..%2fadmin",
-            "secret://vault/database\\password"
+            "secret://vault/database\\password",
+            "secret://vault/database\0password"
         };
         var plan = CreatePlan() with
         {

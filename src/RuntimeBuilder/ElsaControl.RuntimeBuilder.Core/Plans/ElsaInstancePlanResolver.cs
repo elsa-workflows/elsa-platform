@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.PackageCatalog.Abstractions.Catalog;
 using ElsaControl.PackageCatalog.Abstractions.Compatibility;
@@ -21,6 +22,8 @@ public sealed class ElsaInstancePlanResolver(
     IPackageCompatibilityService compatibility,
     ElsaInstancePlanResolutionOptions? options = null)
 {
+    private const int MaxPlanIdLength = 128;
+    private static readonly Regex PlanIdPattern = new("^[A-Za-z0-9][A-Za-z0-9._-]*$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
     private static readonly IReadOnlyDictionary<string, ElsaCapacityProfile> EmptyProfiles =
         new Dictionary<string, ElsaCapacityProfile>(StringComparer.OrdinalIgnoreCase);
 
@@ -605,11 +608,16 @@ public sealed class ElsaInstancePlanResolver(
             if (request.ReleaseManifest.Findings is null || request.ReleaseManifest.Findings.Count > 0)
                 findings.Add(Error("releaseManifest.findings.invalid", "An admitted release manifest cannot carry unresolved admission findings.", "releaseManifest"));
         }
+        var validPlanId = false;
         if (string.IsNullOrWhiteSpace(request.PlanId))
             findings.Add(Error("plan.id.required", "An immutable plan identity is required.", "plan"));
+        else if (!IsSafePlanId(request.PlanId))
+            findings.Add(Error("plan.id.invalid", "The immutable plan identity must be a bounded API token.", "plan"));
+        else
+            validPlanId = true;
         if (string.IsNullOrWhiteSpace(request.PlanUri))
             findings.Add(Error("plan.uri.required", "A dereferenceable plan API URI is required.", "plan"));
-        else if (!IsInstancePlanUri(request.PlanUri, request.PlanId, request.WorkspaceId))
+        else if (validPlanId && !IsInstancePlanUri(request.PlanUri, request.PlanId, request.WorkspaceId))
             findings.Add(Error("plan.uri.invalid", "The plan URI must be the control-plane instance resolved-plan route.", "plan"));
     }
 
@@ -862,6 +870,7 @@ public sealed class ElsaInstancePlanResolver(
             || !string.IsNullOrEmpty(uri.UserInfo))
             return false;
 
+        var normalizedPlanId = planId.Trim();
         var segments = uri.GetComponents(UriComponents.Path, UriFormat.UriEscaped)
             .Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length != 7
@@ -871,7 +880,7 @@ public sealed class ElsaInstancePlanResolver(
             || !segments[3].Equals("instances", StringComparison.OrdinalIgnoreCase)
             || !Guid.TryParseExact(segments[4], "D", out _)
             || !segments[5].Equals("resolved-plans", StringComparison.OrdinalIgnoreCase)
-            || !segments[6].Equals(Uri.EscapeDataString(planId), StringComparison.Ordinal))
+            || !segments[6].Equals(Uri.EscapeDataString(normalizedPlanId), StringComparison.Ordinal))
             return false;
 
         if (!uri.AbsolutePath.EndsWith('/' + segments[6], StringComparison.Ordinal))
@@ -881,14 +890,17 @@ public sealed class ElsaInstancePlanResolver(
     }
 
     private static bool IsSafeSecretReference(string? value)
+        => SecretReferencePolicy.IsSafe(value);
+
+    private static bool IsSafePlanId(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Any(char.IsWhiteSpace) || !Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        if (value is null || value.Any(char.IsControl))
             return false;
-        return uri.Scheme.Equals("secret", StringComparison.OrdinalIgnoreCase)
-            && !string.IsNullOrWhiteSpace(uri.Host)
-            && string.IsNullOrEmpty(uri.UserInfo)
-            && string.IsNullOrEmpty(uri.Query)
-            && string.IsNullOrEmpty(uri.Fragment);
+
+        var normalized = value.Trim();
+        return !string.IsNullOrWhiteSpace(normalized)
+            && normalized.Length <= MaxPlanIdLength
+            && PlanIdPattern.IsMatch(normalized);
     }
 
     private static bool ContainsSensitiveKey(string key) =>

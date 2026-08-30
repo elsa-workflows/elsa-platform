@@ -1,0 +1,28 @@
+namespace ElsaControl.RuntimeBuilder.Abstractions.Plans;
+
+/// <summary>Validates provider-backed secret locators retained in a resolved plan.</summary>
+public static class SecretReferencePolicy
+{
+    public static bool IsSafe(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || value.Any(char.IsWhiteSpace)
+            || value.Any(char.IsControl)
+            || value.Contains('%')
+            || value.Contains('\\')
+            || value.Contains("/../", StringComparison.Ordinal)
+            || value.EndsWith("/..", StringComparison.Ordinal)
+            || value.Contains("/./", StringComparison.Ordinal)
+            || value.EndsWith("/.", StringComparison.Ordinal)
+            || !Uri.TryCreate(value, UriKind.Absolute, out var uri))
+            return false;
+
+        return string.Equals(uri.Scheme, "secret", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(uri.Host)
+            && string.IsNullOrEmpty(uri.UserInfo)
+            && string.IsNullOrEmpty(uri.Query)
+            && string.IsNullOrEmpty(uri.Fragment)
+            && !uri.AbsolutePath.Contains("//", StringComparison.Ordinal)
+            && !uri.AbsolutePath.Split('/').Any(segment => segment is "." or "..");
+    }
+}

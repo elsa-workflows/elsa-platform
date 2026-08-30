@@ -538,6 +538,63 @@ public sealed class ElsaInstancePlanResolverTests
         Assert.Contains("secret://workspace/smtp-password", ResolvedElsaApplicationPlanSerialization.Serialize(result.Plan));
     }
 
+    [Theory]
+    [InlineData("secret://workspace/smtp/../password")]
+    [InlineData("secret://workspace/smtp/./password")]
+    [InlineData("secret://workspace/smtp//password")]
+    [InlineData("secret://workspace/smtp%2fpassword")]
+    [InlineData("secret://workspace/smtp\\password")]
+    [InlineData("secret://workspace/smtp\0password")]
+    public async Task Rejects_unsafe_secret_references_during_resolution_with_deterministic_finding(string reference)
+    {
+        var sourceId = Guid.NewGuid();
+        var source = new PublicPackageSourceProjection(sourceId, "source", "https://packages.example.test/index.json");
+        var version = CreateSecretSettingVersion(sourceId, source);
+        var baseline = CreateRequest();
+        var request = baseline with
+        {
+            BuilderIntent = baseline.BuilderIntent with
+            {
+                Packages = [new(sourceId, "Elsa.Email", "2.0.0", ["email"], new Dictionary<string, IReadOnlyDictionary<string, System.Text.Json.JsonElement>>
+                {
+                    ["email"] = new Dictionary<string, System.Text.Json.JsonElement>
+                    {
+                        ["smtpPassword"] = System.Text.Json.JsonSerializer.SerializeToElement(reference)
+                    }
+                })]
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([version]), new FakeCompatibility()).ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("configuration.secretValue.forbidden", result.Findings[0].Code);
+        Assert.DoesNotContain(result.Findings, finding => finding.Code == "configuration.secretReference.invalid");
+    }
+
+    [Theory]
+    [InlineData("plan/01")]
+    [InlineData("plan%01")]
+    [InlineData("plan\u0000id")]
+    public async Task Rejects_unsafe_plan_ids_before_uri_validation(string planId)
+    {
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility())
+            .ResolveAsync(CreateRequest() with { PlanId = planId });
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(["plan.id.invalid"], result.Findings.Select(finding => finding.Code));
+    }
+
+    [Fact]
+    public async Task Rejects_unbounded_plan_ids_before_uri_validation()
+    {
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility())
+            .ResolveAsync(CreateRequest() with { PlanId = new string('p', 129) });
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(["plan.id.invalid"], result.Findings.Select(finding => finding.Code));
+    }
+
     [Fact]
     public async Task Rejects_missing_required_non_secret_setting_without_a_governed_default()
     {
@@ -671,6 +728,20 @@ public sealed class ElsaInstancePlanResolverTests
         $"sha256:{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ResolvedElsaApplicationPlanSerialization.Serialize(plan)))).ToLowerInvariant()}";
 
     private static string Digest(char value) => $"sha256:{new string(value, 64)}";
+
+    private static PublicPackageVersionProjection CreateSecretSettingVersion(Guid sourceId, PublicPackageSourceProjection source) =>
+        new(
+            "Elsa.Email",
+            "2.0.0",
+            source,
+            "1.0",
+            ["elsa.server"],
+            null,
+            [new(
+                "email", "Elsa.Email", "2.0.0", source, "Elsa.Email.Feature", "Email", null, null,
+                [], [], ["elsa.server"], [], [], [], false, false, "{}",
+                [new("smtpPassword", "System.String", "string", true, null, "SMTP password", null, null, "{}", true, true, "SMTP_PASSWORD", "{}", "{}")] )],
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
     private static ElsaInstancePlanResolutionRequest CreateRequest() => new(
         new ElsaInstanceIntent(
