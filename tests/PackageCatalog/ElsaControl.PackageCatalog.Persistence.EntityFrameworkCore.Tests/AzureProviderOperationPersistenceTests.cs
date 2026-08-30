@@ -139,6 +139,40 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Recovery_claim_only_accepts_recovery_required_operations()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+
+        Assert.Null(await store.ClaimRecoveryAsync(
+            _workspaceId, operation.Id, "recovery-worker", "recovery-lease", TimeSpan.FromMinutes(1), now));
+        Assert.NotNull(await store.ClaimAsync(
+            _workspaceId, operation.Id, "normal-worker", "normal-lease", TimeSpan.FromMinutes(1), now));
+    }
+
+    [Fact]
+    public async Task Transition_sequences_use_the_operation_version()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+        var heartbeat = Assert.IsType<AzureProviderOperation>(await store.HeartbeatAsync(
+            _workspaceId, operation.Id, "lease", TimeSpan.FromMinutes(1), now.AddSeconds(1), claimed.Version));
+        var checkpoint = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+            _workspaceId, operation.Id, "lease",
+            new(AzureProviderOperationPhase.FoundationReady, "foundation.ready", "Ready.", new(), null, AzureProviderHealth.Unknown, []),
+            now.AddSeconds(2), heartbeat.Version));
+
+        var transitions = await store.ListTransitionsAsync(_workspaceId, operation.Id);
+        Assert.Equal([operation.Version, claimed.Version, checkpoint.Version], transitions.Select(x => x.Sequence));
+    }
+
+    [Fact]
     public async Task Unrestorable_plan_is_terminal_and_value_free_with_compare_and_set()
     {
         var now = DateTimeOffset.UtcNow;
