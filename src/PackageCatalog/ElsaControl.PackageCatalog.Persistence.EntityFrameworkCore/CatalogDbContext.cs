@@ -495,10 +495,13 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         var localEnvironments = DeploymentEnvironments.Local
             .Where(environment => managedEnvironmentIds.Contains(environment.Id))
             .ToDictionary(environment => environment.Id, environment => environment);
-        var persistedEnvironments = managedEnvironmentIds.Count == 0
+        var persistedEnvironmentIds = managedEnvironmentIds
+            .Except(localEnvironments.Keys)
+            .ToHashSet();
+        var persistedEnvironments = persistedEnvironmentIds.Count == 0
             ? new Dictionary<Guid, Models.DeploymentEnvironmentEntity>()
             : DeploymentEnvironments.AsNoTracking()
-                .Where(environment => managedEnvironmentIds.Contains(environment.Id))
+                .Where(environment => persistedEnvironmentIds.Contains(environment.Id))
                 .ToDictionary(environment => environment.Id, environment => environment);
 
         foreach (var run in trackedRuns.Where(run => run.ElsaInstanceId is not null))
