@@ -612,7 +612,15 @@ public sealed class AzureProviderExecutor
                 if (cancellationToken.IsCancellationRequested)
                 {
                     runnerCancellation.Cancel();
-                    await runnerTask;
+                    try
+                    {
+                        await runnerTask;
+                    }
+                    catch (Exception)
+                    {
+                        // The cancellation path must report durable recovery rather than
+                        // leaking a provider-specific cancellation or shutdown exception.
+                    }
                     throw new OperationCanceledException(cancellationToken);
                 }
                 var renewed = await _store.HeartbeatAsync(
