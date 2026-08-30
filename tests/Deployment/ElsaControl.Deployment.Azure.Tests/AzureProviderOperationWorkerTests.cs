@@ -134,6 +134,21 @@ public sealed class AzureProviderOperationWorkerTests
         Assert.Equal(AzureProviderOperationStatus.Running, store.Operation.Status);
     }
 
+    [Fact]
+    public async Task Recovery_required_operations_are_reserved_for_explicit_recovery()
+    {
+        var operation = Operation() with { Status = AzureProviderOperationStatus.RecoveryRequired };
+        var store = new WorkerStore(operation);
+        var executor = new AzureProviderExecutor(store, new NeverCalledRunner());
+        var worker = new AzureProviderOperationWorker(store, executor, new PersistedAzureProviderPlanSource(), new FixedTimeProvider());
+
+        var processed = await worker.ProcessOnceAsync();
+
+        Assert.Equal(0, processed);
+        Assert.Equal(0, store.MarkUnrestorableCount);
+        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, store.Operation.Status);
+    }
+
     private static AzureProviderOperation Operation()
     {
         var operation = new AzureProviderOperation(
@@ -261,7 +276,7 @@ public sealed class AzureProviderOperationWorkerTests
             Task.FromResult<AzureProviderOperation?>(Operation);
 
         public Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<AzureProviderOperation>>(Operation.Status is AzureProviderOperationStatus.Accepted or AzureProviderOperationStatus.RecoveryRequired ? [Operation] : []);
+            Task.FromResult<IReadOnlyList<AzureProviderOperation>>(Operation.Status is AzureProviderOperationStatus.Accepted or AzureProviderOperationStatus.Queued ? [Operation] : []);
 
         public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default) =>
             Task.FromResult<AzureProviderOperation?>(null);
@@ -316,7 +331,7 @@ public sealed class AzureProviderOperationWorkerTests
             Task.FromResult(Operations.SingleOrDefault(operation => operation.WorkspaceId == workspaceId && operation.Id == operationId));
 
         public Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<AzureProviderOperation>>(Operations.Where(operation => operation.Status is AzureProviderOperationStatus.Accepted or AzureProviderOperationStatus.RecoveryRequired).ToList());
+            Task.FromResult<IReadOnlyList<AzureProviderOperation>>(Operations.Where(operation => operation.Status is AzureProviderOperationStatus.Accepted or AzureProviderOperationStatus.Queued).ToList());
 
         public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default) =>
             Task.FromResult<AzureProviderOperation?>(null);

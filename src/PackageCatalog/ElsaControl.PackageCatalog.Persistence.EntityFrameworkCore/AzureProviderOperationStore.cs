@@ -123,8 +123,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
 
         var operations = await db.AzureProviderOperations.AsNoTracking()
             .Where(x => (x.Status == AzureProviderOperationStatus.Accepted ||
-                         x.Status == AzureProviderOperationStatus.Queued ||
-                         x.Status == AzureProviderOperationStatus.RecoveryRequired) &&
+                         x.Status == AzureProviderOperationStatus.Queued) &&
                         x.CompletedAt == null &&
                         (x.LeaseExpiresAt == null || x.LeaseExpiresAt <= now))
             .OrderBy(x => x.UpdatedAt)

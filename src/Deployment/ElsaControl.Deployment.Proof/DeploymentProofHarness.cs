@@ -331,6 +331,8 @@ public sealed class DeploymentProofHarness(
             return Invalid("proof.selection.featureDuplicate", "Selected feature names must be unique.", out code, out message);
         if (string.IsNullOrWhiteSpace(input.ImageReference))
             return Invalid("proof.selection.imageReferenceRequired", "An immutable image reference is required.", out code, out message);
+        if (HasCredentialBearingImageReference(input.ImageReference))
+            return Invalid("proof.selection.imageReferenceUnsafe", "Image references must not include embedded credentials.", out code, out message);
         if (!IsSha256Digest(input.ImageDigest))
             return Invalid("proof.selection.imageDigestRequired", "An immutable sha256 image digest is required.", out code, out message);
         if (string.IsNullOrWhiteSpace(environment.Name) || string.IsNullOrWhiteSpace(environment.Region) || string.IsNullOrWhiteSpace(environment.Provider))
@@ -349,6 +351,17 @@ public sealed class DeploymentProofHarness(
         && input.Features.SequenceEqual(selection.Features, StringComparer.Ordinal)
         && string.Equals(input.ImageReference, selection.ImageReference, StringComparison.Ordinal)
         && string.Equals(input.ImageDigest, selection.ImageDigest, StringComparison.Ordinal);
+
+    private static bool HasCredentialBearingImageReference(string imageReference)
+    {
+        if (Uri.TryCreate(imageReference, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.UserInfo))
+            return true;
+
+        var firstSlash = imageReference.IndexOf('/');
+        var authority = firstSlash < 0 ? imageReference : imageReference[..firstSlash];
+        var at = authority.IndexOf('@');
+        return at > 0 && authority[..at].Contains(':', StringComparison.Ordinal);
+    }
 
     private static bool IsSha256Digest(string digest) =>
         digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)

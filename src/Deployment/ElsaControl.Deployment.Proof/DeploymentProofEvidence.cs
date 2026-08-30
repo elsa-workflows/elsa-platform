@@ -79,6 +79,6 @@ public static partial class DeploymentProofEvidence
     [GeneratedRegex("(?<name>password|secret|token|credential|connection(?:string)?|authorization)\\s*[:=]\\s*[^,;\\s]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex SecretAssignmentRegex();
 
-    [GeneratedRegex("(?<scheme>https?://)[^/@\\s]+@", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex("(?<scheme>[a-z][a-z0-9+.-]*://)[^/@\\s]+@", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex UserInfoRegex();
 }

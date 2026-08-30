@@ -135,6 +135,24 @@ public sealed class DeploymentProofHarnessTests
             Assert.Equal(DeploymentProofStageStatus.Skipped, stage.Status));
     }
 
+    [Theory]
+    [InlineData("oci://user@registry.example.test/runtime-combined")]
+    [InlineData("https://user@example.test/runtime-combined")]
+    [InlineData("user:password@registry.example.test/runtime-combined")]
+    public async Task Credential_bearing_image_references_fail_at_selection(string imageReference)
+    {
+        var provider = new FakeDeploymentProofProvider();
+        var invalid = Input with { ImageReference = imageReference };
+
+        var report = await new DeploymentProofHarness().RunAsync(invalid, Environment, provider);
+
+        Assert.False(report.Passed);
+        Assert.Equal(DeploymentProofStage.Selection, report.Failure!.Stage);
+        Assert.Equal("proof.selection.imageReferenceUnsafe", report.Failure.Code);
+        Assert.All(report.Stages.Where(stage => stage.Stage != DeploymentProofStage.Selection), stage =>
+            Assert.Equal(DeploymentProofStageStatus.Skipped, stage.Status));
+    }
+
     [Fact]
     public async Task Provider_internal_cancellation_is_reported_as_unexpected()
     {
