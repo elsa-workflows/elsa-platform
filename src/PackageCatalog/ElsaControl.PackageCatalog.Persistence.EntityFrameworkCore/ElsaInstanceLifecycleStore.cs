@@ -958,6 +958,39 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         {
             existingOperation.FailureCode = null;
             existingOperation.FailureSummary = null;
+            if (existingOperation.DeploymentRunId is { } deploymentRunId)
+            {
+                var run = await dbContext.DeploymentRuns
+                    .Include(x => x.Environment)
+                    .SingleOrDefaultAsync(x => x.Id == deploymentRunId &&
+                        x.WorkspaceId == existingOperation.WorkspaceId &&
+                        x.ElsaInstanceId == existingOperation.InstanceId, cancellationToken);
+                if (run is null || run.Status != WorkspaceDeploymentRunStatus.RecoveryRequired)
+                    throw Conflict("Managed lifecycle recovery linkage is inconsistent.");
+
+                run.Status = WorkspaceDeploymentRunStatus.Queued;
+                run.QueuedAt = requestedAt.ToUniversalTime();
+                run.StartedAt = null;
+                run.CompletedAt = null;
+                run.WorkerId = null;
+                run.WorkerHeartbeatAt = null;
+                run.RecoveryReason = null;
+                run.FailureMessage = null;
+                if (run.Environment is not null)
+                {
+                    run.Environment.UpdatedAt = requestedAt.ToUniversalTime();
+                    run.Environment.DeploymentStatus = DeploymentStatus.Running;
+                }
+                await dbContext.DeploymentRunHistoryEvents.AddAsync(new()
+                {
+                    Id = Guid.NewGuid(),
+                    WorkspaceId = run.WorkspaceId,
+                    RunId = run.Id,
+                    Status = WorkspaceDeploymentRunStatus.Queued,
+                    Message = "Deployment run requeued after provider reconciliation.",
+                    CreatedAt = requestedAt.ToUniversalTime()
+                }, cancellationToken);
+            }
         }
         existingOperation.UpdatedAt = requestedAt.ToUniversalTime();
         await dbContext.ElsaInstanceAuditEvents.AddAsync(

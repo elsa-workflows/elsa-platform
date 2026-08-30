@@ -537,6 +537,56 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
+    public async Task Recovery_resume_requeues_the_managed_deployment_run()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Recovery resume");
+        var workspaceStore = new DeploymentWorkspaceStore(db);
+        var claimed = await workspaceStore.ClaimNextQueuedRunAsync("deployment-worker", Now);
+        Assert.NotNull(claimed);
+        Assert.Equal(1, await workspaceStore.MarkStaleRunningRunsRecoveryRequiredAsync(
+            Now.AddMinutes(10), TimeSpan.FromMinutes(5)));
+        db.ChangeTracker.Clear();
+
+        var lifecycleStore = CreateStore(db);
+        var reconciliation = new ElsaInstanceProviderReconciliationService(
+            lifecycleStore,
+            new StaticProviderPort(new(
+                ElsaInstanceProviderObservationKind.Ambiguous,
+                ElsaObservedLifecycle.Unknown,
+                ElsaInstanceProviderHealthGate.Unknown,
+                "retry-safe-observation",
+                new ElsaInstanceProviderRetryEvidence(
+                    "https://evidence.example/retry/recovery-resume",
+                    "sha256:" + new string('a', 64)))),
+            new FixedTimeProvider(Now.AddMinutes(11)));
+        var reconciled = await reconciliation.ReconcileAsync(workspace.Id, accepted.Operation.Id);
+        Assert.True(reconciled.RetrySafe);
+
+        var current = await lifecycleStore.GetInstanceAsync(workspace.Id, accepted.Instance.Id);
+        Assert.NotNull(current);
+        var recovered = await new ElsaInstanceLifecycleService(lifecycleStore, new FixedTimeProvider(Now.AddMinutes(12)))
+            .RecoverAsync(new(workspace.Id, accepted.Instance.Id, current!.Version, "resume-recovery"));
+
+        Assert.Equal(ElsaInstanceOperationState.Queued, recovered.Operation.State);
+        db.ChangeTracker.Clear();
+        var run = await db.DeploymentRuns.SingleAsync(x => x.Id == claimed!.Id);
+        Assert.Equal(WorkspaceDeploymentRunStatus.Queued, run.Status);
+        Assert.Null(run.WorkerId);
+        Assert.Null(run.WorkerHeartbeatAt);
+        Assert.Equal(DeploymentStatus.Running,
+            (await db.DeploymentEnvironments.SingleAsync(x => x.Id == run.EnvironmentId)).DeploymentStatus);
+        Assert.Contains(await db.DeploymentRunHistoryEvents.Where(x => x.RunId == run.Id).ToListAsync(),
+            x => x.Status == WorkspaceDeploymentRunStatus.Queued &&
+                 x.Message == "Deployment run requeued after provider reconciliation.");
+        db.ChangeTracker.Clear();
+        Assert.NotNull(await workspaceStore.ClaimNextQueuedRunAsync("recovery-worker", Now.AddMinutes(13)));
+    }
+
+    [Fact]
     public async Task Provider_reconciliation_persists_uncertainty_then_converges_and_replays()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
