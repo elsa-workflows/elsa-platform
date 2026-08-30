@@ -208,6 +208,15 @@ internal sealed class ElsaInstanceOperationEntity
     public Guid? DeploymentRunId { get; set; }
     public string? FailureCode { get; set; }
     public string? FailureSummary { get; set; }
+    public int ReconciliationVersion { get; set; }
+    public string? ReconciliationEvidenceFingerprint { get; set; }
+    public string? ReconciliationDiagnosticCode { get; set; }
+    public string? ReconciliationRetryEvidenceReference { get; set; }
+    public string? ReconciliationRetryEvidenceDigest { get; set; }
+    public ElsaObservedLifecycle? ReconciledObservedLifecycle { get; set; }
+    public ElsaInstanceHealth? ReconciledHealth { get; set; }
+    public int? ReconciledInstanceVersion { get; set; }
+    public DateTimeOffset? ReconciledAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

@@ -14,6 +14,9 @@ public sealed class ElsaInstanceProviderReconciliationService(
     public const string HealthFailedCode = "provider.reconciliation.health-failed";
     public const string HealthUnknownCode = "provider.reconciliation.health-unknown";
     public const string FailedCode = "provider.reconciliation.failed";
+    public const string UnavailableCode = "provider.reconciliation.unavailable";
+    public const string RetrySafeCode = "provider.reconciliation.retry-safe";
+    public const string CorrelationMismatchCode = "provider.reconciliation.correlation-mismatch";
 
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
@@ -37,17 +40,50 @@ public sealed class ElsaInstanceProviderReconciliationService(
 
         var instance = target.Instance;
         var operation = target.Operation;
-        var observation = await provider.ObserveAsync(new(
-            workspaceId,
-            instance.Id,
-            operation.Id,
-            operation.AttemptNumber,
-            instance.DesiredLifecycle,
-            instance.ResolvedPlanReference,
-            instance.CurrentDeploymentReference), cancellationToken);
-        ArgumentNullException.ThrowIfNull(observation);
+        var request = new ElsaInstanceProviderReconciliationRequest(
+            workspaceId, instance.Id, operation.Id, operation.AttemptNumber, instance.DesiredLifecycle,
+            instance.ResolvedPlanReference, instance.CurrentDeploymentReference);
+        ElsaInstanceProviderObservation observation;
+        var providerUnavailable = false;
+        string? uncertainCode = null;
+        try
+        {
+            observation = await provider.ObserveAsync(request, cancellationToken)
+                ?? throw new InvalidOperationException("Provider returned no observation.");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            providerUnavailable = true;
+            observation = new(
+                ElsaInstanceProviderObservationKind.Unknown,
+                ElsaObservedLifecycle.Unknown,
+                ElsaInstanceProviderHealthGate.Unknown,
+                operation.Id,
+                operation.AttemptNumber,
+                "provider-unavailable");
+        }
 
-        var projection = Project(instance, operation, observation, _timeProvider.GetUtcNow());
+        if (observation.OperationId != operation.Id || observation.AttemptNumber != operation.AttemptNumber)
+        {
+            uncertainCode = CorrelationMismatchCode;
+            observation = new(
+                ElsaInstanceProviderObservationKind.Ambiguous,
+                ElsaObservedLifecycle.Unknown,
+                ElsaInstanceProviderHealthGate.Unknown,
+                operation.Id,
+                operation.AttemptNumber,
+                "correlation-mismatch");
+        }
+
+        var projection = Project(instance, operation, observation, _timeProvider.GetUtcNow(),
+            uncertainCode ?? (providerUnavailable ? UnavailableCode : null));
+        var retryEvidence = projection.Operation.State == ElsaInstanceOperationState.RecoveryRequired
+            ? observation.RetryEvidence
+            : null;
         return await store.CommitAsync(new(
             workspaceId,
             instance.Id,
@@ -59,7 +95,9 @@ public sealed class ElsaInstanceProviderReconciliationService(
             projection.Instance,
             projection.Operation,
             projection.Code,
-            projection.Operation.State == ElsaInstanceOperationState.RecoveryRequired && observation.RetryEvidence is not null,
+            retryEvidence is not null,
+            retryEvidence?.Reference,
+            retryEvidence?.Digest,
             projection.At), cancellationToken);
     }
 
@@ -67,11 +105,12 @@ public sealed class ElsaInstanceProviderReconciliationService(
         ElsaInstance instance,
         ElsaInstanceOperation operation,
         ElsaInstanceProviderObservation observation,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        string? uncertainCode = null)
     {
         if (observation.Kind != ElsaInstanceProviderObservationKind.Confirmed)
             return (Project(instance, ElsaObservedLifecycle.Unknown, ElsaInstanceHealth.Unknown), operation,
-                observation.Kind == ElsaInstanceProviderObservationKind.Unknown ? UnknownCode : AmbiguousCode, now);
+                uncertainCode ?? (observation.Kind == ElsaInstanceProviderObservationKind.Unknown ? UnknownCode : AmbiguousCode), now);
 
         if (observation.ObservedLifecycle == ElsaObservedLifecycle.Ready)
         {
@@ -80,24 +119,17 @@ public sealed class ElsaInstanceProviderReconciliationService(
                 return (Project(instance, ElsaObservedLifecycle.Ready, ElsaInstanceHealth.Healthy),
                     operation.TransitionTo(ElsaInstanceOperationState.Succeeded), ConvergedCode, now);
 
-            var health = observation.HealthGate == ElsaInstanceProviderHealthGate.Failed
-                ? ElsaInstanceHealth.Degraded
-                : ElsaInstanceHealth.Unknown;
-            var code = observation.HealthGate == ElsaInstanceProviderHealthGate.Failed
-                ? HealthFailedCode
-                : HealthUnknownCode;
-            return (Project(instance, ElsaObservedLifecycle.Degraded, health),
-                operation.TransitionTo(ElsaInstanceOperationState.Failed), code, now);
+            if (observation.HealthGate == ElsaInstanceProviderHealthGate.Failed)
+                return (Project(instance, ElsaObservedLifecycle.Degraded, ElsaInstanceHealth.Degraded),
+                    operation.TransitionTo(ElsaInstanceOperationState.Failed), HealthFailedCode, now);
+
+            return (Project(instance, ElsaObservedLifecycle.Unknown, ElsaInstanceHealth.Unknown),
+                operation, HealthUnknownCode, now);
         }
 
         if (observation.ObservedLifecycle == ElsaObservedLifecycle.Stopped &&
             instance.DesiredLifecycle == ElsaDesiredLifecycle.Stopped)
             return (Project(instance, ElsaObservedLifecycle.Stopped, ElsaInstanceHealth.Unknown),
-                operation.TransitionTo(ElsaInstanceOperationState.Succeeded), ConvergedCode, now);
-
-        if (observation.ObservedLifecycle == ElsaObservedLifecycle.Deleted &&
-            instance.DesiredLifecycle == ElsaDesiredLifecycle.Deleting)
-            return (Project(instance, ElsaObservedLifecycle.Deleted, ElsaInstanceHealth.Unknown, now),
                 operation.TransitionTo(ElsaInstanceOperationState.Succeeded), ConvergedCode, now);
 
         if (observation.ObservedLifecycle == ElsaObservedLifecycle.Failed)

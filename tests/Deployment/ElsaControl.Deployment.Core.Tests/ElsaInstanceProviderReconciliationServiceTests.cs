@@ -24,9 +24,9 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
         var result = await Service(store, new RecordingPort(observation)).ReconcileAsync(WorkspaceId, accepted.Operation.Id);
 
         Assert.Equal(ElsaInstanceProviderReconciliationOutcome.RecoveryRequired, result.Outcome);
-        Assert.Equal(ElsaObservedLifecycle.Unknown, result.Instance.ObservedLifecycle);
-        Assert.Equal(ElsaInstanceHealth.Unknown, result.Instance.Health);
-        Assert.Equal(ElsaInstanceOperationState.RecoveryRequired, result.Operation.State);
+        Assert.Equal(ElsaObservedLifecycle.Unknown, result.Projection.ObservedLifecycle);
+        Assert.Equal(ElsaInstanceHealth.Unknown, result.Projection.Health);
+        Assert.Equal(ElsaInstanceOperationState.RecoveryRequired, result.Projection.OperationState);
         Assert.Equal(expectedCode, result.DiagnosticCode);
         Assert.False(result.RetrySafe);
     }
@@ -36,7 +36,7 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
     {
         var (store, accepted) = await RecoveryTargetAsync();
         var evidence = new ElsaInstanceProviderRetryEvidence(
-            "recovery-proof-1",
+            "https://evidence.example.test/recovery/proof-1",
             "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         var observation = new ElsaInstanceProviderObservation(
             ElsaInstanceProviderObservationKind.Unknown,
@@ -48,8 +48,8 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
         var result = await Service(store, new RecordingPort(observation)).ReconcileAsync(WorkspaceId, accepted.Operation.Id);
 
         Assert.True(result.RetrySafe);
-        Assert.Equal(ElsaInstanceOperationState.RecoveryRequired, result.Operation.State);
-        Assert.Equal(ElsaObservedLifecycle.Unknown, result.Instance.ObservedLifecycle);
+        Assert.Equal(ElsaInstanceOperationState.RecoveryRequired, result.Projection.OperationState);
+        Assert.Equal(ElsaObservedLifecycle.Unknown, result.Projection.ObservedLifecycle);
     }
 
     [Fact]
@@ -65,9 +65,9 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
         var result = await Service(store, new RecordingPort(observation)).ReconcileAsync(WorkspaceId, accepted.Operation.Id);
 
         Assert.Equal(ElsaInstanceProviderReconciliationOutcome.Converged, result.Outcome);
-        Assert.Equal(ElsaObservedLifecycle.Ready, result.Instance.ObservedLifecycle);
-        Assert.Equal(ElsaInstanceHealth.Healthy, result.Instance.Health);
-        Assert.Equal(ElsaInstanceOperationState.Succeeded, result.Operation.State);
+        Assert.Equal(ElsaObservedLifecycle.Ready, result.Projection.ObservedLifecycle);
+        Assert.Equal(ElsaInstanceHealth.Healthy, result.Projection.Health);
+        Assert.Equal(ElsaInstanceOperationState.Succeeded, result.Projection.OperationState);
         Assert.Equal(ElsaInstanceProviderReconciliationService.ConvergedCode, result.DiagnosticCode);
         Assert.Equal(Now, result.ReconciledAt);
     }
@@ -88,13 +88,12 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
 
         Assert.Equal(ElsaInstanceProviderReconciliationOutcome.RecoveryRequired, uncertain.Outcome);
         Assert.Equal(ElsaInstanceProviderReconciliationOutcome.Converged, converged.Outcome);
-        Assert.Equal(ElsaObservedLifecycle.Ready, converged.Instance.ObservedLifecycle);
+        Assert.Equal(ElsaObservedLifecycle.Ready, converged.Projection.ObservedLifecycle);
         Assert.Equal(2, port.Calls);
     }
 
     [Theory]
     [InlineData(ElsaInstanceProviderHealthGate.Failed, ElsaInstanceHealth.Degraded, ElsaInstanceProviderReconciliationService.HealthFailedCode)]
-    [InlineData(ElsaInstanceProviderHealthGate.Unknown, ElsaInstanceHealth.Unknown, ElsaInstanceProviderReconciliationService.HealthUnknownCode)]
     public async Task Ready_report_without_a_passing_health_gate_never_projects_ready(
         ElsaInstanceProviderHealthGate healthGate,
         ElsaInstanceHealth expectedHealth,
@@ -110,11 +109,43 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
         var result = await Service(store, new RecordingPort(observation)).ReconcileAsync(WorkspaceId, accepted.Operation.Id);
 
         Assert.Equal(ElsaInstanceProviderReconciliationOutcome.HealthGateFailed, result.Outcome);
-        Assert.Equal(ElsaObservedLifecycle.Degraded, result.Instance.ObservedLifecycle);
-        Assert.NotEqual(ElsaObservedLifecycle.Ready, result.Instance.ObservedLifecycle);
-        Assert.Equal(expectedHealth, result.Instance.Health);
-        Assert.Equal(ElsaInstanceOperationState.Failed, result.Operation.State);
+        Assert.Equal(ElsaObservedLifecycle.Degraded, result.Projection.ObservedLifecycle);
+        Assert.NotEqual(ElsaObservedLifecycle.Ready, result.Projection.ObservedLifecycle);
+        Assert.Equal(expectedHealth, result.Projection.Health);
+        Assert.Equal(ElsaInstanceOperationState.Failed, result.Projection.OperationState);
         Assert.Equal(expectedCode, result.DiagnosticCode);
+    }
+
+    [Fact]
+    public async Task Unknown_health_gate_remains_unknown_and_recovery_required()
+    {
+        var (store, accepted) = await RecoveryTargetAsync();
+        var observation = new ElsaInstanceProviderObservation(
+            ElsaInstanceProviderObservationKind.Confirmed,
+            ElsaObservedLifecycle.Ready,
+            ElsaInstanceProviderHealthGate.Unknown,
+            "observation-health-unknown");
+
+        var result = await Service(store, new RecordingPort(observation)).ReconcileAsync(WorkspaceId, accepted.Operation.Id);
+
+        Assert.Equal(ElsaInstanceProviderReconciliationOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal(ElsaObservedLifecycle.Unknown, result.Projection.ObservedLifecycle);
+        Assert.Equal(ElsaInstanceHealth.Unknown, result.Projection.Health);
+        Assert.Equal(ElsaInstanceOperationState.RecoveryRequired, result.Projection.OperationState);
+        Assert.Equal(ElsaInstanceProviderReconciliationService.HealthUnknownCode, result.DiagnosticCode);
+    }
+
+    [Fact]
+    public async Task Provider_failure_is_value_free_and_remains_recovery_required()
+    {
+        var (store, accepted) = await RecoveryTargetAsync();
+        var result = await Service(store, new ThrowingPort())
+            .ReconcileAsync(WorkspaceId, accepted.Operation.Id);
+
+        Assert.Equal(ElsaInstanceProviderReconciliationOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal(ElsaObservedLifecycle.Unknown, result.Projection.ObservedLifecycle);
+        Assert.Equal(ElsaInstanceOperationState.RecoveryRequired, result.Projection.OperationState);
+        Assert.Equal(ElsaInstanceProviderReconciliationService.UnavailableCode, result.DiagnosticCode);
     }
 
     [Fact]
@@ -134,8 +165,7 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
         Assert.False(first.Replayed);
         Assert.True(replay.Replayed);
         Assert.Equal(1, port.Calls);
-        Assert.Same(first.Instance, replay.Instance);
-        Assert.Same(first.Operation, replay.Operation);
+        Assert.Equal(first.Projection, replay.Projection);
     }
 
     [Fact]
@@ -182,6 +212,26 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
         Assert.DoesNotContain(providerValue, result.DiagnosticCode, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Mismatched_provider_correlation_fails_closed()
+    {
+        var (store, accepted) = await RecoveryTargetAsync();
+        var observation = new ElsaInstanceProviderObservation(
+            ElsaInstanceProviderObservationKind.Confirmed,
+            ElsaObservedLifecycle.Ready,
+            ElsaInstanceProviderHealthGate.Passed,
+            Guid.NewGuid(),
+            accepted.Operation.AttemptNumber,
+            "wrong-operation");
+
+        var result = await Service(store, new UncorrelatedPort(observation))
+            .ReconcileAsync(WorkspaceId, accepted.Operation.Id);
+
+        Assert.Equal(ElsaInstanceProviderReconciliationOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal(ElsaInstanceProviderReconciliationService.CorrelationMismatchCode, result.DiagnosticCode);
+        Assert.Equal(ElsaObservedLifecycle.Unknown, result.Projection.ObservedLifecycle);
+    }
+
     private static ElsaInstanceProviderReconciliationService Service(
         InMemoryElsaInstanceLifecycleStore store,
         IElsaInstanceProviderReconciliationPort port) =>
@@ -226,8 +276,24 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
             CancellationToken cancellationToken = default)
         {
             Calls++;
-            return Task.FromResult(observation);
+            return Task.FromResult(observation.Correlate(request));
         }
+    }
+
+    private sealed class ThrowingPort : IElsaInstanceProviderReconciliationPort
+    {
+        public Task<ElsaInstanceProviderObservation> ObserveAsync(
+            ElsaInstanceProviderReconciliationRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("secret-provider-message");
+    }
+
+    private sealed class UncorrelatedPort(ElsaInstanceProviderObservation observation)
+        : IElsaInstanceProviderReconciliationPort
+    {
+        public Task<ElsaInstanceProviderObservation> ObserveAsync(
+            ElsaInstanceProviderReconciliationRequest request,
+            CancellationToken cancellationToken = default) => Task.FromResult(observation);
     }
 
     private sealed class QueuePort(params ElsaInstanceProviderObservation[] observations) : IElsaInstanceProviderReconciliationPort
@@ -240,7 +306,7 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
             CancellationToken cancellationToken = default)
         {
             Calls++;
-            return Task.FromResult(_observations.Dequeue());
+            return Task.FromResult(_observations.Dequeue().Correlate(request));
         }
     }
 
@@ -258,7 +324,7 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
             lock (_gate)
                 observation = observations.Dequeue();
             barrier.SignalAndWait(cancellationToken);
-            return Task.FromResult(observation);
+            return Task.FromResult(observation.Correlate(request));
         }
     }
 

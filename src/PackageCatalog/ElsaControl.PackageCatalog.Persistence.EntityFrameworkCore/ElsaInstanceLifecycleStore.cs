@@ -26,7 +26,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
     IElsaInstanceLifecycleResolutionInputSource resolutionInputSource,
     TimeProvider? timeProvider = null) :
     IElsaInstanceLifecycleStore,
-    IElsaInstanceLifecycleWorkerStore
+    IElsaInstanceLifecycleWorkerStore,
+    IElsaInstanceProviderReconciliationStore
 {
     private readonly IElsaInstanceLifecycleResolutionInputSource _resolutionInputSource =
         resolutionInputSource ?? throw new ArgumentNullException(nameof(resolutionInputSource));
@@ -40,6 +41,184 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
     };
 
     private IElsaInstanceLifecycleResolutionInputSource ResolutionInputSource => _resolutionInputSource;
+
+    public async Task<ElsaInstanceProviderReconciliationTarget?> GetTargetAsync(
+        Guid workspaceId,
+        Guid operationId,
+        CancellationToken cancellationToken = default)
+    {
+        dbContext.ChangeTracker.Clear();
+        var operation = await dbContext.ElsaInstanceOperations
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == operationId, cancellationToken);
+        if (operation is null || operation.InstanceId is null ||
+            operation.State != ElsaInstanceOperationState.RecoveryRequired || operation.DeploymentRunId is null)
+            return null;
+        var instance = await dbContext.ElsaInstances
+            .AsNoTracking()
+            .Include(x => x.IdentityBinding)
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == operation.InstanceId, cancellationToken);
+        var runIsUncertain = await dbContext.DeploymentRuns.AsNoTracking().AnyAsync(x =>
+            x.Id == operation.DeploymentRunId && x.WorkspaceId == workspaceId &&
+            x.ElsaInstanceId == operation.InstanceId && x.Status == WorkspaceDeploymentRunStatus.RecoveryRequired,
+            cancellationToken);
+        return instance is null || !runIsUncertain
+            ? null
+            : new ElsaInstanceProviderReconciliationTarget(MapInstance(instance), MapOperation(operation), operation.ReconciliationVersion);
+    }
+
+    public async Task<ElsaInstanceProviderReconciliationResult?> GetResultAsync(
+        Guid workspaceId,
+        Guid operationId,
+        CancellationToken cancellationToken = default)
+    {
+        dbContext.ChangeTracker.Clear();
+        var operation = await dbContext.ElsaInstanceOperations.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == operationId, cancellationToken);
+        if (operation?.InstanceId is null || operation.State is not (ElsaInstanceOperationState.Succeeded or ElsaInstanceOperationState.Failed) ||
+            operation.ReconciliationEvidenceFingerprint is null)
+            return null;
+        return ReconciliationResult(operation, replayed: false);
+    }
+
+    public async Task<ElsaInstanceProviderReconciliationResult> CommitAsync(
+        ElsaInstanceProviderReconciliationCommit commit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(commit);
+        commit.Validate();
+        dbContext.ChangeTracker.Clear();
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            var current = await dbContext.ElsaInstanceOperations.AsNoTracking()
+                .Where(x => x.WorkspaceId == commit.WorkspaceId && x.Id == commit.OperationId)
+                .Select(x => new { x.State, x.ReconciliationEvidenceFingerprint })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (current?.State is ElsaInstanceOperationState.Succeeded or ElsaInstanceOperationState.Failed)
+            {
+                if (!string.Equals(current.ReconciliationEvidenceFingerprint, commit.EvidenceFingerprint, StringComparison.Ordinal))
+                    throw Conflict("Provider reconciliation evidence conflicts with the recorded result.");
+                await transaction.CommitAsync(cancellationToken);
+                return await GetResultAsync(commit.WorkspaceId, commit.OperationId, cancellationToken)
+                    ?? throw Conflict("Provider reconciliation result is incomplete.");
+            }
+            if (current?.State == ElsaInstanceOperationState.RecoveryRequired &&
+                string.Equals(current.ReconciliationEvidenceFingerprint, commit.EvidenceFingerprint, StringComparison.Ordinal))
+            {
+                var replayOperation = await dbContext.ElsaInstanceOperations.AsNoTracking()
+                    .SingleAsync(x => x.WorkspaceId == commit.WorkspaceId && x.Id == commit.OperationId,
+                        cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return ReconciliationResult(replayOperation, replayed: true);
+            }
+
+            var claimed = await dbContext.ElsaInstanceOperations
+                .Where(x => x.WorkspaceId == commit.WorkspaceId && x.Id == commit.OperationId &&
+                            x.InstanceId == commit.InstanceId && x.State == ElsaInstanceOperationState.RecoveryRequired &&
+                            x.AttemptNumber == commit.ExpectedAttemptNumber &&
+                            x.ReconciliationVersion == commit.ExpectedReconciliationVersion)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.ReconciliationVersion, checked(commit.ExpectedReconciliationVersion + 1)), cancellationToken);
+            if (claimed != 1)
+                throw Conflict("Provider reconciliation target changed concurrently.");
+
+            dbContext.ChangeTracker.Clear();
+            var operation = await dbContext.ElsaInstanceOperations.SingleAsync(x => x.Id == commit.OperationId, cancellationToken);
+            var instance = await LoadTrackedInstanceAsync(commit.InstanceId, cancellationToken)
+                ?? throw Conflict("Provider reconciliation instance no longer exists.");
+            var run = operation.DeploymentRunId is null ? null : await dbContext.DeploymentRuns
+                .Include(x => x.Environment)
+                .SingleOrDefaultAsync(x => x.Id == operation.DeploymentRunId && x.WorkspaceId == commit.WorkspaceId,
+                    cancellationToken);
+            if (instance.Version != commit.ExpectedInstanceVersion || run is null ||
+                run.ElsaInstanceId != commit.InstanceId || run.Status != WorkspaceDeploymentRunStatus.RecoveryRequired)
+                throw Conflict("Provider reconciliation target is inconsistent.");
+
+            var priorObservedLifecycle = instance.ObservedLifecycle;
+            ApplyAggregate(instance, commit.Instance);
+            instance.UpdatedAt = commit.ReconciledAt.ToUniversalTime();
+            operation.State = commit.Operation.State;
+            operation.FailureCode = commit.Operation.State == ElsaInstanceOperationState.RecoveryRequired && commit.RetrySafe
+                ? ElsaInstanceProviderReconciliationService.RetrySafeCode
+                : commit.Operation.State == ElsaInstanceOperationState.Failed ? commit.DiagnosticCode : null;
+            operation.FailureSummary = commit.Operation.State == ElsaInstanceOperationState.Failed
+                ? "Provider reconciliation established a terminal failure."
+                : commit.Operation.State == ElsaInstanceOperationState.RecoveryRequired && commit.RetrySafe
+                    ? "Provider reconciliation established that an explicit retry is safe."
+                : null;
+            operation.CompletedAt = commit.Operation.State == ElsaInstanceOperationState.RecoveryRequired
+                ? null
+                : commit.ReconciledAt.ToUniversalTime();
+            operation.WorkerId = null;
+            operation.LeaseTokenHash = null;
+            operation.LeaseExpiresAt = null;
+            operation.HeartbeatAt = null;
+            operation.UpdatedAt = commit.ReconciledAt.ToUniversalTime();
+            operation.ReconciliationEvidenceFingerprint = commit.EvidenceFingerprint;
+            operation.ReconciliationDiagnosticCode = commit.DiagnosticCode;
+            operation.ReconciliationRetryEvidenceReference = commit.RetryEvidenceReference ??
+                operation.ReconciliationRetryEvidenceReference;
+            operation.ReconciliationRetryEvidenceDigest = commit.RetryEvidenceDigest ??
+                operation.ReconciliationRetryEvidenceDigest;
+            operation.ReconciledObservedLifecycle = commit.Instance.ObservedLifecycle;
+            operation.ReconciledHealth = commit.Instance.Health;
+            operation.ReconciledInstanceVersion = commit.Instance.Version;
+            operation.ReconciledAt = commit.ReconciledAt.ToUniversalTime();
+
+            run.Status = commit.Operation.State switch
+            {
+                ElsaInstanceOperationState.Succeeded => WorkspaceDeploymentRunStatus.Succeeded,
+                ElsaInstanceOperationState.Failed => WorkspaceDeploymentRunStatus.Failed,
+                _ => WorkspaceDeploymentRunStatus.RecoveryRequired
+            };
+            run.CompletedAt = run.Status == WorkspaceDeploymentRunStatus.RecoveryRequired
+                ? null
+                : commit.ReconciledAt.ToUniversalTime();
+            run.RecoveryReason = run.Status == WorkspaceDeploymentRunStatus.RecoveryRequired ? commit.DiagnosticCode : null;
+            run.FailureMessage = run.Status == WorkspaceDeploymentRunStatus.Failed
+                ? "Provider reconciliation established a terminal failure."
+                : null;
+            run.WorkerId = null;
+            run.WorkerHeartbeatAt = null;
+            if (run.Environment is not null)
+            {
+                run.Environment.UpdatedAt = commit.ReconciledAt.ToUniversalTime();
+                run.Environment.DeploymentStatus = run.Status == WorkspaceDeploymentRunStatus.Succeeded
+                    ? DeploymentStatus.Succeeded
+                    : DeploymentStatus.Blocked;
+                if (run.Status == WorkspaceDeploymentRunStatus.Succeeded)
+                    run.Environment.DeployedRevisionId = run.SourceRevisionId;
+            }
+
+            await dbContext.DeploymentRunHistoryEvents.AddAsync(new()
+            {
+                Id = Guid.NewGuid(), WorkspaceId = commit.WorkspaceId, RunId = run.Id, Status = run.Status,
+                Message = "Provider state reconciliation recorded a deterministic lifecycle outcome.",
+                CreatedAt = commit.ReconciledAt.ToUniversalTime()
+            }, cancellationToken);
+            await dbContext.ElsaInstanceAuditEvents.AddAsync(await CreateAuditEventAsync(
+                instance, operation, priorObservedLifecycle, commit.ReconciledAt, cancellationToken,
+                eventType: "lifecycle.reconciled", deploymentRunId: run.Id,
+                diagnosticCode: commit.DiagnosticCode,
+                summary: "Provider state reconciliation recorded a deterministic lifecycle outcome."), cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return ReconciliationResult(operation, replayed: false);
+        }
+        catch (ElsaInstanceLifecycleConflictException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+        catch (Exception exception) when (exception is DbUpdateConcurrencyException or DbUpdateException or DbException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            dbContext.ChangeTracker.Clear();
+            throw Conflict("Provider reconciliation conflicted with a newer observation.");
+        }
+    }
 
     public async Task<ElsaInstance?> GetInstanceAsync(
         Guid workspaceId,
@@ -759,6 +938,12 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         var isRecoveryResume = existingOperation.State == ElsaInstanceOperationState.RecoveryRequired &&
             requestedOperation.State == ElsaInstanceOperationState.Queued &&
             requestedOperation.AttemptNumber == existingOperation.AttemptNumber + 1;
+        if (isRecoveryResume &&
+            (!string.Equals(existingOperation.FailureCode,
+                 ElsaInstanceProviderReconciliationService.RetrySafeCode, StringComparison.Ordinal) ||
+             existingOperation.ReconciliationRetryEvidenceReference is null ||
+             existingOperation.ReconciliationRetryEvidenceDigest is null))
+            throw Conflict("Provider reconciliation has not established that retry is safe.");
         if ((!canTransition && !isRecoveryResume) || requestedOperation.AttemptNumber < existingOperation.AttemptNumber)
             throw Conflict("Lifecycle operation state transition is not valid.");
 
@@ -769,6 +954,11 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         existingInstance.UpdatedAt = requestedAt.ToUniversalTime();
         existingOperation.State = requestedOperation.State;
         existingOperation.AttemptNumber = requestedOperation.AttemptNumber;
+        if (isRecoveryResume)
+        {
+            existingOperation.FailureCode = null;
+            existingOperation.FailureSummary = null;
+        }
         existingOperation.UpdatedAt = requestedAt.ToUniversalTime();
         await dbContext.ElsaInstanceAuditEvents.AddAsync(
             await CreateAuditEventAsync(
@@ -858,7 +1048,9 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         CancellationToken cancellationToken,
         string eventType = "lifecycle.accepted",
         Guid? deploymentRunId = null,
-        string? planReference = null)
+        string? planReference = null,
+        string? diagnosticCode = null,
+        string? summary = null)
     {
         var lastSequence = await dbContext.ElsaInstanceAuditEvents
             .Where(x => x.InstanceId == instance.Id)
@@ -878,9 +1070,40 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             NewState = instance.ObservedLifecycle.ToString(),
             DesiredStateRevisionId = instance.DesiredStateRevisionId,
             PlanReference = planReference,
+            DiagnosticCode = diagnosticCode,
+            Summary = summary,
             RequestKeyHash = HashIdempotencyKey(operation.IdempotencyKey),
             OccurredAt = occurredAt.ToUniversalTime()
         };
+    }
+
+    private static ElsaInstanceProviderReconciliationResult ReconciliationResult(
+        ElsaInstanceOperationEntity operation,
+        bool replayed)
+    {
+        if (operation.InstanceId is null || operation.ReconciliationDiagnosticCode is null ||
+            operation.ReconciledObservedLifecycle is null || operation.ReconciledHealth is null ||
+            operation.ReconciledInstanceVersion is null || operation.ReconciledAt is null)
+            throw Conflict("Provider reconciliation result is incomplete.");
+        var diagnosticCode = operation.ReconciliationDiagnosticCode;
+        var outcome = operation.State switch
+        {
+            ElsaInstanceOperationState.Succeeded => ElsaInstanceProviderReconciliationOutcome.Converged,
+            ElsaInstanceOperationState.Failed when diagnosticCode is
+                ElsaInstanceProviderReconciliationService.HealthFailedCode or
+                ElsaInstanceProviderReconciliationService.HealthUnknownCode =>
+                ElsaInstanceProviderReconciliationOutcome.HealthGateFailed,
+            ElsaInstanceOperationState.Failed => ElsaInstanceProviderReconciliationOutcome.Failed,
+            _ => ElsaInstanceProviderReconciliationOutcome.RecoveryRequired
+        };
+        var projection = new ElsaInstanceProviderReconciliationProjection(
+            operation.WorkspaceId, operation.InstanceId.Value, operation.Id, operation.AttemptNumber,
+            operation.ReconciledObservedLifecycle.Value, operation.ReconciledHealth.Value,
+            operation.ReconciledInstanceVersion.Value, operation.State);
+        return new(outcome, projection, diagnosticCode,
+            operation.State == ElsaInstanceOperationState.RecoveryRequired &&
+            operation.ReconciliationRetryEvidenceReference is not null,
+            replayed, operation.ReconciledAt.Value.ToUniversalTime());
     }
 
     private static void ValidateEnvelope(

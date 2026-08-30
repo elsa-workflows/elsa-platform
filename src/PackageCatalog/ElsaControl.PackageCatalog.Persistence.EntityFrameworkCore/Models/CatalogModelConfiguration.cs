@@ -944,6 +944,13 @@ internal sealed class ElsaInstanceOperationConfiguration : IEntityTypeConfigurat
         // Kept as a compatibility-shaped projection for the future worker seam,
         // but CatalogDbContext collapses it to a stable safe code at write time.
         builder.Property(x => x.FailureSummary).HasMaxLength(128);
+        builder.Property(x => x.ReconciliationEvidenceFingerprint).HasMaxLength(64);
+        builder.Property(x => x.ReconciliationDiagnosticCode).HasMaxLength(128);
+        builder.Property(x => x.ReconciliationRetryEvidenceReference).HasMaxLength(2048);
+        builder.Property(x => x.ReconciliationRetryEvidenceDigest).HasMaxLength(71);
+        builder.Property(x => x.ReconciledObservedLifecycle).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.ReconciledHealth).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.ReconciledAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.WorkspaceId, x.IdempotencyScope, x.IdempotencyKey }).IsUnique();

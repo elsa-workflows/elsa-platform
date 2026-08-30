@@ -137,8 +137,8 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         {
             var stored = _reconciliationResults.GetValueOrDefault(operationId);
             return Task.FromResult<ElsaInstanceProviderReconciliationResult?>(
-                stored is not null && stored.Result.Instance.WorkspaceId == workspaceId &&
-                stored.Result.Operation.State != ElsaInstanceOperationState.RecoveryRequired ? stored.Result : null);
+                stored is not null && stored.Result.Projection.WorkspaceId == workspaceId &&
+                stored.Result.Projection.OperationState != ElsaInstanceOperationState.RecoveryRequired ? stored.Result : null);
         }
     }
 
@@ -155,7 +155,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
             {
                 if (!string.Equals(replay.EvidenceFingerprint, commit.EvidenceFingerprint, StringComparison.Ordinal))
                 {
-                    if (replay.Result.Operation.State != ElsaInstanceOperationState.RecoveryRequired ||
+                    if (replay.Result.Projection.OperationState != ElsaInstanceOperationState.RecoveryRequired ||
                         replay.Version != commit.ExpectedReconciliationVersion)
                         throw new ElsaInstanceLifecycleConflictException("Provider reconciliation evidence conflicts with the recorded result.");
                 }
@@ -184,7 +184,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                 _ => ElsaInstanceProviderReconciliationOutcome.RecoveryRequired
             };
             var result = new ElsaInstanceProviderReconciliationResult(
-                outcome, commit.Instance, commit.Operation, commit.DiagnosticCode, commit.RetrySafe, false, commit.ReconciledAt);
+                outcome, Projection(commit), commit.DiagnosticCode, commit.RetrySafe, false, commit.ReconciledAt);
             _reconciliationResults[commit.OperationId] = new(
                 commit.EvidenceFingerprint,
                 checked(commit.ExpectedReconciliationVersion + 1),
@@ -192,6 +192,17 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
             return Task.FromResult(result);
         }
     }
+
+    private static ElsaInstanceProviderReconciliationProjection Projection(
+        ElsaInstanceProviderReconciliationCommit commit) => new(
+        commit.WorkspaceId,
+        commit.InstanceId,
+        commit.OperationId,
+        commit.Operation.AttemptNumber,
+        commit.Instance.ObservedLifecycle,
+        commit.Instance.Health,
+        commit.Instance.Version,
+        commit.Operation.State);
 
     /// <summary>
     /// Supplies safe, already-admitted resolution inputs to the worker seam. A real
@@ -298,6 +309,11 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                 var isRecoveryResume = storedOperation.State == ElsaInstanceOperationState.RecoveryRequired &&
                     operation.State == ElsaInstanceOperationState.Queued &&
                     operation.AttemptNumber == storedOperation.AttemptNumber + 1;
+                if (isRecoveryResume &&
+                    (!_reconciliationResults.TryGetValue(operation.Id, out var reconciliation) ||
+                     !reconciliation.Result.RetrySafe))
+                    throw new ElsaInstanceLifecycleConflictException(
+                        "Provider reconciliation has not established that retry is safe.");
                 if ((!ElsaInstanceOperation.CanTransition(storedOperation.State, operation.State) && !isRecoveryResume) ||
                     operation.AttemptNumber < storedOperation.AttemptNumber)
                     throw new ElsaInstanceLifecycleConflictException("Lifecycle operation state transition is not valid.");

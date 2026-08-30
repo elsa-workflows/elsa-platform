@@ -2389,13 +2389,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
-                    b.Property<long?>("QuarantinedAt")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("QuarantineCode")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
                     b.Property<long>("CreatedAt")
                         .HasColumnType("bigint");
 
@@ -2407,6 +2400,13 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("QuarantineCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long?>("QuarantinedAt")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("RequestHash")
                         .IsRequired()
@@ -2606,6 +2606,39 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<long?>("ReconciledAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ReconciledHealth")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int?>("ReconciledInstanceVersion")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReconciledObservedLifecycle")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ReconciliationDiagnosticCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ReconciliationEvidenceFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ReconciliationRetryEvidenceDigest")
+                        .HasMaxLength(71)
+                        .HasColumnType("nvarchar(71)");
+
+                    b.Property<string>("ReconciliationRetryEvidenceReference")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<int>("ReconciliationVersion")
+                        .HasColumnType("int");
+
                     b.Property<string>("RequestHash")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -2655,7 +2688,9 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     b.ToTable("ElsaInstanceOperations", null, t =>
                         {
                             t.HasCheckConstraint("CK_ElsaInstanceOperations_LeaseVersion_Range", "LeaseVersion >= 0 AND LeaseVersion < 2147483647");
+
                             t.HasCheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'");
+
                         });
                 });
 
@@ -2704,10 +2739,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                     b.HasIndex("WorkspaceId", "ContentHash");
 
+                    b.HasIndex("OrganizationId", "WorkspaceId", "InstanceId");
+
                     b.HasIndex("WorkspaceId", "InstanceId", "PlanId")
                         .IsUnique();
-
-                    b.HasIndex("OrganizationId", "WorkspaceId", "InstanceId");
 
                     b.ToTable("ElsaInstanceResolvedPlans");
                 });
