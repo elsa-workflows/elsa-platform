@@ -8,6 +8,8 @@ public sealed record ManagedElsaInstanceIdentity(
     Uri CallbackUri,
     int BindingVersion);
 
+public sealed record ManagedElsaInstanceScope(Guid OrganizationId, Guid WorkspaceId, Guid InstanceId);
+
 public enum ManagedElsaInstanceIdentityBindingWriteOutcome
 {
     Created,
@@ -27,6 +29,11 @@ public sealed record ManagedElsaInstanceIdentityBindingWriteResult(
 
 public interface IManagedElsaInstanceIdentityStore
 {
+    Task<ManagedElsaInstanceScope?> FindScopeAsync(
+        Guid organizationId,
+        Guid instanceId,
+        CancellationToken cancellationToken = default);
+
     Task<ManagedElsaInstanceIdentity?> EnsureAsync(
         Guid organizationId,
         Guid instanceId,

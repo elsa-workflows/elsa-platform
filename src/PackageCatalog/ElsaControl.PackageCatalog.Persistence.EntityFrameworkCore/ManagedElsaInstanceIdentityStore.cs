@@ -13,6 +13,23 @@ namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 /// </summary>
 public sealed class EfCoreManagedElsaInstanceIdentityStore(CatalogDbContext dbContext) : IManagedElsaInstanceIdentityStore
 {
+    public async Task<ManagedElsaInstanceScope?> FindScopeAsync(
+        Guid organizationId,
+        Guid instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (organizationId == Guid.Empty || instanceId == Guid.Empty)
+            return null;
+        var entity = await dbContext.ElsaInstances
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                x => x.OrganizationId == organizationId && x.Id == instanceId,
+                cancellationToken);
+        return entity is null || IsUnavailable(entity)
+            ? null
+            : new ManagedElsaInstanceScope(entity.OrganizationId, entity.WorkspaceId, entity.Id);
+    }
+
     public async Task<ManagedElsaInstanceIdentity?> EnsureAsync(
         Guid organizationId,
         Guid instanceId,

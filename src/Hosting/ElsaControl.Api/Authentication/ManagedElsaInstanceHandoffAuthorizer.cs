@@ -14,18 +14,22 @@ public sealed class ManagedElsaInstanceHandoffAuthorizer(
         ManagedElsaHandoffRequest request,
         CancellationToken cancellationToken = default)
     {
+        var scope = await identities.FindScopeAsync(request.OrganizationId, request.InstanceId, cancellationToken);
+        if (scope is null)
+            return null;
+
+        var access = await accounts.GetWorkspaceAccessAsync(identity, scope.WorkspaceId, cancellationToken);
+        if (access is null || access.OrganizationId != scope.OrganizationId)
+            return null;
+
+        var effective = await permissions.GetEffectivePermissionsAsync(scope.WorkspaceId, access.AccountId, cancellationToken);
+        if (!effective.Has(ManagedElsaInstancePermissions.Open))
+            return null;
+
         var target = await identities.EnsureAsync(request.OrganizationId, request.InstanceId, cancellationToken);
         if (target is null ||
             !string.Equals(target.Audience, request.Audience, StringComparison.Ordinal) ||
             !ManagedElsaHandoffIssuer.HasExactRedirectBinding(target.CallbackUri, request.RedirectUri))
-            return null;
-
-        var access = await accounts.GetWorkspaceAccessAsync(identity, target.WorkspaceId, cancellationToken);
-        if (access is null || access.OrganizationId != target.OrganizationId)
-            return null;
-
-        var effective = await permissions.GetEffectivePermissionsAsync(target.WorkspaceId, access.AccountId, cancellationToken);
-        if (!effective.Has(ManagedElsaInstancePermissions.Open))
             return null;
 
         return new ManagedElsaHandoffAuthorization(

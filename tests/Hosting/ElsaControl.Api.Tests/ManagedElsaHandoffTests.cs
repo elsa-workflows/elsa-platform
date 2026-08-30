@@ -99,11 +99,21 @@ public sealed class ManagedElsaHandoffTests
 
         var audience = ElsaInstanceIdentityBinding.AudienceFor(instanceId);
         var callback = ElsaInstanceIdentityBinding.CanonicalizeCallbackUri("https://managed.example.test");
+        var handoffRequest = new ManagedElsaHandoffIssueRequest(
+            organizationId, instanceId, audience, callback,
+            ManagedElsaHandoffIssuer.CreateCodeChallenge(CodeVerifier));
+        var unauthorized = await app.CreateControlIdentityClient("managed-outsider")
+            .PostControlJsonAsync("/api/managed-elsa/handoff/issue", handoffRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, unauthorized.StatusCode);
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var identities = scope.ServiceProvider.GetRequiredService<IManagedElsaInstanceIdentityStore>();
+            Assert.Null(await identities.FindAsync(organizationId, instanceId));
+        }
+
         var response = await client.PostControlJsonAsync(
             "/api/managed-elsa/handoff/issue",
-            new ManagedElsaHandoffIssueRequest(
-                organizationId, instanceId, audience, callback,
-                ManagedElsaHandoffIssuer.CreateCodeChallenge(CodeVerifier)));
+            handoffRequest);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
