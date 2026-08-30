@@ -61,7 +61,7 @@ public static partial class DeploymentProofEvidence
         BareUserInfoRegex().Replace(
             ProtocolRelativeUserInfoRegex().Replace(
                 UserInfoRegex().Replace(SecretAssignmentRegex().Replace(value, "$1<redacted>"), "$1<redacted>@"),
-                "$1<redacted>@"),
+                "$1//<redacted>@"),
             "<redacted>@");
 
     private static DeploymentProofStageResult SanitizeStage(DeploymentProofStageResult stage) =>

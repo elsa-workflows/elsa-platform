@@ -364,11 +364,7 @@ public sealed class DeploymentProofHarness(
             : schemeDelimiter >= 0 ? schemeDelimiter + "://".Length : 0;
         var authorityEnd = value.IndexOfAny(['/', '\\', ' ', '\t', '\r', '\n', ',', ';'], authorityStart);
         var authority = authorityEnd < 0 ? value[authorityStart..] : value[authorityStart..authorityEnd];
-        var at = authority.IndexOf('@');
-        if (at < 0)
-            return false;
-
-        return true;
+        return authority.Contains('@');
     }
 
     private static bool IsSha256Digest(string digest) =>
