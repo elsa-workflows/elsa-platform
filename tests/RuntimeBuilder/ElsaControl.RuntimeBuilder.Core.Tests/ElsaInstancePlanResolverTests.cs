@@ -298,6 +298,27 @@ public sealed class ElsaInstancePlanResolverTests
     }
 
     [Fact]
+    public async Task Does_not_mask_projection_null_reference_as_manifest_validation()
+    {
+        var baseline = CreateRequest();
+        var topology = baseline.ReleaseManifest.Manifest!.Topologies[0];
+        var image = topology.Images[0]! with { Capabilities = null };
+        var request = baseline with
+        {
+            ReleaseManifest = baseline.ReleaseManifest with
+            {
+                Manifest = baseline.ReleaseManifest.Manifest with
+                {
+                    Topologies = [topology with { Compatibility = null!, Images = [image] }]
+                }
+            }
+        };
+
+        await Assert.ThrowsAsync<NullReferenceException>(() =>
+            new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility()).ResolveAsync(request));
+    }
+
+    [Fact]
     public async Task Rejects_requested_topology_when_null_admission_selection_defaults_to_a_different_topology()
     {
         var baseline = CreateRequest();

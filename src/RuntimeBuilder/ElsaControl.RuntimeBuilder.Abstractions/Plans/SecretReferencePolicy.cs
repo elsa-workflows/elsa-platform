@@ -19,6 +19,8 @@ public static class SecretReferencePolicy
 
         return string.Equals(uri.Scheme, "secret", StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(uri.Host)
+            && !string.IsNullOrEmpty(uri.AbsolutePath)
+            && uri.AbsolutePath != "/"
             && string.IsNullOrEmpty(uri.UserInfo)
             && string.IsNullOrEmpty(uri.Query)
             && string.IsNullOrEmpty(uri.Fragment)

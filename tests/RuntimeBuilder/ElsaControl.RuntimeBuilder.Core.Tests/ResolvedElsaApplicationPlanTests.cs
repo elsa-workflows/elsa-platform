@@ -141,7 +141,9 @@ public sealed class ResolvedElsaApplicationPlanTests
             "secret://vault/database//password",
             "secret://vault/database%2f..%2fadmin",
             "secret://vault/database\\password",
-            "secret://vault/database\0password"
+            "secret://vault/database\0password",
+            "secret://host",
+            "secret://host/"
         };
         var plan = CreatePlan() with
         {
@@ -161,6 +163,14 @@ public sealed class ResolvedElsaApplicationPlanTests
 
         Assert.Equal(references.Length, findings.Count(x => x.Code == "configuration.secretReference.invalid"));
         Assert.Empty(ResolvedElsaApplicationPlanValidator.Validate(CreatePlan()));
+    }
+
+    [Theory]
+    [InlineData("secret://host")]
+    [InlineData("secret://host/")]
+    public void Rejects_secret_references_without_a_non_root_path(string reference)
+    {
+        Assert.False(SecretReferencePolicy.IsSafe(reference));
     }
 
     [Theory]
@@ -290,7 +300,7 @@ public sealed class ResolvedElsaApplicationPlanTests
                 digestB),
             new(topologyId, components),
             reverseCollections ? [package with { Features = [package.Features[0] with { RequiredCapabilities = ["workflow.runtime"] }] }] : [package],
-            new([new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, "secret://database", null)]),
+            new([new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, "secret://database/connection", null)]),
             new([new(topologyId == "combined" ? "runtime" : "server", 1, 1, 500, 1024)], [new("elsa-data", "relational", "persistent", "exclusive", 10)]),
             new("public", "restricted", true, ["registry.example"], [new(topologyId == "combined" ? "runtime" : "server", "api", "https", 443, "public", true, "/elsa/api")]),
             "Dedicated",
