@@ -558,8 +558,8 @@ EF Core store and produce both SQLite and SQL Server migrations.
 - `InstanceId`, immutable `Audience`, normalized exact `CanonicalCallbackUri`,
   verified endpoint-origin reference, `BindingVersion`, `ChangedAt` and safe audit
   metadata;
-- unique `Audience`, and a filtered unique `CanonicalCallbackUri` for non-null
-  active bindings so two instances cannot claim the same custom domain/callback;
+- unique `Audience` and `CanonicalCallbackUri` values so two instances cannot claim
+  the same custom domain/callback;
 - audience is persisted even though it is deterministically derived from the
   immutable instance ID; persisting it makes corruption/rotation detectable and
   gives the handoff authorizer one authoritative row. Callback rotation updates the

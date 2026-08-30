@@ -351,8 +351,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 name: "IX_ElsaInstanceIdentityBindings_CanonicalCallbackUri",
                 table: "ElsaInstanceIdentityBindings",
                 column: "CanonicalCallbackUri",
-                unique: true,
-                filter: "CanonicalCallbackUri IS NOT NULL");
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_ElsaInstanceMigrations_InstanceId_Phase",

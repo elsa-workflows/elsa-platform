@@ -918,7 +918,7 @@ internal sealed class ElsaInstanceIdentityBindingConfiguration : IEntityTypeConf
         builder.Property(x => x.BindingVersion).IsConcurrencyToken();
         builder.Property(x => x.ChangedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => x.Audience).IsUnique();
-        builder.HasIndex(x => x.CanonicalCallbackUri).IsUnique().HasFilter("CanonicalCallbackUri IS NOT NULL");
+        builder.HasIndex(x => x.CanonicalCallbackUri).IsUnique();
     }
 }
 

@@ -307,7 +307,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             if (operation.ExpectedVersion < 1 || operation.AttemptNumber < 1)
                 throw new InvalidOperationException("An instance operation requires positive version and attempt values.");
             if (operation.InstanceId is not null && operation.InstanceId == Guid.Empty)
-                throw new InvalidOperationException("An instance operation requires organization ownership.");
+                throw new InvalidOperationException("An instance operation requires a non-empty instance ID.");
             if (operation.InstanceId is null && operation.Action != ElsaInstanceOperationAction.Create)
                 throw new InvalidOperationException("Only create operations may omit an instance ID.");
             if (operation.State == ElsaInstanceOperationState.WaitingForPriorOperation &&

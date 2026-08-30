@@ -1982,8 +1982,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .IsUnique();
 
                     b.HasIndex("CanonicalCallbackUri")
-                        .IsUnique()
-                        .HasFilter("CanonicalCallbackUri IS NOT NULL");
+                        .IsUnique();
 
                     b.ToTable("ElsaInstanceIdentityBindings");
                 });

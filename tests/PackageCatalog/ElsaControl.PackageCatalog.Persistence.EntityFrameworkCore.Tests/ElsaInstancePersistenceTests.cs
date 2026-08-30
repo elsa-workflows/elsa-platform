@@ -103,6 +103,12 @@ public sealed class ElsaInstancePersistenceTests
 
         var run = db.Model.FindEntityType(typeof(DeploymentRunEntity))!;
         Assert.Contains(run.GetIndexes().Select(x => x.GetFilter()), x => x == "ElsaInstanceId IS NOT NULL AND Status IN ('Queued', 'Running', 'RecoveryRequired')");
+
+        var identityBinding = db.Model.FindEntityType(typeof(ElsaInstanceIdentityBindingEntity))!;
+        var callbackIndex = Assert.Single(identityBinding.GetIndexes(), index =>
+            index.Properties.Count == 1 && index.Properties[0].Name == nameof(ElsaInstanceIdentityBindingEntity.CanonicalCallbackUri));
+        Assert.True(callbackIndex.IsUnique);
+        Assert.Null(callbackIndex.GetFilter());
     }
 
     [Fact]
@@ -148,6 +154,25 @@ public sealed class ElsaInstancePersistenceTests
         db.ElsaInstanceOperations.AddRange(first, second);
 
         await Assert.ThrowsAnyAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Empty_instance_id_reports_instance_id_validation_error()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Instance ID validation workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+
+        var operation = NewOperation(workspace, null, ElsaInstanceOperationState.Succeeded, "empty-instance-id");
+        operation.InstanceId = Guid.Empty;
+        db.ElsaInstanceOperations.Add(operation);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+        Assert.Equal("An instance operation requires a non-empty instance ID.", exception.Message);
     }
 
     [Fact]

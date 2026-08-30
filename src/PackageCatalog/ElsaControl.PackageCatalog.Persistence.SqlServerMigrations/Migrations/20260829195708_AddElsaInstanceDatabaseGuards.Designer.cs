@@ -1987,8 +1987,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .IsUnique();
 
                     b.HasIndex("CanonicalCallbackUri")
-                        .IsUnique()
-                        .HasFilter("CanonicalCallbackUri IS NOT NULL");
+                        .IsUnique();
 
                     b.ToTable("ElsaInstanceIdentityBindings");
                 });
