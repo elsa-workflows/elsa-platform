@@ -838,6 +838,9 @@ public sealed class AzureProviderExecutorTests
         public Task<AzureProviderOperation?> GetAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_operation is { WorkspaceId: var id, Id: var operationIdValue } && id == workspaceId && operationIdValue == operationId ? _operation : null);
 
+        public Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<AzureProviderOperation>>([]);
+
         public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default) =>
             Task.FromResult<AzureProviderOperation?>(
                 LatestReconcileResources is not null && _operation is not null
