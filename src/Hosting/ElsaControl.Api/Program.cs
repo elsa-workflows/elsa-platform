@@ -1,10 +1,12 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using ConsoleLogStreaming.AspNetCore.DependencyInjection;
 using ConsoleLogStreaming.Core.DependencyInjection;
 using Microsoft.AspNetCore.DataProtection;
 using ElsaControl.Deployment.Artifacts;
 using ElsaControl.Deployment.Core.Cockpit;
+using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.Deployment.Core.Workspace;
 using ElsaControl.Deployment.Azure;
 using ElsaControl.PackageCatalog.Abstractions.Catalog;
@@ -169,19 +171,60 @@ builder.Services.AddCors(options => options.AddPolicy(PublicBuilderCors.PolicyNa
         .WithMethods(HttpMethods.Get, HttpMethods.Post, HttpMethods.Options)
         .WithHeaders("Content-Type", ApiKeyAuthenticationDefaults.HeaderName);
 }));
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, _) =>
+    {
+        await Results.Problem(
+                statusCode: StatusCodes.Status429TooManyRequests,
+                title: "Managed Elsa identity handoff rate limit was exceeded.",
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = "handoff.rate-limited",
+                    ["correlationId"] = context.HttpContext.TraceIdentifier
+                })
+            .ExecuteAsync(context.HttpContext);
+    };
+    options.AddPolicy("managed-elsa-handoff", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 20,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
+});
 builder.Services.AddCatalogAuthorization();
 builder.Services.AddBuilderClientAuthorization();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AdminApiKeyValidator>();
 builder.Services.AddSingleton<BuilderClientApiKeyValidator>();
-builder.Services.AddSingleton<ManagedElsaHandoffKeyRing>(_ => ManagedElsaHandoffKeyRing.CreateEphemeral());
-builder.Services.AddSingleton<IManagedElsaHandoffReplayStore, InMemoryManagedElsaHandoffReplayStore>();
-builder.Services.AddSingleton<IManagedElsaHandoffAuthorizer, UnconfiguredManagedElsaHandoffAuthorizer>();
-builder.Services.AddSingleton<IManagedElsaHandoffAuditSink, NullManagedElsaHandoffAuditSink>();
+builder.Services.AddSingleton<ManagedElsaHandoffKeyRing>(services =>
+{
+    var options = services.GetRequiredService<IOptions<ManagedElsaHandoffOptions>>().Value;
+    if (!options.Enabled)
+        return ManagedElsaHandoffKeyRing.CreateEphemeral();
+    var hasKeyId = !string.IsNullOrWhiteSpace(options.ActiveKeyId);
+    var hasPrivateKey = !string.IsNullOrWhiteSpace(options.ActivePrivateKeyPem);
+    if (hasKeyId != hasPrivateKey)
+        throw new InvalidOperationException(
+            "Managed Elsa handoff active signing key configuration must include both key ID and private key.");
+    return hasKeyId
+        ? ManagedElsaHandoffKeyRing.CreateConfigured(options)
+        : ManagedElsaHandoffKeyRing.CreateEphemeral();
+});
+builder.Services.AddScoped<EfCoreManagedElsaHandoffStore>();
+builder.Services.AddScoped<IManagedElsaHandoffReplayStore, EfCoreManagedElsaHandoffReplayStore>();
+builder.Services.AddScoped<IManagedElsaInstanceIdentityStore, EfCoreManagedElsaInstanceIdentityStore>();
+builder.Services.AddScoped<IManagedElsaHandoffAuthorizer, ManagedElsaInstanceHandoffAuthorizer>();
+builder.Services.AddScoped<IManagedElsaHandoffAuditSink, EfCoreManagedElsaHandoffAuditSink>();
 builder.Services.AddScoped<ManagedElsaHandoffIssuer>();
 builder.Services.AddScoped<ManagedElsaHandoffRedeemer>();
 builder.Services.AddScoped<ManagedElsaHandoffService>();
 builder.Services.AddHostedService<ManagedElsaHandoffConfigurationValidator>();
+builder.Services.AddSingleton<IWorkspacePermissionContribution, ManagedElsaInstancePermissionContribution>();
 builder.Services.AddCatalogDbContext(builder.Configuration);
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
 builder.Services.AddScoped<IPublicCatalogQueries, PublicCatalogQueries>();
@@ -409,6 +452,7 @@ app.Use(async (context, next) =>
 });
 app.UseAdminDashboardRequestForgeryGuard();
 app.UseStaticFiles();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapOpenApi();

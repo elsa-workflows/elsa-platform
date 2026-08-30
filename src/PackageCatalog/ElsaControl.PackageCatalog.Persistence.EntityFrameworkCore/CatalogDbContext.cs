@@ -78,6 +78,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.WeaverPlanEntity> WeaverPlans => Set<Models.WeaverPlanEntity>();
     internal DbSet<Models.WeaverPlanApprovalEntity> WeaverPlanApprovals => Set<Models.WeaverPlanApprovalEntity>();
     internal DbSet<Models.WeaverPlanExecutionEntity> WeaverPlanExecutions => Set<Models.WeaverPlanExecutionEntity>();
+    internal DbSet<Models.ManagedElsaHandoffReplayEntity> ManagedElsaHandoffReplays => Set<Models.ManagedElsaHandoffReplayEntity>();
+    internal DbSet<Models.ManagedElsaHandoffAuditEventEntity> ManagedElsaHandoffAuditEvents => Set<Models.ManagedElsaHandoffAuditEventEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -142,6 +144,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.WeaverPlanConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WeaverPlanApprovalConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WeaverPlanExecutionConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.ManagedElsaHandoffReplayConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.ManagedElsaHandoffAuditEventConfiguration());
     }
 
     public override int SaveChanges() => SaveChanges(acceptAllChangesOnSuccess: true);
@@ -172,6 +176,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         EnsureElsaInstanceIntentRevisionsAreAppendOnly();
         EnsureElsaInstanceLifecycleOutboxIsAppendOnly();
         EnsureElsaInstanceResolvedPlansAreAppendOnly();
+        EnsureManagedElsaHandoffRowsAreAppendOnly();
+        ValidateManagedElsaHandoffRows();
         ValidateElsaInstancePersistence();
         EnsureOrganizationsForNewWorkspaces();
     }
@@ -251,6 +257,49 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         if (ChangeTracker.Entries<Models.ElsaInstanceResolvedPlanEntity>()
             .Any(x => x.State is EntityState.Modified or EntityState.Deleted))
             throw new InvalidOperationException("Elsa instance resolved plans are append-only.");
+    }
+
+    private void EnsureManagedElsaHandoffRowsAreAppendOnly()
+    {
+        if (ChangeTracker.Entries<Models.ManagedElsaHandoffReplayEntity>()
+            .Any(x => x.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Managed Elsa handoff replay records are append-only.");
+        if (ChangeTracker.Entries<Models.ManagedElsaHandoffAuditEventEntity>()
+            .Any(x => x.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Managed Elsa handoff audit events are append-only.");
+    }
+
+    private void ValidateManagedElsaHandoffRows()
+    {
+        foreach (var entry in ChangeTracker.Entries<Models.ManagedElsaHandoffReplayEntity>()
+                     .Where(x => x.State == EntityState.Added))
+        {
+            var replay = entry.Entity;
+            replay.Jti = RequireSafeToken(replay.Jti, nameof(replay.Jti), 128);
+            replay.ExpiresAt = replay.ExpiresAt.ToUniversalTime();
+            replay.ConsumedAt = replay.ConsumedAt.ToUniversalTime();
+            if (replay.ConsumedAt == default || replay.ExpiresAt <= replay.ConsumedAt)
+                throw new InvalidOperationException("Managed Elsa handoff replay lifetime is invalid.");
+        }
+
+        foreach (var entry in ChangeTracker.Entries<Models.ManagedElsaHandoffAuditEventEntity>()
+                     .Where(x => x.State == EntityState.Added))
+        {
+            var audit = entry.Entity;
+            if (audit.Id == Guid.Empty)
+                audit.Id = Guid.NewGuid();
+            audit.Action = RequireSafeCode(audit.Action, nameof(audit.Action));
+            audit.Jti = OptionalSafeToken(audit.Jti, nameof(audit.Jti), 128) ?? "";
+            audit.Audience = OptionalAudience(audit.Audience, nameof(audit.Audience));
+            if (audit.BindingVersion is <= 0)
+                throw new InvalidOperationException("Managed Elsa handoff binding version must be positive when supplied.");
+            audit.CorrelationId = OptionalSafeReference(audit.CorrelationId, nameof(audit.CorrelationId), 128);
+            if (audit.AccountId == Guid.Empty || audit.OrganizationId == Guid.Empty || audit.InstanceId == Guid.Empty)
+                throw new InvalidOperationException("Managed Elsa handoff audit identifiers must be non-empty when supplied.");
+            audit.OccurredAt = audit.OccurredAt.ToUniversalTime();
+            if (audit.OccurredAt == default)
+                throw new InvalidOperationException("Managed Elsa handoff audit timestamp is required.");
+        }
     }
 
     private void ValidateElsaInstancePersistence()
