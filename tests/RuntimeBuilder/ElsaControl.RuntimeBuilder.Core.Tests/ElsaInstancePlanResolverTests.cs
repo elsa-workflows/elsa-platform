@@ -283,6 +283,34 @@ public sealed class ElsaInstancePlanResolverTests
     }
 
     [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Rejects_missing_admitted_manifest_reference_with_stable_finding(string? reference)
+    {
+        var baseline = CreateRequest();
+        var request = baseline with
+        {
+            ReleaseManifest = baseline.ReleaseManifest with { Reference = reference }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility()).ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(["releaseManifest.evidence.invalid"], result.Findings.Select(finding => finding.Code));
+    }
+
+    [Fact]
+    public async Task Rejects_null_existing_evidence_with_stable_projection_finding()
+    {
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility())
+            .ResolveAsync(CreateRequest() with { ExistingEvidence = [null!] });
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(["manifest.projection.invalid"], result.Findings.Select(finding => finding.Code));
+    }
+
+    [Theory]
     [InlineData("sbom")]
     [InlineData("provenance")]
     [InlineData("vulnerabilityScan")]

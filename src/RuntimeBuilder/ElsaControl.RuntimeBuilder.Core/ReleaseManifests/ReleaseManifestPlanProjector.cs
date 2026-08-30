@@ -146,9 +146,12 @@ public static class ReleaseManifestPlanProjector
     {
         foreach (var evidence in existing ?? [])
         {
+            if (evidence is null)
+                throw new InvalidOperationException("Existing plan evidence cannot contain null items.");
+
             // Legacy entries without a kind are discarded by ProjectEvidence. They
             // cannot be retained, but remain tolerated so old plans can be upgraded.
-            if (evidence is null || string.IsNullOrWhiteSpace(evidence.Kind))
+            if (string.IsNullOrWhiteSpace(evidence.Kind))
                 continue;
 
             if (!ReleaseManifestAdmissionService.IsDigest(evidence.Digest)

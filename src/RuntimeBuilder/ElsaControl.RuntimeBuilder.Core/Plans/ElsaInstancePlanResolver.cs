@@ -596,6 +596,7 @@ public sealed class ElsaInstancePlanResolver(
         {
             var signatureEvidence = request.ReleaseManifest.SignatureEvidence;
             if (!ReleaseManifestAdmissionService.IsDigest(request.ReleaseManifest.Digest)
+                || string.IsNullOrWhiteSpace(request.ReleaseManifest.Reference)
                 || !ReleaseManifestAdmissionService.IsSafeEvidenceReference(request.ReleaseManifest.Reference!, request.ReleaseManifest.Digest)
                 || !ReleaseManifestAdmissionService.IsDigest(signatureEvidence.Digest)
                 || !ReleaseManifestAdmissionService.IsSafeEvidenceReference(signatureEvidence.Reference, signatureEvidence.Digest))
