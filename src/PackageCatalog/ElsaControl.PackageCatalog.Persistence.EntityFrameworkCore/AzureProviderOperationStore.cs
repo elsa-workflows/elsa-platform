@@ -123,7 +123,15 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
                     .SetProperty(x => x.AttemptNumber, x => x.AttemptNumber + 1)
                     .SetProperty(x => x.UpdatedAt, now)
                     .SetProperty(x => x.Version, x => x.Version + 1), cancellationToken);
-            if (changed == 0) return;
+            if (changed == 0)
+            {
+                var replay = await db.AzureProviderOperations.AsNoTracking().SingleOrDefaultAsync(x =>
+                    x.WorkspaceId == workspaceId && x.Id == operationId &&
+                    x.Status == AzureProviderOperationStatus.Running && x.WorkerId == workerId &&
+                    x.LeaseTokenHash == hash, cancellationToken);
+                result = replay is null ? null : ToModel(replay);
+                return;
+            }
             db.ChangeTracker.Clear();
             var entity = await db.AzureProviderOperations.SingleAsync(x => x.Id == operationId, cancellationToken);
             AddTransition(entity, allowRecovery ? "operation.recoveryClaimed" : "operation.claimed", allowRecovery ? "Recovery reconciliation claimed." : "Azure provider operation claimed.", now);
