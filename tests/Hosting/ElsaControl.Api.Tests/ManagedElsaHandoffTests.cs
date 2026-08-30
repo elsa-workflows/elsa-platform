@@ -57,7 +57,7 @@ public sealed class ManagedElsaHandoffTests
     }
 
     [Fact]
-    public async Task Production_wiring_issues_from_persisted_instance_binding_and_owner_permission()
+    public async Task Production_wiring_creates_persisted_binding_and_issues_handoff_token()
     {
         await using var app = new ControlApiTestApplication(new Dictionary<string, string?>
         {

@@ -14,6 +14,7 @@ public static class ManagedElsaHandoffDefaults
     public const string ConfigurationSection = "ManagedElsa:Handoff";
     public const string RuntimeSessionScope = "runtime:session";
     public const string TokenType = "elsa-handoff+jwt";
+    public const string TestingEnvironmentName = "Testing";
     public static readonly TimeSpan DefaultLifetime = TimeSpan.FromSeconds(60);
     public static readonly TimeSpan MaximumLifetime = TimeSpan.FromMinutes(5);
 }
@@ -38,7 +39,7 @@ public sealed class ManagedElsaHandoffConfigurationValidator(
         var validated = ManagedElsaHandoffIssuer.ValidateOptions(options.Value);
         if (validated.Enabled)
         {
-            var localEnvironment = environment.IsDevelopment() || environment.IsEnvironment("Testing");
+            var localEnvironment = environment.IsDevelopment() || environment.IsEnvironment(ManagedElsaHandoffDefaults.TestingEnvironmentName);
             var hasAnyConfiguredKey = !string.IsNullOrWhiteSpace(validated.ActiveKeyId) ||
                                       !string.IsNullOrWhiteSpace(validated.ActivePrivateKeyPem);
             var hasConfiguredActiveKey = !string.IsNullOrWhiteSpace(validated.ActiveKeyId) &&
