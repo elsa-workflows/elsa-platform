@@ -373,16 +373,17 @@ public sealed class ManagedElsaHandoffTests
     [Fact]
     public async Task Production_configuration_validator_rejects_malformed_signing_key_at_startup()
     {
-        await using var services = new ServiceCollection().BuildServiceProvider();
+        var handoffOptions = new ManagedElsaHandoffOptions
+        {
+            Enabled = true,
+            Issuer = "https://cloud.example.test",
+            ActiveKeyId = "active-2026-09",
+            ActivePrivateKeyPem = "not a pem"
+        };
+        await using var services = CreateKeyRingServices(handoffOptions);
         var validator = new ManagedElsaHandoffConfigurationValidator(
             new TestHostEnvironment(Environments.Production),
-            Options.Create(new ManagedElsaHandoffOptions
-            {
-                Enabled = true,
-                Issuer = "https://cloud.example.test",
-                ActiveKeyId = "active-2026-09",
-                ActivePrivateKeyPem = "not a pem"
-            }),
+            Options.Create(handoffOptions),
             services);
 
         await Assert.ThrowsAsync<ArgumentException>(() => validator.StartAsync(CancellationToken.None));
@@ -392,20 +393,21 @@ public sealed class ManagedElsaHandoffTests
     public async Task Production_configuration_validator_rejects_malformed_previous_key_at_startup()
     {
         using var active = RSA.Create(2048);
-        await using var services = new ServiceCollection().BuildServiceProvider();
+        var handoffOptions = new ManagedElsaHandoffOptions
+        {
+            Enabled = true,
+            Issuer = "https://cloud.example.test",
+            ActiveKeyId = "active-2026-09",
+            ActivePrivateKeyPem = active.ExportRSAPrivateKeyPem(),
+            PreviousPublicKeys = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["previous-2026-08"] = "not a pem"
+            }
+        };
+        await using var services = CreateKeyRingServices(handoffOptions);
         var validator = new ManagedElsaHandoffConfigurationValidator(
             new TestHostEnvironment(Environments.Production),
-            Options.Create(new ManagedElsaHandoffOptions
-            {
-                Enabled = true,
-                Issuer = "https://cloud.example.test",
-                ActiveKeyId = "active-2026-09",
-                ActivePrivateKeyPem = active.ExportRSAPrivateKeyPem(),
-                PreviousPublicKeys = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["previous-2026-08"] = "not a pem"
-                }
-            }),
+            Options.Create(handoffOptions),
             services);
 
         await Assert.ThrowsAsync<ArgumentException>(() => validator.StartAsync(CancellationToken.None));
@@ -434,6 +436,13 @@ public sealed class ManagedElsaHandoffTests
             services.RemoveAll<IManagedElsaHandoffAuthorizer>();
             services.AddSingleton<IManagedElsaHandoffAuthorizer>(authorizer);
         });
+
+    private static ServiceProvider CreateKeyRingServices(ManagedElsaHandoffOptions options)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(_ => ManagedElsaHandoffKeyRing.CreateConfigured(options));
+        return services.BuildServiceProvider();
+    }
 
     private static HandoffFixture CreateFixture(TestTimeProvider? clock = null)
     {
