@@ -4,6 +4,7 @@ using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 {
     [DbContext(typeof(CatalogDbContext))]
-    partial class CatalogDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260829194849_AddElsaInstancePersistence")]
+    partial class AddElsaInstancePersistence
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -875,247 +878,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     b.HasIndex("WorkspaceId", "ActionType", "TargetId", "ConfirmedByAccountId");
 
                     b.ToTable("ActionConfirmations");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Action")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<int>("AttemptNumber")
-                        .HasColumnType("int");
-
-                    b.Property<long>("CheckpointSequence")
-                        .HasColumnType("bigint");
-
-                    b.Property<long?>("CompletedAt")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("CompletionFingerprint")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("CompletionLeaseTokenHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<long>("CreatedAt")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("DiagnosticsJson")
-                        .IsRequired()
-                        .HasMaxLength(10000)
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ElsaVersion")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("Endpoint")
-                        .HasMaxLength(2048)
-                        .HasColumnType("nvarchar(2048)");
-
-                    b.Property<string>("FoundationDeploymentId")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<string>("Health")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<long?>("HeartbeatAt")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("IdempotencyKey")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<string>("ImageDigest")
-                        .IsRequired()
-                        .HasMaxLength(71)
-                        .HasColumnType("nvarchar(71)");
-
-                    b.Property<string>("ImageRepository")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<string>("Isolation")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<long?>("LeaseExpiresAt")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("LeaseTokenHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("Location")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("OperationIdentity")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("Phase")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("PlanFingerprint")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("ReleaseLine")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("ReleaseManifestDigest")
-                        .HasMaxLength(71)
-                        .HasColumnType("nvarchar(71)");
-
-                    b.Property<string>("ReleaseManifestSignatureDigest")
-                        .HasMaxLength(71)
-                        .HasColumnType("nvarchar(71)");
-
-                    b.Property<string>("RequestHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("ResourceGroupName")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("StableTrafficRevisionName")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("TargetKey")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("TemplateFingerprint")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("Topology")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<long>("UpdatedAt")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("WorkerId")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("WorkloadDeploymentId")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<string>("WorkloadResourceId")
-                        .HasMaxLength(1024)
-                        .HasColumnType("nvarchar(1024)");
-
-                    b.Property<string>("WorkloadRevisionName")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("WorkspaceId", "TargetKey")
-                        .IsUnique()
-                        .HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
-
-                    b.HasIndex("WorkspaceId", "TargetKey", "CreatedAt");
-
-                    b.HasIndex("WorkspaceId", "TargetKey", "IdempotencyKey")
-                        .IsUnique();
-
-                    b.HasIndex("WorkspaceId", "TargetKey", "OperationIdentity")
-                        .IsUnique()
-                        .HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
-
-                    b.HasIndex("WorkspaceId", "Status", "LeaseExpiresAt", "UpdatedAt");
-
-                    b.ToTable("AzureProviderOperations");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationTransitionEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<long>("OccurredAt")
-                        .HasColumnType("bigint");
-
-                    b.Property<Guid>("OperationId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Phase")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<long>("Sequence")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OperationId", "OccurredAt");
-
-                    b.HasIndex("OperationId", "Sequence")
-                        .IsUnique();
-
-                    b.ToTable("AzureProviderOperationTransitions");
                 });
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentApplicationEntity", b =>
@@ -3684,28 +3446,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationEntity", b =>
-                {
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", "Workspace")
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Workspace");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationTransitionEntity", b =>
-                {
-                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationEntity", "Operation")
-                        .WithMany("Transitions")
-                        .HasForeignKey("OperationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Operation");
-                });
-
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentApplicationEntity", b =>
                 {
                     b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", null)
@@ -4188,11 +3928,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
             modelBuilder.Entity("ElsaControl.PackageCatalog.Core.Sync.SyncRun", b =>
                 {
                     b.Navigation("Items");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationEntity", b =>
-                {
-                    b.Navigation("Transitions");
                 });
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentApplicationEntity", b =>

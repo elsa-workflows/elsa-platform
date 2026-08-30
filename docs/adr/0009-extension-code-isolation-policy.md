@@ -39,7 +39,7 @@ Rejected as the managed default because reproducibility, rollback and provenance
 
 ## Consequences
 
-- Initial Shared profiles have a constrained extension surface.
+- Any future Shared profile has a constrained extension surface.
 - Private/custom-code launch requires a threat model, provenance/build pipeline and isolation tests.
 - Entitlements can grant access only to policies that the selected provider/profile actually enforces.
 

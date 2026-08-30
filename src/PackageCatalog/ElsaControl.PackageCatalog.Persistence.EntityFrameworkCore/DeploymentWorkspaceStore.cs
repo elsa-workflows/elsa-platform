@@ -597,7 +597,9 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         dbContext.DeploymentRuns.AnyAsync(
             x => x.WorkspaceId == workspaceId
                 && x.EnvironmentId == environmentId
-                && (x.Status == WorkspaceDeploymentRunStatus.Queued || x.Status == WorkspaceDeploymentRunStatus.Running),
+                && (x.Status == WorkspaceDeploymentRunStatus.Queued ||
+                    x.Status == WorkspaceDeploymentRunStatus.Running ||
+                    x.Status == WorkspaceDeploymentRunStatus.RecoveryRequired),
             cancellationToken);
 
     public async Task<WorkspaceDeploymentRun> CreateRunAsync(
@@ -630,6 +632,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         {
             Id = runId,
             WorkspaceId = workspaceId,
+            ElsaInstanceId = environment.ElsaInstanceId,
             ApplicationId = sourceRevision.ApplicationId,
             EnvironmentId = request.TargetEnvironmentId,
             EngineId = request.TargetEngineId,

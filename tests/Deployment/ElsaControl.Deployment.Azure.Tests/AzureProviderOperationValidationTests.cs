@@ -5,6 +5,17 @@ namespace ElsaControl.Deployment.Azure.Tests;
 public sealed class AzureProviderOperationValidationTests
 {
     [Fact]
+    public void Rejects_deployment_references_longer_than_the_persistence_contract()
+    {
+        var references = new AzureProviderResourceReferences(
+            FoundationDeploymentId: new string('a', 513),
+            WorkloadDeploymentId: new string('b', 513),
+            WorkloadResourceId: new string('c', 1024));
+
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateReferences(references));
+    }
+
+    [Fact]
     public void Normalizes_safe_identity_and_digests()
     {
         var request = ValidRequest() with
