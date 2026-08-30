@@ -67,9 +67,20 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 nullable: true);
 
             migrationBuilder.Sql("""
+                WITH RankedActive AS (
+                    SELECT MigrationId,
+                           row_number() OVER (PARTITION BY InstanceId ORDER BY UpdatedAt DESC, MigrationId DESC) AS Position
+                    FROM ElsaInstanceMigrations
+                    WHERE Phase NOT IN ('RolledBack', 'Released', 'Failed')
+                )
+                UPDATE migration
+                SET Phase = 'Failed'
+                FROM ElsaInstanceMigrations migration
+                JOIN RankedActive ranked ON ranked.MigrationId = migration.MigrationId
+                WHERE ranked.Position > 1;
+
                 UPDATE ElsaInstanceMigrations
-                SET Phase = CASE WHEN Phase IN ('Released', 'RolledBack', 'Failed') THEN Phase ELSE 'Failed' END,
-                    OperationId = MigrationId,
+                SET OperationId = MigrationId,
                     StartRequestHash = lower(replace(convert(varchar(36), MigrationId), '-', '') + replace(convert(varchar(36), MigrationId), '-', '')),
                     LastRequestHash = lower(replace(convert(varchar(36), MigrationId), '-', '') + replace(convert(varchar(36), MigrationId), '-', ''));
 
@@ -81,7 +92,12 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                        'legacy-migration/' + convert(varchar(36), m.MigrationId),
                        'legacy-migration-' + convert(varchar(36), m.MigrationId),
                        m.StartRequestHash, i.Version,
-                       CASE WHEN m.Phase = 'Failed' THEN 'Failed' ELSE 'Succeeded' END,
+                       CASE
+                           WHEN m.Phase IN ('Cutover', 'RetainingSource', 'RetiringSource') THEN 'Running'
+                           WHEN m.Phase IN ('Planned', 'Preparing', 'ProvisioningTarget', 'Validating') THEN 'RecoveryRequired'
+                           WHEN m.Phase = 'Failed' THEN 'Failed'
+                           ELSE 'Succeeded'
+                       END,
                        1, m.CreatedAt, m.CreatedAt, m.UpdatedAt, m.CreatedAt, m.UpdatedAt
                 FROM ElsaInstanceMigrations m
                 JOIN ElsaInstances i ON i.Id = m.InstanceId;

@@ -44,6 +44,9 @@ public interface IElsaInstanceMigrationSourceReleaseStore
     Task<ElsaInstanceMigrationWriteResult> CompleteAsync(
         ElsaInstanceMigrationSourceReleaseClaim claim, ElsaInstanceSourceReleaseResult result,
         DateTimeOffset now, CancellationToken cancellationToken = default);
+    Task<bool> RenewAsync(
+        ElsaInstanceMigrationSourceReleaseClaim claim, DateTimeOffset now, TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class ElsaInstanceMigrationSourceReleaseWorker(
@@ -62,10 +65,32 @@ public sealed class ElsaInstanceMigrationSourceReleaseWorker(
             return null;
 
         var migration = claim.Migration;
-        ElsaInstanceSourceReleaseResult result;
+        using var providerCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var releaseTask = ReleaseAsync(claim, providerCancellation.Token);
+        while (!releaseTask.IsCompleted)
+        {
+            var delay = Task.Delay(LeaseDuration / 2, _timeProvider, cancellationToken);
+            if (await Task.WhenAny(releaseTask, delay) == releaseTask)
+                break;
+            if (!await store.RenewAsync(claim, _timeProvider.GetUtcNow(), LeaseDuration, cancellationToken))
+            {
+                await providerCancellation.CancelAsync();
+                return new(ElsaInstanceMigrationWriteOutcome.Conflict, migration,
+                    "migration.source-release.lease-lost");
+            }
+        }
+
+        var result = await releaseTask;
+        return await store.CompleteAsync(claim, result, _timeProvider.GetUtcNow(), cancellationToken);
+    }
+
+    private async Task<ElsaInstanceSourceReleaseResult> ReleaseAsync(
+        ElsaInstanceMigrationSourceReleaseClaim claim, CancellationToken cancellationToken)
+    {
+        var migration = claim.Migration;
         try
         {
-            result = (await releasePort.ReleaseAsync(migration.OrganizationId, migration.WorkspaceId,
+            return (await releasePort.ReleaseAsync(migration.OrganizationId, migration.WorkspaceId,
                 migration.InstanceId, migration.Id, migration.OperationId, claim.AttemptNumber,
                 $"migration-source-release:{migration.Id:N}", migration.Source, cancellationToken)).Validate();
         }
@@ -75,9 +100,7 @@ public sealed class ElsaInstanceMigrationSourceReleaseWorker(
         }
         catch
         {
-            result = new(ElsaInstanceSourceReleaseOutcome.Ambiguous, "migration.source-release.ambiguous");
+            return new(ElsaInstanceSourceReleaseOutcome.Ambiguous, "migration.source-release.ambiguous");
         }
-
-        return await store.CompleteAsync(claim, result, _timeProvider.GetUtcNow(), cancellationToken);
     }
 }

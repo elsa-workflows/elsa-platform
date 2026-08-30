@@ -71,6 +71,9 @@ public sealed class ElsaInstanceMigrationSourceReleaseWorkerTests
                     ? ElsaInstanceMigrationWriteOutcome.Applied : ElsaInstanceMigrationWriteOutcome.Conflict,
                 current, result.DiagnosticCode));
         }
+
+        public Task<bool> RenewAsync(ElsaInstanceMigrationSourceReleaseClaim claim, DateTimeOffset now,
+            TimeSpan leaseDuration, CancellationToken cancellationToken = default) => Task.FromResult(true);
     }
 
     private sealed class Port(ElsaInstanceSourceReleaseResult result) : IElsaInstanceMigrationSourceReleasePort

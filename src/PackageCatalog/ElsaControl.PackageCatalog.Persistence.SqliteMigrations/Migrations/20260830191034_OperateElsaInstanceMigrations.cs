@@ -67,9 +67,18 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 nullable: true);
 
             migrationBuilder.Sql("""
+                WITH RankedActive AS (
+                    SELECT MigrationId,
+                           row_number() OVER (PARTITION BY InstanceId ORDER BY UpdatedAt DESC, MigrationId DESC) AS Position
+                    FROM ElsaInstanceMigrations
+                    WHERE Phase NOT IN ('RolledBack', 'Released', 'Failed')
+                )
                 UPDATE ElsaInstanceMigrations
-                SET Phase = CASE WHEN Phase IN ('Released', 'RolledBack', 'Failed') THEN Phase ELSE 'Failed' END,
-                    OperationId = MigrationId,
+                SET Phase = 'Failed'
+                WHERE MigrationId IN (SELECT MigrationId FROM RankedActive WHERE Position > 1);
+
+                UPDATE ElsaInstanceMigrations
+                SET OperationId = MigrationId,
                     StartRequestHash = lower(replace(MigrationId, '-', '') || replace(MigrationId, '-', '')),
                     LastRequestHash = lower(replace(MigrationId, '-', '') || replace(MigrationId, '-', ''));
 
@@ -80,7 +89,12 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 SELECT m.MigrationId, m.InstanceId, m.OrganizationId, m.WorkspaceId, 'MajorMigration',
                        'legacy-migration/' || m.MigrationId, 'legacy-migration-' || m.MigrationId,
                        m.StartRequestHash, i.Version,
-                       CASE WHEN m.Phase = 'Failed' THEN 'Failed' ELSE 'Succeeded' END,
+                       CASE
+                           WHEN m.Phase IN ('Cutover', 'RetainingSource', 'RetiringSource') THEN 'Running'
+                           WHEN m.Phase IN ('Planned', 'Preparing', 'ProvisioningTarget', 'Validating') THEN 'RecoveryRequired'
+                           WHEN m.Phase = 'Failed' THEN 'Failed'
+                           ELSE 'Succeeded'
+                       END,
                        1, m.CreatedAt, m.CreatedAt, m.UpdatedAt, m.CreatedAt, m.UpdatedAt
                 FROM ElsaInstanceMigrations m
                 JOIN ElsaInstances i ON i.Id = m.InstanceId;

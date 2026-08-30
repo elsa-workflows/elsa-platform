@@ -271,6 +271,34 @@ public sealed class EfCoreElsaInstanceMigrationStore(CatalogDbContext dbContext)
         return Result(ElsaInstanceMigrationWriteOutcome.Applied, released, "migration.source-released");
     }
 
+    public async Task<bool> RenewAsync(
+        ElsaInstanceMigrationSourceReleaseClaim claim, DateTimeOffset now, TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default)
+    {
+        if (leaseDuration <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(leaseDuration));
+        now = now.ToUniversalTime();
+        dbContext.ChangeTracker.Clear();
+        var entity = await dbContext.ElsaInstanceMigrations.SingleOrDefaultAsync(x =>
+            x.MigrationId == claim.Migration.Id && x.WorkspaceId == claim.Migration.WorkspaceId, cancellationToken);
+        if (entity is null || entity.SourceReleaseClaimToken != claim.ClaimToken ||
+            entity.SourceReleaseClaimedUntil <= now || entity.UpdatedAt != claim.Migration.UpdatedAt ||
+            entity.Phase != nameof(ElsaInstanceMigrationPhase.RetiringSource) ||
+            entity.OperationId != claim.Migration.OperationId)
+            return false;
+        entity.SourceReleaseClaimedUntil = now.Add(leaseDuration);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateException)
+        {
+            dbContext.ChangeTracker.Clear();
+            return false;
+        }
+    }
+
     private async Task<bool> IsPersistedTargetAsync(ElsaInstanceMigration migration, CancellationToken cancellationToken)
     {
         var entity = await dbContext.ElsaInstanceResolvedPlans.AsNoTracking().SingleOrDefaultAsync(x =>

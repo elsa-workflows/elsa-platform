@@ -1412,6 +1412,47 @@ public sealed class ElsaInstancePersistenceTests
         Assert.Equal("sha256:" + new string('e', 64), persisted.SourceReleaseEvidenceDigest);
     }
 
+    [Fact]
+    public async Task Migration_upgrade_preserves_a_legacy_retained_source_under_an_active_reservation()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync("20260830171154_AddElsaInstanceDeletionEvidence");
+        var workspace = new Workspace { Name = "Legacy retained migration workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        db.ElsaInstances.Add(instance);
+        await db.SaveChangesAsync();
+        var migrationId = Guid.NewGuid();
+        var cutover = DateTimeOffset.UtcNow.AddDays(-31);
+        var sourcePlanId = "source-plan";
+        var sourceDigest = "sha256:" + new string('a', 64);
+        var targetDigest = "sha256:" + new string('b', 64);
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO ElsaInstanceMigrations
+                (MigrationId, InstanceId, OrganizationId, WorkspaceId,
+                 SourcePlanId, SourcePlanUri, SourceReleaseLine, SourceVersion, SourceManifestDigest, SourceDeploymentId,
+                 TargetPlanId, TargetPlanUri, TargetReleaseLine, TargetVersion, TargetManifestDigest, TargetDeploymentId,
+                 Phase, SourceAccessMode, CutoverAt, SourceRetainUntil, CreatedAt, UpdatedAt)
+            VALUES
+                ({migrationId}, {instance.Id}, {workspace.OrganizationId}, {workspace.Id},
+                 {sourcePlanId}, {PlanUri(workspace.Id, instance.Id, sourcePlanId)}, {"3.10"}, {"3.10.4"}, {sourceDigest}, {"source-deployment"},
+                 {"target-plan"}, {PlanUri(workspace.Id, instance.Id, "target-plan")}, {"5.0"}, {"5.0.0"}, {targetDigest}, {"target-deployment"},
+                 {"RetainingSource"}, {"Stopped"}, {cutover.UtcTicks}, {cutover.AddDays(30).UtcTicks}, {cutover.AddDays(-1).UtcTicks}, {cutover.UtcTicks})
+            """);
+
+        await db.Database.MigrateAsync();
+        db.ChangeTracker.Clear();
+
+        var retained = await db.ElsaInstanceMigrations.SingleAsync(x => x.MigrationId == migrationId);
+        var operation = await db.ElsaInstanceOperations.SingleAsync(x => x.Id == migrationId);
+        Assert.Equal("RetainingSource", retained.Phase);
+        Assert.Equal(64, retained.StartRequestHash.Length);
+        Assert.Equal(ElsaInstanceOperationState.Running, operation.State);
+    }
+
     private static void SetCurrentRelease(ElsaInstanceEntity instance, Guid workspaceId)
     {
         instance.ObservedLifecycle = ElsaObservedLifecycle.Ready;
