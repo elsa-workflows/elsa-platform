@@ -9,7 +9,7 @@ namespace ElsaControl.Deployment.Core.Instances;
 /// models the atomic boundary required of the relational implementation without
 /// introducing persistence or provider concerns into the lifecycle service.
 /// </summary>
-public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvider = null) : IElsaInstanceLifecycleStore, IElsaInstanceLifecycleWorkerStore
+public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvider = null) : IElsaInstanceLifecycleStore, IElsaInstanceLifecycleWorkerStore, IElsaInstanceProviderReconciliationStore
 {
     private static readonly TimeSpan WorkerLeaseDuration = TimeSpan.FromMinutes(5);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
@@ -22,6 +22,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
     private readonly Dictionary<string, ElsaInstanceLifecycleResolvedPlan> _resolvedPlans = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, ElsaInstanceLifecycleDeploymentRun> _deploymentRuns = [];
     private readonly Dictionary<Guid, ElsaInstanceLifecycleRecordedFailure> _failures = [];
+    private readonly Dictionary<Guid, StoredReconciliationResult> _reconciliationResults = [];
 
     public IReadOnlyCollection<ElsaInstance> Instances
     {
@@ -74,6 +75,121 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         {
             lock (_gate)
                 return _failures.Values.ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Records the uncertain post-submission state used by local compositions and
+    /// deterministic core tests. Durable adapters perform the equivalent transition
+    /// while retaining their existing deployment-run reservation.
+    /// </summary>
+    public void MarkRecoveryRequired(Guid operationId)
+    {
+        lock (_gate)
+        {
+            if (!_operations.TryGetValue(operationId, out var operation) ||
+                !_instances.TryGetValue(operation.InstanceId, out var instance))
+                throw new KeyNotFoundException("Lifecycle operation does not exist.");
+            if (operation.State == ElsaInstanceOperationState.Accepted)
+                operation = operation.TransitionTo(ElsaInstanceOperationState.Queued);
+            if (operation.State == ElsaInstanceOperationState.Queued)
+                operation = operation.TransitionTo(ElsaInstanceOperationState.Running);
+            if (operation.State == ElsaInstanceOperationState.Running)
+                operation = operation.TransitionTo(ElsaInstanceOperationState.RecoveryRequired);
+            if (operation.State != ElsaInstanceOperationState.RecoveryRequired)
+                throw new ElsaInstanceLifecycleConflictException("Lifecycle operation cannot require provider recovery.");
+            _operations[operationId] = operation;
+            _instances[instance.Id] = ElsaInstance.Hydrate(
+                instance.Id, instance.OrganizationId, instance.WorkspaceId, instance.Name, instance.Slug, instance.Intent,
+                ElsaObservedLifecycle.Unknown, ElsaInstanceHealth.Unknown, instance.Version, instance.IdentityBinding,
+                instance.DesiredStateRevisionId, instance.ResolvedPlanReference, instance.CurrentResolvedRelease,
+                instance.CurrentDeploymentReference, instance.PlacementAssignmentReference, instance.ElsaTenantReference,
+                instance.LastOperationId);
+        }
+    }
+
+    public Task<ElsaInstanceProviderReconciliationTarget?> GetTargetAsync(
+        Guid workspaceId,
+        Guid operationId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            if (!_operations.TryGetValue(operationId, out var operation) ||
+                !_instances.TryGetValue(operation.InstanceId, out var instance) ||
+                instance.WorkspaceId != workspaceId || operation.State != ElsaInstanceOperationState.RecoveryRequired)
+                return Task.FromResult<ElsaInstanceProviderReconciliationTarget?>(null);
+            return Task.FromResult<ElsaInstanceProviderReconciliationTarget?>(new(
+                instance,
+                operation,
+                _reconciliationResults.GetValueOrDefault(operationId)?.Version ?? 0));
+        }
+    }
+
+    public Task<ElsaInstanceProviderReconciliationResult?> GetResultAsync(
+        Guid workspaceId,
+        Guid operationId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            var stored = _reconciliationResults.GetValueOrDefault(operationId);
+            return Task.FromResult<ElsaInstanceProviderReconciliationResult?>(
+                stored is not null && stored.Result.Instance.WorkspaceId == workspaceId &&
+                stored.Result.Operation.State != ElsaInstanceOperationState.RecoveryRequired ? stored.Result : null);
+        }
+    }
+
+    public Task<ElsaInstanceProviderReconciliationResult> CommitAsync(
+        ElsaInstanceProviderReconciliationCommit commit,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(commit);
+        commit.Validate();
+        lock (_gate)
+        {
+            if (_reconciliationResults.TryGetValue(commit.OperationId, out var replay))
+            {
+                if (!string.Equals(replay.EvidenceFingerprint, commit.EvidenceFingerprint, StringComparison.Ordinal))
+                {
+                    if (replay.Result.Operation.State != ElsaInstanceOperationState.RecoveryRequired ||
+                        replay.Version != commit.ExpectedReconciliationVersion)
+                        throw new ElsaInstanceLifecycleConflictException("Provider reconciliation evidence conflicts with the recorded result.");
+                }
+                else
+                {
+                    return Task.FromResult(replay.Result with { Replayed = true });
+                }
+            }
+            else if (commit.ExpectedReconciliationVersion != 0)
+                throw new ElsaInstanceLifecycleConflictException("Provider reconciliation target changed concurrently.");
+            if (!_operations.TryGetValue(commit.OperationId, out var operation) ||
+                !_instances.TryGetValue(commit.InstanceId, out var instance) ||
+                instance.WorkspaceId != commit.WorkspaceId || operation.InstanceId != commit.InstanceId ||
+                operation.State != ElsaInstanceOperationState.RecoveryRequired ||
+                operation.AttemptNumber != commit.ExpectedAttemptNumber || instance.Version != commit.ExpectedInstanceVersion)
+                throw new ElsaInstanceLifecycleConflictException("Provider reconciliation target changed concurrently.");
+
+            _instances[commit.InstanceId] = commit.Instance;
+            _operations[commit.OperationId] = commit.Operation;
+            var outcome = commit.Operation.State switch
+            {
+                ElsaInstanceOperationState.Succeeded => ElsaInstanceProviderReconciliationOutcome.Converged,
+                ElsaInstanceOperationState.Failed when commit.DiagnosticCode == ElsaInstanceProviderReconciliationService.HealthFailedCode ||
+                    commit.DiagnosticCode == ElsaInstanceProviderReconciliationService.HealthUnknownCode => ElsaInstanceProviderReconciliationOutcome.HealthGateFailed,
+                ElsaInstanceOperationState.Failed => ElsaInstanceProviderReconciliationOutcome.Failed,
+                _ => ElsaInstanceProviderReconciliationOutcome.RecoveryRequired
+            };
+            var result = new ElsaInstanceProviderReconciliationResult(
+                outcome, commit.Instance, commit.Operation, commit.DiagnosticCode, commit.RetrySafe, false, commit.ReconciledAt);
+            _reconciliationResults[commit.OperationId] = new(
+                commit.EvidenceFingerprint,
+                checked(commit.ExpectedReconciliationVersion + 1),
+                result);
+            return Task.FromResult(result);
         }
     }
 
@@ -484,4 +600,9 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         Convert.ToHexStringLower(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
 
     private sealed record LifecycleClaim(string WorkerId, string Token, int Version, DateTimeOffset ExpiresAt);
+
+    private sealed record StoredReconciliationResult(
+        string EvidenceFingerprint,
+        int Version,
+        ElsaInstanceProviderReconciliationResult Result);
 }
