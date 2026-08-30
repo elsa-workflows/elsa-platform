@@ -1000,7 +1000,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("ResourceGroupName")
-                        .HasMaxLength(128)
+                        .HasMaxLength(90)
                         .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("StableTrafficRevisionName")
