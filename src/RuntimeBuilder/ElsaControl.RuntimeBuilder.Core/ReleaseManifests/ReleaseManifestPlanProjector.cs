@@ -176,8 +176,6 @@ public static class ReleaseManifestPlanProjector
                 continue;
 
             if (!ReleaseManifestAdmissionService.IsDigest(evidence.Digest)
-                || ReleaseManifestAdmissionService.ExtractDigest(evidence.Reference) is not { } embeddedDigest
-                || !string.Equals(embeddedDigest, evidence.Digest, StringComparison.OrdinalIgnoreCase)
                 || !ReleaseManifestAdmissionService.IsSafeEvidenceReference(evidence.Reference, evidence.Digest)
                 || !IsAllowedEvidenceDescription(evidence.Kind, evidence.Description))
                 throw new ReleaseManifestProjectionValidationException("Existing plan evidence must be a safe locator with a non-sensitive description.");
