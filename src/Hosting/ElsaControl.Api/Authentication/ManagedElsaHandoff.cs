@@ -35,14 +35,16 @@ public sealed class ManagedElsaHandoffConfigurationValidator(
     public Task StartAsync(CancellationToken cancellationToken)
     {
         var validated = ManagedElsaHandoffIssuer.ValidateOptions(options.Value);
-        if (environment.IsProduction() && validated.Enabled &&
-            (string.IsNullOrWhiteSpace(validated.ActiveKeyId) || string.IsNullOrWhiteSpace(validated.ActivePrivateKeyPem)))
-            throw new InvalidOperationException(
-                "Managed Elsa handoff requires a configured active signing key in Production.");
-        if (validated.Enabled &&
-            !string.IsNullOrWhiteSpace(validated.ActiveKeyId) &&
-            !string.IsNullOrWhiteSpace(validated.ActivePrivateKeyPem))
-            ManagedElsaHandoffKeyRing.ValidateConfigured(validated);
+        if (validated.Enabled)
+        {
+            var hasConfiguredActiveKey = !string.IsNullOrWhiteSpace(validated.ActiveKeyId) &&
+                                         !string.IsNullOrWhiteSpace(validated.ActivePrivateKeyPem);
+            if (environment.IsProduction() && !hasConfiguredActiveKey)
+                throw new InvalidOperationException(
+                    "Managed Elsa handoff requires a configured active signing key in Production.");
+            if (hasConfiguredActiveKey)
+                ManagedElsaHandoffKeyRing.ValidateConfigured(validated);
+        }
 
         return Task.CompletedTask;
     }
