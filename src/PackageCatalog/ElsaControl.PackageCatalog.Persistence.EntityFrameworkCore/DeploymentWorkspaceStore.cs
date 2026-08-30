@@ -1083,13 +1083,22 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
     {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
             IsolationLevel.Serializable, cancellationToken);
-        var run = await dbContext.DeploymentRuns
-            .Include(x => x.Environment)
-            .SingleAsync(x => x.WorkspaceId == workspaceId && x.Id == runId, cancellationToken);
+        // Persist any correlated command mutation inside this transaction before
+        // detaching a previously tracked run for the set-based terminal CAS. EF
+        // relationship fix-up can otherwise detach the pending command and events
+        // together with their run principal.
+        await dbContext.SaveChangesAsync(cancellationToken);
+        DetachTrackedRun(runId);
+        var currentStatus = await dbContext.DeploymentRuns
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.Id == runId)
+            .Select(x => x.Status)
+            .SingleAsync(cancellationToken);
 
-        if (status == WorkspaceDeploymentRunStatus.RecoveryRequired && IsTerminalRunStatus(run.Status))
+        if (status == WorkspaceDeploymentRunStatus.RecoveryRequired && IsTerminalRunStatus(currentStatus))
             throw new InvalidOperationException("A terminal deployment run cannot be moved into recovery.");
 
+        DeploymentRunEntity run;
         if (IsTerminalRunStatus(status))
         {
             var updated = await dbContext.DeploymentRuns
@@ -1103,13 +1112,15 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             if (updated == 0)
                 throw new InvalidOperationException("Deployment run requires recovery before a terminal update can be applied.");
 
-            DetachTrackedRun(runId);
             run = await dbContext.DeploymentRuns
                 .Include(x => x.Environment)
                 .SingleAsync(x => x.WorkspaceId == workspaceId && x.Id == runId, cancellationToken);
         }
         else
         {
+            run = await dbContext.DeploymentRuns
+                .Include(x => x.Environment)
+                .SingleAsync(x => x.WorkspaceId == workspaceId && x.Id == runId, cancellationToken);
             run.Status = status;
             run.FailureMessage = failureMessage;
         }
