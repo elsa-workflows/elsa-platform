@@ -11,6 +11,7 @@ namespace ElsaControl.Deployment.Core.Instances;
 /// </summary>
 public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleStore, IElsaInstanceLifecycleWorkerStore
 {
+    private static readonly TimeSpan WorkerLeaseDuration = TimeSpan.FromMinutes(5);
     private readonly object _gate = new();
     private readonly Dictionary<Guid, ElsaInstance> _instances = [];
     private readonly Dictionary<Guid, ElsaInstanceOperation> _operations = [];
@@ -266,9 +267,14 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
                 if (operation.State != ElsaInstanceOperationState.Accepted)
                     continue;
 
-                if (_claims.ContainsKey(operation.Id))
+                var nowUtc = now.ToUniversalTime();
+                if (_claims.TryGetValue(operation.Id, out var existingClaim) && existingClaim.ExpiresAt > nowUtc)
                     continue;
-                var claim = new LifecycleClaim(workerId.Trim(), CreateLeaseToken(), 1);
+                var claim = new LifecycleClaim(
+                    workerId.Trim(),
+                    CreateLeaseToken(),
+                    existingClaim is null ? 1 : checked(existingClaim.Version + 1),
+                    nowUtc.Add(WorkerLeaseDuration));
                 _claims[operation.Id] = claim;
                 var input = _resolutionInputs.GetValueOrDefault(operation.Id);
                 return Task.FromResult<ElsaInstanceLifecycleWorkItem?>(
@@ -300,13 +306,24 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
                 !string.Equals(currentOutbox.RequestHash, commit.RequestHash, StringComparison.Ordinal))
                 throw new ElsaInstanceLifecycleConflictException("Lifecycle work item envelope is inconsistent.");
 
-            if (currentOperation.State == ElsaInstanceOperationState.Queued &&
-                _deploymentRuns.Values.FirstOrDefault(x => x.Operation.Id == commit.OperationId) is { } existingRun)
+            if (currentOperation.State == ElsaInstanceOperationState.Queued)
+            {
+                if (_deploymentRuns.Values.FirstOrDefault(x => x.Operation.Id == commit.OperationId) is not { } existingRun ||
+                    existingRun.Run.WorkspaceId != commit.WorkspaceId ||
+                    existingRun.Run.EnvironmentId != commit.DeploymentTarget.EnvironmentId ||
+                    existingRun.Run.ApplicationId != commit.DeploymentTarget.ApplicationId ||
+                    existingRun.InstanceId != commit.InstanceId ||
+                    existingRun.Run.Status is not (WorkspaceDeploymentRunStatus.Queued or
+                        WorkspaceDeploymentRunStatus.Running or
+                        WorkspaceDeploymentRunStatus.RecoveryRequired))
+                    throw new ElsaInstanceLifecycleConflictException("Lifecycle operation deployment run is inconsistent.");
+
                 return Task.FromResult(new ElsaInstanceLifecycleWorkerResult(
                     ElsaInstanceLifecycleWorkerOutcome.AlreadyCompleted,
                     currentOperation,
                     currentInstance,
                     existingRun.Run));
+            }
 
             if (currentOperation.State != ElsaInstanceOperationState.Accepted ||
                 !_claims.TryGetValue(commit.OperationId, out var claim) ||
@@ -335,7 +352,8 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
                     FailureSummary: "Lifecycle target already has active work."));
             }
 
-            if (_resolvedPlans.TryGetValue(commit.Plan.Reference.PlanId, out var existingPlan) &&
+            var planKey = PlanKey(commit.WorkspaceId, commit.InstanceId, commit.Plan.Reference.PlanId);
+            if (_resolvedPlans.TryGetValue(planKey, out var existingPlan) &&
                 (!Equals(existingPlan.Reference, commit.Plan.Reference) ||
                  !string.Equals(existingPlan.SerializedPlan, commit.Plan.SerializedPlan, StringComparison.Ordinal)))
                 throw new ElsaInstanceLifecycleConflictException("Resolved plan identity is already bound to different content.");
@@ -364,7 +382,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
                 RecoveryReason: null,
                 FailureMessage: null);
             var storedPlan = commit.Plan;
-            _resolvedPlans[commit.Plan.Reference.PlanId] = storedPlan;
+            _resolvedPlans[planKey] = storedPlan;
             _instances[commit.InstanceId] = commit.Instance;
             _operations[commit.OperationId] = commit.Operation;
             _deploymentRuns[runId] = new ElsaInstanceLifecycleDeploymentRun(run, commit.Operation, commit.InstanceId);
@@ -391,6 +409,13 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
                 !_instances.TryGetValue(failure.InstanceId, out var instance) ||
                 !_outbox.Values.Any(x => x.Id == failure.OutboxId && x.OperationId == failure.OperationId))
                 throw new ElsaInstanceLifecycleConflictException("Lifecycle work item no longer exists.");
+
+            var currentOutbox = _outbox.Values.Single(x => x.Id == failure.OutboxId);
+            if (currentOutbox.WorkspaceId != failure.WorkspaceId || currentOutbox.InstanceId != failure.InstanceId ||
+                currentOutbox.Action != currentOperation.Action ||
+                !string.Equals(currentOutbox.RequestHash, failure.RequestHash, StringComparison.Ordinal) ||
+                instance.WorkspaceId != failure.WorkspaceId || currentOperation.InstanceId != failure.InstanceId)
+                throw new ElsaInstanceLifecycleConflictException("Lifecycle work item envelope is inconsistent.");
 
             if (currentOperation.State == ElsaInstanceOperationState.Failed &&
                 _failures.TryGetValue(failure.OperationId, out var existingFailure))
@@ -432,6 +457,9 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
         return new ElsaInstanceLifecycleAcceptance(instance, operation, outbox, true);
     }
 
+    private static string PlanKey(Guid workspaceId, Guid instanceId, string planId) =>
+        $"{workspaceId:N}:{instanceId:N}:{planId}";
+
     private static string RequireKey(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -442,5 +470,5 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
     private static string CreateLeaseToken() =>
         Convert.ToHexStringLower(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
 
-    private sealed record LifecycleClaim(string WorkerId, string Token, int Version);
+    private sealed record LifecycleClaim(string WorkerId, string Token, int Version, DateTimeOffset ExpiresAt);
 }

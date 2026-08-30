@@ -376,6 +376,74 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal(0, await verify.ElsaInstanceOperations.CountAsync(x => x.State != ElsaInstanceOperationState.Accepted));
     }
 
+    [Fact]
+    public async Task Expired_resolver_claim_is_reclaimed_with_rotated_lease_and_stale_worker_cannot_finalize()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Expired lease workspace");
+        var accepted = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId, workspace.Id, "Worker Elsa", "expired-lease-elsa", WorkerIntent(), "expired-create"));
+        var target = await AddManagedEnvironmentAsync(db, workspace, accepted.Instance.Id);
+        var store = new EfCoreElsaInstanceLifecycleStore(db, new StaticResolutionInputSource(accepted.Instance, target));
+
+        var first = await store.TryClaimNextAsync("worker-one", Now)
+            ?? throw new InvalidOperationException("Expected the first worker claim.");
+        var second = await store.TryClaimNextAsync("worker-two", Now.AddMinutes(6))
+            ?? throw new InvalidOperationException("Expected the expired claim to be reclaimed.");
+
+        Assert.NotEqual(first.LeaseToken, second.LeaseToken);
+        Assert.Equal(first.LeaseVersion + 1, second.LeaseVersion);
+        var resolved = SuccessfulResolution(workspace.Id, accepted.Instance.Id);
+        var stale = CreateResolutionCommit(first, resolved, Now.AddMinutes(1));
+        await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() => store.CommitResolvedAsync(stale));
+
+        var current = CreateResolutionCommit(second, resolved, Now.AddMinutes(7), "worker-two");
+        var result = await store.CommitResolvedAsync(current);
+
+        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Queued, result.Outcome);
+        Assert.Equal(1, await db.DeploymentRuns.CountAsync());
+    }
+
+    [Fact]
+    public async Task Malformed_first_persisted_instance_is_quarantined_and_later_valid_work_continues()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Malformed work workspace");
+        var first = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId, workspace.Id, "Malformed Elsa", "malformed-worker-elsa", WorkerIntent(), "malformed-create"));
+        var second = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now.AddMinutes(1)))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId, workspace.Id, "Valid Elsa", "valid-worker-elsa", WorkerIntent(), "valid-create"));
+        var target = await AddManagedEnvironmentAsync(db, workspace, second.Instance.Id);
+
+        await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE ElsaInstances SET FeatureOverridesJson = 'not-json' WHERE Id = {first.Instance.Id}");
+        db.ChangeTracker.Clear();
+        var store = new EfCoreElsaInstanceLifecycleStore(db, new StaticResolutionInputSource(second.Instance, target));
+        var result = await new ElsaInstanceLifecycleWorker(
+                store,
+                new StaticResolver(SuccessfulResolution(workspace.Id, second.Instance.Id)),
+                new FixedTimeProvider(Now.AddMinutes(2)))
+            .ProcessAvailableAsync("worker-one");
+
+        Assert.Single(result.Results);
+        Assert.Equal(second.Operation.Id, result.Results[0].Operation.Id);
+        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Queued, result.Results[0].Outcome);
+        Assert.Equal(ElsaInstanceOperationState.Failed,
+            (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == first.Operation.Id)).State);
+        Assert.Equal("outbox.invalid",
+            (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == first.Operation.Id)).FailureCode);
+        Assert.Equal(ElsaInstanceOperationState.Queued,
+            (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == second.Operation.Id)).State);
+    }
+
     private static async Task<Workspace> CreateWorkspaceAsync(CatalogDbContext db, string name)
     {
         var workspace = new Workspace { Name = name };
@@ -504,7 +572,8 @@ public sealed class ElsaInstanceLifecycleStoreTests
     private static ElsaInstanceLifecycleResolutionCommit CreateResolutionCommit(
         ElsaInstanceLifecycleWorkItem item,
         ElsaInstancePlanResolutionResult resolved,
-        DateTimeOffset committedAt)
+        DateTimeOffset committedAt,
+        string workerId = "worker-one")
     {
         var queued = item.Operation.TransitionTo(ElsaInstanceOperationState.Queued);
         var resolvedInstance = item.Instance.AttachResolvedPlan(resolved.Reference!, resolved.CurrentResolvedRelease!);
@@ -514,7 +583,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
             item.Operation.Id,
             item.Outbox.Id,
             item.Outbox.RequestHash,
-            "worker-one",
+            workerId,
             queued,
             resolvedInstance,
             new ElsaInstanceLifecycleResolvedPlan(

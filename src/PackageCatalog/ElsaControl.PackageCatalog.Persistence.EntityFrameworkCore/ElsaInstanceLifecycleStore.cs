@@ -102,6 +102,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         ElsaInstanceLifecycleOutboxMessage outbox,
         CancellationToken cancellationToken = default)
     {
+        dbContext.ChangeTracker.Clear();
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(operation);
         ArgumentNullException.ThrowIfNull(outbox);
@@ -255,6 +256,11 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             dbContext.ChangeTracker.Clear();
             throw Conflict("Lifecycle acceptance could not obtain the persistence reservation.");
         }
+        catch
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     public async Task<ElsaInstanceLifecycleWorkItem?> TryClaimNextAsync(
@@ -262,79 +268,111 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
+        dbContext.ChangeTracker.Clear();
         if (string.IsNullOrWhiteSpace(workerId))
             throw new ArgumentException("Lifecycle worker identity is required.", nameof(workerId));
         workerId = workerId.Trim();
         if (workerId.Length > 256 || workerId.Any(char.IsControl))
             throw new ArgumentException("Lifecycle worker identity is invalid.", nameof(workerId));
 
-        ElsaInstanceLifecycleOutboxMessage outbox;
-        ElsaInstanceOperation operation;
-        ElsaInstance instance;
-        string leaseToken;
+        ElsaInstanceLifecycleOutboxMessage outbox = null!;
+        ElsaInstanceOperation operation = null!;
+        ElsaInstance instance = null!;
+        string leaseToken = null!;
         var leaseVersion = 0;
-        try
+        while (true)
         {
-            await using var transaction = await dbContext.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable, cancellationToken);
-
-            // A lease is never reclaimed merely because its clock expired. Explicit
-            // recovery must reconcile uncertain work before another apply can claim it.
-            var candidate = await dbContext.ElsaInstanceLifecycleOutbox
-                .AsNoTracking()
-                .Where(x => x.Operation != null &&
-                            x.Operation.State == ElsaInstanceOperationState.Accepted &&
-                            x.Operation.WorkerId == null)
-                .OrderBy(x => x.CreatedAt)
-                .ThenBy(x => x.Id)
-                .FirstOrDefaultAsync(cancellationToken);
-            if (candidate is null)
+            var quarantined = false;
+            try
             {
-                await transaction.CommitAsync(cancellationToken);
+                await using var transaction = await dbContext.Database.BeginTransactionAsync(
+                    IsolationLevel.Serializable, cancellationToken);
+
+                // Accepted work is resolver-only until the atomic commit. A lease
+                // that expired before that commit may therefore be safely reclaimed
+                // by rotating both its token and version.
+                var nowUtc = now.ToUniversalTime();
+                var candidate = await dbContext.ElsaInstanceLifecycleOutbox
+                    .AsNoTracking()
+                    .Where(x => x.Operation != null &&
+                                x.Operation.State == ElsaInstanceOperationState.Accepted &&
+                                (x.Operation.WorkerId == null ||
+                                 x.Operation.LeaseExpiresAt == null ||
+                                 x.Operation.LeaseExpiresAt <= nowUtc))
+                    .OrderBy(x => x.CreatedAt)
+                    .ThenBy(x => x.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (candidate is null)
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    return null;
+                }
+
+                var operationEntity = await dbContext.ElsaInstanceOperations
+                    .SingleOrDefaultAsync(x => x.Id == candidate.OperationId, cancellationToken);
+                var instanceEntity = await LoadTrackedInstanceAsync(candidate.InstanceId, cancellationToken);
+                if (operationEntity is null || instanceEntity is null ||
+                    operationEntity.State != ElsaInstanceOperationState.Accepted ||
+                    (operationEntity.WorkerId is not null && operationEntity.LeaseExpiresAt > nowUtc))
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    dbContext.ChangeTracker.Clear();
+                    return null;
+                }
+
+                if (!TryMapPersistedWorkItem(candidate, operationEntity, instanceEntity,
+                        out outbox, out operation, out instance))
+                {
+                    if (!CanQuarantine(candidate, operationEntity, instanceEntity))
+                    {
+                        await transaction.CommitAsync(cancellationToken);
+                        dbContext.ChangeTracker.Clear();
+                        return null;
+                    }
+
+                    await QuarantinePersistedWorkItemAsync(
+                        operationEntity, instanceEntity, nowUtc, cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                    quarantined = true;
+                }
+                else
+                {
+                    leaseToken = CreateLeaseToken();
+                    leaseVersion = checked(operationEntity.LeaseVersion + 1);
+                    operationEntity.WorkerId = workerId;
+                    operationEntity.LeaseTokenHash = HashLeaseToken(leaseToken);
+                    operationEntity.LeaseVersion = leaseVersion;
+                    operationEntity.LeaseExpiresAt = nowUtc.Add(WorkerLeaseDuration);
+                    operationEntity.HeartbeatAt = nowUtc;
+                    operationEntity.StartedAt ??= nowUtc;
+                    operationEntity.UpdatedAt = nowUtc;
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                }
+            }
+            catch (ElsaInstanceLifecycleConflictException)
+            {
+                dbContext.ChangeTracker.Clear();
+                throw;
+            }
+            catch (Exception exception) when (exception is DbUpdateConcurrencyException or DbUpdateException or DbException)
+            {
+                dbContext.ChangeTracker.Clear();
                 return null;
             }
-
-            var operationEntity = await dbContext.ElsaInstanceOperations
-                .SingleOrDefaultAsync(x => x.Id == candidate.OperationId, cancellationToken);
-            var instanceEntity = await LoadTrackedInstanceAsync(candidate.InstanceId, cancellationToken);
-            if (operationEntity is null || instanceEntity is null ||
-                operationEntity.State != ElsaInstanceOperationState.Accepted ||
-                operationEntity.WorkerId is not null)
+            catch
             {
-                await transaction.CommitAsync(cancellationToken);
-                return null;
+                dbContext.ChangeTracker.Clear();
+                throw;
             }
 
-            outbox = MapOutbox(candidate);
-            operation = MapOperation(operationEntity);
-            instance = MapInstance(instanceEntity);
-            if (outbox.OperationId != operation.Id || outbox.InstanceId != instance.Id ||
-                outbox.WorkspaceId != instance.WorkspaceId || operation.InstanceId != instance.Id ||
-                outbox.Action != operation.Action ||
-                !string.Equals(outbox.RequestHash, operation.RequestHash, StringComparison.Ordinal))
-                throw Conflict("Lifecycle work item envelope is inconsistent.");
+            if (quarantined)
+            {
+                dbContext.ChangeTracker.Clear();
+                continue;
+            }
 
-            leaseToken = CreateLeaseToken();
-            leaseVersion = checked(operationEntity.LeaseVersion + 1);
-            operationEntity.WorkerId = workerId;
-            operationEntity.LeaseTokenHash = HashLeaseToken(leaseToken);
-            operationEntity.LeaseVersion = leaseVersion;
-            operationEntity.LeaseExpiresAt = now.ToUniversalTime().Add(WorkerLeaseDuration);
-            operationEntity.HeartbeatAt = now.ToUniversalTime();
-            operationEntity.StartedAt ??= now.ToUniversalTime();
-            operationEntity.UpdatedAt = now.ToUniversalTime();
-            await dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-        }
-        catch (ElsaInstanceLifecycleConflictException)
-        {
-            dbContext.ChangeTracker.Clear();
-            throw;
-        }
-        catch (Exception exception) when (exception is DbUpdateConcurrencyException or DbUpdateException or DbException)
-        {
-            dbContext.ChangeTracker.Clear();
-            return null;
+            break;
         }
 
         ElsaInstanceLifecycleResolutionInput? resolution = null;
@@ -365,6 +403,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         ElsaInstanceLifecycleResolutionCommit commit,
         CancellationToken cancellationToken = default)
     {
+        dbContext.ChangeTracker.Clear();
         ArgumentNullException.ThrowIfNull(commit);
         commit.Validate();
 
@@ -387,7 +426,14 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     throw Conflict("Lifecycle operation is queued without a deployment run.");
                 var existingRun = await dbContext.DeploymentRuns
                     .SingleOrDefaultAsync(x => x.Id == operation.DeploymentRunId, cancellationToken);
-                if (existingRun is null || existingRun.ElsaInstanceId != commit.InstanceId)
+                if (existingRun is null ||
+                    existingRun.WorkspaceId != commit.WorkspaceId ||
+                    existingRun.EnvironmentId != commit.DeploymentTarget.EnvironmentId ||
+                    existingRun.ApplicationId != commit.DeploymentTarget.ApplicationId ||
+                    existingRun.ElsaInstanceId != commit.InstanceId ||
+                    existingRun.Status is not (WorkspaceDeploymentRunStatus.Queued or
+                        WorkspaceDeploymentRunStatus.Running or
+                        WorkspaceDeploymentRunStatus.RecoveryRequired))
                     throw Conflict("Lifecycle operation deployment run is inconsistent.");
                 await transaction.CommitAsync(cancellationToken);
                 return new ElsaInstanceLifecycleWorkerResult(
@@ -521,12 +567,18 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             dbContext.ChangeTracker.Clear();
             return await ResolveReservationRaceAsync(commit, cancellationToken);
         }
+        catch
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     public async Task<ElsaInstanceLifecycleWorkerResult> FailResolutionAsync(
         ElsaInstanceLifecycleResolutionFailure failure,
         CancellationToken cancellationToken = default)
     {
+        dbContext.ChangeTracker.Clear();
         ArgumentNullException.ThrowIfNull(failure);
         failure.Validate();
 
@@ -541,6 +593,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 .SingleOrDefaultAsync(x => x.Id == failure.OutboxId, cancellationToken);
             if (operation is null || instance is null || outbox is null)
                 throw Conflict("Lifecycle work item no longer exists.");
+            ValidateWorkerEnvelope(failure, operation, instance, outbox);
             if (operation.State == ElsaInstanceOperationState.Failed &&
                 string.Equals(operation.FailureCode, failure.Code, StringComparison.Ordinal))
             {
@@ -553,7 +606,6 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     FailureSummary: operation.FailureSummary);
             }
 
-            ValidateWorkerEnvelope(failure, operation, instance, outbox);
             EnsureLease(failure, operation);
             var priorObservedLifecycle = instance.ObservedLifecycle;
             operation.State = ElsaInstanceOperationState.Failed;
@@ -597,6 +649,11 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         {
             dbContext.ChangeTracker.Clear();
             throw Conflict("Lifecycle resolution could not be finalized safely.");
+        }
+        catch
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
         }
     }
 
@@ -881,6 +938,22 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         ElsaInstanceLifecycleResolutionCommit commit,
         CancellationToken cancellationToken)
     {
+        dbContext.ChangeTracker.Clear();
+        try
+        {
+            return await ResolveReservationRaceCoreAsync(commit, cancellationToken);
+        }
+        catch
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    private async Task<ElsaInstanceLifecycleWorkerResult> ResolveReservationRaceCoreAsync(
+        ElsaInstanceLifecycleResolutionCommit commit,
+        CancellationToken cancellationToken)
+    {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
             IsolationLevel.Serializable, cancellationToken);
         var operation = await dbContext.ElsaInstanceOperations
@@ -900,7 +973,10 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             .FirstOrDefaultAsync(cancellationToken);
         if (activeRun is null)
             throw Conflict("Lifecycle resolution conflicted with another request.");
-        if (activeRun.ElsaInstanceId == commit.InstanceId && operation.State == ElsaInstanceOperationState.Queued)
+        if (activeRun.ElsaInstanceId == commit.InstanceId &&
+            activeRun.ApplicationId == commit.DeploymentTarget.ApplicationId &&
+            operation.DeploymentRunId == activeRun.Id &&
+            operation.State == ElsaInstanceOperationState.Queued)
         {
             await transaction.CommitAsync(cancellationToken);
             return new ElsaInstanceLifecycleWorkerResult(
@@ -916,6 +992,91 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
 
         return await CompleteReservationConflictAsync(
             transaction, operation, instance, commit.CommittedAt, cancellationToken);
+    }
+
+    private async Task QuarantinePersistedWorkItemAsync(
+        ElsaInstanceOperationEntity operation,
+        ElsaInstanceEntity instance,
+        DateTimeOffset occurredAt,
+        CancellationToken cancellationToken)
+    {
+        var priorObservedLifecycle = instance.ObservedLifecycle;
+        operation.State = ElsaInstanceOperationState.Failed;
+        operation.FailureCode = "outbox.invalid";
+        operation.FailureSummary = "Lifecycle work item could not be read safely.";
+        operation.CompletedAt = occurredAt;
+        operation.WorkerId = null;
+        operation.LeaseTokenHash = null;
+        operation.LeaseExpiresAt = null;
+        operation.HeartbeatAt = null;
+        operation.UpdatedAt = occurredAt;
+        await dbContext.ElsaInstanceAuditEvents.AddAsync(
+            await CreateAuditEventAsync(
+                instance,
+                operation,
+                priorObservedLifecycle,
+                occurredAt,
+                cancellationToken,
+                eventType: "lifecycle.failed"),
+            cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static bool TryMapPersistedWorkItem(
+        ElsaInstanceLifecycleOutboxEntity candidate,
+        ElsaInstanceOperationEntity? operationEntity,
+        ElsaInstanceEntity? instanceEntity,
+        out ElsaInstanceLifecycleOutboxMessage outbox,
+        out ElsaInstanceOperation operation,
+        out ElsaInstance instance)
+    {
+        outbox = null!;
+        operation = null!;
+        instance = null!;
+        try
+        {
+            if (operationEntity is null || instanceEntity is null)
+                return false;
+
+            outbox = MapOutbox(candidate);
+            operation = MapOperation(operationEntity);
+            instance = MapInstance(instanceEntity);
+            if (outbox.OperationId != operation.Id || outbox.InstanceId != instance.Id ||
+                outbox.WorkspaceId != instance.WorkspaceId || operation.InstanceId != instance.Id ||
+                operationEntity.WorkspaceId != instance.WorkspaceId || operationEntity.OrganizationId != instance.OrganizationId ||
+                candidate.OrganizationId != instance.OrganizationId ||
+                outbox.Action != operation.Action ||
+                !string.Equals(outbox.RequestHash, operation.RequestHash, StringComparison.Ordinal))
+                return false;
+            return true;
+        }
+        catch (Exception)
+        {
+            outbox = null!;
+            operation = null!;
+            instance = null!;
+            return false;
+        }
+    }
+
+    private static bool CanQuarantine(
+        ElsaInstanceLifecycleOutboxEntity candidate,
+        ElsaInstanceOperationEntity? operation,
+        ElsaInstanceEntity? instance)
+    {
+        return operation is not null && instance is not null &&
+               candidate.OperationId != Guid.Empty && candidate.InstanceId != Guid.Empty &&
+               operation.Id == candidate.OperationId &&
+               operation.InstanceId == candidate.InstanceId &&
+               operation.State == ElsaInstanceOperationState.Accepted &&
+               Enum.IsDefined(operation.Action) &&
+               operation.OrganizationId != Guid.Empty &&
+               operation.WorkspaceId != Guid.Empty &&
+               operation.OrganizationId == instance.OrganizationId &&
+               operation.WorkspaceId == instance.WorkspaceId &&
+               instance.Id == candidate.InstanceId &&
+               instance.WorkspaceId == candidate.WorkspaceId &&
+               IsCanonicalHash(operation.RequestHash);
     }
 
     private static WorkspaceDeploymentRun MapDeploymentRun(DeploymentRunEntity entity) =>

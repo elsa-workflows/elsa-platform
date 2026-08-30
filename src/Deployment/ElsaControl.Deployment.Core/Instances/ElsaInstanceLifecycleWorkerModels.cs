@@ -67,7 +67,7 @@ public sealed record ElsaInstanceLifecycleWorkItem(
         if (Operation.State != ElsaInstanceOperationState.Accepted)
             throw new InvalidOperationException("Persisted lifecycle work item is not claimed.");
         ElsaInstanceLifecycleLease.Validate(LeaseToken, LeaseVersion);
-        if (Resolution.PlanRequest.WorkspaceId is { } requestWorkspace && requestWorkspace != Instance.WorkspaceId)
+        if (Resolution.PlanRequest.WorkspaceId != Instance.WorkspaceId)
             throw new InvalidOperationException("Lifecycle resolution workspace is invalid.");
         if (!string.Equals(Resolution.PlanRequest.InstanceIntent.ComputeCanonicalHash(), Instance.ComputeCanonicalIntentHash(), StringComparison.Ordinal))
             throw new InvalidOperationException("Lifecycle resolution intent does not match the instance.");
@@ -86,14 +86,20 @@ public sealed record ElsaInstanceLifecycleResolvedPlan(
             throw new InvalidOperationException("Resolved lifecycle plan is empty.");
         try
         {
-            if (!string.Equals(
-                    ResolvedElsaApplicationPlanSerialization.ComputeContentHash(
-                        ResolvedElsaApplicationPlanSerialization.Deserialize(SerializedPlan)),
+            var typed = ResolvedElsaApplicationPlanSerialization.Deserialize(SerializedPlan);
+            var canonical = ResolvedElsaApplicationPlanSerialization.Serialize(typed);
+            if (!string.Equals(canonical, SerializedPlan, StringComparison.Ordinal) ||
+                !string.Equals(typed.SchemaVersion, ResolvedElsaApplicationPlanSchema.CurrentVersion, StringComparison.Ordinal) ||
+                !int.TryParse(typed.SchemaVersion, out var schemaVersion) ||
+                schemaVersion != Reference.SchemaVersion ||
+                !string.Equals(
+                    ResolvedElsaApplicationPlanSerialization.ComputeContentHash(typed),
                     Reference.ContentHash,
-                    StringComparison.Ordinal))
+                    StringComparison.Ordinal) ||
+                ResolvedElsaApplicationPlanValidator.Validate(typed).Count > 0)
                 throw new InvalidOperationException("Resolved lifecycle plan identity is invalid.");
         }
-        catch (Exception exception) when (exception is JsonException or ArgumentException or InvalidOperationException)
+        catch (Exception exception) when (exception is JsonException or ArgumentException or InvalidOperationException or FormatException or NotSupportedException)
         {
             throw new InvalidOperationException("Resolved lifecycle plan identity is invalid.");
         }
@@ -130,7 +136,11 @@ public sealed record ElsaInstanceLifecycleResolutionCommit(
         ElsaInstanceLifecycleLease.Validate(LeaseToken, LeaseVersion);
         if (Operation.State != ElsaInstanceOperationState.Queued || Operation.Id != OperationId ||
             Operation.InstanceId != InstanceId || Instance.Id != InstanceId || Instance.WorkspaceId != WorkspaceId ||
-            !string.Equals(Operation.RequestHash, RequestHash, StringComparison.Ordinal))
+            !string.Equals(Operation.RequestHash, RequestHash, StringComparison.Ordinal) ||
+            Instance.ResolvedPlanReference is null ||
+            !Equals(Instance.ResolvedPlanReference, Plan.Reference) ||
+            Instance.CurrentResolvedRelease is null ||
+            !Equals(Instance.CurrentResolvedRelease.PlanReference, Plan.Reference))
             throw new InvalidOperationException("Lifecycle resolution commit state is invalid.");
     }
 }
