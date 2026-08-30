@@ -179,9 +179,21 @@ public sealed class ResolvedElsaApplicationPlanTests
     }
 
     [Theory]
+    [InlineData("/", true)]
+    [InlineData("/api", true)]
+    [InlineData("/api/", false)]
+    [InlineData("//api", false)]
+    public void Enforces_canonical_endpoint_path_form(string path, bool expected)
+    {
+        Assert.Equal(expected, EndpointPathPolicy.IsSafe(path));
+    }
+
+    [Theory]
     [InlineData("https://attacker.example.test/callback")]
     [InlineData("/elsa/api?token=secret")]
     [InlineData("/elsa/api/../admin")]
+    [InlineData("/elsa/api/")]
+    [InlineData("//api")]
     public void Validator_rejects_unsafe_topology_endpoint_paths(string path)
     {
         var baseline = CreatePlan();

@@ -886,12 +886,12 @@ public sealed class ElsaInstancePlanResolver(
         var segments = uri.GetComponents(UriComponents.Path, UriFormat.UriEscaped)
             .Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length != 7
-            || !segments[0].Equals("api", StringComparison.OrdinalIgnoreCase)
-            || !segments[1].Equals("workspaces", StringComparison.OrdinalIgnoreCase)
+            || !segments[0].Equals("api", StringComparison.Ordinal)
+            || !segments[1].Equals("workspaces", StringComparison.Ordinal)
             || !Guid.TryParseExact(segments[2], "D", out var workspaceId)
-            || !segments[3].Equals("instances", StringComparison.OrdinalIgnoreCase)
+            || !segments[3].Equals("instances", StringComparison.Ordinal)
             || !Guid.TryParseExact(segments[4], "D", out _)
-            || !segments[5].Equals("resolved-plans", StringComparison.OrdinalIgnoreCase)
+            || !segments[5].Equals("resolved-plans", StringComparison.Ordinal)
             || !segments[6].Equals(Uri.EscapeDataString(planId), StringComparison.Ordinal))
             return false;
 

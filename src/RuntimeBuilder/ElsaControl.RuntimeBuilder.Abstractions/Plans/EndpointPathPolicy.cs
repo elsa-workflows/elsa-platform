@@ -6,14 +6,28 @@ public static class EndpointPathPolicy
         string.IsNullOrWhiteSpace(path) ? null : path;
 
     public static bool IsSafe(string? path) =>
-        !string.IsNullOrWhiteSpace(path)
-        && path.StartsWith("/", StringComparison.Ordinal)
-        && !path.Any(char.IsWhiteSpace)
-        && !path.Any(char.IsControl)
-        && !path.Contains('%', StringComparison.Ordinal)
-        && !path.Contains('\\', StringComparison.Ordinal)
-        && !path.Contains("//", StringComparison.Ordinal)
-        && !path.Contains('?', StringComparison.Ordinal)
-        && !path.Contains('#', StringComparison.Ordinal)
-        && !path.Split('/').Any(segment => segment is "." or "..");
+        IsSafePath(path);
+
+    private static bool IsSafePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)
+            || !path.StartsWith("/", StringComparison.Ordinal)
+            || path.Any(char.IsWhiteSpace)
+            || path.Any(char.IsControl)
+            || path.Contains('%', StringComparison.Ordinal)
+            || path.Contains('\\', StringComparison.Ordinal)
+            || path.Contains('?', StringComparison.Ordinal)
+            || path.Contains('#', StringComparison.Ordinal))
+            return false;
+
+        if (path == "/")
+            return true;
+
+        var segments = path.Split('/');
+        if (segments[0].Length != 0 || segments[1..].Any(segment => string.IsNullOrEmpty(segment) || segment is "." or ".."))
+            return false;
+
+        var canonicalPath = "/" + string.Join("/", segments[1..]);
+        return string.Equals(path, canonicalPath, StringComparison.Ordinal);
+    }
 }
