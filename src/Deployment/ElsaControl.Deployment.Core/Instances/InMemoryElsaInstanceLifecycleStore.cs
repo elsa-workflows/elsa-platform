@@ -332,7 +332,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                 var isRecoveryResume = storedOperation.State == ElsaInstanceOperationState.RecoveryRequired &&
                     operation.State == ElsaInstanceOperationState.Queued &&
                     operation.AttemptNumber == storedOperation.AttemptNumber + 1;
-                if (isRecoveryResume &&
+                if (isRecoveryResume && storedOperation.Action != ElsaInstanceOperationAction.Delete &&
                     (!_reconciliationResults.TryGetValue(operation.Id, out var reconciliation) ||
                      !reconciliation.Result.RetrySafe))
                     throw new ElsaInstanceLifecycleConflictException(
@@ -485,7 +485,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                     operation = operation.TransitionTo(ElsaInstanceOperationState.Accepted);
                     _operations[operation.Id] = operation;
                 }
-                if (operation.State is not (ElsaInstanceOperationState.Accepted or ElsaInstanceOperationState.Queued))
+                if (operation.State is not (ElsaInstanceOperationState.Accepted or ElsaInstanceOperationState.Queued or ElsaInstanceOperationState.Running))
                     continue;
 
                 var nowUtc = now.ToUniversalTime();
@@ -514,6 +514,23 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         }
     }
 
+    public Task<bool> RenewDeletionLeaseAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            if (!_claims.TryGetValue(item.Operation.Id, out var claim) ||
+                !string.Equals(claim.WorkerId, workerId, StringComparison.Ordinal) ||
+                !string.Equals(claim.Token, item.LeaseToken, StringComparison.Ordinal) ||
+                claim.Version != item.LeaseVersion || claim.ExpiresAt <= now.ToUniversalTime())
+                return Task.FromResult(false);
+
+            _claims[item.Operation.Id] = claim with { ExpiresAt = now.ToUniversalTime().Add(WorkerLeaseDuration) };
+            return Task.FromResult(true);
+        }
+    }
+
     public Task<ElsaInstanceDeletionResult> CommitDeletionAsync(
         ElsaInstanceDeletionCommit commit,
         CancellationToken cancellationToken = default)
@@ -529,6 +546,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                     throw new ElsaInstanceLifecycleConflictException("Deletion evidence conflicts with the terminal result.");
                 return Task.FromResult(stored.Result with { Replayed = true });
             }
+
             EnsureDeletionOwnership(commit.WorkspaceId, commit.InstanceId, commit.OperationId, commit.OutboxId,
                 commit.ExpectedInstanceVersion, commit.ExpectedAttemptNumber, commit.WorkerId, commit.LeaseToken, commit.LeaseVersion);
             var currentInstance = _instances[commit.InstanceId];

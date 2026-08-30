@@ -175,6 +175,15 @@ public sealed class ElsaInstanceDeletionWorkerTests
         Assert.Throws<ArgumentException>(() => new ElsaInstanceCleanupEvidence(
             "https://evidence.example/proof", "sha256:" + new string('A', 64)));
 
+    [Fact]
+    public void Cleanup_request_accepts_partial_persisted_targets()
+    {
+        var request = new ElsaInstanceCleanupRequest(WorkspaceId, Guid.NewGuid(), Guid.NewGuid(), 1,
+            new ElsaCurrentDeploymentReference("deployment-safe"), null, null);
+
+        request.Validate();
+    }
+
     private static ElsaInstanceDeletionWorkItem WorkItem(
         bool local,
         ElsaObservedLifecycle observedLifecycle = ElsaObservedLifecycle.Deleting,
@@ -239,6 +248,9 @@ public sealed class ElsaInstanceDeletionWorkerTests
                 commit.Operation, commit.Instance, commit.DiagnosticCode, commit.EvidenceFingerprint, false));
         }
 
+        public Task<bool> RenewDeletionLeaseAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
+            CancellationToken cancellationToken = default) => Task.FromResult(true);
+
         public Task<ElsaInstanceDeletionResult> RequireDeletionRecoveryAsync(ElsaInstanceDeletionFailure failure,
             CancellationToken cancellationToken = default)
         {
@@ -279,6 +291,9 @@ public sealed class ElsaInstanceDeletionWorkerTests
             return Task.FromResult(new ElsaInstanceDeletionResult(ElsaInstanceDeletionOutcome.Deleted,
                 commit.Operation, commit.Instance, commit.DiagnosticCode, commit.EvidenceFingerprint, false));
         }
+
+        public Task<bool> RenewDeletionLeaseAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
+            CancellationToken cancellationToken = default) => Task.FromResult(true);
 
         public Task<ElsaInstanceDeletionResult> RequireDeletionRecoveryAsync(ElsaInstanceDeletionFailure failure,
             CancellationToken cancellationToken = default) =>

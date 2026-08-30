@@ -47,8 +47,7 @@ public sealed record ElsaInstanceCleanupRequest(
 {
     public void Validate()
     {
-        if (WorkspaceId == Guid.Empty || InstanceId == Guid.Empty || OperationId == Guid.Empty || AttemptNumber < 1 ||
-            (CurrentDeployment is null) != (PlacementAssignment is null))
+        if (WorkspaceId == Guid.Empty || InstanceId == Guid.Empty || OperationId == Guid.Empty || AttemptNumber < 1)
             throw new InvalidOperationException("Cleanup request identity is invalid.");
     }
 }
@@ -196,6 +195,7 @@ public sealed record ElsaInstanceDeletionResult(
 public interface IElsaInstanceDeletionStore
 {
     Task<ElsaInstanceDeletionWorkItem?> TryClaimNextDeletionAsync(string workerId, DateTimeOffset now, CancellationToken cancellationToken = default);
+    Task<bool> RenewDeletionLeaseAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now, CancellationToken cancellationToken = default);
     Task<ElsaInstanceDeletionResult> CommitDeletionAsync(ElsaInstanceDeletionCommit commit, CancellationToken cancellationToken = default);
     Task<ElsaInstanceDeletionResult> RequireDeletionRecoveryAsync(ElsaInstanceDeletionFailure failure, CancellationToken cancellationToken = default);
 }

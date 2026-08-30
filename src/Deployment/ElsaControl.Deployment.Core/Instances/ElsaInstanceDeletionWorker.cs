@@ -82,7 +82,7 @@ public sealed class ElsaInstanceDeletionWorker(
             try
             {
                 providerInvoked();
-                observation = await cleanupPort.CleanupAsync(request, cancellationToken);
+                observation = await CleanupWithLeaseAsync(item, workerId, request, cancellationToken);
                 observation.Validate();
             }
             catch (OperationCanceledException) { throw; }
@@ -131,6 +131,29 @@ public sealed class ElsaInstanceDeletionWorker(
             Math.Max(1, item.Instance.Version), Math.Max(1, item.Operation.AttemptNumber), item.CorrelatedRunId,
             workerId, item.LeaseToken, Math.Max(1, item.LeaseVersion), fingerprint,
             "deletion.item.invalid", _timeProvider.GetUtcNow());
+    }
+
+    private async Task<ElsaInstanceCleanupObservation> CleanupWithLeaseAsync(
+        ElsaInstanceDeletionWorkItem item,
+        string workerId,
+        ElsaInstanceCleanupRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var cleanup = cleanupPort.CleanupAsync(request, cancellation.Token);
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1), _timeProvider);
+        while (await Task.WhenAny(cleanup, timer.WaitForNextTickAsync(cancellationToken).AsTask()) != cleanup)
+        {
+            if (!await store.RenewDeletionLeaseAsync(item, workerId, _timeProvider.GetUtcNow(), cancellationToken))
+            {
+                cancellation.Cancel();
+                if (!cleanup.IsCompleted)
+                    _ = cleanup.ContinueWith(static task => _ = task.Exception,
+                        TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+                throw new InvalidOperationException("Deletion lease could not be renewed.");
+            }
+        }
+        return await cleanup;
     }
 
     private static ElsaInstanceLifecycleWorkerResult Map(ElsaInstanceDeletionResult result) => new(

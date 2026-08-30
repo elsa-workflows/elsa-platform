@@ -678,6 +678,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 .Where(x => x.Action == ElsaInstanceOperationAction.Delete && x.Operation != null && x.QuarantinedAt == null &&
                             (x.Operation.State == ElsaInstanceOperationState.Accepted ||
                              x.Operation.State == ElsaInstanceOperationState.Queued ||
+                             x.Operation.State == ElsaInstanceOperationState.Running ||
                              (x.Operation.State == ElsaInstanceOperationState.WaitingForPriorOperation &&
                               !dbContext.ElsaInstanceOperations.Any(prior => prior.Id != x.OperationId &&
                                   prior.WorkspaceId == x.WorkspaceId &&
@@ -706,7 +707,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 ?? throw Conflict("Deletion instance no longer exists.");
             if (operation.State == ElsaInstanceOperationState.WaitingForPriorOperation)
                 operation.State = ElsaInstanceOperationState.Accepted;
-            if (operation.State is not (ElsaInstanceOperationState.Accepted or ElsaInstanceOperationState.Queued) ||
+            if (operation.State is not (ElsaInstanceOperationState.Accepted or ElsaInstanceOperationState.Queued or ElsaInstanceOperationState.Running) ||
                 operation.Action != ElsaInstanceOperationAction.Delete)
                 throw Conflict("Deletion operation is not claimable.");
 
@@ -750,6 +751,25 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         }
     }
 
+    public async Task<bool> RenewDeletionLeaseAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        dbContext.ChangeTracker.Clear();
+        var nowUtc = now.ToUniversalTime();
+        var operation = await dbContext.ElsaInstanceOperations.SingleOrDefaultAsync(x => x.Id == item.Operation.Id, cancellationToken);
+        if (operation is null || operation.State is not (ElsaInstanceOperationState.Accepted or ElsaInstanceOperationState.Running) ||
+            !string.Equals(operation.WorkerId, workerId, StringComparison.Ordinal) ||
+            !string.Equals(operation.LeaseTokenHash, HashLeaseToken(item.LeaseToken), StringComparison.Ordinal) ||
+            operation.LeaseVersion != item.LeaseVersion || operation.LeaseExpiresAt is null || operation.LeaseExpiresAt <= nowUtc)
+            return false;
+
+        operation.LeaseExpiresAt = nowUtc.Add(WorkerLeaseDuration);
+        operation.HeartbeatAt = nowUtc;
+        operation.UpdatedAt = nowUtc;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task<ElsaInstanceDeletionResult> CommitDeletionAsync(
         ElsaInstanceDeletionCommit commit,
         CancellationToken cancellationToken = default)
@@ -772,6 +792,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 await transaction.CommitAsync(cancellationToken);
                 return DeletionResult(operation, instance, true);
             }
+
             EnsureDeletionLease(operation, instance, outbox, commit.WorkspaceId, commit.InstanceId, commit.OperationId,
                 commit.ExpectedInstanceVersion, commit.ExpectedAttemptNumber, commit.WorkerId, commit.LeaseToken, commit.LeaseVersion);
             var currentAggregate = MapInstance(instance);
@@ -1207,7 +1228,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         var isRecoveryResume = existingOperation.State == ElsaInstanceOperationState.RecoveryRequired &&
             requestedOperation.State == ElsaInstanceOperationState.Queued &&
             requestedOperation.AttemptNumber == existingOperation.AttemptNumber + 1;
-        if (isRecoveryResume &&
+        if (isRecoveryResume && existingOperation.Action != ElsaInstanceOperationAction.Delete &&
             (!string.Equals(existingOperation.FailureCode,
                  ElsaInstanceProviderReconciliationService.RetrySafeCode, StringComparison.Ordinal) ||
              existingOperation.ReconciliationRetryEvidenceReference is null ||
