@@ -10,17 +10,20 @@ public sealed record ElsaInstanceSourceReleaseResult(
 {
     public ElsaInstanceSourceReleaseResult Validate()
     {
+        var hasAnyEvidence = ProviderCorrelationId is not null || EvidenceReference is not null || EvidenceDigest is not null;
+        var hasCompleteEvidence = ProviderCorrelationId is not null && EvidenceReference is not null && EvidenceDigest is not null;
         if (!Enum.IsDefined(Outcome) || string.IsNullOrWhiteSpace(DiagnosticCode) || DiagnosticCode.Length > 128 ||
             DiagnosticCode.Any(character => !(char.IsAsciiLetterLower(character) || char.IsAsciiDigit(character) || character is '.' or '-')) ||
-            (Outcome == ElsaInstanceSourceReleaseOutcome.Confirmed) !=
-            (ProviderCorrelationId is not null && EvidenceReference is not null && EvidenceDigest is not null))
+            hasAnyEvidence != hasCompleteEvidence ||
+            (Outcome == ElsaInstanceSourceReleaseOutcome.Confirmed) != hasCompleteEvidence)
             throw new ArgumentException("Source release result is invalid.");
-        if (ProviderCorrelationId is not null)
+        if (ProviderCorrelationId is { } correlationId && EvidenceReference is { } evidenceReference &&
+            EvidenceDigest is { } evidenceDigest)
         {
-            if (ProviderCorrelationId.Length > 128 || ProviderCorrelationId.Any(character =>
+            if (correlationId.Length > 128 || correlationId.Any(character =>
                     !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.' or ':' or '/')))
                 throw new ArgumentException("Provider correlation identifier is invalid.", nameof(ProviderCorrelationId));
-            _ = new ElsaInstanceCleanupEvidence(EvidenceReference!, EvidenceDigest!);
+            _ = new ElsaInstanceCleanupEvidence(evidenceReference, evidenceDigest);
         }
         return this;
     }

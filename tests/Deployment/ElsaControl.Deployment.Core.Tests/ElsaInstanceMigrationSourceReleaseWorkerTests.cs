@@ -52,6 +52,18 @@ public sealed class ElsaInstanceMigrationSourceReleaseWorkerTests
         Assert.True(port.CancellationObserved);
     }
 
+    [Fact]
+    public void Partial_or_nonconfirmed_release_evidence_is_rejected_before_persistence()
+    {
+        Assert.Throws<ArgumentException>(() => new ElsaInstanceSourceReleaseResult(
+            ElsaInstanceSourceReleaseOutcome.Ambiguous, "migration.source-release.ambiguous",
+            EvidenceReference: "https://evidence.example/migrations/release-1").Validate());
+        Assert.Throws<ArgumentException>(() => new ElsaInstanceSourceReleaseResult(
+            ElsaInstanceSourceReleaseOutcome.RetryableFailure, "migration.source-release.retryable",
+            "provider-operation-1", "https://evidence.example/migrations/release-1",
+            "sha256:" + new string('d', 64)).Validate());
+    }
+
     private static ElsaInstanceMigration RetiringMigration()
     {
         var source = Reference("source", "3.10", "3.10.4", 'a');
