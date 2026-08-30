@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ElsaControl.Deployment.Azure;
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Workspace;
 
@@ -128,3 +129,7 @@ public sealed record WorkspaceDeploymentRunDetailResponse(
     IReadOnlyList<DeploymentRunCommandSummary> Commands);
 
 public sealed record WorkspaceRuntimeControlRunRequest(Guid ConfirmationId);
+
+public sealed record AzureProviderOperationResponse(
+    AzureProviderOperation Operation,
+    IReadOnlyList<AzureProviderOperationTransition> Transitions);

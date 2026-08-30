@@ -99,13 +99,17 @@ public sealed class DeploymentProofHarnessTests
             extraMetadata: new Dictionary<string, string>
             {
                 ["diagnostic"] = "provider returned token=do-not-leak",
-                ["password"] = "do-not-leak"
+                ["password"] = "do-not-leak",
+                ["images"] = "push user:password@registry.example.test/runtime,other@registry.example.test/runtime,//scheme:secret@registry.example.test/runtime"
             });
 
         var report = await new DeploymentProofHarness().RunAsync(Input, Environment, provider);
         var evidence = report.ToJson();
 
         Assert.DoesNotContain("do-not-leak", evidence, StringComparison.Ordinal);
+        Assert.DoesNotContain("user:password@", evidence, StringComparison.Ordinal);
+        Assert.DoesNotContain("other@", evidence, StringComparison.Ordinal);
+        Assert.DoesNotContain("scheme:secret@", evidence, StringComparison.Ordinal);
         Assert.Contains("redacted", evidence, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("azure-workload-identity=", evidence, StringComparison.Ordinal);
 
@@ -135,8 +139,112 @@ public sealed class DeploymentProofHarnessTests
             Assert.Equal(DeploymentProofStageStatus.Skipped, stage.Status));
     }
 
+    [Theory]
+    [InlineData("oci://user@registry.example.test/runtime-combined")]
+    [InlineData("https://user@example.test/runtime-combined")]
+    [InlineData("user@registry.example.test/runtime-combined")]
+    [InlineData("user@registry.example.test")]
+    [InlineData("user:password@registry.example.test/runtime-combined")]
+    [InlineData("user:password@registry.example.test")]
+    [InlineData("user:password@registry.example.test ")]
+    [InlineData("https://user@registry.example.test /runtime-combined")]
+    [InlineData("//user:password@registry.example.test/runtime-combined")]
+    [InlineData("oci://" + "user" + "@" + "registry.example.test/runtime-combined ")]
+    [InlineData("https://" + "user" + "@" + "registry.example.test/runtime-combined ")]
+    public async Task Credential_bearing_image_references_fail_at_selection(string imageReference)
+    {
+        var provider = new FakeDeploymentProofProvider();
+        var invalid = new DeploymentProofInput(
+            Input.ElsaVersion,
+            Input.Topology,
+            Input.Features,
+            imageReference,
+            Input.ImageDigest);
+
+        var report = await new DeploymentProofHarness().RunAsync(invalid, Environment, provider);
+
+        Assert.False(report.Passed);
+        Assert.Equal(DeploymentProofStage.Selection, report.Failure!.Stage);
+        Assert.Equal("proof.selection.imageReferenceUnsafe", report.Failure.Code);
+        Assert.All(report.Stages.Where(stage => stage.Stage != DeploymentProofStage.Selection), stage =>
+            Assert.Equal(DeploymentProofStageStatus.Skipped, stage.Status));
+        var json = report.ToJson();
+        Assert.DoesNotContain(imageReference.Trim(), json, StringComparison.Ordinal);
+        Assert.DoesNotContain("password", json, StringComparison.Ordinal);
+        Assert.Contains("redacted", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Provider_internal_cancellation_is_reported_as_unexpected()
+    {
+        var report = await new DeploymentProofHarness().RunAsync(
+            Input,
+            Environment,
+            new CancellationProofProvider(cancelSelectionInternally: true));
+
+        Assert.Equal("proof.selection.unexpected", report.Failure?.Code);
+    }
+
+    [Fact]
+    public async Task Repeat_apply_unexpected_failure_uses_the_established_stage_code()
+    {
+        var report = await new DeploymentProofHarness().RunAsync(
+            Input,
+            Environment,
+            new CancellationProofProvider(failRepeatApplyUnexpectedly: true));
+
+        Assert.Equal("proof.repeatApply.unexpected", report.Failure?.Code);
+    }
+
+    [Fact]
+    public async Task Cleanup_is_bounded_when_the_provider_does_not_complete()
+    {
+        var report = await new DeploymentProofHarness(
+                cleanupTimeout: TimeSpan.FromMilliseconds(20))
+            .RunAsync(Input, Environment, new CancellationProofProvider(hangCleanup: true));
+
+        Assert.Equal("proof.cleanup.cancelled", report.Failure?.Code);
+    }
+
     private static async Task<DeploymentProofReport> RunAsync()
     {
         return await new DeploymentProofHarness().RunAsync(Input, Environment, new FakeDeploymentProofProvider());
+    }
+
+    private sealed class CancellationProofProvider(
+        bool cancelSelectionInternally = false,
+        bool hangCleanup = false,
+        bool failRepeatApplyUnexpectedly = false) : IDeploymentProofProvider
+    {
+        private readonly FakeDeploymentProofProvider _inner = new();
+
+        public Task<DeploymentProofSelection> SelectAsync(DeploymentProofInput input, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default) =>
+            cancelSelectionInternally
+                ? Task.FromException<DeploymentProofSelection>(new OperationCanceledException())
+                : _inner.SelectAsync(input, environment, cancellationToken);
+
+        public Task<DeploymentProofPlan> PlanAsync(DeploymentProofSelection selection, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default) =>
+            _inner.PlanAsync(selection, environment, cancellationToken);
+
+        public Task<DeploymentProofDeployment> ProvisionAsync(DeploymentProofPlan plan, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default) =>
+            _inner.ProvisionAsync(plan, environment, cancellationToken);
+
+        public Task<DeploymentProofHealth> WaitForHealthAsync(DeploymentProofDeployment deployment, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default) =>
+            _inner.WaitForHealthAsync(deployment, environment, cancellationToken);
+
+        public Task<DeploymentProofWorkflow> RunWorkflowAsync(DeploymentProofHealth health, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default) =>
+            _inner.RunWorkflowAsync(health, environment, cancellationToken);
+
+        public Task<DeploymentProofApply> ApplyAsync(DeploymentProofPlan plan, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default) =>
+            failRepeatApplyUnexpectedly
+                ? Task.FromException<DeploymentProofApply>(new InvalidOperationException("Injected failure."))
+                : _inner.ApplyAsync(plan, environment, cancellationToken);
+
+        public async Task<DeploymentProofCleanup> CleanupAsync(DeploymentProofPlan plan, DeploymentProofDeployment? deployment, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default)
+        {
+            if (hangCleanup)
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return await _inner.CleanupAsync(plan, deployment, environment, cancellationToken);
+        }
     }
 }

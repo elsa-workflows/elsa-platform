@@ -423,12 +423,12 @@ public sealed class ReleaseManifestAdmissionTests
     }
 
     [Fact]
-    public async Task Projector_retains_unrelated_evidence_with_fixed_description_and_digest_binding()
+    public async Task Projector_retains_unrelated_evidence_with_separately_retained_digest()
     {
         var admission = await Admit(Artifact(Digest('b')));
         var plan = CreatePlan() with
         {
-            Evidence = [new("existing", $"https://evidence.example/a@{Digest('a')}", Digest('a'), "Retained immutable evidence.")]
+            Evidence = [new("existing", "https://evidence.example/a", Digest('a'), "Retained immutable evidence.")]
         };
 
         var projected = ReleaseManifestPlanProjector.Project(admission, plan);

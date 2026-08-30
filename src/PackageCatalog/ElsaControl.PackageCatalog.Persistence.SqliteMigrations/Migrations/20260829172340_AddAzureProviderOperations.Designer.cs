@@ -3,6 +3,7 @@ using System;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 {
     [DbContext(typeof(CatalogDbContext))]
-    partial class CatalogDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260829172340_AddAzureProviderOperations")]
+    partial class AddAzureProviderOperations
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
@@ -985,16 +988,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasMaxLength(71)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("ReleaseManifestReference")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("ReleaseManifestSignatureDigest")
                         .HasMaxLength(71)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ReleaseManifestSignatureReference")
-                        .HasMaxLength(2048)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RequestHash")
@@ -1004,11 +999,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.Property<string>("ResourceGroupName")
                         .HasMaxLength(90)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SecretReferencesJson")
-                        .IsRequired()
-                        .HasMaxLength(10000)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("StableTrafficRevisionName")
@@ -1063,10 +1053,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("WorkspaceId", "TargetKey")
-                        .IsUnique()
-                        .HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
-
                     b.HasIndex("WorkspaceId", "TargetKey", "CreatedAt");
 
                     b.HasIndex("WorkspaceId", "TargetKey", "IdempotencyKey")
@@ -1076,7 +1062,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .IsUnique()
                         .HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
 
-                    b.HasIndex("Status", "LeaseExpiresAt", "UpdatedAt", "Id");
+                    b.HasIndex("WorkspaceId", "Status", "LeaseExpiresAt", "UpdatedAt");
 
                     b.ToTable("AzureProviderOperations");
                 });
@@ -1453,9 +1439,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid?>("ElsaInstanceId")
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -1482,13 +1465,9 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ElsaInstanceId")
-                        .IsUnique()
-                        .HasFilter("ElsaInstanceId IS NOT NULL");
+                    b.HasIndex("ApplicationId");
 
                     b.HasIndex("TierId");
-
-                    b.HasIndex("WorkspaceId", "ElsaInstanceId");
 
                     b.HasIndex("WorkspaceId", "TierId");
 
@@ -1521,9 +1500,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.Property<long>("CreatedAt")
                         .HasColumnType("INTEGER");
-
-                    b.Property<Guid?>("ElsaInstanceId")
-                        .HasColumnType("TEXT");
 
                     b.Property<Guid>("EngineId")
                         .HasColumnType("TEXT");
@@ -1576,9 +1552,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("WorkspaceId", "EnvironmentId")
-                        .IsUnique()
-                        .HasFilter("Status IN ('Queued', 'Running', 'RecoveryRequired')");
+                    b.HasIndex("EnvironmentId");
 
                     b.HasIndex("WorkspaceId", "EnvironmentId", "Status");
 
@@ -1907,804 +1881,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.HasIndex("WorkspaceId", "EnvironmentId", "EngineId", "DetectedAt");
 
                     b.ToTable("DriftReportItems");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceAuditEventEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("ActorAccountId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("DeploymentRunId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DesiredStateRevisionId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DiagnosticCode")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("InstanceId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("NewState")
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("OccurredAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid?>("OperationId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("OperatorSubject")
-                        .HasMaxLength(71)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PlanReference")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PriorState")
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RequestKeyHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("Sequence")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Summary")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("InstanceId", "Sequence")
-                        .IsUnique();
-
-                    b.HasIndex("WorkspaceId", "OccurredAt");
-
-                    b.HasIndex("OrganizationId", "WorkspaceId", "InstanceId");
-
-                    b.ToTable("ElsaInstanceAuditEvents");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CapacityProfile")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Channel")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ConfigurationShapeRevisionId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("CreatedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("CurrentDeploymentEndpointUri")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CurrentDeploymentId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CurrentDeploymentRevisionId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CurrentReleaseComponentDigestsJson")
-                        .HasMaxLength(65536)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CurrentReleaseDistributionId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CurrentReleaseLine")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CurrentReleaseManifestDigest")
-                        .HasMaxLength(71)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CurrentReleaseVersion")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long?>("DeletedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("DesiredLifecycle")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DesiredStateRevisionId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DistributionId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DomainOutcome")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ElsaTenantAudience")
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ElsaTenantId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("FeatureOverridesJson")
-                        .IsRequired()
-                        .HasMaxLength(32768)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("FeaturePresetId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Health")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("IsolationProfile")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LastOperationId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("MajorMigrations")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("MinorUpdates")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("NetworkOutcome")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ObservedLifecycle")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PackagePolicy")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PatchUpdates")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PlacementAssignmentId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RegionCode")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ReleaseLine")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RequestedVersion")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ResolvedPlanContentHash")
-                        .HasMaxLength(71)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ResolvedPlanId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("ResolvedPlanSchemaVersion")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("ResolvedPlanUri")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Slug")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TargetMode")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TopologyId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("UpdatedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("WorkspaceId", "Slug")
-                        .IsUnique()
-                        .HasFilter("DeletedAt IS NULL");
-
-                    b.ToTable("ElsaInstances");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceIdentityBindingEntity", b =>
-                {
-                    b.Property<Guid>("InstanceId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Audience")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("BindingVersion")
-                        .IsConcurrencyToken()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("CanonicalCallbackUri")
-                        .IsRequired()
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("ChangedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("VerifiedEndpointOrigin")
-                        .IsRequired()
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("InstanceId");
-
-                    b.HasIndex("Audience")
-                        .IsUnique();
-
-                    b.HasIndex("CanonicalCallbackUri")
-                        .IsUnique();
-
-                    b.ToTable("ElsaInstanceIdentityBindings");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceIntentRevisionEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("AuthoredAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("CapacityProfile")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Channel")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ConfigurationShapeRevisionId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ContentHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("CreatedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid?>("CreatedByAccountId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DesiredLifecycle")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DistributionId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DomainOutcome")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("FeatureOverridesJson")
-                        .IsRequired()
-                        .HasMaxLength(32768)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("FeaturePresetId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("InstanceId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("IsolationProfile")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("MajorMigrations")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("MinorUpdates")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("NetworkOutcome")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PackagePolicy")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PatchUpdates")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RegionCode")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ReleaseLine")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RequestedVersion")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("RevisionNumber")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("TargetMode")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TopologyId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("InstanceId", "RevisionNumber")
-                        .IsUnique();
-
-                    b.HasIndex("WorkspaceId", "ContentHash");
-
-                    b.HasIndex("OrganizationId", "WorkspaceId", "InstanceId");
-
-                    b.ToTable("ElsaInstanceIntentRevisions");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceLifecycleOutboxEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Action")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long?>("QuarantinedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("QuarantineCode")
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("CreatedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("InstanceId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("OperationId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RequestHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OperationId")
-                        .IsUnique();
-
-                    b.HasIndex("WorkspaceId", "CreatedAt");
-
-                    b.HasIndex("OrganizationId", "WorkspaceId", "InstanceId");
-
-                    b.HasIndex("WorkspaceId", "InstanceId", "CreatedAt");
-
-                    b.ToTable("ElsaInstanceLifecycleOutbox");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceMigrationEntity", b =>
-                {
-                    b.Property<Guid>("MigrationId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("CreatedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long?>("CutoverAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long?>("EarlyReleaseApprovedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid?>("EarlyReleaseApprovedByAccountId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("InstanceId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Phase")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SourceAccessMode")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SourceDeploymentId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SourceManifestDigest")
-                        .HasMaxLength(71)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SourcePlanId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SourcePlanUri")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SourceReleaseLine")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long?>("SourceReleasedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long?>("SourceRetainUntil")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("SourceVersion")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TargetDeploymentId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TargetManifestDigest")
-                        .HasMaxLength(71)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TargetPlanId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TargetPlanUri")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TargetReleaseLine")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TargetVersion")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("UpdatedAt")
-                        .IsConcurrencyToken()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("MigrationId");
-
-                    b.HasIndex("InstanceId", "Phase");
-
-                    b.HasIndex("InstanceId", "SourceRetainUntil");
-
-                    b.HasIndex("OrganizationId", "WorkspaceId", "InstanceId");
-
-                    b.ToTable("ElsaInstanceMigrations");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceOperationEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("AcceptedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Action")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("AttemptNumber")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long?>("CompletedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long>("CreatedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid?>("DeploymentRunId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DesiredStateRevisionId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("ExpectedVersion")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("FailureCode")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("FailureSummary")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long?>("HeartbeatAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("IdempotencyKey")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("IdempotencyScope")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("InstanceId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<long?>("LeaseExpiresAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("LeaseTokenHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("LeaseVersion")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RequestHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ResolvedPlanId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long?>("StartedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("State")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("UpdatedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("WorkerId")
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("InstanceId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_ElsaInstanceOperations_ActiveInstanceId")
-                        .HasFilter("InstanceId IS NOT NULL AND State IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
-
-                    b.HasIndex("InstanceId", "State")
-                        .IsUnique()
-                        .HasDatabaseName("IX_ElsaInstanceOperations_WaitingInstanceId")
-                        .HasFilter("InstanceId IS NOT NULL AND State = 'WaitingForPriorOperation'");
-
-                    b.HasIndex("OrganizationId", "WorkspaceId", "InstanceId");
-
-                    b.HasIndex("WorkspaceId", "IdempotencyScope", "IdempotencyKey")
-                        .IsUnique();
-
-                    b.HasIndex("WorkspaceId", "State", "AcceptedAt");
-
-                    b.ToTable("ElsaInstanceOperations", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_ElsaInstanceOperations_LeaseVersion_Range", "LeaseVersion >= 0 AND LeaseVersion < 2147483647");
-                            t.HasCheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'");
-                        });
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceResolvedPlanEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ContentHash")
-                        .IsRequired()
-                        .HasMaxLength(71)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("CreatedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("InstanceId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PlanId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PlanUri")
-                        .IsRequired()
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("SchemaVersion")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("SerializedPlan")
-                        .IsRequired()
-                        .HasMaxLength(1048576)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("WorkspaceId", "ContentHash");
-
-                    b.HasIndex("WorkspaceId", "InstanceId", "PlanId")
-                        .IsUnique();
-
-                    b.HasIndex("OrganizationId", "WorkspaceId", "InstanceId");
-
-                    b.ToTable("ElsaInstanceResolvedPlans");
                 });
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.EngineCapabilityEntity", b =>
@@ -4003,27 +3179,18 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentEnvironmentEntity", b =>
                 {
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentApplicationEntity", "Application")
+                        .WithMany("Environments")
+                        .HasForeignKey("ApplicationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentTierDefinitionEntity", "TierDefinition")
                         .WithMany("Environments")
                         .HasForeignKey("TierId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentApplicationEntity", "Application")
-                        .WithMany("Environments")
-                        .HasForeignKey("WorkspaceId", "ApplicationId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceEntity", "ElsaInstance")
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId", "ElsaInstanceId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.Navigation("Application");
-
-                    b.Navigation("ElsaInstance");
 
                     b.Navigation("TierDefinition");
                 });
@@ -4032,8 +3199,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 {
                     b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentEnvironmentEntity", "Environment")
                         .WithMany()
-                        .HasForeignKey("WorkspaceId", "EnvironmentId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .HasForeignKey("EnvironmentId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -4111,189 +3277,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .IsRequired();
 
                     b.Navigation("Environment");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceAuditEventEntity", b =>
-                {
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Organization", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", null)
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceEntity", "Instance")
-                        .WithMany("AuditEvents")
-                        .HasForeignKey("OrganizationId", "WorkspaceId", "InstanceId")
-                        .HasPrincipalKey("OrganizationId", "WorkspaceId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Instance");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceEntity", b =>
-                {
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Organization", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId", "WorkspaceId")
-                        .HasPrincipalKey("OrganizationId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceIdentityBindingEntity", b =>
-                {
-                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceEntity", "Instance")
-                        .WithOne("IdentityBinding")
-                        .HasForeignKey("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceIdentityBindingEntity", "InstanceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Instance");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceIntentRevisionEntity", b =>
-                {
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Organization", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId", "WorkspaceId")
-                        .HasPrincipalKey("OrganizationId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceEntity", "Instance")
-                        .WithMany("IntentRevisions")
-                        .HasForeignKey("OrganizationId", "WorkspaceId", "InstanceId")
-                        .HasPrincipalKey("OrganizationId", "WorkspaceId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Instance");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceLifecycleOutboxEntity", b =>
-                {
-                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceOperationEntity", "Operation")
-                        .WithMany()
-                        .HasForeignKey("OperationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Organization", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId", "WorkspaceId")
-                        .HasPrincipalKey("OrganizationId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceEntity", "Instance")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId", "WorkspaceId", "InstanceId")
-                        .HasPrincipalKey("OrganizationId", "WorkspaceId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Instance");
-
-                    b.Navigation("Operation");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceMigrationEntity", b =>
-                {
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Organization", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId", "WorkspaceId")
-                        .HasPrincipalKey("OrganizationId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceEntity", "Instance")
-                        .WithMany("Migrations")
-                        .HasForeignKey("OrganizationId", "WorkspaceId", "InstanceId")
-                        .HasPrincipalKey("OrganizationId", "WorkspaceId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Instance");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceOperationEntity", b =>
-                {
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Organization", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId", "WorkspaceId")
-                        .HasPrincipalKey("OrganizationId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceEntity", "Instance")
-                        .WithMany("Operations")
-                        .HasForeignKey("OrganizationId", "WorkspaceId", "InstanceId")
-                        .HasPrincipalKey("OrganizationId", "WorkspaceId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("Instance");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceResolvedPlanEntity", b =>
-                {
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Organization", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", null)
-                        .WithMany()
-                        .HasForeignKey("OrganizationId", "WorkspaceId")
-                        .HasPrincipalKey("OrganizationId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceEntity", "Instance")
-                        .WithMany()
-                        .HasForeignKey("OrganizationId", "WorkspaceId", "InstanceId")
-                        .HasPrincipalKey("OrganizationId", "WorkspaceId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Instance");
                 });
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.EngineCapabilityEntity", b =>
@@ -4579,19 +3562,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DesiredStateRevisionEntity", b =>
                 {
                     b.Navigation("Records");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceEntity", b =>
-                {
-                    b.Navigation("AuditEvents");
-
-                    b.Navigation("IdentityBinding");
-
-                    b.Navigation("IntentRevisions");
-
-                    b.Navigation("Migrations");
-
-                    b.Navigation("Operations");
                 });
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.WeaverPlanEntity", b =>
