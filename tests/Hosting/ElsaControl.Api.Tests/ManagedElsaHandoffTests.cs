@@ -53,6 +53,8 @@ public sealed class ManagedElsaHandoffTests
             new ManagedElsaHandoffRedeemRequest(issued.Token, authorizer.Audience, authorizer.RedirectUri.OriginalString, CodeVerifier));
 
         Assert.Equal(HttpStatusCode.OK, redeem.StatusCode);
+        Assert.Contains("no-store", redeem.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
+        Assert.Contains("no-cache", redeem.Headers.Pragma.Select(x => x.Name), StringComparer.OrdinalIgnoreCase);
         var session = (await redeem.Content.ReadControlJsonAsync<ManagedElsaHandoffRedeemResponse>())!;
         Assert.Equal(authorizer.OrganizationId, session.OrganizationId);
         Assert.Equal(authorizer.InstanceId, session.InstanceId);

@@ -73,6 +73,11 @@ public static class ManagedElsaHandoffEndpoints
 
             var result = await handoff.RedeemAsync(
                 request.Token, audience!, redirectUri!, request.CodeVerifier, cancellationToken, context.TraceIdentifier);
+            if (result.Succeeded)
+            {
+                context.Response.Headers.CacheControl = "no-store";
+                context.Response.Headers.Pragma = "no-cache";
+            }
             return result.Failure switch
             {
                 ManagedElsaHandoffRedeemFailure.Replay => Results.Conflict(new
