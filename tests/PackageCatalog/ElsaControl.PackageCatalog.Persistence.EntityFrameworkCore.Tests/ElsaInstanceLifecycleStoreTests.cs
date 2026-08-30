@@ -554,7 +554,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         var lifecycleStore = CreateStore(db);
         var reconciliation = new ElsaInstanceProviderReconciliationService(
             lifecycleStore,
-            new StaticProviderPort(new(
+            new QueueProviderPort(new ElsaInstanceProviderObservation(
                 ElsaInstanceProviderObservationKind.Ambiguous,
                 ElsaObservedLifecycle.Unknown,
                 ElsaInstanceProviderHealthGate.Unknown,
