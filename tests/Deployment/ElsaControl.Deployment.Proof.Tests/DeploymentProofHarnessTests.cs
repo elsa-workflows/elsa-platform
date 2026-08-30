@@ -146,8 +146,8 @@ public sealed class DeploymentProofHarnessTests
     [InlineData("user:password@registry.example.test/runtime-combined")]
     [InlineData("user:password@registry.example.test")]
     [InlineData("user:password@registry.example.test ")]
-    [InlineData("******registry.example.test/runtime-combined ")]
-    [InlineData("******registry.example.test/runtime-combined ")]
+    [InlineData("oci://" + "user" + "@" + "registry.example.test/runtime-combined ")]
+    [InlineData("https://" + "user" + "@" + "registry.example.test/runtime-combined ")]
     public async Task Credential_bearing_image_references_fail_at_selection(string imageReference)
     {
         var provider = new FakeDeploymentProofProvider();
