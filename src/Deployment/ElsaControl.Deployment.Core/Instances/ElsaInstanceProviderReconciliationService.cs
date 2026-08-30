@@ -132,6 +132,11 @@ public sealed class ElsaInstanceProviderReconciliationService(
             return (Project(instance, ElsaObservedLifecycle.Stopped, ElsaInstanceHealth.Unknown),
                 operation.TransitionTo(ElsaInstanceOperationState.Succeeded), ConvergedCode, now);
 
+        if (observation.ObservedLifecycle == ElsaObservedLifecycle.Deleted &&
+            instance.DesiredLifecycle == ElsaDesiredLifecycle.Deleting)
+            return (Project(instance, ElsaObservedLifecycle.Deleted, ElsaInstanceHealth.Unknown, now),
+                operation.TransitionTo(ElsaInstanceOperationState.Succeeded), ConvergedCode, now);
+
         if (observation.ObservedLifecycle == ElsaObservedLifecycle.Failed)
             return (Project(instance, ElsaObservedLifecycle.Failed, ElsaInstanceHealth.Unreachable),
                 operation.TransitionTo(ElsaInstanceOperationState.Failed), FailedCode, now);

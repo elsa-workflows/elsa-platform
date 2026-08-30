@@ -521,7 +521,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
 
         Assert.Equal(1, marked);
         db.ChangeTracker.Clear();
-        var run = await db.DeploymentRuns.SingleAsync(x => x.Id == claimed!.Id);
+        var run = await db.DeploymentRuns.Include(x => x.Environment).SingleAsync(x => x.Id == claimed!.Id);
         var operation = await db.ElsaInstanceOperations.SingleAsync(x => x.Id == accepted.Operation.Id);
         var instance = await db.ElsaInstances.SingleAsync(x => x.Id == accepted.Instance.Id);
         Assert.Equal(WorkspaceDeploymentRunStatus.RecoveryRequired, run.Status);
@@ -530,6 +530,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Null(operation.CompletedAt);
         Assert.Equal(ElsaObservedLifecycle.Unknown, instance.ObservedLifecycle);
         Assert.Equal(ElsaInstanceHealth.Unknown, instance.Health);
+        Assert.Equal(DeploymentStatus.Blocked, run.Environment!.DeploymentStatus);
         var audit = await db.ElsaInstanceAuditEvents.SingleAsync(x => x.EventType == "lifecycle.recovery-required");
         Assert.Equal("provider.reconciliation.required", audit.DiagnosticCode);
         Assert.DoesNotContain("deployment-worker", audit.Summary ?? "", StringComparison.Ordinal);

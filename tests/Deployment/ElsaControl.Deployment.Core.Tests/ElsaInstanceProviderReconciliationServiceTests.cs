@@ -73,6 +73,24 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
     }
 
     [Fact]
+    public async Task Confirmed_deleted_state_converges_a_deleting_instance()
+    {
+        var (store, accepted) = await RecoveryTargetAsync(ElsaDesiredLifecycle.Deleting);
+        var observation = new ElsaInstanceProviderObservation(
+            ElsaInstanceProviderObservationKind.Confirmed,
+            ElsaObservedLifecycle.Deleted,
+            ElsaInstanceProviderHealthGate.Unknown,
+            "observation-deleted");
+
+        var result = await Service(store, new RecordingPort(observation)).ReconcileAsync(WorkspaceId, accepted.Operation.Id);
+
+        Assert.Equal(ElsaInstanceProviderReconciliationOutcome.Converged, result.Outcome);
+        Assert.Equal(ElsaObservedLifecycle.Deleted, result.Projection.ObservedLifecycle);
+        Assert.Equal(ElsaInstanceOperationState.Succeeded, result.Projection.OperationState);
+        Assert.Equal(Now, store.Instances.Single().DeletedAt);
+    }
+
+    [Fact]
     public async Task Later_positive_evidence_can_converge_after_an_unknown_observation()
     {
         var (store, accepted) = await RecoveryTargetAsync();
@@ -237,7 +255,8 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
         IElsaInstanceProviderReconciliationPort port) =>
         new(store, port, new StaticTimeProvider(Now));
 
-    private static async Task<(InMemoryElsaInstanceLifecycleStore Store, ElsaInstanceLifecycleAcceptance Accepted)> RecoveryTargetAsync()
+    private static async Task<(InMemoryElsaInstanceLifecycleStore Store, ElsaInstanceLifecycleAcceptance Accepted)> RecoveryTargetAsync(
+        ElsaDesiredLifecycle desiredLifecycle = ElsaDesiredLifecycle.Running)
     {
         var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
         var accepted = await new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now)).CreateAsync(new(
@@ -248,7 +267,8 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
             new(
                 new("commercial", "5.0", "5.0.1"),
                 new("server-studio"),
-                new("managed", "westeurope", "dedicated", "standard-small", "public", "managed")),
+                new("managed", "westeurope", "dedicated", "standard-small", "public", "managed"),
+                desiredLifecycle),
             "create-reconciliation-test"));
         store.MarkRecoveryRequired(accepted.Operation.Id);
         return (store, accepted);

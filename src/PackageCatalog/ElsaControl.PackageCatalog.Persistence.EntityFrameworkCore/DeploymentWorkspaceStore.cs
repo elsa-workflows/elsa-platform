@@ -1184,6 +1184,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
 
             DetachTrackedRun(runId);
             var run = await dbContext.DeploymentRuns
+                .Include(x => x.Environment)
                 .SingleAsync(x => x.Id == runId, cancellationToken);
             await dbContext.DeploymentRunHistoryEvents.AddAsync(new DeploymentRunHistoryEventEntity
             {
@@ -1196,6 +1197,11 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             }, cancellationToken);
 
             await ProjectManagedRecoveryRequiredAsync(run, now, cancellationToken);
+            if (run.Environment is not null)
+            {
+                run.Environment.UpdatedAt = now;
+                run.Environment.DeploymentStatus = DeploymentStatus.Blocked;
+            }
             markedCount++;
         }
 
