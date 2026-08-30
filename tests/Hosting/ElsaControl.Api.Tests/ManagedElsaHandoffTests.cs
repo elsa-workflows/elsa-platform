@@ -295,6 +295,27 @@ public sealed class ManagedElsaHandoffTests
         await Assert.ThrowsAsync<ArgumentException>(() => validator.StartAsync(CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Production_configuration_validator_rejects_malformed_previous_key_at_startup()
+    {
+        using var active = RSA.Create(2048);
+        var validator = new ManagedElsaHandoffConfigurationValidator(
+            new TestHostEnvironment(Environments.Production),
+            Options.Create(new ManagedElsaHandoffOptions
+            {
+                Enabled = true,
+                Issuer = "https://cloud.example.test",
+                ActiveKeyId = "active-2026-09",
+                ActivePrivateKeyPem = active.ExportRSAPrivateKeyPem(),
+                PreviousPublicKeys = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["previous-2026-08"] = "not a pem"
+                }
+            }));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => validator.StartAsync(CancellationToken.None));
+    }
+
     private static ControlApiTestApplication CreateApplication(FakeHandoffAuthorizer authorizer) =>
         new(new Dictionary<string, string?>
         {

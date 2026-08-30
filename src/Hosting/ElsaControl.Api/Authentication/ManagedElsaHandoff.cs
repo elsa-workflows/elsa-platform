@@ -42,9 +42,7 @@ public sealed class ManagedElsaHandoffConfigurationValidator(
         if (validated.Enabled &&
             !string.IsNullOrWhiteSpace(validated.ActiveKeyId) &&
             !string.IsNullOrWhiteSpace(validated.ActivePrivateKeyPem))
-        {
-            using var _ = ManagedElsaHandoffKeyRing.CreateConfigured(validated);
-        }
+            ManagedElsaHandoffKeyRing.ValidateConfigured(validated);
 
         return Task.CompletedTask;
     }
@@ -144,6 +142,11 @@ public sealed class ManagedElsaHandoffKeyRing : IDisposable
 
     public static ManagedElsaHandoffKeyRing CreateEphemeral() =>
         new("prototype", RSA.Create(2048));
+
+    public static void ValidateConfigured(ManagedElsaHandoffOptions options)
+    {
+        using var _ = CreateConfigured(options);
+    }
 
     public static ManagedElsaHandoffKeyRing CreateConfigured(ManagedElsaHandoffOptions options)
     {
