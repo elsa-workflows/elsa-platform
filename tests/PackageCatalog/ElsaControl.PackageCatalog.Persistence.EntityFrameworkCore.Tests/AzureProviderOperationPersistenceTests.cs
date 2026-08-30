@@ -1,6 +1,7 @@
 using ElsaControl.Deployment.Azure;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
+using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,6 +19,18 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         db.Database.EnsureCreated();
         db.Workspaces.Add(new Workspace { Id = _workspaceId, Name = "Azure operation workspace" });
         db.SaveChanges();
+    }
+
+    [Fact]
+    public void Runnable_queue_has_a_global_polling_index()
+    {
+        using var db = CreateContext();
+        var entity = db.Model.FindEntityType(typeof(AzureProviderOperationEntity))!;
+        var index = Assert.Single(entity.GetIndexes(), candidate =>
+            candidate.Properties.Select(property => property.Name).SequenceEqual(
+                ["Status", "LeaseExpiresAt", "UpdatedAt", "Id"]));
+
+        Assert.Equal("IX_AzureProviderOperations_Status_LeaseExpiresAt_UpdatedAt_Id", index.GetDatabaseName());
     }
 
     [Fact]

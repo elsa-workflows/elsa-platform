@@ -93,9 +93,9 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_AzureProviderOperations_WorkspaceId_Status_LeaseExpiresAt_UpdatedAt",
+                name: "IX_AzureProviderOperations_Status_LeaseExpiresAt_UpdatedAt_Id",
                 table: "AzureProviderOperations",
-                columns: new[] { "WorkspaceId", "Status", "LeaseExpiresAt", "UpdatedAt" });
+                columns: new[] { "Status", "LeaseExpiresAt", "UpdatedAt", "Id" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_AzureProviderOperations_WorkspaceId_TargetKey_CreatedAt",
