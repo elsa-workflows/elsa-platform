@@ -59,6 +59,25 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
+    public async Task DbContext_rejects_unsafe_deletion_evidence_metadata()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Unsafe deletion evidence workspace");
+        var created = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId, workspace.Id, "Unsafe evidence Elsa", "unsafe-evidence-elsa",
+                WorkerIntent(), "unsafe-evidence-create"));
+        var operation = await db.ElsaInstanceOperations.SingleAsync(x => x.Id == created.Operation.Id);
+        operation.DeletionEvidenceReference = "https://user:secret@evidence.example/proof?token=secret";
+        operation.DeletionEvidenceDigest = Digest('a');
+
+        await Assert.ThrowsAsync<ArgumentException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
     public async Task Create_commits_instance_revision_operation_and_outbox_and_replays_exactly()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -671,6 +690,16 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal(first.LeaseVersion + 1, reclaimed.LeaseVersion);
         Assert.NotEqual(first.LeaseToken, reclaimed.LeaseToken);
         Assert.Equal(1, await db.ElsaInstanceOperations.CountAsync(x => x.Id == deletion.Operation.Id));
+
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE ElsaInstanceOperations SET LeaseExpiresAt = NULL WHERE Id = {reclaimed.Operation.Id}");
+        db.ChangeTracker.Clear();
+        var failure = new ElsaInstanceDeletionFailure(workspace.Id, created.Instance.Id, deletion.Operation.Id,
+            reclaimed.Outbox.Id, reclaimed.Instance.Version, reclaimed.Operation.AttemptNumber,
+            reclaimed.CorrelatedRunId, "worker-two", reclaimed.LeaseToken, reclaimed.LeaseVersion,
+            new string('f', 64), "deletion.provider.unavailable", Now.AddMinutes(6));
+        await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() =>
+            store.RequireDeletionRecoveryAsync(failure));
     }
 
     [Fact]

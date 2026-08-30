@@ -400,6 +400,14 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                 operation.DeletionDiagnosticCode, nameof(operation.DeletionDiagnosticCode));
             if ((operation.DeletionEvidenceReference is null) != (operation.DeletionEvidenceDigest is null))
                 throw new InvalidOperationException("Deletion evidence must be complete.");
+            if (operation.DeletionEvidenceReference is not null)
+            {
+                var evidence = new ElsaControl.Deployment.Core.Instances.ElsaInstanceCleanupEvidence(
+                    operation.DeletionEvidenceReference,
+                    operation.DeletionEvidenceDigest!);
+                operation.DeletionEvidenceReference = evidence.Reference;
+                operation.DeletionEvidenceDigest = evidence.Digest;
+            }
             if (operation.ExpectedVersion < 1 || operation.AttemptNumber < 1)
                 throw new InvalidOperationException("An instance operation requires positive version and attempt values.");
             if (operation.InstanceId is not null && operation.InstanceId == Guid.Empty)

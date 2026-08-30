@@ -887,7 +887,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             instance.Version != expectedVersion || outbox.OperationId != operationId || outbox.InstanceId != instanceId ||
             !string.Equals(operation.WorkerId, workerId, StringComparison.Ordinal) ||
             !string.Equals(operation.LeaseTokenHash, HashLeaseToken(leaseToken), StringComparison.Ordinal) ||
-            operation.LeaseVersion != leaseVersion || operation.LeaseExpiresAt <= _timeProvider.GetUtcNow())
+            operation.LeaseVersion != leaseVersion || operation.LeaseExpiresAt is null ||
+            operation.LeaseExpiresAt <= _timeProvider.GetUtcNow())
             throw Conflict("Deletion work item is no longer owned by this worker.");
     }
 
