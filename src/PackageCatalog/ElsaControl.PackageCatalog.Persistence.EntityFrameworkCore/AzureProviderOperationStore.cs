@@ -211,8 +211,19 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         return recovered;
     }
 
-    public async Task<IReadOnlyList<AzureProviderOperationTransition>> ListTransitionsAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) =>
-        (await db.AzureProviderOperationTransitions.AsNoTracking().Where(x => x.OperationId == operationId && db.AzureProviderOperations.Any(o => o.Id == x.OperationId && o.WorkspaceId == workspaceId)).OrderBy(x => x.Sequence).ToListAsync(cancellationToken)).Select(ToTransition).ToList();
+    public async Task<IReadOnlyList<AzureProviderOperationTransition>> ListTransitionsAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default)
+    {
+        if (!await db.AzureProviderOperations.AsNoTracking()
+                .AnyAsync(x => x.Id == operationId && x.WorkspaceId == workspaceId, cancellationToken))
+            return [];
+
+        return (await db.AzureProviderOperationTransitions.AsNoTracking()
+                .Where(x => x.OperationId == operationId)
+                .OrderBy(x => x.Sequence)
+                .ToListAsync(cancellationToken))
+            .Select(ToTransition)
+            .ToList();
+    }
 
     private async Task<AzureProviderOperation?> FindByKeyAsync(AzureProviderOperationRequest request, CancellationToken cancellationToken) =>
         await db.AzureProviderOperations.AsNoTracking().SingleOrDefaultAsync(x => x.WorkspaceId == request.WorkspaceId && x.TargetKey == request.TargetKey && x.IdempotencyKey == request.IdempotencyKey, cancellationToken) is { } entity ? ToModel(entity) : null;
