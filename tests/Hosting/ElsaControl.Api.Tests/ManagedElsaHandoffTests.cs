@@ -373,6 +373,7 @@ public sealed class ManagedElsaHandoffTests
     [Fact]
     public async Task Production_configuration_validator_rejects_malformed_signing_key_at_startup()
     {
+        await using var services = new ServiceCollection().BuildServiceProvider();
         var validator = new ManagedElsaHandoffConfigurationValidator(
             new TestHostEnvironment(Environments.Production),
             Options.Create(new ManagedElsaHandoffOptions
@@ -381,7 +382,8 @@ public sealed class ManagedElsaHandoffTests
                 Issuer = "https://cloud.example.test",
                 ActiveKeyId = "active-2026-09",
                 ActivePrivateKeyPem = "not a pem"
-            }));
+            }),
+            services);
 
         await Assert.ThrowsAsync<ArgumentException>(() => validator.StartAsync(CancellationToken.None));
     }
@@ -390,6 +392,7 @@ public sealed class ManagedElsaHandoffTests
     public async Task Production_configuration_validator_rejects_malformed_previous_key_at_startup()
     {
         using var active = RSA.Create(2048);
+        await using var services = new ServiceCollection().BuildServiceProvider();
         var validator = new ManagedElsaHandoffConfigurationValidator(
             new TestHostEnvironment(Environments.Production),
             Options.Create(new ManagedElsaHandoffOptions
@@ -402,7 +405,8 @@ public sealed class ManagedElsaHandoffTests
                 {
                     ["previous-2026-08"] = "not a pem"
                 }
-            }));
+            }),
+            services);
 
         await Assert.ThrowsAsync<ArgumentException>(() => validator.StartAsync(CancellationToken.None));
     }
