@@ -237,6 +237,15 @@ public sealed class ManagedElsaHandoffPersistenceTests
             Assert.Equal("https://rotated.example.test/managed-elsa/handoff/callback",
                 rotated.Identity?.CallbackUri.AbsoluteUri);
         }
+
+        await using (var endpointRemoved = CreateContext(connection))
+        {
+            var instance = await endpointRemoved.ElsaInstances.SingleAsync();
+            instance.CurrentDeploymentEndpointUri = null;
+            await endpointRemoved.SaveChangesAsync();
+            Assert.Null(await new EfCoreManagedElsaInstanceIdentityStore(endpointRemoved)
+                .FindAsync(organizationId, instanceId));
+        }
     }
 
     [Fact]
@@ -331,6 +340,8 @@ public sealed class ManagedElsaHandoffPersistenceTests
             CapacityProfile = "standard-small",
             NetworkOutcome = "public",
             DomainOutcome = "managed",
+            CurrentDeploymentId = "deployment-managed",
+            CurrentDeploymentEndpointUri = "https://managed.example.test/runtime/health",
             DesiredLifecycle = ElsaDesiredLifecycle.Running,
             ObservedLifecycle = ElsaObservedLifecycle.Pending,
             Health = ElsaInstanceHealth.Unknown,

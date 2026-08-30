@@ -145,7 +145,10 @@ public sealed class EfCoreManagedElsaInstanceIdentityStore(CatalogDbContext dbCo
                 persisted.ChangedAt);
             if (!string.Equals(persisted.Audience, binding.Audience, StringComparison.Ordinal) ||
                 !string.Equals(persisted.CanonicalCallbackUri, binding.CanonicalCallbackUri, StringComparison.Ordinal) ||
-                !Uri.TryCreate(binding.CanonicalCallbackUri, UriKind.Absolute, out var callbackUri))
+                !Uri.TryCreate(binding.CanonicalCallbackUri, UriKind.Absolute, out var callbackUri) ||
+                !Uri.TryCreate(entity.CurrentDeploymentEndpointUri, UriKind.Absolute, out var currentEndpoint) ||
+                !string.Equals(currentEndpoint.GetLeftPart(UriPartial.Authority), binding.VerifiedEndpointOrigin,
+                    StringComparison.Ordinal))
                 return null;
 
             return Map(entity, binding, callbackUri);

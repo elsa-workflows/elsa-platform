@@ -797,12 +797,6 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal(1, await workspaceStore.MarkStaleRunningRunsRecoveryRequiredAsync(
             Now.AddMinutes(10), TimeSpan.FromMinutes(5)));
         db.ChangeTracker.Clear();
-        var deploymentTarget = await db.ElsaInstances.SingleAsync(x => x.Id == accepted.Instance.Id);
-        deploymentTarget.CurrentDeploymentId = "deployment-reconciled";
-        deploymentTarget.CurrentDeploymentEndpointUri = "https://managed.example.test/runtime/health";
-        await db.SaveChangesAsync();
-        db.ChangeTracker.Clear();
-
         var port = new QueueProviderPort(
             new(ElsaInstanceProviderObservationKind.Ambiguous, ElsaObservedLifecycle.Unknown,
                 ElsaInstanceProviderHealthGate.Unknown, "provider-observation-1",
@@ -810,7 +804,9 @@ public sealed class ElsaInstanceLifecycleStoreTests
                     "https://evidence.example/retry/provider-observation-1",
                     "sha256:" + new string('b', 64))),
             new(ElsaInstanceProviderObservationKind.Confirmed, ElsaObservedLifecycle.Ready,
-                ElsaInstanceProviderHealthGate.Passed, "provider-observation-2"));
+                ElsaInstanceProviderHealthGate.Passed, "provider-observation-2",
+                currentDeploymentReference: new ElsaCurrentDeploymentReference(
+                    "deployment-reconciled", endpointUri: "https://managed.example.test/runtime/health")));
         var lifecycleStore = new EfCoreElsaInstanceLifecycleStore(
             db, EmptyResolutionInputSource.Instance, new FixedTimeProvider(Now.AddMinutes(11)));
         var service = new ElsaInstanceProviderReconciliationService(

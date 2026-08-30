@@ -88,6 +88,11 @@ public sealed class ManagedElsaHandoffTests
                         "managed", "westeurope", "dedicated", "standard-small", "public", "managed")),
                 "managed-handoff-production-wiring",
                 instanceId));
+            const string deploymentId = "deployment-managed";
+            const string endpointUri = "https://managed.example.test/runtime/health";
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE ElsaInstances SET CurrentDeploymentId = {deploymentId}, CurrentDeploymentEndpointUri = {endpointUri} WHERE Id = {instanceId}");
+            db.ChangeTracker.Clear();
             var identities = scope.ServiceProvider.GetRequiredService<IManagedElsaInstanceIdentityStore>();
             Assert.True((await identities.BindAsync(
                 organizationId, workspaceId, instanceId, "https://managed.example.test", null, now)).Succeeded);

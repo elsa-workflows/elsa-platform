@@ -67,8 +67,9 @@ public sealed record ElsaInstanceProviderObservation
         ElsaObservedLifecycle observedLifecycle,
         ElsaInstanceProviderHealthGate healthGate,
         string correlationId,
-        ElsaInstanceProviderRetryEvidence? retryEvidence = null)
-        : this(kind, observedLifecycle, healthGate, Guid.Empty, 0, correlationId, retryEvidence)
+        ElsaInstanceProviderRetryEvidence? retryEvidence = null,
+        ElsaCurrentDeploymentReference? currentDeploymentReference = null)
+        : this(kind, observedLifecycle, healthGate, Guid.Empty, 0, correlationId, retryEvidence, currentDeploymentReference)
     {
     }
 
@@ -79,7 +80,8 @@ public sealed record ElsaInstanceProviderObservation
         Guid operationId,
         int attemptNumber,
         string correlationId,
-        ElsaInstanceProviderRetryEvidence? retryEvidence = null)
+        ElsaInstanceProviderRetryEvidence? retryEvidence = null,
+        ElsaCurrentDeploymentReference? currentDeploymentReference = null)
     {
         if (!Enum.IsDefined(kind) || !Enum.IsDefined(observedLifecycle) || !Enum.IsDefined(healthGate))
             throw new ArgumentOutOfRangeException(nameof(kind), "Provider observation value is invalid.");
@@ -87,7 +89,8 @@ public sealed record ElsaInstanceProviderObservation
             correlationId.Any(char.IsControl) || correlationId.Any(char.IsWhiteSpace))
             throw new ArgumentException("Provider observation correlation is invalid.", nameof(correlationId));
         if (kind != ElsaInstanceProviderObservationKind.Confirmed &&
-            (observedLifecycle != ElsaObservedLifecycle.Unknown || healthGate != ElsaInstanceProviderHealthGate.Unknown))
+            (observedLifecycle != ElsaObservedLifecycle.Unknown || healthGate != ElsaInstanceProviderHealthGate.Unknown ||
+             currentDeploymentReference is not null))
             throw new ArgumentException("Uncertain provider observations must remain unknown.", nameof(observedLifecycle));
 
         Kind = kind;
@@ -97,6 +100,7 @@ public sealed record ElsaInstanceProviderObservation
         AttemptNumber = attemptNumber;
         CorrelationId = correlationId;
         RetryEvidence = retryEvidence;
+        CurrentDeploymentReference = currentDeploymentReference;
     }
 
     public ElsaInstanceProviderObservationKind Kind { get; }
@@ -113,18 +117,20 @@ public sealed record ElsaInstanceProviderObservation
 
     public ElsaInstanceProviderRetryEvidence? RetryEvidence { get; }
 
+    public ElsaCurrentDeploymentReference? CurrentDeploymentReference { get; }
+
     public ElsaInstanceProviderObservation Correlate(ElsaInstanceProviderReconciliationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.OperationId == Guid.Empty || request.AttemptNumber < 1)
             throw new ArgumentException("Provider reconciliation request identity is invalid.", nameof(request));
         return new(Kind, ObservedLifecycle, HealthGate, request.OperationId, request.AttemptNumber,
-            CorrelationId, RetryEvidence);
+            CorrelationId, RetryEvidence, CurrentDeploymentReference);
     }
 
     internal string ComputeFingerprint()
     {
-        var canonical = $"{Kind}\n{ObservedLifecycle}\n{HealthGate}\n{OperationId:D}\n{AttemptNumber}\n{CorrelationId}\n{RetryEvidence?.Reference}\n{RetryEvidence?.Digest}\n";
+        var canonical = $"{Kind}\n{ObservedLifecycle}\n{HealthGate}\n{OperationId:D}\n{AttemptNumber}\n{CorrelationId}\n{RetryEvidence?.Reference}\n{RetryEvidence?.Digest}\n{CurrentDeploymentReference?.DeploymentId}\n{CurrentDeploymentReference?.RevisionId}\n{CurrentDeploymentReference?.EndpointUri}\n";
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 }
