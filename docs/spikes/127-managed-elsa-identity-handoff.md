@@ -64,6 +64,7 @@ Its claims are:
 | `redirect_uri` | Exact HTTPS (or local development) callback binding. |
 | `code_challenge` | S256 PKCE challenge held by the initiating browser/runtime. |
 | `scope` | Only `runtime:session` in this prototype. |
+| `session_exp` | Authenticated Control-session upper bound for the runtime's separate local session, capped by Control's configured runtime-session maximum. This is distinct from code `exp`. |
 | `jti` | Unique one-time redemption identifier. |
 | `iat`, `nbf`, `exp` | One-minute lifetime; maximum configured lifetime is five minutes. |
 
@@ -126,10 +127,15 @@ Production rotation is: publish the new public key, begin signing with the new
 `kid`, retain the old public key for at least the maximum token lifetime plus clock
 skew, then retire it. Key changes and failed validation spikes are audit events.
 
-The runtime session lifetime must be independent from the code lifetime and bounded
-by the Control customer session and the runtime's own session policy. The prototype
-does not implement a runtime session store; that behavior belongs to #144, avoiding
-the unsafe implication that a one-minute handoff code is a one-minute user session.
+The runtime session lifetime is independent from the code lifetime. Control derives
+`session_exp` only from the authentication handler that produced the current cookie
+or bearer identity and caps it with `ManagedElsa:Handoff:RuntimeSessionMaximumLifetime`
+(eight hours by default and as the hard configuration ceiling, aligned with the
+Control customer-cookie lifetime). Issuance fails
+closed for identities such as trusted headers that provide no authenticated expiry,
+and when the source session cannot remain valid through the handoff-code lifetime.
+The runtime must apply the returned bound together with its own shorter policy.
+Control does not implement the runtime session store; that behavior belongs to #144.
 Logout clears/revokes the runtime session. It does not use an OIDC back-channel
 logout as a substitute for local session revocation; federation logout remains a
 separate enterprise concern.

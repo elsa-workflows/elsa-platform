@@ -241,11 +241,15 @@ builder.Services.AddScoped<CustomerSessionIdentityReader>();
 builder.Services.AddScoped<TrustedHeaderWorkspaceIdentityReader>();
 builder.Services.AddScoped<WorkspaceAccessResolver>();
 builder.Services.AddHostedService<ControlIdentityConfigurationValidator>();
-builder.Services.AddScoped<IWorkspaceIdentityReader>(services => new CompositeWorkspaceIdentityReader([
+builder.Services.AddScoped<CompositeWorkspaceIdentityReader>(services => new CompositeWorkspaceIdentityReader([
     services.GetRequiredService<ControlIdentityReader>(),
     services.GetRequiredService<CustomerSessionIdentityReader>(),
     services.GetRequiredService<TrustedHeaderWorkspaceIdentityReader>()
 ]));
+builder.Services.AddScoped<IWorkspaceIdentityReader>(services =>
+    services.GetRequiredService<CompositeWorkspaceIdentityReader>());
+builder.Services.AddScoped<IAuthenticatedControlSessionReader>(services =>
+    services.GetRequiredService<CompositeWorkspaceIdentityReader>());
 builder.Services.AddSingleton<PublicCatalogCache>();
 builder.Services.AddSingleton<IPublicCatalogCacheInvalidator>(services => services.GetRequiredService<PublicCatalogCache>());
 builder.Services.AddScoped<IPackageSourceStore, PackageSourceStore>();

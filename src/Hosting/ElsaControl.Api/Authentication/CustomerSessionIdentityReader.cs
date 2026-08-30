@@ -4,7 +4,9 @@ using Microsoft.Extensions.Options;
 
 namespace ElsaControl.Api.Authentication;
 
-public sealed class CustomerSessionIdentityReader(IOptions<ControlIdentityOptions> options) : IWorkspaceIdentityReader
+public sealed class CustomerSessionIdentityReader(IOptions<ControlIdentityOptions> options) :
+    IWorkspaceIdentityReader,
+    IAuthenticatedControlSessionReader
 {
     private readonly ControlIdentityOptions _options = options.Value;
 
@@ -15,5 +17,27 @@ public sealed class CustomerSessionIdentityReader(IOptions<ControlIdentityOption
             return null;
 
         return ControlClaimsIdentityMapper.ToTrustedWorkspaceIdentity(result.Principal, _options);
+    }
+
+    public async ValueTask<AuthenticatedControlSession?> ReadAsync(
+        HttpContext context,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await context.AuthenticateAsync(CustomerAuthenticationDefaults.CookieScheme);
+        return ToAuthenticatedControlSession(result, _options);
+    }
+
+    internal static AuthenticatedControlSession? ToAuthenticatedControlSession(
+        AuthenticateResult result,
+        ControlIdentityOptions options)
+    {
+        if (!result.Succeeded || result.Principal is null)
+            return null;
+
+        var identity = ControlClaimsIdentityMapper.ToTrustedWorkspaceIdentity(result.Principal, options);
+        var expiresAt = result.Properties?.ExpiresUtc;
+        return identity is not null && expiresAt.HasValue
+            ? new AuthenticatedControlSession(identity, expiresAt.Value)
+            : null;
     }
 }

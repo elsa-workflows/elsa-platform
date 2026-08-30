@@ -9,6 +9,23 @@ public interface IWorkspaceIdentityReader
     ValueTask<TrustedWorkspaceIdentity?> ReadAsync(HttpContext context);
 }
 
+/// <summary>
+/// An authenticated Control identity together with the expiry asserted by the
+/// authentication handler that produced it. The expiry is deliberately kept out
+/// of <see cref="TrustedWorkspaceIdentity"/> because most workspace callers do
+/// not need session lifetime information.
+/// </summary>
+public sealed record AuthenticatedControlSession(
+    TrustedWorkspaceIdentity Identity,
+    DateTimeOffset ExpiresAt);
+
+public interface IAuthenticatedControlSessionReader
+{
+    ValueTask<AuthenticatedControlSession?> ReadAsync(
+        HttpContext context,
+        CancellationToken cancellationToken = default);
+}
+
 public sealed class TrustedHeaderWorkspaceIdentityReader(IConfiguration configuration) : IWorkspaceIdentityReader
 {
     public const string EnabledConfigurationKey = "Authentication:WorkspaceTrustedHeaders:Enabled";
