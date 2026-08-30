@@ -195,7 +195,7 @@ public sealed class DeploymentProofHarness(
             stages.Add(new DeploymentProofStageResult(
                 stage,
                 DeploymentProofStageStatus.Failed,
-                $"proof.{stage.ToString().ToLowerInvariant()}.cancelled",
+                $"proof.{StageCode(stage)}.cancelled",
                 "The provider operation was cancelled.",
                 startedAt,
                 _timeProvider.GetUtcNow(),
@@ -207,7 +207,7 @@ public sealed class DeploymentProofHarness(
             stages.Add(new DeploymentProofStageResult(
                 stage,
                 DeploymentProofStageStatus.Failed,
-                $"proof.{stage.ToString().ToLowerInvariant()}.unexpected",
+                $"proof.{StageCode(stage)}.unexpected",
                 "The provider operation failed unexpectedly.",
                 startedAt,
                 _timeProvider.GetUtcNow(),
@@ -222,6 +222,12 @@ public sealed class DeploymentProofHarness(
             throw new ArgumentOutOfRangeException(nameof(timeout), "Cleanup timeout must be positive.");
         return timeout;
     }
+
+    private static string StageCode(DeploymentProofStage stage) => stage switch
+    {
+        DeploymentProofStage.RepeatApply => "repeatApply",
+        _ => stage.ToString().ToLowerInvariant()
+    };
 
     private static DeploymentProofStageResult Passed<T>(DeploymentProofStage stage, T result, DateTimeOffset startedAt, DateTimeOffset completedAt)
     {

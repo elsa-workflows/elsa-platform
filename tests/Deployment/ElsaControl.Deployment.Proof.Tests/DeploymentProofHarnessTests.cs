@@ -147,6 +147,17 @@ public sealed class DeploymentProofHarnessTests
     }
 
     [Fact]
+    public async Task Repeat_apply_unexpected_failure_uses_the_established_stage_code()
+    {
+        var report = await new DeploymentProofHarness().RunAsync(
+            Input,
+            Environment,
+            new CancellationProofProvider(failRepeatApplyUnexpectedly: true));
+
+        Assert.Equal("proof.repeatApply.unexpected", report.Failure?.Code);
+    }
+
+    [Fact]
     public async Task Cleanup_is_bounded_when_the_provider_does_not_complete()
     {
         var report = await new DeploymentProofHarness(
@@ -163,7 +174,8 @@ public sealed class DeploymentProofHarnessTests
 
     private sealed class CancellationProofProvider(
         bool cancelSelectionInternally = false,
-        bool hangCleanup = false) : IDeploymentProofProvider
+        bool hangCleanup = false,
+        bool failRepeatApplyUnexpectedly = false) : IDeploymentProofProvider
     {
         private readonly FakeDeploymentProofProvider _inner = new();
 
@@ -185,7 +197,9 @@ public sealed class DeploymentProofHarnessTests
             _inner.RunWorkflowAsync(health, environment, cancellationToken);
 
         public Task<DeploymentProofApply> ApplyAsync(DeploymentProofPlan plan, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default) =>
-            _inner.ApplyAsync(plan, environment, cancellationToken);
+            failRepeatApplyUnexpectedly
+                ? Task.FromException<DeploymentProofApply>(new InvalidOperationException("Injected failure."))
+                : _inner.ApplyAsync(plan, environment, cancellationToken);
 
         public async Task<DeploymentProofCleanup> CleanupAsync(DeploymentProofPlan plan, DeploymentProofDeployment? deployment, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default)
         {
