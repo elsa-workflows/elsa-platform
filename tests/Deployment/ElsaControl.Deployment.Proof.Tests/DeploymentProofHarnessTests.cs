@@ -135,8 +135,63 @@ public sealed class DeploymentProofHarnessTests
             Assert.Equal(DeploymentProofStageStatus.Skipped, stage.Status));
     }
 
+    [Fact]
+    public async Task Provider_internal_cancellation_is_reported_as_unexpected()
+    {
+        var report = await new DeploymentProofHarness().RunAsync(
+            Input,
+            Environment,
+            new CancellationProofProvider(cancelSelectionInternally: true));
+
+        Assert.Equal("proof.selection.unexpected", report.Failure?.Code);
+    }
+
+    [Fact]
+    public async Task Cleanup_is_bounded_when_the_provider_does_not_complete()
+    {
+        var report = await new DeploymentProofHarness(
+                cleanupTimeout: TimeSpan.FromMilliseconds(20))
+            .RunAsync(Input, Environment, new CancellationProofProvider(hangCleanup: true));
+
+        Assert.Equal("proof.cleanup.cancelled", report.Failure?.Code);
+    }
+
     private static async Task<DeploymentProofReport> RunAsync()
     {
         return await new DeploymentProofHarness().RunAsync(Input, Environment, new FakeDeploymentProofProvider());
+    }
+
+    private sealed class CancellationProofProvider(
+        bool cancelSelectionInternally = false,
+        bool hangCleanup = false) : IDeploymentProofProvider
+    {
+        private readonly FakeDeploymentProofProvider _inner = new();
+
+        public Task<DeploymentProofSelection> SelectAsync(DeploymentProofInput input, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default) =>
+            cancelSelectionInternally
+                ? Task.FromException<DeploymentProofSelection>(new OperationCanceledException())
+                : _inner.SelectAsync(input, environment, cancellationToken);
+
+        public Task<DeploymentProofPlan> PlanAsync(DeploymentProofSelection selection, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default) =>
+            _inner.PlanAsync(selection, environment, cancellationToken);
+
+        public Task<DeploymentProofDeployment> ProvisionAsync(DeploymentProofPlan plan, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default) =>
+            _inner.ProvisionAsync(plan, environment, cancellationToken);
+
+        public Task<DeploymentProofHealth> WaitForHealthAsync(DeploymentProofDeployment deployment, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default) =>
+            _inner.WaitForHealthAsync(deployment, environment, cancellationToken);
+
+        public Task<DeploymentProofWorkflow> RunWorkflowAsync(DeploymentProofHealth health, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default) =>
+            _inner.RunWorkflowAsync(health, environment, cancellationToken);
+
+        public Task<DeploymentProofApply> ApplyAsync(DeploymentProofPlan plan, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default) =>
+            _inner.ApplyAsync(plan, environment, cancellationToken);
+
+        public async Task<DeploymentProofCleanup> CleanupAsync(DeploymentProofPlan plan, DeploymentProofDeployment? deployment, DeploymentProofEnvironment environment, CancellationToken cancellationToken = default)
+        {
+            if (hangCleanup)
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return await _inner.CleanupAsync(plan, deployment, environment, cancellationToken);
+        }
     }
 }

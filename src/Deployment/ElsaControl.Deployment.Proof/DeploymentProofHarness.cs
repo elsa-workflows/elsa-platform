@@ -4,9 +4,12 @@ namespace ElsaControl.Deployment.Proof;
 /// Runs the highest useful deployment seam in a disposable context. It deliberately owns no
 /// provider credentials or resource lifecycle policy beyond offering Cleanup after planning.
 /// </summary>
-public sealed class DeploymentProofHarness(TimeProvider? timeProvider = null)
+public sealed class DeploymentProofHarness(
+    TimeProvider? timeProvider = null,
+    TimeSpan? cleanupTimeout = null)
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly TimeSpan _cleanupTimeout = ValidateCleanupTimeout(cleanupTimeout ?? TimeSpan.FromMinutes(2));
 
     public async Task<DeploymentProofReport> RunAsync(
         DeploymentProofInput input,
@@ -35,7 +38,8 @@ public sealed class DeploymentProofHarness(TimeProvider? timeProvider = null)
             selection = await ExecuteAsync(
                 DeploymentProofStage.Selection,
                 stages,
-                () => provider.SelectAsync(input, environment, cancellationToken));
+                () => provider.SelectAsync(input, environment, cancellationToken),
+                cancellationToken);
             failed = selection is null;
             if (selection is not null && !SelectionMatches(input, selection))
             {
@@ -54,7 +58,8 @@ public sealed class DeploymentProofHarness(TimeProvider? timeProvider = null)
             plan = await ExecuteAsync(
                 DeploymentProofStage.Plan,
                 stages,
-                () => provider.PlanAsync(selection!, environment, cancellationToken));
+                () => provider.PlanAsync(selection!, environment, cancellationToken),
+                cancellationToken);
             failed = plan is null;
         }
 
@@ -63,7 +68,8 @@ public sealed class DeploymentProofHarness(TimeProvider? timeProvider = null)
             deployment = await ExecuteAsync(
                 DeploymentProofStage.Provision,
                 stages,
-                () => provider.ProvisionAsync(plan!, environment, cancellationToken));
+                () => provider.ProvisionAsync(plan!, environment, cancellationToken),
+                cancellationToken);
             failed = deployment is null;
         }
 
@@ -72,7 +78,8 @@ public sealed class DeploymentProofHarness(TimeProvider? timeProvider = null)
             health = await ExecuteAsync(
                 DeploymentProofStage.Health,
                 stages,
-                () => provider.WaitForHealthAsync(deployment!, environment, cancellationToken));
+                () => provider.WaitForHealthAsync(deployment!, environment, cancellationToken),
+                cancellationToken);
             failed = health is null || !health.Healthy;
             if (health is not null && !health.Healthy)
                 stages[^1] = stages[^1] with { Status = DeploymentProofStageStatus.Failed, Code = "proof.health.unhealthy", Message = "The provider returned an unhealthy endpoint." };
@@ -88,7 +95,8 @@ public sealed class DeploymentProofHarness(TimeProvider? timeProvider = null)
             var workflow = await ExecuteAsync(
                 DeploymentProofStage.Workflow,
                 stages,
-                () => provider.RunWorkflowAsync(health!, environment, cancellationToken));
+                () => provider.RunWorkflowAsync(health!, environment, cancellationToken),
+                cancellationToken);
             failed = workflow is null || !workflow.Succeeded;
             if (workflow is not null && !workflow.Succeeded)
                 stages[^1] = stages[^1] with { Status = DeploymentProofStageStatus.Failed, Code = "proof.workflow.failed", Message = "The provider reported that the basic workflow did not succeed." };
@@ -101,7 +109,8 @@ public sealed class DeploymentProofHarness(TimeProvider? timeProvider = null)
             var repeatApply = await ExecuteAsync(
                 DeploymentProofStage.RepeatApply,
                 stages,
-                () => provider.ApplyAsync(plan!, environment, cancellationToken));
+                () => provider.ApplyAsync(plan!, environment, cancellationToken),
+                cancellationToken);
             if (repeatApply is null)
                 failed = true;
             else if (!string.Equals(repeatApply.PlanId, plan!.PlanId, StringComparison.Ordinal))
@@ -122,10 +131,15 @@ public sealed class DeploymentProofHarness(TimeProvider? timeProvider = null)
         AddSkippedStages(stages, plan is null ? DeploymentProofStage.Cleanup : null);
         if (plan is not null)
         {
+            using var cleanupCancellation = cancellationToken.IsCancellationRequested
+                ? new CancellationTokenSource()
+                : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cleanupCancellation.CancelAfter(_cleanupTimeout);
             var cleanup = await ExecuteAsync(
                 DeploymentProofStage.Cleanup,
                 stages,
-                () => provider.CleanupAsync(plan, deployment, environment, CancellationToken.None));
+                () => provider.CleanupAsync(plan, deployment, environment, cleanupCancellation.Token),
+                cleanupCancellation.Token);
             if (cleanup is null || !cleanup.Succeeded)
             {
                 failed = true;
@@ -153,7 +167,8 @@ public sealed class DeploymentProofHarness(TimeProvider? timeProvider = null)
     private async Task<T?> ExecuteAsync<T>(
         DeploymentProofStage stage,
         List<DeploymentProofStageResult> stages,
-        Func<Task<T>> operation)
+        Func<Task<T>> operation,
+        CancellationToken cancellationToken)
     {
         var startedAt = _timeProvider.GetUtcNow();
         try
@@ -175,7 +190,7 @@ public sealed class DeploymentProofHarness(TimeProvider? timeProvider = null)
                 new Dictionary<string, string>(StringComparer.Ordinal)));
             return default;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             stages.Add(new DeploymentProofStageResult(
                 stage,
@@ -187,7 +202,7 @@ public sealed class DeploymentProofHarness(TimeProvider? timeProvider = null)
                 new Dictionary<string, string>(StringComparer.Ordinal)));
             return default;
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception)
         {
             stages.Add(new DeploymentProofStageResult(
                 stage,
@@ -199,6 +214,13 @@ public sealed class DeploymentProofHarness(TimeProvider? timeProvider = null)
                 new Dictionary<string, string>(StringComparer.Ordinal)));
             return default;
         }
+    }
+
+    private static TimeSpan ValidateCleanupTimeout(TimeSpan timeout)
+    {
+        if (timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout), "Cleanup timeout must be positive.");
+        return timeout;
     }
 
     private static DeploymentProofStageResult Passed<T>(DeploymentProofStage stage, T result, DateTimeOffset startedAt, DateTimeOffset completedAt)

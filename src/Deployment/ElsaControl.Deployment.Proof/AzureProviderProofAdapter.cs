@@ -237,7 +237,11 @@ public sealed class AzureProviderProofAdapter(
 
     private static string SelectionId(DeploymentProofInput input, DeploymentProofEnvironment environment)
     {
-        var canonical = string.Join("|", input.ElsaVersion, input.Topology, string.Join(",", input.Features), input.ImageReference, input.ImageDigest, environment.Name, environment.Region);
+        var features = input.Features
+            .Select(feature => feature.Trim())
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var canonical = string.Join("|", input.ElsaVersion, input.Topology, string.Join(",", features), input.ImageReference, input.ImageDigest, environment.Name, environment.Region);
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 }

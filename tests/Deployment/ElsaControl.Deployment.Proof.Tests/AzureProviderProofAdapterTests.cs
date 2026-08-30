@@ -49,6 +49,14 @@ public sealed class AzureProviderProofAdapterTests
         Assert.Equal(first.SelectionId, proofPlan.SelectionId);
         Assert.Equal(plan.Fingerprint, proofPlan.Fingerprint);
         Assert.Equal("azure-" + plan.Fingerprint, proofPlan.PlanId);
+
+        var reordered = new DeploymentProofInput(
+            input.ElsaVersion,
+            input.Topology,
+            [" managed-runtime "],
+            input.ImageReference,
+            input.ImageDigest);
+        Assert.Equal(first.SelectionId, (await adapter.SelectAsync(reordered, environment)).SelectionId);
     }
 
     private sealed class StaticPlanFactory(AzureProviderOperationSubmission submission) : IAzureProviderProofPlanFactory
