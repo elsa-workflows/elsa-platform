@@ -1048,8 +1048,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasColumnType("bigint");
 
                     b.Property<string>("WorkerId")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("WorkloadDeploymentId")
                         .HasMaxLength(512)

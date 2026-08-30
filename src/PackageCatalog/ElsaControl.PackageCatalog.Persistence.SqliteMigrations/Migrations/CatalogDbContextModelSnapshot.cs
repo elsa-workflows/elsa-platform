@@ -1043,7 +1043,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("WorkerId")
-                        .HasMaxLength(256)
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("WorkloadDeploymentId")

@@ -755,7 +755,7 @@ internal sealed class AzureProviderOperationConfiguration : IEntityTypeConfigura
         builder.Property(x => x.Endpoint).HasMaxLength(2048);
         builder.Property(x => x.DiagnosticsJson).HasMaxLength(10000).IsRequired();
         builder.Property(x => x.Version).IsConcurrencyToken().ValueGeneratedNever();
-        builder.Property(x => x.WorkerId).HasMaxLength(256);
+        builder.Property(x => x.WorkerId).HasMaxLength(128);
         builder.Property(x => x.LeaseTokenHash).HasMaxLength(64);
         builder.Property(x => x.CompletionLeaseTokenHash).HasMaxLength(64);
         builder.Property(x => x.CompletionFingerprint).HasMaxLength(64);

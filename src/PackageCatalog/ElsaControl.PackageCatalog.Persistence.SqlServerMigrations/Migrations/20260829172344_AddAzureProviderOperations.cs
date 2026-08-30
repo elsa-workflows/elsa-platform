@@ -47,7 +47,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     Endpoint = table.Column<string>(type: "nvarchar(2048)", maxLength: 2048, nullable: true),
                     Health = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
                     DiagnosticsJson = table.Column<string>(type: "nvarchar(max)", maxLength: 10000, nullable: false),
-                    WorkerId = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
+                    WorkerId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
                     LeaseTokenHash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
                     CompletionLeaseTokenHash = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
                     CompletionFingerprint = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
