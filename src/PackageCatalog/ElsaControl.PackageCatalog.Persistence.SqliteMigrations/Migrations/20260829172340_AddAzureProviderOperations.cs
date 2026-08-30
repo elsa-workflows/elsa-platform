@@ -47,7 +47,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     Endpoint = table.Column<string>(type: "TEXT", maxLength: 2048, nullable: true),
                     Health = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
                     DiagnosticsJson = table.Column<string>(type: "TEXT", maxLength: 10000, nullable: false),
-                    WorkerId = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
+                    WorkerId = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true),
                     LeaseTokenHash = table.Column<string>(type: "TEXT", maxLength: 64, nullable: true),
                     CompletionLeaseTokenHash = table.Column<string>(type: "TEXT", maxLength: 64, nullable: true),
                     CompletionFingerprint = table.Column<string>(type: "TEXT", maxLength: 64, nullable: true),
