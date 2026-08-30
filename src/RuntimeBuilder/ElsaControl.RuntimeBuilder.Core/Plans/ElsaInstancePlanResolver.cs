@@ -385,7 +385,7 @@ public sealed class ElsaInstancePlanResolver(
                 {
                     try
                     {
-                        value = JsonDocument.Parse(setting.DefaultValueJson).RootElement.Clone();
+                        value = ParseJsonElement(setting.DefaultValueJson);
                         if (ContainsSensitiveKey(setting.Name) || ContainsSecretLikeValue(value.Value)
                             || !MatchesJsonType(value.Value, setting.JsonType))
                         {
@@ -588,6 +588,12 @@ public sealed class ElsaInstancePlanResolver(
         }
 
         return FeatureDependencyIdentityPolicy.Matches(feature.FeatureId, shellName, requestedFeatureId);
+    }
+
+    private static JsonElement ParseJsonElement(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
     }
 
     private static void ValidateRequestShape(ElsaInstancePlanResolutionRequest request, List<ElsaInstancePlanResolutionFinding> findings)
