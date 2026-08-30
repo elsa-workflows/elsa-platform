@@ -38,7 +38,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     CheckpointSequence = table.Column<long>(type: "INTEGER", nullable: false),
                     AttemptNumber = table.Column<int>(type: "INTEGER", nullable: false),
                     Version = table.Column<long>(type: "INTEGER", nullable: false),
-                    ResourceGroupName = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true),
+                    ResourceGroupName = table.Column<string>(type: "TEXT", maxLength: 90, nullable: true),
                     FoundationDeploymentId = table.Column<string>(type: "TEXT", maxLength: 512, nullable: true),
                     WorkloadDeploymentId = table.Column<string>(type: "TEXT", maxLength: 512, nullable: true),
                     WorkloadResourceId = table.Column<string>(type: "TEXT", maxLength: 1024, nullable: true),

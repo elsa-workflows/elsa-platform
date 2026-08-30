@@ -8,6 +8,7 @@ public sealed class AzureProviderOperationValidationTests
     [InlineData("foundation", 513)]
     [InlineData("workloadDeployment", 513)]
     [InlineData("workloadResource", 1025)]
+    [InlineData("resourceGroup", 91)]
     public void Rejects_each_reference_longer_than_its_persistence_contract(string referenceKind, int length)
     {
         var value = new string('a', length);
@@ -16,6 +17,7 @@ public sealed class AzureProviderOperationValidationTests
             "foundation" => new AzureProviderResourceReferences(FoundationDeploymentId: value),
             "workloadDeployment" => new AzureProviderResourceReferences(WorkloadDeploymentId: value),
             "workloadResource" => new AzureProviderResourceReferences(WorkloadResourceId: value),
+            "resourceGroup" => new AzureProviderResourceReferences(ResourceGroupName: value),
             _ => throw new ArgumentOutOfRangeException(nameof(referenceKind))
         };
 
@@ -109,7 +111,8 @@ public sealed class AzureProviderOperationValidationTests
             TargetKey = first.TargetKey.ToUpperInvariant(),
             PlanFingerprint = first.PlanFingerprint.ToUpperInvariant(),
             ImageDigest = first.ImageDigest.ToUpperInvariant(),
-            ImageRepository = first.ImageRepository.ToUpperInvariant()
+            ImageRepository = first.ImageRepository.ToUpperInvariant(),
+            Isolation = first.Isolation.ToUpperInvariant()
         };
 
         Assert.Equal(AzureProviderOperationValidation.ComputeRequestHash(first), AzureProviderOperationValidation.ComputeRequestHash(second));
