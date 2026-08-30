@@ -75,11 +75,11 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
             new(ResourceGroupName: "rg-safe", FoundationDeploymentId: "deployment-1"), null, AzureProviderHealth.Unknown,
             [new("foundation.note", "different-unpersisted-detail")]), now);
         Assert.Equal(savedCheckpoint.Version, replay?.Version);
-        var completed = await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Completed.", now, savedCheckpoint.Version);
+        var completed = await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.succeeded", now, savedCheckpoint.Version);
         Assert.Equal(AzureProviderOperationStatus.Succeeded, completed?.Status);
-        Assert.Null(await store.FinalizeAsync(_workspaceId, operation.Id, "wrong-lease", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Completed.", now));
-        Assert.Equal(completed?.Id, (await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Different unpersisted detail.", now, savedCheckpoint.Version))?.Id);
-        Assert.Null(await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.different", "Completed.", now, savedCheckpoint.Version));
+        Assert.Null(await store.FinalizeAsync(_workspaceId, operation.Id, "wrong-lease", AzureProviderOperationStatus.Succeeded, "operation.succeeded", now));
+        Assert.Equal(completed?.Id, (await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.succeeded", now, savedCheckpoint.Version))?.Id);
+        Assert.Null(await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.different", now, savedCheckpoint.Version));
         Assert.Equal(4, (await store.ListTransitionsAsync(_workspaceId, operation.Id)).Count);
         Assert.DoesNotContain(await store.ListTransitionsAsync(_workspaceId, operation.Id), x => x.Message.Contains("hunter2", StringComparison.Ordinal));
     }
@@ -147,7 +147,7 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
             else if (suffix == "checkpoint")
                 Assert.Null(await first.CheckpointAsync(_workspaceId, operation.Id, "lease-checkpoint", new(AzureProviderOperationPhase.FoundationReady, "checkpoint.ready", "Ready.", new(), null, AzureProviderHealth.Unknown, []), DateTimeOffset.UtcNow.AddMinutes(2), claimed!.Version));
             else
-                Assert.Null(await first.FinalizeAsync(_workspaceId, operation.Id, "lease-finalize", AzureProviderOperationStatus.Succeeded, "operation.succeeded", "Completed.", DateTimeOffset.UtcNow.AddMinutes(2), claimed!.Version));
+                Assert.Null(await first.FinalizeAsync(_workspaceId, operation.Id, "lease-finalize", AzureProviderOperationStatus.Succeeded, "operation.succeeded", DateTimeOffset.UtcNow.AddMinutes(2), claimed!.Version));
         }
     }
 

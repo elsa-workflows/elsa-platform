@@ -27,15 +27,9 @@ public static class AzureProviderOperationValidation
         ValidateReferences(checkpoint.Resources);
     }
 
-    public static void ValidateMessage(string message)
-    {
-        if (string.IsNullOrWhiteSpace(message) || message.Length > 2000 || message.Any(char.IsControl) || ContainsSensitiveMarker(message))
-            throw new ArgumentException("Diagnostic message is unsafe.", nameof(message));
-    }
-
     public static void ValidateCode(string code)
     {
-        if (!IsSafeCode(code)) throw new ArgumentException("Diagnostic code is unsafe.", nameof(code));
+        if (!IsSafeCode(code)) throw new ArgumentException("Operation event code is unsafe.", nameof(code));
     }
 
     public static void ValidateLeaseToken(string leaseToken)

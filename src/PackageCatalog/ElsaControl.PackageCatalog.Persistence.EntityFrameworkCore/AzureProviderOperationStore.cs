@@ -165,10 +165,9 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         return ToModel(entity);
     }
 
-    public async Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, string message, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
+    public async Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
     {
         AzureProviderOperationValidation.ValidateLeaseToken(leaseToken);
-        AzureProviderOperationValidation.ValidateMessage(message);
         AzureProviderOperationValidation.ValidateCode(code);
         if (status is not (AzureProviderOperationStatus.Succeeded or AzureProviderOperationStatus.Failed or AzureProviderOperationStatus.Cancelled or AzureProviderOperationStatus.RecoveryRequired))
             throw new ArgumentException("Invalid final operation status.", nameof(status));
