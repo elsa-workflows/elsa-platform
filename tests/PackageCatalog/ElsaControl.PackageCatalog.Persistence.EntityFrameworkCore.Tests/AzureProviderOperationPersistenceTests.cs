@@ -189,6 +189,27 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Claim_replay_requires_the_same_unexpired_lease()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now, operation.Version));
+
+        var replay = await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now.AddSeconds(30), operation.Version);
+
+        Assert.Equal(claimed.Version, replay?.Version);
+        Assert.Null(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now.AddMinutes(2), operation.Version));
+        Assert.Null(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "different-lease", TimeSpan.FromMinutes(1), now.AddSeconds(30), operation.Version));
+        Assert.Equal(2, (await store.ListTransitionsAsync(_workspaceId, operation.Id)).Count);
+    }
+
+    [Fact]
     public async Task Stale_recovery_wins_against_heartbeat_checkpoint_and_finalize_versions()
     {
         using var firstDb = CreateContext();

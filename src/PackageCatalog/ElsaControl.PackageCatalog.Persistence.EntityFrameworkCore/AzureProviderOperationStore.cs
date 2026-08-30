@@ -128,7 +128,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
                 var replay = await db.AzureProviderOperations.AsNoTracking().SingleOrDefaultAsync(x =>
                     x.WorkspaceId == workspaceId && x.Id == operationId &&
                     x.Status == AzureProviderOperationStatus.Running && x.WorkerId == workerId &&
-                    x.LeaseTokenHash == hash, cancellationToken);
+                    x.LeaseTokenHash == hash && x.LeaseExpiresAt > now, cancellationToken);
                 result = replay is null ? null : ToModel(replay);
                 return;
             }
