@@ -4,13 +4,20 @@ namespace ElsaControl.Deployment.Azure.Tests;
 
 public sealed class AzureProviderOperationValidationTests
 {
-    [Fact]
-    public void Rejects_deployment_references_longer_than_the_persistence_contract()
+    [Theory]
+    [InlineData("foundation", 513)]
+    [InlineData("workloadDeployment", 513)]
+    [InlineData("workloadResource", 1025)]
+    public void Rejects_each_reference_longer_than_its_persistence_contract(string referenceKind, int length)
     {
-        var references = new AzureProviderResourceReferences(
-            FoundationDeploymentId: new string('a', 513),
-            WorkloadDeploymentId: new string('b', 513),
-            WorkloadResourceId: new string('c', 1024));
+        var value = new string('a', length);
+        var references = referenceKind switch
+        {
+            "foundation" => new AzureProviderResourceReferences(FoundationDeploymentId: value),
+            "workloadDeployment" => new AzureProviderResourceReferences(WorkloadDeploymentId: value),
+            "workloadResource" => new AzureProviderResourceReferences(WorkloadResourceId: value),
+            _ => throw new ArgumentOutOfRangeException(nameof(referenceKind))
+        };
 
         Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateReferences(references));
     }
