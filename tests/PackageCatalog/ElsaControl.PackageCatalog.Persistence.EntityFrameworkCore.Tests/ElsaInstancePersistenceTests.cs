@@ -56,10 +56,73 @@ public sealed class ElsaInstancePersistenceTests
             var tables = await ReadScalarStringsAsync(db, "SELECT name FROM sqlite_master WHERE type = 'table'");
             Assert.Contains("ElsaInstances", tables);
             Assert.Contains("ElsaInstanceOperations", tables);
+            Assert.Contains("ElsaInstanceIntentRevisions", tables);
+            Assert.Contains("ElsaInstanceLifecycleOutbox", tables);
             Assert.Contains("ElsaInstanceAuditEvents", tables);
             Assert.Contains("ElsaInstanceIdentityBindings", tables);
             Assert.Contains("ElsaInstanceMigrations", tables);
         }
+    }
+
+    [Fact]
+    public async Task Intent_revisions_and_lifecycle_outbox_are_safe_and_append_only()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Intent revision workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        db.ElsaInstances.Add(instance);
+        await db.SaveChangesAsync();
+
+        var operation = NewOperation(workspace, instance, ElsaInstanceOperationState.Succeeded, "intent-revision-operation");
+        var revision = NewIntentRevision(workspace, instance);
+        var outbox = new ElsaInstanceLifecycleOutboxEntity
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = workspace.OrganizationId,
+            WorkspaceId = workspace.Id,
+            InstanceId = instance.Id,
+            OperationId = operation.Id,
+            Action = operation.Action,
+            RequestHash = operation.RequestHash,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        db.ElsaInstanceOperations.Add(operation);
+        db.ElsaInstanceIntentRevisions.Add(revision);
+        db.ElsaInstanceLifecycleOutbox.Add(outbox);
+        await db.SaveChangesAsync();
+
+        db.ChangeTracker.Clear();
+        var savedRevision = await db.ElsaInstanceIntentRevisions.SingleAsync();
+        var savedOutbox = await db.ElsaInstanceLifecycleOutbox.SingleAsync();
+        Assert.Equal(1, savedRevision.RevisionNumber);
+        Assert.Equal(64, savedRevision.ContentHash.Length);
+        Assert.Equal(operation.Id, savedOutbox.OperationId);
+        Assert.Equal(operation.RequestHash, savedOutbox.RequestHash);
+        Assert.DoesNotContain("Payload", db.Model.FindEntityType(typeof(ElsaInstanceIntentRevisionEntity))!.GetProperties().Select(x => x.Name));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            savedRevision.TopologyId = "changed";
+            await db.SaveChangesAsync();
+        });
+        db.ChangeTracker.Clear();
+        savedOutbox = await db.ElsaInstanceLifecycleOutbox.SingleAsync();
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            savedOutbox.RequestHash = new string('b', 64);
+            await db.SaveChangesAsync();
+        });
+
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE ElsaInstanceIntentRevisions SET TopologyId = {"changed"} WHERE Id = {savedRevision.Id}"));
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE FROM ElsaInstanceLifecycleOutbox WHERE Id = {savedOutbox.Id}"));
     }
 
     [Fact]
@@ -1029,6 +1092,37 @@ public sealed class ElsaInstancePersistenceTests
             Version = 1,
             CreatedAt = now,
             UpdatedAt = now
+        };
+    }
+
+    private static ElsaInstanceIntentRevisionEntity NewIntentRevision(Workspace workspace, ElsaInstanceEntity instance)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new ElsaInstanceIntentRevisionEntity
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = workspace.OrganizationId,
+            WorkspaceId = workspace.Id,
+            InstanceId = instance.Id,
+            RevisionNumber = 1,
+            ContentHash = new string('a', 64),
+            DistributionId = instance.DistributionId,
+            ReleaseLine = instance.ReleaseLine,
+            Channel = instance.Channel,
+            PatchUpdates = instance.PatchUpdates,
+            MinorUpdates = instance.MinorUpdates,
+            MajorMigrations = instance.MajorMigrations,
+            TopologyId = instance.TopologyId,
+            FeatureOverridesJson = instance.FeatureOverridesJson,
+            TargetMode = instance.TargetMode,
+            RegionCode = instance.RegionCode,
+            IsolationProfile = instance.IsolationProfile,
+            CapacityProfile = instance.CapacityProfile,
+            NetworkOutcome = instance.NetworkOutcome,
+            DomainOutcome = instance.DomainOutcome,
+            DesiredLifecycle = instance.DesiredLifecycle,
+            AuthoredAt = now,
+            CreatedAt = now
         };
     }
 

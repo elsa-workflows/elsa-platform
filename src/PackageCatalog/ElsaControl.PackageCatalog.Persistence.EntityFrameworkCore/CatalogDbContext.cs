@@ -38,6 +38,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.DeploymentApplicationEntity> DeploymentApplications => Set<Models.DeploymentApplicationEntity>();
     internal DbSet<Models.DeploymentEnvironmentEntity> DeploymentEnvironments => Set<Models.DeploymentEnvironmentEntity>();
     internal DbSet<Models.ElsaInstanceEntity> ElsaInstances => Set<Models.ElsaInstanceEntity>();
+    internal DbSet<Models.ElsaInstanceIntentRevisionEntity> ElsaInstanceIntentRevisions => Set<Models.ElsaInstanceIntentRevisionEntity>();
+    internal DbSet<Models.ElsaInstanceLifecycleOutboxEntity> ElsaInstanceLifecycleOutbox => Set<Models.ElsaInstanceLifecycleOutboxEntity>();
     internal DbSet<Models.ElsaInstanceOperationEntity> ElsaInstanceOperations => Set<Models.ElsaInstanceOperationEntity>();
     internal DbSet<Models.ElsaInstanceAuditEventEntity> ElsaInstanceAuditEvents => Set<Models.ElsaInstanceAuditEventEntity>();
     internal DbSet<Models.ElsaInstanceIdentityBindingEntity> ElsaInstanceIdentityBindings => Set<Models.ElsaInstanceIdentityBindingEntity>();
@@ -97,6 +99,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.DeploymentApplicationConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DeploymentEnvironmentConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.ElsaInstanceIntentRevisionConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.ElsaInstanceLifecycleOutboxConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceOperationConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceAuditEventConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceIdentityBindingConfiguration());
@@ -156,6 +160,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         EnsureWorkspacePermissionAuditIsAppendOnly();
         EnsureElsaInstanceAuditIsAppendOnly();
         EnsureElsaInstanceDurableRowsAreNotDeleted();
+        EnsureElsaInstanceIntentRevisionsAreAppendOnly();
+        EnsureElsaInstanceLifecycleOutboxIsAppendOnly();
         ValidateElsaInstancePersistence();
         EnsureOrganizationsForNewWorkspaces();
     }
@@ -184,6 +190,20 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             throw new InvalidOperationException("Elsa instance migrations are durable and cannot be deleted.");
         if (ChangeTracker.Entries<Models.ElsaInstanceOperationEntity>().Any(x => x.State == EntityState.Deleted))
             throw new InvalidOperationException("Elsa instance operations are durable and cannot be deleted.");
+    }
+
+    private void EnsureElsaInstanceIntentRevisionsAreAppendOnly()
+    {
+        if (ChangeTracker.Entries<Models.ElsaInstanceIntentRevisionEntity>()
+            .Any(x => x.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Elsa instance intent revisions are append-only.");
+    }
+
+    private void EnsureElsaInstanceLifecycleOutboxIsAppendOnly()
+    {
+        if (ChangeTracker.Entries<Models.ElsaInstanceLifecycleOutboxEntity>()
+            .Any(x => x.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Elsa instance lifecycle outbox records are append-only.");
     }
 
     private void ValidateElsaInstancePersistence()
@@ -342,6 +362,78 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                 if (operation.AttemptNumber < originalAttemptNumber)
                     throw new InvalidOperationException("Instance operation attempt number cannot decrease.");
             }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<Models.ElsaInstanceIntentRevisionEntity>()
+                     .Where(x => x.State == EntityState.Added))
+        {
+            var revision = entry.Entity;
+            if (revision.Id == Guid.Empty || revision.OrganizationId == Guid.Empty ||
+                revision.WorkspaceId == Guid.Empty || revision.InstanceId == Guid.Empty ||
+                revision.RevisionNumber < 1)
+                throw new InvalidOperationException("An Elsa instance intent revision requires stable ownership and version identifiers.");
+
+            revision.ContentHash = RequireCanonicalHash(revision.ContentHash, nameof(revision.ContentHash));
+            revision.DistributionId = RequireCatalogValue(revision.DistributionId, nameof(revision.DistributionId));
+            revision.ReleaseLine = RequireCatalogValue(revision.ReleaseLine, nameof(revision.ReleaseLine));
+            revision.RequestedVersion = OptionalCatalogValue(revision.RequestedVersion, nameof(revision.RequestedVersion));
+            if (revision.RequestedVersion is not null && !BelongsToReleaseLine(revision.ReleaseLine, revision.RequestedVersion))
+                throw new InvalidOperationException("Requested version must belong to the selected release line.");
+            revision.Channel = RequireCatalogValue(revision.Channel, nameof(revision.Channel));
+            revision.PatchUpdates = RequireCatalogValue(revision.PatchUpdates, nameof(revision.PatchUpdates));
+            revision.MinorUpdates = RequireCatalogValue(revision.MinorUpdates, nameof(revision.MinorUpdates));
+            revision.MajorMigrations = RequireCatalogValue(revision.MajorMigrations, nameof(revision.MajorMigrations));
+            revision.TopologyId = RequireCatalogValue(revision.TopologyId, nameof(revision.TopologyId));
+            revision.FeaturePresetId = OptionalCatalogValue(revision.FeaturePresetId, nameof(revision.FeaturePresetId));
+            ValidateFeatureOverrides(revision.FeatureOverridesJson);
+            revision.PackagePolicy = OptionalCatalogValue(revision.PackagePolicy, nameof(revision.PackagePolicy));
+            revision.ConfigurationShapeRevisionId = OptionalCatalogValue(revision.ConfigurationShapeRevisionId, nameof(revision.ConfigurationShapeRevisionId));
+            revision.TargetMode = RequireCatalogValue(revision.TargetMode, nameof(revision.TargetMode));
+            revision.RegionCode = RequireCatalogValue(revision.RegionCode, nameof(revision.RegionCode));
+            revision.IsolationProfile = RequireCatalogValue(revision.IsolationProfile, nameof(revision.IsolationProfile));
+            revision.CapacityProfile = RequireCatalogValue(revision.CapacityProfile, nameof(revision.CapacityProfile));
+            revision.NetworkOutcome = RequireCatalogValue(revision.NetworkOutcome, nameof(revision.NetworkOutcome));
+            revision.DomainOutcome = RequireCatalogValue(revision.DomainOutcome, nameof(revision.DomainOutcome));
+            EnsureDefined(revision.DesiredLifecycle, nameof(revision.DesiredLifecycle));
+
+            var instance = ChangeTracker.Entries<Models.ElsaInstanceEntity>()
+                .Select(x => x.Entity)
+                .FirstOrDefault(x => x.Id == revision.InstanceId);
+            instance ??= ElsaInstances.Find(revision.InstanceId);
+            if (instance is not null &&
+                (instance.OrganizationId != revision.OrganizationId || instance.WorkspaceId != revision.WorkspaceId))
+                throw new InvalidOperationException("Intent revision ownership must match its instance.");
+        }
+
+        foreach (var entry in ChangeTracker.Entries<Models.ElsaInstanceLifecycleOutboxEntity>()
+                     .Where(x => x.State == EntityState.Added))
+        {
+            var outbox = entry.Entity;
+            EnsureDefined(outbox.Action, nameof(outbox.Action));
+            if (outbox.Id == Guid.Empty || outbox.OrganizationId == Guid.Empty ||
+                outbox.WorkspaceId == Guid.Empty || outbox.InstanceId == Guid.Empty ||
+                outbox.OperationId == Guid.Empty)
+                throw new InvalidOperationException("An Elsa instance lifecycle outbox record requires stable ownership identifiers.");
+            outbox.RequestHash = RequireCanonicalHash(outbox.RequestHash, nameof(outbox.RequestHash));
+
+            var instance = ChangeTracker.Entries<Models.ElsaInstanceEntity>()
+                .Select(x => x.Entity)
+                .FirstOrDefault(x => x.Id == outbox.InstanceId);
+            instance ??= ElsaInstances.Find(outbox.InstanceId);
+            if (instance is not null &&
+                (instance.OrganizationId != outbox.OrganizationId || instance.WorkspaceId != outbox.WorkspaceId))
+                throw new InvalidOperationException("Lifecycle outbox ownership must match its instance.");
+
+            var operation = ChangeTracker.Entries<Models.ElsaInstanceOperationEntity>()
+                .Select(x => x.Entity)
+                .FirstOrDefault(x => x.Id == outbox.OperationId);
+            operation ??= ElsaInstanceOperations.Find(outbox.OperationId);
+            if (operation is not null &&
+                (operation.Action != outbox.Action ||
+                 !string.Equals(operation.RequestHash, outbox.RequestHash, StringComparison.Ordinal) ||
+                 (operation.InstanceId is not null && operation.InstanceId != outbox.InstanceId) ||
+                 operation.OrganizationId != outbox.OrganizationId || operation.WorkspaceId != outbox.WorkspaceId))
+                throw new InvalidOperationException("Lifecycle outbox envelope must match its operation.");
         }
 
         foreach (var entry in ChangeTracker.Entries<Models.ElsaInstanceIdentityBindingEntity>()

@@ -884,6 +884,77 @@ internal sealed class ElsaInstanceOperationConfiguration : IEntityTypeConfigurat
     }
 }
 
+internal sealed class ElsaInstanceIntentRevisionConfiguration : IEntityTypeConfiguration<ElsaInstanceIntentRevisionEntity>
+{
+    public void Configure(EntityTypeBuilder<ElsaInstanceIntentRevisionEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.RevisionNumber).IsRequired();
+        builder.Property(x => x.ContentHash).HasMaxLength(64).IsRequired();
+
+        builder.Property(x => x.DistributionId).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.ReleaseLine).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.RequestedVersion).HasMaxLength(128);
+        builder.Property(x => x.Channel).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.PatchUpdates).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.MinorUpdates).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.MajorMigrations).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.TopologyId).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.FeaturePresetId).HasMaxLength(128);
+        builder.Property(x => x.FeatureOverridesJson).HasMaxLength(32768).IsRequired();
+        builder.Property(x => x.PackagePolicy).HasMaxLength(128);
+        builder.Property(x => x.ConfigurationShapeRevisionId).HasMaxLength(128);
+        builder.Property(x => x.TargetMode).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.RegionCode).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.IsolationProfile).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.CapacityProfile).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.NetworkOutcome).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.DomainOutcome).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.DesiredLifecycle).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(x => x.AuthoredAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+
+        builder.HasIndex(x => new { x.InstanceId, x.RevisionNumber }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.ContentHash });
+        builder.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Workspace>().WithMany()
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.Instance).WithMany(x => x.IntentRevisions)
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId, x.InstanceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.WorkspaceId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+internal sealed class ElsaInstanceLifecycleOutboxConfiguration : IEntityTypeConfiguration<ElsaInstanceLifecycleOutboxEntity>
+{
+    public void Configure(EntityTypeBuilder<ElsaInstanceLifecycleOutboxEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Action).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.RequestHash).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+
+        builder.HasIndex(x => x.OperationId).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.CreatedAt });
+        builder.HasIndex(x => new { x.WorkspaceId, x.InstanceId, x.CreatedAt });
+        builder.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Workspace>().WithMany()
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.Instance).WithMany()
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId, x.InstanceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.WorkspaceId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.Operation).WithMany()
+            .HasForeignKey(x => x.OperationId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 internal sealed class ElsaInstanceAuditEventConfiguration : IEntityTypeConfiguration<ElsaInstanceAuditEventEntity>
 {
     public void Configure(EntityTypeBuilder<ElsaInstanceAuditEventEntity> builder)
