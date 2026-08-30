@@ -173,6 +173,7 @@ public sealed record ElsaInstanceProviderReconciliationCommit(
     {
         if (WorkspaceId == Guid.Empty || InstanceId == Guid.Empty || OperationId == Guid.Empty ||
             ExpectedInstanceVersion < 1 || ExpectedAttemptNumber < 1 || ExpectedReconciliationVersion < 0 ||
+            string.IsNullOrWhiteSpace(EvidenceFingerprint) ||
             EvidenceFingerprint.Length != 64 ||
             EvidenceFingerprint.Any(x => !(char.IsAsciiDigit(x) || x is >= 'a' and <= 'f')) ||
             string.IsNullOrWhiteSpace(DiagnosticCode) || DiagnosticCode.Length > 128 ||

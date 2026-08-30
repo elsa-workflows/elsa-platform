@@ -10,6 +10,33 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
     private static readonly Guid WorkspaceId = Guid.Parse("20000000-0000-0000-0000-000000000001");
     private static readonly DateTimeOffset Now = new(2026, 8, 30, 12, 0, 0, TimeSpan.Zero);
 
+    [Fact]
+    public async Task Commit_envelope_rejects_null_evidence_fingerprint_with_contract_error()
+    {
+        var (store, accepted) = await RecoveryTargetAsync();
+        var target = await store.GetTargetAsync(WorkspaceId, accepted.Operation.Id)
+            ?? throw new InvalidOperationException("Expected a reconciliation target.");
+        var commit = new ElsaInstanceProviderReconciliationCommit(
+            WorkspaceId,
+            target.Instance.Id,
+            target.Operation.Id,
+            target.Instance.Version,
+            target.Operation.AttemptNumber,
+            target.ReconciliationVersion,
+            null!,
+            target.Instance,
+            target.Operation,
+            ElsaInstanceProviderReconciliationService.UnknownCode,
+            false,
+            null,
+            null,
+            Now);
+
+        var error = Assert.Throws<InvalidOperationException>(commit.Validate);
+
+        Assert.Equal("Provider reconciliation commit envelope is invalid.", error.Message);
+    }
+
     [Theory]
     [InlineData(ElsaInstanceProviderObservationKind.Unknown, ElsaInstanceProviderReconciliationService.UnknownCode)]
     [InlineData(ElsaInstanceProviderObservationKind.Ambiguous, ElsaInstanceProviderReconciliationService.AmbiguousCode)]

@@ -261,7 +261,6 @@ public sealed class ElsaInstanceLifecycleStoreTests
         operation = await db.ElsaInstanceOperations.SingleAsync(x => x.Id == created.Operation.Id);
         operation.State = ElsaInstanceOperationState.RecoveryRequired;
         operation.FailureCode = ElsaInstanceProviderReconciliationService.RetrySafeCode;
-        operation.FailureSummary = "Provider reconciliation established that an explicit retry is safe.";
         operation.ReconciliationRetryEvidenceReference = "https://evidence.example/retry/recovery-elsa";
         operation.ReconciliationRetryEvidenceDigest = "sha256:" + new string('a', 64);
         await db.SaveChangesAsync();
