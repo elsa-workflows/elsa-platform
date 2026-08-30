@@ -547,7 +547,7 @@ public sealed class ElsaInstancePlanResolver(
             new(capacityComponents, []),
             new(placement.NetworkOutcome, Options.DefaultEgress, string.Equals(placement.NetworkOutcome, "private", StringComparison.OrdinalIgnoreCase), [], networkEndpoints),
             placement.IsolationProfile,
-            new(request.InstanceIntent.Release.Channel, manifestTopology is null ? "supported" : request.ReleaseManifest.Manifest!.Distribution.Lifecycle, Options.RolloutRing, request.InstanceIntent.Release.PatchUpdates, request.InstanceIntent.Release.MinorUpdates, request.InstanceIntent.Release.MajorMigrations),
+            new(request.InstanceIntent.Release.Channel, request.ReleaseManifest.Manifest!.Distribution.Lifecycle, Options.RolloutRing, request.InstanceIntent.Release.PatchUpdates, request.InstanceIntent.Release.MinorUpdates, request.InstanceIntent.Release.MajorMigrations),
             providerCapabilities,
             request.ExistingEvidence ?? []);
     }
@@ -979,7 +979,7 @@ public sealed class ElsaInstancePlanResolver(
         if (string.IsNullOrWhiteSpace(scope) || scope.Any(char.IsControl))
             return "plan";
 
-        var category = scope.Split([':', '/'], 2)[0];
+        var category = scope.Split([':', '/', '.'], 2)[0];
         return category switch
         {
             "schemaVersion" => "releaseManifest",

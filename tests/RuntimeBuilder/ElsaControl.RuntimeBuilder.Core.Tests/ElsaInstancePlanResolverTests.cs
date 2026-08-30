@@ -1,3 +1,4 @@
+using System.Reflection;
 using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.PackageCatalog.Abstractions.Catalog;
 using ElsaControl.PackageCatalog.Abstractions.Compatibility;
@@ -68,6 +69,21 @@ public sealed class ElsaInstancePlanResolverTests
 
         Assert.True(result.Succeeded, string.Join("; ", result.Findings.Select(x => x.Code)));
         Assert.Contains(result.Plan!.Evidence, evidence => evidence.Kind == ReleaseManifestEvidenceKinds.Signature);
+    }
+
+    [Theory]
+    [InlineData("topology.id", "topology")]
+    [InlineData("network.endpoints", "network")]
+    [InlineData("releasePolicy.lifecycle", "releasePolicy")]
+    [InlineData("configuration:secretReference", "configuration")]
+    [InlineData("providerCapabilities/capability", "providerCapabilities")]
+    public void Maps_validator_scopes_to_safe_top_level_categories(string validatorScope, string expectedScope)
+    {
+        var safeScope = typeof(ElsaInstancePlanResolver).GetMethod("SafeScope", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var actualScope = Assert.IsType<string>(safeScope.Invoke(null, [validatorScope]));
+
+        Assert.Equal(expectedScope, actualScope);
     }
 
     [Theory]
