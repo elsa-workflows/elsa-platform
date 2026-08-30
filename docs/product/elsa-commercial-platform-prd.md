@@ -58,7 +58,7 @@ Valence Works can turn this complexity into a product by combining its Elsa expe
 1. Visit `cloud.elsaworkflows.io` and sign up or sign in.
 2. Create or join an organization.
 3. Establish a trial or subscription entitlement.
-4. Create an Elsa instance by selecting an available Elsa version, topology/profile, region, isolation level and feature preset.
+4. Create an Elsa instance by selecting an available Elsa version, topology/profile, region, available isolation profile (Dedicated at initial paid launch) and feature preset.
 5. Confirm the configuration and watch durable provisioning progress.
 6. Receive a healthy managed URL.
 7. Open Elsa without an unnecessary second authentication ceremony.
