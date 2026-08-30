@@ -213,7 +213,7 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.Equal(AzureProviderOperationStatus.Failed, failed?.Status);
         Assert.Equal(now, failed?.CompletedAt);
         var transition = Assert.Single(await store.ListTransitionsAsync(_workspaceId, operation.Id), x => x.Code == "azure.plan.unrestorable");
-        Assert.Equal("azure.plan.unrestorable", transition.Message);
+        Assert.Equal("The persisted provider plan cannot be restored.", transition.Message);
         Assert.Empty(await store.ListRunnableAsync(now, 10));
         Assert.Null(await store.MarkUnrestorableAsync(_workspaceId, operation.Id, now, operation.Version));
     }
@@ -331,7 +331,7 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.NotNull(failed);
         Assert.Empty(failed!.Diagnostics);
         var transition = Assert.Single(await store.ListTransitionsAsync(_workspaceId, operation.Id), x => x.Code == "azure.plan.unrestorable");
-        Assert.Equal("azure.plan.unrestorable", transition.Message);
+        Assert.Equal("The persisted provider plan cannot be restored.", transition.Message);
     }
 
     [Fact]
