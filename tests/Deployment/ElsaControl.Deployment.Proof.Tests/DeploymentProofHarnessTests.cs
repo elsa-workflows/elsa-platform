@@ -146,7 +146,12 @@ public sealed class DeploymentProofHarnessTests
     public async Task Credential_bearing_image_references_fail_at_selection(string imageReference)
     {
         var provider = new FakeDeploymentProofProvider();
-        var invalid = Input with { ImageReference = imageReference };
+        var invalid = new DeploymentProofInput(
+            Input.ElsaVersion,
+            Input.Topology,
+            Input.Features,
+            imageReference,
+            Input.ImageDigest);
 
         var report = await new DeploymentProofHarness().RunAsync(invalid, Environment, provider);
 
