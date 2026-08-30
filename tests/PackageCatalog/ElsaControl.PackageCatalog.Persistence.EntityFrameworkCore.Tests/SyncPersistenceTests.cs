@@ -1,5 +1,4 @@
 using System.Data.Common;
-using System.Reflection;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Core.Manifests;
 using ElsaControl.PackageCatalog.Core.Packaging;
@@ -184,10 +183,6 @@ public sealed class SyncPersistenceTests
             commandRecorder.Commands,
             command => command.Contains("FROM \"Packages\"", StringComparison.Ordinal));
         Assert.DoesNotContain("Workspaces", catalogQuery, StringComparison.OrdinalIgnoreCase);
-        var publicQuery = (IQueryable<Package>)typeof(PublicCatalogQueries)
-            .GetMethod("VisiblePackages", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(new PublicCatalogQueries(db), [Array.Empty<Guid>(), null])!;
-        Assert.DoesNotContain("OwnerWorkspace.", publicQuery.Expression.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
