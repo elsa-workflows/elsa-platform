@@ -52,15 +52,18 @@ public interface IElsaInstanceMigrationSourceReleaseStore
 public sealed class ElsaInstanceMigrationSourceReleaseWorker(
     IElsaInstanceMigrationSourceReleaseStore store,
     IElsaInstanceMigrationSourceReleasePort releasePort,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null,
+    TimeSpan? leaseDuration = null)
 {
-    private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(5);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly TimeSpan _leaseDuration = leaseDuration is null or { Ticks: > 0 }
+        ? leaseDuration ?? TimeSpan.FromMinutes(5)
+        : throw new ArgumentOutOfRangeException(nameof(leaseDuration));
 
     public async Task<ElsaInstanceMigrationWriteResult?> RunOnceAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var claim = await store.TryClaimDueAsync(_timeProvider.GetUtcNow(), LeaseDuration, cancellationToken);
+        var claim = await store.TryClaimDueAsync(_timeProvider.GetUtcNow(), _leaseDuration, cancellationToken);
         if (claim is null)
             return null;
 
@@ -69,12 +72,20 @@ public sealed class ElsaInstanceMigrationSourceReleaseWorker(
         var releaseTask = ReleaseAsync(claim, providerCancellation.Token);
         while (!releaseTask.IsCompleted)
         {
-            var delay = Task.Delay(LeaseDuration / 2, _timeProvider, cancellationToken);
+            var delay = Task.Delay(_leaseDuration / 2, _timeProvider, cancellationToken);
             if (await Task.WhenAny(releaseTask, delay) == releaseTask)
                 break;
-            if (!await store.RenewAsync(claim, _timeProvider.GetUtcNow(), LeaseDuration, cancellationToken))
+            if (!await store.RenewAsync(claim, _timeProvider.GetUtcNow(), _leaseDuration, cancellationToken))
             {
                 await providerCancellation.CancelAsync();
+                try
+                {
+                    await releaseTask;
+                }
+                catch (OperationCanceledException) when (providerCancellation.IsCancellationRequested)
+                {
+                    // Observe the provider task before surrendering the claim.
+                }
                 return new(ElsaInstanceMigrationWriteOutcome.Conflict, migration,
                     "migration.source-release.lease-lost");
             }

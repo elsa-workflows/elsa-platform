@@ -38,6 +38,20 @@ public sealed class ElsaInstanceMigrationSourceReleaseWorkerTests
         Assert.Equal(ElsaInstanceMigrationPhase.RetiringSource, result.Migration!.Phase);
     }
 
+    [Fact]
+    public async Task Lost_lease_cancels_and_observes_the_provider_call()
+    {
+        var store = new Store(RetiringMigration()) { RenewalAllowed = false };
+        var port = new CancellingPort();
+        var worker = new ElsaInstanceMigrationSourceReleaseWorker(
+            store, port, TimeProvider.System, TimeSpan.FromMilliseconds(20));
+
+        var result = await worker.RunOnceAsync();
+
+        Assert.Equal(ElsaInstanceMigrationWriteOutcome.Conflict, result!.Outcome);
+        Assert.True(port.CancellationObserved);
+    }
+
     private static ElsaInstanceMigration RetiringMigration()
     {
         var source = Reference("source", "3.10", "3.10.4", 'a');
@@ -56,6 +70,7 @@ public sealed class ElsaInstanceMigrationSourceReleaseWorkerTests
 
     private sealed class Store(ElsaInstanceMigration migration) : IElsaInstanceMigrationSourceReleaseStore
     {
+        public bool RenewalAllowed { get; init; } = true;
         public Task<ElsaInstanceMigrationSourceReleaseClaim?> TryClaimDueAsync(DateTimeOffset now, TimeSpan leaseDuration,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<ElsaInstanceMigrationSourceReleaseClaim?>(new(migration, Guid.NewGuid(), 1, now.Add(leaseDuration)));
@@ -73,7 +88,7 @@ public sealed class ElsaInstanceMigrationSourceReleaseWorkerTests
         }
 
         public Task<bool> RenewAsync(ElsaInstanceMigrationSourceReleaseClaim claim, DateTimeOffset now,
-            TimeSpan leaseDuration, CancellationToken cancellationToken = default) => Task.FromResult(true);
+            TimeSpan leaseDuration, CancellationToken cancellationToken = default) => Task.FromResult(RenewalAllowed);
     }
 
     private sealed class Port(ElsaInstanceSourceReleaseResult result) : IElsaInstanceMigrationSourceReleasePort
@@ -91,5 +106,26 @@ public sealed class ElsaInstanceMigrationSourceReleaseWorkerTests
     private sealed class Clock(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class CancellingPort : IElsaInstanceMigrationSourceReleasePort
+    {
+        public bool CancellationObserved { get; private set; }
+
+        public async Task<ElsaInstanceSourceReleaseResult> ReleaseAsync(Guid organizationId, Guid workspaceId,
+            Guid instanceId, Guid migrationId, Guid operationId, int attemptNumber, string idempotencyKey,
+            ElsaInstanceMigrationReleaseReference source, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("The provider call should have been cancelled.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                CancellationObserved = true;
+                throw;
+            }
+        }
     }
 }
