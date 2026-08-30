@@ -1,0 +1,219 @@
+using ElsaControl.Deployment.Abstractions.Instances;
+using System.Security.Cryptography;
+using System.Text;
+
+namespace ElsaControl.Deployment.Core.Instances;
+
+public enum ElsaInstanceProviderObservationKind
+{
+    Confirmed,
+    Unknown,
+    Ambiguous
+}
+
+public enum ElsaInstanceProviderHealthGate
+{
+    Passed,
+    Failed,
+    Unknown,
+    NotApplicable
+}
+
+/// <summary>
+/// Opaque, safe evidence that a new provider apply would not duplicate uncertain
+/// work. Its presence is advisory to a later retry decision; reconciliation never
+/// turns it into an automatic retry.
+/// </summary>
+public sealed record ElsaInstanceProviderRetryEvidence
+{
+    public ElsaInstanceProviderRetryEvidence(string reference, string digest)
+    {
+        Reference = RequireToken(reference, nameof(reference));
+        Digest = RequireDigest(digest);
+    }
+
+    public string Reference { get; }
+
+    public string Digest { get; }
+
+    private static string RequireToken(string value, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 2048 || value.Any(char.IsControl) ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            uri.Scheme is not ("https" or "oci") || string.IsNullOrWhiteSpace(uri.Host) ||
+            uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 ||
+            uri.AbsolutePath is "" or "/")
+            throw new ArgumentException("Retry evidence reference is invalid.", parameterName);
+        return value.Trim();
+    }
+
+    private static string RequireDigest(string value)
+    {
+        if (value is null || value.Length != 71 || !value.StartsWith("sha256:", StringComparison.Ordinal) ||
+            value.AsSpan(7).ContainsAnyExcept("0123456789abcdef"))
+            throw new ArgumentException("Retry evidence digest is invalid.", nameof(value));
+        return value;
+    }
+}
+
+/// <summary>
+/// Provider-neutral, value-free provider observation. Provider adapters retain raw
+/// payloads and expose only a correlated lifecycle fact plus optional retry proof.
+/// </summary>
+public sealed record ElsaInstanceProviderObservation
+{
+    public ElsaInstanceProviderObservation(
+        ElsaInstanceProviderObservationKind kind,
+        ElsaObservedLifecycle observedLifecycle,
+        ElsaInstanceProviderHealthGate healthGate,
+        string correlationId,
+        ElsaInstanceProviderRetryEvidence? retryEvidence = null)
+        : this(kind, observedLifecycle, healthGate, Guid.Empty, 0, correlationId, retryEvidence)
+    {
+    }
+
+    public ElsaInstanceProviderObservation(
+        ElsaInstanceProviderObservationKind kind,
+        ElsaObservedLifecycle observedLifecycle,
+        ElsaInstanceProviderHealthGate healthGate,
+        Guid operationId,
+        int attemptNumber,
+        string correlationId,
+        ElsaInstanceProviderRetryEvidence? retryEvidence = null)
+    {
+        if (!Enum.IsDefined(kind) || !Enum.IsDefined(observedLifecycle) || !Enum.IsDefined(healthGate))
+            throw new ArgumentOutOfRangeException(nameof(kind), "Provider observation value is invalid.");
+        if (string.IsNullOrWhiteSpace(correlationId) || correlationId.Length > 128 ||
+            correlationId.Any(char.IsControl) || correlationId.Any(char.IsWhiteSpace))
+            throw new ArgumentException("Provider observation correlation is invalid.", nameof(correlationId));
+        if (kind != ElsaInstanceProviderObservationKind.Confirmed &&
+            (observedLifecycle != ElsaObservedLifecycle.Unknown || healthGate != ElsaInstanceProviderHealthGate.Unknown))
+            throw new ArgumentException("Uncertain provider observations must remain unknown.", nameof(observedLifecycle));
+
+        Kind = kind;
+        ObservedLifecycle = observedLifecycle;
+        HealthGate = healthGate;
+        OperationId = operationId;
+        AttemptNumber = attemptNumber;
+        CorrelationId = correlationId;
+        RetryEvidence = retryEvidence;
+    }
+
+    public ElsaInstanceProviderObservationKind Kind { get; }
+
+    public ElsaObservedLifecycle ObservedLifecycle { get; }
+
+    public ElsaInstanceProviderHealthGate HealthGate { get; }
+
+    public Guid OperationId { get; }
+
+    public int AttemptNumber { get; }
+
+    public string CorrelationId { get; }
+
+    public ElsaInstanceProviderRetryEvidence? RetryEvidence { get; }
+
+    public ElsaInstanceProviderObservation Correlate(ElsaInstanceProviderReconciliationRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.OperationId == Guid.Empty || request.AttemptNumber < 1)
+            throw new ArgumentException("Provider reconciliation request identity is invalid.", nameof(request));
+        return new(Kind, ObservedLifecycle, HealthGate, request.OperationId, request.AttemptNumber,
+            CorrelationId, RetryEvidence);
+    }
+
+    internal string ComputeFingerprint()
+    {
+        var canonical = $"{Kind}\n{ObservedLifecycle}\n{HealthGate}\n{OperationId:D}\n{AttemptNumber}\n{CorrelationId}\n{RetryEvidence?.Reference}\n{RetryEvidence?.Digest}\n";
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+    }
+}
+
+public sealed record ElsaInstanceProviderReconciliationRequest(
+    Guid WorkspaceId,
+    Guid InstanceId,
+    Guid OperationId,
+    int AttemptNumber,
+    ElsaDesiredLifecycle DesiredLifecycle,
+    ElsaResolvedPlanReference? ResolvedPlanReference,
+    ElsaCurrentDeploymentReference? CurrentDeploymentReference);
+
+public sealed record ElsaInstanceProviderReconciliationTarget(
+    ElsaInstance Instance,
+    ElsaInstanceOperation Operation,
+    int ReconciliationVersion)
+{
+    public void Validate()
+    {
+        ArgumentNullException.ThrowIfNull(Instance);
+        ArgumentNullException.ThrowIfNull(Operation);
+        if (Operation.InstanceId != Instance.Id || Operation.State != ElsaInstanceOperationState.RecoveryRequired ||
+            ReconciliationVersion < 0)
+            throw new InvalidOperationException("Provider reconciliation target is invalid.");
+    }
+}
+
+public sealed record ElsaInstanceProviderReconciliationCommit(
+    Guid WorkspaceId,
+    Guid InstanceId,
+    Guid OperationId,
+    int ExpectedInstanceVersion,
+    int ExpectedAttemptNumber,
+    int ExpectedReconciliationVersion,
+    string EvidenceFingerprint,
+    ElsaInstance Instance,
+    ElsaInstanceOperation Operation,
+    string DiagnosticCode,
+    bool RetrySafe,
+    string? RetryEvidenceReference,
+    string? RetryEvidenceDigest,
+    DateTimeOffset ReconciledAt)
+{
+    public void Validate()
+    {
+        if (WorkspaceId == Guid.Empty || InstanceId == Guid.Empty || OperationId == Guid.Empty ||
+            ExpectedInstanceVersion < 1 || ExpectedAttemptNumber < 1 || ExpectedReconciliationVersion < 0 ||
+            string.IsNullOrWhiteSpace(EvidenceFingerprint) ||
+            EvidenceFingerprint.Length != 64 ||
+            EvidenceFingerprint.Any(x => !(char.IsAsciiDigit(x) || x is >= 'a' and <= 'f')) ||
+            string.IsNullOrWhiteSpace(DiagnosticCode) || DiagnosticCode.Length > 128 ||
+            DiagnosticCode.Any(x => !(char.IsAsciiLetterLower(x) || char.IsAsciiDigit(x) || x is '.' or '-')))
+            throw new InvalidOperationException("Provider reconciliation commit envelope is invalid.");
+        ArgumentNullException.ThrowIfNull(Instance);
+        ArgumentNullException.ThrowIfNull(Operation);
+        if (Instance.Id != InstanceId || Instance.WorkspaceId != WorkspaceId ||
+            Operation.Id != OperationId || Operation.InstanceId != InstanceId ||
+            Operation.AttemptNumber != ExpectedAttemptNumber ||
+            RetrySafe != (RetryEvidenceReference is not null && RetryEvidenceDigest is not null) ||
+            Operation.State is not (ElsaInstanceOperationState.RecoveryRequired or ElsaInstanceOperationState.Succeeded or ElsaInstanceOperationState.Failed))
+            throw new InvalidOperationException("Provider reconciliation commit state is invalid.");
+        if (RetrySafe)
+            _ = new ElsaInstanceProviderRetryEvidence(RetryEvidenceReference!, RetryEvidenceDigest!);
+    }
+}
+
+public enum ElsaInstanceProviderReconciliationOutcome
+{
+    Converged,
+    RecoveryRequired,
+    HealthGateFailed,
+    Failed
+}
+
+public sealed record ElsaInstanceProviderReconciliationProjection(
+    Guid WorkspaceId,
+    Guid InstanceId,
+    Guid OperationId,
+    int AttemptNumber,
+    ElsaObservedLifecycle ObservedLifecycle,
+    ElsaInstanceHealth Health,
+    int InstanceVersion,
+    ElsaInstanceOperationState OperationState);
+
+public sealed record ElsaInstanceProviderReconciliationResult(
+    ElsaInstanceProviderReconciliationOutcome Outcome,
+    ElsaInstanceProviderReconciliationProjection Projection,
+    string DiagnosticCode,
+    bool RetrySafe,
+    bool Replayed,
+    DateTimeOffset ReconciledAt);

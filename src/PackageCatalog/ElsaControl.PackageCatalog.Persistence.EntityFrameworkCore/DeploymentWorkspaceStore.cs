@@ -1,4 +1,6 @@
+using System.Data;
 using System.Text.Json;
+using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Artifacts;
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Workspace;
@@ -1079,13 +1081,58 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         string? failureMessage = null,
         CancellationToken cancellationToken = default)
     {
-        var run = await dbContext.DeploymentRuns
-            .Include(x => x.Environment)
-            .SingleAsync(x => x.WorkspaceId == workspaceId && x.Id == runId, cancellationToken);
-        run.Status = status;
-        run.FailureMessage = failureMessage;
-        if (status is WorkspaceDeploymentRunStatus.Succeeded or WorkspaceDeploymentRunStatus.Failed or WorkspaceDeploymentRunStatus.Blocked or WorkspaceDeploymentRunStatus.Cancelled or WorkspaceDeploymentRunStatus.RolledBack or WorkspaceDeploymentRunStatus.RecoveryRequired)
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable, cancellationToken);
+        // Persist any correlated command mutation inside this transaction before
+        // detaching a previously tracked run for the set-based terminal CAS. EF
+        // relationship fix-up can otherwise detach the pending command and events
+        // together with their run principal.
+        await dbContext.SaveChangesAsync(cancellationToken);
+        DetachTrackedRun(runId);
+        var currentStatus = await dbContext.DeploymentRuns
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.Id == runId)
+            .Select(x => x.Status)
+            .SingleAsync(cancellationToken);
+
+        if (status == WorkspaceDeploymentRunStatus.RecoveryRequired && IsTerminalRunStatus(currentStatus))
+            throw new InvalidOperationException("A terminal deployment run cannot be moved into recovery.");
+
+        DeploymentRunEntity run;
+        if (IsTerminalRunStatus(status))
+        {
+            var updated = await dbContext.DeploymentRuns
+                .Where(x => x.WorkspaceId == workspaceId
+                    && x.Id == runId
+                    && x.Status != WorkspaceDeploymentRunStatus.RecoveryRequired)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.Status, status)
+                    .SetProperty(x => x.FailureMessage, failureMessage)
+                    .SetProperty(x => x.CompletedAt, now), cancellationToken);
+            if (updated == 0)
+                throw new InvalidOperationException("Deployment run requires recovery before a terminal update can be applied.");
+
+            run = await dbContext.DeploymentRuns
+                .Include(x => x.Environment)
+                .SingleAsync(x => x.WorkspaceId == workspaceId && x.Id == runId, cancellationToken);
+        }
+        else
+        {
+            run = await dbContext.DeploymentRuns
+                .Include(x => x.Environment)
+                .SingleAsync(x => x.WorkspaceId == workspaceId && x.Id == runId, cancellationToken);
+            run.Status = status;
+            run.FailureMessage = failureMessage;
+        }
+
+        if (IsTerminalRunStatus(status))
             run.CompletedAt = now;
+        else if (status == WorkspaceDeploymentRunStatus.RecoveryRequired)
+        {
+            run.CompletedAt = null;
+            run.RecoveryReason = failureMessage ?? message;
+            await ProjectManagedRecoveryRequiredAsync(run, now, cancellationToken);
+        }
 
         if (run.Environment is not null)
         {
@@ -1109,6 +1156,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             CreatedAt = now
         }, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return ToWorkspaceDeploymentRun(run);
     }
 
@@ -1118,16 +1166,38 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         CancellationToken cancellationToken = default)
     {
         var staleBefore = now.Subtract(staleAfter);
-        var runs = await dbContext.DeploymentRuns
+        var staleRunIds = await dbContext.DeploymentRuns
+            .AsNoTracking()
             .Where(x => x.Status == WorkspaceDeploymentRunStatus.Running
                 && (x.WorkerHeartbeatAt ?? x.StartedAt ?? x.QueuedAt) < staleBefore)
+            .Select(x => x.Id)
             .ToListAsync(cancellationToken);
 
-        foreach (var run in runs)
+        if (staleRunIds.Count == 0)
+            return 0;
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable, cancellationToken);
+        var markedCount = 0;
+        const string recoveryReason = "Worker heartbeat became stale.";
+
+        foreach (var runId in staleRunIds)
         {
-            run.Status = WorkspaceDeploymentRunStatus.RecoveryRequired;
-            run.CompletedAt = now;
-            run.RecoveryReason = "Worker heartbeat became stale.";
+            var updated = await dbContext.DeploymentRuns
+                .Where(x => x.Id == runId
+                    && x.Status == WorkspaceDeploymentRunStatus.Running
+                    && (x.WorkerHeartbeatAt ?? x.StartedAt ?? x.QueuedAt) < staleBefore)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.Status, WorkspaceDeploymentRunStatus.RecoveryRequired)
+                    .SetProperty(x => x.CompletedAt, (DateTimeOffset?)null)
+                    .SetProperty(x => x.RecoveryReason, recoveryReason), cancellationToken);
+            if (updated == 0)
+                continue;
+
+            DetachTrackedRun(runId);
+            var run = await dbContext.DeploymentRuns
+                .Include(x => x.Environment)
+                .SingleAsync(x => x.Id == runId, cancellationToken);
             await dbContext.DeploymentRunHistoryEvents.AddAsync(new DeploymentRunHistoryEventEntity
             {
                 Id = Guid.NewGuid(),
@@ -1137,10 +1207,76 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
                 Message = "Deployment run requires recovery after stale worker heartbeat.",
                 CreatedAt = now
             }, cancellationToken);
+
+            await ProjectManagedRecoveryRequiredAsync(run, now, cancellationToken);
+            if (run.Environment is not null)
+            {
+                run.Environment.UpdatedAt = now;
+                run.Environment.DeploymentStatus = DeploymentStatus.Blocked;
+            }
+            markedCount++;
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        return runs.Count;
+        await transaction.CommitAsync(cancellationToken);
+        return markedCount;
+    }
+
+    private async Task ProjectManagedRecoveryRequiredAsync(
+        DeploymentRunEntity run,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (run.ElsaInstanceId is not { } instanceId)
+            return;
+
+        var operation = await dbContext.ElsaInstanceOperations
+            .SingleOrDefaultAsync(x => x.WorkspaceId == run.WorkspaceId
+                && x.DeploymentRunId == run.Id
+                && x.InstanceId == instanceId,
+                cancellationToken);
+        var instance = await dbContext.ElsaInstances
+            .SingleOrDefaultAsync(x => x.Id == instanceId && x.WorkspaceId == run.WorkspaceId,
+                cancellationToken);
+        if (operation is null || instance is null)
+            throw new InvalidOperationException("Managed lifecycle recovery linkage is inconsistent.");
+        if (operation.State == ElsaInstanceOperationState.RecoveryRequired &&
+            instance.ObservedLifecycle == ElsaObservedLifecycle.Unknown &&
+            instance.Health == ElsaInstanceHealth.Unknown)
+            return;
+        if (operation.State is not (ElsaInstanceOperationState.Queued or ElsaInstanceOperationState.Running))
+            throw new InvalidOperationException("Managed lifecycle recovery linkage is inconsistent.");
+
+        var priorState = instance.ObservedLifecycle;
+        operation.State = ElsaInstanceOperationState.RecoveryRequired;
+        operation.CompletedAt = null;
+        operation.WorkerId = null;
+        operation.LeaseTokenHash = null;
+        operation.LeaseExpiresAt = null;
+        operation.HeartbeatAt = null;
+        operation.UpdatedAt = now;
+        instance.ObservedLifecycle = ElsaObservedLifecycle.Unknown;
+        instance.Health = ElsaInstanceHealth.Unknown;
+        instance.UpdatedAt = now;
+        var sequence = await dbContext.ElsaInstanceAuditEvents
+            .Where(x => x.InstanceId == instanceId)
+            .Select(x => (long?)x.Sequence)
+            .MaxAsync(cancellationToken) ?? 0;
+        await dbContext.ElsaInstanceAuditEvents.AddAsync(new()
+        {
+            Id = Guid.NewGuid(), OrganizationId = instance.OrganizationId,
+            WorkspaceId = instance.WorkspaceId, InstanceId = instance.Id,
+            Sequence = checked(sequence + 1), EventType = "lifecycle.recovery-required",
+            OperationId = operation.Id, DeploymentRunId = run.Id,
+            PriorState = priorState.ToString(), NewState = ElsaObservedLifecycle.Unknown.ToString(),
+            DesiredStateRevisionId = instance.DesiredStateRevisionId,
+            PlanReference = instance.ResolvedPlanUri,
+            DiagnosticCode = "provider.reconciliation.required",
+            Summary = "Provider state must be reconciled before retry.",
+            RequestKeyHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(operation.IdempotencyKey))),
+            OccurredAt = now
+        }, cancellationToken);
     }
 
     public async Task<RuntimeControlExecution> RecordRuntimeControlExecutionAsync(
@@ -3037,6 +3173,20 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             or DeploymentCommandStatus.Cancelled
             or DeploymentCommandStatus.RecoveryRequired
             or DeploymentCommandStatus.Expired;
+
+    private static bool IsTerminalRunStatus(WorkspaceDeploymentRunStatus status) =>
+        status is WorkspaceDeploymentRunStatus.Succeeded
+            or WorkspaceDeploymentRunStatus.Failed
+            or WorkspaceDeploymentRunStatus.Blocked
+            or WorkspaceDeploymentRunStatus.Cancelled
+            or WorkspaceDeploymentRunStatus.RolledBack;
+
+    private void DetachTrackedRun(Guid runId)
+    {
+        var tracked = dbContext.DeploymentRuns.Local.FirstOrDefault(x => x.Id == runId);
+        if (tracked is not null)
+            dbContext.Entry(tracked).State = EntityState.Detached;
+    }
 
     private static WorkspaceDeploymentRunStatus ToRunStatus(DeploymentCommandStatus status) =>
         status switch

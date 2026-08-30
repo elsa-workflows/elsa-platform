@@ -166,11 +166,23 @@ public sealed class ElsaInstanceLifecycleServiceTests
                     accepted.RequestHash,
                     Now.AddMinutes(store.Outbox.Count)));
         }
+        await new ElsaInstanceProviderReconciliationService(
+                store,
+                new StaticProviderPort(new(
+                    ElsaInstanceProviderObservationKind.Unknown,
+                    ElsaObservedLifecycle.Unknown,
+                    ElsaInstanceProviderHealthGate.Unknown,
+                    "retry-proof-observation",
+                    new ElsaInstanceProviderRetryEvidence(
+                        "https://evidence.example.test/recovery/retry-proof",
+                        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))),
+                new StaticTimeProvider(Now))
+            .ReconcileAsync(WorkspaceId, accepted.Id);
 
         var recovered = await service.RecoverAsync(new ElsaInstanceLifecycleRequest(
             WorkspaceId,
             created.Instance.Id,
-            created.Instance.Version,
+            store.Instances.Single().Version,
             "recover-1"));
 
         Assert.False(recovered.Replayed);
@@ -179,6 +191,21 @@ public sealed class ElsaInstanceLifecycleServiceTests
         Assert.Equal(2, recovered.Operation.AttemptNumber);
         Assert.Equal(5, store.Outbox.Count);
         Assert.Single(store.Operations);
+    }
+
+    [Fact]
+    public async Task Recover_without_provider_retry_proof_is_rejected()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore();
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+        store.MarkRecoveryRequired(created.Operation.Id);
+
+        var error = await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() => service.RecoverAsync(new(
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "recover-without-proof")));
+
+        Assert.Equal("Provider reconciliation has not established that retry is safe.", error.Message);
     }
 
     [Fact]
@@ -257,5 +284,13 @@ public sealed class ElsaInstanceLifecycleServiceTests
     private sealed class StaticTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class StaticProviderPort(ElsaInstanceProviderObservation observation)
+        : IElsaInstanceProviderReconciliationPort
+    {
+        public Task<ElsaInstanceProviderObservation> ObserveAsync(
+            ElsaInstanceProviderReconciliationRequest request,
+            CancellationToken cancellationToken = default) => Task.FromResult(observation.Correlate(request));
     }
 }

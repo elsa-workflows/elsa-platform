@@ -372,6 +372,27 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             operation.FailureCode = OptionalSafeCode(operation.FailureCode, nameof(operation.FailureCode));
             operation.FailureSummary = operation.FailureCode ??
                 (string.IsNullOrWhiteSpace(operation.FailureSummary) ? null : "operation.failure");
+            operation.ReconciliationEvidenceFingerprint = OptionalCanonicalHash(
+                operation.ReconciliationEvidenceFingerprint, nameof(operation.ReconciliationEvidenceFingerprint));
+            operation.ReconciliationDiagnosticCode = OptionalSafeCode(
+                operation.ReconciliationDiagnosticCode, nameof(operation.ReconciliationDiagnosticCode));
+            if ((operation.ReconciliationRetryEvidenceReference is null) !=
+                (operation.ReconciliationRetryEvidenceDigest is null))
+                throw new InvalidOperationException("Provider reconciliation retry evidence must be complete.");
+            if (operation.ReconciliationRetryEvidenceReference is not null)
+            {
+                var evidence = new ElsaControl.Deployment.Core.Instances.ElsaInstanceProviderRetryEvidence(
+                    operation.ReconciliationRetryEvidenceReference,
+                    operation.ReconciliationRetryEvidenceDigest!);
+                operation.ReconciliationRetryEvidenceReference = evidence.Reference;
+                operation.ReconciliationRetryEvidenceDigest = evidence.Digest;
+            }
+            if (operation.ReconciledObservedLifecycle is { } reconciledLifecycle)
+                EnsureDefined(reconciledLifecycle, nameof(operation.ReconciledObservedLifecycle));
+            if (operation.ReconciledHealth is { } reconciledHealth)
+                EnsureDefined(reconciledHealth, nameof(operation.ReconciledHealth));
+            if (operation.ReconciliationVersion < 0 || operation.ReconciledInstanceVersion is < 1)
+                throw new InvalidOperationException("Provider reconciliation versions are invalid.");
             if (operation.ExpectedVersion < 1 || operation.AttemptNumber < 1)
                 throw new InvalidOperationException("An instance operation requires positive version and attempt values.");
             if (operation.InstanceId is not null && operation.InstanceId == Guid.Empty)
