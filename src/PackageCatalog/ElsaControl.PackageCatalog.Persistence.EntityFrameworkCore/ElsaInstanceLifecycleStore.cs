@@ -969,6 +969,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     throw Conflict("Managed lifecycle recovery run is missing.");
                 if (run.Status != WorkspaceDeploymentRunStatus.RecoveryRequired)
                     throw Conflict("Managed lifecycle recovery run is not awaiting recovery.");
+                if (run.Environment is null)
+                    throw Conflict("Managed lifecycle recovery environment is missing.");
 
                 run.Status = WorkspaceDeploymentRunStatus.Queued;
                 run.QueuedAt = requestedAt.ToUniversalTime();
@@ -978,11 +980,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 run.WorkerHeartbeatAt = null;
                 run.RecoveryReason = null;
                 run.FailureMessage = null;
-                if (run.Environment is not null)
-                {
-                    run.Environment.UpdatedAt = requestedAt.ToUniversalTime();
-                    run.Environment.DeploymentStatus = DeploymentStatus.Running;
-                }
+                run.Environment.UpdatedAt = requestedAt.ToUniversalTime();
+                run.Environment.DeploymentStatus = DeploymentStatus.Running;
                 await dbContext.DeploymentRunHistoryEvents.AddAsync(new()
                 {
                     Id = Guid.NewGuid(),
