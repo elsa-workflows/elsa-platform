@@ -173,7 +173,7 @@ public sealed class ResolvedElsaApplicationPlanTests
     [InlineData("secret://host")]
     [InlineData("secret://host/")]
     [InlineData("secret://host/database/")]
-    public void Rejects_secret_references_without_a_non_root_path(string reference)
+    public void Rejects_secret_references_with_root_or_non_canonical_paths(string reference)
     {
         Assert.False(SecretReferencePolicy.IsSafe(reference));
     }
