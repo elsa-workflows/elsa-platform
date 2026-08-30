@@ -64,7 +64,8 @@ public static class ManagedElsaHandoffEndpoints
                     correlationId = context.TraceIdentifier
                 });
 
-            var result = await handoff.RedeemAsync(request.Token, audience!, redirectUri!, request.CodeVerifier, cancellationToken);
+            var result = await handoff.RedeemAsync(
+                request.Token, audience!, redirectUri!, request.CodeVerifier, cancellationToken, context.TraceIdentifier);
             return result.Failure switch
             {
                 ManagedElsaHandoffRedeemFailure.Replay => Results.Conflict(new

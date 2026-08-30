@@ -267,7 +267,9 @@ public sealed record ManagedElsaHandoffAuditEvent(
     Guid? OrganizationId,
     Guid? InstanceId,
     string? Audience,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    int? BindingVersion = null,
+    string? CorrelationId = null);
 
 public interface IManagedElsaHandoffAuditSink
 {
@@ -404,13 +406,14 @@ public sealed class ManagedElsaHandoffRedeemer(
         string expectedAudience,
         Uri expectedRedirectUri,
         string codeVerifier,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? correlationId = null)
     {
         if (string.IsNullOrWhiteSpace(token) ||
             string.IsNullOrWhiteSpace(expectedAudience) ||
             !ManagedElsaHandoffIssuer.IsSafeRedirectUri(expectedRedirectUri) ||
             !ManagedElsaHandoffIssuer.IsValidCodeVerifier(codeVerifier))
-            return await InvalidAsync(cancellationToken);
+            return await InvalidAsync(cancellationToken, correlationId);
 
         ManagedElsaHandoffClaims claims;
         try
@@ -419,18 +422,18 @@ public sealed class ManagedElsaHandoffRedeemer(
         }
         catch (SecurityTokenException)
         {
-            return await InvalidAsync(cancellationToken);
+            return await InvalidAsync(cancellationToken, correlationId);
         }
         catch (ArgumentException)
         {
-            return await InvalidAsync(cancellationToken);
+            return await InvalidAsync(cancellationToken, correlationId);
         }
 
         var computedChallenge = ManagedElsaHandoffIssuer.CreateCodeChallenge(codeVerifier);
         if (!CryptographicOperations.FixedTimeEquals(
                 Encoding.ASCII.GetBytes(computedChallenge),
                 Encoding.ASCII.GetBytes(claims.CodeChallenge)))
-            return await InvalidAsync(cancellationToken);
+            return await InvalidAsync(cancellationToken, correlationId);
 
         if (!await replayStore.TryConsumeAsync(claims.Jti, claims.ExpiresAt, cancellationToken))
         {
@@ -441,7 +444,9 @@ public sealed class ManagedElsaHandoffRedeemer(
                 claims.OrganizationId,
                 claims.InstanceId,
                 claims.Audience,
-                timeProvider.GetUtcNow()), cancellationToken);
+                timeProvider.GetUtcNow(),
+                claims.BindingVersion,
+                correlationId), cancellationToken);
             return ManagedElsaHandoffRedeemResult.Denied(ManagedElsaHandoffRedeemFailure.Replay);
         }
 
@@ -454,7 +459,9 @@ public sealed class ManagedElsaHandoffRedeemer(
                 claims.OrganizationId,
                 claims.InstanceId,
                 claims.Audience,
-                timeProvider.GetUtcNow()), cancellationToken);
+                timeProvider.GetUtcNow(),
+                claims.BindingVersion,
+                correlationId), cancellationToken);
             return ManagedElsaHandoffRedeemResult.Denied(ManagedElsaHandoffRedeemFailure.AuthorizationRevoked);
         }
 
@@ -465,7 +472,9 @@ public sealed class ManagedElsaHandoffRedeemer(
             claims.OrganizationId,
             claims.InstanceId,
             claims.Audience,
-            timeProvider.GetUtcNow()), cancellationToken);
+            timeProvider.GetUtcNow(),
+            claims.BindingVersion,
+            correlationId), cancellationToken);
         return ManagedElsaHandoffRedeemResult.Success(claims);
     }
 
@@ -530,7 +539,9 @@ public sealed class ManagedElsaHandoffRedeemer(
             bindingVersion);
     }
 
-    private async Task<ManagedElsaHandoffRedeemResult> InvalidAsync(CancellationToken cancellationToken)
+    private async Task<ManagedElsaHandoffRedeemResult> InvalidAsync(
+        CancellationToken cancellationToken,
+        string? correlationId)
     {
         await auditSink.RecordAsync(new ManagedElsaHandoffAuditEvent(
             "redeem.invalid",
@@ -539,7 +550,8 @@ public sealed class ManagedElsaHandoffRedeemer(
             null,
             null,
             null,
-            timeProvider.GetUtcNow()), cancellationToken);
+            timeProvider.GetUtcNow(),
+            CorrelationId: correlationId), cancellationToken);
         return ManagedElsaHandoffRedeemResult.Denied(ManagedElsaHandoffRedeemFailure.InvalidToken);
     }
 
@@ -592,7 +604,8 @@ public sealed class ManagedElsaHandoffService(
                 request.OrganizationId,
                 request.InstanceId,
                 request.Audience,
-                timeProvider.GetUtcNow()), cancellationToken);
+                timeProvider.GetUtcNow(),
+                CorrelationId: context.TraceIdentifier), cancellationToken);
             return null;
         }
 
@@ -604,7 +617,9 @@ public sealed class ManagedElsaHandoffService(
             authorization.OrganizationId,
             authorization.InstanceId,
             authorization.Audience,
-            result.IssuedAt), cancellationToken);
+            result.IssuedAt,
+            authorization.BindingVersion,
+            context.TraceIdentifier), cancellationToken);
         return result;
     }
 
@@ -613,6 +628,7 @@ public sealed class ManagedElsaHandoffService(
         string expectedAudience,
         Uri expectedRedirectUri,
         string codeVerifier,
-        CancellationToken cancellationToken = default) =>
-        redeemer.RedeemAsync(token, expectedAudience, expectedRedirectUri, codeVerifier, cancellationToken);
+        CancellationToken cancellationToken = default,
+        string? correlationId = null) =>
+        redeemer.RedeemAsync(token, expectedAudience, expectedRedirectUri, codeVerifier, cancellationToken, correlationId);
 }
