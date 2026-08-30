@@ -76,7 +76,9 @@ public sealed class ElsaInstanceLifecycleWorker(
                 resolvedInstance,
                 new ElsaInstanceLifecycleResolvedPlan(resolution.Reference, planJson),
                 item.Resolution.DeploymentTarget,
-                _timeProvider.GetUtcNow());
+                _timeProvider.GetUtcNow(),
+                item.LeaseToken,
+                item.LeaseVersion);
             return await store.CommitResolvedAsync(commit, cancellationToken);
         }
         catch (OperationCanceledException)
@@ -106,7 +108,9 @@ public sealed class ElsaInstanceLifecycleWorker(
             code == "resolution.failed"
                 ? "Lifecycle plan resolution was rejected."
                 : "Lifecycle work item could not be resolved safely.",
-            _timeProvider.GetUtcNow());
+            _timeProvider.GetUtcNow(),
+            item.LeaseToken,
+            item.LeaseVersion);
         return store.FailResolutionAsync(failure, cancellationToken);
     }
 }

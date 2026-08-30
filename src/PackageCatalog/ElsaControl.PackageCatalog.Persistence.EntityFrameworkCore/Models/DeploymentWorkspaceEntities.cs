@@ -198,6 +198,7 @@ internal sealed class ElsaInstanceOperationEntity
     public string? WorkerId { get; set; }
     /// <summary>One-way SHA-256 lease proof; the bearer token is never persisted.</summary>
     public string? LeaseTokenHash { get; set; }
+    public int LeaseVersion { get; set; }
     public DateTimeOffset? LeaseExpiresAt { get; set; }
     public DateTimeOffset? HeartbeatAt { get; set; }
     public string? DesiredStateRevisionId { get; set; }
@@ -207,6 +208,26 @@ internal sealed class ElsaInstanceOperationEntity
     public string? FailureSummary { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// Immutable, safe resolved-plan record. The canonical JSON is retained only after
+/// the worker validates and normalizes the typed plan; no resolver input or provider
+/// payload is stored here.
+/// </summary>
+internal sealed class ElsaInstanceResolvedPlanEntity
+{
+    public Guid Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid InstanceId { get; set; }
+    public ElsaInstanceEntity? Instance { get; set; }
+    public string PlanId { get; set; } = "";
+    public int SchemaVersion { get; set; }
+    public string ContentHash { get; set; } = "";
+    public string PlanUri { get; set; } = "";
+    public string SerializedPlan { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 internal sealed class ElsaInstanceAuditEventEntity

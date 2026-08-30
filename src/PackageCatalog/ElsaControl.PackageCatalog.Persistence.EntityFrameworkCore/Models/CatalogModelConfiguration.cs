@@ -928,6 +928,31 @@ internal sealed class ElsaInstanceIntentRevisionConfiguration : IEntityTypeConfi
     }
 }
 
+internal sealed class ElsaInstanceResolvedPlanConfiguration : IEntityTypeConfiguration<ElsaInstanceResolvedPlanEntity>
+{
+    public void Configure(EntityTypeBuilder<ElsaInstanceResolvedPlanEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.PlanId).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.SchemaVersion).IsRequired();
+        builder.Property(x => x.ContentHash).HasMaxLength(71).IsRequired();
+        builder.Property(x => x.PlanUri).HasMaxLength(2048).IsRequired();
+        builder.Property(x => x.SerializedPlan).HasMaxLength(1_048_576).IsRequired();
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.WorkspaceId, x.InstanceId, x.PlanId }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.ContentHash });
+        builder.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Workspace>().WithMany()
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.Instance).WithMany()
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId, x.InstanceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.WorkspaceId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 internal sealed class ElsaInstanceLifecycleOutboxConfiguration : IEntityTypeConfiguration<ElsaInstanceLifecycleOutboxEntity>
 {
     public void Configure(EntityTypeBuilder<ElsaInstanceLifecycleOutboxEntity> builder)

@@ -7,6 +7,7 @@ using ElsaControl.PackageCatalog.Core.Manifests;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Core.Packages;
 using ElsaControl.RuntimeBuilder.Abstractions.RuntimeConfigurations;
+using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 using ElsaControl.PackageCatalog.Core.Sync;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -41,6 +42,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.ElsaInstanceIntentRevisionEntity> ElsaInstanceIntentRevisions => Set<Models.ElsaInstanceIntentRevisionEntity>();
     internal DbSet<Models.ElsaInstanceLifecycleOutboxEntity> ElsaInstanceLifecycleOutbox => Set<Models.ElsaInstanceLifecycleOutboxEntity>();
     internal DbSet<Models.ElsaInstanceOperationEntity> ElsaInstanceOperations => Set<Models.ElsaInstanceOperationEntity>();
+    internal DbSet<Models.ElsaInstanceResolvedPlanEntity> ElsaInstanceResolvedPlans => Set<Models.ElsaInstanceResolvedPlanEntity>();
     internal DbSet<Models.ElsaInstanceAuditEventEntity> ElsaInstanceAuditEvents => Set<Models.ElsaInstanceAuditEventEntity>();
     internal DbSet<Models.ElsaInstanceIdentityBindingEntity> ElsaInstanceIdentityBindings => Set<Models.ElsaInstanceIdentityBindingEntity>();
     internal DbSet<Models.ElsaInstanceMigrationEntity> ElsaInstanceMigrations => Set<Models.ElsaInstanceMigrationEntity>();
@@ -102,6 +104,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceIntentRevisionConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceLifecycleOutboxConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceOperationConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.ElsaInstanceResolvedPlanConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceAuditEventConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceIdentityBindingConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceMigrationConfiguration());
@@ -162,6 +165,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         EnsureElsaInstanceDurableRowsAreNotDeleted();
         EnsureElsaInstanceIntentRevisionsAreAppendOnly();
         EnsureElsaInstanceLifecycleOutboxIsAppendOnly();
+        EnsureElsaInstanceResolvedPlansAreAppendOnly();
         ValidateElsaInstancePersistence();
         EnsureOrganizationsForNewWorkspaces();
     }
@@ -204,6 +208,13 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         if (ChangeTracker.Entries<Models.ElsaInstanceLifecycleOutboxEntity>()
             .Any(x => x.State is EntityState.Modified or EntityState.Deleted))
             throw new InvalidOperationException("Elsa instance lifecycle outbox records are append-only.");
+    }
+
+    private void EnsureElsaInstanceResolvedPlansAreAppendOnly()
+    {
+        if (ChangeTracker.Entries<Models.ElsaInstanceResolvedPlanEntity>()
+            .Any(x => x.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Elsa instance resolved plans are append-only.");
     }
 
     private void ValidateElsaInstancePersistence()
@@ -406,6 +417,46 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             if (instance is not null &&
                 (instance.OrganizationId != revision.OrganizationId || instance.WorkspaceId != revision.WorkspaceId))
                 throw new InvalidOperationException("Intent revision ownership must match its instance.");
+        }
+
+        foreach (var entry in ChangeTracker.Entries<Models.ElsaInstanceResolvedPlanEntity>()
+                     .Where(x => x.State == EntityState.Added))
+        {
+            var plan = entry.Entity;
+            if (plan.Id == Guid.Empty || plan.OrganizationId == Guid.Empty || plan.WorkspaceId == Guid.Empty ||
+                plan.InstanceId == Guid.Empty || plan.SchemaVersion < 1 ||
+                string.IsNullOrWhiteSpace(plan.SerializedPlan) || plan.SerializedPlan.Length > 1_048_576)
+                throw new InvalidOperationException("A resolved plan requires bounded ownership and content.");
+
+            plan.PlanId = RequireSafeReference(plan.PlanId, nameof(plan.PlanId), 128);
+            plan.ContentHash = OptionalSha256Digest(plan.ContentHash, nameof(plan.ContentHash))
+                ?? throw new InvalidOperationException("Resolved plan content hash is required.");
+            RequireInstancePlanUri(plan.PlanUri, nameof(plan.PlanUri), plan.WorkspaceId, plan.InstanceId, plan.PlanId);
+
+            try
+            {
+                var typedPlan = ResolvedElsaApplicationPlanSerialization.Deserialize(plan.SerializedPlan);
+                var canonical = ResolvedElsaApplicationPlanSerialization.Serialize(typedPlan);
+                if (!string.Equals(canonical, plan.SerializedPlan, StringComparison.Ordinal) ||
+                    !string.Equals(ResolvedElsaApplicationPlanSerialization.ComputeContentHash(typedPlan), plan.ContentHash, StringComparison.Ordinal))
+                    throw new InvalidOperationException();
+                if (typedPlan.SchemaVersion != plan.SchemaVersion.ToString(CultureInfo.InvariantCulture))
+                    throw new InvalidOperationException();
+                var findings = ResolvedElsaApplicationPlanValidator.Validate(typedPlan);
+                if (findings.Count > 0)
+                    throw new InvalidOperationException();
+            }
+            catch (Exception exception) when (exception is JsonException or ArgumentException or InvalidOperationException)
+            {
+                throw new InvalidOperationException("Resolved plan content is invalid.");
+            }
+
+            var instance = ChangeTracker.Entries<Models.ElsaInstanceEntity>()
+                .Select(x => x.Entity)
+                .FirstOrDefault(x => x.Id == plan.InstanceId);
+            instance ??= ElsaInstances.Find(plan.InstanceId);
+            if (instance is null || instance.OrganizationId != plan.OrganizationId || instance.WorkspaceId != plan.WorkspaceId)
+                throw new InvalidOperationException("Resolved plan ownership must match its instance.");
         }
 
         foreach (var entry in ChangeTracker.Entries<Models.ElsaInstanceLifecycleOutboxEntity>()

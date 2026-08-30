@@ -47,7 +47,9 @@ public sealed record ElsaInstanceLifecycleWorkItem(
     ElsaInstanceLifecycleOutboxMessage Outbox,
     ElsaInstanceOperation Operation,
     ElsaInstance Instance,
-    ElsaInstanceLifecycleResolutionInput Resolution)
+    ElsaInstanceLifecycleResolutionInput Resolution,
+    string? LeaseToken = null,
+    int LeaseVersion = 0)
 {
     public void Validate()
     {
@@ -64,6 +66,7 @@ public sealed record ElsaInstanceLifecycleWorkItem(
             throw new InvalidOperationException("Persisted lifecycle work item identity is invalid.");
         if (Operation.State != ElsaInstanceOperationState.Accepted)
             throw new InvalidOperationException("Persisted lifecycle work item is not claimed.");
+        ElsaInstanceLifecycleLease.Validate(LeaseToken, LeaseVersion);
         if (Resolution.PlanRequest.WorkspaceId is { } requestWorkspace && requestWorkspace != Instance.WorkspaceId)
             throw new InvalidOperationException("Lifecycle resolution workspace is invalid.");
         if (!string.Equals(Resolution.PlanRequest.InstanceIntent.ComputeCanonicalHash(), Instance.ComputeCanonicalIntentHash(), StringComparison.Ordinal))
@@ -108,7 +111,9 @@ public sealed record ElsaInstanceLifecycleResolutionCommit(
     ElsaInstance Instance,
     ElsaInstanceLifecycleResolvedPlan Plan,
     ElsaInstanceLifecycleDeploymentTarget DeploymentTarget,
-    DateTimeOffset CommittedAt)
+    DateTimeOffset CommittedAt,
+    string? LeaseToken = null,
+    int LeaseVersion = 0)
 {
     public void Validate()
     {
@@ -122,6 +127,7 @@ public sealed record ElsaInstanceLifecycleResolutionCommit(
         ArgumentNullException.ThrowIfNull(Plan);
         Plan.Validate();
         DeploymentTarget.Validate();
+        ElsaInstanceLifecycleLease.Validate(LeaseToken, LeaseVersion);
         if (Operation.State != ElsaInstanceOperationState.Queued || Operation.Id != OperationId ||
             Operation.InstanceId != InstanceId || Instance.Id != InstanceId || Instance.WorkspaceId != WorkspaceId ||
             !string.Equals(Operation.RequestHash, RequestHash, StringComparison.Ordinal))
@@ -138,7 +144,9 @@ public sealed record ElsaInstanceLifecycleResolutionFailure(
     string WorkerId,
     string Code,
     string Summary,
-    DateTimeOffset FailedAt)
+    DateTimeOffset FailedAt,
+    string? LeaseToken = null,
+    int LeaseVersion = 0)
 {
     public void Validate()
     {
@@ -148,6 +156,17 @@ public sealed record ElsaInstanceLifecycleResolutionFailure(
             string.IsNullOrWhiteSpace(Code) || string.IsNullOrWhiteSpace(Summary) ||
             Code.Length > 128 || Code.Any(char.IsControl) || Summary.Length > 2000 || Summary.Any(char.IsControl))
             throw new InvalidOperationException("Lifecycle resolution failure envelope is invalid.");
+        ElsaInstanceLifecycleLease.Validate(LeaseToken, LeaseVersion);
+    }
+}
+
+internal static class ElsaInstanceLifecycleLease
+{
+    public static void Validate(string? token, int version)
+    {
+        if (string.IsNullOrWhiteSpace(token) || token.Length != 64 ||
+            token.Any(x => !char.IsAsciiHexDigit(x)) || version < 1)
+            throw new InvalidOperationException("Lifecycle worker lease is invalid.");
     }
 }
 

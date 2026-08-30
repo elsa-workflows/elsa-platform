@@ -16,7 +16,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
     private readonly Dictionary<Guid, ElsaInstanceOperation> _operations = [];
     private readonly Dictionary<Guid, ElsaInstanceLifecycleOutboxMessage> _outbox = [];
     private readonly Dictionary<Guid, ElsaInstanceLifecycleResolutionInput> _resolutionInputs = [];
-    private readonly Dictionary<Guid, string> _claims = [];
+    private readonly Dictionary<Guid, LifecycleClaim> _claims = [];
     private readonly Dictionary<string, ElsaInstanceLifecycleResolvedPlan> _resolvedPlans = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, ElsaInstanceLifecycleDeploymentRun> _deploymentRuns = [];
     private readonly Dictionary<Guid, ElsaInstanceLifecycleRecordedFailure> _failures = [];
@@ -268,10 +268,11 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
 
                 if (_claims.ContainsKey(operation.Id))
                     continue;
-                _claims[operation.Id] = workerId.Trim();
+                var claim = new LifecycleClaim(workerId.Trim(), CreateLeaseToken(), 1);
+                _claims[operation.Id] = claim;
                 var input = _resolutionInputs.GetValueOrDefault(operation.Id);
                 return Task.FromResult<ElsaInstanceLifecycleWorkItem?>(
-                    new ElsaInstanceLifecycleWorkItem(outbox, operation, instance, input!));
+                    new ElsaInstanceLifecycleWorkItem(outbox, operation, instance, input!, claim.Token, claim.Version));
             }
 
             return Task.FromResult<ElsaInstanceLifecycleWorkItem?>(null);
@@ -308,8 +309,10 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
                     existingRun.Run));
 
             if (currentOperation.State != ElsaInstanceOperationState.Accepted ||
-                !_claims.TryGetValue(commit.OperationId, out var claimWorker) ||
-                !string.Equals(claimWorker, commit.WorkerId, StringComparison.Ordinal) ||
+                !_claims.TryGetValue(commit.OperationId, out var claim) ||
+                !string.Equals(claim.WorkerId, commit.WorkerId, StringComparison.Ordinal) ||
+                !string.Equals(claim.Token, commit.LeaseToken, StringComparison.Ordinal) ||
+                claim.Version != commit.LeaseVersion ||
                 currentOperation.InstanceId != commit.InstanceId ||
                 !string.Equals(currentOperation.RequestHash, commit.RequestHash, StringComparison.Ordinal))
                 throw new ElsaInstanceLifecycleConflictException("Lifecycle work item is no longer owned by this worker.");
@@ -398,8 +401,10 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
                     FailureCode: existingFailure.Code,
                     FailureSummary: existingFailure.Summary));
             if (currentOperation.State != ElsaInstanceOperationState.Accepted ||
-                !_claims.TryGetValue(failure.OperationId, out var claimWorker) ||
-                !string.Equals(claimWorker, failure.WorkerId, StringComparison.Ordinal) ||
+                !_claims.TryGetValue(failure.OperationId, out var claim) ||
+                !string.Equals(claim.WorkerId, failure.WorkerId, StringComparison.Ordinal) ||
+                !string.Equals(claim.Token, failure.LeaseToken, StringComparison.Ordinal) ||
+                claim.Version != failure.LeaseVersion ||
                 !string.Equals(currentOperation.RequestHash, failure.RequestHash, StringComparison.Ordinal))
                 throw new ElsaInstanceLifecycleConflictException("Lifecycle work item is no longer owned by this worker.");
 
@@ -433,4 +438,9 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
             throw new ArgumentException("Idempotency key is required.", nameof(value));
         return value.Trim();
     }
+
+    private static string CreateLeaseToken() =>
+        Convert.ToHexStringLower(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+
+    private sealed record LifecycleClaim(string WorkerId, string Token, int Version);
 }
