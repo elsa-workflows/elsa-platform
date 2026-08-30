@@ -182,7 +182,7 @@ public sealed class ElsaInstanceLifecycleServiceTests
         var recovered = await service.RecoverAsync(new ElsaInstanceLifecycleRequest(
             WorkspaceId,
             created.Instance.Id,
-            created.Instance.Version,
+            store.Instances.Single().Version,
             "recover-1"));
 
         Assert.False(recovered.Replayed);

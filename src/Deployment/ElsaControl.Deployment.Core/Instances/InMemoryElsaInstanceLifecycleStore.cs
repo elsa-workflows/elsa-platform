@@ -173,7 +173,8 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                 operation.AttemptNumber != commit.ExpectedAttemptNumber || instance.Version != commit.ExpectedInstanceVersion)
                 throw new ElsaInstanceLifecycleConflictException("Provider reconciliation target changed concurrently.");
 
-            _instances[commit.InstanceId] = commit.Instance;
+            var persistedInstance = WithVersion(commit.Instance, checked(commit.ExpectedInstanceVersion + 1));
+            _instances[commit.InstanceId] = persistedInstance;
             _operations[commit.OperationId] = commit.Operation;
             var outcome = commit.Operation.State switch
             {
@@ -184,7 +185,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                 _ => ElsaInstanceProviderReconciliationOutcome.RecoveryRequired
             };
             var result = new ElsaInstanceProviderReconciliationResult(
-                outcome, Projection(commit), commit.DiagnosticCode, commit.RetrySafe, false, commit.ReconciledAt);
+                outcome, Projection(commit, persistedInstance.Version), commit.DiagnosticCode, commit.RetrySafe, false, commit.ReconciledAt);
             _reconciliationResults[commit.OperationId] = new(
                 commit.EvidenceFingerprint,
                 checked(commit.ExpectedReconciliationVersion + 1),
@@ -194,15 +195,36 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
     }
 
     private static ElsaInstanceProviderReconciliationProjection Projection(
-        ElsaInstanceProviderReconciliationCommit commit) => new(
+        ElsaInstanceProviderReconciliationCommit commit,
+        int instanceVersion) => new(
         commit.WorkspaceId,
         commit.InstanceId,
         commit.OperationId,
         commit.Operation.AttemptNumber,
         commit.Instance.ObservedLifecycle,
         commit.Instance.Health,
-        commit.Instance.Version,
+        instanceVersion,
         commit.Operation.State);
+
+    private static ElsaInstance WithVersion(ElsaInstance instance, int version) => ElsaInstance.Hydrate(
+        instance.Id,
+        instance.OrganizationId,
+        instance.WorkspaceId,
+        instance.Name,
+        instance.Slug,
+        instance.Intent,
+        instance.ObservedLifecycle,
+        instance.Health,
+        version,
+        instance.IdentityBinding,
+        instance.DesiredStateRevisionId,
+        instance.ResolvedPlanReference,
+        instance.CurrentResolvedRelease,
+        instance.CurrentDeploymentReference,
+        instance.PlacementAssignmentReference,
+        instance.ElsaTenantReference,
+        instance.LastOperationId,
+        instance.DeletedAt);
 
     /// <summary>
     /// Supplies safe, already-admitted resolution inputs to the worker seam. A real

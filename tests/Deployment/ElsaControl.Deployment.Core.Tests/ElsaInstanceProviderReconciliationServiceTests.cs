@@ -70,6 +70,8 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
         Assert.Equal(ElsaInstanceOperationState.Succeeded, result.Projection.OperationState);
         Assert.Equal(ElsaInstanceProviderReconciliationService.ConvergedCode, result.DiagnosticCode);
         Assert.Equal(Now, result.ReconciledAt);
+        Assert.Equal(checked(accepted.Instance.Version + 1), result.Projection.InstanceVersion);
+        Assert.Equal(result.Projection.InstanceVersion, store.Instances.Single().Version);
     }
 
     [Fact]
