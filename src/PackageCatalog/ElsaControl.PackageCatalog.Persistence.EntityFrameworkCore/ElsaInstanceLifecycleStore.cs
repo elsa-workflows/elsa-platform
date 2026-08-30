@@ -965,8 +965,10 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     .SingleOrDefaultAsync(x => x.Id == deploymentRunId &&
                         x.WorkspaceId == existingOperation.WorkspaceId &&
                         x.ElsaInstanceId == existingOperation.InstanceId, cancellationToken);
-                if (run is null || run.Status != WorkspaceDeploymentRunStatus.RecoveryRequired)
-                    throw Conflict("Managed lifecycle recovery linkage is inconsistent.");
+                if (run is null)
+                    throw Conflict("Managed lifecycle recovery run is missing.");
+                if (run.Status != WorkspaceDeploymentRunStatus.RecoveryRequired)
+                    throw Conflict("Managed lifecycle recovery run is not awaiting recovery.");
 
                 run.Status = WorkspaceDeploymentRunStatus.Queued;
                 run.QueuedAt = requestedAt.ToUniversalTime();
