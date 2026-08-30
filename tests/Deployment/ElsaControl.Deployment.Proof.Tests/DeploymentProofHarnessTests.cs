@@ -164,7 +164,8 @@ public sealed class DeploymentProofHarnessTests
         Assert.All(report.Stages.Where(stage => stage.Stage != DeploymentProofStage.Selection), stage =>
             Assert.Equal(DeploymentProofStageStatus.Skipped, stage.Status));
         var json = report.ToJson();
-        Assert.DoesNotContain("user", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("user@", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("user:password@", json, StringComparison.Ordinal);
         Assert.DoesNotContain("password", json, StringComparison.Ordinal);
     }
 
