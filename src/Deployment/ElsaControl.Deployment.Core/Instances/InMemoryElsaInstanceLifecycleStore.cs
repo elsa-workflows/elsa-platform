@@ -9,9 +9,10 @@ namespace ElsaControl.Deployment.Core.Instances;
 /// models the atomic boundary required of the relational implementation without
 /// introducing persistence or provider concerns into the lifecycle service.
 /// </summary>
-public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleStore, IElsaInstanceLifecycleWorkerStore
+public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvider = null) : IElsaInstanceLifecycleStore, IElsaInstanceLifecycleWorkerStore
 {
     private static readonly TimeSpan WorkerLeaseDuration = TimeSpan.FromMinutes(5);
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly object _gate = new();
     private readonly Dictionary<Guid, ElsaInstance> _instances = [];
     private readonly Dictionary<Guid, ElsaInstanceOperation> _operations = [];
@@ -330,6 +331,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
                 !string.Equals(claim.WorkerId, commit.WorkerId, StringComparison.Ordinal) ||
                 !string.Equals(claim.Token, commit.LeaseToken, StringComparison.Ordinal) ||
                 claim.Version != commit.LeaseVersion ||
+                claim.ExpiresAt <= _timeProvider.GetUtcNow() ||
                 currentOperation.InstanceId != commit.InstanceId ||
                 !string.Equals(currentOperation.RequestHash, commit.RequestHash, StringComparison.Ordinal))
                 throw new ElsaInstanceLifecycleConflictException("Lifecycle work item is no longer owned by this worker.");
@@ -430,6 +432,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore : IElsaInstanceLifecycleS
                 !string.Equals(claim.WorkerId, failure.WorkerId, StringComparison.Ordinal) ||
                 !string.Equals(claim.Token, failure.LeaseToken, StringComparison.Ordinal) ||
                 claim.Version != failure.LeaseVersion ||
+                claim.ExpiresAt <= _timeProvider.GetUtcNow() ||
                 !string.Equals(currentOperation.RequestHash, failure.RequestHash, StringComparison.Ordinal))
                 throw new ElsaInstanceLifecycleConflictException("Lifecycle work item is no longer owned by this worker.");
 

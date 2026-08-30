@@ -1,20 +1,41 @@
 using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Instances;
+using ElsaControl.Deployment.Core.Workspace;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models;
+using ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations;
 using ElsaControl.RuntimeBuilder.Abstractions;
 using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 using ElsaControl.RuntimeBuilder.Abstractions.ReleaseManifests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
 
 public sealed class ElsaInstanceLifecycleStoreTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-08-30T10:00:00Z");
+
+    [Fact]
+    public void Sql_server_resolved_plan_trigger_migration_is_idempotent_and_append_only()
+    {
+        // SQL Server is not a local integration dependency; assert the exact
+        // generated SQL operation so the production migration remains reviewable.
+        var migration = new AddElsaInstanceWorkerPersistence();
+        var up = Assert.Single(migration.UpOperations.OfType<SqlOperation>(),
+            x => x.Sql.Contains("TR_ElsaInstanceResolvedPlans_AppendOnly", StringComparison.Ordinal));
+        var down = Assert.Single(migration.DownOperations.OfType<SqlOperation>(),
+            x => x.Sql.Contains("TR_ElsaInstanceResolvedPlans_AppendOnly", StringComparison.Ordinal));
+
+        Assert.Contains("IF OBJECT_ID(N'dbo.TR_ElsaInstanceResolvedPlans_AppendOnly', N'TR') IS NULL", up.Sql, StringComparison.Ordinal);
+        Assert.Contains("CREATE TRIGGER dbo.TR_ElsaInstanceResolvedPlans_AppendOnly", up.Sql, StringComparison.Ordinal);
+        Assert.Contains("ON dbo.ElsaInstanceResolvedPlans", up.Sql, StringComparison.Ordinal);
+        Assert.Contains("INSTEAD OF UPDATE, DELETE", up.Sql, StringComparison.Ordinal);
+        Assert.Contains("DROP TRIGGER IF EXISTS dbo.TR_ElsaInstanceResolvedPlans_AppendOnly", down.Sql, StringComparison.Ordinal);
+    }
 
     [Fact]
     public void Worker_store_requires_a_governed_resolution_source_at_composition()
@@ -314,6 +335,86 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
+    public async Task Unmanaged_active_run_reserves_the_workspace_environment_for_lifecycle_commit()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Unmanaged reservation workspace");
+        var accepted = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId, workspace.Id, "Worker Elsa", "unmanaged-reservation-elsa", WorkerIntent(), "unmanaged-reservation-create"));
+        var target = await AddManagedEnvironmentAsync(db, workspace, accepted.Instance.Id);
+        db.ChangeTracker.Clear();
+        var unmanagedRunAt = Now.AddMinutes(-1);
+        db.DeploymentRuns.Add(new DeploymentRunEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspace.Id,
+            ElsaInstanceId = null,
+            ApplicationId = target.ApplicationId,
+            EnvironmentId = target.EnvironmentId,
+            EngineId = Guid.NewGuid(),
+            SourceRevisionId = Guid.NewGuid(),
+            Status = WorkspaceDeploymentRunStatus.Queued,
+            ValidationOutcome = DeploymentValidationOutcome.Passed,
+            ConfirmationId = Guid.NewGuid(),
+            ActorAccountId = Guid.NewGuid(),
+            QueuedAt = unmanagedRunAt,
+            CreatedAt = unmanagedRunAt,
+            AttemptNumber = 1
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var store = new EfCoreElsaInstanceLifecycleStore(
+            db,
+            new StaticResolutionInputSource(accepted.Instance, target),
+            new FixedTimeProvider(Now));
+        var item = await store.TryClaimNextAsync("worker-one", Now)
+            ?? throw new InvalidOperationException("Expected a claimed work item.");
+        var result = await store.CommitResolvedAsync(
+            CreateResolutionCommit(item, SuccessfulResolution(workspace.Id, accepted.Instance.Id), Now.AddSeconds(1)));
+
+        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Conflict, result.Outcome);
+        Assert.Equal("run.reservation.conflict", result.FailureCode);
+        Assert.Equal(ElsaInstanceOperationState.Failed,
+            (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == accepted.Operation.Id)).State);
+        Assert.Equal(1, await db.DeploymentRuns.CountAsync());
+        Assert.Empty(await db.ElsaInstanceResolvedPlans.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Finalization_uses_store_clock_when_caller_supplies_a_backdated_timestamp()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Authoritative clock workspace");
+        var accepted = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId, workspace.Id, "Worker Elsa", "authoritative-clock-elsa", WorkerIntent(), "authoritative-clock-create"));
+        var target = await AddManagedEnvironmentAsync(db, workspace, accepted.Instance.Id);
+        var store = new EfCoreElsaInstanceLifecycleStore(
+            db,
+            new StaticResolutionInputSource(accepted.Instance, target),
+            new FixedTimeProvider(Now.AddMinutes(6)));
+        var item = await store.TryClaimNextAsync("worker-one", Now)
+            ?? throw new InvalidOperationException("Expected a claimed work item.");
+
+        var error = await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() => store.CommitResolvedAsync(
+            CreateResolutionCommit(item, SuccessfulResolution(workspace.Id, accepted.Instance.Id), Now.AddMinutes(1))));
+
+        Assert.Equal("Lifecycle work item is no longer owned by this worker.", error.Message);
+        db.ChangeTracker.Clear();
+        Assert.Equal(ElsaInstanceOperationState.Accepted,
+            (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == accepted.Operation.Id)).State);
+        Assert.Empty(await db.DeploymentRuns.ToListAsync());
+    }
+
+    [Fact]
     public async Task Worker_rejects_stale_lease_token_without_partial_finalization()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -440,6 +541,43 @@ public sealed class ElsaInstanceLifecycleStoreTests
             (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == first.Operation.Id)).State);
         Assert.Equal("outbox.invalid",
             (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == first.Operation.Id)).FailureCode);
+        Assert.Equal(ElsaInstanceOperationState.Queued,
+            (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == second.Operation.Id)).State);
+    }
+
+    [Fact]
+    public async Task Untrusted_first_envelope_is_skipped_and_later_valid_work_continues()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Untrusted work workspace");
+        var first = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId, workspace.Id, "Untrusted Elsa", "untrusted-worker-elsa", WorkerIntent(), "untrusted-create"));
+        var second = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now.AddMinutes(1)))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId, workspace.Id, "Valid Elsa", "valid-after-untrusted-elsa", WorkerIntent(), "valid-after-untrusted-create"));
+        var target = await AddManagedEnvironmentAsync(db, workspace, second.Instance.Id);
+
+        // Bypass the application boundary to model a row whose operation cannot
+        // be safely reconstructed. It must not be quarantined or starve later work.
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE ElsaInstanceOperations SET IdempotencyKey = '' WHERE Id = {first.Operation.Id}");
+        db.ChangeTracker.Clear();
+        var store = new EfCoreElsaInstanceLifecycleStore(db, new StaticResolutionInputSource(second.Instance, target));
+        var result = await new ElsaInstanceLifecycleWorker(
+                store,
+                new StaticResolver(SuccessfulResolution(workspace.Id, second.Instance.Id)),
+                new FixedTimeProvider(Now.AddMinutes(2)))
+            .ProcessAvailableAsync("worker-one");
+
+        Assert.Single(result.Results);
+        Assert.Equal(second.Operation.Id, result.Results[0].Operation.Id);
+        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Queued, result.Results[0].Outcome);
+        Assert.Equal(ElsaInstanceOperationState.Accepted,
+            (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == first.Operation.Id)).State);
         Assert.Equal(ElsaInstanceOperationState.Queued,
             (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == second.Operation.Id)).State);
     }

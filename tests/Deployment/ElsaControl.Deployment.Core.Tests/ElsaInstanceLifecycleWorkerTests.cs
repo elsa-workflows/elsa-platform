@@ -16,12 +16,12 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     [Fact]
     public async Task Resolves_accepted_work_and_commits_one_queued_run_atomically()
     {
-        var store = new InMemoryElsaInstanceLifecycleStore();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
         var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
         var accepted = await service.CreateAsync(CreateRequest("claims-prod", "create-1"));
         store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
 
-        var worker = new ElsaInstanceLifecycleWorker(store, new RecordingResolver(SuccessfulResolution()));
+        var worker = new ElsaInstanceLifecycleWorker(store, new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)), new StaticTimeProvider(Now));
 
         var result = await worker.ProcessAvailableAsync("lifecycle-worker-1");
 
@@ -30,7 +30,7 @@ public sealed class ElsaInstanceLifecycleWorkerTests
         var run = Assert.Single(store.DeploymentRuns);
         Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Queued, Assert.Single(result.Results).Outcome);
         Assert.Equal(ElsaInstanceOperationState.Queued, operation.State);
-        Assert.Equal(SuccessfulResolution().Reference, instance.ResolvedPlanReference);
+        Assert.Equal(SuccessfulResolution(WorkspaceId, accepted.Instance.Id).Reference, instance.ResolvedPlanReference);
         Assert.NotNull(instance.CurrentResolvedRelease);
         Assert.Equal("5.0", instance.CurrentResolvedRelease!.ReleaseLine);
         Assert.Equal("5.0.0-preview.1", instance.CurrentResolvedRelease.Version);
@@ -41,16 +41,52 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     }
 
     [Fact]
+    public async Task In_memory_finalization_uses_store_clock_for_lease_expiry()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now.AddMinutes(6)));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var accepted = await service.CreateAsync(CreateRequest("claims-clock", "create-clock"));
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+        var item = await store.TryClaimNextAsync("lifecycle-worker-1", Now)
+            ?? throw new InvalidOperationException("Expected a claimed work item.");
+        var resolution = SuccessfulResolution(WorkspaceId, accepted.Instance.Id);
+        var resolvedInstance = item.Instance.AttachResolvedPlan(resolution.Reference!, resolution.CurrentResolvedRelease!);
+        var commit = new ElsaInstanceLifecycleResolutionCommit(
+            item.Outbox.WorkspaceId,
+            item.Outbox.InstanceId,
+            item.Operation.Id,
+            item.Outbox.Id,
+            item.Outbox.RequestHash,
+            "lifecycle-worker-1",
+            item.Operation.TransitionTo(ElsaInstanceOperationState.Queued),
+            resolvedInstance,
+            new ElsaInstanceLifecycleResolvedPlan(
+                resolution.Reference!,
+                ResolvedElsaApplicationPlanSerialization.Serialize(resolution.Plan!)),
+            item.Resolution.DeploymentTarget,
+            Now.AddMinutes(1),
+            item.LeaseToken,
+            item.LeaseVersion);
+
+        var error = await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(
+            () => store.CommitResolvedAsync(commit));
+
+        Assert.Equal("Lifecycle work item is no longer owned by this worker.", error.Message);
+        Assert.Equal(ElsaInstanceOperationState.Accepted, Assert.Single(store.Operations).State);
+        Assert.Empty(store.DeploymentRuns);
+    }
+
+    [Fact]
     public async Task Resolution_failure_fails_operation_without_creating_a_run()
     {
-        var store = new InMemoryElsaInstanceLifecycleStore();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
         var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
         var accepted = await service.CreateAsync(CreateRequest("claims-failed", "create-failed"));
         store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
         var failure = ElsaInstancePlanResolutionResult.Failed(
             [new("error", "catalog.unavailable", "Required catalog metadata could not be loaded.", "catalog")]);
 
-        var result = await new ElsaInstanceLifecycleWorker(store, new RecordingResolver(failure))
+        var result = await new ElsaInstanceLifecycleWorker(store, new RecordingResolver(failure), new StaticTimeProvider(Now))
             .ProcessAvailableAsync("lifecycle-worker-1");
 
         Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Failed, Assert.Single(result.Results).Outcome);
@@ -64,7 +100,7 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     [Fact]
     public async Task A_bad_item_does_not_stop_the_worker_from_continuing_the_queue()
     {
-        var store = new InMemoryElsaInstanceLifecycleStore();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
         var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
         var first = await service.CreateAsync(CreateRequest("claims-bad", "create-bad"));
         var second = await new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now.AddSeconds(1)))
@@ -74,9 +110,9 @@ public sealed class ElsaInstanceLifecycleWorkerTests
         var resolver = new QueueResolver(
             ElsaInstancePlanResolutionResult.Failed(
                 [new("error", "plan.invalid", "Resolved application plan values are invalid.", "plan")]),
-            SuccessfulResolution());
+            SuccessfulResolution(WorkspaceId, second.Instance.Id));
 
-        var result = await new ElsaInstanceLifecycleWorker(store, resolver)
+        var result = await new ElsaInstanceLifecycleWorker(store, resolver, new StaticTimeProvider(Now))
             .ProcessAvailableAsync("lifecycle-worker-1");
 
         Assert.Equal(2, result.Results.Count);
@@ -91,7 +127,7 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     [Fact]
     public async Task A_malformed_item_is_failed_and_the_next_item_is_still_processed()
     {
-        var store = new InMemoryElsaInstanceLifecycleStore();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
         var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
         var first = await service.CreateAsync(CreateRequest("claims-malformed", "create-malformed"));
         var second = await service.CreateAsync(CreateRequest("claims-after-malformed", "create-after-malformed"));
@@ -104,7 +140,8 @@ public sealed class ElsaInstanceLifecycleWorkerTests
 
         var result = await new ElsaInstanceLifecycleWorker(
                 store,
-                new RecordingResolver(SuccessfulResolution()))
+                new RecordingResolver(SuccessfulResolution(WorkspaceId, second.Instance.Id)),
+                new StaticTimeProvider(Now))
             .ProcessAvailableAsync("lifecycle-worker-1");
 
         Assert.Equal(2, result.Results.Count);
@@ -121,11 +158,11 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     [Fact]
     public async Task Retrying_a_completed_item_is_idempotent_and_does_not_insert_another_run()
     {
-        var store = new InMemoryElsaInstanceLifecycleStore();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
         var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
         var accepted = await service.CreateAsync(CreateRequest("claims-retry", "create-retry"));
         store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
-        var worker = new ElsaInstanceLifecycleWorker(store, new RecordingResolver(SuccessfulResolution()));
+        var worker = new ElsaInstanceLifecycleWorker(store, new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)), new StaticTimeProvider(Now));
 
         var first = await worker.ProcessAvailableAsync("lifecycle-worker-1");
         var second = await worker.ProcessAvailableAsync("lifecycle-worker-1");
@@ -139,7 +176,7 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     [Fact]
     public async Task Active_environment_reservation_conflict_fails_the_losing_operation_without_a_second_run()
     {
-        var store = new InMemoryElsaInstanceLifecycleStore();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
         var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
         var first = await service.CreateAsync(CreateRequest("claims-reservation-1", "create-reservation-1"));
         var second = await service.CreateAsync(CreateRequest("claims-reservation-2", "create-reservation-2"));
@@ -147,7 +184,13 @@ public sealed class ElsaInstanceLifecycleWorkerTests
         store.RegisterResolutionInput(first.Operation.Id, ResolutionInput(first.Instance, environmentId));
         store.RegisterResolutionInput(second.Operation.Id, ResolutionInput(second.Instance, environmentId));
 
-        var result = await new ElsaInstanceLifecycleWorker(store, new RecordingResolver(SuccessfulResolution()))
+        var result = await new ElsaInstanceLifecycleWorker(store, new InstanceResolver(
+                new Dictionary<Guid, ElsaInstancePlanResolutionResult>
+                {
+                    [first.Instance.Id] = SuccessfulResolution(WorkspaceId, first.Instance.Id),
+                    [second.Instance.Id] = SuccessfulResolution(WorkspaceId, second.Instance.Id)
+                }),
+                new StaticTimeProvider(Now))
             .ProcessAvailableAsync("lifecycle-worker-1");
 
         var losing = result.Results.Single(x => x.Outcome == ElsaInstanceLifecycleWorkerOutcome.Conflict);
@@ -161,17 +204,17 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     [Fact]
     public async Task Waiting_delete_is_not_claimed_or_resolved()
     {
-        var store = new InMemoryElsaInstanceLifecycleStore();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
         var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
         var created = await service.CreateAsync(CreateRequest("claims-delete", "create-delete"));
         store.RegisterResolutionInput(created.Operation.Id, ResolutionInput(created.Instance));
-        await new ElsaInstanceLifecycleWorker(store, new RecordingResolver(SuccessfulResolution()))
+        await new ElsaInstanceLifecycleWorker(store, new RecordingResolver(SuccessfulResolution(WorkspaceId, created.Instance.Id)), new StaticTimeProvider(Now))
             .ProcessAvailableAsync("lifecycle-worker-1");
         var deletion = await service.DeleteAsync(new ElsaInstanceLifecycleRequest(
             WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1"));
         store.RegisterResolutionInput(deletion.Operation.Id, ResolutionInput(deletion.Instance));
 
-        var result = await new ElsaInstanceLifecycleWorker(store, new RecordingResolver(SuccessfulResolution()))
+        var result = await new ElsaInstanceLifecycleWorker(store, new RecordingResolver(SuccessfulResolution(WorkspaceId, created.Instance.Id)), new StaticTimeProvider(Now))
             .ProcessAvailableAsync("lifecycle-worker-1");
 
         Assert.Empty(result.Results);
@@ -195,8 +238,8 @@ public sealed class ElsaInstanceLifecycleWorkerTests
                 new(new("future-runtime", null, null, null), [], [], [], null),
                 AdmittedManifest(),
                 "plan_01J5WORKER",
-                "https://control.example.test/api/workspaces/10000000-0000-0000-0000-000000000001/instances/plan_01J5WORKER",
-                WorkspaceId),
+                $"https://control.example.test/api/workspaces/{instance.WorkspaceId:D}/instances/{instance.Id:D}/resolved-plans/plan_01J5WORKER",
+                instance.WorkspaceId),
             new(Guid.NewGuid(), environmentId ?? Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()));
 
     private static ReleaseManifestAdmissionResult AdmittedManifest()
@@ -224,13 +267,13 @@ public sealed class ElsaInstanceLifecycleWorkerTests
             []);
     }
 
-    private static ElsaInstancePlanResolutionResult SuccessfulResolution()
+    private static ElsaInstancePlanResolutionResult SuccessfulResolution(Guid workspaceId, Guid instanceId)
     {
         var provisionalReference = new ElsaResolvedPlanReference(
             "plan_01J5WORKER",
             1,
             "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-            "https://control.example.test/api/workspaces/10000000-0000-0000-0000-000000000001/instances/plan_01J5WORKER");
+            $"https://control.example.test/api/workspaces/{workspaceId:D}/instances/{instanceId:D}/resolved-plans/plan_01J5WORKER");
         var plan = MinimalPlan(provisionalReference);
         var reference = new ElsaResolvedPlanReference(
             provisionalReference.PlanId,
@@ -279,6 +322,15 @@ public sealed class ElsaInstanceLifecycleWorkerTests
 
         public Task<ElsaInstancePlanResolutionResult> ResolveAsync(ElsaInstancePlanResolutionRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(results[Math.Min(Interlocked.Increment(ref _index) - 1, results.Length - 1)]);
+    }
+
+    private sealed class InstanceResolver(IReadOnlyDictionary<Guid, ElsaInstancePlanResolutionResult> results) : IElsaInstancePlanResolver
+    {
+        public Task<ElsaInstancePlanResolutionResult> ResolveAsync(ElsaInstancePlanResolutionRequest request, CancellationToken cancellationToken = default)
+        {
+            var instanceId = request.PlanUri.Split('/', StringSplitOptions.RemoveEmptyEntries)[6];
+            return Task.FromResult(results[Guid.Parse(instanceId)]);
+        }
     }
 
     private sealed class StaticTimeProvider(DateTimeOffset now) : TimeProvider

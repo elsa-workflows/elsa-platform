@@ -23,12 +23,14 @@ namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 /// </summary>
 public sealed class EfCoreElsaInstanceLifecycleStore(
     CatalogDbContext dbContext,
-    IElsaInstanceLifecycleResolutionInputSource resolutionInputSource) :
+    IElsaInstanceLifecycleResolutionInputSource resolutionInputSource,
+    TimeProvider? timeProvider = null) :
     IElsaInstanceLifecycleStore,
     IElsaInstanceLifecycleWorkerStore
 {
     private readonly IElsaInstanceLifecycleResolutionInputSource _resolutionInputSource =
         resolutionInputSource ?? throw new ArgumentNullException(nameof(resolutionInputSource));
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private static readonly TimeSpan WorkerLeaseDuration = TimeSpan.FromMinutes(5);
     private static readonly JsonDocumentOptions SafeJsonOptions = new()
     {
@@ -280,6 +282,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         ElsaInstance instance = null!;
         string leaseToken = null!;
         var leaseVersion = 0;
+        const int MaxSkippedCandidates = 1024;
+        var skippedCandidateIds = new HashSet<Guid>();
         while (true)
         {
             var quarantined = false;
@@ -295,6 +299,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 var candidate = await dbContext.ElsaInstanceLifecycleOutbox
                     .AsNoTracking()
                     .Where(x => x.Operation != null &&
+                                !skippedCandidateIds.Contains(x.Id) &&
                                 x.Operation.State == ElsaInstanceOperationState.Accepted &&
                                 (x.Operation.WorkerId == null ||
                                  x.Operation.LeaseExpiresAt == null ||
@@ -311,8 +316,16 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 var operationEntity = await dbContext.ElsaInstanceOperations
                     .SingleOrDefaultAsync(x => x.Id == candidate.OperationId, cancellationToken);
                 var instanceEntity = await LoadTrackedInstanceAsync(candidate.InstanceId, cancellationToken);
-                if (operationEntity is null || instanceEntity is null ||
-                    operationEntity.State != ElsaInstanceOperationState.Accepted ||
+                if (operationEntity is null || instanceEntity is null)
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    dbContext.ChangeTracker.Clear();
+                    skippedCandidateIds.Add(candidate.Id);
+                    if (skippedCandidateIds.Count >= MaxSkippedCandidates)
+                        return null;
+                    continue;
+                }
+                if (operationEntity.State != ElsaInstanceOperationState.Accepted ||
                     (operationEntity.WorkerId is not null && operationEntity.LeaseExpiresAt > nowUtc))
                 {
                     await transaction.CommitAsync(cancellationToken);
@@ -327,13 +340,29 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     {
                         await transaction.CommitAsync(cancellationToken);
                         dbContext.ChangeTracker.Clear();
-                        return null;
+                        skippedCandidateIds.Add(candidate.Id);
+                        if (skippedCandidateIds.Count >= MaxSkippedCandidates)
+                            return null;
+                        continue;
                     }
 
-                    await QuarantinePersistedWorkItemAsync(
-                        operationEntity, instanceEntity, nowUtc, cancellationToken);
-                    await transaction.CommitAsync(cancellationToken);
-                    quarantined = true;
+                    try
+                    {
+                        await QuarantinePersistedWorkItemAsync(
+                            operationEntity, instanceEntity, nowUtc, cancellationToken);
+                        await transaction.CommitAsync(cancellationToken);
+                        quarantined = true;
+                    }
+                    catch (Exception exception) when (exception is InvalidOperationException or DbUpdateException or DbException)
+                    {
+                        // A malformed row may be identifiable but still fail the
+                        // context's durable-row validation. The transaction rolls
+                        // back and this candidate is excluded for this scan.
+                        dbContext.ChangeTracker.Clear();
+                        skippedCandidateIds.Add(candidate.Id);
+                        if (skippedCandidateIds.Count >= MaxSkippedCandidates)
+                            return null;
+                    }
                 }
                 else
                 {
@@ -443,7 +472,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     MapDeploymentRun(existingRun));
             }
 
-            EnsureLease(commit, operation);
+            EnsureLease(commit, operation, _timeProvider.GetUtcNow());
             if (instance.Version != commit.Instance.Version)
                 throw Conflict("Lifecycle instance changed while it was being resolved.");
             var environment = await dbContext.DeploymentEnvironments
@@ -455,8 +484,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 throw Conflict("Lifecycle deployment target is not bound to the instance.");
 
             var activeRun = await dbContext.DeploymentRuns
-                .Where(x => x.ElsaInstanceId != null &&
-                            x.WorkspaceId == commit.WorkspaceId &&
+                .Where(x => x.WorkspaceId == commit.WorkspaceId &&
                             x.EnvironmentId == commit.DeploymentTarget.EnvironmentId &&
                             (x.Status == WorkspaceDeploymentRunStatus.Queued ||
                              x.Status == WorkspaceDeploymentRunStatus.Running ||
@@ -606,7 +634,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     FailureSummary: operation.FailureSummary);
             }
 
-            EnsureLease(failure, operation);
+            EnsureLease(failure, operation, _timeProvider.GetUtcNow());
             var priorObservedLifecycle = instance.ObservedLifecycle;
             operation.State = ElsaInstanceOperationState.Failed;
             operation.FailureCode = failure.Code;
@@ -856,25 +884,27 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
 
     private static void EnsureLease(
         ElsaInstanceLifecycleResolutionCommit commit,
-        ElsaInstanceOperationEntity operation)
+        ElsaInstanceOperationEntity operation,
+        DateTimeOffset now)
     {
         if (operation.State != ElsaInstanceOperationState.Accepted ||
             !string.Equals(operation.WorkerId, commit.WorkerId, StringComparison.Ordinal) ||
             operation.LeaseVersion != commit.LeaseVersion ||
             !string.Equals(operation.LeaseTokenHash, HashLeaseToken(commit.LeaseToken!), StringComparison.Ordinal) ||
-            operation.LeaseExpiresAt is null || operation.LeaseExpiresAt <= commit.CommittedAt)
+            operation.LeaseExpiresAt is null || operation.LeaseExpiresAt <= now)
             throw Conflict("Lifecycle work item is no longer owned by this worker.");
     }
 
     private static void EnsureLease(
         ElsaInstanceLifecycleResolutionFailure failure,
-        ElsaInstanceOperationEntity operation)
+        ElsaInstanceOperationEntity operation,
+        DateTimeOffset now)
     {
         if (operation.State != ElsaInstanceOperationState.Accepted ||
             !string.Equals(operation.WorkerId, failure.WorkerId, StringComparison.Ordinal) ||
             operation.LeaseVersion != failure.LeaseVersion ||
             !string.Equals(operation.LeaseTokenHash, HashLeaseToken(failure.LeaseToken!), StringComparison.Ordinal) ||
-            operation.LeaseExpiresAt is null || operation.LeaseExpiresAt <= failure.FailedAt)
+            operation.LeaseExpiresAt is null || operation.LeaseExpiresAt <= now)
             throw Conflict("Lifecycle work item is no longer owned by this worker.");
     }
 
@@ -963,8 +993,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             throw Conflict("Lifecycle work item no longer exists.");
 
         var activeRun = await dbContext.DeploymentRuns
-            .Where(x => x.ElsaInstanceId != null &&
-                        x.WorkspaceId == commit.WorkspaceId &&
+            .Where(x => x.WorkspaceId == commit.WorkspaceId &&
                         x.EnvironmentId == commit.DeploymentTarget.EnvironmentId &&
                         (x.Status == WorkspaceDeploymentRunStatus.Queued ||
                          x.Status == WorkspaceDeploymentRunStatus.Running ||
@@ -1065,6 +1094,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         ElsaInstanceEntity? instance)
     {
         return operation is not null && instance is not null &&
+               candidate.Id != Guid.Empty &&
                candidate.OperationId != Guid.Empty && candidate.InstanceId != Guid.Empty &&
                operation.Id == candidate.OperationId &&
                operation.InstanceId == candidate.InstanceId &&
@@ -1076,8 +1106,40 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                operation.WorkspaceId == instance.WorkspaceId &&
                instance.Id == candidate.InstanceId &&
                instance.WorkspaceId == candidate.WorkspaceId &&
-               IsCanonicalHash(operation.RequestHash);
+               IsCanonicalHash(operation.RequestHash) &&
+               IsSafePersistedReference(operation.IdempotencyScope, 256) &&
+               IsSafePersistedToken(operation.IdempotencyKey, 128) &&
+               operation.ExpectedVersion >= 1 && operation.AttemptNumber >= 1 &&
+               IsOptionalSafePersistedToken(operation.WorkerId, 256) &&
+               IsOptionalCanonicalHash(operation.LeaseTokenHash) &&
+               IsOptionalSafePersistedReference(operation.DesiredStateRevisionId, 128) &&
+               IsOptionalSafePersistedReference(operation.ResolvedPlanId, 128) &&
+               IsOptionalSafePersistedCode(operation.FailureCode) &&
+               IsOptionalSafePersistedReference(instance.DesiredStateRevisionId, 128);
     }
+
+    private static bool IsSafePersistedReference(string? value, int maxLength) =>
+        value is not null && value.Length > 0 && value.Length <= maxLength && value == value.Trim() &&
+        value.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '.' or '-' or '_' or ':' or '/' or '+');
+
+    private static bool IsSafePersistedToken(string? value, int maxLength) =>
+        IsSafePersistedReference(value, maxLength) &&
+        !value!.Contains('/', StringComparison.Ordinal) &&
+        !value!.Contains(':', StringComparison.Ordinal) &&
+        !value!.Contains('+', StringComparison.Ordinal);
+
+    private static bool IsOptionalSafePersistedReference(string? value, int maxLength) =>
+        value is null || IsSafePersistedReference(value, maxLength);
+
+    private static bool IsOptionalSafePersistedToken(string? value, int maxLength) =>
+        value is null || IsSafePersistedToken(value, maxLength);
+
+    private static bool IsOptionalCanonicalHash(string? value) =>
+        value is null || IsCanonicalHash(value);
+
+    private static bool IsOptionalSafePersistedCode(string? value) =>
+        value is null || (value.Length is > 0 and <= 128 && value == value.Trim() &&
+                          value.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '.' or '-' or '_' or ':'));
 
     private static WorkspaceDeploymentRun MapDeploymentRun(DeploymentRunEntity entity) =>
         new(

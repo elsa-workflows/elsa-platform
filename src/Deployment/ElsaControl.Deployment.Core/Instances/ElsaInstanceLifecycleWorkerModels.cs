@@ -137,11 +137,38 @@ public sealed record ElsaInstanceLifecycleResolutionCommit(
         if (Operation.State != ElsaInstanceOperationState.Queued || Operation.Id != OperationId ||
             Operation.InstanceId != InstanceId || Instance.Id != InstanceId || Instance.WorkspaceId != WorkspaceId ||
             !string.Equals(Operation.RequestHash, RequestHash, StringComparison.Ordinal) ||
+            !IsExactPlanUri(Plan.Reference.PlanUri, WorkspaceId, InstanceId, Plan.Reference.PlanId) ||
             Instance.ResolvedPlanReference is null ||
             !Equals(Instance.ResolvedPlanReference, Plan.Reference) ||
             Instance.CurrentResolvedRelease is null ||
             !Equals(Instance.CurrentResolvedRelease.PlanReference, Plan.Reference))
             throw new InvalidOperationException("Lifecycle resolution commit state is invalid.");
+    }
+
+    private static bool IsExactPlanUri(string value, Guid workspaceId, Guid instanceId, string planId)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(uri.Host) || uri.UserInfo.Length != 0 ||
+            uri.Query.Length != 0 || uri.Fragment.Length != 0)
+            return false;
+
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length == 7 &&
+               string.Equals(segments[0], "api", StringComparison.Ordinal) &&
+               string.Equals(segments[1], "workspaces", StringComparison.Ordinal) &&
+               Guid.TryParseExact(segments[2], "D", out var uriWorkspaceId) &&
+               uriWorkspaceId == workspaceId &&
+               string.Equals(segments[3], "instances", StringComparison.Ordinal) &&
+               Guid.TryParseExact(segments[4], "D", out var uriInstanceId) &&
+               uriInstanceId == instanceId &&
+               string.Equals(segments[5], "resolved-plans", StringComparison.Ordinal) &&
+               string.Equals(segments[6], planId, StringComparison.Ordinal) &&
+               uri.AbsolutePath.EndsWith('/' + planId, StringComparison.Ordinal) &&
+               !uri.AbsolutePath.Contains('%', StringComparison.Ordinal) &&
+               !uri.AbsolutePath.Contains('\\', StringComparison.Ordinal) &&
+               !uri.AbsolutePath.Contains("//", StringComparison.Ordinal) &&
+               !segments.Any(segment => segment is "." or "..");
     }
 }
 

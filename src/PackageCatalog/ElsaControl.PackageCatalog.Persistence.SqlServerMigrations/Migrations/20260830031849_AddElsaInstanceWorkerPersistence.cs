@@ -73,19 +73,22 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 unique: true);
 
             migrationBuilder.Sql("""
-                EXEC(N'CREATE TRIGGER TR_ElsaInstanceResolvedPlans_AppendOnly
-                ON ElsaInstanceResolvedPlans
-                INSTEAD OF UPDATE, DELETE
-                AS BEGIN
-                    THROW 51007, ''Elsa instance resolved plans are append-only'', 1;
-                END;');
+                IF OBJECT_ID(N'dbo.TR_ElsaInstanceResolvedPlans_AppendOnly', N'TR') IS NULL
+                BEGIN
+                    EXEC(N'CREATE TRIGGER dbo.TR_ElsaInstanceResolvedPlans_AppendOnly
+                    ON dbo.ElsaInstanceResolvedPlans
+                    INSTEAD OF UPDATE, DELETE
+                    AS BEGIN
+                        THROW 51007, ''Elsa instance resolved plans are append-only'', 1;
+                    END;');
+                END;
                 """);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.Sql("DROP TRIGGER IF EXISTS TR_ElsaInstanceResolvedPlans_AppendOnly;");
+            migrationBuilder.Sql("DROP TRIGGER IF EXISTS dbo.TR_ElsaInstanceResolvedPlans_AppendOnly;");
 
             migrationBuilder.DropTable(
                 name: "ElsaInstanceResolvedPlans");
