@@ -73,6 +73,17 @@ public sealed class ElsaInstanceMigrationSourceReleaseWorkerTests
             TimeProvider.System, TimeSpan.FromTicks(1)));
     }
 
+    [Fact]
+    public void Provider_correlation_identifier_matches_persistence_safe_reference_rules()
+    {
+        var result = new ElsaInstanceSourceReleaseResult(
+            ElsaInstanceSourceReleaseOutcome.Confirmed, "migration.source-release.confirmed",
+            "provider+operation/1", "https://evidence.example/migrations/release-1",
+            "sha256:" + new string('d', 64));
+
+        Assert.Same(result, result.Validate());
+    }
+
     private static ElsaInstanceMigration RetiringMigration()
     {
         var source = Reference("source", "3.10", "3.10.4", 'a');

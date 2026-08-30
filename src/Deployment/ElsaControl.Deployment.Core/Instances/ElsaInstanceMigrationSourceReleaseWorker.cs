@@ -21,7 +21,7 @@ public sealed record ElsaInstanceSourceReleaseResult(
             EvidenceDigest is { } evidenceDigest)
         {
             if (correlationId.Length > 128 || correlationId.Any(character =>
-                    !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.' or ':' or '/')))
+                    !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.' or ':' or '/' or '+')))
                 throw new ArgumentException("Provider correlation identifier is invalid.", nameof(ProviderCorrelationId));
             _ = new ElsaInstanceCleanupEvidence(evidenceReference, evidenceDigest);
         }
