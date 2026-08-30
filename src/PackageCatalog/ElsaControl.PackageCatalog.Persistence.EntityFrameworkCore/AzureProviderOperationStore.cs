@@ -152,8 +152,14 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             .Select(x => new AzureProviderDiagnostic(x.Code, x.Code))
             .ToArray();
         var diagnosticsJson = JsonSerializer.Serialize(safeDiagnostics);
+        var lastTransitionCode = await db.AzureProviderOperationTransitions.AsNoTracking()
+            .Where(x => x.OperationId == entity.Id)
+            .OrderByDescending(x => x.Sequence)
+            .Select(x => x.Code)
+            .FirstOrDefaultAsync(cancellationToken);
         if (entity.Phase == checkpoint.Phase && entity.Endpoint == checkpoint.Endpoint && entity.Health == checkpoint.Health &&
-            entity.DiagnosticsJson == diagnosticsJson && ResourcesEqual(entity, checkpoint.Resources))
+            entity.DiagnosticsJson == diagnosticsJson && ResourcesEqual(entity, checkpoint.Resources) &&
+            lastTransitionCode == checkpoint.Code)
             return ToModel(entity);
         entity.Phase = checkpoint.Phase; entity.CheckpointSequence++; entity.Version++; entity.UpdatedAt = now;
         entity.ResourceGroupName = checkpoint.Resources.ResourceGroupName; entity.FoundationDeploymentId = checkpoint.Resources.FoundationDeploymentId;
