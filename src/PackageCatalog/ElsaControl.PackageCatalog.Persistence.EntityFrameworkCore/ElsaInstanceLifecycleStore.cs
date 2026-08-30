@@ -140,6 +140,10 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
 
             var priorObservedLifecycle = instance.ObservedLifecycle;
             ApplyAggregate(instance, commit.Instance);
+            if (commit.Operation.State == ElsaInstanceOperationState.Succeeded &&
+                commit.Instance.ObservedLifecycle == ElsaObservedLifecycle.Ready &&
+                commit.Instance.Health == ElsaInstanceHealth.Healthy)
+                SynchronizeIdentityBinding(instance, commit.ReconciledAt);
             instance.UpdatedAt = commit.ReconciledAt.ToUniversalTime();
             operation.State = commit.Operation.State;
             operation.FailureCode = commit.Operation.State == ElsaInstanceOperationState.RecoveryRequired && commit.RetrySafe
@@ -194,7 +198,10 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
 
             await dbContext.DeploymentRunHistoryEvents.AddAsync(new()
             {
-                Id = Guid.NewGuid(), WorkspaceId = commit.WorkspaceId, RunId = run.Id, Status = run.Status,
+                Id = Guid.NewGuid(),
+                WorkspaceId = commit.WorkspaceId,
+                RunId = run.Id,
+                Status = run.Status,
                 Message = "Provider state reconciliation recorded a deterministic lifecycle outcome.",
                 CreatedAt = commit.ReconciledAt.ToUniversalTime()
             }, cancellationToken);
@@ -1340,6 +1347,42 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         return await dbContext.ElsaInstances
             .Include(x => x.IdentityBinding)
             .SingleOrDefaultAsync(x => x.Id == instanceId, cancellationToken);
+    }
+
+    private static void SynchronizeIdentityBinding(ElsaInstanceEntity instance, DateTimeOffset changedAt)
+    {
+        if (!Uri.TryCreate(instance.CurrentDeploymentEndpointUri, UriKind.Absolute, out var endpoint))
+            return;
+
+        var verifiedOrigin = endpoint.GetLeftPart(UriPartial.Authority);
+        if (instance.IdentityBinding is null)
+        {
+            var created = ElsaInstanceIdentityBinding.Create(instance.Id, verifiedOrigin, changedAt);
+            instance.IdentityBinding = new ElsaInstanceIdentityBindingEntity
+            {
+                InstanceId = instance.Id,
+                Audience = created.Audience,
+                CanonicalCallbackUri = created.CanonicalCallbackUri,
+                VerifiedEndpointOrigin = created.VerifiedEndpointOrigin,
+                BindingVersion = created.BindingVersion,
+                ChangedAt = created.ChangedAt
+            };
+            return;
+        }
+
+        var persisted = instance.IdentityBinding;
+        var current = ElsaInstanceIdentityBinding.Hydrate(
+            instance.Id, persisted.VerifiedEndpointOrigin, persisted.BindingVersion, persisted.ChangedAt);
+        if (string.Equals(current.VerifiedEndpointOrigin, verifiedOrigin, StringComparison.Ordinal))
+            return;
+
+        var rotationTime = changedAt <= current.ChangedAt ? current.ChangedAt.AddTicks(1) : changedAt;
+        var rotated = current.Rotate(verifiedOrigin, rotationTime);
+        persisted.Audience = rotated.Audience;
+        persisted.CanonicalCallbackUri = rotated.CanonicalCallbackUri;
+        persisted.VerifiedEndpointOrigin = rotated.VerifiedEndpointOrigin;
+        persisted.BindingVersion = rotated.BindingVersion;
+        persisted.ChangedAt = rotated.ChangedAt;
     }
 
     private async Task AddIntentRevisionIfNeededAsync(

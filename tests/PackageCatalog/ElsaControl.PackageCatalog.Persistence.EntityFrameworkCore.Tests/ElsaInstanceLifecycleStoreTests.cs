@@ -749,7 +749,6 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal(1, await workspaceStore.MarkStaleRunningRunsRecoveryRequiredAsync(
             Now.AddMinutes(10), TimeSpan.FromMinutes(5)));
         db.ChangeTracker.Clear();
-
         var lifecycleStore = CreateStore(db);
         var reconciliation = new ElsaInstanceProviderReconciliationService(
             lifecycleStore,
@@ -798,6 +797,11 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal(1, await workspaceStore.MarkStaleRunningRunsRecoveryRequiredAsync(
             Now.AddMinutes(10), TimeSpan.FromMinutes(5)));
         db.ChangeTracker.Clear();
+        var deploymentTarget = await db.ElsaInstances.SingleAsync(x => x.Id == accepted.Instance.Id);
+        deploymentTarget.CurrentDeploymentId = "deployment-reconciled";
+        deploymentTarget.CurrentDeploymentEndpointUri = "https://managed.example.test/runtime/health";
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
 
         var port = new QueueProviderPort(
             new(ElsaInstanceProviderObservationKind.Ambiguous, ElsaObservedLifecycle.Unknown,
@@ -838,6 +842,10 @@ public sealed class ElsaInstanceLifecycleStoreTests
             .SingleAsync();
         Assert.Equal(persistedInstanceVersion, converged.Projection.InstanceVersion);
         Assert.Equal(persistedInstanceVersion, operation.ReconciledInstanceVersion);
+        var identityBinding = await db.ElsaInstanceIdentityBindings.SingleAsync(x => x.InstanceId == accepted.Instance.Id);
+        Assert.Equal(ElsaInstanceIdentityBinding.AudienceFor(accepted.Instance.Id), identityBinding.Audience);
+        Assert.Equal("https://managed.example.test/managed-elsa/handoff/callback",
+            identityBinding.CanonicalCallbackUri);
         Assert.Equal(2, await db.ElsaInstanceAuditEvents.CountAsync(x =>
             x.OperationId == accepted.Operation.Id && x.EventType == "lifecycle.reconciled"));
         Assert.Equal("https://evidence.example/retry/provider-observation-1",

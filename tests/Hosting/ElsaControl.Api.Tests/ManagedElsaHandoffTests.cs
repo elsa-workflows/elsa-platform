@@ -4,7 +4,11 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.IdentityModel.Tokens.Jwt;
 using ElsaControl.Api.Authentication;
+using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.PackageCatalog.Core.Accounts;
+using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -53,6 +57,62 @@ public sealed class ManagedElsaHandoffTests
     }
 
     [Fact]
+    public async Task Production_wiring_issues_from_persisted_instance_binding_and_owner_permission()
+    {
+        await using var app = new ControlApiTestApplication(new Dictionary<string, string?>
+        {
+            [$"{ManagedElsaHandoffDefaults.ConfigurationSection}:Enabled"] = "true"
+        });
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateControlIdentityClient(subject: "managed-owner");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        var instanceId = Guid.NewGuid();
+        Guid organizationId;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+            var workspace = await db.Workspaces.SingleAsync(x => x.Id == workspaceId);
+            organizationId = workspace.OrganizationId;
+            var now = DateTimeOffset.UtcNow;
+            var lifecycle = new ElsaInstanceLifecycleService(
+                new EfCoreElsaInstanceLifecycleStore(db, new EmptyLifecycleResolutionInputSource()));
+            await lifecycle.CreateAsync(new ElsaInstanceCreateRequest(
+                organizationId,
+                workspaceId,
+                "Managed Elsa",
+                "managed-elsa",
+                new ElsaInstanceIntent(
+                    new ElsaReleaseIntent("server-studio", "3.10", "3.10.4"),
+                    new ElsaApplicationIntent("combined"),
+                    new ElsaPlacementIntent(
+                        "managed", "westeurope", "dedicated", "standard-small", "public", "managed")),
+                "managed-handoff-production-wiring",
+                instanceId));
+            var identities = scope.ServiceProvider.GetRequiredService<IManagedElsaInstanceIdentityStore>();
+            Assert.True((await identities.BindAsync(
+                organizationId, workspaceId, instanceId, "https://managed.example.test", null, now)).Succeeded);
+        }
+
+        var audience = ElsaInstanceIdentityBinding.AudienceFor(instanceId);
+        var callback = ElsaInstanceIdentityBinding.CanonicalizeCallbackUri("https://managed.example.test");
+        var response = await client.PostControlJsonAsync(
+            "/api/managed-elsa/handoff/issue",
+            new ManagedElsaHandoffIssueRequest(
+                organizationId, instanceId, audience, callback,
+                ManagedElsaHandoffIssuer.CreateCodeChallenge(CodeVerifier)));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    private sealed class EmptyLifecycleResolutionInputSource : IElsaInstanceLifecycleResolutionInputSource
+    {
+        public Task<ElsaInstanceLifecycleResolutionInput?> GetAsync(
+            ElsaInstance instance,
+            ElsaInstanceOperation operation,
+            CancellationToken cancellationToken = default) => Task.FromResult<ElsaInstanceLifecycleResolutionInput?>(null);
+    }
+
+    [Fact]
     public async Task Handoff_endpoint_rejects_cross_organization_target()
     {
         var authorizer = new FakeHandoffAuthorizer(Guid.NewGuid(), Guid.NewGuid());
@@ -66,6 +126,25 @@ public sealed class ManagedElsaHandoffTests
                 Guid.NewGuid(),
                 authorizer.InstanceId,
                 authorizer.Audience,
+                authorizer.RedirectUri.OriginalString,
+                authorizer.CodeChallenge));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Denied_caller_controlled_target_is_a_safe_forbidden_response()
+    {
+        var authorizer = new FakeHandoffAuthorizer(Guid.NewGuid(), Guid.NewGuid());
+        await using var app = CreateApplication(authorizer);
+        await app.SeedAsync(_ => Task.CompletedTask);
+
+        var response = await app.CreateControlIdentityClient(subject: "handoff-user").PostControlJsonAsync(
+            "/api/managed-elsa/handoff/issue",
+            new ManagedElsaHandoffIssueRequest(
+                Guid.Empty,
+                Guid.Empty,
+                "caller-controlled-audience",
                 authorizer.RedirectUri.OriginalString,
                 authorizer.CodeChallenge));
 
@@ -206,6 +285,18 @@ public sealed class ManagedElsaHandoffTests
         var result = await fixture.RedeemAsync(token);
 
         Assert.Equal(ManagedElsaHandoffRedeemFailure.AuthorizationRevoked, result.Failure);
+    }
+
+    [Fact]
+    public async Task Legacy_token_without_binding_version_is_bounded_to_version_one()
+    {
+        using var fixture = CreateFixture();
+        fixture.Authorizer.BindingVersion = 1;
+
+        var result = await fixture.RedeemAsync(fixture.IssueWithoutBindingVersion());
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(1, result.Claims!.BindingVersion);
     }
 
     [Fact]
@@ -389,6 +480,24 @@ public sealed class ManagedElsaHandoffTests
                 NotBefore = source.ValidFrom,
                 Expires = source.ValidTo,
                 TokenType = tokenType,
+                SigningCredentials = KeyRing.ActiveSigningCredentials
+            }));
+        }
+
+        public string IssueWithoutBindingVersion()
+        {
+            var handler = new JwtSecurityTokenHandler();
+            var source = handler.ReadJwtToken(Issue());
+            return handler.WriteToken(handler.CreateToken(new Microsoft.IdentityModel.Tokens.SecurityTokenDescriptor
+            {
+                Issuer = source.Issuer,
+                Audience = source.Audiences.Single(),
+                Subject = new System.Security.Claims.ClaimsIdentity(
+                    source.Claims.Where(claim => claim.Type != "binding_version")),
+                IssuedAt = source.ValidFrom,
+                NotBefore = source.ValidFrom,
+                Expires = source.ValidTo,
+                TokenType = ManagedElsaHandoffDefaults.TokenType,
                 SigningCredentials = KeyRing.ActiveSigningCredentials
             }));
         }

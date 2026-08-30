@@ -30,20 +30,24 @@ public sealed class ManagedElsaHandoffOptions
 
 public sealed class ManagedElsaHandoffConfigurationValidator(
     IHostEnvironment environment,
-    IOptions<ManagedElsaHandoffOptions> options) : IHostedService
+    IOptions<ManagedElsaHandoffOptions> options,
+    IServiceProvider services) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken)
     {
         var validated = ManagedElsaHandoffIssuer.ValidateOptions(options.Value);
         if (validated.Enabled)
         {
+            var localEnvironment = environment.IsDevelopment() || environment.IsEnvironment("Testing");
             var hasConfiguredActiveKey = !string.IsNullOrWhiteSpace(validated.ActiveKeyId) &&
                                          !string.IsNullOrWhiteSpace(validated.ActivePrivateKeyPem);
-            if (environment.IsProduction() && !hasConfiguredActiveKey)
+            if (!localEnvironment && !hasConfiguredActiveKey)
                 throw new InvalidOperationException(
-                    "Managed Elsa handoff requires a configured active signing key in Production.");
+                    "Managed Elsa handoff requires a configured active signing key outside local environments.");
             if (hasConfiguredActiveKey)
                 ManagedElsaHandoffKeyRing.ValidateConfigured(validated);
+            if (!localEnvironment)
+                _ = services.GetRequiredService<ManagedElsaHandoffKeyRing>().ActiveKeyId;
         }
 
         return Task.CompletedTask;
@@ -520,7 +524,7 @@ public sealed class ManagedElsaHandoffRedeemer(
         var controlSubject = RequiredClaim(principal, "control_sub");
         var organizationId = RequiredGuid(principal, "org_id");
         var instanceId = RequiredGuid(principal, "instance_id");
-        var bindingVersion = RequiredPositiveInt(principal, "binding_version");
+        var bindingVersion = OptionalPositiveInt(principal, "binding_version", 1);
         var codeChallenge = RequiredClaim(principal, "code_challenge");
         var audience = RequiredClaim(principal, JwtRegisteredClaimNames.Aud);
         var redirectUri = new Uri(RequiredClaim(principal, "redirect_uri"), UriKind.Absolute);
@@ -586,6 +590,11 @@ public sealed class ManagedElsaHandoffRedeemer(
             System.Globalization.CultureInfo.InvariantCulture, out var value) && value > 0
             ? value
             : throw new SecurityTokenException($"Handoff claim '{claimType}' is not a positive integer.");
+
+    private static int OptionalPositiveInt(ClaimsPrincipal principal, string claimType, int legacyDefault) =>
+        principal.FindFirst(claimType) is null
+            ? legacyDefault
+            : RequiredPositiveInt(principal, claimType);
 }
 
 public sealed class ManagedElsaHandoffService(
@@ -612,9 +621,9 @@ public sealed class ManagedElsaHandoffService(
                 "issue.authorization_denied",
                 "",
                 null,
-                request.OrganizationId,
-                request.InstanceId,
-                request.Audience,
+                null,
+                null,
+                null,
                 timeProvider.GetUtcNow(),
                 CorrelationId: context.TraceIdentifier), cancellationToken);
             return null;
