@@ -276,6 +276,18 @@ public sealed class ElsaInstancePlanResolver(
 
         foreach (var suppliedValue in supplied)
         {
+            if (string.IsNullOrWhiteSpace(suppliedValue.Setting))
+            {
+                findings.Add(Error("configuration.key.required", "A configuration setting identity is required.", "configuration.entries"));
+                continue;
+            }
+
+            if (!ConfigurationKeyPolicy.IsSafe(suppliedValue.Setting))
+            {
+                findings.Add(Error("configuration.key.invalid", "Configuration key must be a canonical safe identifier.", "configuration.entries"));
+                continue;
+            }
+
             if (ambiguousSettingNames.Contains(suppliedValue.Setting))
                 continue;
 
@@ -314,7 +326,13 @@ public sealed class ElsaInstancePlanResolver(
             var key = matching.Name;
             if (string.IsNullOrWhiteSpace(key))
             {
-                findings.Add(Error("configuration.key.required", "A configuration setting identity is required.", "configuration"));
+                findings.Add(Error("configuration.key.required", "A configuration setting identity is required.", "configuration.entries"));
+                continue;
+            }
+
+            if (!ConfigurationKeyPolicy.IsSafe(key))
+            {
+                findings.Add(Error("configuration.key.invalid", "Configuration key must be a canonical safe identifier.", "configuration.entries"));
                 continue;
             }
 
@@ -364,7 +382,13 @@ public sealed class ElsaInstancePlanResolver(
             {
                 if (string.IsNullOrWhiteSpace(setting.Name))
                 {
-                    findings.Add(Error("configuration.key.required", "A configuration setting identity is required.", "configuration"));
+                    findings.Add(Error("configuration.key.required", "A configuration setting identity is required.", "configuration.entries"));
+                    continue;
+                }
+
+                if (!ConfigurationKeyPolicy.IsSafe(setting.Name))
+                {
+                    findings.Add(Error("configuration.key.invalid", "Configuration key must be a canonical safe identifier.", "configuration.entries"));
                     continue;
                 }
 
@@ -444,6 +468,12 @@ public sealed class ElsaInstancePlanResolver(
             }
 
             var key = $"featureOverride.{overrideValue.Key}";
+            if (!ConfigurationKeyPolicy.IsSafe(key))
+            {
+                findings.Add(Error("configuration.key.invalid", "Configuration key must be a canonical safe identifier.", "configuration.entries"));
+                continue;
+            }
+
             if (ContainsSensitiveKey(key) || ContainsSecretLikeValue(JsonSerializer.SerializeToElement(overrideValue.Value.Value)))
             {
                 findings.Add(Error("configuration.secretValue.forbidden", "Secret values cannot be embedded in a resolved plan.", "configuration"));

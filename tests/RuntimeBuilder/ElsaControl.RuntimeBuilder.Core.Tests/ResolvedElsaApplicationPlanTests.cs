@@ -179,6 +179,60 @@ public sealed class ResolvedElsaApplicationPlanTests
     }
 
     [Theory]
+    [InlineData("invalid\nkey")]
+    [InlineData("invalid\0key")]
+    [InlineData(" invalid")]
+    [InlineData("invalid ")]
+    [InlineData("invalid/key")]
+    public void Validator_rejects_unsafe_configuration_keys_without_echoing_them(string key)
+    {
+        var plan = CreatePlan() with
+        {
+            Configuration = new([new(key, "string", false, false, false, null, JsonValue("\"safe\""), null, null)])
+        };
+
+        var findings = ResolvedElsaApplicationPlanValidator.Validate(plan);
+        var finding = Assert.Single(findings, x => x.Code == "configuration.key.invalid");
+
+        Assert.Equal("configuration.entries", finding.Scope);
+        Assert.DoesNotContain(key, JsonSerializer.Serialize(findings), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Validator_rejects_overlong_configuration_keys_without_echoing_them()
+    {
+        var key = new string('k', ConfigurationKeyPolicy.MaxLength + 1);
+        var plan = CreatePlan() with
+        {
+            Configuration = new([new(key, "string", false, false, false, null, JsonValue("\"safe\""), null, null)])
+        };
+
+        var findings = ResolvedElsaApplicationPlanValidator.Validate(plan);
+        var finding = Assert.Single(findings, x => x.Code == "configuration.key.invalid");
+
+        Assert.Equal("configuration.entries", finding.Scope);
+        Assert.DoesNotContain(key, JsonSerializer.Serialize(findings), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void Validator_reports_missing_configuration_keys_with_fixed_scope(string? key)
+    {
+        var plan = CreatePlan() with
+        {
+            Configuration = new([new(key!, "string", false, false, false, null, JsonValue("\"safe\""), null, null)])
+        };
+
+        var finding = Assert.Single(
+            ResolvedElsaApplicationPlanValidator.Validate(plan),
+            x => x.Code == "configuration.key.required");
+
+        Assert.Equal("configuration.entries", finding.Scope);
+    }
+
+    [Theory]
     [InlineData("/", true)]
     [InlineData("/api", true)]
     [InlineData("/api/", false)]

@@ -632,6 +632,66 @@ public sealed class ElsaInstancePlanResolverTests
         Assert.DoesNotContain(result.Findings, finding => finding.Message.Contains("super-secret", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("invalid\nkey")]
+    [InlineData("invalid\0key")]
+    [InlineData(" invalid")]
+    [InlineData("invalid ")]
+    [InlineData("invalid/key")]
+    public async Task Rejects_unsafe_catalog_setting_names_with_deterministic_findings(string settingName)
+    {
+        var sourceId = Guid.NewGuid();
+        var source = new PublicPackageSourceProjection(sourceId, "source", "https://packages.example.test/index.json");
+        var version = CreateSecretSettingVersion(sourceId, source);
+        var feature = version.Features[0] with
+        {
+            Settings = [version.Features[0].Settings[0] with { Name = settingName }]
+        };
+        version = version with { Features = [feature] };
+        var request = CreateRequest() with
+        {
+            BuilderIntent = CreateRequest().BuilderIntent with
+            {
+                Packages = [new(sourceId, "Elsa.Email", "2.0.0", ["email"], null)]
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([version]), new FakeCompatibility()).ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        var finding = Assert.Single(result.Findings, x => x.Code == "configuration.key.invalid");
+        Assert.Equal("configuration.entries", finding.Scope);
+        Assert.DoesNotContain(settingName, System.Text.Json.JsonSerializer.Serialize(result.Findings), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Rejects_overlong_catalog_setting_names_without_echoing_them()
+    {
+        var settingName = new string('k', ConfigurationKeyPolicy.MaxLength + 1);
+        var sourceId = Guid.NewGuid();
+        var source = new PublicPackageSourceProjection(sourceId, "source", "https://packages.example.test/index.json");
+        var version = CreateSecretSettingVersion(sourceId, source);
+        var feature = version.Features[0] with
+        {
+            Settings = [version.Features[0].Settings[0] with { Name = settingName }]
+        };
+        version = version with { Features = [feature] };
+        var request = CreateRequest() with
+        {
+            BuilderIntent = CreateRequest().BuilderIntent with
+            {
+                Packages = [new(sourceId, "Elsa.Email", "2.0.0", ["email"], null)]
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([version]), new FakeCompatibility()).ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        var finding = Assert.Single(result.Findings, x => x.Code == "configuration.key.invalid");
+        Assert.Equal("configuration.entries", finding.Scope);
+        Assert.DoesNotContain(settingName, System.Text.Json.JsonSerializer.Serialize(result.Findings), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Resolves_typed_settings_and_external_secret_references_without_retaining_secret_values()
     {

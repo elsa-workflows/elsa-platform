@@ -97,7 +97,7 @@ public static class ResolvedElsaApplicationPlanValidator
             findings.Add(new("configuration.required", "Configuration shape is required.", "configuration"));
         else
         {
-            Duplicate(plan.Configuration.Entries, x => x.Key, "configuration.key.duplicate", "configuration.entries");
+            var validConfigurationKeys = new List<string>();
             foreach (var entry in plan.Configuration.Entries ?? [])
             {
                 if (entry is null)
@@ -106,7 +106,19 @@ public static class ResolvedElsaApplicationPlanValidator
                     continue;
                 }
 
-                Required(entry.Key, "configuration.key.required", "Configuration key is required.", "configuration.entries");
+                if (string.IsNullOrWhiteSpace(entry.Key))
+                {
+                    findings.Add(new("configuration.key.required", "Configuration key is required.", "configuration.entries"));
+                    continue;
+                }
+
+                if (!ConfigurationKeyPolicy.IsSafe(entry.Key))
+                {
+                    findings.Add(new("configuration.key.invalid", "Configuration key must be a canonical safe identifier.", "configuration.entries"));
+                    continue;
+                }
+
+                validConfigurationKeys.Add(entry.Key);
                 Required(entry.JsonType, "configuration.type.required", "Configuration JSON type is required.", $"configuration:{entry.Key}");
                 if (entry.Secret && entry.Value is not null)
                     findings.Add(new("configuration.secretValue.forbidden", "Secret configuration values must not be embedded in a resolved plan.", $"configuration:{entry.Key}"));
@@ -117,6 +129,11 @@ public static class ResolvedElsaApplicationPlanValidator
                 if (entry.Required && entry.Value is null && entry.SecretReference is null)
                     findings.Add(new("configuration.requiredValue.missing", "Required configuration needs a value or secret reference.", $"configuration:{entry.Key}"));
             }
+
+            foreach (var group in validConfigurationKeys
+                .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .Where(x => x.Count() > 1))
+                findings.Add(new("configuration.key.duplicate", "Configuration contains duplicate setting identities.", "configuration.entries"));
         }
 
         if (plan.Capacity is null)
