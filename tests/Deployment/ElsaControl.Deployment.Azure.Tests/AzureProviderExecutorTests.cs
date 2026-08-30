@@ -835,7 +835,7 @@ public sealed class AzureProviderExecutorTests
                 incoming.WorkloadRevisionName ?? existing.WorkloadRevisionName,
                 incoming.StableTrafficRevisionName ?? existing.StableTrafficRevisionName);
 
-        public Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, string message, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
+        public Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
         {
             if (_operation is null || _operation.Status != AzureProviderOperationStatus.Running || expectedVersion.HasValue && _operation.Version != expectedVersion.Value)
                 return Task.FromResult<AzureProviderOperation?>(null);

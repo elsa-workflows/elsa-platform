@@ -566,14 +566,12 @@ public sealed class AzureProviderExecutor
         CancellationToken cancellationToken = default)
     {
         AzureProviderOperationValidation.ValidateCode(code);
-        AzureProviderOperationValidation.ValidateMessage(message);
         var finalized = await _store.FinalizeAsync(
             operation.WorkspaceId,
             operation.Id,
             leaseToken,
             status,
             code,
-            message,
             _timeProvider.GetUtcNow(),
             operation.Version,
             cancellationToken);
