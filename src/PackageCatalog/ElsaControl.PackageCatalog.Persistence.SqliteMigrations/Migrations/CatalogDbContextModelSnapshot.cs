@@ -1937,6 +1937,9 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Property<Guid>("InstanceId")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("MigrationId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("NewState")
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
@@ -1977,6 +1980,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("MigrationId");
 
                     b.HasIndex("InstanceId", "Sequence")
                         .IsUnique();
@@ -2446,6 +2451,14 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Property<Guid>("InstanceId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("LastRequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("TEXT");
 
@@ -2475,7 +2488,32 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("SourceReleaseAttemptCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("SourceReleaseClaimToken")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("SourceReleaseClaimedUntil")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SourceReleaseDiagnosticCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceReleaseEvidenceDigest")
+                        .HasMaxLength(71)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceReleaseEvidenceReference")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("SourceReleaseLine")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceReleaseProviderCorrelationId")
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
@@ -2487,6 +2525,11 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.Property<string>("SourceVersion")
                         .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StartRequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("TargetDeploymentId")
@@ -2522,11 +2565,23 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.HasKey("MigrationId");
 
+                    b.HasIndex("InstanceId")
+                        .IsUnique()
+                        .HasFilter("Phase NOT IN ('RolledBack', 'Released', 'Failed')");
+
+                    b.HasIndex("OperationId")
+                        .IsUnique();
+
                     b.HasIndex("InstanceId", "Phase");
 
                     b.HasIndex("InstanceId", "SourceRetainUntil");
 
+                    b.HasIndex("InstanceId", "StartRequestHash")
+                        .IsUnique();
+
                     b.HasIndex("OrganizationId", "WorkspaceId", "InstanceId");
+
+                    b.HasIndex("Phase", "SourceRetainUntil", "SourceReleaseClaimedUntil");
 
                     b.ToTable("ElsaInstanceMigrations");
                 });
@@ -4274,6 +4329,12 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceMigrationEntity", b =>
                 {
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceOperationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("OperationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Organization", null)
                         .WithMany()
                         .HasForeignKey("OrganizationId")

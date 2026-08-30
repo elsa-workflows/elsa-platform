@@ -596,6 +596,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                      .Where(x => x.State == EntityState.Added))
         {
             var audit = entry.Entity;
+            if (audit.MigrationId == Guid.Empty)
+                throw new InvalidOperationException("Migration audit linkage is invalid.");
             audit.EventType = RequireSafeCode(audit.EventType, nameof(audit.EventType));
             audit.DiagnosticCode = OptionalSafeCode(audit.DiagnosticCode, nameof(audit.DiagnosticCode));
             // Human-readable summaries and operator subjects are not durable
@@ -619,16 +621,40 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                      .Where(x => x.State is EntityState.Added or EntityState.Modified))
         {
             var migration = entry.Entity;
-            if (migration.MigrationId == Guid.Empty || migration.InstanceId == Guid.Empty)
+            if (migration.MigrationId == Guid.Empty || migration.OperationId == Guid.Empty || migration.InstanceId == Guid.Empty)
                 throw new InvalidOperationException("An instance migration requires stable identifiers.");
             if (entry.State == EntityState.Modified)
             {
                 foreach (var property in ImmutableMigrationProperties)
                     EnsureUnchanged(entry, property, entry.Property(property).CurrentValue,
                         "Instance migration identity and release references are immutable.");
+                var originalPhase = (string)entry.Property(nameof(Models.ElsaInstanceMigrationEntity.Phase)).OriginalValue!;
+                if (originalPhase == nameof(ElsaInstanceMigrationPhase.Released))
+                {
+                    foreach (var property in TerminalMigrationReleaseProperties)
+                        EnsureUnchanged(entry, property, entry.Property(property).CurrentValue,
+                            "Confirmed source release evidence is immutable.");
+                }
             }
             migration.Phase = RequireMigrationPhase(migration.Phase);
             migration.SourceAccessMode = RequireSourceAccessMode(migration.SourceAccessMode);
+            migration.StartRequestHash = RequireCanonicalHash(migration.StartRequestHash, nameof(migration.StartRequestHash));
+            migration.LastRequestHash = RequireCanonicalHash(migration.LastRequestHash, nameof(migration.LastRequestHash));
+            migration.SourceReleaseDiagnosticCode = OptionalSafeCode(
+                migration.SourceReleaseDiagnosticCode, nameof(migration.SourceReleaseDiagnosticCode));
+            migration.SourceReleaseProviderCorrelationId = OptionalSafeReference(
+                migration.SourceReleaseProviderCorrelationId, nameof(migration.SourceReleaseProviderCorrelationId), 128);
+            migration.SourceReleaseEvidenceReference = OptionalSafeEvidenceUri(
+                migration.SourceReleaseEvidenceReference, nameof(migration.SourceReleaseEvidenceReference));
+            migration.SourceReleaseEvidenceDigest = OptionalSha256Digest(
+                migration.SourceReleaseEvidenceDigest, nameof(migration.SourceReleaseEvidenceDigest));
+            if ((migration.SourceReleaseProviderCorrelationId is null) != (migration.SourceReleaseEvidenceReference is null) ||
+                (migration.SourceReleaseEvidenceReference is null) != (migration.SourceReleaseEvidenceDigest is null) ||
+                migration.Phase == nameof(ElsaInstanceMigrationPhase.Released) && migration.SourceReleaseEvidenceReference is null)
+                throw new InvalidOperationException("Source release evidence is incomplete.");
+            if ((migration.SourceReleaseClaimToken is null) != (migration.SourceReleaseClaimedUntil is null) ||
+                migration.SourceReleaseClaimToken == Guid.Empty || migration.SourceReleaseAttemptCount < 0)
+                throw new InvalidOperationException("Source release claim metadata is invalid.");
             ValidateMigrationTuple(migration, source: true);
             ValidateMigrationTuple(migration, source: false);
             if (migration.CutoverAt is not null && migration.SourceRetainUntil is null)
@@ -639,6 +665,12 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                 throw new InvalidOperationException("Migration source retention must be at least 30 days after cutover.");
             if (migration.SourceReleasedAt is not null && migration.SourceRetainUntil is null)
                 throw new InvalidOperationException("Source release requires a retention timestamp.");
+            if (migration.Phase == nameof(ElsaInstanceMigrationPhase.Released) && migration.SourceReleasedAt is null)
+                throw new InvalidOperationException("Released migrations require confirmed source release.");
+            if ((migration.Phase is nameof(ElsaInstanceMigrationPhase.Cutover) or nameof(ElsaInstanceMigrationPhase.RetainingSource) or
+                 nameof(ElsaInstanceMigrationPhase.RetiringSource) or nameof(ElsaInstanceMigrationPhase.Released)) &&
+                migration.CutoverAt is null)
+                throw new InvalidOperationException("Migration phase requires a completed cutover.");
             if (migration.SourceReleasedAt < migration.CutoverAt)
                 throw new InvalidOperationException("Source release cannot precede migration cutover.");
             var hasApproval = migration.EarlyReleaseApprovedByAccountId is not null || migration.EarlyReleaseApprovedAt is not null;
@@ -842,7 +874,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             ("ProvisioningTarget", "Validating" or "Cutover" or "Failed") => true,
             ("Validating", "Cutover" or "Failed") => true,
             ("Cutover", "RetainingSource" or "RetiringSource" or "RolledBack" or "Failed") => true,
-            ("RetainingSource", "Released" or "RolledBack" or "Failed") => true,
+            ("RetainingSource", "RetiringSource" or "RolledBack" or "Failed") => true,
             ("RetiringSource", "Released" or "RolledBack" or "Failed") => true,
             _ => false
         };
@@ -931,6 +963,20 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         var uri = ParseSafeUri(value, name, allowLocalHttp: false);
         if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) || !IsResolvedPlanPath(uri.AbsolutePath))
             throw new InvalidOperationException($"{name} must be an absolute HTTPS resolved-plan URI.");
+        return uri.AbsoluteUri;
+    }
+
+    private static string? OptionalSafeEvidenceUri(string? value, string name)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        var normalized = value.Trim();
+        if (normalized.Length > 2048 || normalized.Any(char.IsControl) ||
+            !Uri.TryCreate(normalized, UriKind.Absolute, out var uri) ||
+            uri.Scheme is not ("https" or "oci") || string.IsNullOrWhiteSpace(uri.Host) ||
+            uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 ||
+            uri.AbsolutePath is "" or "/")
+            throw new InvalidOperationException($"{name} must be a safe immutable evidence URI.");
         return uri.AbsoluteUri;
     }
 
@@ -1140,6 +1186,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     private static readonly string[] ImmutableMigrationProperties =
     [
         nameof(Models.ElsaInstanceMigrationEntity.InstanceId),
+        nameof(Models.ElsaInstanceMigrationEntity.OperationId),
         nameof(Models.ElsaInstanceMigrationEntity.OrganizationId),
         nameof(Models.ElsaInstanceMigrationEntity.WorkspaceId),
         nameof(Models.ElsaInstanceMigrationEntity.SourcePlanId),
@@ -1154,7 +1201,16 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         nameof(Models.ElsaInstanceMigrationEntity.TargetVersion),
         nameof(Models.ElsaInstanceMigrationEntity.TargetManifestDigest),
         nameof(Models.ElsaInstanceMigrationEntity.TargetDeploymentId),
+        nameof(Models.ElsaInstanceMigrationEntity.StartRequestHash),
         nameof(Models.ElsaInstanceMigrationEntity.CreatedAt)
+    ];
+
+    private static readonly string[] TerminalMigrationReleaseProperties =
+    [
+        nameof(Models.ElsaInstanceMigrationEntity.SourceReleasedAt),
+        nameof(Models.ElsaInstanceMigrationEntity.SourceReleaseProviderCorrelationId),
+        nameof(Models.ElsaInstanceMigrationEntity.SourceReleaseEvidenceReference),
+        nameof(Models.ElsaInstanceMigrationEntity.SourceReleaseEvidenceDigest)
     ];
 
     private static readonly JsonDocumentOptions SafeJsonOptions = new()
