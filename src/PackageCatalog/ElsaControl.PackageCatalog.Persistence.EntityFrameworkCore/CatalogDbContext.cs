@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Core.Workspace;
 using ElsaControl.PackageCatalog.Core.Manifests;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Core.Packages;
@@ -393,6 +394,20 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                 EnsureDefined(reconciledHealth, nameof(operation.ReconciledHealth));
             if (operation.ReconciliationVersion < 0 || operation.ReconciledInstanceVersion is < 1)
                 throw new InvalidOperationException("Provider reconciliation versions are invalid.");
+            operation.DeletionEvidenceFingerprint = OptionalCanonicalHash(
+                operation.DeletionEvidenceFingerprint, nameof(operation.DeletionEvidenceFingerprint));
+            operation.DeletionDiagnosticCode = OptionalSafeCode(
+                operation.DeletionDiagnosticCode, nameof(operation.DeletionDiagnosticCode));
+            if ((operation.DeletionEvidenceReference is null) != (operation.DeletionEvidenceDigest is null))
+                throw new InvalidOperationException("Deletion evidence must be complete.");
+            if (operation.DeletionEvidenceReference is not null)
+            {
+                var evidence = new ElsaControl.Deployment.Core.Instances.ElsaInstanceCleanupEvidence(
+                    operation.DeletionEvidenceReference,
+                    operation.DeletionEvidenceDigest!);
+                operation.DeletionEvidenceReference = evidence.Reference;
+                operation.DeletionEvidenceDigest = evidence.Digest;
+            }
             if (operation.ExpectedVersion < 1 || operation.AttemptNumber < 1)
                 throw new InvalidOperationException("An instance operation requires positive version and attempt values.");
             if (operation.InstanceId is not null && operation.InstanceId == Guid.Empty)
@@ -755,7 +770,24 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                 .Where(run => !changedRunIds.Contains(run.Id))
                 .ToArray();
 
-            if (persistedRuns.Any(run => run.WorkspaceId != environment.WorkspaceId || run.ElsaInstanceId != environment.ElsaInstanceId))
+            var releasedDeletedInstanceId = environment.ElsaInstanceId is null
+                ? ChangeTracker.Entries<Models.DeploymentEnvironmentEntity>()
+                    .Where(entry => entry.Entity.Id == environment.Id && entry.State == EntityState.Modified)
+                    .Select(entry => (Guid?)entry.Property(nameof(Models.DeploymentEnvironmentEntity.ElsaInstanceId)).OriginalValue)
+                    .SingleOrDefault()
+                : null;
+            var releasesDeletedInstance = releasedDeletedInstanceId is not null &&
+                ChangeTracker.Entries<Models.ElsaInstanceEntity>().Any(entry =>
+                    entry.Entity.Id == releasedDeletedInstanceId &&
+                    entry.Entity.WorkspaceId == environment.WorkspaceId &&
+                    entry.Entity.ObservedLifecycle == ElsaObservedLifecycle.Deleted) &&
+                persistedRuns.All(run => run.ElsaInstanceId == releasedDeletedInstanceId &&
+                    run.Status is not (WorkspaceDeploymentRunStatus.Queued or
+                        WorkspaceDeploymentRunStatus.Running or
+                        WorkspaceDeploymentRunStatus.RecoveryRequired));
+
+            if (!releasesDeletedInstance &&
+                persistedRuns.Any(run => run.WorkspaceId != environment.WorkspaceId || run.ElsaInstanceId != environment.ElsaInstanceId))
                 throw new InvalidOperationException("An environment binding cannot break an existing managed deployment run.");
 
             foreach (var run in trackedRuns.Where(run => run.EnvironmentId == environment.Id && run.ElsaInstanceId is not null))

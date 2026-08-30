@@ -9,7 +9,7 @@ namespace ElsaControl.Deployment.Core.Instances;
 /// models the atomic boundary required of the relational implementation without
 /// introducing persistence or provider concerns into the lifecycle service.
 /// </summary>
-public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvider = null) : IElsaInstanceLifecycleStore, IElsaInstanceLifecycleWorkerStore, IElsaInstanceProviderReconciliationStore
+public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvider = null) : IElsaInstanceLifecycleStore, IElsaInstanceLifecycleWorkerStore, IElsaInstanceProviderReconciliationStore, IElsaInstanceDeletionStore
 {
     private static readonly TimeSpan WorkerLeaseDuration = TimeSpan.FromMinutes(5);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
@@ -23,6 +23,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
     private readonly Dictionary<Guid, ElsaInstanceLifecycleDeploymentRun> _deploymentRuns = [];
     private readonly Dictionary<Guid, ElsaInstanceLifecycleRecordedFailure> _failures = [];
     private readonly Dictionary<Guid, StoredReconciliationResult> _reconciliationResults = [];
+    private readonly Dictionary<Guid, StoredDeletionResult> _deletionResults = [];
 
     public IReadOnlyCollection<ElsaInstance> Instances
     {
@@ -331,7 +332,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                 var isRecoveryResume = storedOperation.State == ElsaInstanceOperationState.RecoveryRequired &&
                     operation.State == ElsaInstanceOperationState.Queued &&
                     operation.AttemptNumber == storedOperation.AttemptNumber + 1;
-                if (isRecoveryResume &&
+                if (isRecoveryResume && storedOperation.Action != ElsaInstanceOperationAction.Delete &&
                     (!_reconciliationResults.TryGetValue(operation.Id, out var reconciliation) ||
                      !reconciliation.Result.RetrySafe))
                     throw new ElsaInstanceLifecycleConflictException(
@@ -414,6 +415,11 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                     !_instances.TryGetValue(outbox.InstanceId, out var instance))
                     continue;
 
+                // Delete work has a distinct cleanup/evidence boundary. It must
+                // never be consumed by the plan-resolution worker.
+                if (operation.Action == ElsaInstanceOperationAction.Delete)
+                    continue;
+
                 // Waiting deletes are durable successors, not resolver work. They
                 // become eligible once their prior operation reaches a terminal
                 // state.
@@ -448,6 +454,162 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
 
             return Task.FromResult<ElsaInstanceLifecycleWorkItem?>(null);
         }
+    }
+
+    public Task<ElsaInstanceDeletionWorkItem?> TryClaimNextDeletionAsync(
+        string workerId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(workerId))
+            throw new ArgumentException("Deletion worker identity is required.", nameof(workerId));
+
+        lock (_gate)
+        {
+            foreach (var outbox in _outbox.Values
+                         .Where(x => x.Action == ElsaInstanceOperationAction.Delete)
+                         .OrderBy(x => x.CreatedAt).ThenBy(x => x.Id))
+            {
+                if (!_operations.TryGetValue(outbox.OperationId, out var operation) ||
+                    !_instances.TryGetValue(outbox.InstanceId, out var instance))
+                    continue;
+                var uncertainRun = _deploymentRuns.Values.Any(x => x.InstanceId == instance.Id &&
+                    x.Run.Status is WorkspaceDeploymentRunStatus.Queued or WorkspaceDeploymentRunStatus.Running or
+                        WorkspaceDeploymentRunStatus.RecoveryRequired);
+                if (uncertainRun)
+                    continue;
+                if (operation.State == ElsaInstanceOperationState.WaitingForPriorOperation)
+                {
+                    var priorBlocking = _operations.Values.Any(x => x.Id != operation.Id &&
+                        x.InstanceId == instance.Id && ElsaInstanceOperationGuard.IsBlocking(x.State));
+                    if (priorBlocking)
+                        continue;
+                    operation = operation.TransitionTo(ElsaInstanceOperationState.Accepted);
+                    _operations[operation.Id] = operation;
+                }
+                if (operation.State is not (ElsaInstanceOperationState.Accepted or ElsaInstanceOperationState.Queued or ElsaInstanceOperationState.Running))
+                    continue;
+
+                var nowUtc = now.ToUniversalTime();
+                if (_claims.TryGetValue(operation.Id, out var existingClaim) && existingClaim.ExpiresAt > nowUtc)
+                    continue;
+                var claim = new LifecycleClaim(workerId.Trim(), CreateLeaseToken(),
+                    existingClaim is null ? 1 : checked(existingClaim.Version + 1), nowUtc.Add(WorkerLeaseDuration));
+                if (operation.State == ElsaInstanceOperationState.Queued)
+                {
+                    operation = operation.TransitionTo(ElsaInstanceOperationState.Running);
+                    _operations[operation.Id] = operation;
+                }
+                _claims[operation.Id] = claim;
+                var correlatedRun = _deploymentRuns.Values
+                    .Where(x => x.InstanceId == instance.Id)
+                    .OrderByDescending(x => x.Run.CreatedAt)
+                    .Select(x => (Guid?)x.Run.Id)
+                    .FirstOrDefault();
+                var local = instance.ObservedLifecycle != ElsaObservedLifecycle.Unknown &&
+                    instance.CurrentDeploymentReference is null && instance.PlacementAssignmentReference is null &&
+                    instance.ElsaTenantReference is null;
+                return Task.FromResult<ElsaInstanceDeletionWorkItem?>(new(
+                    outbox, operation, instance, local, correlatedRun, claim.Token, claim.Version));
+            }
+            return Task.FromResult<ElsaInstanceDeletionWorkItem?>(null);
+        }
+    }
+
+    public Task<bool> RenewDeletionLeaseAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            if (!_claims.TryGetValue(item.Operation.Id, out var claim) ||
+                !string.Equals(claim.WorkerId, workerId, StringComparison.Ordinal) ||
+                !string.Equals(claim.Token, item.LeaseToken, StringComparison.Ordinal) ||
+                claim.Version != item.LeaseVersion || claim.ExpiresAt <= now.ToUniversalTime())
+                return Task.FromResult(false);
+
+            _claims[item.Operation.Id] = claim with { ExpiresAt = now.ToUniversalTime().Add(WorkerLeaseDuration) };
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<ElsaInstanceDeletionResult> CommitDeletionAsync(
+        ElsaInstanceDeletionCommit commit,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(commit);
+        commit.Validate();
+        lock (_gate)
+        {
+            if (_deletionResults.TryGetValue(commit.OperationId, out var stored))
+            {
+                if (!string.Equals(stored.Fingerprint, commit.EvidenceFingerprint, StringComparison.Ordinal))
+                    throw new ElsaInstanceLifecycleConflictException("Deletion evidence conflicts with the terminal result.");
+                return Task.FromResult(stored.Result with { Replayed = true });
+            }
+
+            EnsureDeletionOwnership(commit.WorkspaceId, commit.InstanceId, commit.OperationId, commit.OutboxId,
+                commit.ExpectedInstanceVersion, commit.ExpectedAttemptNumber, commit.WorkerId, commit.LeaseToken, commit.LeaseVersion);
+            var currentInstance = _instances[commit.InstanceId];
+            if (commit.ProofKind == ElsaInstanceDeletionProofKind.LocalNoOwnedResources &&
+                (currentInstance.ObservedLifecycle == ElsaObservedLifecycle.Unknown ||
+                 currentInstance.CurrentDeploymentReference is not null ||
+                 currentInstance.PlacementAssignmentReference is not null ||
+                 currentInstance.ElsaTenantReference is not null))
+                throw new ElsaInstanceLifecycleConflictException("Local deletion proof is not valid for this instance.");
+            if (commit.ExpectedRunId is { } runId && (!_deploymentRuns.TryGetValue(runId, out var run) ||
+                run.InstanceId != commit.InstanceId || run.Run.Status is WorkspaceDeploymentRunStatus.Queued or WorkspaceDeploymentRunStatus.Running or WorkspaceDeploymentRunStatus.RecoveryRequired))
+                throw new ElsaInstanceLifecycleConflictException("Deletion run correlation is not terminal.");
+
+            var tombstone = WithVersion(commit.Instance, checked(commit.ExpectedInstanceVersion + 1));
+            _instances[commit.InstanceId] = tombstone;
+            _operations[commit.OperationId] = commit.Operation;
+            _claims.Remove(commit.OperationId);
+            var result = new ElsaInstanceDeletionResult(ElsaInstanceDeletionOutcome.Deleted, commit.Operation,
+                tombstone, commit.DiagnosticCode, commit.EvidenceFingerprint, false);
+            _deletionResults[commit.OperationId] = new(commit.EvidenceFingerprint, result);
+            return Task.FromResult(result);
+        }
+    }
+
+    public Task<ElsaInstanceDeletionResult> RequireDeletionRecoveryAsync(
+        ElsaInstanceDeletionFailure failure,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(failure);
+        failure.Validate();
+        lock (_gate)
+        {
+            EnsureDeletionOwnership(failure.WorkspaceId, failure.InstanceId, failure.OperationId, failure.OutboxId,
+                failure.ExpectedInstanceVersion, failure.ExpectedAttemptNumber, failure.WorkerId, failure.LeaseToken, failure.LeaseVersion);
+            var operation = _operations[failure.OperationId];
+            if (operation.State == ElsaInstanceOperationState.Accepted)
+                operation = operation.TransitionTo(ElsaInstanceOperationState.Queued);
+            operation = operation.TransitionTo(ElsaInstanceOperationState.RecoveryRequired);
+            _operations[operation.Id] = operation;
+            _claims.Remove(operation.Id);
+            var instance = _instances[failure.InstanceId];
+            var result = new ElsaInstanceDeletionResult(ElsaInstanceDeletionOutcome.RecoveryRequired, operation,
+                instance, failure.DiagnosticCode, failure.EvidenceFingerprint, false);
+            return Task.FromResult(result);
+        }
+    }
+
+    private void EnsureDeletionOwnership(Guid workspaceId, Guid instanceId, Guid operationId, Guid outboxId,
+        int expectedVersion, int expectedAttempt, string workerId, string leaseToken, int leaseVersion)
+    {
+        if (!_instances.TryGetValue(instanceId, out var instance) || instance.WorkspaceId != workspaceId || instance.Version != expectedVersion ||
+            !_operations.TryGetValue(operationId, out var operation) || operation.Action != ElsaInstanceOperationAction.Delete ||
+            operation.State is not (ElsaInstanceOperationState.Accepted or ElsaInstanceOperationState.Running) ||
+            operation.AttemptNumber != expectedAttempt ||
+            !_outbox.TryGetValue(outboxId, out var outbox) || outbox.OperationId != operationId ||
+            !_claims.TryGetValue(operationId, out var claim) || !string.Equals(claim.WorkerId, workerId, StringComparison.Ordinal) ||
+            !string.Equals(claim.Token, leaseToken, StringComparison.Ordinal) || claim.Version != leaseVersion ||
+            claim.ExpiresAt <= _timeProvider.GetUtcNow())
+            throw new ElsaInstanceLifecycleConflictException("Deletion work item is no longer owned by this worker.");
     }
 
     public Task<ElsaInstanceLifecycleWorkerResult> CommitResolvedAsync(
@@ -643,4 +805,6 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         string EvidenceFingerprint,
         int Version,
         ElsaInstanceProviderReconciliationResult Result);
+
+    private sealed record StoredDeletionResult(string Fingerprint, ElsaInstanceDeletionResult Result);
 }

@@ -363,7 +363,7 @@ public static class ElsaInstanceStateMachine
             (ElsaObservedLifecycle.Stopping, ElsaObservedLifecycle.Stopped or ElsaObservedLifecycle.Failed or ElsaObservedLifecycle.Deleting or ElsaObservedLifecycle.Unknown) => true,
             (ElsaObservedLifecycle.Stopped, ElsaObservedLifecycle.Provisioning or ElsaObservedLifecycle.Deleting or ElsaObservedLifecycle.Unknown) => true,
             (ElsaObservedLifecycle.Failed, ElsaObservedLifecycle.Provisioning or ElsaObservedLifecycle.Deleting or ElsaObservedLifecycle.Unknown) => true,
-            (ElsaObservedLifecycle.Unknown, ElsaObservedLifecycle.Provisioning or ElsaObservedLifecycle.Deleting or ElsaObservedLifecycle.Failed or ElsaObservedLifecycle.Degraded or ElsaObservedLifecycle.Stopped or ElsaObservedLifecycle.Deleted) => true,
+            (ElsaObservedLifecycle.Unknown, ElsaObservedLifecycle.Provisioning or ElsaObservedLifecycle.Deleting or ElsaObservedLifecycle.Failed or ElsaObservedLifecycle.Degraded or ElsaObservedLifecycle.Stopped) => true,
             (ElsaObservedLifecycle.Deleting, ElsaObservedLifecycle.Deleted or ElsaObservedLifecycle.Unknown) => true,
             _ => false
         };
@@ -543,10 +543,10 @@ public static class ElsaInstanceStateMachine
     public static ElsaInstance Report(ElsaInstance instance, ElsaObservedLifecycle observed)
     {
         ArgumentNullException.ThrowIfNull(instance);
+        if (observed == ElsaObservedLifecycle.Deleted)
+            throw new InvalidOperationException("Deletion requires correlated positive absence evidence.");
         if (observed == ElsaObservedLifecycle.Ready && instance.ObservedLifecycle == ElsaObservedLifecycle.Unknown)
             throw new InvalidOperationException("An unknown instance requires reconciliation before it can be ready.");
-        if (observed == ElsaObservedLifecycle.Deleted && instance.Intent.DesiredLifecycle != ElsaDesiredLifecycle.Deleting)
-            throw new InvalidOperationException("An instance can be deleted only after deletion intent is recorded.");
         Transition(instance.ObservedLifecycle, observed);
         var health = observed switch
         {
@@ -556,8 +556,33 @@ public static class ElsaInstanceStateMachine
             ElsaObservedLifecycle.Failed => ElsaInstanceHealth.Unreachable,
             _ => instance.Health
         };
-        var deletedAt = observed == ElsaObservedLifecycle.Deleted ? DateTimeOffset.UtcNow : instance.DeletedAt;
-        return instance.ProjectObservation(observed, health, deletedAt);
+        return instance.ProjectObservation(observed, health, instance.DeletedAt);
+    }
+
+    /// <summary>
+    /// Projects a retained tombstone after the deletion coordinator has atomically
+    /// verified the owned-resource absence proof and operation/run correlation.
+    /// Provider adapters must not call this method directly.
+    /// </summary>
+    public static ElsaInstance FinalizeDeletion(ElsaInstance instance, DateTimeOffset deletedAt)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        if (instance.Intent.DesiredLifecycle != ElsaDesiredLifecycle.Deleting)
+            throw new InvalidOperationException("An instance can be deleted only after deletion intent is recorded.");
+        if (instance.ObservedLifecycle is not (ElsaObservedLifecycle.Deleting or ElsaObservedLifecycle.Unknown))
+            throw new InvalidOperationException("An instance cannot finalize deletion from its current lifecycle state.");
+        if (deletedAt == default)
+            throw new ArgumentException("Deletion timestamp is required.", nameof(deletedAt));
+
+        return instance.ProjectObservation(
+            ElsaObservedLifecycle.Deleted,
+            ElsaInstanceHealth.Unknown,
+            deletedAt.ToUniversalTime()) with
+        {
+            CurrentDeploymentReference = null,
+            PlacementAssignmentReference = null,
+            ElsaTenantReference = null
+        };
     }
 
     private static ElsaInstance ApplyIntentUpdate(

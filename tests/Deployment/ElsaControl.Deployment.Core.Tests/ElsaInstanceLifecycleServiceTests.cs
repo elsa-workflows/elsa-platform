@@ -209,6 +209,48 @@ public sealed class ElsaInstanceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task Recover_delete_requeues_cleanup_without_provider_reconciliation_evidence()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore();
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+        var progressing = created.Operation;
+        foreach (var state in new[]
+                 {
+                     ElsaInstanceOperationState.Queued,
+                     ElsaInstanceOperationState.Running,
+                     ElsaInstanceOperationState.Succeeded
+                 })
+        {
+            progressing = progressing.TransitionTo(state);
+            await store.CommitAcceptedAsync(
+                created.Instance,
+                created.Instance,
+                progressing,
+                new ElsaInstanceLifecycleOutboxMessage(
+                    Guid.NewGuid(),
+                    WorkspaceId,
+                    created.Instance.Id,
+                    created.Operation.Id,
+                    created.Operation.Action,
+                    created.Operation.RequestHash,
+                    Now.AddMinutes(store.Outbox.Count)));
+        }
+
+        var deletion = await service.DeleteAsync(new ElsaInstanceLifecycleRequest(
+            WorkspaceId, created.Instance.Id, store.Instances.Single().Version, "delete-1"));
+        store.MarkRecoveryRequired(deletion.Operation.Id);
+
+        var recovered = await service.RecoverAsync(new ElsaInstanceLifecycleRequest(
+            WorkspaceId, created.Instance.Id, store.Instances.Single().Version, "recover-delete-1"));
+
+        Assert.Equal(deletion.Operation.Id, recovered.Operation.Id);
+        Assert.Equal(ElsaInstanceOperationState.Queued, recovered.Operation.State);
+        Assert.Equal(2, recovered.Operation.AttemptNumber);
+    }
+
+    [Fact]
     public async Task Active_reservation_is_selected_before_a_waiting_delete_successor()
     {
         var store = new InMemoryElsaInstanceLifecycleStore();
@@ -268,11 +310,12 @@ public sealed class ElsaInstanceLifecycleServiceTests
             priorWork.LeaseToken,
             priorWork.LeaseVersion));
 
-        var claimed = await store.TryClaimNextAsync("lifecycle-worker-1", Now);
+        var claimed = await store.TryClaimNextDeletionAsync("deletion-worker-1", Now);
 
         Assert.NotNull(claimed);
         Assert.Equal(deletion.Operation.Id, claimed!.Operation.Id);
         Assert.Equal(ElsaInstanceOperationState.Accepted, claimed.Operation.State);
+        Assert.True(claimed.CanFinalizeLocally);
     }
 
     private static ElsaInstanceIntent Intent(ElsaDesiredLifecycle lifecycle = ElsaDesiredLifecycle.Running) => new(

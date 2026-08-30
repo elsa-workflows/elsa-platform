@@ -217,6 +217,10 @@ internal sealed class ElsaInstanceOperationEntity
     public ElsaInstanceHealth? ReconciledHealth { get; set; }
     public int? ReconciledInstanceVersion { get; set; }
     public DateTimeOffset? ReconciledAt { get; set; }
+    public string? DeletionEvidenceFingerprint { get; set; }
+    public string? DeletionEvidenceReference { get; set; }
+    public string? DeletionEvidenceDigest { get; set; }
+    public string? DeletionDiagnosticCode { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

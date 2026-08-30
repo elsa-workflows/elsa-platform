@@ -209,11 +209,12 @@ internal static class ElsaInstanceLifecycleLease
 
 public enum ElsaInstanceLifecycleWorkerOutcome
 {
-    Queued,
-    Failed,
-    AlreadyCompleted,
-    WaitingForPriorOperation,
-    Conflict
+    Queued = 0,
+    Failed = 1,
+    AlreadyCompleted = 2,
+    WaitingForPriorOperation = 3,
+    Conflict = 4,
+    Deleted = 5
 }
 
 public sealed record ElsaInstanceLifecycleWorkerResult(
