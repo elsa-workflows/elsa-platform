@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.IdentityModel.Tokens.Jwt;
+using System.Text.Json;
 using ElsaControl.Api.Authentication;
 using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Core.Instances;
@@ -423,6 +424,7 @@ public sealed class ManagedElsaHandoffTests
     {
         using var app = new ControlApiTestApplication(new Dictionary<string, string?>
         {
+            [$"{ManagedElsaHandoffDefaults.ConfigurationSection}:Enabled"] = "true",
             [$"{ManagedElsaHandoffDefaults.ConfigurationSection}:ActiveKeyId"] = "active-2026-09"
         });
 
@@ -430,6 +432,44 @@ public sealed class ManagedElsaHandoffTests
             () => app.Services.GetRequiredService<ManagedElsaHandoffKeyRing>());
 
         Assert.Contains("both key ID and private key", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Disabled_handoff_with_partial_key_configuration_returns_correlated_unavailable()
+    {
+        await using var app = new ControlApiTestApplication(new Dictionary<string, string?>
+        {
+            [$"{ManagedElsaHandoffDefaults.ConfigurationSection}:ActiveKeyId"] = "stray-key-id"
+        });
+        await app.SeedAsync(_ => Task.CompletedTask);
+
+        var response = await app.CreateControlIdentityClient("disabled-handoff")
+            .PostControlJsonAsync("/api/managed-elsa/handoff/issue", new { });
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("correlationId").GetString()));
+    }
+
+    [Fact]
+    public async Task Rate_limit_rejection_has_stable_code_and_correlation()
+    {
+        var authorizer = new FakeHandoffAuthorizer(Guid.NewGuid(), Guid.NewGuid());
+        await using var app = CreateApplication(authorizer);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateControlIdentityClient("rate-limited-handoff");
+        HttpResponseMessage? response = null;
+        for (var attempt = 0; attempt < 21; attempt++)
+        {
+            response?.Dispose();
+            response = await client.PostControlJsonAsync("/api/managed-elsa/handoff/issue", new { });
+        }
+
+        using var finalResponse = response ?? throw new InvalidOperationException("Expected a rate-limit response.");
+        Assert.Equal(HttpStatusCode.TooManyRequests, finalResponse.StatusCode);
+        using var body = JsonDocument.Parse(await finalResponse.Content.ReadAsStringAsync());
+        Assert.Equal("handoff.rate-limited", body.RootElement.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("correlationId").GetString()));
     }
 
     private static ControlApiTestApplication CreateApplication(FakeHandoffAuthorizer authorizer) =>

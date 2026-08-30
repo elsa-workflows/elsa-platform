@@ -174,6 +174,18 @@ builder.Services.AddCors(options => options.AddPolicy(PublicBuilderCors.PolicyNa
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, _) =>
+    {
+        await Results.Problem(
+                statusCode: StatusCodes.Status429TooManyRequests,
+                title: "Managed Elsa identity handoff rate limit was exceeded.",
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = "handoff.rate-limited",
+                    ["correlationId"] = context.HttpContext.TraceIdentifier
+                })
+            .ExecuteAsync(context.HttpContext);
+    };
     options.AddPolicy("managed-elsa-handoff", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions
@@ -192,6 +204,8 @@ builder.Services.AddSingleton<BuilderClientApiKeyValidator>();
 builder.Services.AddSingleton<ManagedElsaHandoffKeyRing>(services =>
 {
     var options = services.GetRequiredService<IOptions<ManagedElsaHandoffOptions>>().Value;
+    if (!options.Enabled)
+        return ManagedElsaHandoffKeyRing.CreateEphemeral();
     var hasKeyId = !string.IsNullOrWhiteSpace(options.ActiveKeyId);
     var hasPrivateKey = !string.IsNullOrWhiteSpace(options.ActivePrivateKeyPem);
     if (hasKeyId != hasPrivateKey)

@@ -21,7 +21,8 @@ public static class ManagedElsaHandoffEndpoints
             if (!options.Value.Enabled)
                 return Results.Problem(
                     title: "Managed Elsa identity handoff is not configured.",
-                    statusCode: StatusCodes.Status503ServiceUnavailable);
+                    statusCode: StatusCodes.Status503ServiceUnavailable,
+                    extensions: Correlation(context));
 
             if (!request.TryCreate(out var handoffRequest))
                 return Results.BadRequest(new
@@ -55,7 +56,8 @@ public static class ManagedElsaHandoffEndpoints
             if (!options.Value.Enabled)
                 return Results.Problem(
                     title: "Managed Elsa identity handoff is not configured.",
-                    statusCode: StatusCodes.Status503ServiceUnavailable);
+                    statusCode: StatusCodes.Status503ServiceUnavailable,
+                    extensions: Correlation(context));
 
             if (!request.TryCreate(out var audience, out var redirectUri))
                 return Results.BadRequest(new
@@ -92,12 +94,17 @@ public static class ManagedElsaHandoffEndpoints
     private static IResult Failure(int statusCode, string code, HttpContext context) =>
         Results.Problem(
             statusCode: statusCode,
-            title: "Managed Elsa identity handoff was denied.",
+            title: "Managed Elsa identity handoff could not be completed.",
             extensions: new Dictionary<string, object?>
             {
                 ["code"] = code,
                 ["correlationId"] = context.TraceIdentifier
             });
+
+    private static Dictionary<string, object?> Correlation(HttpContext context) => new()
+    {
+        ["correlationId"] = context.TraceIdentifier
+    };
 }
 
 public sealed record ManagedElsaHandoffIssueRequest(

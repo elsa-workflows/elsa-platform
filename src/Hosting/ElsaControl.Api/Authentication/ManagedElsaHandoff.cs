@@ -4,6 +4,8 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using ElsaControl.PackageCatalog.Core.Accounts;
+using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
@@ -34,7 +36,7 @@ public sealed class ManagedElsaHandoffConfigurationValidator(
     IOptions<ManagedElsaHandoffOptions> options,
     IServiceProvider services) : IHostedService
 {
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         var validated = ManagedElsaHandoffIssuer.ValidateOptions(options.Value);
         if (validated.Enabled)
@@ -49,9 +51,19 @@ public sealed class ManagedElsaHandoffConfigurationValidator(
                     "Managed Elsa handoff requires a configured active signing key outside local environments.");
             if (hasAnyConfiguredKey || !localEnvironment)
                 _ = services.GetRequiredService<ManagedElsaHandoffKeyRing>().ActiveKeyId;
+            if (!localEnvironment)
+            {
+                await using var scope = services.CreateAsyncScope();
+                var database = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+                if (!await database.Database.CanConnectAsync(cancellationToken))
+                    throw new InvalidOperationException(
+                        "Managed Elsa handoff requires reachable durable persistence outside local environments.");
+                _ = await database.Database.ExecuteSqlRawAsync(
+                    "SELECT 1 FROM ManagedElsaHandoffReplayConsumptions WHERE 1 = 0", cancellationToken);
+                _ = await database.Database.ExecuteSqlRawAsync(
+                    "SELECT 1 FROM ManagedElsaHandoffAuditEvents WHERE 1 = 0", cancellationToken);
+            }
         }
-
-        return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
