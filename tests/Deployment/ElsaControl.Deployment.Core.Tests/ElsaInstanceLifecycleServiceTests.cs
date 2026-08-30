@@ -196,6 +196,56 @@ public sealed class ElsaInstanceLifecycleServiceTests
         Assert.True(active.HoldsReservation);
     }
 
+    [Fact]
+    public async Task Delete_replay_uses_the_original_operation_after_it_mutates_the_instance_intent()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore();
+        var service = new ElsaInstanceLifecycleService(store);
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+        var request = new ElsaInstanceLifecycleRequest(
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1");
+
+        var accepted = await service.DeleteAsync(request);
+        var replay = await service.DeleteAsync(request);
+
+        Assert.False(accepted.Replayed);
+        Assert.True(replay.Replayed);
+        Assert.Equal(accepted.Operation.Id, replay.Operation.Id);
+    }
+
+    [Fact]
+    public async Task Waiting_delete_is_claimed_after_its_prior_operation_becomes_terminal()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore();
+        var service = new ElsaInstanceLifecycleService(store);
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+        var deletion = await service.DeleteAsync(new ElsaInstanceLifecycleRequest(
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1"));
+
+        var priorWork = await store.TryClaimNextAsync("lifecycle-worker-1", Now);
+        Assert.NotNull(priorWork);
+        await store.FailResolutionAsync(new ElsaInstanceLifecycleResolutionFailure(
+            priorWork!.Outbox.WorkspaceId,
+            priorWork.Outbox.InstanceId,
+            priorWork.Operation.Id,
+            priorWork.Outbox.Id,
+            priorWork.Outbox.RequestHash,
+            "lifecycle-worker-1",
+            "resolution.failed",
+            "Lifecycle plan resolution was rejected.",
+            Now,
+            priorWork.LeaseToken,
+            priorWork.LeaseVersion));
+
+        var claimed = await store.TryClaimNextAsync("lifecycle-worker-1", Now);
+
+        Assert.NotNull(claimed);
+        Assert.Equal(deletion.Operation.Id, claimed!.Operation.Id);
+        Assert.Equal(ElsaInstanceOperationState.Accepted, claimed.Operation.State);
+    }
+
     private static ElsaInstanceIntent Intent(ElsaDesiredLifecycle lifecycle = ElsaDesiredLifecycle.Running) => new(
         new ElsaReleaseIntent("valence-runtime", "3.8", channel: "stable"),
         new ElsaApplicationIntent("combined", "starter", packagePolicy: "approved"),

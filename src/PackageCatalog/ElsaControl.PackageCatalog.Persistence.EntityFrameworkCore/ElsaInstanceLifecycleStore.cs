@@ -301,7 +301,16 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     .Where(x => x.Operation != null &&
                                 x.QuarantinedAt == null &&
                                 !skippedCandidateIds.Contains(x.Id) &&
-                                x.Operation.State == ElsaInstanceOperationState.Accepted &&
+                                (x.Operation.State == ElsaInstanceOperationState.Accepted ||
+                                 (x.Operation.State == ElsaInstanceOperationState.WaitingForPriorOperation &&
+                                  !dbContext.ElsaInstanceOperations.Any(operation =>
+                                      operation.Id != x.OperationId &&
+                                      operation.InstanceId == x.InstanceId &&
+                                      (operation.State == ElsaInstanceOperationState.Accepted ||
+                                       operation.State == ElsaInstanceOperationState.WaitingForPriorOperation ||
+                                       operation.State == ElsaInstanceOperationState.Queued ||
+                                       operation.State == ElsaInstanceOperationState.Running ||
+                                       operation.State == ElsaInstanceOperationState.RecoveryRequired)))) &&
                                 (x.Operation.WorkerId == null ||
                                  x.Operation.LeaseExpiresAt == null ||
                                  x.Operation.LeaseExpiresAt <= nowUtc))
@@ -337,6 +346,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                         dbContext.ChangeTracker.Clear();
                     continue;
                 }
+                if (operationEntity.State == ElsaInstanceOperationState.WaitingForPriorOperation)
+                    operationEntity.State = ElsaInstanceOperationState.Accepted;
                 if (operationEntity.State != ElsaInstanceOperationState.Accepted ||
                     (operationEntity.WorkerId is not null && operationEntity.LeaseExpiresAt > nowUtc))
                 {

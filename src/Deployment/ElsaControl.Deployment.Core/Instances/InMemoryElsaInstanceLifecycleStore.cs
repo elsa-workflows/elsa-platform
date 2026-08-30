@@ -261,10 +261,20 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                     continue;
 
                 // Waiting deletes are durable successors, not resolver work. They
-                // become eligible only through a separate continuation step after
-                // their prior operation reaches a terminal state.
+                // become eligible once their prior operation reaches a terminal
+                // state.
                 if (operation.State == ElsaInstanceOperationState.WaitingForPriorOperation)
-                    continue;
+                {
+                    var priorOperationIsActive = _operations.Values.Any(x =>
+                        x.Id != operation.Id &&
+                        x.InstanceId == operation.InstanceId &&
+                        ElsaInstanceOperationGuard.IsBlocking(x.State));
+                    if (priorOperationIsActive)
+                        continue;
+
+                    operation = operation.TransitionTo(ElsaInstanceOperationState.Accepted);
+                    _operations[operation.Id] = operation;
+                }
                 if (operation.State != ElsaInstanceOperationState.Accepted)
                     continue;
 
