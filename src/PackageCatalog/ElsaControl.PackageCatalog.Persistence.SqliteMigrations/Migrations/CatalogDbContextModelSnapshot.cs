@@ -2395,7 +2395,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.ToTable("ElsaInstanceOperations", null, t =>
                         {
-                            t.HasCheckConstraint("CK_ElsaInstanceOperations_LeaseVersion_NonNegative", "LeaseVersion >= 0");
+                            t.HasCheckConstraint("CK_ElsaInstanceOperations_LeaseVersion_Range", "LeaseVersion >= 0 AND LeaseVersion < 2147483647");
                             t.HasCheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'");
                         });
                 });

@@ -844,7 +844,7 @@ internal sealed class ElsaInstanceOperationConfiguration : IEntityTypeConfigurat
         builder.ToTable("ElsaInstanceOperations", t =>
         {
             t.HasCheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'");
-            t.HasCheckConstraint("CK_ElsaInstanceOperations_LeaseVersion_NonNegative", "LeaseVersion >= 0");
+            t.HasCheckConstraint("CK_ElsaInstanceOperations_LeaseVersion_Range", "LeaseVersion >= 0 AND LeaseVersion < 2147483647");
         });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Action).HasConversion<string>().HasMaxLength(64).IsRequired();

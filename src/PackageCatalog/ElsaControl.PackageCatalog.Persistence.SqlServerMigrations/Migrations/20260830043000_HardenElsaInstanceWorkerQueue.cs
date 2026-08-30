@@ -16,9 +16,9 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddCheckConstraint(
-                name: "CK_ElsaInstanceOperations_LeaseVersion_NonNegative",
+                name: "CK_ElsaInstanceOperations_LeaseVersion_Range",
                 table: "ElsaInstanceOperations",
-                sql: "LeaseVersion >= 0");
+                sql: "LeaseVersion >= 0 AND LeaseVersion < 2147483647");
 
             migrationBuilder.AddColumn<long>(
                 name: "QuarantinedAt",
@@ -106,7 +106,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                 """);
 
             migrationBuilder.DropCheckConstraint(
-                name: "CK_ElsaInstanceOperations_LeaseVersion_NonNegative",
+                name: "CK_ElsaInstanceOperations_LeaseVersion_Range",
                 table: "ElsaInstanceOperations");
         }
     }
