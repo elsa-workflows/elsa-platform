@@ -17,8 +17,12 @@ public sealed class ElsaInstanceDeletionWorker(
             throw new ArgumentException("Deletion worker identity is required.", nameof(workerId));
         var results = new List<ElsaInstanceLifecycleWorkerResult>();
         var providerInvocations = 0;
-        while (await store.TryClaimNextDeletionAsync(workerId.Trim(), _timeProvider.GetUtcNow(), cancellationToken) is { } item)
+        while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            var item = await store.TryClaimNextDeletionAsync(workerId.Trim(), _timeProvider.GetUtcNow(), cancellationToken);
+            if (item is null)
+                break;
             try
             {
                 results.Add(Map(await ProcessClaimedAsync(
@@ -30,13 +34,17 @@ public sealed class ElsaInstanceDeletionWorker(
             }
             catch (ElsaInstanceLifecycleConflictException)
             {
-                results.Add(Conflict(item));
+                if (TryConflict(item) is { } conflict)
+                    results.Add(conflict);
             }
             catch (Exception)
             {
+                var failure = TryInvalidFailure(item, workerId.Trim());
+                if (failure is null)
+                    continue;
                 try
                 {
-                    results.Add(Map(await store.RequireDeletionRecoveryAsync(InvalidFailure(item, workerId.Trim()), cancellationToken)));
+                    results.Add(Map(await store.RequireDeletionRecoveryAsync(failure, cancellationToken)));
                 }
                 catch (OperationCanceledException)
                 {
@@ -44,7 +52,8 @@ public sealed class ElsaInstanceDeletionWorker(
                 }
                 catch (Exception)
                 {
-                    results.Add(Conflict(item));
+                    if (TryConflict(item) is { } conflict)
+                        results.Add(conflict);
                 }
             }
         }
@@ -110,8 +119,12 @@ public sealed class ElsaInstanceDeletionWorker(
             item.LeaseToken, item.LeaseVersion, fingerprint, code, _timeProvider.GetUtcNow()), cancellationToken);
     }
 
-    private ElsaInstanceDeletionFailure InvalidFailure(ElsaInstanceDeletionWorkItem item, string workerId)
+    private ElsaInstanceDeletionFailure? TryInvalidFailure(ElsaInstanceDeletionWorkItem item, string workerId)
     {
+        if (item.Outbox is null || item.Operation is null || item.Instance is null ||
+            item.Outbox.Id == Guid.Empty || item.Operation.Id == Guid.Empty || item.Instance.Id == Guid.Empty ||
+            item.Instance.WorkspaceId == Guid.Empty || string.IsNullOrWhiteSpace(item.LeaseToken) || item.LeaseVersion < 1)
+            return null;
         var canonical = $"deletion.item.invalid\n{item.Outbox.Id:D}\n{item.Operation.Id:D}\n{item.Instance.Id:D}\n";
         var fingerprint = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
         return new(item.Instance.WorkspaceId, item.Instance.Id, item.Operation.Id, item.Outbox.Id,
@@ -129,10 +142,11 @@ public sealed class ElsaInstanceDeletionWorker(
             _ => ElsaInstanceLifecycleWorkerOutcome.Conflict
         }, result.Operation, result.Instance, FailureCode: result.DiagnosticCode);
 
-    private static ElsaInstanceLifecycleWorkerResult Conflict(ElsaInstanceDeletionWorkItem item) => new(
-        ElsaInstanceLifecycleWorkerOutcome.Conflict,
-        item.Operation,
-        item.Instance,
-        FailureCode: "deletion.claim.conflict",
-        FailureSummary: "Deletion work item ownership changed before completion.");
+    private static ElsaInstanceLifecycleWorkerResult? TryConflict(ElsaInstanceDeletionWorkItem item) =>
+        item.Operation is null || item.Instance is null ? null : new(
+            ElsaInstanceLifecycleWorkerOutcome.Conflict,
+            item.Operation,
+            item.Instance,
+            FailureCode: "deletion.claim.conflict",
+            FailureSummary: "Deletion work item ownership changed before completion.");
 }

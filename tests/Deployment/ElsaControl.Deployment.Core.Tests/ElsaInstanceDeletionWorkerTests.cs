@@ -130,6 +130,39 @@ public sealed class ElsaInstanceDeletionWorkerTests
         Assert.Equal(2, store.CommitAttempts);
     }
 
+    [Fact]
+    public async Task Structurally_corrupt_item_is_skipped_and_later_work_continues()
+    {
+        var corrupt = WorkItem(local: true) with { Operation = null! };
+        var valid = WorkItem(local: true);
+        var store = new ConflictThenSuccessStore(false, corrupt, valid);
+        var port = new RecordingPort(new(ElsaInstanceCleanupObservationKind.Unavailable,
+            valid.Operation.Id, valid.Operation.AttemptNumber, "deletion.provider.unavailable"));
+
+        var result = await new ElsaInstanceDeletionWorker(store, port, new FixedTimeProvider(Now))
+            .ProcessAvailableAsync("delete-worker");
+
+        Assert.Single(result.Results);
+        Assert.Equal(valid.Operation.Id, result.Results[0].Operation.Id);
+        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Deleted, result.Results[0].Outcome);
+    }
+
+    [Fact]
+    public async Task Cancellation_is_checked_before_claiming_another_item()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var item = WorkItem(local: true);
+        var store = new CancellingStore(item, cancellation);
+        var port = new RecordingPort(new(ElsaInstanceCleanupObservationKind.Unavailable,
+            item.Operation.Id, item.Operation.AttemptNumber, "deletion.provider.unavailable"));
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            new ElsaInstanceDeletionWorker(store, port, new FixedTimeProvider(Now))
+                .ProcessAvailableAsync("delete-worker", cancellation.Token));
+
+        Assert.Equal(1, store.Claims);
+    }
+
     [Theory]
     [InlineData("https://user:secret@evidence.example/proof")]
     [InlineData("https://evidence.example/proof?token=secret")]
@@ -218,9 +251,19 @@ public sealed class ElsaInstanceDeletionWorkerTests
         }
     }
 
-    private sealed class ConflictThenSuccessStore(params ElsaInstanceDeletionWorkItem[] items) : IElsaInstanceDeletionStore
+    private sealed class ConflictThenSuccessStore : IElsaInstanceDeletionStore
     {
-        private readonly Queue<ElsaInstanceDeletionWorkItem> _items = new(items);
+        private readonly Queue<ElsaInstanceDeletionWorkItem> _items;
+        private readonly bool _conflictFirst;
+
+        public ConflictThenSuccessStore(params ElsaInstanceDeletionWorkItem[] items) : this(true, items) { }
+
+        public ConflictThenSuccessStore(bool conflictFirst, params ElsaInstanceDeletionWorkItem[] items)
+        {
+            _conflictFirst = conflictFirst;
+            _items = new(items);
+        }
+
         public int CommitAttempts { get; private set; }
 
         public Task<ElsaInstanceDeletionWorkItem?> TryClaimNextDeletionAsync(string workerId, DateTimeOffset now,
@@ -231,7 +274,7 @@ public sealed class ElsaInstanceDeletionWorkerTests
             CancellationToken cancellationToken = default)
         {
             CommitAttempts++;
-            if (CommitAttempts == 1)
+            if (_conflictFirst && CommitAttempts == 1)
                 throw new ElsaInstanceLifecycleConflictException("Lease changed.");
             return Task.FromResult(new ElsaInstanceDeletionResult(ElsaInstanceDeletionOutcome.Deleted,
                 commit.Operation, commit.Instance, commit.DiagnosticCode, commit.EvidenceFingerprint, false));
@@ -240,6 +283,29 @@ public sealed class ElsaInstanceDeletionWorkerTests
         public Task<ElsaInstanceDeletionResult> RequireDeletionRecoveryAsync(ElsaInstanceDeletionFailure failure,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class CancellingStore(
+        ElsaInstanceDeletionWorkItem item,
+        CancellationTokenSource cancellation) : IElsaInstanceDeletionStore
+    {
+        public int Claims { get; private set; }
+
+        public Task<ElsaInstanceDeletionWorkItem?> TryClaimNextDeletionAsync(string workerId, DateTimeOffset now,
+            CancellationToken cancellationToken = default)
+        {
+            Claims++;
+            cancellation.Cancel();
+            return Task.FromResult<ElsaInstanceDeletionWorkItem?>(item);
+        }
+
+        public Task<ElsaInstanceDeletionResult> CommitDeletionAsync(ElsaInstanceDeletionCommit commit,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ElsaInstanceDeletionResult(ElsaInstanceDeletionOutcome.Deleted,
+                commit.Operation, commit.Instance, commit.DiagnosticCode, commit.EvidenceFingerprint, false));
+
+        public Task<ElsaInstanceDeletionResult> RequireDeletionRecoveryAsync(ElsaInstanceDeletionFailure failure,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
