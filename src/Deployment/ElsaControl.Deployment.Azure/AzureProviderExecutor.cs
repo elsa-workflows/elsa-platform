@@ -160,7 +160,11 @@ public sealed class AzureProviderExecutor
                 return await FinalizeResultAsync(operation, leaseToken, AzureProviderOperationStatus.Failed, "azure.operation.phase.invalid", "The reconcile operation has an invalid lifecycle phase.");
             }
             if (next.Count == 0)
+            {
+                if (string.IsNullOrWhiteSpace(operation.Resources.WorkloadResourceId))
+                    return await MarkRecoveryAsync(operation, leaseToken, "azure.workload.identity.missing", "The provider did not retain an owned workload resource identity.");
                 return await FinalizeResultAsync(operation, leaseToken, AzureProviderOperationStatus.Succeeded, "azure.operation.succeeded", "Azure workload reconciliation completed.");
+            }
 
             foreach (var (step, phase) in next)
             {
@@ -605,7 +609,12 @@ public sealed class AzureProviderExecutor
                 if (completed == runnerTask)
                     return (await runnerTask, operation);
 
-                cancellationToken.ThrowIfCancellationRequested();
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    runnerCancellation.Cancel();
+                    await runnerTask;
+                    throw new OperationCanceledException(cancellationToken);
+                }
                 var renewed = await _store.HeartbeatAsync(
                     operation.WorkspaceId,
                     operation.Id,
@@ -755,6 +764,8 @@ public sealed class AzureProviderExecutor
             !char.IsAsciiLetterOrDigit(plan.WorkloadName[0]) || !char.IsAsciiLetterOrDigit(plan.WorkloadName[^1]) ||
             plan.WorkloadName.Any(x => !char.IsAsciiLetterOrDigit(x) && x != '-'))
             throw new ArgumentException("The provider plan workload name is required.", nameof(request));
+        if (!string.Equals(plan.WorkloadName, operation.TargetKey, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("The provider plan workload name does not match the operation target.", nameof(request));
         if (!string.Equals(plan.Location, operation.Location, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(plan.ElsaVersion, operation.ElsaVersion, StringComparison.Ordinal) ||
             !string.Equals(plan.ReleaseLine, operation.ReleaseLine, StringComparison.Ordinal) ||

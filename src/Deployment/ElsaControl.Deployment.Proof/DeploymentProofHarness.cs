@@ -125,7 +125,7 @@ public sealed class DeploymentProofHarness(TimeProvider? timeProvider = null)
             var cleanup = await ExecuteAsync(
                 DeploymentProofStage.Cleanup,
                 stages,
-                () => provider.CleanupAsync(plan, deployment, environment, cancellationToken));
+                () => provider.CleanupAsync(plan, deployment, environment, CancellationToken.None));
             if (cleanup is null || !cleanup.Succeeded)
             {
                 failed = true;
@@ -170,6 +170,18 @@ public sealed class DeploymentProofHarness(TimeProvider? timeProvider = null)
                 DeploymentProofStageStatus.Failed,
                 exception.Code,
                 DeploymentProofEvidence.SanitizeMessage(exception.Message),
+                startedAt,
+                _timeProvider.GetUtcNow(),
+                new Dictionary<string, string>(StringComparer.Ordinal)));
+            return default;
+        }
+        catch (OperationCanceledException)
+        {
+            stages.Add(new DeploymentProofStageResult(
+                stage,
+                DeploymentProofStageStatus.Failed,
+                $"proof.{stage.ToString().ToLowerInvariant()}.cancelled",
+                "The provider operation was cancelled.",
                 startedAt,
                 _timeProvider.GetUtcNow(),
                 new Dictionary<string, string>(StringComparer.Ordinal)));

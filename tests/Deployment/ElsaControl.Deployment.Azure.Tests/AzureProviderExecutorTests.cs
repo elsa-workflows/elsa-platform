@@ -56,6 +56,35 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Rejects_a_plan_for_a_different_reserved_target_before_claiming()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner();
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            executor.ApplyAsync(CreateRequest(), CreatePlan() with { WorkloadName = "workload-b" }));
+
+        Assert.Empty(runner.Steps);
+    }
+
+    [Fact]
+    public async Task Requires_a_durable_workload_resource_identity_before_succeeding()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner
+        {
+            ResourcesOverride = new AzureProviderResourceReferences(ResourceGroupName: "proof-rg")
+        };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, result.Operation.Status);
+    }
+
+    [Fact]
     public async Task An_interrupted_remote_step_is_recovery_required_and_can_resume_idempotently()
     {
         var store = new FakeOperationStore();

@@ -136,9 +136,11 @@ public sealed class AzureProviderProofAdapter(
         var endpoint = operation.Endpoint;
         if (string.IsNullOrWhiteSpace(endpoint))
             throw new DeploymentProofStageException(DeploymentProofStage.Provision, "azure.proof.endpointMissing", "The Azure provider did not return a workload endpoint.");
+        if (string.IsNullOrWhiteSpace(operation.Resources.WorkloadResourceId))
+            throw new DeploymentProofStageException(DeploymentProofStage.Provision, "azure.proof.resourceMissing", "The Azure provider did not return an owned workload resource identity.");
         _operations[plan.PlanId] = operation;
         return new DeploymentProofDeployment(
-            operation.Resources.WorkloadResourceId ?? $"azure-operation:{operation.Id:N}",
+            operation.Resources.WorkloadResourceId,
             endpoint,
             plan.PlanId,
             new Dictionary<string, string>(StringComparer.Ordinal)
@@ -216,7 +218,9 @@ public sealed class AzureProviderProofAdapter(
         if (!execution.Succeeded)
             throw new DeploymentProofStageException(DeploymentProofStage.Cleanup, "azure.proof.cleanupFailed", "The Azure provider did not confirm cleanup.");
 
-        var resourceId = deployment?.ResourceId ?? operation.Resources.WorkloadResourceId ?? $"azure-operation:{operation.Id:N}";
+        var resourceId = deployment?.ResourceId ?? execution.Operation.Resources.WorkloadResourceId;
+        if (string.IsNullOrWhiteSpace(resourceId))
+            throw new DeploymentProofStageException(DeploymentProofStage.Cleanup, "azure.proof.resourceMissing", "The Azure provider did not retain an owned workload resource identity.");
         return new(true, resourceId, new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["operationId"] = execution.Operation.Id.ToString("N")

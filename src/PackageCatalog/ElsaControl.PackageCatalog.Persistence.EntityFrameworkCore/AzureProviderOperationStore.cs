@@ -28,6 +28,10 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         var activeTargetEntity = await FindActiveTargetAsync(normalized, cancellationToken);
         if (activeTargetEntity is not null)
             throw new AzureProviderOperationConflictException(ToModel(activeTargetEntity));
+        var previousResources = await GetLatestReconcileAsync(
+            normalized.WorkspaceId,
+            normalized.TargetKey,
+            cancellationToken);
 
         var entity = new AzureProviderOperationEntity
         {
@@ -59,7 +63,13 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             Version = 1,
             Health = AzureProviderHealth.Unknown,
             CreatedAt = now,
-            UpdatedAt = now
+            UpdatedAt = now,
+            ResourceGroupName = previousResources?.Resources.ResourceGroupName,
+            FoundationDeploymentId = previousResources?.Resources.FoundationDeploymentId,
+            WorkloadDeploymentId = previousResources?.Resources.WorkloadDeploymentId,
+            WorkloadResourceId = previousResources?.Resources.WorkloadResourceId,
+            WorkloadRevisionName = previousResources?.Resources.WorkloadRevisionName,
+            StableTrafficRevisionName = previousResources?.Resources.StableTrafficRevisionName
         };
         entity.Transitions.Add(new AzureProviderOperationTransitionEntity
         {
@@ -274,7 +284,9 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             .OrderByDescending(x => x.Sequence)
             .Select(x => x.Code)
             .FirstOrDefaultAsync(cancellationToken);
-        if (entity.Phase == checkpoint.Phase && entity.Endpoint == checkpoint.Endpoint && entity.Health == checkpoint.Health &&
+        var endpoint = checkpoint.Endpoint ?? entity.Endpoint;
+        var health = checkpoint.Health == AzureProviderHealth.Unknown ? entity.Health : checkpoint.Health;
+        if (entity.Phase == checkpoint.Phase && entity.Endpoint == endpoint && entity.Health == health &&
             entity.DiagnosticsJson == diagnosticsJson && ResourcesEqual(entity, resources) &&
             lastTransitionCode == checkpoint.Code)
             return ToModel(entity);
@@ -282,7 +294,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         entity.ResourceGroupName = resources.ResourceGroupName; entity.FoundationDeploymentId = resources.FoundationDeploymentId;
         entity.WorkloadDeploymentId = resources.WorkloadDeploymentId; entity.WorkloadResourceId = resources.WorkloadResourceId;
         entity.WorkloadRevisionName = resources.WorkloadRevisionName; entity.StableTrafficRevisionName = resources.StableTrafficRevisionName;
-        entity.Endpoint = checkpoint.Endpoint; entity.Health = checkpoint.Health;
+        entity.Endpoint = endpoint; entity.Health = health;
         entity.DiagnosticsJson = diagnosticsJson;
         AddTransition(entity, checkpoint.Code, checkpoint.Code, now);
         try { await db.SaveChangesAsync(cancellationToken); } catch (DbUpdateConcurrencyException) { db.ChangeTracker.Clear(); return null; }

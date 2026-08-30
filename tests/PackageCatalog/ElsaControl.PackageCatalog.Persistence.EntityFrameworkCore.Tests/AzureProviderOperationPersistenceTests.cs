@@ -238,6 +238,57 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
             store.CreateOrGetAsync(Request() with { IdempotencyKey = "different-plan", PlanFingerprint = new('f', 64) }, now.AddMinutes(2)));
     }
 
+    [Fact]
+    public async Task New_reconcile_inherits_the_latest_durable_resource_snapshot()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var first = await store.CreateOrGetAsync(Request(), now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, first.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+        var checkpoint = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+            _workspaceId, first.Id, "lease",
+            new(AzureProviderOperationPhase.WorkloadReady, "workload.ready", "Ready.",
+                new(ResourceGroupName: "rg-safe", WorkloadResourceId: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app"),
+                "https://workload.example.test", AzureProviderHealth.Healthy, []),
+            now, claimed.Version));
+        Assert.NotNull(await store.FinalizeAsync(
+            _workspaceId, first.Id, "lease", AzureProviderOperationStatus.Succeeded, "operation.succeeded", now, checkpoint.Version));
+
+        var next = await store.CreateOrGetAsync(
+            Request() with { IdempotencyKey = "next-reconcile", PlanFingerprint = new('f', 64) },
+            now.AddMinutes(1));
+
+        Assert.Equal("rg-safe", next.Resources.ResourceGroupName);
+        Assert.Equal("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app", next.Resources.WorkloadResourceId);
+    }
+
+    [Fact]
+    public async Task Reference_only_checkpoint_preserves_existing_endpoint_and_health()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+        var observed = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+            _workspaceId, operation.Id, "lease",
+            new(AzureProviderOperationPhase.HealthVerified, "health.verified", "Verified.", new(),
+                "https://workload.example.test", AzureProviderHealth.Healthy, []),
+            now, claimed.Version));
+
+        var preserved = await store.CheckpointAsync(
+            _workspaceId, operation.Id, "lease",
+            new(AzureProviderOperationPhase.TrafficPromoted, "traffic.restored", "Restored.", new(),
+                null, AzureProviderHealth.Unknown, []),
+            now.AddSeconds(1), observed.Version);
+
+        Assert.Equal("https://workload.example.test", preserved?.Endpoint);
+        Assert.Equal(AzureProviderHealth.Healthy, preserved?.Health);
+    }
+
     [Theory]
     [InlineData("DiagnosticsJson", "{")]
     [InlineData("DiagnosticsJson", "null")]
