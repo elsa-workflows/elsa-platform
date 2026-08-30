@@ -357,8 +357,11 @@ public sealed class DeploymentProofHarness(
         if (Uri.TryCreate(imageReference, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.UserInfo))
             return true;
 
-        var firstSlash = imageReference.IndexOf('/');
-        var authority = firstSlash < 0 ? imageReference : imageReference[..firstSlash];
+        var authorityStart = imageReference.IndexOf("://", StringComparison.Ordinal) is var schemeSeparator && schemeSeparator >= 0
+            ? schemeSeparator + 3
+            : 0;
+        var firstSlash = imageReference.IndexOf('/', authorityStart);
+        var authority = firstSlash < 0 ? imageReference[authorityStart..] : imageReference[authorityStart..firstSlash];
         var at = authority.IndexOf('@');
         return at > 0;
     }

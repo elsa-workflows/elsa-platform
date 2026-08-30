@@ -170,7 +170,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
                 .SetProperty(x => x.Status, x => x.Status == AzureProviderOperationStatus.RecoveryRequired
                     ? AzureProviderOperationStatus.RecoveryRequired
                     : AzureProviderOperationStatus.Failed)
-                .SetProperty(x => x.CompletedAt, now)
+                .SetProperty(x => x.CompletedAt, x => x.Status == AzureProviderOperationStatus.RecoveryRequired ? null : now)
                 .SetProperty(x => x.UpdatedAt, now)
                 .SetProperty(x => x.Version, x => x.Version + 1)
                 .SetProperty(x => x.LeaseTokenHash, (string?)null)
