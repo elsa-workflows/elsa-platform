@@ -60,6 +60,15 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     IF EXISTS (
                         SELECT 1
                         FROM inserted i
+                        JOIN DeploymentEnvironments e ON e.Id = i.EnvironmentId
+                        WHERE e.ElsaInstanceId IS NOT NULL
+                          AND (i.ElsaInstanceId IS NULL
+                               OR e.WorkspaceId <> i.WorkspaceId
+                               OR e.ElsaInstanceId <> i.ElsaInstanceId))
+                        THROW 51003, ''Managed deployment run binding mismatch'', 1;
+                    IF EXISTS (
+                        SELECT 1
+                        FROM inserted i
                         JOIN deleted d ON d.Id = i.Id
                         WHERE d.ElsaInstanceId IS NOT NULL
                           AND (i.ElsaInstanceId IS NULL OR i.ElsaInstanceId <> d.ElsaInstanceId))

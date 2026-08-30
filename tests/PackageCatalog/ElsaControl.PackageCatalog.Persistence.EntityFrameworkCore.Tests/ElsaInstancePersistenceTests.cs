@@ -701,6 +701,11 @@ public sealed class ElsaInstancePersistenceTests
         db.ElsaInstanceMigrations.Add(migration);
         await db.SaveChangesAsync();
 
+        var efNullBindingRun = NewRun(workspace.Id, application.Id, environment.Id, WorkspaceDeploymentRunStatus.Failed);
+        db.DeploymentRuns.Add(efNullBindingRun);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+        db.ChangeTracker.Clear();
+
         db.ElsaInstanceOperations.Remove(create);
         var deleteException = await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
         Assert.Equal("Elsa instance operations are durable and cannot be deleted.", deleteException.Message);
@@ -721,6 +726,14 @@ public sealed class ElsaInstancePersistenceTests
             FROM DeploymentRuns WHERE Id = {run.Id}
             """));
         await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO DeploymentRuns (Id, WorkspaceId, ElsaInstanceId, ApplicationId, EnvironmentId, EngineId,
+                SourceRevisionId, Status, ValidationOutcome, ConfirmationId, ActorAccountId, QueuedAt, CreatedAt, AttemptNumber)
+            SELECT {Guid.NewGuid()}, WorkspaceId, NULL, ApplicationId, EnvironmentId, EngineId,
+                SourceRevisionId, 'Failed', ValidationOutcome, ConfirmationId, ActorAccountId, QueuedAt, CreatedAt, AttemptNumber
+            FROM DeploymentRuns WHERE Id = {run.Id}
+            """));
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
             $"UPDATE DeploymentEnvironments SET ElsaInstanceId = {second.Id} WHERE Id = {environment.Id}"));
         await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
             $"UPDATE ElsaInstanceOperations SET Action = {deleteAction} WHERE Id = {create.Id}"));
@@ -730,6 +743,21 @@ public sealed class ElsaInstancePersistenceTests
             $"DELETE FROM ElsaInstanceMigrations WHERE MigrationId = {migration.MigrationId}"));
         await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
             $"DELETE FROM ElsaInstances WHERE Id = {second.Id}"));
+
+        var unboundEnvironment = NewEnvironment(workspace.Id, application.Id, null, "Unbound guard environment");
+        db.DeploymentEnvironments.Add(unboundEnvironment);
+        await db.SaveChangesAsync();
+        var unboundRun = NewRun(workspace.Id, application.Id, unboundEnvironment.Id, WorkspaceDeploymentRunStatus.Failed);
+        db.DeploymentRuns.Add(unboundRun);
+        await db.SaveChangesAsync();
+
+        unboundRun.EnvironmentId = environment.Id;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+        db.ChangeTracker.Clear();
+
+        var managedEnvironmentId = environment.Id;
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE DeploymentRuns SET EnvironmentId = {managedEnvironmentId} WHERE Id = {unboundRun.Id}"));
     }
 
     [Fact]

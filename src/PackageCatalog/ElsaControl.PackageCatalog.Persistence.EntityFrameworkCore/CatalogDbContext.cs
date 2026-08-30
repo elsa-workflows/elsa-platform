@@ -488,14 +488,13 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         }
 
         var trackedRuns = trackedRunEntries.Select(entry => entry.Entity).ToArray();
-        var managedEnvironmentIds = trackedRuns
-            .Where(run => run.ElsaInstanceId is not null)
+        var referencedEnvironmentIds = trackedRuns
             .Select(run => run.EnvironmentId)
             .ToHashSet();
         var localEnvironments = DeploymentEnvironments.Local
-            .Where(environment => managedEnvironmentIds.Contains(environment.Id))
+            .Where(environment => referencedEnvironmentIds.Contains(environment.Id))
             .ToDictionary(environment => environment.Id, environment => environment);
-        var persistedEnvironmentIds = managedEnvironmentIds
+        var persistedEnvironmentIds = referencedEnvironmentIds
             .Except(localEnvironments.Keys)
             .ToHashSet();
         var persistedEnvironments = persistedEnvironmentIds.Count == 0
@@ -504,13 +503,27 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                 .Where(environment => persistedEnvironmentIds.Contains(environment.Id))
                 .ToDictionary(environment => environment.Id, environment => environment);
 
-        foreach (var run in trackedRuns.Where(run => run.ElsaInstanceId is not null))
+        foreach (var run in trackedRuns)
         {
             var environment = trackedEnvironments.GetValueOrDefault(run.EnvironmentId)
                 ?? localEnvironments.GetValueOrDefault(run.EnvironmentId)
                 ?? persistedEnvironments.GetValueOrDefault(run.EnvironmentId);
 
-            if (environment is null || environment.WorkspaceId != run.WorkspaceId || environment.ElsaInstanceId != run.ElsaInstanceId)
+            if (environment is null)
+            {
+                if (run.ElsaInstanceId is not null)
+                    throw new InvalidOperationException("A managed deployment run must match its environment instance binding.");
+                continue;
+            }
+
+            if (run.ElsaInstanceId is null)
+            {
+                if (environment.ElsaInstanceId is not null)
+                    throw new InvalidOperationException("A managed deployment run must match its environment instance binding.");
+                continue;
+            }
+
+            if (environment.WorkspaceId != run.WorkspaceId || environment.ElsaInstanceId != run.ElsaInstanceId)
                 throw new InvalidOperationException("A managed deployment run must match its environment instance binding.");
         }
 

@@ -28,11 +28,18 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 BEGIN SELECT RAISE(ABORT, 'Elsa instance operations are durable'); END;
                 CREATE TRIGGER TR_DeploymentRuns_ManagedInstanceBinding_Insert
                 BEFORE INSERT ON DeploymentRuns
-                WHEN NEW.ElsaInstanceId IS NOT NULL AND NOT EXISTS (
+                WHEN EXISTS (
                     SELECT 1 FROM DeploymentEnvironments e
                     WHERE e.Id = NEW.EnvironmentId
-                      AND e.WorkspaceId = NEW.WorkspaceId
-                      AND e.ElsaInstanceId = NEW.ElsaInstanceId)
+                      AND e.ElsaInstanceId IS NOT NULL
+                      AND (NEW.ElsaInstanceId IS NULL
+                           OR e.WorkspaceId <> NEW.WorkspaceId
+                           OR e.ElsaInstanceId <> NEW.ElsaInstanceId))
+                     OR (NEW.ElsaInstanceId IS NOT NULL AND NOT EXISTS (
+                         SELECT 1 FROM DeploymentEnvironments e
+                         WHERE e.Id = NEW.EnvironmentId
+                           AND e.WorkspaceId = NEW.WorkspaceId
+                           AND e.ElsaInstanceId = NEW.ElsaInstanceId))
                 BEGIN SELECT RAISE(ABORT, 'Managed deployment run binding mismatch'); END;
                 CREATE TRIGGER TR_DeploymentRuns_ManagedInstanceBinding_Update
                 BEFORE UPDATE OF WorkspaceId, EnvironmentId, ElsaInstanceId ON DeploymentRuns
@@ -41,6 +48,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     WHERE e.Id = NEW.EnvironmentId
                       AND e.WorkspaceId = NEW.WorkspaceId
                       AND e.ElsaInstanceId = NEW.ElsaInstanceId))
+                     OR (NEW.ElsaInstanceId IS NULL AND EXISTS (
+                         SELECT 1 FROM DeploymentEnvironments e
+                         WHERE e.Id = NEW.EnvironmentId
+                           AND e.ElsaInstanceId IS NOT NULL))
                      OR (OLD.ElsaInstanceId IS NOT NULL AND
                          (NEW.ElsaInstanceId IS NULL OR NEW.ElsaInstanceId <> OLD.ElsaInstanceId))
                 BEGIN SELECT RAISE(ABORT, 'Managed deployment run binding mismatch'); END;
