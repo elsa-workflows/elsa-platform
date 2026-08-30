@@ -142,7 +142,9 @@ public sealed class ManagedElsaHandoffTests
 
         Assert.Equal(ManagedElsaHandoffDefaults.TokenType, jwt.Header.Typ);
         Assert.Equal("prototype", jwt.Header.Kid);
-        Assert.Equal(fixture.Authorizer.BindingVersion.ToString(), jwt.Claims.Single(x => x.Type == "binding_version").Value);
+        Assert.Equal(
+            fixture.Authorizer.BindingVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            jwt.Claims.Single(x => x.Type == "binding_version").Value);
     }
 
     [Fact]
