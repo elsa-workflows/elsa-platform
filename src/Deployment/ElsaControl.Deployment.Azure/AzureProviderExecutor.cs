@@ -616,10 +616,10 @@ public sealed class AzureProviderExecutor
                     {
                         await runnerTask;
                     }
-                    catch (Exception)
+                    catch (OperationCanceledException)
                     {
                         // The cancellation path must report durable recovery rather than
-                        // leaking a provider-specific cancellation or shutdown exception.
+                        // leaking a provider-specific cancellation exception.
                     }
                     throw new OperationCanceledException(cancellationToken);
                 }
