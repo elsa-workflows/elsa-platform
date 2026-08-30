@@ -1081,9 +1081,14 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         string? failureMessage = null,
         CancellationToken cancellationToken = default)
     {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable, cancellationToken);
         var run = await dbContext.DeploymentRuns
             .Include(x => x.Environment)
             .SingleAsync(x => x.WorkspaceId == workspaceId && x.Id == runId, cancellationToken);
+
+        if (status == WorkspaceDeploymentRunStatus.RecoveryRequired && IsTerminalRunStatus(run.Status))
+            throw new InvalidOperationException("A terminal deployment run cannot be moved into recovery.");
 
         if (IsTerminalRunStatus(status))
         {
@@ -1139,6 +1144,7 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
             CreatedAt = now
         }, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return ToWorkspaceDeploymentRun(run);
     }
 

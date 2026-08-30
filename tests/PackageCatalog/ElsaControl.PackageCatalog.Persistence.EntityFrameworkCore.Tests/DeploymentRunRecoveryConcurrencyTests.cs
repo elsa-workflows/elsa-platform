@@ -108,6 +108,46 @@ public sealed class DeploymentRunRecoveryConcurrencyTests
         }
     }
 
+    [Fact]
+    public async Task Direct_recovery_update_cannot_regress_a_terminal_run()
+    {
+        var database = await CreateDatabaseAsync();
+
+        try
+        {
+            await using (var completionContext = new CatalogDbContext(database.Options))
+            {
+                await new DeploymentWorkspaceStore(completionContext).UpdateRunStatusAsync(
+                    database.WorkspaceId,
+                    database.RunId,
+                    WorkspaceDeploymentRunStatus.Succeeded,
+                    "Deployment completed.",
+                    Now.AddMinutes(11));
+            }
+
+            await using var recoveryContext = new CatalogDbContext(database.Options);
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                new DeploymentWorkspaceStore(recoveryContext).UpdateRunStatusAsync(
+                    database.WorkspaceId,
+                    database.RunId,
+                    WorkspaceDeploymentRunStatus.RecoveryRequired,
+                    "Recovery requested after completion.",
+                    Now.AddMinutes(12)));
+
+            Assert.Equal("A terminal deployment run cannot be moved into recovery.", exception.Message);
+            await using var verify = new CatalogDbContext(database.Options);
+            var run = await verify.DeploymentRuns.SingleAsync(x => x.Id == database.RunId);
+            Assert.Equal(WorkspaceDeploymentRunStatus.Succeeded, run.Status);
+            Assert.Equal(Now.AddMinutes(11), run.CompletedAt);
+            Assert.DoesNotContain(await verify.DeploymentRunHistoryEvents.Where(x => x.RunId == database.RunId).ToListAsync(),
+                x => x.Status == WorkspaceDeploymentRunStatus.RecoveryRequired);
+        }
+        finally
+        {
+            DeleteDatabase(database.Path);
+        }
+    }
+
     private static async Task<TestDatabase> CreateDatabaseAsync()
     {
         var path = Path.Combine(Path.GetTempPath(), $"elsa-control-run-recovery-{Guid.NewGuid():N}.db");
