@@ -857,6 +857,7 @@ public sealed class ElsaInstancePlanResolver(
     private static bool IsInstancePlanUri(string value, string? planId, Guid? expectedWorkspaceId)
     {
         if (string.IsNullOrWhiteSpace(planId)
+            || !string.Equals(planId, planId.Trim(), StringComparison.Ordinal)
             || !Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri)
             || !uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
             || string.IsNullOrWhiteSpace(uri.Host)
@@ -865,7 +866,6 @@ public sealed class ElsaInstancePlanResolver(
             || !string.IsNullOrEmpty(uri.UserInfo))
             return false;
 
-        var normalizedPlanId = planId.Trim();
         var segments = uri.GetComponents(UriComponents.Path, UriFormat.UriEscaped)
             .Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length != 7
@@ -875,7 +875,7 @@ public sealed class ElsaInstancePlanResolver(
             || !segments[3].Equals("instances", StringComparison.OrdinalIgnoreCase)
             || !Guid.TryParseExact(segments[4], "D", out _)
             || !segments[5].Equals("resolved-plans", StringComparison.OrdinalIgnoreCase)
-            || !segments[6].Equals(Uri.EscapeDataString(normalizedPlanId), StringComparison.Ordinal))
+            || !segments[6].Equals(Uri.EscapeDataString(planId), StringComparison.Ordinal))
             return false;
 
         if (!uri.AbsolutePath.EndsWith('/' + segments[6], StringComparison.Ordinal))
@@ -889,13 +889,14 @@ public sealed class ElsaInstancePlanResolver(
 
     private static bool IsSafePlanId(string? value)
     {
-        if (value is null || value.Any(char.IsControl))
+        if (value is null
+            || value.Any(char.IsControl)
+            || !string.Equals(value, value.Trim(), StringComparison.Ordinal))
             return false;
 
-        var normalized = value.Trim();
-        return !string.IsNullOrWhiteSpace(normalized)
-            && normalized.Length <= MaxPlanIdLength
-            && PlanIdPattern.IsMatch(normalized);
+        return !string.IsNullOrWhiteSpace(value)
+            && value.Length <= MaxPlanIdLength
+            && PlanIdPattern.IsMatch(value);
     }
 
     private static bool ContainsSensitiveKey(string key) =>

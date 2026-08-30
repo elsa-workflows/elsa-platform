@@ -143,7 +143,8 @@ public sealed class ResolvedElsaApplicationPlanTests
             "secret://vault/database\\password",
             "secret://vault/database\0password",
             "secret://host",
-            "secret://host/"
+            "secret://host/",
+            "secret://vault/database/"
         };
         var plan = CreatePlan() with
         {
@@ -168,6 +169,7 @@ public sealed class ResolvedElsaApplicationPlanTests
     [Theory]
     [InlineData("secret://host")]
     [InlineData("secret://host/")]
+    [InlineData("secret://host/database/")]
     public void Rejects_secret_references_without_a_non_root_path(string reference)
     {
         Assert.False(SecretReferencePolicy.IsSafe(reference));

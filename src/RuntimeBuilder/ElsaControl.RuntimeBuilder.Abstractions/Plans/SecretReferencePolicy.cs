@@ -17,6 +17,8 @@ public static class SecretReferencePolicy
             || !Uri.TryCreate(value, UriKind.Absolute, out var uri))
             return false;
 
+        var pathSegments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var canonicalPath = "/" + string.Join("/", pathSegments);
         return string.Equals(uri.Scheme, "secret", StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(uri.Host)
             && !string.IsNullOrEmpty(uri.AbsolutePath)
@@ -25,6 +27,7 @@ public static class SecretReferencePolicy
             && string.IsNullOrEmpty(uri.Query)
             && string.IsNullOrEmpty(uri.Fragment)
             && !uri.AbsolutePath.Contains("//", StringComparison.Ordinal)
-            && !uri.AbsolutePath.Split('/').Any(segment => segment is "." or "..");
+            && !pathSegments.Any(segment => segment is "." or "..")
+            && string.Equals(uri.AbsolutePath, canonicalPath, StringComparison.Ordinal);
     }
 }

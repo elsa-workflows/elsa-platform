@@ -613,6 +613,7 @@ public sealed class ElsaInstancePlanResolverTests
     [InlineData("secret://workspace/smtp%2fpassword")]
     [InlineData("secret://workspace/smtp\\password")]
     [InlineData("secret://workspace/smtp\0password")]
+    [InlineData("secret://workspace/smtp-password/")]
     public async Task Rejects_unsafe_secret_references_during_resolution_with_deterministic_finding(string reference)
     {
         var sourceId = Guid.NewGuid();
@@ -644,6 +645,8 @@ public sealed class ElsaInstancePlanResolverTests
     [InlineData("plan/01")]
     [InlineData("plan%01")]
     [InlineData("plan\u0000id")]
+    [InlineData(" plan_01J5FUTURE")]
+    [InlineData("plan_01J5FUTURE ")]
     public async Task Rejects_unsafe_plan_ids_before_uri_validation(string planId)
     {
         var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility())
