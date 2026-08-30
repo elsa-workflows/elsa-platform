@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace ElsaControl.Deployment.Azure;
 
@@ -43,6 +45,8 @@ public sealed class AzureProviderOperationService(
     IAzureProviderOperationStore store,
     TimeProvider? timeProvider = null) : IAzureProviderOperationService
 {
+    private const int MaximumIdempotencyKeyLength = 512;
+    private const string DeleteIdempotencySuffix = ":delete";
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     public Task<AzureProviderOperation> SubmitAsync(
@@ -57,13 +61,29 @@ public sealed class AzureProviderOperationService(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(submission);
+        var deleteIdempotencyKey = CreateDeleteIdempotencyKey(submission.IdempotencyKey);
         // Idempotency is scoped to a lifecycle action. A cleanup request must never
         // accidentally reuse the successful reconcile operation for the same target.
         return SubmitCoreAsync(
             workspaceId,
-            submission with { IdempotencyKey = $"{submission.IdempotencyKey}:delete" },
+            submission with { IdempotencyKey = deleteIdempotencyKey },
             AzureProviderOperationAction.Delete,
             cancellationToken);
+    }
+
+    private static string CreateDeleteIdempotencyKey(string idempotencyKey)
+    {
+        if (string.IsNullOrWhiteSpace(idempotencyKey) ||
+            idempotencyKey.Length > MaximumIdempotencyKeyLength ||
+            idempotencyKey.Any(char.IsControl))
+            throw new ArgumentException("A bounded safe idempotency key is required.", nameof(idempotencyKey));
+
+        var normalized = idempotencyKey.Trim();
+        if (normalized.Length + DeleteIdempotencySuffix.Length <= MaximumIdempotencyKeyLength)
+            return normalized + DeleteIdempotencySuffix;
+
+        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized))).ToLowerInvariant();
+        return $"delete:sha256:{digest}";
     }
 
     public async Task<AzureProviderOperationStatusResponse?> GetStatusAsync(

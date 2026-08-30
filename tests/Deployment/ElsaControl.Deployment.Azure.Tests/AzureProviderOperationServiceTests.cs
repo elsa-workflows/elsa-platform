@@ -74,6 +74,39 @@ public sealed class AzureProviderOperationServiceTests
 
         Assert.Equal(AzureProviderOperationAction.Delete, result.Action);
         Assert.Equal(AzureProviderOperationAction.Delete, store.Request!.Action);
+        Assert.Equal("delete-1:delete", store.Request.IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task Delete_submission_derives_a_bounded_deterministic_key_from_a_maximum_length_key()
+    {
+        var originalKey = new string('x', 512);
+        var firstStore = new CapturingStore();
+        var secondStore = new CapturingStore();
+
+        await new AzureProviderOperationService(firstStore, new FixedTimeProvider(Now)).SubmitDeleteAsync(
+            WorkspaceId,
+            new AzureProviderOperationSubmission(originalKey, new('b', 64), CreatePlan()));
+        await new AzureProviderOperationService(secondStore, new FixedTimeProvider(Now)).SubmitDeleteAsync(
+            WorkspaceId,
+            new AzureProviderOperationSubmission(originalKey, new('b', 64), CreatePlan()));
+
+        Assert.StartsWith("delete:sha256:", firstStore.Request!.IdempotencyKey, StringComparison.Ordinal);
+        Assert.True(firstStore.Request.IdempotencyKey.Length <= 512);
+        Assert.Equal(firstStore.Request.IdempotencyKey, secondStore.Request!.IdempotencyKey);
+    }
+
+    [Theory]
+    [InlineData(513)]
+    [InlineData(0)]
+    public async Task Delete_submission_rejects_invalid_original_idempotency_keys(int length)
+    {
+        var key = length == 0 ? "\t" : new string('x', length);
+        var service = new AzureProviderOperationService(new CapturingStore(), new FixedTimeProvider(Now));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SubmitDeleteAsync(
+            WorkspaceId,
+            new AzureProviderOperationSubmission(key, new('b', 64), CreatePlan())));
     }
 
     [Fact]

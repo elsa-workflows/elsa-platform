@@ -31,7 +31,7 @@ public sealed class AzureProviderOperationHostedService(
         var batchSize = configured.BatchSize is >= 1 and <= 100 ? configured.BatchSize : 10;
         using var timer = new PeriodicTimer(interval);
 
-        do
+        while (true)
         {
             try
             {
@@ -49,7 +49,16 @@ public sealed class AzureProviderOperationHostedService(
             {
                 logger.LogError(exception, "Azure provider operation processing failed.");
             }
+
+            try
+            {
+                if (!await timer.WaitForNextTickAsync(stoppingToken))
+                    return;
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
         }
-        while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 }
