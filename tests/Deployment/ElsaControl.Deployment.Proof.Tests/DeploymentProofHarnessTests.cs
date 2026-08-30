@@ -99,13 +99,16 @@ public sealed class DeploymentProofHarnessTests
             extraMetadata: new Dictionary<string, string>
             {
                 ["diagnostic"] = "provider returned token=do-not-leak",
-                ["password"] = "do-not-leak"
+                ["password"] = "do-not-leak",
+                ["images"] = "push user:password@registry.example.test/runtime,other@registry.example.test/runtime"
             });
 
         var report = await new DeploymentProofHarness().RunAsync(Input, Environment, provider);
         var evidence = report.ToJson();
 
         Assert.DoesNotContain("do-not-leak", evidence, StringComparison.Ordinal);
+        Assert.DoesNotContain("user:password@", evidence, StringComparison.Ordinal);
+        Assert.DoesNotContain("other@", evidence, StringComparison.Ordinal);
         Assert.Contains("redacted", evidence, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("azure-workload-identity=", evidence, StringComparison.Ordinal);
 
