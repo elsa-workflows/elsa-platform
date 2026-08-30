@@ -172,20 +172,51 @@ public sealed class ElsaInstancePlanResolverTests
             }
         };
 
-        var resolver = new ElsaInstancePlanResolver(
-            new FakeCatalog([]),
-            new FakeCompatibility(),
-            new ElsaInstancePlanResolutionOptions(
-                FeatureOverrideDefinitions: new Dictionary<string, ElsaFeatureOverrideKind>
-                {
-                    ["replicas"] = ElsaFeatureOverrideKind.Number
-                }));
+        var resolver = CreateNumberOverrideResolver();
         var result = await resolver.ResolveAsync(request);
 
         Assert.True(result.Succeeded, string.Join("; ", result.Findings.Select(x => x.Code)));
         var overrideEntry = Assert.Single(result.Plan!.Configuration.Entries, entry => entry.Key == "featureOverride.replicas");
         Assert.Equal("number", overrideEntry.JsonType);
         Assert.Equal(3, overrideEntry.Value!.Value.GetInt32());
+    }
+
+    [Fact]
+    public async Task Projects_decimal_maximum_feature_override_without_loss()
+    {
+        var request = CreateRequest() with
+        {
+            InstanceIntent = CreateRequest().InstanceIntent with
+            {
+                Application = new("server-studio", "starter", [new("replicas", ElsaFeatureOverride.FromNumber(decimal.MaxValue))], "approved")
+            }
+        };
+
+        var resolver = CreateNumberOverrideResolver();
+        var result = await resolver.ResolveAsync(request);
+
+        Assert.True(result.Succeeded, string.Join("; ", result.Findings.Select(x => x.Code)));
+        var overrideEntry = Assert.Single(result.Plan!.Configuration.Entries, entry => entry.Key == "featureOverride.replicas");
+        Assert.Equal(decimal.MaxValue, overrideEntry.Value!.Value.GetDecimal());
+    }
+
+    [Fact]
+    public async Task Rejects_overflowing_feature_override_with_deterministic_finding()
+    {
+        var request = CreateRequest() with
+        {
+            InstanceIntent = CreateRequest().InstanceIntent with
+            {
+                Application = new("server-studio", "starter", [new("replicas", RawFeatureOverride(ElsaFeatureOverrideKind.Number, "79228162514264337593543950336"))], "approved")
+            }
+        };
+
+        var resolver = CreateNumberOverrideResolver();
+        var result = await resolver.ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Findings, finding => finding.Code == "configuration.override.invalid");
+        Assert.DoesNotContain(result.Plan?.Configuration.Entries ?? [], entry => entry.Key == "featureOverride.replicas");
     }
 
     [Fact]
@@ -789,6 +820,21 @@ public sealed class ElsaInstancePlanResolverTests
         AdmittedManifest("5.0", "5.0.0-preview.1", "server-studio"),
         "plan_01J5FUTURE",
         "https://control.example.test/api/workspaces/00000000-0000-0000-0000-000000000001/instances/00000000-0000-0000-0000-000000000002/resolved-plans/plan_01J5FUTURE");
+
+    private static ElsaInstancePlanResolver CreateNumberOverrideResolver() =>
+        new(
+            new FakeCatalog([]),
+            new FakeCompatibility(),
+            new ElsaInstancePlanResolutionOptions(
+                FeatureOverrideDefinitions: new Dictionary<string, ElsaFeatureOverrideKind>
+                {
+                    ["replicas"] = ElsaFeatureOverrideKind.Number
+                }));
+
+    private static ElsaFeatureOverride RawFeatureOverride(ElsaFeatureOverrideKind kind, string value) =>
+        (ElsaFeatureOverride)typeof(ElsaFeatureOverride)
+            .GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, binder: null, [typeof(ElsaFeatureOverrideKind), typeof(string)], modifiers: null)!
+            .Invoke([kind, value]);
 
     private static ReleaseManifestAdmissionResult AdmittedManifest(
         string releaseLine,

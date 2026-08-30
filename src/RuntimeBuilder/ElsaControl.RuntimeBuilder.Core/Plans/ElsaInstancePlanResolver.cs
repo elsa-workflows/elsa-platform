@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -445,7 +446,6 @@ public sealed class ElsaInstancePlanResolver(
                 continue;
             }
 
-            JsonElement value;
             var jsonType = overrideValue.Value.Kind switch
             {
                 ElsaFeatureOverrideKind.Boolean => "boolean",
@@ -453,21 +453,22 @@ public sealed class ElsaInstancePlanResolver(
                 ElsaFeatureOverrideKind.Catalog => "string",
                 _ => ""
             };
-            try
-            {
-                value = overrideValue.Value.Kind switch
-                {
-                    ElsaFeatureOverrideKind.Boolean => JsonSerializer.SerializeToElement(overrideValue.Value.Value.Equals("true", StringComparison.OrdinalIgnoreCase)),
-                    ElsaFeatureOverrideKind.Number => JsonSerializer.SerializeToElement(decimal.Parse(overrideValue.Value.Value, System.Globalization.CultureInfo.InvariantCulture)),
-                    ElsaFeatureOverrideKind.Catalog => JsonSerializer.SerializeToElement(overrideValue.Value.Value),
-                    _ => default
-                };
-            }
-            catch (FormatException)
+
+            decimal number = default;
+            if (overrideValue.Value.Kind == ElsaFeatureOverrideKind.Number &&
+                !decimal.TryParse(overrideValue.Value.Value, NumberStyles.Number, CultureInfo.InvariantCulture, out number))
             {
                 findings.Add(Error("configuration.override.invalid", "A typed feature override is invalid.", "configuration"));
                 continue;
             }
+
+            var value = overrideValue.Value.Kind switch
+            {
+                ElsaFeatureOverrideKind.Boolean => JsonSerializer.SerializeToElement(overrideValue.Value.Value.Equals("true", StringComparison.OrdinalIgnoreCase)),
+                ElsaFeatureOverrideKind.Number => JsonSerializer.SerializeToElement(number),
+                ElsaFeatureOverrideKind.Catalog => JsonSerializer.SerializeToElement(overrideValue.Value.Value),
+                _ => default
+            };
 
             entries.Add(new(key, jsonType, false, false, false, null, value, null, null));
         }
