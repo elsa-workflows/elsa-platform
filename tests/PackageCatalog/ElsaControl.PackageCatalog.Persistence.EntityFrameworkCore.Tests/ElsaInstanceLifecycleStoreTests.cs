@@ -588,6 +588,25 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal("https://evidence.example/retry/provider-observation-1",
             operation.ReconciliationRetryEvidenceReference);
         Assert.Equal("sha256:" + new string('b', 64), operation.ReconciliationRetryEvidenceDigest);
+        Assert.False(replay.RetrySafe);
+
+        var concurrentReplay = await lifecycleStore.CommitAsync(new(
+            accepted.Instance.WorkspaceId,
+            accepted.Instance.Id,
+            accepted.Operation.Id,
+            originalTarget.Instance.Version,
+            originalTarget.Operation.AttemptNumber,
+            originalTarget.ReconciliationVersion,
+            operation.ReconciliationEvidenceFingerprint!,
+            originalTarget.Instance,
+            originalTarget.Operation,
+            ElsaInstanceProviderReconciliationService.ConvergedCode,
+            false,
+            null,
+            null,
+            Now.AddMinutes(12)));
+        Assert.True(concurrentReplay.Replayed);
+        Assert.False(concurrentReplay.RetrySafe);
 
         await db.Database.ExecuteSqlInterpolatedAsync(
             $"UPDATE ElsaInstances SET ObservedLifecycle = 'Failed', Health = 'Unreachable', Version = Version + 1 WHERE Id = {accepted.Instance.Id}");

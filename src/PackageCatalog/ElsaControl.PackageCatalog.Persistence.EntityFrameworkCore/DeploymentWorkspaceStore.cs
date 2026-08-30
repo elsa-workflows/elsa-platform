@@ -1,3 +1,4 @@
+using System.Data;
 using System.Text.Json;
 using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Artifacts;
@@ -1157,7 +1158,8 @@ public sealed class DeploymentWorkspaceStore(CatalogDbContext dbContext) : IWork
         if (staleRunIds.Count == 0)
             return 0;
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable, cancellationToken);
         var markedCount = 0;
         const string recoveryReason = "Worker heartbeat became stale.";
 

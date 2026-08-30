@@ -101,7 +101,9 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     throw Conflict("Provider reconciliation evidence conflicts with the recorded result.");
                 await transaction.CommitAsync(cancellationToken);
                 return await GetResultAsync(commit.WorkspaceId, commit.OperationId, cancellationToken)
-                    ?? throw Conflict("Provider reconciliation result is incomplete.");
+                    is { } result
+                    ? result with { Replayed = true }
+                    : throw Conflict("Provider reconciliation result is incomplete.");
             }
             if (current?.State == ElsaInstanceOperationState.RecoveryRequired &&
                 string.Equals(current.ReconciliationEvidenceFingerprint, commit.EvidenceFingerprint, StringComparison.Ordinal))
@@ -1102,7 +1104,10 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             operation.ReconciledInstanceVersion.Value, operation.State);
         return new(outcome, projection, diagnosticCode,
             operation.State == ElsaInstanceOperationState.RecoveryRequired &&
-            operation.ReconciliationRetryEvidenceReference is not null,
+            string.Equals(operation.FailureCode, ElsaInstanceProviderReconciliationService.RetrySafeCode,
+                StringComparison.Ordinal) &&
+            operation.ReconciliationRetryEvidenceReference is not null &&
+            operation.ReconciliationRetryEvidenceDigest is not null,
             replayed, operation.ReconciledAt.Value.ToUniversalTime());
     }
 
