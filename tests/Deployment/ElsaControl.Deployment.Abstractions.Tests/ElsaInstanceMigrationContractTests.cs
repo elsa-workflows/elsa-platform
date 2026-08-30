@@ -74,6 +74,8 @@ public sealed class ElsaInstanceMigrationContractTests
         Assert.Equal(accountId, released.EarlyReleaseApprovedByAccountId);
         Assert.Equal(Now.AddHours(1), released.EarlyReleaseApprovedAt);
         Assert.Equal(Now.AddDays(1).AddMinutes(1), released.SourceReleasedAt);
+        Assert.Throws<InvalidOperationException>(() =>
+            approved.ApproveEarlyRelease(Guid.NewGuid(), Now.AddHours(2)));
     }
 
     [Fact]

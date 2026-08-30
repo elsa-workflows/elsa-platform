@@ -181,6 +181,8 @@ public sealed record ElsaInstanceMigration
             throw new ArgumentException("Approving account is required.", nameof(accountId));
         if (Phase is not (ElsaInstanceMigrationPhase.Cutover or ElsaInstanceMigrationPhase.RetainingSource))
             throw new InvalidOperationException("Early release approval requires a retained source.");
+        if (EarlyReleaseApprovedByAccountId is not null || EarlyReleaseApprovedAt is not null)
+            throw new InvalidOperationException("Early release approval is immutable once recorded.");
         var approvedAt = RequireLater(now);
         return Copy(earlyReleaseApprovedByAccountId: accountId, earlyReleaseApprovedAt: approvedAt, updatedAt: approvedAt);
     }
