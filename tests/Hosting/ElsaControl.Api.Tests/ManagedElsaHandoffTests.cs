@@ -492,6 +492,22 @@ public sealed class ManagedElsaHandoffTests
     }
 
     [Fact]
+    public void Session_bound_at_the_normalized_code_expiry_is_accepted()
+    {
+        var clock = new TestTimeProvider(DateTimeOffset.FromUnixTimeMilliseconds(1_800_000_000_900));
+        using var fixture = CreateFixture(clock);
+        var boundary = DateTimeOffset.FromUnixTimeSeconds(
+            clock.GetUtcNow().AddMinutes(1).ToUnixTimeSeconds());
+
+        var token = fixture.Issue(boundary);
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
+
+        Assert.Equal(
+            boundary.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture),
+            jwt.Claims.Single(x => x.Type == ManagedElsaHandoffDefaults.SessionExpiryClaim).Value);
+    }
+
+    [Fact]
     public void Configured_key_ring_supports_active_and_previous_key_overlap()
     {
         using var active = RSA.Create(2048);
@@ -692,6 +708,12 @@ public sealed class ManagedElsaHandoffTests
             request,
             Authorizer.Authorization,
             Clock.GetUtcNow().AddHours(1)).Token;
+
+        public string Issue(DateTimeOffset sessionExpiresAt) => Issuer.Issue(
+            new TrustedWorkspaceIdentity("https://idp.example.test", "subject", "User", "user@example.test"),
+            Request,
+            Authorizer.Authorization,
+            sessionExpiresAt).Token;
 
         public string IssueWithTokenType(string tokenType)
             => RewriteToken(Issue(), claims => claims, tokenType);

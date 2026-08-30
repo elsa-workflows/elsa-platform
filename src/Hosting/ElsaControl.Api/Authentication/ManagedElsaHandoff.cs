@@ -388,8 +388,9 @@ public sealed class ManagedElsaHandoffIssuer(
 
         var now = timeProvider.GetUtcNow();
         sessionExpiresAt = NormalizeUnixTime(sessionExpiresAt);
+        var minimumSessionExpiresAt = NormalizeUnixTime(now.Add(_options.TokenLifetime));
         var maximumSessionExpiresAt = NormalizeUnixTime(now.Add(_options.RuntimeSessionMaximumLifetime));
-        if (sessionExpiresAt <= now.Add(_options.TokenLifetime) ||
+        if (sessionExpiresAt < minimumSessionExpiresAt ||
             sessionExpiresAt > maximumSessionExpiresAt)
             throw new InvalidOperationException("The Control session does not provide a safe runtime-session bound.");
 
@@ -445,7 +446,7 @@ public sealed class ManagedElsaHandoffIssuer(
         sessionExpiresAt = NormalizeUnixTime(sourceExpiresAt) <= maximum
             ? NormalizeUnixTime(sourceExpiresAt)
             : maximum;
-        return sessionExpiresAt > NormalizeUnixTime(now.Add(_options.TokenLifetime));
+        return sessionExpiresAt >= NormalizeUnixTime(now.Add(_options.TokenLifetime));
     }
 
     internal static ManagedElsaHandoffOptions ValidateOptions(ManagedElsaHandoffOptions options)
