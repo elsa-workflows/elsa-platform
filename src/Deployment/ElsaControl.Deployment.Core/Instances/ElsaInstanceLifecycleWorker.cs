@@ -85,13 +85,17 @@ public sealed class ElsaInstanceLifecycleWorker(
         {
             throw;
         }
+        catch (ElsaInstanceLifecycleConflictException)
+        {
+            return Conflict(item);
+        }
         catch (Exception) when (item is not null)
         {
             return await FailAsync(item, workerId, "resolution.invalid", cancellationToken);
         }
     }
 
-    private Task<ElsaInstanceLifecycleWorkerResult> FailAsync(
+    private async Task<ElsaInstanceLifecycleWorkerResult> FailAsync(
         ElsaInstanceLifecycleWorkItem item,
         string workerId,
         string code,
@@ -111,6 +115,21 @@ public sealed class ElsaInstanceLifecycleWorker(
             _timeProvider.GetUtcNow(),
             item.LeaseToken,
             item.LeaseVersion);
-        return store.FailResolutionAsync(failure, cancellationToken);
+        try
+        {
+            return await store.FailResolutionAsync(failure, cancellationToken);
+        }
+        catch (ElsaInstanceLifecycleConflictException)
+        {
+            return Conflict(item);
+        }
     }
+
+    private static ElsaInstanceLifecycleWorkerResult Conflict(ElsaInstanceLifecycleWorkItem item) =>
+        new(
+            ElsaInstanceLifecycleWorkerOutcome.Conflict,
+            item.Operation,
+            item.Instance,
+            FailureCode: "lifecycle.claim.conflict",
+            FailureSummary: "Lifecycle work item ownership changed before completion.");
 }

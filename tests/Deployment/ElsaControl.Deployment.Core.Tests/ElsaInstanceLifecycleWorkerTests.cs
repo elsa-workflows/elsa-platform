@@ -156,6 +156,49 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     }
 
     [Fact]
+    public async Task A_commit_lease_conflict_does_not_stop_the_worker_from_continuing_the_queue()
+    {
+        var (inner, first, second) = await CreateTwoAcceptedAsync("commit-race");
+        var store = new ConflictOnceWorkerStore(inner, conflictOnCommit: true);
+
+        var result = await new ElsaInstanceLifecycleWorker(
+                store,
+                new InstanceResolver(new Dictionary<Guid, ElsaInstancePlanResolutionResult>
+                {
+                    [first.Instance.Id] = SuccessfulResolution(WorkspaceId, first.Instance.Id),
+                    [second.Instance.Id] = SuccessfulResolution(WorkspaceId, second.Instance.Id)
+                }),
+                new StaticTimeProvider(Now))
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        Assert.Equal(2, result.Results.Count);
+        Assert.Equal("lifecycle.claim.conflict", result.Results.Single(x => x.Operation.Id == first.Operation.Id).FailureCode);
+        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Queued, result.Results.Single(x => x.Operation.Id == second.Operation.Id).Outcome);
+        Assert.Single(inner.DeploymentRuns);
+    }
+
+    [Fact]
+    public async Task A_failure_recording_lease_conflict_does_not_stop_the_worker_from_continuing_the_queue()
+    {
+        var (inner, first, second) = await CreateTwoAcceptedAsync("failure-race");
+        var store = new ConflictOnceWorkerStore(inner, conflictOnFailure: true);
+        var resolver = new InstanceResolver(new Dictionary<Guid, ElsaInstancePlanResolutionResult>
+        {
+            [first.Instance.Id] = ElsaInstancePlanResolutionResult.Failed(
+                [new("error", "plan.invalid", "Resolved application plan values are invalid.", "plan")]),
+            [second.Instance.Id] = SuccessfulResolution(WorkspaceId, second.Instance.Id)
+        });
+
+        var result = await new ElsaInstanceLifecycleWorker(store, resolver, new StaticTimeProvider(Now))
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        Assert.Equal(2, result.Results.Count);
+        Assert.Equal("lifecycle.claim.conflict", result.Results.Single(x => x.Operation.Id == first.Operation.Id).FailureCode);
+        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Queued, result.Results.Single(x => x.Operation.Id == second.Operation.Id).Outcome);
+        Assert.Single(inner.DeploymentRuns);
+    }
+
+    [Fact]
     public async Task Retrying_a_completed_item_is_idempotent_and_does_not_insert_another_run()
     {
         var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
@@ -225,6 +268,20 @@ public sealed class ElsaInstanceLifecycleWorkerTests
 
     private static ElsaInstanceCreateRequest CreateRequest(string slug, string key) =>
         new(OrganizationId, WorkspaceId, slug, slug, Intent(), key);
+
+    private static async Task<(InMemoryElsaInstanceLifecycleStore Store,
+        ElsaInstanceLifecycleAcceptance First,
+        ElsaInstanceLifecycleAcceptance Second)> CreateTwoAcceptedAsync(string prefix)
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var first = await new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now))
+            .CreateAsync(CreateRequest($"{prefix}-first", $"{prefix}-first"));
+        var second = await new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now.AddSeconds(1)))
+            .CreateAsync(CreateRequest($"{prefix}-second", $"{prefix}-second"));
+        store.RegisterResolutionInput(first.Operation.Id, ResolutionInput(first.Instance));
+        store.RegisterResolutionInput(second.Operation.Id, ResolutionInput(second.Instance));
+        return (store, first, second);
+    }
 
     private static ElsaInstanceIntent Intent() => new(
         new("future-runtime", "5.0", "5.0.0-preview.1", "preview"),
@@ -330,6 +387,39 @@ public sealed class ElsaInstanceLifecycleWorkerTests
         {
             var instanceId = request.PlanUri.Split('/', StringSplitOptions.RemoveEmptyEntries)[6];
             return Task.FromResult(results[Guid.Parse(instanceId)]);
+        }
+    }
+
+    private sealed class ConflictOnceWorkerStore(
+        IElsaInstanceLifecycleWorkerStore inner,
+        bool conflictOnCommit = false,
+        bool conflictOnFailure = false) : IElsaInstanceLifecycleWorkerStore
+    {
+        private int _commitConflictsRemaining = conflictOnCommit ? 1 : 0;
+        private int _failureConflictsRemaining = conflictOnFailure ? 1 : 0;
+
+        public Task<ElsaInstanceLifecycleWorkItem?> TryClaimNextAsync(
+            string workerId,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default) =>
+            inner.TryClaimNextAsync(workerId, now, cancellationToken);
+
+        public Task<ElsaInstanceLifecycleWorkerResult> CommitResolvedAsync(
+            ElsaInstanceLifecycleResolutionCommit commit,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Exchange(ref _commitConflictsRemaining, 0) == 1)
+                throw new ElsaInstanceLifecycleConflictException("Lease ownership changed.");
+            return inner.CommitResolvedAsync(commit, cancellationToken);
+        }
+
+        public Task<ElsaInstanceLifecycleWorkerResult> FailResolutionAsync(
+            ElsaInstanceLifecycleResolutionFailure failure,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Exchange(ref _failureConflictsRemaining, 0) == 1)
+                throw new ElsaInstanceLifecycleConflictException("Lease ownership changed.");
+            return inner.FailResolutionAsync(failure, cancellationToken);
         }
     }
 

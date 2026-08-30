@@ -69,6 +69,25 @@ public sealed class ElsaInstanceLifecycleServiceTests
         Assert.Single(store.Operations);
     }
 
+    [Theory]
+    [InlineData(null, "claims-prod", "Name")]
+    [InlineData(" ", "claims-prod", "Name")]
+    [InlineData("Claims", null, "Slug")]
+    [InlineData("Claims", "\t", "Slug")]
+    public async Task Create_rejects_missing_identity_values_before_hashing(
+        string? name,
+        string? slug,
+        string parameterName)
+    {
+        var service = new ElsaInstanceLifecycleService(new InMemoryElsaInstanceLifecycleStore());
+        var request = new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, name!, slug!, Intent(), "create-invalid");
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() => service.CreateAsync(request));
+
+        Assert.Equal(parameterName, exception.ParamName);
+    }
+
     [Fact]
     public async Task Stale_if_match_version_cannot_accept_a_lifecycle_mutation()
     {

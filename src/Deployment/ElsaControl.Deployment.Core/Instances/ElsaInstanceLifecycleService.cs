@@ -24,6 +24,8 @@ public sealed class ElsaInstanceLifecycleService(
         ValidateWorkspace(request.WorkspaceId);
         ValidateOrganization(request.OrganizationId);
         ArgumentNullException.ThrowIfNull(request.Intent);
+        ValidateRequired(request.Name, nameof(request.Name), "Instance name is required.");
+        ValidateRequired(request.Slug, nameof(request.Slug), "Instance slug is required.");
         var key = RequireKey(request.IdempotencyKey);
         var requestHash = ComputeRequestHash(
             ElsaInstanceOperationAction.Create,
@@ -196,6 +198,12 @@ public sealed class ElsaInstanceLifecycleService(
         if (string.IsNullOrWhiteSpace(value))
             throw new ArgumentException("Idempotency key is required.", nameof(value));
         return value.Trim();
+    }
+
+    private static void ValidateRequired(string? value, string parameterName, string message)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            throw new ArgumentException(message, parameterName);
     }
 
     private static string ComputeRequestHash(
