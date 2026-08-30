@@ -233,10 +233,13 @@ public sealed class AzureProviderOperationWorkerTests
                 _ => AzureProviderOperationPhase.CleanupVerified
             };
             var hasEndpoint = command.Step is AzureProviderRunnerStep.Health or AzureProviderRunnerStep.Promotion;
+            var resources = command.Step == AzureProviderRunnerStep.Workload
+                ? new AzureProviderResourceReferences(WorkloadResourceId: "/subscriptions/test/resourceGroups/test/providers/Microsoft.App/containerApps/workload-a")
+                : new AzureProviderResourceReferences();
             return Task.FromResult(new AzureProviderRunnerResult(
                 AzureProviderRunnerOutcome.Completed,
                 phase,
-                new(),
+                resources,
                 hasEndpoint ? AzureProviderHealth.Healthy : AzureProviderHealth.Unknown,
                 hasEndpoint ? "https://workload.example.test" : null,
                 [],
@@ -357,7 +360,7 @@ public sealed class AzureProviderOperationWorkerTests
             var updated = Operations[index] with
             {
                 Phase = checkpoint.Phase,
-                Resources = checkpoint.Resources,
+                Resources = MergeResources(Operations[index].Resources, checkpoint.Resources),
                 Endpoint = checkpoint.Endpoint,
                 Health = checkpoint.Health,
                 Diagnostics = checkpoint.Diagnostics,
@@ -393,6 +396,17 @@ public sealed class AzureProviderOperationWorkerTests
 
         public Task<IReadOnlyList<AzureProviderOperationTransition>> ListTransitionsAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<AzureProviderOperationTransition>>([]);
+
+        private static AzureProviderResourceReferences MergeResources(
+            AzureProviderResourceReferences current,
+            AzureProviderResourceReferences incoming) =>
+            new(
+                incoming.ResourceGroupName ?? current.ResourceGroupName,
+                incoming.FoundationDeploymentId ?? current.FoundationDeploymentId,
+                incoming.WorkloadDeploymentId ?? current.WorkloadDeploymentId,
+                incoming.WorkloadResourceId ?? current.WorkloadResourceId,
+                incoming.WorkloadRevisionName ?? current.WorkloadRevisionName,
+                incoming.StableTrafficRevisionName ?? current.StableTrafficRevisionName);
 
         private Task<AzureProviderOperation?> ClaimCoreAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion, bool allowRecovery)
         {
