@@ -476,7 +476,8 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             {
                 if (pair.Key is null || pair.Value is null ||
                     !string.Equals(pair.Key, pair.Key.Trim().ToLowerInvariant(), StringComparison.Ordinal) ||
-                    !normalizedKeys.Add(pair.Key.Trim()))
+                    !normalizedKeys.Add(pair.Key.Trim()) ||
+                    !AzureProviderOperationValidation.IsSafeSecretReference(pair.Value))
                     return (new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), true);
 
                 references.Add(pair.Key, pair.Value);

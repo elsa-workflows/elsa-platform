@@ -297,6 +297,7 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     [InlineData("SecretReferencesJson", "{")]
     [InlineData("SecretReferencesJson", "null")]
     [InlineData("SecretReferencesJson", "{\"database\":null}")]
+    [InlineData("SecretReferencesJson", "{\"database\":\"secret://vault/database?token=unsafe\"}")]
     public async Task Malformed_persisted_metadata_is_marked_unrestorable_without_escaping(string column, string json)
     {
         var now = DateTimeOffset.UtcNow;
