@@ -315,7 +315,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         var completionFingerprint = Hash($"{status}|{code}");
         if (entity.Status == status) return entity.CompletionLeaseTokenHash == Hash(leaseToken) && entity.CompletionFingerprint == completionFingerprint ? ToModel(entity) : null;
         if (entity.Status != AzureProviderOperationStatus.Running || !LeaseMatches(entity, leaseToken, now) || expectedVersion.HasValue && entity.Version != expectedVersion.Value) return null;
-        entity.Status = status; entity.UpdatedAt = now; entity.CompletedAt = status == AzureProviderOperationStatus.RecoveryRequired ? null : now; entity.Version++;
+        entity.Status = status; entity.UpdatedAt = now; entity.CompletedAt = now; entity.Version++;
         entity.CompletionLeaseTokenHash = entity.LeaseTokenHash;
         entity.CompletionFingerprint = completionFingerprint;
         entity.LeaseTokenHash = null; entity.LeaseExpiresAt = null; entity.WorkerId = null;
