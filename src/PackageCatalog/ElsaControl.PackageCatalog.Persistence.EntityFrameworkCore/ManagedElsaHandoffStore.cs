@@ -41,11 +41,16 @@ public sealed class EfCoreManagedElsaHandoffStore(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jti);
 
+        var normalizedExpiry = expiresAt.ToUniversalTime();
+        var consumedAt = _timeProvider.GetUtcNow().ToUniversalTime();
+        if (consumedAt >= normalizedExpiry)
+            consumedAt = normalizedExpiry.AddTicks(-1);
+
         var entity = new ManagedElsaHandoffReplayEntity
         {
             Jti = jti,
-            ExpiresAt = expiresAt.ToUniversalTime(),
-            ConsumedAt = _timeProvider.GetUtcNow().ToUniversalTime()
+            ExpiresAt = normalizedExpiry,
+            ConsumedAt = consumedAt
         };
         dbContext.ManagedElsaHandoffReplays.Add(entity);
         try
@@ -90,7 +95,7 @@ internal static class EfCoreDatabaseExceptionPolicy
     {
         for (var current = exception.InnerException; current is not null; current = current.InnerException)
         {
-            if (current is SqliteException { SqliteErrorCode: 19 })
+            if (current is SqliteException { SqliteErrorCode: 19, SqliteExtendedErrorCode: 1555 or 2067 })
                 return true;
             if (current is SqlException { Number: 2601 or 2627 })
                 return true;

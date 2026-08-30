@@ -192,9 +192,14 @@ builder.Services.AddSingleton<BuilderClientApiKeyValidator>();
 builder.Services.AddSingleton<ManagedElsaHandoffKeyRing>(services =>
 {
     var options = services.GetRequiredService<IOptions<ManagedElsaHandoffOptions>>().Value;
-    return string.IsNullOrWhiteSpace(options.ActiveKeyId) && string.IsNullOrWhiteSpace(options.ActivePrivateKeyPem)
-        ? ManagedElsaHandoffKeyRing.CreateEphemeral()
-        : ManagedElsaHandoffKeyRing.CreateConfigured(options);
+    var hasKeyId = !string.IsNullOrWhiteSpace(options.ActiveKeyId);
+    var hasPrivateKey = !string.IsNullOrWhiteSpace(options.ActivePrivateKeyPem);
+    if (hasKeyId != hasPrivateKey)
+        throw new InvalidOperationException(
+            "Managed Elsa handoff active signing key configuration must include both key ID and private key.");
+    return hasKeyId
+        ? ManagedElsaHandoffKeyRing.CreateConfigured(options)
+        : ManagedElsaHandoffKeyRing.CreateEphemeral();
 });
 builder.Services.AddScoped<EfCoreManagedElsaHandoffStore>();
 builder.Services.AddScoped<IManagedElsaHandoffReplayStore, EfCoreManagedElsaHandoffReplayStore>();

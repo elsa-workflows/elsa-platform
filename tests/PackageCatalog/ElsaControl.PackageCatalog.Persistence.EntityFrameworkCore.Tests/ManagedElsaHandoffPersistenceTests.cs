@@ -54,6 +54,34 @@ public sealed class ManagedElsaHandoffPersistenceTests
     }
 
     [Fact]
+    public async Task Replay_consumption_clamps_subsecond_expiry_boundary()
+    {
+        await using var connection = NewConnection();
+        await connection.OpenAsync();
+        await using var db = CreateContext(connection);
+        await db.Database.MigrateAsync();
+        var expiresAt = new DateTimeOffset(2026, 8, 30, 21, 0, 0, TimeSpan.Zero);
+        var clock = new FixedTimeProvider(expiresAt.AddMilliseconds(250));
+
+        Assert.True(await new EfCoreManagedElsaHandoffStore(db, clock)
+            .TryConsumeAsync("handoff-expiry-boundary", expiresAt));
+
+        var saved = await db.ManagedElsaHandoffReplays.SingleAsync();
+        Assert.Equal(expiresAt.UtcTicks, saved.ExpiresAt.UtcTicks);
+        Assert.Equal(expiresAt.AddTicks(-1).UtcTicks, saved.ConsumedAt.UtcTicks);
+    }
+
+    [Fact]
+    public void Sqlite_non_unique_constraints_are_not_classified_as_replays()
+    {
+        var exception = new DbUpdateException(
+            "constraint",
+            new SqliteException("not null", 19, 1299));
+
+        Assert.False(EfCoreDatabaseExceptionPolicy.IsUniqueViolation(exception));
+    }
+
+    [Fact]
     public async Task Concurrent_replay_consumers_have_one_winner()
     {
         var databaseName = "handoff-atomic-" + Guid.NewGuid().ToString("N");
@@ -198,6 +226,10 @@ public sealed class ManagedElsaHandoffPersistenceTests
                 "https://rotated.example.test", 9, changedAt.AddMinutes(1));
             Assert.Equal(ManagedElsaInstanceIdentityBindingWriteOutcome.Conflict, stale.Outcome);
 
+            var invalid = await store.BindAsync(organizationId, workspaceId, instanceId,
+                "https://rotated.example.test", 0, changedAt.AddMinutes(1));
+            Assert.Equal(ManagedElsaInstanceIdentityBindingWriteOutcome.Conflict, invalid.Outcome);
+
             var rotated = await store.BindAsync(organizationId, workspaceId, instanceId,
                 "https://rotated.example.test", 1, changedAt.AddMinutes(1));
             Assert.Equal(ManagedElsaInstanceIdentityBindingWriteOutcome.Rotated, rotated.Outcome);
@@ -265,6 +297,11 @@ public sealed class ManagedElsaHandoffPersistenceTests
             var store = new EfCoreManagedElsaInstanceIdentityStore(unavailable);
             Assert.Null(await store.FindAsync(organizationId, instanceId));
         }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
     private static async Task<ElsaInstanceEntity> SeedInstanceAsync(CatalogDbContext db)

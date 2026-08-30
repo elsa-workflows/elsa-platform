@@ -411,6 +411,20 @@ public sealed class ManagedElsaHandoffTests
         await Assert.ThrowsAsync<ArgumentException>(() => validator.StartAsync(CancellationToken.None));
     }
 
+    [Fact]
+    public void Key_ring_resolution_rejects_partial_active_key_configuration()
+    {
+        using var app = new ControlApiTestApplication(new Dictionary<string, string?>
+        {
+            [$"{ManagedElsaHandoffDefaults.ConfigurationSection}:ActiveKeyId"] = "active-2026-09"
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => app.Services.GetRequiredService<ManagedElsaHandoffKeyRing>());
+
+        Assert.Contains("both key ID and private key", exception.Message, StringComparison.Ordinal);
+    }
+
     private static ControlApiTestApplication CreateApplication(FakeHandoffAuthorizer authorizer) =>
         new(new Dictionary<string, string?>
         {

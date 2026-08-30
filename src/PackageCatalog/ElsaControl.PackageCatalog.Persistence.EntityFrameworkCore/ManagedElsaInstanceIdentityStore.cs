@@ -45,9 +45,10 @@ public sealed class EfCoreManagedElsaInstanceIdentityStore(CatalogDbContext dbCo
         DateTimeOffset changedAt,
         CancellationToken cancellationToken = default)
     {
-        if (organizationId == Guid.Empty || workspaceId == Guid.Empty || instanceId == Guid.Empty ||
-            expectedBindingVersion is <= 0)
+        if (organizationId == Guid.Empty || workspaceId == Guid.Empty || instanceId == Guid.Empty)
             return NotFound();
+        if (expectedBindingVersion is <= 0)
+            return Conflict();
 
         dbContext.ChangeTracker.Clear();
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
