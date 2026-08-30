@@ -2,5 +2,6 @@
   <ItemGroup>
     <ProjectReference Include="..\ElsaControl.Deployment.Abstractions\ElsaControl.Deployment.Abstractions.csproj" />
     <ProjectReference Include="..\ElsaControl.Deployment.Artifacts\ElsaControl.Deployment.Artifacts.csproj" />
+    <ProjectReference Include="..\..\RuntimeBuilder\ElsaControl.RuntimeBuilder.Abstractions\ElsaControl.RuntimeBuilder.Abstractions.csproj" />
   </ItemGroup>
 </Project>

@@ -3,6 +3,7 @@ using System;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 {
     [DbContext(typeof(CatalogDbContext))]
-    partial class CatalogDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260830031832_AddElsaInstanceWorkerPersistence")]
+    partial class AddElsaInstanceWorkerPersistence
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
@@ -872,260 +875,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.ToTable("ActionConfirmations");
                 });
 
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Action")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("AttemptNumber")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long>("CheckpointSequence")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long?>("CompletedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("CompletionFingerprint")
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CompletionLeaseTokenHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("CreatedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("DiagnosticsJson")
-                        .IsRequired()
-                        .HasMaxLength(10000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ElsaVersion")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Endpoint")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("FoundationDeploymentId")
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Health")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long?>("HeartbeatAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("IdempotencyKey")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ImageDigest")
-                        .IsRequired()
-                        .HasMaxLength(71)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ImageRepository")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Isolation")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long?>("LeaseExpiresAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("LeaseTokenHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Location")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("OperationIdentity")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Phase")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PlanFingerprint")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ReleaseLine")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ReleaseManifestDigest")
-                        .HasMaxLength(71)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ReleaseManifestReference")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ReleaseManifestSignatureDigest")
-                        .HasMaxLength(71)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ReleaseManifestSignatureReference")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RequestHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ResourceGroupName")
-                        .HasMaxLength(90)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SecretReferencesJson")
-                        .IsRequired()
-                        .HasMaxLength(10000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("StableTrafficRevisionName")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TargetKey")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TemplateFingerprint")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Topology")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("UpdatedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("WorkerId")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("WorkloadDeploymentId")
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("WorkloadResourceId")
-                        .HasMaxLength(1024)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("WorkloadRevisionName")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("WorkspaceId", "TargetKey")
-                        .IsUnique()
-                        .HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
-
-                    b.HasIndex("WorkspaceId", "TargetKey", "CreatedAt");
-
-                    b.HasIndex("WorkspaceId", "TargetKey", "IdempotencyKey")
-                        .IsUnique();
-
-                    b.HasIndex("WorkspaceId", "TargetKey", "OperationIdentity")
-                        .IsUnique()
-                        .HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
-
-                    b.HasIndex("Status", "LeaseExpiresAt", "UpdatedAt", "Id");
-
-                    b.ToTable("AzureProviderOperations");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationTransitionEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("OccurredAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("OperationId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Phase")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("Sequence")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OperationId", "OccurredAt");
-
-                    b.HasIndex("OperationId", "Sequence")
-                        .IsUnique();
-
-                    b.ToTable("AzureProviderOperationTransitions");
-                });
-
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentApplicationEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1578,7 +1327,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.HasIndex("WorkspaceId", "EnvironmentId")
                         .IsUnique()
-                        .HasFilter("Status IN ('Queued', 'Running', 'RecoveryRequired')");
+                        .HasFilter("ElsaInstanceId IS NOT NULL AND Status IN ('Queued', 'Running', 'RecoveryRequired')");
 
                     b.HasIndex("WorkspaceId", "EnvironmentId", "Status");
 
@@ -2233,7 +1982,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .IsUnique();
 
                     b.HasIndex("CanonicalCallbackUri")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("CanonicalCallbackUri IS NOT NULL");
 
                     b.ToTable("ElsaInstanceIdentityBindings");
                 });
@@ -2381,13 +2131,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.Property<string>("Action")
                         .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long?>("QuarantinedAt")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("QuarantineCode")
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
@@ -2649,7 +2392,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.ToTable("ElsaInstanceOperations", null, t =>
                         {
-                            t.HasCheckConstraint("CK_ElsaInstanceOperations_LeaseVersion_Range", "LeaseVersion >= 0 AND LeaseVersion < 2147483647");
                             t.HasCheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'");
                         });
                 });
@@ -3937,28 +3679,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationEntity", b =>
-                {
-                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", "Workspace")
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Workspace");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationTransitionEntity", b =>
-                {
-                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationEntity", "Operation")
-                        .WithMany("Transitions")
-                        .HasForeignKey("OperationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Operation");
-                });
-
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentApplicationEntity", b =>
                 {
                     b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", null)
@@ -4524,11 +4244,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
             modelBuilder.Entity("ElsaControl.PackageCatalog.Core.Sync.SyncRun", b =>
                 {
                     b.Navigation("Items");
-                });
-
-            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationEntity", b =>
-                {
-                    b.Navigation("Transitions");
                 });
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentApplicationEntity", b =>

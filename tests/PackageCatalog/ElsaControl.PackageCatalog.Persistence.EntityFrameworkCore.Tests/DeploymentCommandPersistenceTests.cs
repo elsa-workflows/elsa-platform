@@ -351,8 +351,24 @@ public sealed class DeploymentCommandPersistenceTests : IDisposable
         var topology = await SeedTopologyAsync();
 
         await QueueRunAsync(topology);
+        var firstCommand = Assert.Single(
+            await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow));
+        await _store.ClaimCommandAsync(
+            _workspaceId,
+            firstCommand.Id,
+            new ClaimDeploymentCommandRequest(topology.Engine.Id, "worker-1", TimeSpan.FromMinutes(5)),
+            "lease-1",
+            DateTimeOffset.UtcNow);
+        await _store.CompleteCommandAsync(
+            _workspaceId,
+            firstCommand.Id,
+            new CompleteDeploymentCommandRequest("lease-1", new WorkspaceArtifactDigest("sha256", "observed"), null, []),
+            DateTimeOffset.UtcNow);
         await QueueRunAsync(topology);
-        var commands = await _store.PollPendingCommandsAsync(_workspaceId, topology.Engine.Id, 10, DateTimeOffset.UtcNow);
+        var commands = await _db.DeploymentCommands
+            .Where(x => x.WorkspaceId == _workspaceId)
+            .OrderBy(x => x.CreatedAt)
+            .ToListAsync();
 
         Assert.Equal(2, commands.Count());
         Assert.Equal(commands.Select(x => x.IdempotencyKey).Count(), commands.Select(x => x.IdempotencyKey).Distinct().Count());

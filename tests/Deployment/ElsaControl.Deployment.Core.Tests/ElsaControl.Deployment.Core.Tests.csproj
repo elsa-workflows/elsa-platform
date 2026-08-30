@@ -12,5 +12,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Deployment\ElsaControl.Deployment.Core\ElsaControl.Deployment.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\RuntimeBuilder\ElsaControl.RuntimeBuilder.Abstractions\ElsaControl.RuntimeBuilder.Abstractions.csproj" />
   </ItemGroup>
 </Project>

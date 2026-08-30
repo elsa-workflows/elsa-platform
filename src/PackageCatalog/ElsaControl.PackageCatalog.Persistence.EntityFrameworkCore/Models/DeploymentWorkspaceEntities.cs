@@ -108,9 +108,76 @@ internal sealed class ElsaInstanceEntity
     public DateTimeOffset? DeletedAt { get; set; }
 
     public List<ElsaInstanceOperationEntity> Operations { get; set; } = [];
+    public List<ElsaInstanceIntentRevisionEntity> IntentRevisions { get; set; } = [];
     public List<ElsaInstanceAuditEventEntity> AuditEvents { get; set; } = [];
     public List<ElsaInstanceMigrationEntity> Migrations { get; set; } = [];
     public ElsaInstanceIdentityBindingEntity? IdentityBinding { get; set; }
+}
+
+/// <summary>
+/// Immutable, typed snapshot of an Elsa instance's provider-neutral customer
+/// intent. This deliberately duplicates the normalized intent fields from the
+/// aggregate so every accepted revision remains independently auditable. It does
+/// not contain serialized request payloads, workflow definitions, credentials, or
+/// provider resource identifiers.
+/// </summary>
+internal sealed class ElsaInstanceIntentRevisionEntity
+{
+    public Guid Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid InstanceId { get; set; }
+    public ElsaInstanceEntity? Instance { get; set; }
+    public int RevisionNumber { get; set; }
+    public string ContentHash { get; set; } = "";
+
+    public string DistributionId { get; set; } = "";
+    public string ReleaseLine { get; set; } = "";
+    public string? RequestedVersion { get; set; }
+    public string Channel { get; set; } = "";
+    public string PatchUpdates { get; set; } = "";
+    public string MinorUpdates { get; set; } = "";
+    public string MajorMigrations { get; set; } = "";
+
+    public string TopologyId { get; set; } = "";
+    public string? FeaturePresetId { get; set; }
+    public string FeatureOverridesJson { get; set; } = "{}";
+    public string? PackagePolicy { get; set; }
+    public string? ConfigurationShapeRevisionId { get; set; }
+
+    public string TargetMode { get; set; } = "";
+    public string RegionCode { get; set; } = "";
+    public string IsolationProfile { get; set; } = "";
+    public string CapacityProfile { get; set; } = "";
+    public string NetworkOutcome { get; set; } = "";
+    public string DomainOutcome { get; set; } = "";
+    public ElsaDesiredLifecycle DesiredLifecycle { get; set; }
+
+    public DateTimeOffset AuthoredAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public Guid? CreatedByAccountId { get; set; }
+}
+
+/// <summary>
+/// Durable lifecycle work envelope. The envelope is intentionally small: workers
+/// reload the immutable revision and aggregate by ID after the acceptance
+/// transaction commits. No request body, plan payload, credential, token, or
+/// provider-specific data is copied into the outbox.
+/// </summary>
+internal sealed class ElsaInstanceLifecycleOutboxEntity
+{
+    public Guid Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid InstanceId { get; set; }
+    public ElsaInstanceEntity? Instance { get; set; }
+    public Guid OperationId { get; set; }
+    public ElsaInstanceOperationEntity? Operation { get; set; }
+    public ElsaInstanceOperationAction Action { get; set; }
+    public string RequestHash { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? QuarantinedAt { get; set; }
+    public string? QuarantineCode { get; set; }
 }
 
 internal sealed class ElsaInstanceOperationEntity
@@ -133,6 +200,7 @@ internal sealed class ElsaInstanceOperationEntity
     public string? WorkerId { get; set; }
     /// <summary>One-way SHA-256 lease proof; the bearer token is never persisted.</summary>
     public string? LeaseTokenHash { get; set; }
+    public int LeaseVersion { get; set; }
     public DateTimeOffset? LeaseExpiresAt { get; set; }
     public DateTimeOffset? HeartbeatAt { get; set; }
     public string? DesiredStateRevisionId { get; set; }
@@ -142,6 +210,26 @@ internal sealed class ElsaInstanceOperationEntity
     public string? FailureSummary { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// Immutable, safe resolved-plan record. The canonical JSON is retained only after
+/// the worker validates and normalizes the typed plan; no resolver input or provider
+/// payload is stored here.
+/// </summary>
+internal sealed class ElsaInstanceResolvedPlanEntity
+{
+    public Guid Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid InstanceId { get; set; }
+    public ElsaInstanceEntity? Instance { get; set; }
+    public string PlanId { get; set; } = "";
+    public int SchemaVersion { get; set; }
+    public string ContentHash { get; set; } = "";
+    public string PlanUri { get; set; } = "";
+    public string SerializedPlan { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 internal sealed class ElsaInstanceAuditEventEntity
