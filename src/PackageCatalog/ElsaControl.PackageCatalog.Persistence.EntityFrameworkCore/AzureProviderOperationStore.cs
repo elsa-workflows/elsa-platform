@@ -130,8 +130,9 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         DateTimeOffset leaseExpires;
         try { leaseExpires = now.Add(leaseDuration); } catch (ArgumentOutOfRangeException) { throw new ArgumentException("Lease duration overflowed.", nameof(leaseDuration)); }
         var changed = await db.AzureProviderOperations.Where(x => x.WorkspaceId == workspaceId && x.Id == operationId &&
-                (x.Status == AzureProviderOperationStatus.Accepted || x.Status == AzureProviderOperationStatus.Queued ||
-                 (allowRecovery && x.Status == AzureProviderOperationStatus.RecoveryRequired)) &&
+                (allowRecovery
+                    ? x.Status == AzureProviderOperationStatus.RecoveryRequired
+                    : x.Status == AzureProviderOperationStatus.Accepted || x.Status == AzureProviderOperationStatus.Queued) &&
                 (x.LeaseExpiresAt == null || x.LeaseExpiresAt <= now) && (!expectedVersion.HasValue || x.Version == expectedVersion.Value) &&
                 !db.AzureProviderOperations.Any(other => other.Id != operationId && other.WorkspaceId == workspaceId &&
                     other.TargetKey == x.TargetKey &&
@@ -237,6 +238,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             if (changed == 0) continue;
             recovered++;
             candidate.Status = AzureProviderOperationStatus.RecoveryRequired;
+            candidate.Version++;
             AddTransition(candidate, "operation.recoveryRequired", "The operation lease expired before completion.", now);
         }
         await db.SaveChangesAsync(cancellationToken);
@@ -280,12 +282,11 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
 
     private void AddTransition(AzureProviderOperationEntity entity, string code, string message, DateTimeOffset now)
     {
-        var nextSequence = db.AzureProviderOperationTransitions.Where(x => x.OperationId == entity.Id).Select(x => (long?)x.Sequence).Max() ?? 0;
         db.AzureProviderOperationTransitions.Add(new AzureProviderOperationTransitionEntity
         {
             Id = Guid.NewGuid(),
             OperationId = entity.Id,
-            Sequence = nextSequence + 1,
+            Sequence = entity.Version,
             Status = entity.Status,
             Phase = entity.Phase,
             Code = code,
