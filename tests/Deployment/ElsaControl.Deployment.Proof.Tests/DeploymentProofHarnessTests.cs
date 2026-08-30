@@ -158,8 +158,9 @@ public sealed class DeploymentProofHarnessTests
         Assert.Equal("proof.selection.imageReferenceUnsafe", report.Failure.Code);
         Assert.All(report.Stages.Where(stage => stage.Stage != DeploymentProofStage.Selection), stage =>
             Assert.Equal(DeploymentProofStageStatus.Skipped, stage.Status));
-        Assert.DoesNotContain("user", report.ToJson(), StringComparison.Ordinal);
-        Assert.DoesNotContain("password", report.ToJson(), StringComparison.Ordinal);
+        var json = report.ToJson();
+        Assert.DoesNotContain("user", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("password", json, StringComparison.Ordinal);
     }
 
     [Fact]
