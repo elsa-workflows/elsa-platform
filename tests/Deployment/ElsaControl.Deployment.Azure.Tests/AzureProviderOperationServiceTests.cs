@@ -108,6 +108,31 @@ public sealed class AzureProviderOperationServiceTests
         Assert.DoesNotContain("SafeSecretReferences", json, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Empty_safe_secret_references_cannot_be_mutated_across_operations()
+    {
+        var operation = await new CapturingStore().CreateOrGetAsync(
+            AzureProviderOperationValidation.Normalize(new AzureProviderOperationRequest(
+                WorkspaceId,
+                "workload-a",
+                AzureProviderOperationAction.Reconcile,
+                "request-empty-secrets",
+                new('a', 64),
+                new('b', 64),
+                "3.8.0",
+                "3.8",
+                "combined",
+                "Dedicated",
+                "westeurope",
+                "valenceruntimeimages.azurecr.io/runtime-combined",
+                "sha256:" + new string('e', 64))),
+            Now);
+        var mutableView = Assert.IsAssignableFrom<IDictionary<string, string>>(operation.SafeSecretReferences);
+
+        Assert.Throws<NotSupportedException>(() => mutableView.Add("database", "secret://vault/database"));
+        Assert.Empty(operation.SafeSecretReferences);
+    }
+
     private static AzureWorkloadPlan CreatePlan() => new(
         "workload-a",
         "westeurope",

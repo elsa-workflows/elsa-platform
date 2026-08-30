@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
 
 namespace ElsaControl.Deployment.Azure;
@@ -114,7 +115,8 @@ public sealed record AzureProviderOperation(
     public IReadOnlyDictionary<string, string> SafeSecretReferences => SecretReferences ?? EmptySecretReferences;
 
     private static readonly IReadOnlyDictionary<string, string> EmptySecretReferences =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        new ReadOnlyDictionary<string, string>(
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
 }
 
 public sealed class AzureProviderOperationConflictException(AzureProviderOperation operation)
