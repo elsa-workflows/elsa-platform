@@ -16,9 +16,15 @@ public static class ManagedElsaHandoffDefaults
     public const string ConfigurationSection = "ManagedElsa:Handoff";
     public const string RuntimeSessionScope = "runtime:session";
     public const string TokenType = "elsa-handoff+jwt";
+    // This is deliberately distinct from the JWT `exp`, which expires the
+    // one-time handoff code. It is the upper bound the runtime must apply to
+    // its own local session.
+    public const string SessionExpiryClaim = "session_exp";
     public const string TestingEnvironmentName = "Testing";
     public static readonly TimeSpan DefaultLifetime = TimeSpan.FromSeconds(60);
     public static readonly TimeSpan MaximumLifetime = TimeSpan.FromMinutes(5);
+    public static readonly TimeSpan DefaultRuntimeSessionMaximumLifetime = TimeSpan.FromHours(8);
+    public static readonly TimeSpan MaximumRuntimeSessionLifetime = TimeSpan.FromHours(8);
 }
 
 public sealed class ManagedElsaHandoffOptions
@@ -26,6 +32,8 @@ public sealed class ManagedElsaHandoffOptions
     public bool Enabled { get; init; }
     public string Issuer { get; init; } = "https://cloud.elsaworkflows.io";
     public TimeSpan TokenLifetime { get; init; } = ManagedElsaHandoffDefaults.DefaultLifetime;
+    public TimeSpan RuntimeSessionMaximumLifetime { get; init; } =
+        ManagedElsaHandoffDefaults.DefaultRuntimeSessionMaximumLifetime;
     public string? ActiveKeyId { get; init; }
     public string? ActivePrivateKeyPem { get; init; }
     public Dictionary<string, string> PreviousPublicKeys { get; init; } = new(StringComparer.Ordinal);
@@ -246,7 +254,8 @@ public sealed record ManagedElsaHandoffIssueResult(
     Uri RedirectUri,
     DateTimeOffset IssuedAt,
     DateTimeOffset ExpiresAt,
-    string Jti);
+    string Jti,
+    DateTimeOffset SessionExpiresAt);
 
 public sealed record ManagedElsaHandoffClaims(
     string Jti,
@@ -261,26 +270,9 @@ public sealed record ManagedElsaHandoffClaims(
     IReadOnlySet<string> Scopes,
     DateTimeOffset IssuedAt,
     DateTimeOffset ExpiresAt,
-    int BindingVersion)
+    int BindingVersion,
+    DateTimeOffset SessionExpiresAt)
 {
-    public ManagedElsaHandoffClaims(
-        string jti,
-        Guid accountId,
-        string controlIssuer,
-        string controlSubject,
-        Guid organizationId,
-        Guid instanceId,
-        string audience,
-        Uri redirectUri,
-        string codeChallenge,
-        IReadOnlySet<string> scopes,
-        DateTimeOffset issuedAt,
-        DateTimeOffset expiresAt)
-        : this(jti, accountId, controlIssuer, controlSubject, organizationId, instanceId, audience,
-            redirectUri, codeChallenge, scopes, issuedAt, expiresAt, 1)
-    {
-    }
-
     public TrustedWorkspaceIdentity ToTrustedWorkspaceIdentity() =>
         new(ControlIssuer, ControlSubject, null, null);
 }
@@ -373,7 +365,8 @@ public sealed class ManagedElsaHandoffIssuer(
     public ManagedElsaHandoffIssueResult Issue(
         TrustedWorkspaceIdentity identity,
         ManagedElsaHandoffRequest request,
-        ManagedElsaHandoffAuthorization authorization)
+        ManagedElsaHandoffAuthorization authorization,
+        DateTimeOffset sessionExpiresAt)
     {
         ArgumentNullException.ThrowIfNull(identity);
         ArgumentNullException.ThrowIfNull(request);
@@ -394,6 +387,13 @@ public sealed class ManagedElsaHandoffIssuer(
             throw new InvalidOperationException("The handoff authorization does not match the requested target.");
 
         var now = timeProvider.GetUtcNow();
+        sessionExpiresAt = NormalizeUnixTime(sessionExpiresAt);
+        var minimumSessionExpiresAt = NormalizeUnixTime(now.Add(_options.TokenLifetime));
+        var maximumSessionExpiresAt = NormalizeUnixTime(now.Add(_options.RuntimeSessionMaximumLifetime));
+        if (sessionExpiresAt < minimumSessionExpiresAt ||
+            sessionExpiresAt > maximumSessionExpiresAt)
+            throw new InvalidOperationException("The Control session does not provide a safe runtime-session bound.");
+
         var expiresAt = now.Add(_options.TokenLifetime);
         var jti = Guid.NewGuid().ToString("N");
         var claims = new List<Claim>
@@ -407,6 +407,8 @@ public sealed class ManagedElsaHandoffIssuer(
             new("redirect_uri", authorization.RedirectUri.OriginalString),
             new("code_challenge", authorization.CodeChallenge),
             new("scope", string.Join(' ', request.RequestedScopes.Order(StringComparer.Ordinal))),
+            new(ManagedElsaHandoffDefaults.SessionExpiryClaim,
+                sessionExpiresAt.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)),
             new(JwtRegisteredClaimNames.Jti, jti)
         };
         var descriptor = new SecurityTokenDescriptor
@@ -431,7 +433,20 @@ public sealed class ManagedElsaHandoffIssuer(
             authorization.RedirectUri,
             now,
             expiresAt,
-            jti);
+            jti,
+            sessionExpiresAt);
+    }
+
+    public bool TryCreateSessionBound(
+        DateTimeOffset sourceExpiresAt,
+        out DateTimeOffset sessionExpiresAt)
+    {
+        var now = timeProvider.GetUtcNow();
+        var maximum = NormalizeUnixTime(now.Add(_options.RuntimeSessionMaximumLifetime));
+        sessionExpiresAt = NormalizeUnixTime(sourceExpiresAt) <= maximum
+            ? NormalizeUnixTime(sourceExpiresAt)
+            : maximum;
+        return sessionExpiresAt >= NormalizeUnixTime(now.Add(_options.TokenLifetime));
     }
 
     internal static ManagedElsaHandoffOptions ValidateOptions(ManagedElsaHandoffOptions options)
@@ -440,9 +455,19 @@ public sealed class ManagedElsaHandoffIssuer(
             throw new InvalidOperationException("ManagedElsa:Handoff:Issuer must be an absolute HTTPS URI.");
         if (options.TokenLifetime <= TimeSpan.Zero || options.TokenLifetime > ManagedElsaHandoffDefaults.MaximumLifetime)
             throw new InvalidOperationException($"ManagedElsa:Handoff:TokenLifetime must be between 1 second and {ManagedElsaHandoffDefaults.MaximumLifetime}.");
+        if (options.RuntimeSessionMaximumLifetime <= TimeSpan.Zero ||
+            options.RuntimeSessionMaximumLifetime > ManagedElsaHandoffDefaults.MaximumRuntimeSessionLifetime)
+            throw new InvalidOperationException(
+                $"ManagedElsa:Handoff:RuntimeSessionMaximumLifetime must be between 1 second and {ManagedElsaHandoffDefaults.MaximumRuntimeSessionLifetime}.");
+        if (options.RuntimeSessionMaximumLifetime <= options.TokenLifetime)
+            throw new InvalidOperationException(
+                "ManagedElsa:Handoff:RuntimeSessionMaximumLifetime must exceed TokenLifetime.");
 
         return options;
     }
+
+    internal static DateTimeOffset NormalizeUnixTime(DateTimeOffset value) =>
+        DateTimeOffset.FromUnixTimeSeconds(value.ToUnixTimeSeconds());
 
     internal static bool IsSafeRedirectUri(Uri redirectUri) =>
         redirectUri.IsAbsoluteUri &&
@@ -612,6 +637,15 @@ public sealed class ManagedElsaHandoffRedeemer(
 
         var issuedAt = NumericDateClaim(principal, JwtRegisteredClaimNames.Iat);
         var expiresAt = NumericDateClaim(principal, JwtRegisteredClaimNames.Exp);
+        var sessionExpiresAt = NumericDateClaim(principal, ManagedElsaHandoffDefaults.SessionExpiryClaim);
+        var now = ManagedElsaHandoffIssuer.NormalizeUnixTime(timeProvider.GetUtcNow());
+        var maximumSessionExpiresAt = ManagedElsaHandoffIssuer.NormalizeUnixTime(
+            issuedAt.Add(_options.RuntimeSessionMaximumLifetime));
+        if (sessionExpiresAt <= now ||
+            sessionExpiresAt <= issuedAt ||
+            sessionExpiresAt > maximumSessionExpiresAt)
+            throw new SecurityTokenException("The handoff token has no safe Control session bound.");
+
         return new ManagedElsaHandoffClaims(
             jti,
             subject,
@@ -625,7 +659,8 @@ public sealed class ManagedElsaHandoffRedeemer(
             scopes,
             issuedAt,
             expiresAt,
-            bindingVersion);
+            bindingVersion,
+            sessionExpiresAt);
     }
 
     private async Task<ManagedElsaHandoffRedeemResult> InvalidAsync(
@@ -655,9 +690,22 @@ public sealed class ManagedElsaHandoffRedeemer(
             : throw new SecurityTokenException($"Handoff claim '{claimType}' is not a GUID.");
 
     private static DateTimeOffset NumericDateClaim(ClaimsPrincipal principal, string claimType) =>
-        long.TryParse(RequiredClaim(principal, claimType), out var seconds)
-            ? DateTimeOffset.FromUnixTimeSeconds(seconds)
+        long.TryParse(RequiredClaim(principal, claimType), System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out var seconds)
+            ? FromUnixTimeSeconds(seconds, claimType)
             : throw new SecurityTokenException($"Handoff claim '{claimType}' is not a numeric date.");
+
+    private static DateTimeOffset FromUnixTimeSeconds(long seconds, string claimType)
+    {
+        try
+        {
+            return DateTimeOffset.FromUnixTimeSeconds(seconds);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            throw new SecurityTokenException($"Handoff claim '{claimType}' is not a valid numeric date.");
+        }
+    }
 
     private static int RequiredPositiveInt(ClaimsPrincipal principal, string claimType) =>
         int.TryParse(RequiredClaim(principal, claimType), System.Globalization.NumberStyles.None,
@@ -672,7 +720,7 @@ public sealed class ManagedElsaHandoffRedeemer(
 }
 
 public sealed class ManagedElsaHandoffService(
-    IWorkspaceIdentityReader identityReader,
+    IAuthenticatedControlSessionReader sessionReader,
     IManagedElsaHandoffAuthorizer authorizer,
     ManagedElsaHandoffIssuer issuer,
     ManagedElsaHandoffRedeemer redeemer,
@@ -684,11 +732,22 @@ public sealed class ManagedElsaHandoffService(
         ManagedElsaHandoffRequest request,
         CancellationToken cancellationToken = default)
     {
-        var identity = await identityReader.ReadAsync(context);
-        if (identity is null)
+        var session = await sessionReader.ReadAsync(context, cancellationToken);
+        if (session is null || !issuer.TryCreateSessionBound(session.ExpiresAt, out var sessionExpiresAt))
+        {
+            await auditSink.RecordAsync(new ManagedElsaHandoffAuditEvent(
+                "issue.session_expiry_rejected",
+                "",
+                null,
+                null,
+                null,
+                null,
+                timeProvider.GetUtcNow(),
+                CorrelationId: context.TraceIdentifier), cancellationToken);
             return null;
+        }
 
-        var authorization = await authorizer.AuthorizeAsync(identity, request, cancellationToken);
+        var authorization = await authorizer.AuthorizeAsync(session.Identity, request, cancellationToken);
         if (authorization is null)
         {
             await auditSink.RecordAsync(new ManagedElsaHandoffAuditEvent(
@@ -703,7 +762,7 @@ public sealed class ManagedElsaHandoffService(
             return null;
         }
 
-        var result = issuer.Issue(identity, request, authorization);
+        var result = issuer.Issue(session.Identity, request, authorization, sessionExpiresAt);
         await auditSink.RecordAsync(new ManagedElsaHandoffAuditEvent(
             "issue.succeeded",
             result.Jti,

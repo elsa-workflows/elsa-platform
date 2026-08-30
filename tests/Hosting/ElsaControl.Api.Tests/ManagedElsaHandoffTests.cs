@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Text.Json;
 using ElsaControl.Api.Authentication;
 using ElsaControl.Deployment.Abstractions.Instances;
@@ -10,6 +11,7 @@ using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -29,7 +31,8 @@ public sealed class ManagedElsaHandoffTests
         var authorizer = new FakeHandoffAuthorizer(organizationId, instanceId);
         await using var app = CreateApplication(authorizer);
         await app.SeedAsync(_ => Task.CompletedTask);
-        var client = app.CreateControlIdentityClient(subject: "handoff-user");
+        var controlExpiresAt = DateTimeOffset.UtcNow.AddMinutes(4);
+        var client = app.CreateControlIdentityClient(subject: "handoff-user", expires: controlExpiresAt);
 
         var issue = await client.PostControlJsonAsync(
             "/api/managed-elsa/handoff/issue",
@@ -47,6 +50,12 @@ public sealed class ManagedElsaHandoffTests
         Assert.Equal(ManagedElsaHandoffDefaults.TokenType, issued.TokenType);
         Assert.Equal(authorizer.Audience, issued.Audience);
         Assert.Equal(authorizer.RedirectUri.OriginalString, issued.RedirectUri);
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(issued.Token);
+        var sessionExpiresAt = DateTimeOffset.FromUnixTimeSeconds(long.Parse(
+            jwt.Claims.Single(x => x.Type == ManagedElsaHandoffDefaults.SessionExpiryClaim).Value,
+            System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(controlExpiresAt.ToUnixTimeSeconds(), sessionExpiresAt.ToUnixTimeSeconds());
+        Assert.True(sessionExpiresAt > issued.ExpiresAt);
 
         var redeem = await app.CreateClient().PostControlJsonAsync(
             "/api/managed-elsa/handoff/redeem",
@@ -59,6 +68,87 @@ public sealed class ManagedElsaHandoffTests
         Assert.Equal(authorizer.OrganizationId, session.OrganizationId);
         Assert.Equal(authorizer.InstanceId, session.InstanceId);
         Assert.Contains(ManagedElsaHandoffDefaults.RuntimeSessionScope, session.Scopes);
+        Assert.Equal(sessionExpiresAt, session.SessionExpiresAt);
+    }
+
+    [Fact]
+    public async Task Issued_session_bound_is_capped_by_configured_runtime_maximum()
+    {
+        var authorizer = new FakeHandoffAuthorizer(Guid.NewGuid(), Guid.NewGuid());
+        await using var app = CreateApplication(authorizer, new Dictionary<string, string?>
+        {
+            [$"{ManagedElsaHandoffDefaults.ConfigurationSection}:RuntimeSessionMaximumLifetime"] = "00:02:00"
+        });
+        await app.SeedAsync(_ => Task.CompletedTask);
+
+        var response = await app.CreateControlIdentityClient(
+                subject: "bounded-handoff-user",
+                expires: DateTimeOffset.UtcNow.AddHours(1))
+            .PostControlJsonAsync("/api/managed-elsa/handoff/issue", IssueRequest(authorizer));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var issued = (await response.Content.ReadControlJsonAsync<ManagedElsaHandoffIssueResponse>())!;
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(issued.Token);
+        var sessionExpiresAt = DateTimeOffset.FromUnixTimeSeconds(long.Parse(
+            jwt.Claims.Single(x => x.Type == ManagedElsaHandoffDefaults.SessionExpiryClaim).Value,
+            System.Globalization.CultureInfo.InvariantCulture));
+        var seconds = (sessionExpiresAt - issued.IssuedAt).TotalSeconds;
+        Assert.InRange(seconds, 119, 120);
+    }
+
+    [Fact]
+    public async Task Expiring_control_session_is_rejected_before_handoff_issue()
+    {
+        var authorizer = new FakeHandoffAuthorizer(Guid.NewGuid(), Guid.NewGuid());
+        await using var app = CreateApplication(authorizer);
+        await app.SeedAsync(_ => Task.CompletedTask);
+
+        var response = await app.CreateControlIdentityClient(
+                subject: "expiring-handoff-user",
+                expires: DateTimeOffset.UtcNow.AddSeconds(30))
+            .PostControlJsonAsync("/api/managed-elsa/handoff/issue", IssueRequest(authorizer));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public void Cookie_session_bound_comes_only_from_authentication_properties()
+    {
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(2);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(JwtRegisteredClaimNames.Iss, ControlApiTestApplication.TestControlIdentityIssuer),
+            new Claim(JwtRegisteredClaimNames.Sub, "cookie-user")
+        ], CustomerAuthenticationDefaults.CookieScheme));
+        var properties = new AuthenticationProperties { ExpiresUtc = expiresAt };
+        var ticket = new AuthenticationTicket(principal, properties, CustomerAuthenticationDefaults.CookieScheme);
+
+        var session = CustomerSessionIdentityReader.ToAuthenticatedControlSession(
+            AuthenticateResult.Success(ticket),
+            new ControlIdentityOptions { Issuer = ControlApiTestApplication.TestControlIdentityIssuer });
+        var missingBound = CustomerSessionIdentityReader.ToAuthenticatedControlSession(
+            AuthenticateResult.Success(new AuthenticationTicket(
+                principal,
+                new AuthenticationProperties(),
+                CustomerAuthenticationDefaults.CookieScheme)),
+            new ControlIdentityOptions { Issuer = ControlApiTestApplication.TestControlIdentityIssuer });
+
+        Assert.Equal("cookie-user", session?.Identity.Subject);
+        Assert.Equal(expiresAt.ToUnixTimeSeconds(), session?.ExpiresAt.ToUnixTimeSeconds());
+        Assert.Null(missingBound);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not-a-date")]
+    [InlineData("9223372036854775807")]
+    public void Bearer_session_bound_rejects_missing_malformed_or_out_of_range_expiry(string? value)
+    {
+        var claims = value is null ? [] : new[] { new Claim(JwtRegisteredClaimNames.Exp, value) };
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, ControlIdentityDefaults.Scheme));
+
+        Assert.False(ControlIdentityReader.TryReadBearerExpiry(principal, out _));
     }
 
     [Fact]
@@ -261,7 +351,8 @@ public sealed class ManagedElsaHandoffTests
         var unknownKey = alternateIssuer.Issue(
             new TrustedWorkspaceIdentity("https://idp.example.test", "subject", "User", "user@example.test"),
             fixture.Request,
-            fixture.Authorizer.Authorization).Token;
+            fixture.Authorizer.Authorization,
+            fixture.Clock.GetUtcNow().AddHours(1)).Token;
 
         Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, (await fixture.RedeemAsync(wrongType)).Failure);
         Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, (await fixture.RedeemAsync(unknownKey)).Failure);
@@ -276,6 +367,19 @@ public sealed class ManagedElsaHandoffTests
         var result = await fixture.RedeemAsync(fixture.Issue());
 
         Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, result.Failure);
+    }
+
+    [Fact]
+    public async Task Missing_or_extended_session_bound_is_rejected()
+    {
+        using var fixture = CreateFixture();
+
+        var missing = await fixture.RedeemAsync(fixture.IssueWithoutSessionExpiry());
+        var extended = await fixture.RedeemAsync(
+            fixture.IssueWithSessionExpiry(fixture.Clock.GetUtcNow().AddDays(1)));
+
+        Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, missing.Failure);
+        Assert.Equal(ManagedElsaHandoffRedeemFailure.InvalidToken, extended.Failure);
     }
 
     [Fact]
@@ -362,6 +466,45 @@ public sealed class ManagedElsaHandoffTests
             "active",
             active,
             [("active", duplicate)]));
+    }
+
+    [Fact]
+    public void Runtime_session_maximum_must_exceed_the_handoff_code_lifetime()
+    {
+        using var keyRing = ManagedElsaHandoffKeyRing.CreateEphemeral();
+        var options = Options.Create(new ManagedElsaHandoffOptions
+        {
+            TokenLifetime = TimeSpan.FromMinutes(1),
+            RuntimeSessionMaximumLifetime = TimeSpan.FromMinutes(1)
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            new ManagedElsaHandoffIssuer(options, keyRing, TimeProvider.System));
+
+        Assert.Contains("must exceed TokenLifetime", exception.Message, StringComparison.Ordinal);
+
+        var excessive = Options.Create(new ManagedElsaHandoffOptions
+        {
+            RuntimeSessionMaximumLifetime = TimeSpan.FromHours(8).Add(TimeSpan.FromSeconds(1))
+        });
+        Assert.Throws<InvalidOperationException>(() =>
+            new ManagedElsaHandoffIssuer(excessive, keyRing, TimeProvider.System));
+    }
+
+    [Fact]
+    public void Session_bound_at_the_normalized_code_expiry_is_accepted()
+    {
+        var clock = new TestTimeProvider(DateTimeOffset.FromUnixTimeMilliseconds(1_800_000_000_900));
+        using var fixture = CreateFixture(clock);
+        var boundary = DateTimeOffset.FromUnixTimeSeconds(
+            clock.GetUtcNow().AddMinutes(1).ToUnixTimeSeconds());
+
+        var token = fixture.Issue(boundary);
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
+
+        Assert.Equal(
+            boundary.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture),
+            jwt.Claims.Single(x => x.Type == ManagedElsaHandoffDefaults.SessionExpiryClaim).Value);
     }
 
     [Fact]
@@ -482,15 +625,30 @@ public sealed class ManagedElsaHandoffTests
         Assert.False(string.IsNullOrWhiteSpace(body.RootElement.GetProperty("correlationId").GetString()));
     }
 
-    private static ControlApiTestApplication CreateApplication(FakeHandoffAuthorizer authorizer) =>
-        new(new Dictionary<string, string?>
+    private static ControlApiTestApplication CreateApplication(
+        FakeHandoffAuthorizer authorizer,
+        IReadOnlyDictionary<string, string?>? overrides = null)
+    {
+        var configuration = new Dictionary<string, string?>
         {
             [$"{ManagedElsaHandoffDefaults.ConfigurationSection}:Enabled"] = "true"
-        }, services =>
+        };
+        foreach (var (key, value) in overrides ?? new Dictionary<string, string?>())
+            configuration[key] = value;
+
+        return new ControlApiTestApplication(configuration, services =>
         {
             services.RemoveAll<IManagedElsaHandoffAuthorizer>();
             services.AddSingleton<IManagedElsaHandoffAuthorizer>(authorizer);
         });
+    }
+
+    private static ManagedElsaHandoffIssueRequest IssueRequest(FakeHandoffAuthorizer authorizer) => new(
+        authorizer.OrganizationId,
+        authorizer.InstanceId,
+        authorizer.Audience,
+        authorizer.RedirectUri.OriginalString,
+        authorizer.CodeChallenge);
 
     private static ServiceProvider CreateKeyRingServices(ManagedElsaHandoffOptions options)
     {
@@ -542,44 +700,54 @@ public sealed class ManagedElsaHandoffTests
         public string Issue() => Issuer.Issue(
             new TrustedWorkspaceIdentity("https://idp.example.test", "subject", "User", "user@example.test"),
             Request,
-            Authorizer.Authorization).Token;
+            Authorizer.Authorization,
+            Clock.GetUtcNow().AddHours(1)).Token;
 
         public string Issue(ManagedElsaHandoffRequest request) => Issuer.Issue(
             new TrustedWorkspaceIdentity("https://idp.example.test", "subject", "User", "user@example.test"),
             request,
-            Authorizer.Authorization).Token;
+            Authorizer.Authorization,
+            Clock.GetUtcNow().AddHours(1)).Token;
+
+        public string Issue(DateTimeOffset sessionExpiresAt) => Issuer.Issue(
+            new TrustedWorkspaceIdentity("https://idp.example.test", "subject", "User", "user@example.test"),
+            Request,
+            Authorizer.Authorization,
+            sessionExpiresAt).Token;
 
         public string IssueWithTokenType(string tokenType)
+            => RewriteToken(Issue(), claims => claims, tokenType);
+
+        public string IssueWithoutBindingVersion()
+            => RewriteToken(Issue(), claims => claims.Where(claim => claim.Type != "binding_version"));
+
+        public string IssueWithoutSessionExpiry() =>
+            RewriteToken(Issue(), claims => claims.Where(claim =>
+                claim.Type != ManagedElsaHandoffDefaults.SessionExpiryClaim));
+
+        public string IssueWithSessionExpiry(DateTimeOffset expiresAt) =>
+            RewriteToken(Issue(), claims => claims
+                .Where(claim => claim.Type != ManagedElsaHandoffDefaults.SessionExpiryClaim)
+                .Append(new Claim(
+                    ManagedElsaHandoffDefaults.SessionExpiryClaim,
+                    expiresAt.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture))));
+
+        private string RewriteToken(
+            string token,
+            Func<IEnumerable<Claim>, IEnumerable<Claim>> rewriteClaims,
+            string tokenType = ManagedElsaHandoffDefaults.TokenType)
         {
             var handler = new JwtSecurityTokenHandler();
-            var source = handler.ReadJwtToken(Issue());
+            var source = handler.ReadJwtToken(token);
             return handler.WriteToken(handler.CreateToken(new Microsoft.IdentityModel.Tokens.SecurityTokenDescriptor
             {
                 Issuer = source.Issuer,
                 Audience = source.Audiences.Single(),
-                Subject = new System.Security.Claims.ClaimsIdentity(source.Claims),
+                Subject = new ClaimsIdentity(rewriteClaims(source.Claims)),
                 IssuedAt = source.ValidFrom,
                 NotBefore = source.ValidFrom,
                 Expires = source.ValidTo,
                 TokenType = tokenType,
-                SigningCredentials = KeyRing.ActiveSigningCredentials
-            }));
-        }
-
-        public string IssueWithoutBindingVersion()
-        {
-            var handler = new JwtSecurityTokenHandler();
-            var source = handler.ReadJwtToken(Issue());
-            return handler.WriteToken(handler.CreateToken(new Microsoft.IdentityModel.Tokens.SecurityTokenDescriptor
-            {
-                Issuer = source.Issuer,
-                Audience = source.Audiences.Single(),
-                Subject = new System.Security.Claims.ClaimsIdentity(
-                    source.Claims.Where(claim => claim.Type != "binding_version")),
-                IssuedAt = source.ValidFrom,
-                NotBefore = source.ValidFrom,
-                Expires = source.ValidTo,
-                TokenType = ManagedElsaHandoffDefaults.TokenType,
                 SigningCredentials = KeyRing.ActiveSigningCredentials
             }));
         }
