@@ -165,7 +165,7 @@ public sealed class ElsaInstancePersistenceTests
         Assert.Contains(operationFilters, x => x!.Contains("WaitingForPriorOperation", StringComparison.Ordinal));
 
         var run = db.Model.FindEntityType(typeof(DeploymentRunEntity))!;
-        Assert.Contains(run.GetIndexes().Select(x => x.GetFilter()), x => x == "ElsaInstanceId IS NOT NULL AND Status IN ('Queued', 'Running', 'RecoveryRequired')");
+        Assert.Contains(run.GetIndexes().Select(x => x.GetFilter()), x => x == "Status IN ('Queued', 'Running', 'RecoveryRequired')");
 
         var identityBinding = db.Model.FindEntityType(typeof(ElsaInstanceIdentityBindingEntity))!;
         var callbackIndex = Assert.Single(identityBinding.GetIndexes(), index =>

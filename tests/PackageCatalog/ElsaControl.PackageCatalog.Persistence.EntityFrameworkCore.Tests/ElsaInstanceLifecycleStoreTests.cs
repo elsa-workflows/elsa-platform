@@ -20,6 +20,20 @@ public sealed class ElsaInstanceLifecycleStoreTests
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-08-30T10:00:00Z");
 
     [Fact]
+    public void Active_run_reservation_index_includes_unmanaged_runs()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        using var db = CreateMigratedContext(connection);
+        var index = db.Model.FindEntityType(typeof(DeploymentRunEntity))!
+            .GetIndexes()
+            .Single(x => x.Properties.Select(property => property.Name)
+                .SequenceEqual(["WorkspaceId", "EnvironmentId"]));
+
+        Assert.Equal("Status IN ('Queued', 'Running', 'RecoveryRequired')", index.GetFilter());
+    }
+
+    [Fact]
     public void Sql_server_resolved_plan_trigger_migration_is_idempotent_and_append_only()
     {
         // SQL Server is not a local integration dependency; assert the exact
@@ -580,6 +594,53 @@ public sealed class ElsaInstanceLifecycleStoreTests
             (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == first.Operation.Id)).State);
         Assert.Equal(ElsaInstanceOperationState.Queued,
             (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == second.Operation.Id)).State);
+        var quarantined = await db.ElsaInstanceLifecycleOutbox
+            .SingleAsync(x => x.OperationId == first.Operation.Id);
+        Assert.Equal("outbox.invalid", quarantined.QuarantineCode);
+        Assert.Equal(Now.AddMinutes(2), quarantined.QuarantinedAt);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(int.MaxValue)]
+    public async Task Corrupt_lease_version_is_quarantined_without_blocking_later_work(int leaseVersion)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, $"Corrupt lease workspace {leaseVersion}");
+        var first = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId, workspace.Id, "Corrupt Elsa", $"corrupt-lease-{leaseVersion}", WorkerIntent(), $"corrupt-lease-create-{leaseVersion}"));
+        var second = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now.AddMinutes(1)))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId, workspace.Id, "Valid Elsa", $"valid-after-lease-{leaseVersion}", WorkerIntent(), $"valid-after-lease-create-{leaseVersion}"));
+        var target = await AddManagedEnvironmentAsync(db, workspace, second.Instance.Id);
+
+        // Disable only the SQLite compatibility trigger to model a legacy row
+        // that predates the database range guard.
+        await db.Database.ExecuteSqlRawAsync("DROP TRIGGER IF EXISTS TR_ElsaInstanceOperations_LeaseVersion_Range_Insert;");
+        await db.Database.ExecuteSqlRawAsync("DROP TRIGGER IF EXISTS TR_ElsaInstanceOperations_LeaseVersion_Range_Update;");
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE ElsaInstanceOperations SET LeaseVersion = {leaseVersion} WHERE Id = {first.Operation.Id}");
+        db.ChangeTracker.Clear();
+        var store = new EfCoreElsaInstanceLifecycleStore(db, new StaticResolutionInputSource(second.Instance, target));
+        var result = await new ElsaInstanceLifecycleWorker(
+                store,
+                new StaticResolver(SuccessfulResolution(workspace.Id, second.Instance.Id)),
+                new FixedTimeProvider(Now.AddMinutes(2)))
+            .ProcessAvailableAsync("worker-one");
+
+        Assert.Single(result.Results);
+        Assert.Equal(second.Operation.Id, result.Results[0].Operation.Id);
+        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Queued, result.Results[0].Outcome);
+        Assert.Equal(ElsaInstanceOperationState.Accepted,
+            (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == first.Operation.Id)).State);
+        var quarantined = await db.ElsaInstanceLifecycleOutbox
+            .SingleAsync(x => x.OperationId == first.Operation.Id);
+        Assert.Equal("outbox.invalid", quarantined.QuarantineCode);
+        Assert.Equal(Now.AddMinutes(2), quarantined.QuarantinedAt);
     }
 
     private static async Task<Workspace> CreateWorkspaceAsync(CatalogDbContext db, string name)

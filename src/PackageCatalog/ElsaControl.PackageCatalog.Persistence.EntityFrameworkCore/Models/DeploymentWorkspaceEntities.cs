@@ -176,6 +176,8 @@ internal sealed class ElsaInstanceLifecycleOutboxEntity
     public ElsaInstanceOperationAction Action { get; set; }
     public string RequestHash { get; set; } = "";
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? QuarantinedAt { get; set; }
+    public string? QuarantineCode { get; set; }
 }
 
 internal sealed class ElsaInstanceOperationEntity

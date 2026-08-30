@@ -299,6 +299,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 var candidate = await dbContext.ElsaInstanceLifecycleOutbox
                     .AsNoTracking()
                     .Where(x => x.Operation != null &&
+                                x.QuarantinedAt == null &&
                                 !skippedCandidateIds.Contains(x.Id) &&
                                 x.Operation.State == ElsaInstanceOperationState.Accepted &&
                                 (x.Operation.WorkerId == null ||
@@ -318,11 +319,22 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 var instanceEntity = await LoadTrackedInstanceAsync(candidate.InstanceId, cancellationToken);
                 if (operationEntity is null || instanceEntity is null)
                 {
-                    await transaction.CommitAsync(cancellationToken);
-                    dbContext.ChangeTracker.Clear();
-                    skippedCandidateIds.Add(candidate.Id);
-                    if (skippedCandidateIds.Count >= MaxSkippedCandidates)
-                        return null;
+                    try
+                    {
+                        await QuarantinePersistedWorkItemAsync(
+                            candidate.Id, null, null, false, nowUtc, cancellationToken);
+                        await transaction.CommitAsync(cancellationToken);
+                        quarantined = true;
+                    }
+                    catch (Exception exception) when (exception is InvalidOperationException or DbUpdateException or DbException)
+                    {
+                        dbContext.ChangeTracker.Clear();
+                        skippedCandidateIds.Add(candidate.Id);
+                        if (skippedCandidateIds.Count >= MaxSkippedCandidates)
+                            return null;
+                    }
+                    if (quarantined)
+                        dbContext.ChangeTracker.Clear();
                     continue;
                 }
                 if (operationEntity.State != ElsaInstanceOperationState.Accepted ||
@@ -336,20 +348,15 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 if (!TryMapPersistedWorkItem(candidate, operationEntity, instanceEntity,
                         out outbox, out operation, out instance))
                 {
-                    if (!CanQuarantine(candidate, operationEntity, instanceEntity))
-                    {
-                        await transaction.CommitAsync(cancellationToken);
-                        dbContext.ChangeTracker.Clear();
-                        skippedCandidateIds.Add(candidate.Id);
-                        if (skippedCandidateIds.Count >= MaxSkippedCandidates)
-                            return null;
-                        continue;
-                    }
-
                     try
                     {
                         await QuarantinePersistedWorkItemAsync(
-                            operationEntity, instanceEntity, nowUtc, cancellationToken);
+                            candidate.Id,
+                            operationEntity,
+                            instanceEntity,
+                            CanQuarantine(candidate, operationEntity, instanceEntity),
+                            nowUtc,
+                            cancellationToken);
                         await transaction.CommitAsync(cancellationToken);
                         quarantined = true;
                     }
@@ -363,9 +370,39 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                         if (skippedCandidateIds.Count >= MaxSkippedCandidates)
                             return null;
                     }
+
+                    if (quarantined)
+                        dbContext.ChangeTracker.Clear();
+                    continue;
                 }
                 else
                 {
+                    if (operationEntity.LeaseVersion < 0 || operationEntity.LeaseVersion == int.MaxValue)
+                    {
+                        try
+                        {
+                            await QuarantinePersistedWorkItemAsync(
+                                candidate.Id,
+                                operationEntity,
+                                instanceEntity,
+                                CanQuarantine(candidate, operationEntity, instanceEntity),
+                                nowUtc,
+                                cancellationToken);
+                            await transaction.CommitAsync(cancellationToken);
+                            quarantined = true;
+                        }
+                        catch (Exception exception) when (exception is InvalidOperationException or DbUpdateException or DbException)
+                        {
+                            dbContext.ChangeTracker.Clear();
+                            skippedCandidateIds.Add(candidate.Id);
+                            if (skippedCandidateIds.Count >= MaxSkippedCandidates)
+                                return null;
+                        }
+                        if (quarantined)
+                            dbContext.ChangeTracker.Clear();
+                        continue;
+                    }
+
                     leaseToken = CreateLeaseToken();
                     leaseVersion = checked(operationEntity.LeaseVersion + 1);
                     operationEntity.WorkerId = workerId;
@@ -1024,30 +1061,42 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
     }
 
     private async Task QuarantinePersistedWorkItemAsync(
-        ElsaInstanceOperationEntity operation,
-        ElsaInstanceEntity instance,
+        Guid outboxId,
+        ElsaInstanceOperationEntity? operation,
+        ElsaInstanceEntity? instance,
+        bool failOperation,
         DateTimeOffset occurredAt,
         CancellationToken cancellationToken)
     {
-        var priorObservedLifecycle = instance.ObservedLifecycle;
-        operation.State = ElsaInstanceOperationState.Failed;
-        operation.FailureCode = "outbox.invalid";
-        operation.FailureSummary = "Lifecycle work item could not be read safely.";
-        operation.CompletedAt = occurredAt;
-        operation.WorkerId = null;
-        operation.LeaseTokenHash = null;
-        operation.LeaseExpiresAt = null;
-        operation.HeartbeatAt = null;
-        operation.UpdatedAt = occurredAt;
-        await dbContext.ElsaInstanceAuditEvents.AddAsync(
-            await CreateAuditEventAsync(
-                instance,
-                operation,
-                priorObservedLifecycle,
-                occurredAt,
-                cancellationToken,
-                eventType: "lifecycle.failed"),
-            cancellationToken);
+        var outbox = await dbContext.ElsaInstanceLifecycleOutbox
+            .SingleOrDefaultAsync(x => x.Id == outboxId, cancellationToken)
+            ?? throw new InvalidOperationException("Lifecycle outbox record no longer exists.");
+        outbox.QuarantinedAt = occurredAt;
+        outbox.QuarantineCode = "outbox.invalid";
+
+        if (failOperation && operation is not null && instance is not null)
+        {
+            var priorObservedLifecycle = instance.ObservedLifecycle;
+            operation.State = ElsaInstanceOperationState.Failed;
+            operation.FailureCode = "outbox.invalid";
+            operation.FailureSummary = "Lifecycle work item could not be read safely.";
+            operation.CompletedAt = occurredAt;
+            operation.WorkerId = null;
+            operation.LeaseTokenHash = null;
+            operation.LeaseExpiresAt = null;
+            operation.HeartbeatAt = null;
+            operation.UpdatedAt = occurredAt;
+            await dbContext.ElsaInstanceAuditEvents.AddAsync(
+                await CreateAuditEventAsync(
+                    instance,
+                    operation,
+                    priorObservedLifecycle,
+                    occurredAt,
+                    cancellationToken,
+                    eventType: "lifecycle.failed"),
+                cancellationToken);
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -1107,6 +1156,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                instance.Id == candidate.InstanceId &&
                instance.WorkspaceId == candidate.WorkspaceId &&
                IsCanonicalHash(operation.RequestHash) &&
+               operation.LeaseVersion >= 0 && operation.LeaseVersion < int.MaxValue &&
                IsSafePersistedReference(operation.IdempotencyScope, 256) &&
                IsSafePersistedToken(operation.IdempotencyKey, 128) &&
                operation.ExpectedVersion >= 1 && operation.AttemptNumber >= 1 &&

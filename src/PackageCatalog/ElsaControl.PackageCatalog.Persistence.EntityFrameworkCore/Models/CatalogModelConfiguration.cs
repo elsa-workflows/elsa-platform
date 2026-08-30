@@ -654,7 +654,7 @@ internal sealed class DeploymentRunConfiguration : IEntityTypeConfiguration<Depl
         builder.HasIndex(x => new { x.WorkspaceId, x.EnvironmentId, x.Status });
         builder.HasIndex(x => new { x.WorkspaceId, x.EnvironmentId })
             .IsUnique()
-            .HasFilter("ElsaInstanceId IS NOT NULL AND Status IN ('Queued', 'Running', 'RecoveryRequired')");
+            .HasFilter("Status IN ('Queued', 'Running', 'RecoveryRequired')");
         builder.HasOne(x => x.Environment).WithMany()
             .HasForeignKey(x => new { x.WorkspaceId, x.EnvironmentId })
             .HasPrincipalKey(x => new { x.WorkspaceId, x.Id })
@@ -841,7 +841,11 @@ internal sealed class ElsaInstanceOperationConfiguration : IEntityTypeConfigurat
 {
     public void Configure(EntityTypeBuilder<ElsaInstanceOperationEntity> builder)
     {
-        builder.ToTable("ElsaInstanceOperations", t => t.HasCheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'"));
+        builder.ToTable("ElsaInstanceOperations", t =>
+        {
+            t.HasCheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'");
+            t.HasCheckConstraint("CK_ElsaInstanceOperations_LeaseVersion_NonNegative", "LeaseVersion >= 0");
+        });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Action).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.IdempotencyScope).HasMaxLength(256).IsRequired();
@@ -961,6 +965,8 @@ internal sealed class ElsaInstanceLifecycleOutboxConfiguration : IEntityTypeConf
         builder.Property(x => x.Action).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.RequestHash).HasMaxLength(64).IsRequired();
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.QuarantinedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.QuarantineCode).HasMaxLength(64);
 
         builder.HasIndex(x => x.OperationId).IsUnique();
         builder.HasIndex(x => new { x.WorkspaceId, x.CreatedAt });

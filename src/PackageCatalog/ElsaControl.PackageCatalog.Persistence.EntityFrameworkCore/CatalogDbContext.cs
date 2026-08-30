@@ -205,9 +205,31 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
 
     private void EnsureElsaInstanceLifecycleOutboxIsAppendOnly()
     {
-        if (ChangeTracker.Entries<Models.ElsaInstanceLifecycleOutboxEntity>()
-            .Any(x => x.State is EntityState.Modified or EntityState.Deleted))
-            throw new InvalidOperationException("Elsa instance lifecycle outbox records are append-only.");
+        foreach (var entry in ChangeTracker.Entries<Models.ElsaInstanceLifecycleOutboxEntity>()
+                     .Where(x => x.State is EntityState.Modified or EntityState.Deleted))
+        {
+            if (entry.State == EntityState.Deleted)
+                throw new InvalidOperationException("Elsa instance lifecycle outbox records are append-only.");
+
+            var changedProperties = entry.Properties
+                .Where(property => property.IsModified)
+                .Select(property => property.Metadata.Name)
+                .ToArray();
+            if (changedProperties.Any(property => property is not (
+                    nameof(Models.ElsaInstanceLifecycleOutboxEntity.QuarantinedAt) or
+                    nameof(Models.ElsaInstanceLifecycleOutboxEntity.QuarantineCode))))
+                throw new InvalidOperationException("Elsa instance lifecycle outbox payload is append-only.");
+
+            var originalAt = (DateTimeOffset?)entry.Property(nameof(Models.ElsaInstanceLifecycleOutboxEntity.QuarantinedAt)).OriginalValue;
+            var currentAt = entry.Entity.QuarantinedAt;
+            var originalCode = (string?)entry.Property(nameof(Models.ElsaInstanceLifecycleOutboxEntity.QuarantineCode)).OriginalValue;
+            var currentCode = entry.Entity.QuarantineCode;
+            if (originalAt is not null || originalCode is not null ||
+                (currentAt is null && currentCode is null))
+                throw new InvalidOperationException("Elsa instance lifecycle outbox quarantine metadata is append-only.");
+            if (currentAt is null || !string.Equals(currentCode, "outbox.invalid", StringComparison.Ordinal))
+                throw new InvalidOperationException("Elsa instance lifecycle outbox quarantine metadata is invalid.");
+        }
     }
 
     private void EnsureElsaInstanceResolvedPlansAreAppendOnly()
@@ -460,15 +482,25 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         }
 
         foreach (var entry in ChangeTracker.Entries<Models.ElsaInstanceLifecycleOutboxEntity>()
-                     .Where(x => x.State == EntityState.Added))
+                     .Where(x => x.State is EntityState.Added or EntityState.Modified))
         {
             var outbox = entry.Entity;
-            EnsureDefined(outbox.Action, nameof(outbox.Action));
-            if (outbox.Id == Guid.Empty || outbox.OrganizationId == Guid.Empty ||
-                outbox.WorkspaceId == Guid.Empty || outbox.InstanceId == Guid.Empty ||
-                outbox.OperationId == Guid.Empty)
-                throw new InvalidOperationException("An Elsa instance lifecycle outbox record requires stable ownership identifiers.");
-            outbox.RequestHash = RequireCanonicalHash(outbox.RequestHash, nameof(outbox.RequestHash));
+            if (entry.State == EntityState.Added)
+            {
+                EnsureDefined(outbox.Action, nameof(outbox.Action));
+                if (outbox.Id == Guid.Empty || outbox.OrganizationId == Guid.Empty ||
+                    outbox.WorkspaceId == Guid.Empty || outbox.InstanceId == Guid.Empty ||
+                    outbox.OperationId == Guid.Empty)
+                    throw new InvalidOperationException("An Elsa instance lifecycle outbox record requires stable ownership identifiers.");
+                outbox.RequestHash = RequireCanonicalHash(outbox.RequestHash, nameof(outbox.RequestHash));
+                if (outbox.QuarantinedAt is not null || outbox.QuarantineCode is not null)
+                    throw new InvalidOperationException("New Elsa instance lifecycle outbox records cannot be quarantined.");
+            }
+            else if (outbox.QuarantinedAt is not null &&
+                     !string.Equals(outbox.QuarantineCode, "outbox.invalid", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Elsa instance lifecycle outbox quarantine metadata is invalid.");
+            }
 
             var instance = ChangeTracker.Entries<Models.ElsaInstanceEntity>()
                 .Select(x => x.Entity)

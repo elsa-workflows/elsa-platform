@@ -1329,7 +1329,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                     b.HasIndex("WorkspaceId", "EnvironmentId")
                         .IsUnique()
-                        .HasFilter("ElsaInstanceId IS NOT NULL AND Status IN ('Queued', 'Running', 'RecoveryRequired')");
+                        .HasFilter("Status IN ('Queued', 'Running', 'RecoveryRequired')");
 
                     b.HasIndex("WorkspaceId", "EnvironmentId", "Status");
 
@@ -2135,6 +2135,13 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<long?>("QuarantinedAt")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("QuarantineCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<long>("CreatedAt")
                         .HasColumnType("bigint");
 
@@ -2393,6 +2400,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                     b.ToTable("ElsaInstanceOperations", null, t =>
                         {
+                            t.HasCheckConstraint("CK_ElsaInstanceOperations_LeaseVersion_NonNegative", "LeaseVersion >= 0");
                             t.HasCheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'");
                         });
                 });

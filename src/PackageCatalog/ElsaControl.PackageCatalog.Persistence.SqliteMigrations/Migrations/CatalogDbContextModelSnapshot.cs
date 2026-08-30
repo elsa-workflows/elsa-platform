@@ -1324,7 +1324,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.HasIndex("WorkspaceId", "EnvironmentId")
                         .IsUnique()
-                        .HasFilter("ElsaInstanceId IS NOT NULL AND Status IN ('Queued', 'Running', 'RecoveryRequired')");
+                        .HasFilter("Status IN ('Queued', 'Running', 'RecoveryRequired')");
 
                     b.HasIndex("WorkspaceId", "EnvironmentId", "Status");
 
@@ -2130,6 +2130,13 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("QuarantinedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("QuarantineCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<long>("CreatedAt")
                         .HasColumnType("INTEGER");
 
@@ -2388,6 +2395,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.ToTable("ElsaInstanceOperations", null, t =>
                         {
+                            t.HasCheckConstraint("CK_ElsaInstanceOperations_LeaseVersion_NonNegative", "LeaseVersion >= 0");
                             t.HasCheckConstraint("CK_ElsaInstanceOperations_NullInstanceOnlyCreate", "InstanceId IS NOT NULL OR Action = 'Create'");
                         });
                 });
