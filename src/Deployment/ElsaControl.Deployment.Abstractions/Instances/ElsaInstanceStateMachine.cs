@@ -516,6 +516,7 @@ public static class ElsaInstanceStateMachine
             expected);
         if (waitForPriorOperation)
             operation = operation.TransitionTo(ElsaInstanceOperationState.WaitingForPriorOperation);
+        next = next with { LastOperationId = new ElsaLastOperationId(operation.Id) };
         return new ElsaInstanceTransitionResult(next, operation);
     }
 

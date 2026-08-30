@@ -25,6 +25,8 @@ public sealed class ElsaInstanceLifecycleServiceTests
         Assert.True(replay.Replayed);
         Assert.Equal(first.Instance.Id, replay.Instance.Id);
         Assert.Equal(first.Operation.Id, replay.Operation.Id);
+        Assert.Equal(new ElsaLastOperationId(first.Operation.Id), first.Instance.LastOperationId);
+        Assert.Equal(first.Instance.LastOperationId, replay.Instance.LastOperationId);
         Assert.Equal(first.Outbox.Id, replay.Outbox.Id);
         Assert.Single(store.Instances);
         Assert.Single(store.Operations);
