@@ -217,7 +217,7 @@ public sealed class ElsaInstanceLifecycleServiceTests
     [Fact]
     public async Task Waiting_delete_is_claimed_after_its_prior_operation_becomes_terminal()
     {
-        var store = new InMemoryElsaInstanceLifecycleStore();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
         var service = new ElsaInstanceLifecycleService(store);
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));

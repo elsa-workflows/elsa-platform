@@ -146,10 +146,10 @@ public sealed class ElsaInstanceLifecycleService(
             if (existingOperation.InstanceId != instanceId || existingOperation.Action != action)
                 throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
 
-            var requestHash = existingOperation.RequestHash;
+            var existingRequestHash = existingOperation.RequestHash;
             if (requestedIntent is not null &&
                 !string.Equals(
-                    requestHash,
+                    existingRequestHash,
                     ComputeRequestHash(action, existingOperation.ExpectedVersion, requestedIntent.ComputeCanonicalHash()),
                     StringComparison.Ordinal))
                 throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
@@ -163,7 +163,7 @@ public sealed class ElsaInstanceLifecycleService(
                 existingOperation,
                 existingOperation.ExpectedVersion,
                 key,
-                requestHash,
+                existingRequestHash,
                 requestedIntent);
             return await CommitAsync(instance, replayTransition, cancellationToken);
         }
