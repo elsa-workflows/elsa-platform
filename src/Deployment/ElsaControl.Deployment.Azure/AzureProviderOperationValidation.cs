@@ -92,7 +92,7 @@ public static class AzureProviderOperationValidation
     private static bool IsSafeCode(string? value) => value is not null && value.Length <= 128 && Regex.IsMatch(value, "^[a-z0-9]+(?:[._-][a-z0-9]+)*\\z");
 
     private static bool IsSafeRepository(string? value) => value is not null && value.Length <= 512 &&
-        Regex.IsMatch(value, "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?:/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*\\z");
+        Regex.IsMatch(value, "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?:/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)*\\z", RegexOptions.IgnoreCase);
 
     public static AzureProviderOperationRequest Normalize(AzureProviderOperationRequest request)
     {

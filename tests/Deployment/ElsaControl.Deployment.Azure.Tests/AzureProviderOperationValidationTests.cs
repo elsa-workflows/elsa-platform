@@ -108,7 +108,8 @@ public sealed class AzureProviderOperationValidationTests
         {
             TargetKey = first.TargetKey.ToUpperInvariant(),
             PlanFingerprint = first.PlanFingerprint.ToUpperInvariant(),
-            ImageDigest = first.ImageDigest.ToUpperInvariant()
+            ImageDigest = first.ImageDigest.ToUpperInvariant(),
+            ImageRepository = first.ImageRepository.ToUpperInvariant()
         };
 
         Assert.Equal(AzureProviderOperationValidation.ComputeRequestHash(first), AzureProviderOperationValidation.ComputeRequestHash(second));
