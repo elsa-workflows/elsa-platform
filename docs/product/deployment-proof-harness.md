@@ -43,10 +43,14 @@ provider resolves credentials inside its own execution boundary (managed identit
 or another approved provider) and returns only safe metadata.
 
 For the real Azure proof, the operator must additionally provide an enabled Azure subscription,
-permission to create and delete the disposable resource group, the approved West Europe region,
+permission to create and delete the disposable resource group, one governed proof region
+(`westeurope`, `northeurope`, or `swedencentral`),
 the exact image digest, immutable manifest and retained signature references/digests, a source
 commit, a durable state path, and the narrow SQL bootstrap identity/IP. Those prerequisites belong
 to the real-provider run and are not hidden in this fake-provider test.
+
+These proof-only capacity fallbacks do not change the product decision that West Europe is the
+sole initial managed launch region.
 
 ## Stage contract and evidence
 

@@ -1,6 +1,6 @@
 # Disposable Azure workload proof
 
-This directory is the checked-in Bicep authority for issue [#146](https://github.com/valence-works/elsa-control/issues/146), a disposable Elsa 3.8 Combined proof in **West Europe**. Azure-specific resource realization stays here; provider-neutral desired state does not gain Azure fields.
+This directory is the checked-in Bicep authority for issue [#146](https://github.com/valence-works/elsa-control/issues/146), a disposable Elsa 3.8 Combined proof in a governed proof region: **West Europe**, **North Europe**, or **Sweden Central**. Azure-specific resource realization stays here; provider-neutral desired state does not gain Azure fields. These capacity fallbacks do not expand the product launch promise beyond West Europe.
 
 The stack deliberately contains no secret values, SQL passwords, connection-string values, or mutable image tags. The image is composed as `imageRepository@sha256:imageDigest`, and `imageDigest` is exactly 64 hexadecimal characters. The existing `valenceruntimeimages` ACR is the only resource outside the disposable group, and receives one deterministic `AcrPull` assignment through `acr-pull-role.bicep`.
 
@@ -60,7 +60,7 @@ Do not echo, log or persist that variable. Cleanup deletes and purges the dispos
 | Key Vault | RBAC, soft delete, public access for this no-VNet proof, 7-day retention |
 | Azure SQL | Entra-only bootstrap, no proof-managed SQL credentials, contained managed-identity runtime access; GP serverless 0.5 minimum, 60-minute auto-pause, local backup redundancy |
 | Log Analytics | PerGB2018, minimum 30-day retention; ACA console/system logs and metrics |
-| Container Apps environment | West Europe, consumption-backed, no zone redundancy |
+| Container Apps environment | Selected governed proof region, consumption-backed, no zone redundancy |
 | Container App | External HTTPS-only ingress, port 8080, multiple revisions, latest revision at 100%, 0–1 replicas, startup/readiness/liveness probes |
 
 Front Door, custom domains, private networking, VNet integration and production HA are intentionally excluded from this proof. They are separate provider/edge decisions.
