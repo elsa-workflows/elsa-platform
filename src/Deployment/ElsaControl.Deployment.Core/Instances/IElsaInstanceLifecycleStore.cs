@@ -29,6 +29,7 @@ public interface IElsaInstanceLifecycleStore
         string idempotencyKey,
         Guid? instanceId = null,
         ElsaInstanceOperationAction? action = null,
+        string? idempotencyScope = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

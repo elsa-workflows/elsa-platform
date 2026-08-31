@@ -319,6 +319,31 @@ public sealed class ManagedElsaInstanceApiTests
     }
 
     [Fact]
+    public async Task Canonical_operation_key_cannot_be_reused_for_a_different_terminal_action()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient("managed-instance-cross-action-idempotency");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        var created = await CreateCanonicalInstanceAsync(client, workspaceId, "cross-action-runtime");
+        await MarkOperationSucceededAsync(app, created.Operation.Id);
+        var first = await SendOperationAsync(client, workspaceId, created.Instance.InstanceId,
+            created.Instance.ETag, "shared-operation-key", new(ElsaInstanceOperationAction.Reconcile));
+        Assert.Equal(HttpStatusCode.Accepted, first.StatusCode);
+        var firstBody = await first.Content.ReadControlJsonAsync<ManagedElsaInstanceAcceptedResponse>();
+        await MarkOperationSucceededAsync(app, firstBody!.Operation.Id);
+        var operationCount = await CountOperationsAsync(app);
+
+        var conflict = await SendOperationAsync(client, workspaceId, created.Instance.InstanceId,
+            created.Instance.ETag, "shared-operation-key", new(ElsaInstanceOperationAction.Stop));
+
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        Assert.Contains("instance.idempotency-conflict", await conflict.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(operationCount, await CountOperationsAsync(app));
+    }
+
+    [Fact]
     public async Task Canonical_delete_requires_matching_confirmation_and_replays_exact_request()
     {
         await using var app = CreateApplication([]);
@@ -667,6 +692,24 @@ public sealed class ManagedElsaInstanceApiTests
         string endpointUri) =>
         db.Database.ExecuteSqlInterpolatedAsync(
             $"UPDATE ElsaInstances SET CurrentDeploymentId = {"deployment-managed"}, CurrentDeploymentEndpointUri = {endpointUri}, DesiredLifecycle = {ElsaDesiredLifecycle.Running.ToString()}, ObservedLifecycle = {ElsaObservedLifecycle.Ready.ToString()}, Health = {ElsaInstanceHealth.Healthy.ToString()} WHERE Id = {instanceId}");
+
+    private static async Task MarkOperationSucceededAsync(ControlApiTestApplication app, Guid operationId)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE ElsaInstanceOperations SET State = {ElsaInstanceOperationState.Succeeded.ToString()}, CompletedAt = {DateTimeOffset.UtcNow} WHERE Id = {operationId}");
+    }
+
+    private static async Task<int> CountOperationsAsync(ControlApiTestApplication app)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        await db.Database.OpenConnectionAsync();
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM ElsaInstanceOperations";
+        return Convert.ToInt32(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
+    }
 
     private static async Task<ManagedElsaInstanceAcceptedResponse> CreateCanonicalInstanceAsync(
         HttpClient client,

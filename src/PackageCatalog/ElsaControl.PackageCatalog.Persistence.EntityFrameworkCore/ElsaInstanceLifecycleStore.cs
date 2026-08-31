@@ -271,6 +271,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         string idempotencyKey,
         Guid? instanceId = null,
         ElsaInstanceOperationAction? action = null,
+        string? idempotencyScope = null,
         CancellationToken cancellationToken = default)
     {
         if (workspaceId == Guid.Empty)
@@ -284,6 +285,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             query = query.Where(x => x.InstanceId == instanceId);
         if (action is not null)
             query = query.Where(x => x.Action == action);
+        if (idempotencyScope is not null)
+            query = query.Where(x => x.IdempotencyScope == idempotencyScope);
         var entity = await query
             .OrderByDescending(x => x.AcceptedAt)
             .ThenByDescending(x => x.CreatedAt)

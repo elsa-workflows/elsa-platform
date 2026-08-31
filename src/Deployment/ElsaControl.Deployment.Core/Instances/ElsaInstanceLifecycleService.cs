@@ -200,7 +200,9 @@ public sealed class ElsaInstanceLifecycleService(
         var key = RequireKey(idempotencyKey);
         var instance = await store.GetInstanceAsync(workspaceId, instanceId, cancellationToken)
             ?? throw new KeyNotFoundException("Elsa instance does not exist in the workspace.");
-        var existingOperation = await store.FindOperationByKeyAsync(workspaceId, key, instanceId, action, cancellationToken);
+        var operationScope = OperationScope(instanceId, action);
+        var existingOperation = await store.FindOperationByKeyAsync(
+            workspaceId, key, instanceId, idempotencyScope: operationScope, cancellationToken: cancellationToken);
         if (existingOperation is not null)
         {
             if (existingOperation.InstanceId != instanceId || existingOperation.Action != action)
@@ -229,7 +231,8 @@ public sealed class ElsaInstanceLifecycleService(
                 existingRequestHash,
                 requestedIntent,
                 minorApproved,
-                migrationAuthorized);
+                migrationAuthorized,
+                operationScope);
             if (requestedName is not null && !string.Equals(replayTransition.Instance.Name, requestedName, StringComparison.Ordinal))
                 replayTransition = new ElsaInstanceTransitionResult(replayTransition.Instance.Rename(requestedName), replayTransition.Operation);
             return await CommitAsync(instance, replayTransition,
@@ -254,7 +257,8 @@ public sealed class ElsaInstanceLifecycleService(
             requestHash,
             effectiveIntent,
             minorApproved,
-            migrationAuthorized);
+            migrationAuthorized,
+            operationScope);
         if (requestedName is not null && !string.Equals(transition.Instance.Name, requestedName, StringComparison.Ordinal))
             transition = new ElsaInstanceTransitionResult(transition.Instance.Rename(requestedName), transition.Operation);
         return await CommitAsync(instance, transition,
@@ -270,12 +274,13 @@ public sealed class ElsaInstanceLifecycleService(
         string? requestHash = null,
         ElsaInstanceIntent? requestedIntent = null,
         bool minorApproved = false,
-        bool migrationAuthorized = false)
+        bool migrationAuthorized = false,
+        string? idempotencyScope = null)
     {
         try
         {
             return ElsaInstanceStateMachine.Request(instance, action, activeOperation, expectedVersion,
-                idempotencyKey, requestHash, requestedIntent, minorApproved, migrationAuthorized);
+                idempotencyKey, requestHash, requestedIntent, minorApproved, migrationAuthorized, idempotencyScope);
         }
         catch (ElsaInstanceStateConflictException exception)
         {
@@ -348,6 +353,11 @@ public sealed class ElsaInstanceLifecycleService(
     }
 
     private static string RequireKey(string value) => ElsaInstanceIdempotencyKey.Normalize(value);
+
+    private static string OperationScope(Guid instanceId, ElsaInstanceOperationAction action) =>
+        action == ElsaInstanceOperationAction.UpdateIntent
+            ? $"instance/{instanceId:D}/{action}"
+            : $"instance/{instanceId:D}/operations";
 
     private static void ValidateRequired(string? value, string parameterName, string message)
     {

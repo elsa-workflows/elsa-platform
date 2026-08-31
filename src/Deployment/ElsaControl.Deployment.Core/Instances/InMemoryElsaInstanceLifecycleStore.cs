@@ -284,6 +284,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         string idempotencyKey,
         Guid? instanceId = null,
         ElsaInstanceOperationAction? action = null,
+        string? idempotencyScope = null,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -294,6 +295,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                 .Where(x => x.IdempotencyKey == idempotencyKey)
                 .Where(x => instanceId is null || x.InstanceId == instanceId)
                 .Where(x => action is null || x.Action == action)
+                .Where(x => idempotencyScope is null || x.IdempotencyScope == idempotencyScope)
                 .Where(x => _instances.TryGetValue(x.InstanceId, out var instance) && instance.WorkspaceId == workspaceId)
                 .OrderByDescending(x => x.AcceptedAt)
                 .FirstOrDefault();

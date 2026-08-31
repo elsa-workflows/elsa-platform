@@ -57,6 +57,35 @@ public sealed class ElsaInstanceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task Operation_route_idempotency_key_cannot_be_reused_for_a_different_terminal_action()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore();
+        var service = new ElsaInstanceLifecycleService(store);
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+        await store.CommitAcceptedAsync(created.Instance, created.Instance,
+            created.Operation.TransitionTo(ElsaInstanceOperationState.Succeeded),
+            new ElsaInstanceLifecycleOutboxMessage(Guid.NewGuid(), WorkspaceId, created.Instance.Id, created.Operation.Id,
+                created.Operation.Action, created.Operation.RequestHash, Now));
+        var first = await service.ReconcileAsync(new ElsaInstanceLifecycleRequest(
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "shared-operation-key"));
+        await store.CommitAcceptedAsync(first.Instance, first.Instance,
+            first.Operation.TransitionTo(ElsaInstanceOperationState.Succeeded),
+            new ElsaInstanceLifecycleOutboxMessage(Guid.NewGuid(), WorkspaceId, first.Instance.Id, first.Operation.Id,
+                first.Operation.Action, first.Operation.RequestHash, Now));
+        var operationCount = store.Operations.Count;
+        var outboxCount = store.Outbox.Count;
+
+        var exception = await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() =>
+            service.StopAsync(new ElsaInstanceLifecycleRequest(
+                WorkspaceId, first.Instance.Id, first.Instance.Version, "shared-operation-key")));
+
+        Assert.Equal(ElsaInstanceLifecycleConflictReason.IdempotencyConflict, exception.Reason);
+        Assert.Equal(operationCount, store.Operations.Count);
+        Assert.Equal(outboxCount, store.Outbox.Count);
+    }
+
+    [Fact]
     public async Task Create_idempotency_binds_name_slug_and_explicit_identity()
     {
         var store = new InMemoryElsaInstanceLifecycleStore();

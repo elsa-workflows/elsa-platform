@@ -406,7 +406,8 @@ public static class ElsaInstanceStateMachine
         string? requestHash = null,
         ElsaInstanceIntent? requestedIntent = null,
         bool minorApproved = false,
-        bool migrationAuthorized = false)
+        bool migrationAuthorized = false,
+        string? idempotencyScope = null)
     {
         ArgumentNullException.ThrowIfNull(instance);
 
@@ -417,7 +418,7 @@ public static class ElsaInstanceStateMachine
             requestHash ?? requestedIntent?.ComputeCanonicalHash() ?? instance.ComputeCanonicalIntentHash(), nameof(requestHash));
         var expected = expectedVersion ?? instance.Version;
 
-        var operationScope = $"instance/{instance.Id:D}/{action}";
+        var operationScope = idempotencyScope ?? $"instance/{instance.Id:D}/{action}";
         if (activeOperation is not null && activeOperation.InstanceId != instance.Id)
             throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.ActiveOperationOwnershipMismatch);
 
