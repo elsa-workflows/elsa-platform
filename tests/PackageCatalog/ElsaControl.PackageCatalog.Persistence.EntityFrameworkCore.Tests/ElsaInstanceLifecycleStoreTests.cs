@@ -133,6 +133,38 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
+    public async Task Create_slug_unique_reservation_maps_database_race_to_stable_slug_conflict()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Slug reservation workspace");
+        var service = new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now));
+        await service.CreateAsync(new ElsaInstanceCreateRequest(
+            workspace.OrganizationId,
+            workspace.Id,
+            "First Elsa",
+            "reserved-slug",
+            CreateIntent(),
+            "first-slug-reservation"));
+        db.ChangeTracker.Clear();
+
+        var conflict = await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() =>
+            service.CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId,
+                workspace.Id,
+                "Racing Elsa",
+                "reserved-slug",
+                CreateIntent(),
+                "racing-slug-reservation")));
+
+        Assert.Equal("Instance slug is already in use in this workspace.", conflict.Message);
+        Assert.Equal(1, await db.ElsaInstances.CountAsync());
+        Assert.Equal(1, await db.ElsaInstanceOperations.CountAsync());
+    }
+
+    [Fact]
     public async Task Accepted_operation_links_the_existing_revision_when_intent_hash_is_unchanged()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

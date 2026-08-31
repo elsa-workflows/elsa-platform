@@ -15,6 +15,15 @@ namespace ElsaControl.Api.Tests;
 public sealed class ManagedElsaInstanceApiTests
 {
     [Fact]
+    public void Slug_unique_reservation_conflict_maps_to_stable_api_code()
+    {
+        var code = ManagedElsaInstanceEndpoints.ConflictCode(
+            new ElsaInstanceLifecycleConflictException("Instance slug is already in use in this workspace."));
+
+        Assert.Equal("instance.slug-conflict", code);
+    }
+
+    [Fact]
     public async Task Healthy_bound_instance_is_openable_but_deleting_instance_fails_closed()
     {
         var healthy = Guid.NewGuid();

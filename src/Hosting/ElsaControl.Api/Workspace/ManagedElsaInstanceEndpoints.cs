@@ -487,8 +487,9 @@ public static class ManagedElsaInstanceEndpoints
 
     private static string ETag(int version) => $"\"{version}\"";
 
-    private static string ConflictCode(ElsaInstanceLifecycleConflictException exception) =>
+    internal static string ConflictCode(ElsaInstanceLifecycleConflictException exception) =>
         exception.Message.Contains("version", StringComparison.OrdinalIgnoreCase) ? "instance.version-conflict" :
+        exception.Message.Contains("slug", StringComparison.OrdinalIgnoreCase) ? "instance.slug-conflict" :
         exception.Message.Contains("operation", StringComparison.OrdinalIgnoreCase) ? "instance.operation-active" :
         "instance.idempotency-conflict";
 

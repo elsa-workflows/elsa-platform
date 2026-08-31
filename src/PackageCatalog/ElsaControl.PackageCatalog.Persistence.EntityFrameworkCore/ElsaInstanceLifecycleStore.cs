@@ -467,6 +467,12 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             dbContext.ChangeTracker.Clear();
             throw Conflict("Lifecycle acceptance conflicted with a newer instance version.");
         }
+        catch (DbUpdateException exception) when (
+            EfCoreDatabaseExceptionPolicy.IsElsaInstanceSlugUniqueViolation(exception))
+        {
+            dbContext.ChangeTracker.Clear();
+            throw Conflict("Instance slug is already in use in this workspace.");
+        }
         catch (DbUpdateException)
         {
             dbContext.ChangeTracker.Clear();

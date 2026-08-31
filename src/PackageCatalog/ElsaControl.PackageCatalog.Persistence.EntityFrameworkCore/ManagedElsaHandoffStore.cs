@@ -108,4 +108,24 @@ internal static class EfCoreDatabaseExceptionPolicy
 
         return false;
     }
+
+    internal static bool IsElsaInstanceSlugUniqueViolation(DbUpdateException exception)
+    {
+        for (var current = exception.InnerException; current is not null; current = current.InnerException)
+        {
+            if (current is SqliteException { SqliteErrorCode: 19, SqliteExtendedErrorCode: 2067 } sqlite &&
+                sqlite.Message.Contains(
+                    "ElsaInstances.WorkspaceId, ElsaInstances.Slug",
+                    StringComparison.Ordinal))
+                return true;
+
+            if (current is SqlException { Number: 2601 or 2627 } sqlServer &&
+                sqlServer.Message.Contains(
+                    "IX_ElsaInstances_WorkspaceId_Slug",
+                    StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
+    }
 }
