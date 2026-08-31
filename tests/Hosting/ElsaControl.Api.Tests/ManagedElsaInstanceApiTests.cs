@@ -155,6 +155,74 @@ public sealed class ManagedElsaInstanceApiTests
     }
 
     [Fact]
+    public async Task Canonical_detail_uses_current_identity_seam_for_callback_rotation_and_rejects_stale_binding()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient("managed-instance-current-identity");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        var created = await CreateCanonicalInstanceAsync(client, workspaceId, "identity-rotation-runtime");
+        var instanceId = created.Instance.InstanceId;
+        var rotationChangedAt = DateTimeOffset.UtcNow.AddMinutes(1);
+        Guid organizationId;
+
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+            organizationId = await db.Workspaces.Where(x => x.Id == workspaceId)
+                .Select(x => x.OrganizationId)
+                .SingleAsync();
+            await SetOpenableDeploymentEndpointAsync(db, instanceId, "https://old-managed.example.test/runtime/health");
+            var identities = scope.ServiceProvider.GetRequiredService<IManagedElsaInstanceIdentityStore>();
+            var bound = await identities.BindAsync(organizationId, workspaceId, instanceId,
+                "https://old-managed.example.test", expectedBindingVersion: null, DateTimeOffset.UtcNow);
+            Assert.True(bound.Succeeded);
+        }
+
+        var original = await client.GetControlJsonAsync<ManagedElsaInstanceResponse>(
+            $"/api/workspaces/{workspaceId}/instances/{instanceId}");
+        Assert.True(original!.CanOpen);
+        Assert.Equal("https://old-managed.example.test/managed-elsa/handoff/callback", original.RedirectUri);
+        Assert.Equal(1, original.IdentityBinding!.BindingVersion);
+
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+            await SetOpenableDeploymentEndpointAsync(db, instanceId, "https://rotated-managed.example.test/runtime/health");
+        }
+
+        var stale = await client.GetControlJsonAsync<ManagedElsaInstanceResponse>(
+            $"/api/workspaces/{workspaceId}/instances/{instanceId}");
+        Assert.False(stale!.CanOpen);
+        Assert.Null(stale.Audience);
+        Assert.Null(stale.RedirectUri);
+        Assert.Null(stale.IdentityBinding);
+        Assert.Equal("identity-unavailable", stale.IdentityBindingState);
+
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var identities = scope.ServiceProvider.GetRequiredService<IManagedElsaInstanceIdentityStore>();
+            var rotated = await identities.BindAsync(organizationId, workspaceId, instanceId,
+                "https://rotated-managed.example.test", expectedBindingVersion: 1, rotationChangedAt);
+            Assert.True(rotated.Succeeded);
+        }
+
+        var current = await client.GetControlJsonAsync<ManagedElsaInstanceResponse>(
+            $"/api/workspaces/{workspaceId}/instances/{instanceId}");
+        Assert.True(current!.CanOpen);
+        Assert.Equal("urn:elsa:instance:" + instanceId.ToString("D"), current.Audience);
+        Assert.Equal("https://rotated-managed.example.test/managed-elsa/handoff/callback", current.RedirectUri);
+        Assert.Equal(current.RedirectUri, current.IdentityBinding!.CanonicalCallbackUri);
+        Assert.Equal("https://rotated-managed.example.test", current.IdentityBinding.VerifiedEndpointOrigin);
+        Assert.Equal(2, current.IdentityBinding.BindingVersion);
+        Assert.Equal(rotationChangedAt, current.IdentityBinding.ChangedAt);
+        Assert.DoesNotContain("old-managed",
+            System.Text.Json.JsonSerializer.Serialize(current, ControlApiTestApplication.JsonOptions),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Canonical_list_handles_large_page_numbers_without_overflowing_has_more()
     {
         await using var app = CreateApplication([]);
@@ -557,6 +625,13 @@ public sealed class ManagedElsaInstanceApiTests
         });
         await db.SaveChangesAsync();
     }
+
+    private static Task SetOpenableDeploymentEndpointAsync(
+        CatalogDbContext db,
+        Guid instanceId,
+        string endpointUri) =>
+        db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE ElsaInstances SET CurrentDeploymentId = {"deployment-managed"}, CurrentDeploymentEndpointUri = {endpointUri}, DesiredLifecycle = {ElsaDesiredLifecycle.Running.ToString()}, ObservedLifecycle = {ElsaObservedLifecycle.Ready.ToString()}, Health = {ElsaInstanceHealth.Healthy.ToString()} WHERE Id = {instanceId}");
 
     private static async Task<ManagedElsaInstanceAcceptedResponse> CreateCanonicalInstanceAsync(
         HttpClient client,

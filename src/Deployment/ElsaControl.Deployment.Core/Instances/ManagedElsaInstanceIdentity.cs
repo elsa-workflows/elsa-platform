@@ -6,7 +6,8 @@ public sealed record ManagedElsaInstanceIdentity(
     Guid InstanceId,
     string Audience,
     Uri CallbackUri,
-    int BindingVersion);
+    int BindingVersion,
+    DateTimeOffset ChangedAt);
 
 public sealed record ManagedElsaInstanceScope(Guid OrganizationId, Guid WorkspaceId, Guid InstanceId);
 

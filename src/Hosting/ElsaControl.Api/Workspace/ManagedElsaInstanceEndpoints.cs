@@ -3,6 +3,7 @@ using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.Deployment.Core.Workspace;
 using ElsaControl.PackageCatalog.Core.Accounts;
+using Microsoft.AspNetCore.Mvc;
 
 namespace ElsaControl.Api.Workspace;
 
@@ -32,6 +33,7 @@ public static class ManagedElsaInstanceEndpoints
             HttpContext context,
             WorkspacePermissionService permissions,
             IManagedElsaInstanceApiStore instances,
+            [FromServices] IManagedElsaInstanceIdentityStore identities,
             CancellationToken cancellationToken) =>
         {
             var access = context.GetWorkspaceAccess();
@@ -41,7 +43,9 @@ public static class ManagedElsaInstanceEndpoints
             var currentPageSize = Math.Clamp(pageSize ?? 50, 1, 100);
             var offset = (long)(currentPage - 1) * currentPageSize;
             var pageResult = await instances.ListInstancesAsync(workspaceId, currentPage, currentPageSize, cancellationToken);
-            var items = pageResult.Items.Select(x => ToResponse(x, canOpen, workspaceId)).ToList();
+            var items = new List<ManagedElsaInstanceResponse>(pageResult.Items.Count);
+            foreach (var instance in pageResult.Items)
+                items.Add(await ToResponseAsync(instance, canOpen, workspaceId, identities, cancellationToken));
             return Results.Ok(new ManagedElsaInstanceListResponse(items, currentPage, currentPageSize, pageResult.TotalCount,
                 offset + currentPageSize < pageResult.TotalCount));
         }).RequireWorkspaceAccess();
@@ -55,6 +59,7 @@ public static class ManagedElsaInstanceEndpoints
             ElsaInstanceLifecycleService lifecycle,
             IElsaInstanceLifecycleStore lifecycleStore,
             IManagedElsaInstanceApiStore queries,
+            [FromServices] IManagedElsaInstanceIdentityStore identities,
             CancellationToken cancellationToken) =>
         {
             var keyResult = ReadIdempotencyKey(context);
@@ -85,7 +90,7 @@ public static class ManagedElsaInstanceEndpoints
                 var accepted = await lifecycle.CreateAsync(new ElsaInstanceCreateRequest(
                     access.OrganizationId, workspaceId, request.Name, normalizedSlug, request.Intent, key,
                     ActorAccountId: access.AccountId), cancellationToken);
-                return await AcceptedAsync(workspaceId, accepted, queries, permissions, access.AccountId, cancellationToken);
+                return await AcceptedAsync(workspaceId, accepted, queries, permissions, identities, access.AccountId, cancellationToken);
             }
             catch (ElsaInstanceLifecycleConflictException exception)
             {
@@ -106,6 +111,7 @@ public static class ManagedElsaInstanceEndpoints
             HttpContext context,
             WorkspacePermissionService permissions,
             IElsaInstanceLifecycleStore lifecycle,
+            [FromServices] IManagedElsaInstanceIdentityStore identities,
             CancellationToken cancellationToken) =>
         {
             var instance = await lifecycle.GetInstanceAsync(workspaceId, instanceId, cancellationToken);
@@ -113,7 +119,7 @@ public static class ManagedElsaInstanceEndpoints
                 return Results.NotFound();
             var canOpen = (await permissions.GetEffectivePermissionsAsync(workspaceId, context.GetWorkspaceAccess().AccountId, cancellationToken))
                 .Has(ManagedElsaInstancePermissions.Open);
-            var response = ToResponse(instance, canOpen, workspaceId);
+            var response = await ToResponseAsync(instance, canOpen, workspaceId, identities, cancellationToken);
             context.Response.Headers.ETag = response.ETag;
             return Results.Ok(response);
         }).RequireWorkspaceAccess();
@@ -128,6 +134,7 @@ public static class ManagedElsaInstanceEndpoints
             IElsaInstanceLifecycleStore store,
             ElsaInstanceLifecycleService lifecycle,
             IManagedElsaInstanceApiStore queries,
+            [FromServices] IManagedElsaInstanceIdentityStore identities,
             CancellationToken cancellationToken) =>
         {
             var precondition = ReadIfMatch(context.Request);
@@ -152,7 +159,7 @@ public static class ManagedElsaInstanceEndpoints
                 var accepted = await lifecycle.UpdateIntentAsync(new ElsaInstanceIntentUpdateRequest(
                     workspaceId, instanceId, request.Intent, precondition.Value, key, request.Name, request.Reason,
                     access.AccountId), cancellationToken);
-                return await AcceptedAsync(workspaceId, accepted, queries, permissions, access.AccountId, cancellationToken);
+                return await AcceptedAsync(workspaceId, accepted, queries, permissions, identities, access.AccountId, cancellationToken);
             }
             catch (ElsaInstanceLifecycleConflictException exception)
             {
@@ -179,6 +186,7 @@ public static class ManagedElsaInstanceEndpoints
             WorkspacePermissionService permissions,
             ElsaInstanceLifecycleService lifecycle,
             IManagedElsaInstanceApiStore queries,
+            [FromServices] IManagedElsaInstanceIdentityStore identities,
             CancellationToken cancellationToken) =>
         {
             var keyResult = ReadIdempotencyKey(context);
@@ -241,7 +249,7 @@ public static class ManagedElsaInstanceEndpoints
                         _ => throw new ArgumentOutOfRangeException(nameof(request.Action))
                     };
                 }
-                return await AcceptedAsync(workspaceId, accepted, queries, permissions, access.AccountId, cancellationToken);
+                return await AcceptedAsync(workspaceId, accepted, queries, permissions, identities, access.AccountId, cancellationToken);
             }
             catch (ElsaInstanceLifecycleConflictException exception)
             {
@@ -363,6 +371,7 @@ public static class ManagedElsaInstanceEndpoints
         ElsaInstanceLifecycleAcceptance accepted,
         IManagedElsaInstanceApiStore queries,
         WorkspacePermissionService permissions,
+        IManagedElsaInstanceIdentityStore identities,
         Guid accountId,
         CancellationToken cancellationToken)
     {
@@ -375,10 +384,10 @@ public static class ManagedElsaInstanceEndpoints
                 accepted.Instance.DesiredStateRevisionId?.Value, accepted.Instance.ResolvedPlanReference?.PlanId,
                 null, null, null, null);
         return Results.Accepted(location, new ManagedElsaInstanceAcceptedResponse(
-            ToResponse(accepted.Instance,
+            await ToResponseAsync(accepted.Instance,
                 (await permissions.GetEffectivePermissionsAsync(workspaceId, accountId, cancellationToken))
                 .Has(ManagedElsaInstancePermissions.Open),
-                workspaceId),
+                workspaceId, identities, cancellationToken),
             ToOperationResponse(workspaceId, accepted.Instance.Id, operation),
             new Dictionary<string, string> { ["self"] = location }));
     }
@@ -390,18 +399,38 @@ public static class ManagedElsaInstanceEndpoints
         await accountStore.GetLatestOrganizationEntitlementAsync(organizationId, cancellationToken) is
             { ManagedHostingEnabled: true };
 
-    internal static ManagedElsaInstanceResponse ToResponse(ElsaInstance instance, bool canOpen, Guid workspaceId)
+    private static async Task<ManagedElsaInstanceResponse> ToResponseAsync(
+        ElsaInstance instance,
+        bool canOpen,
+        Guid workspaceId,
+        IManagedElsaInstanceIdentityStore identities,
+        CancellationToken cancellationToken)
+    {
+        var identity = canOpen
+            ? await identities.FindOpenableAsync(instance.OrganizationId, instance.Id, cancellationToken)
+            : await identities.FindAsync(instance.OrganizationId, instance.Id, cancellationToken);
+        return ToResponse(instance, canOpen, workspaceId, identity);
+    }
+
+    internal static ManagedElsaInstanceResponse ToResponse(
+        ElsaInstance instance,
+        bool canOpen,
+        Guid workspaceId,
+        ManagedElsaInstanceIdentity? identity = null)
     {
         var healthy = instance.DesiredLifecycle == ElsaDesiredLifecycle.Running &&
                       instance.ObservedLifecycle == ElsaObservedLifecycle.Ready &&
                       instance.Health == ElsaInstanceHealth.Healthy;
-        var openable = canOpen && healthy && instance.IdentityBinding is not null;
-        var binding = openable ? instance.IdentityBinding : null;
+        var currentIdentity = identity is { } candidate && candidate.OrganizationId == instance.OrganizationId &&
+                              candidate.WorkspaceId == workspaceId && candidate.InstanceId == instance.Id
+            ? candidate
+            : null;
+        var openable = canOpen && healthy && currentIdentity is not null;
         return new ManagedElsaInstanceResponse(instance.OrganizationId, instance.Id, instance.Name, instance.Slug,
             instance.DesiredLifecycle, instance.ObservedLifecycle, instance.Health, openable,
-            binding?.Audience,
-            binding?.CanonicalCallbackUri,
-            !canOpen ? "Not authorized to open this instance." : !healthy ? "This instance is not currently available." : binding is null ? "The current identity binding is unavailable." : null)
+            openable ? currentIdentity!.Audience : null,
+            openable ? currentIdentity!.CallbackUri.AbsoluteUri : null,
+            !canOpen ? "Not authorized to open this instance." : !healthy ? "This instance is not currently available." : currentIdentity is null ? "The current identity binding is unavailable." : null)
         {
             Version = instance.Version,
             ETag = ETag(instance.Version),
@@ -409,9 +438,11 @@ public static class ManagedElsaInstanceEndpoints
             ResolvedPlan = instance.ResolvedPlanReference,
             CurrentResolvedRelease = instance.CurrentResolvedRelease,
             CurrentDeployment = instance.CurrentDeploymentReference,
-            IdentityBinding = binding is null ? null : new ManagedElsaInstanceIdentityBindingResponse(
-                binding.Audience, binding.CanonicalCallbackUri, binding.VerifiedEndpointOrigin, binding.BindingVersion, binding.ChangedAt),
-            IdentityBindingState = !canOpen ? "not-authorized" : !healthy ? "instance-unavailable" : binding is null ? "identity-unavailable" : "available",
+            IdentityBinding = openable ? new ManagedElsaInstanceIdentityBindingResponse(
+                currentIdentity!.Audience, currentIdentity.CallbackUri.AbsoluteUri,
+                currentIdentity.CallbackUri.GetLeftPart(UriPartial.Authority), currentIdentity.BindingVersion,
+                currentIdentity.ChangedAt) : null,
+            IdentityBindingState = !canOpen ? "not-authorized" : !healthy ? "instance-unavailable" : currentIdentity is null ? "identity-unavailable" : "available",
             Intent = instance.Intent,
             Links = new Dictionary<string, string>
             {
