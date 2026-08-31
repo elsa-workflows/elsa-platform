@@ -280,7 +280,10 @@ function trustedCallbackUri(value: string) {
   } catch {
     throw new ManagedElsaOpenError("unavailable");
   }
-  const localHttp = uri.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(uri.hostname);
+  // WHATWG URL implementations normally retain brackets in hostname for IPv6
+  // literals; accept both representations so local-only HTTP does not depend
+  // on a browser-specific serialization detail.
+  const localHttp = uri.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]", "::1"].includes(uri.hostname);
   if ((uri.protocol !== "https:" && !localHttp) || uri.pathname !== "/managed-elsa/handoff/callback" ||
       uri.username || uri.password || uri.search || uri.hash)
     throw new ManagedElsaOpenError("unavailable");
