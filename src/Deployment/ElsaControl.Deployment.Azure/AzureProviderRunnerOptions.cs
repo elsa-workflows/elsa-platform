@@ -65,8 +65,12 @@ public sealed record AzureProviderTargetScope(
 public sealed record AzureProviderRunnerOptions
 {
     public bool Enabled { get; init; }
-    public string AzureCliPath { get; init; } = "az";
-    public string SqlCmdPath { get; init; } = "sqlcmd";
+    /// <summary>Absolute Azure CLI executable bound into provider authority.</summary>
+    public string AzureCliPath { get; init; } = "";
+    /// <summary>Absolute sqlcmd executable bound into provider authority.</summary>
+    public string SqlCmdPath { get; init; } = "";
+    /// <summary>Absolute curl executable used for the post-promotion health probe.</summary>
+    public string CurlPath { get; init; } = "";
     public string TemplateRoot { get; init; } = "";
     public string SqlBootstrapObjectId { get; init; } = "";
     public string SqlBootstrapLogin { get; init; } = "";
@@ -94,6 +98,8 @@ public sealed record AzureProviderRunnerOptions
             azureCliDigest = ComputeFileDigest(AzureCliPath),
             sqlCmdPath = Path.GetFullPath(SqlCmdPath),
             sqlCmdDigest = ComputeFileDigest(SqlCmdPath),
+            curlPath = Path.GetFullPath(CurlPath),
+            curlDigest = ComputeFileDigest(CurlPath),
             templateRoot = NormalizeRoot(TemplateRoot),
             templateAuthorityFingerprint = ComputeTemplateAuthorityFingerprint(),
             sqlBootstrapObjectId = SqlBootstrapObjectId.ToLowerInvariant(),
@@ -129,6 +135,7 @@ public sealed record AzureProviderRunnerOptions
             throw new InvalidOperationException("The concrete Azure provider runner is not enabled.");
         ValidateExecutable(AzureCliPath, nameof(AzureCliPath));
         ValidateExecutable(SqlCmdPath, nameof(SqlCmdPath));
+        ValidateExecutable(CurlPath, nameof(CurlPath));
         if (string.IsNullOrWhiteSpace(TemplateRoot) || !Path.IsPathFullyQualified(TemplateRoot))
             throw new ArgumentException("The Azure template root must be an absolute path.", nameof(TemplateRoot));
         var normalizedRoot = NormalizeRoot(TemplateRoot);
