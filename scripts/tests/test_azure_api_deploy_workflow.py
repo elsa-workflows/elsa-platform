@@ -38,6 +38,12 @@ class AzureApiDeployWorkflowTests(unittest.TestCase):
         self.assertNotIn("--registry-username", self.source)
 
     def test_deploy_and_rollback_use_the_captured_runtime_mode(self) -> None:
+        self.assertEqual(
+            self.source.count(
+                "if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' }}"
+            ),
+            4,
+        )
         self.assertIn("capture_succeeded=false", self.source)
         self.assertIn("capture_succeeded=true", self.source)
         self.assertIn("steps.current-deployment.outputs.capture_succeeded == 'true'", self.source)
@@ -51,6 +57,10 @@ class AzureApiDeployWorkflowTests(unittest.TestCase):
         self.assertIn('--image "$PREVIOUS_SITECONTAINER_IMAGE"', self.source)
         self.assertIn("steps.deploy-api.outcome == 'failure'", self.source)
         self.assertIn("steps.health-gate.outcome == 'failure'", self.source)
+        self.assertIn(
+            "Restore previous API deployment after deployment or health failure",
+            self.source,
+        )
 
     def test_health_gates_require_exact_http_200(self) -> None:
         self.assertGreaterEqual(

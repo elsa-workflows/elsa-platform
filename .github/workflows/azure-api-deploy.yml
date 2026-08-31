@@ -129,7 +129,7 @@ jobs:
           npm run build
 
       - name: Log in Azure CLI
-        if: steps.deployment-config.outputs.deploy_configured == 'true'
+        if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' }}
         uses: azure/login@v2
         with:
           client-id: ${{ env.AZURE_CLIENT_ID }}
@@ -138,7 +138,7 @@ jobs:
 
       - name: Capture current API deployment
         id: current-deployment
-        if: steps.deployment-config.outputs.deploy_configured == 'true'
+        if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -228,7 +228,7 @@ jobs:
 
       - name: Deploy API app
         id: deploy-api
-        if: steps.deployment-config.outputs.deploy_configured == 'true'
+        if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -345,7 +345,7 @@ jobs:
           echo "::error::API health check failed after deployment: $health_url"
           exit 1
 
-      - name: Restore previous API deployment after health failure
+      - name: Restore previous API deployment after deployment or health failure
         if: ${{ failure() && steps.current-deployment.outcome == 'success' && steps.current-deployment.outputs.capture_succeeded == 'true' && (steps.deploy-api.outcome == 'failure' || steps.health-gate.outcome == 'failure') }}
         env:
           PREVIOUS_LINUX_FX_VERSION: ${{ steps.current-deployment.outputs.linux_fx_version }}
