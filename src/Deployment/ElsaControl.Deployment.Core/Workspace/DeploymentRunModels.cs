@@ -128,7 +128,8 @@ public enum ConfirmationActionType
 {
     Deploy,
     Rollback,
-    RuntimeControl
+    RuntimeControl,
+    DeleteManagedInstance
 }
 
 public enum WorkspaceDeploymentRunStatus

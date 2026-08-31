@@ -677,7 +677,11 @@ values never appear in customer DTOs. Display `Name` is not a uniqueness key;
 
 `DELETE` is intentionally represented as an explicit operation so confirmation,
 retention and asynchronous provider cleanup cannot be mistaken for an immediate row
-delete. `POST /operations` should accept an action-specific body, for example:
+delete. A delete body carries `deleteConfirmationId`, created for the
+`DeleteManagedInstance` confirmation action and canonical instance-ID target. The
+caller must also hold `instances.delete`; exact replays bind the same confirmation
+ID into the idempotency fingerprint without consuming it twice. `POST /operations`
+should accept an action-specific body, for example:
 
 ```json
 {

@@ -128,7 +128,8 @@ public sealed class ElsaInstanceLifecycleService(
         ElsaInstanceLifecycleRequest request,
         CancellationToken cancellationToken = default) =>
         AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Delete,
-            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken);
+            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken,
+            confirmationId: request.DeleteConfirmationId);
 
     public Task<ElsaInstanceLifecycleAcceptance> ApproveMinorUpgradeAsync(
         ElsaInstanceIntentUpdateRequest request,
@@ -169,7 +170,8 @@ public sealed class ElsaInstanceLifecycleService(
         string? reason,
         CancellationToken cancellationToken,
         bool minorApproved = false,
-        bool migrationAuthorized = false)
+        bool migrationAuthorized = false,
+        Guid? confirmationId = null)
     {
         ValidateWorkspace(workspaceId);
         if (instanceId == Guid.Empty)
@@ -191,7 +193,8 @@ public sealed class ElsaInstanceLifecycleService(
                 expectedVersion,
                 requestedIntent?.ComputeCanonicalHash(),
                 requestedName,
-                reason);
+                reason,
+                confirmationId);
             if (!string.Equals(existingRequestHash, replayRequestHash, StringComparison.Ordinal))
                 throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
 
@@ -218,7 +221,8 @@ public sealed class ElsaInstanceLifecycleService(
             expectedVersion,
             requestedIntent?.ComputeCanonicalHash(),
             requestedName,
-            reason);
+            reason,
+            confirmationId);
         var activeOperation = await store.GetActiveOperationAsync(workspaceId, instanceId, cancellationToken);
         var effectiveIntent = EffectiveRequestedIntent(action, instance, requestedIntent);
         var transition = ElsaInstanceStateMachine.Request(
@@ -262,12 +266,7 @@ public sealed class ElsaInstanceLifecycleService(
         return store.CommitAcceptedAsync(expectedInstance, transition.Instance, transition.Operation, outbox, cancellationToken);
     }
 
-    private static string RequireKey(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            throw new ArgumentException("Idempotency key is required.", nameof(value));
-        return value.Trim();
-    }
+    private static string RequireKey(string value) => ElsaInstanceIdempotencyKey.Normalize(value);
 
     private static void ValidateRequired(string? value, string parameterName, string message)
     {
@@ -280,7 +279,8 @@ public sealed class ElsaInstanceLifecycleService(
         int expectedVersion,
         string? intentHash,
         string? requestedName = null,
-        string? reason = null)
+        string? reason = null,
+        Guid? confirmationId = null)
     {
         var canonical = new StringBuilder()
             .Append(action).Append('\n')
@@ -288,6 +288,12 @@ public sealed class ElsaInstanceLifecycleService(
         AppendOptional(canonical, intentHash);
         AppendOptional(canonical, requestedName);
         AppendOptional(canonical, reason);
+        if (confirmationId is not null)
+        {
+            if (confirmationId == Guid.Empty)
+                throw new ArgumentException("Confirmation ID cannot be empty.", nameof(confirmationId));
+            AppendOptional(canonical, confirmationId.Value.ToString("D"));
+        }
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
     }
 

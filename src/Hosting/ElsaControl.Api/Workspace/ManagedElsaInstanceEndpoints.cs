@@ -50,9 +50,12 @@ public static class ManagedElsaInstanceEndpoints
             IManagedElsaInstanceApiStore queries,
             CancellationToken cancellationToken) =>
         {
-            var key = RequireIdempotencyKey(context);
-            if (key is null)
+            var keyResult = ReadIdempotencyKey(context);
+            if (keyResult.State == IdempotencyKeyState.Missing)
                 return Problem("instance.idempotency-key-required", "Idempotency-Key is required for instance creation.", StatusCodes.Status400BadRequest);
+            if (keyResult.State == IdempotencyKeyState.Invalid)
+                return InvalidIdempotencyKey();
+            var key = keyResult.Value!;
             if (request.Intent is null || string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Slug))
                 return Problem("instance.shape-invalid", "Instance name, slug and intent are required.", StatusCodes.Status422UnprocessableEntity);
 
@@ -121,9 +124,12 @@ public static class ManagedElsaInstanceEndpoints
             var precondition = ReadIfMatch(context.Request);
             if (precondition is null)
                 return Problem("instance.if-match-required", "If-Match is required for instance updates.", StatusCodes.Status428PreconditionRequired);
-            var key = RequireIdempotencyKey(context);
-            if (key is null)
+            var keyResult = ReadIdempotencyKey(context);
+            if (keyResult.State == IdempotencyKeyState.Missing)
                 return Problem("instance.idempotency-key-required", "Idempotency-Key is required for instance updates.", StatusCodes.Status400BadRequest);
+            if (keyResult.State == IdempotencyKeyState.Invalid)
+                return InvalidIdempotencyKey();
+            var key = keyResult.Value!;
             var existing = await store.GetInstanceAsync(workspaceId, instanceId, cancellationToken);
             if (existing is null)
                 return Results.NotFound();
@@ -159,13 +165,19 @@ public static class ManagedElsaInstanceEndpoints
             ManagedElsaInstanceOperationRequest request,
             HttpContext context,
             IAccountWorkspaceStore accountStore,
+            WorkspacePermissionService permissions,
+            ConfirmationService confirmations,
+            IElsaInstanceLifecycleStore lifecycleStore,
             ElsaInstanceLifecycleService lifecycle,
             IManagedElsaInstanceApiStore queries,
             CancellationToken cancellationToken) =>
         {
-            var key = RequireIdempotencyKey(context);
-            if (key is null)
+            var keyResult = ReadIdempotencyKey(context);
+            if (keyResult.State == IdempotencyKeyState.Missing)
                 return Problem("instance.idempotency-key-required", "Idempotency-Key is required for instance operations.", StatusCodes.Status400BadRequest);
+            if (keyResult.State == IdempotencyKeyState.Invalid)
+                return InvalidIdempotencyKey();
+            var key = keyResult.Value!;
             if (!Enum.IsDefined(request.Action) || request.Action is ElsaInstanceOperationAction.Create or ElsaInstanceOperationAction.UpdateIntent)
                 return Problem("instance.operation-invalid", "The requested operation is not supported on this route.", StatusCodes.Status422UnprocessableEntity);
             var expectedVersion = ReadIfMatch(context.Request);
@@ -176,9 +188,40 @@ public static class ManagedElsaInstanceEndpoints
             if (!await HasManagedHostingEntitlementAsync(accountStore, context.GetWorkspaceAccess().OrganizationId, cancellationToken))
                 return Problem("instance.entitlement-required", "Managed hosting is not enabled for this organization.", StatusCodes.Status422UnprocessableEntity);
 
+            if (request.Action == ElsaInstanceOperationAction.Delete)
+            {
+                var access = context.GetWorkspaceAccess();
+                if (!(await permissions.GetEffectivePermissionsAsync(workspaceId, access.AccountId, cancellationToken))
+                    .Has(ManagedElsaInstancePermissions.Delete))
+                    return Problem("instance.delete-permission-required", "Delete permission is required.", StatusCodes.Status403Forbidden);
+                if (request.DeleteConfirmationId is null || request.DeleteConfirmationId == Guid.Empty)
+                    return Problem("instance.delete-confirmation-required", "A delete confirmation is required.", StatusCodes.Status400BadRequest);
+
+                var existing = await lifecycleStore.FindOperationByKeyAsync(
+                    workspaceId, key, instanceId, ElsaInstanceOperationAction.Delete, cancellationToken);
+                if (existing is null)
+                {
+                    var instance = await lifecycleStore.GetInstanceAsync(workspaceId, instanceId, cancellationToken);
+                    if (instance is null)
+                        return Results.NotFound();
+                    if (instance.Version != expectedVersion.Value)
+                        return Problem("instance.version-conflict", "Instance version conflict.", StatusCodes.Status412PreconditionFailed);
+                    var consumption = await confirmations.ConsumeConfirmationAsync(
+                        workspaceId,
+                        request.DeleteConfirmationId.Value,
+                        access.AccountId,
+                        ConfirmationActionType.DeleteManagedInstance,
+                        instanceId.ToString("D"),
+                        cancellationToken);
+                    if (consumption.Validation.Severity != ElsaControl.Deployment.Core.Cockpit.ValidationSeverity.Pass)
+                        return Problem("instance.delete-confirmation-invalid", "The delete confirmation is invalid or unavailable.", StatusCodes.Status409Conflict);
+                }
+            }
+
             try
             {
-                var operationRequest = new ElsaInstanceLifecycleRequest(workspaceId, instanceId, expectedVersion.Value, key, request.Reason);
+                var operationRequest = new ElsaInstanceLifecycleRequest(
+                    workspaceId, instanceId, expectedVersion.Value, key, request.Reason, request.DeleteConfirmationId);
                 ElsaInstanceLifecycleAcceptance accepted;
                 if (request.Action is ElsaInstanceOperationAction.ApproveMinorUpgrade or ElsaInstanceOperationAction.MajorMigration)
                 {
@@ -404,8 +447,25 @@ public static class ManagedElsaInstanceEndpoints
             !canOpen ? "Not authorized to open this instance." : !healthy ? "This instance is not currently available." : !openable ? "The current instance binding is unavailable." : null);
     }
 
-    private static string? RequireIdempotencyKey(HttpContext context) =>
-        context.Request.Headers["Idempotency-Key"].FirstOrDefault()?.Trim() is { Length: > 0 } key ? key : null;
+    private static IdempotencyKeyReadResult ReadIdempotencyKey(HttpContext context)
+    {
+        var values = context.Request.Headers["Idempotency-Key"];
+        if (values.Count == 0 || values.Count == 1 && string.IsNullOrWhiteSpace(values[0]))
+            return new(IdempotencyKeyState.Missing, null);
+        if (values.Count != 1)
+            return new(IdempotencyKeyState.Invalid, null);
+        try
+        {
+            return new(IdempotencyKeyState.Valid, ElsaInstanceIdempotencyKey.Normalize(values[0]));
+        }
+        catch (ArgumentException)
+        {
+            return new(IdempotencyKeyState.Invalid, null);
+        }
+    }
+
+    private static IResult InvalidIdempotencyKey() =>
+        Problem("instance.idempotency-key-invalid", "Idempotency-Key must be a safe token of at most 128 characters.", StatusCodes.Status400BadRequest);
 
     private static int? ReadIfMatch(HttpRequest request)
     {
@@ -431,7 +491,7 @@ public static class ManagedElsaInstanceEndpoints
 
 public sealed record ManagedElsaInstanceCreateRequest(string? Name, string? Slug, ElsaInstanceIntent? Intent, Guid? InstanceId = null);
 public sealed record ManagedElsaInstancePatchRequest(ElsaInstanceIntent? Intent = null, string? Name = null, string? Reason = null);
-public sealed record ManagedElsaInstanceOperationRequest(ElsaInstanceOperationAction Action, int? ExpectedVersion = null, string? Reason = null, ElsaInstanceIntent? Intent = null, string? Name = null);
+public sealed record ManagedElsaInstanceOperationRequest(ElsaInstanceOperationAction Action, int? ExpectedVersion = null, string? Reason = null, ElsaInstanceIntent? Intent = null, string? Name = null, Guid? DeleteConfirmationId = null);
 public sealed record ManagedElsaInstanceListResponse(IReadOnlyList<ManagedElsaInstanceResponse> Items, int Page, int PageSize, int TotalCount, bool HasMore);
 public sealed record ManagedElsaInstanceAcceptedResponse(ManagedElsaInstanceResponse Instance, ManagedElsaInstanceOperationResponse Operation, IReadOnlyDictionary<string, string> Links);
 public sealed record ManagedElsaInstanceOperationResponse(Guid Id, Guid InstanceId, ElsaInstanceOperationAction Action, ElsaInstanceOperationState State, int ExpectedVersion, int AttemptNumber, DateTimeOffset AcceptedAt, DateTimeOffset? StartedAt, DateTimeOffset? CompletedAt, string? DesiredStateRevisionId, string? ResolvedPlanId, Guid? DeploymentRunId, string? FailureCode, ElsaObservedLifecycle? ReconciledObservedLifecycle, ElsaInstanceHealth? ReconciledHealth, IReadOnlyDictionary<string, string> Links);
@@ -439,6 +499,9 @@ public sealed record ManagedElsaInstanceIdentityBindingResponse(string Audience,
 public sealed record ManagedElsaInstanceRevisionsResponse(IReadOnlyList<ElsaInstanceIntentRevisionSummary> Items);
 public sealed record ManagedElsaInstanceDeploymentsResponse(IReadOnlyList<ElsaInstanceDeploymentSummary> Items);
 public sealed record ManagedElsaInstanceAuditResponse(IReadOnlyList<ElsaInstanceAuditEventSummary> Items);
+
+internal enum IdempotencyKeyState { Missing, Invalid, Valid }
+internal sealed record IdempotencyKeyReadResult(IdempotencyKeyState State, string? Value);
 
 public sealed record ManagedElsaInstanceResponse(Guid OrganizationId, Guid InstanceId, string Name, string Slug, ElsaDesiredLifecycle DesiredLifecycle, ElsaObservedLifecycle ObservedLifecycle, ElsaInstanceHealth Health, bool CanOpen, string? Audience, string? RedirectUri, string? UnavailableReason)
 {

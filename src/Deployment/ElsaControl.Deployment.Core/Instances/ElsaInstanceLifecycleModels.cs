@@ -25,7 +25,8 @@ public sealed record ElsaInstanceLifecycleRequest(
     Guid InstanceId,
     int ExpectedVersion,
     string IdempotencyKey,
-    string? Reason = null)
+    string? Reason = null,
+    Guid? DeleteConfirmationId = null)
 {
     public int IfMatchVersion => ExpectedVersion;
 }
