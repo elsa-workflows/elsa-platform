@@ -152,8 +152,8 @@ jobs:
             echo "::error::Could not capture the current Linux runtime image; refusing an unprotected deployment."
             exit 1
           fi
-          if [[ ! "$linux_fx_version" =~ ^[[:alnum:]][[:alnum:]._:/@|=-]*$ ]]; then
-            echo "::error::The captured Linux runtime image has an unexpected or unsafe format."
+          if [[ ! "$linux_fx_version" =~ ^DOCKER\|[[:alnum:]][[:alnum:]._:/@=-]*$ ]]; then
+            echo "::error::The captured Docker runtime image has an unexpected or unsafe format."
             exit 1
           fi
 
@@ -164,7 +164,7 @@ jobs:
             --output tsv)"
 
           if [ -n "$application_build_number" ]; then
-            if [[ ! "$application_build_number" =~ ^(azd-deploy-[0-9]+|[0-9]+)$ ]]; then
+            if [[ ! "$application_build_number" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$ ]]; then
               echo "::error::The captured Application__BuildNumber has an unexpected or unsafe format."
               exit 1
             fi
