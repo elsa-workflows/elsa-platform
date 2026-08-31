@@ -1459,16 +1459,20 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             requirement.ConfirmationId == Guid.Empty || requirement.AccountId == Guid.Empty)
             throw new ElsaInstanceDeleteConfirmationException();
 
-        var confirmation = await dbContext.ActionConfirmations.SingleOrDefaultAsync(
-            x => x.WorkspaceId == instance.WorkspaceId && x.Id == requirement.ConfirmationId,
-            cancellationToken);
-        if (confirmation is null || confirmation.ActionType != ConfirmationActionType.DeleteManagedInstance ||
-            confirmation.ConfirmedByAccountId != requirement.AccountId || confirmation.UsedAt is not null ||
-            confirmation.ExpiresAt <= consumedAt ||
-            !string.Equals(confirmation.TargetId, instance.Id.ToString("D"), StringComparison.Ordinal))
+        var consumedAtUtc = consumedAt.ToUniversalTime();
+        var affected = await dbContext.ActionConfirmations
+            .Where(x => x.WorkspaceId == instance.WorkspaceId &&
+                        x.Id == requirement.ConfirmationId &&
+                        x.ActionType == ConfirmationActionType.DeleteManagedInstance &&
+                        x.ConfirmedByAccountId == requirement.AccountId &&
+                        x.UsedAt == null &&
+                        x.ExpiresAt > consumedAt &&
+                        x.TargetId == instance.Id.ToString("D"))
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(x => x.UsedAt, consumedAtUtc),
+                cancellationToken);
+        if (affected == 0)
             throw new ElsaInstanceDeleteConfirmationException();
-
-        confirmation.UsedAt = consumedAt.ToUniversalTime();
     }
 
     private async Task<ElsaInstanceAuditEventEntity> CreateAuditEventAsync(
