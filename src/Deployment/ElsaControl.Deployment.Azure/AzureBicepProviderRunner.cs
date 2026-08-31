@@ -305,7 +305,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             try
             {
                 lease = await _secretResolver.ResolveAsync(
-                    new AzureSecretResolutionRequest(command.Context.WorkspaceId, key, reference), cancellationToken);
+                    new AzureSecretResolutionRequest(command.Context.WorkspaceId, key, reference, command.Resources), cancellationToken);
             }
             catch (OperationCanceledException)
             {

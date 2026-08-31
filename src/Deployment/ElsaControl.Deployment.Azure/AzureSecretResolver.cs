@@ -3,7 +3,11 @@ using System.Text.Json.Serialization;
 
 namespace ElsaControl.Deployment.Azure;
 
-public sealed record AzureSecretResolutionRequest(Guid WorkspaceId, string Name, string Reference)
+public sealed record AzureSecretResolutionRequest(
+    Guid WorkspaceId,
+    string Name,
+    string Reference,
+    AzureProviderResourceReferences? Resources = null)
 {
     public void Validate()
     {
@@ -12,12 +16,14 @@ public sealed record AzureSecretResolutionRequest(Guid WorkspaceId, string Name,
         if (string.IsNullOrWhiteSpace(Name) || Name.Length > 256 ||
             !System.Text.RegularExpressions.Regex.IsMatch(
                 Name,
-                "^[a-z0-9][a-z0-9._-]{0,255}\\z",
+                "^[a-z0-9][a-z0-9._:-]{0,255}\\z",
                 System.Text.RegularExpressions.RegexOptions.CultureInvariant |
                 System.Text.RegularExpressions.RegexOptions.NonBacktracking))
             throw new ArgumentException("The secret name is unsafe.", nameof(Name));
         if (!AzureProviderOperationValidation.IsSafeSecretReference(Reference))
             throw new ArgumentException("The secret reference is unsafe.", nameof(Reference));
+        if (Resources is not null)
+            AzureProviderOperationValidation.ValidateReferences(Resources);
     }
 }
 
