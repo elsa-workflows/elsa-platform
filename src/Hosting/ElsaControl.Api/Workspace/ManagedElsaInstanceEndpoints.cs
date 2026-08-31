@@ -92,11 +92,11 @@ public static class ManagedElsaInstanceEndpoints
                 var statusCode = exception.Message.Contains("version", StringComparison.OrdinalIgnoreCase)
                     ? StatusCodes.Status412PreconditionFailed
                     : StatusCodes.Status409Conflict;
-                return Problem(ConflictCode(exception), exception.Message, statusCode);
+                return Problem(ConflictCode(exception), "The request conflicts with the current instance state.", statusCode);
             }
             catch (ArgumentException exception)
             {
-                return Problem("instance.shape-invalid", exception.Message, StatusCodes.Status422UnprocessableEntity);
+                return Problem("instance.shape-invalid", "The instance request is invalid.", StatusCodes.Status422UnprocessableEntity);
             }
         }).RequireWorkspaceAccess(WorkspaceOperation.MutateWorkspaceResource);
 
@@ -156,17 +156,17 @@ public static class ManagedElsaInstanceEndpoints
             }
             catch (ElsaInstanceLifecycleConflictException exception)
             {
-                return Problem(ConflictCode(exception), exception.Message,
+                return Problem(ConflictCode(exception), "The request conflicts with the current instance state.",
                     exception.Message.Contains("version", StringComparison.OrdinalIgnoreCase)
                         ? StatusCodes.Status412PreconditionFailed : StatusCodes.Status409Conflict);
             }
             catch (InvalidOperationException exception) when (exception.Message.Contains("version", StringComparison.OrdinalIgnoreCase))
             {
-                return Problem("instance.version-conflict", exception.Message, StatusCodes.Status412PreconditionFailed);
+                return Problem("instance.version-conflict", "The instance has been modified.", StatusCodes.Status412PreconditionFailed);
             }
             catch (ArgumentException exception)
             {
-                return Problem("instance.shape-invalid", exception.Message, StatusCodes.Status422UnprocessableEntity);
+                return Problem("instance.shape-invalid", "The instance request is invalid.", StatusCodes.Status422UnprocessableEntity);
             }
         }).RequireWorkspaceAccess(WorkspaceOperation.MutateWorkspaceResource);
 
@@ -248,7 +248,7 @@ public static class ManagedElsaInstanceEndpoints
                 var status = exception.Message.Contains("version", StringComparison.OrdinalIgnoreCase)
                     ? StatusCodes.Status412PreconditionFailed
                     : StatusCodes.Status409Conflict;
-                return Problem(ConflictCode(exception), exception.Message, status);
+                return Problem(ConflictCode(exception), "The request conflicts with the current instance state.", status);
             }
             catch (ElsaInstanceDeleteConfirmationException)
             {
@@ -260,18 +260,18 @@ public static class ManagedElsaInstanceEndpoints
             }
             catch (InvalidOperationException exception) when (exception.Message.Contains("version", StringComparison.OrdinalIgnoreCase))
             {
-                return Problem("instance.version-conflict", exception.Message, StatusCodes.Status412PreconditionFailed);
+                return Problem("instance.version-conflict", "The instance has been modified.", StatusCodes.Status412PreconditionFailed);
             }
             catch (InvalidOperationException exception)
             {
                 var code = exception.Message.Contains("already active", StringComparison.OrdinalIgnoreCase)
                     ? "instance.operation-active"
                     : "instance.operation-conflict";
-                return Problem(code, exception.Message, StatusCodes.Status409Conflict);
+                return Problem(code, "The requested operation conflicts with the current instance state.", StatusCodes.Status409Conflict);
             }
             catch (ArgumentException exception)
             {
-                return Problem("instance.operation-invalid", exception.Message, StatusCodes.Status422UnprocessableEntity);
+                return Problem("instance.operation-invalid", "The requested operation is invalid.", StatusCodes.Status422UnprocessableEntity);
             }
         }).RequireWorkspaceAccess(WorkspaceOperation.MutateWorkspaceResource);
 

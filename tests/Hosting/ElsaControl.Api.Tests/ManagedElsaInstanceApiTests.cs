@@ -410,7 +410,10 @@ public sealed class ManagedElsaInstanceApiTests
         var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
-        Assert.Contains("instance.shape-invalid", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        Assert.Contains("instance.shape-invalid", responseBody, StringComparison.Ordinal);
+        Assert.Contains("The instance request is invalid.", responseBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("Display name cannot exceed", responseBody, StringComparison.Ordinal);
     }
 
     [Fact]
