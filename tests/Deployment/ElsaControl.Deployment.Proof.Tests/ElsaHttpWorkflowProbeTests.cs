@@ -15,6 +15,20 @@ public sealed class ElsaHttpWorkflowProbeTests
         ["runtime-login"]);
 
     [Fact]
+    public void Disables_ambient_http_client_timeout_in_favor_of_bounded_probe_timeouts()
+    {
+        using var client = new HttpClient(new RecordingHandler(_ => []));
+        Assert.Equal(TimeSpan.FromSeconds(100), client.Timeout);
+
+        using var probe = new ElsaHttpWorkflowProbe(
+            client,
+            new ElsaHttpWorkflowProbeOptions("proof-user", requestTimeout: TimeSpan.FromMinutes(2)),
+            new StaticCredentialSource("proof-password"));
+
+        Assert.Equal(Timeout.InfiniteTimeSpan, client.Timeout);
+    }
+
+    [Fact]
     public async Task Runs_health_login_create_publish_verify_execute_and_poll_using_safe_evidence()
     {
         var handler = new RecordingHandler(

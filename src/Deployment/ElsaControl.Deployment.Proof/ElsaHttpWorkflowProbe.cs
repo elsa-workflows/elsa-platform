@@ -100,6 +100,7 @@ public sealed class ElsaHttpWorkflowProbe : IAzureProviderProofWorkflowProbe, ID
         bool ownsHttpClient = false)
     {
         this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        this.httpClient.Timeout = Timeout.InfiniteTimeSpan;
         this.options = options ?? throw new ArgumentNullException(nameof(options));
         this.credentialSource = credentialSource ?? throw new ArgumentNullException(nameof(credentialSource));
         this.ownsHttpClient = ownsHttpClient;
