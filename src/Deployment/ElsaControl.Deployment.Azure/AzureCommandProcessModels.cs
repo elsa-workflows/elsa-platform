@@ -17,8 +17,8 @@ public sealed record AzureCommandProcessRequest
         IReadOnlyDictionary<string, string?>? environmentVariables = null,
         string? workingDirectory = null)
     {
-        if (string.IsNullOrWhiteSpace(fileName))
-            throw new ArgumentException("The command executable is required.", nameof(fileName));
+        if (string.IsNullOrWhiteSpace(fileName) || fileName.Length > 1024 || fileName.Any(char.IsControl))
+            throw new ArgumentException("The command executable locator is unsafe.", nameof(fileName));
 
         arguments ??= [];
         if (environmentVariables is not null && environmentVariables.Keys.Any(string.IsNullOrWhiteSpace))

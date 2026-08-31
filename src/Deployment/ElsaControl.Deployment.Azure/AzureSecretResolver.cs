@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace ElsaControl.Deployment.Azure;
@@ -19,6 +20,7 @@ public sealed record AzureSecretResolutionRequest(Guid WorkspaceId, string Name,
 /// Short-lived, explicitly erasable secret material. The value is excluded from serialization,
 /// has no value-bearing string representation, and is zeroed when the lease is disposed.
 /// </summary>
+[JsonConverter(typeof(AzureSecretLeaseJsonConverter))]
 public sealed class AzureSecretLease : IAsyncDisposable, IDisposable
 {
     private char[]? _value;
@@ -47,6 +49,15 @@ public sealed class AzureSecretLease : IAsyncDisposable, IDisposable
     }
 
     public override string ToString() => nameof(AzureSecretLease);
+}
+
+public sealed class AzureSecretLeaseJsonConverter : JsonConverter<AzureSecretLease>
+{
+    public override AzureSecretLease? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        throw new NotSupportedException("Secret leases cannot be deserialized.");
+
+    public override void Write(Utf8JsonWriter writer, AzureSecretLease value, JsonSerializerOptions options) =>
+        throw new NotSupportedException("Secret leases cannot be serialized.");
 }
 
 public interface IAzureSecretResolver

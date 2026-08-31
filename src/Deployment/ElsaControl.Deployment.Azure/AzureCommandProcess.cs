@@ -88,7 +88,7 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
             cancellationTask,
             outputLimitReached.Task).ConfigureAwait(false);
 
-        var status = completedTask == cancellationTask || cancellationToken.IsCancellationRequested
+        var status = completedTask == cancellationTask
             ? AzureCommandProcessStatus.Cancelled
             : completedTask == timeoutTask
                 ? AzureCommandProcessStatus.TimedOut

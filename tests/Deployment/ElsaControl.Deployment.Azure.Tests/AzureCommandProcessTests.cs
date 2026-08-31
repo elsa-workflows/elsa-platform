@@ -147,6 +147,14 @@ public sealed class AzureCommandProcessTests
         Assert.Null(result.Value);
     }
 
+    [Theory]
+    [InlineData("az\nforged")]
+    [InlineData("az\rforged")]
+    public void Rejects_control_characters_in_executable_locators(string executable)
+    {
+        Assert.Throws<ArgumentException>(() => new AzureCommandProcessRequest(executable));
+    }
+
     [Fact]
     public void Request_and_result_string_forms_do_not_include_secret_values()
     {

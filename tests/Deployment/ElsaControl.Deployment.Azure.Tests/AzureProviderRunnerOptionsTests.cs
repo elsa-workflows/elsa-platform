@@ -87,7 +87,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
 
         Assert.Equal("sensitive-value", lease.Value.ToString());
         Assert.Equal(nameof(AzureSecretLease), lease.ToString());
-        var exception = Assert.Throws<InvalidOperationException>(() => JsonSerializer.Serialize(lease));
+        var exception = Assert.Throws<NotSupportedException>(() => JsonSerializer.Serialize(lease));
         Assert.DoesNotContain("sensitive-value", exception.Message, StringComparison.Ordinal);
         lease.Dispose();
         Assert.Throws<ObjectDisposedException>(() => _ = lease.Value);
