@@ -9,6 +9,7 @@ public sealed class AdmittedAzureProofPlanFactoryTests
 {
     private const string ManifestDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     private const string ImageDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    private const string SignatureDigest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 
     [Fact]
     public void Creates_deterministic_submission_from_admitted_plan()
@@ -102,7 +103,7 @@ public sealed class AdmittedAzureProofPlanFactoryTests
             [new("managed-runtime", "Run the resolved runtime components.", true, ["container", "persistent-storage"])],
             [
                 new(ReleaseManifestEvidenceKinds.Manifest, "oci://release-manifest.example/manifest", ManifestDigest, "Verified release manifest"),
-                new(ReleaseManifestEvidenceKinds.Signature, "oci://release-manifest.example/signature", ImageDigest, "Verified release manifest signature")
+                new(ReleaseManifestEvidenceKinds.Signature, "oci://release-manifest.example/signature", SignatureDigest, "Verified release manifest signature")
             ]);
     }
 }

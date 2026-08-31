@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using ElsaControl.Deployment.ProofHost;
 
@@ -295,7 +296,7 @@ public sealed class ProofHostOptionsTests
                 ["DISPOSABLE_PROOF_SQL_BOOTSTRAP_LOGIN"] = "proof-admin",
                 ["DISPOSABLE_PROOF_SQL_BOOTSTRAP_IP"] = "192.0.2.10",
                 ["DISPOSABLE_PROOF_OWNER"] = "elsa-control",
-                ["DISPOSABLE_PROOF_EXPIRY_UTC"] = "2026-09-02",
+                ["DISPOSABLE_PROOF_EXPIRY_UTC"] = DateTime.UtcNow.AddDays(2).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 ["DISPOSABLE_PROOF_SQL_CONNECTION_REFERENCE"] = "secret://proof/sql-connection",
                 ["DISPOSABLE_PROOF_IDENTITY_SIGNING_KEY_REFERENCE"] = "secret://proof/identity-signing-key",
                 ["DISPOSABLE_PROOF_ADMIN_PASSWORD_REFERENCE"] = "secret://proof/admin-password"
