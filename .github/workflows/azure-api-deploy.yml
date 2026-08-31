@@ -235,29 +235,30 @@ jobs:
           health_url="https://$default_host_name/health"
           previous_health_build_number=""
           previous_health_image_id=""
-          if http_status="$(curl --silent --show-error --output "$health_response_file" --write-out '%{http_code}' --max-time 10 "$health_url")"; then
+          if ! http_status="$(curl --silent --show-error --output "$health_response_file" --write-out '%{http_code}' --max-time 10 "$health_url")"; then
+            http_status=000
+          fi
+          if [ "$http_status" = "200" ] && jq -e '.status == "ok"' "$health_response_file" >/dev/null 2>&1; then
             if jq -e 'type == "object"' "$health_response_file" >/dev/null 2>&1; then
               previous_health_build_number="$(jq -r '.buildNumber // empty' "$health_response_file")"
               previous_health_image_id="$(jq -r '.imageId // empty' "$health_response_file")"
+              if [ "$previous_health_build_number" = "unknown" ]; then
+                previous_health_build_number=""
+              fi
+              if [ "$previous_health_image_id" = "unknown" ]; then
+                previous_health_image_id=""
+              fi
+              for identifier in previous_health_build_number previous_health_image_id; do
+                value="${!identifier}"
+                if [ -n "$value" ] && [[ ! "$value" =~ $safe_identifier_pattern ]]; then
+                  echo "::error::The current API health response contains an unexpected or unsafe $identifier; refusing an unprotected deployment."
+                  exit 1
+                fi
+              done
+              echo "Captured safe current API build/image identity for rollback verification."
+            else
+              echo "::notice::The current API health response had no object identity fields; retaining Azure image/build metadata and using rollback compatibility verification."
             fi
-          else
-            http_status=000
-          fi
-          if [ "$previous_health_build_number" = "unknown" ]; then
-            previous_health_build_number=""
-          fi
-          if [ "$previous_health_image_id" = "unknown" ]; then
-            previous_health_image_id=""
-          fi
-          for identifier in previous_health_build_number previous_health_image_id; do
-            value="${!identifier}"
-            if [ -n "$value" ] && [[ ! "$value" =~ $safe_identifier_pattern ]]; then
-              echo "::error::The current API health response contains an unexpected or unsafe $identifier; refusing an unprotected deployment."
-              exit 1
-            fi
-          done
-          if [ "$http_status" = "200" ] && jq -e '.status == "ok"' "$health_response_file" >/dev/null 2>&1; then
-            echo "Captured safe current API build/image identity for rollback verification."
           else
             previous_health_build_number=""
             previous_health_image_id=""

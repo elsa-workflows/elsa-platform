@@ -238,7 +238,7 @@ printf '%s' "${HEALTH_STATUS:-200}"
                 "",
                 health_response=(
                     '{"status":"degraded","buildNumber":"1786839398",'
-                    '"imageId":"abcdef0123456789"}'
+                    '"imageId":"https://user:pass@example.test/image"}'
                 ),
                 health_status="503",
             )
