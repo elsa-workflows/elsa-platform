@@ -499,7 +499,10 @@ public static class ManagedElsaInstanceEndpoints
 
     private static int? ReadIfMatch(HttpRequest request)
     {
-        var value = request.Headers.IfMatch.FirstOrDefault()?.Trim();
+        var values = request.Headers.IfMatch;
+        if (values.Count != 1)
+            return null;
+        var value = values[0]?.Trim();
         if (string.IsNullOrWhiteSpace(value) || value == "*" || value.StartsWith("W/", StringComparison.OrdinalIgnoreCase))
             return null;
         if (value.Length < 3 || value[0] != '"' || value[^1] != '"')

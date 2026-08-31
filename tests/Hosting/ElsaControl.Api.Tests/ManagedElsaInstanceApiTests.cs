@@ -336,6 +336,26 @@ public sealed class ManagedElsaInstanceApiTests
     }
 
     [Fact]
+    public async Task Canonical_mutations_reject_ambiguous_multi_value_if_match()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient("managed-instance-api-multi-if-match");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        var instanceId = Guid.NewGuid();
+
+        var patch = new HttpRequestMessage(HttpMethod.Patch, $"/api/workspaces/{workspaceId}/instances/{instanceId}")
+        {
+            Content = JsonContent.Create(new ManagedElsaInstancePatchRequest(Name: "Renamed"), options: ControlApiTestApplication.JsonOptions)
+        };
+        patch.Headers.Add("Idempotency-Key", "rename-multi-if-match");
+        patch.Headers.TryAddWithoutValidation("If-Match", "\"1\"");
+        patch.Headers.TryAddWithoutValidation("If-Match", "\"2\"");
+        var response = await client.SendAsync(patch);
+        Assert.Equal((HttpStatusCode)428, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Canonical_operation_maps_typed_version_conflict_to_precondition_failed()
     {
         await using var app = CreateApplication([]);
