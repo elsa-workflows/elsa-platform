@@ -38,6 +38,7 @@ import { SyncRunDetailsPage } from "@/features/sync-runs/SyncRunDetailsPage";
 import { SyncRunsPage } from "@/features/sync-runs/SyncRunsPage";
 import { WeaverSessionPage } from "@/features/weaver/WeaverSessionPage";
 import { ConsoleLogsPage } from "@/features/console/ConsoleLogsPage";
+import { ManagedElsaInstancesPage } from "@/features/managed-elsa/ManagedElsaInstancesPage";
 
 function PlaceholderPage({ title }: { title: string }) {
   return (
@@ -160,7 +161,7 @@ export const router = createBrowserRouter([
           { path: "runtime-builder/:configurationId/edit", element: <EditRuntimeBuilderPage /> },
           { path: "console", element: <ConsoleLogsPage /> },
           { path: "targets", element: <PlaceholderPage title="Targets" /> },
-          { path: "runtimes", element: <PlaceholderPage title="Managed Runtimes" /> },
+          { path: "runtimes", element: <ManagedElsaInstancesPage /> },
           { path: "operations", element: <PlaceholderPage title="Runtime Operations" /> },
           { path: "weaver/sessions/:sessionId", element: <WeaverSessionPage /> },
           { path: "audit", element: <PlaceholderPage title="Audit" /> }

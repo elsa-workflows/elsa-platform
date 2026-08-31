@@ -217,6 +217,7 @@ builder.Services.AddSingleton<ManagedElsaHandoffKeyRing>(services =>
 });
 builder.Services.AddScoped<EfCoreManagedElsaHandoffStore>();
 builder.Services.AddScoped<IManagedElsaHandoffReplayStore, EfCoreManagedElsaHandoffReplayStore>();
+builder.Services.AddScoped<IManagedElsaInstanceCatalog, EfCoreManagedElsaInstanceCatalog>();
 builder.Services.AddScoped<IManagedElsaInstanceIdentityStore, EfCoreManagedElsaInstanceIdentityStore>();
 builder.Services.AddScoped<IManagedElsaHandoffAuthorizer, ManagedElsaInstanceHandoffAuthorizer>();
 builder.Services.AddScoped<IManagedElsaHandoffAuditSink, EfCoreManagedElsaHandoffAuditSink>();
@@ -489,6 +490,7 @@ app.MapWorkspacePackageEndpoints();
 app.MapWorkspaceBuilderEndpoints();
 app.MapWorkspaceRuntimeConfigurationEndpoints();
 app.MapWorkspaceDeploymentEndpoints();
+app.MapManagedElsaInstanceEndpoints();
 app.MapWorkspacePermissionManagementEndpoints();
 app.MapWorkspaceArtifactEndpoints();
 app.MapWorkspaceWeaverEndpoints();
