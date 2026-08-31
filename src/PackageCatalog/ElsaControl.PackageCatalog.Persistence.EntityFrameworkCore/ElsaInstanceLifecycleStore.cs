@@ -367,7 +367,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             {
                 if (existingKeyOperation.Action != operation.Action ||
                     !string.Equals(existingKeyOperation.RequestHash, operation.RequestHash, StringComparison.Ordinal))
-                    throw Conflict("Idempotency key was already used for a different request.");
+                    throw Conflict("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
 
                 var keyInstance = await LoadTrackedInstanceAsync(existingKeyOperation.InstanceId, cancellationToken);
                 var keyOutbox = await dbContext.ElsaInstanceLifecycleOutbox
@@ -410,7 +410,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     operation.State == ElsaInstanceOperationState.WaitingForPriorOperation &&
                     activeOperation.Action != ElsaInstanceOperationAction.Delete;
                 if (!isDeleteSuccessor)
-                    throw Conflict("An instance operation is already active.");
+                    throw Conflict("An instance operation is already active.", ElsaInstanceLifecycleConflictReason.OperationActive);
             }
 
             var priorObservedLifecycle = storedInstance?.ObservedLifecycle;
@@ -465,13 +465,13 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         catch (DbUpdateConcurrencyException)
         {
             dbContext.ChangeTracker.Clear();
-            throw Conflict("Lifecycle acceptance conflicted with a newer instance version.");
+            throw Conflict("Lifecycle acceptance conflicted with a newer instance version.", ElsaInstanceLifecycleConflictReason.VersionConflict);
         }
         catch (DbUpdateException exception) when (
             EfCoreDatabaseExceptionPolicy.IsElsaInstanceSlugUniqueViolation(exception))
         {
             dbContext.ChangeTracker.Clear();
-            throw Conflict("Instance slug is already in use in this workspace.");
+            throw Conflict("Instance slug is already in use in this workspace.", ElsaInstanceLifecycleConflictReason.SlugConflict);
         }
         catch (DbUpdateException)
         {
@@ -1921,9 +1921,9 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             expected.WorkspaceId != requested.WorkspaceId || stored.OrganizationId != expected.OrganizationId ||
             stored.WorkspaceId != expected.WorkspaceId || stored.Version != expected.Version ||
             !string.Equals(stored.Slug, expected.Slug, StringComparison.Ordinal))
-            throw Conflict(stored is null || stored.Version != expected.Version
-                ? "Instance version conflict."
-                : "Elsa instance does not exist in the workspace.");
+            throw stored is null || stored.Version != expected.Version
+                ? Conflict("Instance version conflict.", ElsaInstanceLifecycleConflictReason.VersionConflict)
+                : Conflict("Elsa instance does not exist in the workspace.", ElsaInstanceLifecycleConflictReason.InvalidState);
     }
 
     private static ElsaInstanceEntity ToEntity(ElsaInstance instance, DateTimeOffset now)
@@ -2370,6 +2370,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         value.Contains("connectionstring", StringComparison.OrdinalIgnoreCase) ||
         value.Contains("workflow", StringComparison.OrdinalIgnoreCase);
 
-    private static ElsaInstanceLifecycleConflictException Conflict(string message) =>
-        new(message);
+    private static ElsaInstanceLifecycleConflictException Conflict(
+        string message, ElsaInstanceLifecycleConflictReason reason = ElsaInstanceLifecycleConflictReason.InvalidState) =>
+        new(message, reason);
 }

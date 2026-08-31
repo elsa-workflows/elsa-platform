@@ -349,7 +349,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                     existingForUpdate.WorkspaceId != instance.WorkspaceId)
                     throw new ElsaInstanceLifecycleConflictException("Elsa instance does not exist in the workspace.");
                 if (expectedInstance is not null && existingForUpdate.Version != expectedInstance.Version)
-                    throw new ElsaInstanceLifecycleConflictException("Instance version conflict.");
+                    throw new ElsaInstanceLifecycleConflictException("Instance version conflict.", ElsaInstanceLifecycleConflictReason.VersionConflict);
 
                 _instances[instance.Id] = instance;
                 _operations[operation.Id] = operation;
@@ -364,7 +364,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
             {
                 if (sameIdentity.InstanceId != operation.InstanceId ||
                     !string.Equals(sameIdentity.RequestHash, operation.RequestHash, StringComparison.Ordinal))
-                    throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
+                    throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
                 return Task.FromResult(Replay(instance, sameIdentity));
             }
 
@@ -381,7 +381,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                 if (!instanceExists || existing!.WorkspaceId != instance.WorkspaceId)
                     throw new ElsaInstanceLifecycleConflictException("Elsa instance does not exist in the workspace.");
                 if (existing.Version != expectedInstance.Version)
-                    throw new ElsaInstanceLifecycleConflictException("Instance version conflict.");
+                    throw new ElsaInstanceLifecycleConflictException("Instance version conflict.", ElsaInstanceLifecycleConflictReason.VersionConflict);
             }
 
             var active = _operations.Values.FirstOrDefault(x =>
@@ -392,7 +392,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                     operation.State == ElsaInstanceOperationState.WaitingForPriorOperation &&
                     active.Action != ElsaInstanceOperationAction.Delete;
                 if (!isDeleteSuccessor)
-                    throw new ElsaInstanceLifecycleConflictException("An instance operation is already active.");
+                    throw new ElsaInstanceLifecycleConflictException("An instance operation is already active.", ElsaInstanceLifecycleConflictReason.OperationActive);
             }
 
             _instances[instance.Id] = instance;

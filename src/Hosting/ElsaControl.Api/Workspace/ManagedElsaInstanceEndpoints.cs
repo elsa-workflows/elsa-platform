@@ -94,10 +94,7 @@ public static class ManagedElsaInstanceEndpoints
             }
             catch (ElsaInstanceLifecycleConflictException exception)
             {
-                var statusCode = exception.Message.Contains("version", StringComparison.OrdinalIgnoreCase)
-                    ? StatusCodes.Status412PreconditionFailed
-                    : StatusCodes.Status409Conflict;
-                return Problem(ConflictCode(exception), "The request conflicts with the current instance state.", statusCode);
+                return Problem(ConflictCode(exception), "The request conflicts with the current instance state.", ConflictStatusCode(exception));
             }
             catch (ArgumentException)
             {
@@ -163,9 +160,7 @@ public static class ManagedElsaInstanceEndpoints
             }
             catch (ElsaInstanceLifecycleConflictException exception)
             {
-                return Problem(ConflictCode(exception), "The request conflicts with the current instance state.",
-                    exception.Message.Contains("version", StringComparison.OrdinalIgnoreCase)
-                        ? StatusCodes.Status412PreconditionFailed : StatusCodes.Status409Conflict);
+                return Problem(ConflictCode(exception), "The request conflicts with the current instance state.", ConflictStatusCode(exception));
             }
             catch (InvalidOperationException exception) when (exception.Message.Contains("version", StringComparison.OrdinalIgnoreCase))
             {
@@ -253,10 +248,7 @@ public static class ManagedElsaInstanceEndpoints
             }
             catch (ElsaInstanceLifecycleConflictException exception)
             {
-                var status = exception.Message.Contains("version", StringComparison.OrdinalIgnoreCase)
-                    ? StatusCodes.Status412PreconditionFailed
-                    : StatusCodes.Status409Conflict;
-                return Problem(ConflictCode(exception), "The request conflicts with the current instance state.", status);
+                return Problem(ConflictCode(exception), "The request conflicts with the current instance state.", ConflictStatusCode(exception));
             }
             catch (ElsaInstanceDeleteConfirmationException)
             {
@@ -518,11 +510,19 @@ public static class ManagedElsaInstanceEndpoints
 
     private static string ETag(int version) => $"\"{version}\"";
 
-    internal static string ConflictCode(ElsaInstanceLifecycleConflictException exception) =>
-        exception.Message.Contains("version", StringComparison.OrdinalIgnoreCase) ? "instance.version-conflict" :
-        exception.Message.Contains("slug", StringComparison.OrdinalIgnoreCase) ? "instance.slug-conflict" :
-        exception.Message.Contains("operation", StringComparison.OrdinalIgnoreCase) ? "instance.operation-active" :
-        "instance.idempotency-conflict";
+    internal static string ConflictCode(ElsaInstanceLifecycleConflictException exception) => exception.Reason switch
+    {
+        ElsaInstanceLifecycleConflictReason.VersionConflict => "instance.version-conflict",
+        ElsaInstanceLifecycleConflictReason.SlugConflict => "instance.slug-conflict",
+        ElsaInstanceLifecycleConflictReason.OperationActive => "instance.operation-active",
+        ElsaInstanceLifecycleConflictReason.IdempotencyConflict => "instance.idempotency-conflict",
+        _ => "instance.invalid-state",
+    };
+
+    private static int ConflictStatusCode(ElsaInstanceLifecycleConflictException exception) =>
+        exception.Reason == ElsaInstanceLifecycleConflictReason.VersionConflict
+            ? StatusCodes.Status412PreconditionFailed
+            : StatusCodes.Status409Conflict;
 
     private static IResult Problem(string code, string title, int statusCode) => Results.Problem(title: title, statusCode: statusCode,
         extensions: new Dictionary<string, object?> { ["code"] = code });

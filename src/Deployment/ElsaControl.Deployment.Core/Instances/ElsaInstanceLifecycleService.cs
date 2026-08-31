@@ -43,13 +43,13 @@ public sealed class ElsaInstanceLifecycleService(
         if (existingOperation is not null)
         {
             if (existingOperation.Action != ElsaInstanceOperationAction.Create)
-                throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
+                throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
             if (!string.Equals(existingOperation.RequestHash, requestHash, StringComparison.Ordinal))
-                throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
+                throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
             var existing = await store.GetInstanceAsync(request.WorkspaceId, existingOperation.InstanceId, cancellationToken)
-                ?? throw new ElsaInstanceLifecycleConflictException("Lifecycle operation outbox record is orphaned.");
+                ?? throw new ElsaInstanceLifecycleConflictException("Lifecycle operation outbox record is orphaned.", ElsaInstanceLifecycleConflictReason.InvalidState);
             if (existing.OrganizationId != request.OrganizationId)
-                throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
+                throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
             var replayTransition = ElsaInstanceStateMachine.Request(
                 existing,
                 ElsaInstanceOperationAction.Create,
@@ -204,7 +204,7 @@ public sealed class ElsaInstanceLifecycleService(
         if (existingOperation is not null)
         {
             if (existingOperation.InstanceId != instanceId || existingOperation.Action != action)
-                throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
+                throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
 
             var existingRequestHash = existingOperation.RequestHash;
             var replayRequestHash = ComputeRequestHash(
@@ -215,7 +215,7 @@ public sealed class ElsaInstanceLifecycleService(
                 reason,
                 confirmationId);
             if (!string.Equals(existingRequestHash, replayRequestHash, StringComparison.Ordinal))
-                throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
+                throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
 
             // Supplying the existing operation to the state machine makes an exact
             // replay independent of the caller's current If-Match value, including

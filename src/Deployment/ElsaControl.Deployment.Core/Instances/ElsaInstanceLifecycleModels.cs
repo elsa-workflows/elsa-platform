@@ -81,14 +81,40 @@ public sealed class ElsaInstanceDeleteConfirmationException : InvalidOperationEx
 }
 
 /// <summary>
+/// Stable classification for an <see cref="ElsaInstanceLifecycleConflictException"/>,
+/// used by API adapters to select an HTTP status code and ProblemDetails error code
+/// without inspecting the (human-oriented) exception message.
+/// </summary>
+public enum ElsaInstanceLifecycleConflictReason
+{
+    /// <summary>An optimistic concurrency (If-Match/expected-version) conflict.</summary>
+    VersionConflict,
+
+    /// <summary>An idempotency key was reused for a request that does not match the original.</summary>
+    IdempotencyConflict,
+
+    /// <summary>A blocking operation is already active on the instance.</summary>
+    OperationActive,
+
+    /// <summary>The requested slug is already reserved by another instance in the workspace.</summary>
+    SlugConflict,
+
+    /// <summary>Any other invariant violation that does not fit the categories above.</summary>
+    InvalidState,
+}
+
+/// <summary>
 /// Indicates that a request cannot be accepted because an idempotency or optimistic
 /// concurrency invariant was violated. The message is deliberately stable and safe
 /// for an API boundary.
 /// </summary>
 public sealed class ElsaInstanceLifecycleConflictException : InvalidOperationException
 {
-    public ElsaInstanceLifecycleConflictException(string message)
+    public ElsaInstanceLifecycleConflictException(string message, ElsaInstanceLifecycleConflictReason reason = ElsaInstanceLifecycleConflictReason.InvalidState)
         : base(message)
     {
+        Reason = reason;
     }
+
+    public ElsaInstanceLifecycleConflictReason Reason { get; }
 }

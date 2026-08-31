@@ -18,7 +18,8 @@ public sealed class ManagedElsaInstanceApiTests
     public void Slug_unique_reservation_conflict_maps_to_stable_api_code()
     {
         var code = ManagedElsaInstanceEndpoints.ConflictCode(
-            new ElsaInstanceLifecycleConflictException("Instance slug is already in use in this workspace."));
+            new ElsaInstanceLifecycleConflictException(
+                "Instance slug is already in use in this workspace.", ElsaInstanceLifecycleConflictReason.SlugConflict));
 
         Assert.Equal("instance.slug-conflict", code);
     }
