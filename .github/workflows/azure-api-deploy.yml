@@ -179,6 +179,7 @@ jobs:
           fi
 
       - name: Deploy API app
+        id: deploy-api
         if: steps.deployment-config.outputs.deploy_configured == 'true'
         shell: bash
         run: |
@@ -221,7 +222,7 @@ jobs:
 
       - name: Verify deployed API health
         id: health-gate
-        if: steps.deployment-config.outputs.deploy_configured == 'true'
+        if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -251,7 +252,7 @@ jobs:
           exit 1
 
       - name: Restore previous API deployment after health failure
-        if: ${{ failure() && steps.health-gate.outcome == 'failure' }}
+        if: ${{ failure() && steps.current-deployment.outcome == 'success' && (steps.deploy-api.outcome == 'failure' || steps.health-gate.outcome == 'failure') }}
         env:
           PREVIOUS_LINUX_FX_VERSION: ${{ steps.current-deployment.outputs.linux_fx_version }}
           PREVIOUS_BUILD_NUMBER: ${{ steps.current-deployment.outputs.application_build_number }}
