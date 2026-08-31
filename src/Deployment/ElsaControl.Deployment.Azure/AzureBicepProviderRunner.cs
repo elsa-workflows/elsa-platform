@@ -1235,6 +1235,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 cancellationToken);
             if (!deleted.Succeeded || deleted.Value is null)
             {
+                consecutiveAbsenceObservations = 0;
                 if (attempt + 1 < observationAttempts)
                     await Task.Delay(_options.ObservationDelay, cancellationToken);
                 continue;

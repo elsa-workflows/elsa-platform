@@ -681,6 +681,25 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.DoesNotContain(process.Calls, call => call.Contains("keyvault") && call.Contains("purge"));
     }
 
+    [Fact]
+    public async Task Cleanup_requires_consecutive_vault_absence_observations()
+    {
+        using var fixture = new RunnerFixture(observationAttempts: 3);
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("group") && args.Contains("exists"), "false");
+        process.Success(args => args.Contains("role") && args.Contains("list"), "[]");
+        process.Success(args => args.Contains("deployment") && args.Contains("delete"));
+        process.Success(args => args.Contains("deployment") && args.Contains("list"), "[]");
+        process.Success(args => args.Contains("list-deleted"), "[]");
+        process.Failure(args => args.Contains("list-deleted"));
+        process.Success(args => args.Contains("list-deleted"), "[]");
+
+        var result = await fixture.Runner(process).RunAsync(fixture.Command(AzureProviderRunnerStep.Cleanup, fixture.FoundationResources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.Equal("azure.cleanup.vault-uncertain", result.Code);
+    }
+
     public void Dispose() => _fixture.Dispose();
 
     private static string FoundationOutputs() => """
