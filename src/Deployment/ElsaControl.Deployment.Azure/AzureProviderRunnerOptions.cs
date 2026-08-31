@@ -199,7 +199,7 @@ public sealed record AzureProviderRunnerOptions
                 throw new ArgumentException("The checked-in Azure provider authority is incomplete.", nameof(TemplateRoot));
             hash.AppendData(Encoding.UTF8.GetBytes(relativePath));
             hash.AppendData([0]);
-            hash.AppendData(File.ReadAllBytes(path));
+            AppendFileContents(hash, path);
             hash.AppendData([0]);
         }
         return Convert.ToHexStringLower(hash.GetHashAndReset());
@@ -231,6 +231,30 @@ public sealed record AzureProviderRunnerOptions
     private static string NormalizeRoot(string root) =>
         Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
 
-    private static string ComputeFileDigest(string path) =>
-        Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path)));
+    private static string ComputeFileDigest(string path)
+    {
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 64 * 1024,
+            FileOptions.SequentialScan);
+        return Convert.ToHexStringLower(SHA256.HashData(stream));
+    }
+
+    private static void AppendFileContents(IncrementalHash hash, string path)
+    {
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 64 * 1024,
+            FileOptions.SequentialScan);
+        var buffer = new byte[64 * 1024];
+        int read;
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+            hash.AppendData(buffer, 0, read);
+    }
 }
