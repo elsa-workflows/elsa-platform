@@ -266,10 +266,6 @@ public static class ManagedElsaInstanceEndpoints
             {
                 return Results.NotFound();
             }
-            catch (InvalidOperationException)
-            {
-                return Problem("instance.operation-conflict", "The requested operation conflicts with the current instance state.", StatusCodes.Status409Conflict);
-            }
             catch (ArgumentException)
             {
                 return Problem("instance.operation-invalid", "The requested operation is invalid.", StatusCodes.Status422UnprocessableEntity);
