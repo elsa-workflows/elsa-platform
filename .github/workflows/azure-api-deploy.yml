@@ -143,6 +143,28 @@ jobs:
         run: |
           set -euo pipefail
 
+          webapp_probe_file="$(mktemp)"
+          trap 'rm -f "$webapp_probe_file"' EXIT
+          if ! current_webapp_name="$(az webapp show \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_WEBAPP_NAME" \
+            --query name \
+            --output tsv \
+            --only-show-errors 2>"$webapp_probe_file")"; then
+            if [ "$DEPLOY_MODE" = "infra" ] && grep -Eq 'Resource(NotFound|GroupNotFound)|was not found' "$webapp_probe_file"; then
+              echo "capture_succeeded=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::Skipping previous deployment capture because the Web App does not exist yet; infra deployment will create it."
+              exit 0
+            fi
+
+            echo "::error::Could not determine whether the current Web App exists; refusing an unprotected deployment."
+            exit 1
+          fi
+          if [ -z "$current_webapp_name" ]; then
+            echo "::error::Azure returned no Web App name; refusing an unprotected deployment."
+            exit 1
+          fi
+
           linux_fx_version="$(az webapp config show \
             --resource-group "$AZURE_RESOURCE_GROUP" \
             --name "$AZURE_WEBAPP_NAME" \
@@ -202,6 +224,7 @@ jobs:
           if [ -n "$application_build_number" ]; then
             echo "application_build_number=$application_build_number" >> "$GITHUB_OUTPUT"
           fi
+          echo "capture_succeeded=true" >> "$GITHUB_OUTPUT"
 
       - name: Deploy API app
         id: deploy-api
@@ -223,14 +246,12 @@ jobs:
             current_deployment_mode="${{ steps.current-deployment.outputs.deployment_mode }}"
 
             az acr login --name "$acr_name"
-            docker build --file src/Hosting/ElsaControl.Api/Dockerfile --tag "$image" .
+            docker build \
+              --build-arg ELSA_CONTROL_IMAGE_ID="$GITHUB_SHA" \
+              --file src/Hosting/ElsaControl.Api/Dockerfile \
+              --tag "$image" \
+              .
             docker push "$image"
-
-            az webapp config appsettings set \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --name "$AZURE_WEBAPP_NAME" \
-              --settings AZURE_TOKEN_CREDENTIALS=prod Application__BuildNumber="$GITHUB_RUN_NUMBER" \
-              --output none
 
             if [ "$current_deployment_mode" = "sitecontainers" ]; then
               az webapp sitecontainers update \
@@ -252,6 +273,20 @@ jobs:
               exit 1
             fi
 
+          fi
+
+          if [ "$DEPLOY_MODE" = "infra" ]; then
+            az webapp config appsettings set \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_WEBAPP_NAME" \
+              --settings Application__BuildNumber="$GITHUB_RUN_NUMBER" \
+              --output none
+          else
+            az webapp config appsettings set \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_WEBAPP_NAME" \
+              --settings AZURE_TOKEN_CREDENTIALS=prod Application__BuildNumber="$GITHUB_RUN_NUMBER" \
+              --output none
           fi
 
           az webapp restart \
@@ -279,18 +314,31 @@ jobs:
             exit 1
           fi
           health_url="https://$default_host_name/health"
+          health_response_file="$(mktemp)"
+          trap 'rm -f "$health_response_file"' EXIT
+          stable_health_probes=0
 
           for attempt in $(seq 1 30); do
-            if http_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 "$health_url")"; then
-              if [ "$http_status" = "200" ]; then
-                echo "API health check passed with HTTP 200 on attempt $attempt."
-                exit 0
+            if http_status="$(curl --silent --show-error --output "$health_response_file" --write-out '%{http_code}' --max-time 10 "$health_url")"; then
+              if [ "$http_status" = "200" ] && jq -e \
+                --arg expected_build_number "$GITHUB_RUN_NUMBER" \
+                --arg expected_image_id "$GITHUB_SHA" \
+                '.status == "ok" and .buildNumber == $expected_build_number and .imageId == $expected_image_id' \
+                "$health_response_file" >/dev/null 2>&1; then
+                stable_health_probes=$((stable_health_probes + 1))
+                if [ "$stable_health_probes" -ge 2 ]; then
+                  echo "API health check passed with HTTP 200 and the expected build/image identity on attempt $attempt."
+                  exit 0
+                fi
+              else
+                stable_health_probes=0
               fi
             else
               http_status=000
+              stable_health_probes=0
             fi
 
-            echo "API health check returned HTTP $http_status (attempt $attempt/30); retrying."
+            echo "API health check returned HTTP $http_status or an unexpected build/image identity (attempt $attempt/30, stable probes $stable_health_probes/2); retrying."
             sleep 10
           done
 
@@ -298,7 +346,7 @@ jobs:
           exit 1
 
       - name: Restore previous API deployment after health failure
-        if: ${{ failure() && steps.current-deployment.outcome == 'success' && (steps.deploy-api.outcome == 'failure' || steps.health-gate.outcome == 'failure') }}
+        if: ${{ failure() && steps.current-deployment.outcome == 'success' && steps.current-deployment.outputs.capture_succeeded == 'true' && (steps.deploy-api.outcome == 'failure' || steps.health-gate.outcome == 'failure') }}
         env:
           PREVIOUS_LINUX_FX_VERSION: ${{ steps.current-deployment.outputs.linux_fx_version }}
           PREVIOUS_DEPLOYMENT_MODE: ${{ steps.current-deployment.outputs.deployment_mode }}
@@ -388,19 +436,32 @@ jobs:
           fi
 
           rollback_health_url="https://$default_host_name/health"
+          rollback_health_response_file="$(mktemp)"
+          trap 'rm -f "$rollback_health_response_file"' EXIT
+          expected_previous_build_number="${PREVIOUS_BUILD_NUMBER:-unknown}"
           rollback_health_succeeded=false
+          stable_rollback_health_probes=0
           for attempt in $(seq 1 30); do
-            if http_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 "$rollback_health_url")"; then
-              if [ "$http_status" = "200" ]; then
-                rollback_health_succeeded=true
-                echo "Rollback health check passed with HTTP 200 on attempt $attempt."
-                break
+            if http_status="$(curl --silent --show-error --output "$rollback_health_response_file" --write-out '%{http_code}' --max-time 10 "$rollback_health_url")"; then
+              if [ "$http_status" = "200" ] && jq -e \
+                --arg expected_build_number "$expected_previous_build_number" \
+                '.status == "ok" and ((.buildNumber // $expected_build_number) == $expected_build_number)' \
+                "$rollback_health_response_file" >/dev/null 2>&1; then
+                stable_rollback_health_probes=$((stable_rollback_health_probes + 1))
+                if [ "$stable_rollback_health_probes" -ge 2 ]; then
+                  rollback_health_succeeded=true
+                  echo "Rollback health check passed with HTTP 200 and the expected previous build identity on attempt $attempt."
+                  break
+                fi
+              else
+                stable_rollback_health_probes=0
               fi
             else
               http_status=000
+              stable_rollback_health_probes=0
             fi
 
-            echo "Rollback health check returned HTTP $http_status (attempt $attempt/30); retrying."
+            echo "Rollback health check returned HTTP $http_status or an unexpected build identity (attempt $attempt/30, stable probes $stable_rollback_health_probes/2); retrying."
             sleep 10
           done
 

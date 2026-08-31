@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using ElsaControl.Api.Authentication;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -14,6 +15,41 @@ public sealed class AdminApiAuthenticationTests
         var response = await app.CreateClient().GetAsync("/health");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Health_endpoint_reports_the_safe_build_and_image_identity()
+    {
+        await using var app = new ControlApiTestApplication(new Dictionary<string, string?>
+        {
+            ["Application:BuildNumber"] = "1786839398",
+            ["ELSA_CONTROL_IMAGE_ID"] = "abcdef0123456789"
+        });
+
+        var response = await app.CreateClient().GetAsync("/health");
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("ok", payload.RootElement.GetProperty("status").GetString());
+        Assert.Equal("1786839398", payload.RootElement.GetProperty("buildNumber").GetString());
+        Assert.Equal("abcdef0123456789", payload.RootElement.GetProperty("imageId").GetString());
+    }
+
+    [Fact]
+    public async Task Health_endpoint_redacts_unsafe_build_and_image_identity()
+    {
+        await using var app = new ControlApiTestApplication(new Dictionary<string, string?>
+        {
+            ["Application:BuildNumber"] = "build number with spaces",
+            ["ELSA_CONTROL_IMAGE_ID"] = "https://user:password@example.test/image"
+        });
+
+        var response = await app.CreateClient().GetAsync("/health");
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("unknown", payload.RootElement.GetProperty("buildNumber").GetString());
+        Assert.Equal("unknown", payload.RootElement.GetProperty("imageId").GetString());
     }
 
     [Fact]

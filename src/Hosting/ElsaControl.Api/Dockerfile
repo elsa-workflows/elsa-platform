@@ -23,6 +23,7 @@ RUN dotnet publish src/Hosting/ElsaControl.Api/ElsaControl.Api.csproj \
     -p:SkipAdminConsoleBuild=true
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
+ARG ELSA_CONTROL_IMAGE_ID=unknown
 WORKDIR /app
 LABEL org.opencontainers.image.title="Elsa Control" \
       org.opencontainers.image.source="https://github.com/valence-works/elsa-control" \
@@ -30,5 +31,6 @@ LABEL org.opencontainers.image.title="Elsa Control" \
 COPY --from=build /app/publish .
 COPY LICENSE NOTICE.md ./
 EXPOSE 8080
-ENV ASPNETCORE_URLS=http://+:8080
+ENV ASPNETCORE_URLS=http://+:8080 \
+    ELSA_CONTROL_IMAGE_ID=$ELSA_CONTROL_IMAGE_ID
 ENTRYPOINT ["dotnet", "ElsaControl.Api.dll"]
