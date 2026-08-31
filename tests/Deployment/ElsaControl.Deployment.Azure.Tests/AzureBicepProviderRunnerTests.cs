@@ -520,13 +520,15 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task Workload_uses_a_deterministic_revision_and_removes_the_sql_admin()
+    public async Task Workload_uses_a_deterministic_revision_and_preserves_the_exact_sql_admin()
     {
         var process = new FakeCommandProcess();
         process.Success(args => args.Contains("resource") && args.Contains("list"), "0");
         process.Success(args => args.Contains("resource") && args.Contains("list"), "0");
         process.Success(args => args.Contains("deployment") && args.Contains("create"), WorkloadOutputs());
-        process.Success(args => args.Contains("sql") && args.Contains("server") && args.Contains("list"), "0");
+        process.Success(args => args.Contains("sql") && args.Contains("server") && args.Contains("list"), "1");
+        process.Success(args => args.Contains("ad-admin") && args.Contains("list"), "[{\"login\":\"proof-bootstrap\",\"sid\":\"11111111-1111-1111-1111-111111111111\"}]");
+        process.Success(args => args.Contains("ad-only-auth") && args.Contains("enable"));
 
         var resources = _fixture.FoundationResources with
         {
@@ -539,6 +541,29 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
         Assert.Equal($"proof-app--{_fixture.Plan.Fingerprint[..24]}", result.Resources.WorkloadRevisionName);
         Assert.Equal(_fixture.AppId, result.Resources.WorkloadResourceId);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("ad-admin") && call.Contains("delete"));
+        Assert.DoesNotContain(process.Calls, call => call.Contains("ad-only-auth") && call.Contains("disable"));
+    }
+
+    [Fact]
+    public async Task Workload_fails_closed_when_the_sql_server_is_missing_after_deployment()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("resource") && args.Contains("list"), "0");
+        process.Success(args => args.Contains("resource") && args.Contains("list"), "0");
+        process.Success(args => args.Contains("deployment") && args.Contains("create"), WorkloadOutputs());
+        process.Success(args => args.Contains("sql") && args.Contains("server") && args.Contains("list"), "0");
+        var resources = _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
+        };
+
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.Workload, resources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Equal("azure.sql.admin-invalid", result.Code);
     }
 
     [Fact]
@@ -553,7 +578,9 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         process.Success(args => args.Contains("resource") && args.Contains("show"), invalidSuffix);
         process.Success(args => args.Contains("revision") && args.Contains("list"), "[\"proof-app--" + invalidSuffix + "\"]");
         process.Success(args => args.Contains("deployment") && args.Contains("create"), WorkloadOutputs());
-        process.Success(args => args.Contains("sql") && args.Contains("server") && args.Contains("list"), "0");
+        process.Success(args => args.Contains("sql") && args.Contains("server") && args.Contains("list"), "1");
+        process.Success(args => args.Contains("ad-admin") && args.Contains("list"), "[{\"login\":\"proof-bootstrap\",\"sid\":\"11111111-1111-1111-1111-111111111111\"}]");
+        process.Success(args => args.Contains("ad-only-auth") && args.Contains("enable"));
 
         var resources = _fixture.FoundationResources with
         {

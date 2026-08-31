@@ -11,10 +11,10 @@ param databaseName string
 @description('Azure region for the server and database.')
 param location string
 
-@description('Microsoft Entra object ID used only for the controlled bootstrap administrator boundary.')
+@description('Microsoft Entra object ID retained as the governed administrator for the disposable server lifetime.')
 param bootstrapObjectId string
 
-@description('Microsoft Entra login/display name for the controlled bootstrap administrator boundary.')
+@description('Microsoft Entra login/display name retained as the governed administrator for the disposable server lifetime.')
 @minLength(1)
 @maxLength(128)
 param bootstrapLogin string

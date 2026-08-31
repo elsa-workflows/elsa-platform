@@ -163,7 +163,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             if (!updated.Succeeded)
                 return ProcessFailure(command, AzureProviderOperationPhase.FoundationSubmitted, updated, resources, mutation: true);
 
-            var adminReady = await EnsureSqlBootstrapAdminForReapplyAsync(command, cancellationToken);
+            var adminReady = await EnsureExactSqlBootstrapAdminAsync(command, allowMissingServer: true, cancellationToken: cancellationToken);
             if (adminReady is null)
                 return Uncertain(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.foundation.sql-admin-uncertain", "The SQL bootstrap administrator could not be confirmed for reconciliation.", resources);
             if (!adminReady.Value)
@@ -482,10 +482,11 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             return Failed(command, AzureProviderOperationPhase.WorkloadReady, "azure.workload.output-invalid", exception.Message);
         }
 
-        EnsureMutationAuthority(command);
-        var adminRemoved = await RemoveSqlBootstrapAdminAsync(command, CancellationToken.None);
-        if (!adminRemoved)
-            return Uncertain(command, AzureProviderOperationPhase.WorkloadReady, "azure.sql.admin-removal-uncertain", "The temporary SQL bootstrap administrator could not be proven absent.", resources);
+        var adminReady = await EnsureExactSqlBootstrapAdminAsync(command, allowMissingServer: false, cancellationToken: cancellationToken);
+        if (adminReady is null)
+            return Uncertain(command, AzureProviderOperationPhase.WorkloadReady, "azure.sql.admin-verification-uncertain", "The SQL bootstrap administrator could not be confirmed after workload deployment.", resources);
+        if (!adminReady.Value)
+            return Failed(command, AzureProviderOperationPhase.WorkloadReady, "azure.sql.admin-invalid", "The SQL administrator does not match the governed bootstrap identity.", resources);
 
         return Completed(command, AzureProviderOperationPhase.WorkloadReady, resources);
     }
@@ -1012,8 +1013,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         return false;
     }
 
-    private async Task<bool?> EnsureSqlBootstrapAdminForReapplyAsync(
+    private async Task<bool?> EnsureExactSqlBootstrapAdminAsync(
         AzureProviderRunnerCommand command,
+        bool allowMissingServer,
         CancellationToken cancellationToken)
     {
         var server = $"{command.Plan.WorkloadName}-sql";
@@ -1025,7 +1027,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         if (!count.Succeeded || count.Value is null)
             return null;
         if (count.Value.Value == 0)
-            return true;
+            return allowMissingServer;
         if (count.Value.Value != 1)
             return false;
 
@@ -1070,58 +1072,6 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             static _ => AzureCommandNoOutput.Instance,
             cancellationToken);
         return enabled.Succeeded ? true : null;
-    }
-
-    private async Task<bool> RemoveSqlBootstrapAdminAsync(AzureProviderRunnerCommand command, CancellationToken cancellationToken)
-    {
-        var workloadName = command.Plan.WorkloadName;
-        var server = $"{workloadName}-sql";
-        var count = await ExecuteAzAsync(command,
-            ["sql", "server", "list", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
-                "--query", "[?name=='" + server + "'] | length(@)", "--output", "tsv", "--only-show-errors"],
-            ParseIntegerAsync,
-            cancellationToken);
-        if (!count.Succeeded || count.Value!.Value == 0)
-            return count.Succeeded && count.Value!.Value == 0;
-        if (count.Value.Value != 1)
-            return false;
-        var admins = await ExecuteAzAsync(command,
-            ["sql", "server", "ad-admin", "list", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
-                "--server", server, "--output", "json", "--only-show-errors"],
-            ParseAdminsAsync,
-            cancellationToken);
-        if (!admins.Succeeded || admins.Value is null || admins.Value.Value.Count == 0)
-            return admins.Succeeded && admins.Value is not null && admins.Value.Value.Count == 0;
-        if (admins.Value.Value.Count != 1 || !string.Equals(admins.Value.Value[0].Login, _options.SqlBootstrapLogin, StringComparison.Ordinal) ||
-            !string.Equals(admins.Value.Value[0].Sid, _options.SqlBootstrapObjectId, StringComparison.OrdinalIgnoreCase))
-            return false;
-        EnsureMutationAuthority(command);
-        var disabled = await ExecuteAzAsync<AzureCommandNoOutput>(command,
-            ["sql", "server", "ad-only-auth", "disable", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
-                "--name", server, "--output", "none", "--only-show-errors"],
-            static _ => AzureCommandNoOutput.Instance,
-            cancellationToken);
-        if (!disabled.Succeeded)
-            return false;
-        EnsureMutationAuthority(command);
-        await ExecuteAzAsync<AzureCommandNoOutput>(command,
-            ["sql", "server", "ad-admin", "delete", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
-                "--server", server, "--output", "none", "--only-show-errors"],
-            static _ => AzureCommandNoOutput.Instance,
-            cancellationToken);
-        for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
-        {
-            var remaining = await ExecuteAzAsync(command,
-                ["sql", "server", "ad-admin", "list", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
-                    "--server", server, "--query", "length(@)", "--output", "tsv", "--only-show-errors"],
-                ParseIntegerAsync,
-                cancellationToken);
-            if (remaining.Succeeded && remaining.Value?.Value == 0)
-                return true;
-            if (attempt + 1 < _options.ObservationAttempts)
-                await Task.Delay(_options.ObservationDelay, cancellationToken);
-        }
-        return false;
     }
 
     private async Task<bool> RoleAssignmentAbsentAsync(

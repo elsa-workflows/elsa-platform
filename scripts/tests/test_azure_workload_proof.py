@@ -149,17 +149,16 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("--authentication-method ActiveDirectoryDefault", source)
         self.assertIn("sqlcmd '-?'", source)
         self.assertIn("temporary_firewall_rule", source)
-        self.assertIn("remove_sql_bootstrap_admin", source)
-        self.assertIn("ensure_sql_bootstrap_admin_for_reapply", source)
+        self.assertIn("ensure_exact_sql_bootstrap_admin", source)
         self.assertIn("az sql server ad-admin create", source)
         self.assertIn("az sql server ad-only-auth enable", source)
         self.assertIn("Refusing to replace an unexpected SQL server administrator", source)
-        self.assertIn("az sql server ad-admin delete", combined_source)
         self.assertIn("az sql server ad-admin list", combined_source)
-        self.assertIn("az sql server ad-only-auth disable", combined_source)
-        self.assertIn("Refusing to remove an unexpected SQL server administrator", library)
-        self.assertIn("Temporary SQL bootstrap administrator cleanup failed", source)
-        self.assertIn("CRITICAL: temporary SQL bootstrap administrator cleanup could not be verified", source)
+        self.assertNotIn("az sql server ad-admin delete", combined_source)
+        self.assertNotIn("az sql server ad-only-auth disable", combined_source)
+        self.assertIn("ensure_exact_sql_bootstrap_admin 1", source)
+        self.assertIn("ensure_exact_sql_bootstrap_admin 0", source)
+        self.assertIn("governed SQL administrator could not be verified after workload deployment", source)
         self.assertIn("openssl rand -base64 48 | tr -d '\\r\\n'", source)
         self.assertIn('seed_secret_if_missing admin-password "$temp_dir/admin-password"', source)
         firewall_deletes = [
@@ -233,7 +232,7 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("promote_workload_revision", library)
         self.assertIn("verify_single_revision_traffic", library)
         self.assertIn("verify_workload_traffic", library)
-        self.assertIn("remove_owned_sql_bootstrap_admin", library)
+        self.assertNotIn("remove_owned_sql_bootstrap_admin", library)
         self.assertIn("delete_and_verify_role_assignment", library)
         self.assertIn("valid_role_assignment_id", library)
         self.assertIn("validate_direct_acr_pull_assignment", library)
@@ -562,66 +561,6 @@ promote_workload_revision proof-rg proof-app stable-revision candidate-revision 
         self.assertNotIn("curl must not run", result.stderr)
         self.assertIn("uncertain result", result.stderr)
         self.assertIn("Restored stable traffic", result.stderr)
-
-    def test_unexpected_sql_admin_is_preserved_by_cleanup(self) -> None:
-        script = r'''
-source "$1"
-az() {
-  printf 'az:%s\n' "$*" >&2
-  case "$*" in
-    *"sql server list"*) printf '1\n' ;;
-    *"ad-admin list"*"length(@)"*) printf '1\n' ;;
-    *"ad-admin list"*) printf '{"login":"unrelated-admin","sid":"00000000-0000-0000-0000-000000000099"}\n' ;;
-    *"ad-only-auth disable"*|*"ad-admin delete"*) return 97 ;;
-    *) return 98 ;;
-  esac
-}
-remove_owned_sql_bootstrap_admin proof-sub proof-rg proof-sql proof-admin 00000000-0000-0000-0000-000000000001
-'''
-        result = subprocess.run(
-            ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertEqual(1, result.returncode)
-        self.assertIn("Refusing to remove an unexpected SQL server administrator", result.stderr)
-        self.assertNotIn("ad-only-auth disable", result.stderr)
-        self.assertNotIn("ad-admin delete", result.stderr)
-
-    def test_sql_admin_identity_comparison_is_case_insensitive(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            state = Path(temp_dir) / "state"
-            state.write_text("0")
-            script = r'''
-source "$1"
-STATE_FILE="$2"
-az() {
-  printf 'az:%s\n' "$*" >&2
-  case "$*" in
-    *"sql server list"*) printf '1\n' ;;
-    *"ad-admin list"*"length(@)"*)
-      count="$(<"$STATE_FILE")"
-      count=$((count + 1))
-      printf '%s' "$count" >"$STATE_FILE"
-      (( count == 1 )) && printf '1\n' || printf '0\n'
-      ;;
-    *"ad-admin list"*) printf '{"login":"proof-admin","sid":"A1111111-AAAA-AAAA-AAAA-AAAAAAAAAAAA"}\n' ;;
-    *"ad-only-auth disable"*|*"ad-admin delete"*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-remove_owned_sql_bootstrap_admin proof-sub proof-rg proof-sql proof-admin a1111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa
-'''
-            result = subprocess.run(
-                ["bash", "-c", script, "test", str(RUNBOOK_LIB), str(state)],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn("ad-only-auth disable", result.stderr)
-            self.assertIn("ad-admin delete", result.stderr)
 
     def test_role_cleanup_waits_for_eventual_absence_after_uncertain_delete(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
