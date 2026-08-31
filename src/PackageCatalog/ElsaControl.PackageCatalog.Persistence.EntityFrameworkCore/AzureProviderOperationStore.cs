@@ -156,9 +156,10 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             throw new ArgumentException("Target key is required.", nameof(targetKey));
 
         var normalizedTargetKey = targetKey.Trim().ToLowerInvariant();
+        var normalizedProviderScopeFingerprint = providerScopeFingerprint?.Trim().ToLowerInvariant();
         var entity = await db.AzureProviderOperations.AsNoTracking()
             .Where(x => x.WorkspaceId == workspaceId && x.TargetKey == normalizedTargetKey &&
-                        x.ProviderScopeFingerprint == providerScopeFingerprint &&
+                        x.ProviderScopeFingerprint == normalizedProviderScopeFingerprint &&
                         x.Action == AzureProviderOperationAction.Reconcile &&
                         (x.ResourceGroupName != null || x.FoundationDeploymentId != null ||
                          x.WorkloadDeploymentId != null || x.WorkloadResourceId != null ||
@@ -189,9 +190,10 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             throw new ArgumentException("Target key is required.", nameof(targetKey));
 
         var normalizedTargetKey = targetKey.Trim().ToLowerInvariant();
+        var normalizedProviderScopeFingerprint = providerScopeFingerprint?.Trim().ToLowerInvariant();
         var entity = await db.AzureProviderOperations.AsNoTracking()
             .Where(x => x.WorkspaceId == workspaceId && x.TargetKey == normalizedTargetKey &&
-                        x.ProviderScopeFingerprint == providerScopeFingerprint &&
+                        x.ProviderScopeFingerprint == normalizedProviderScopeFingerprint &&
                         x.Action == AzureProviderOperationAction.Reconcile &&
                         (x.Status == AzureProviderOperationStatus.Running ||
                          x.Status == AzureProviderOperationStatus.RecoveryRequired))

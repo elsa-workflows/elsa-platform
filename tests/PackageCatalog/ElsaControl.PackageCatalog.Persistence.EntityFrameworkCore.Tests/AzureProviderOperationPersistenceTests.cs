@@ -167,7 +167,7 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.Equal(1, await store.RecoverStaleAsync(now.AddMinutes(2)));
 
         var active = await store.GetLatestActiveReconcileAsync(
-            _workspaceId, request.TargetKey, request.ProviderScopeFingerprint);
+            _workspaceId, request.TargetKey.ToUpperInvariant(), $" {request.ProviderScopeFingerprint!.ToUpperInvariant()} ");
 
         Assert.NotNull(active);
         Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, active.Status);

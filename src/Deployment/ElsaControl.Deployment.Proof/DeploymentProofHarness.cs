@@ -292,6 +292,7 @@ public sealed class DeploymentProofHarness(
         {
             ["succeeded"] = value.Succeeded.ToString().ToLowerInvariant()
         };
+        metadata.Remove("resourceId");
         if (!string.IsNullOrWhiteSpace(value.ResourceId))
             metadata["resourceId"] = value.ResourceId;
         return metadata;
