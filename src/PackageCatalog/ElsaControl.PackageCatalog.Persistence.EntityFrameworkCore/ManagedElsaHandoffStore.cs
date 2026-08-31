@@ -96,6 +96,21 @@ public sealed class EfCoreManagedElsaHandoffStore(
 
 internal static class EfCoreDatabaseExceptionPolicy
 {
+    internal static bool IsSqlServerLifecycleReservationConflict(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is SqlException sqlServer &&
+                IsSqlServerLifecycleReservationConflictNumber(sqlServer.Number))
+                return true;
+        }
+
+        return false;
+    }
+
+    internal static bool IsSqlServerLifecycleReservationConflictNumber(int number) =>
+        number is 1205 or 2601 or 2627 or 3960;
+
     internal static bool IsUniqueViolation(DbUpdateException exception)
     {
         for (var current = exception.InnerException; current is not null; current = current.InnerException)

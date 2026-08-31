@@ -34,6 +34,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         resolutionInputSource ?? throw new ArgumentNullException(nameof(resolutionInputSource));
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private static readonly TimeSpan WorkerLeaseDuration = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan[] IdempotencyReplayLookupDelays =
+        [TimeSpan.Zero, TimeSpan.FromMilliseconds(25), TimeSpan.FromMilliseconds(75)];
     private static readonly JsonDocumentOptions SafeJsonOptions = new()
     {
         MaxDepth = 16,
@@ -470,6 +472,22 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             dbContext.ChangeTracker.Clear();
             throw Conflict("Lifecycle acceptance conflicted with a newer instance version.", ElsaInstanceLifecycleConflictReason.VersionConflict);
         }
+        catch (Exception exception) when (
+            expectedInstance is null &&
+            operation.Action == ElsaInstanceOperationAction.Create &&
+            EfCoreDatabaseExceptionPolicy.IsSqlServerLifecycleReservationConflict(exception))
+        {
+            dbContext.ChangeTracker.Clear();
+            var replay = await TryReplayCommittedCreateAsync(instance, operation, cancellationToken);
+            if (replay is not null)
+                return replay;
+
+            if (exception is DbUpdateException updateException &&
+                EfCoreDatabaseExceptionPolicy.IsElsaInstanceSlugUniqueViolation(updateException))
+                throw Conflict("Instance slug is already in use in this workspace.", ElsaInstanceLifecycleConflictReason.SlugConflict);
+
+            throw Conflict("Lifecycle acceptance conflicted with another request.");
+        }
         catch (DbUpdateException exception) when (
             EfCoreDatabaseExceptionPolicy.IsElsaInstanceSlugUniqueViolation(exception))
         {
@@ -491,6 +509,72 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             dbContext.ChangeTracker.Clear();
             throw;
         }
+    }
+
+    private async Task<ElsaInstanceLifecycleAcceptance?> TryReplayCommittedCreateAsync(
+        ElsaInstance requestedInstance,
+        ElsaInstanceOperation requestedOperation,
+        CancellationToken cancellationToken)
+    {
+        foreach (var delay in IdempotencyReplayLookupDelays)
+        {
+            if (delay > TimeSpan.Zero)
+                await Task.Delay(delay, cancellationToken);
+
+            dbContext.ChangeTracker.Clear();
+            try
+            {
+                var existingOperation = await dbContext.ElsaInstanceOperations
+                    .AsNoTracking()
+                    .OrderByDescending(x => x.AcceptedAt)
+                    .ThenByDescending(x => x.CreatedAt)
+                    .FirstOrDefaultAsync(
+                        x => x.WorkspaceId == requestedInstance.WorkspaceId &&
+                             x.IdempotencyScope == requestedOperation.IdempotencyScope &&
+                             x.IdempotencyKey == requestedOperation.IdempotencyKey,
+                        cancellationToken);
+                if (existingOperation is null)
+                    continue;
+
+                if (existingOperation.Action != requestedOperation.Action ||
+                    !string.Equals(existingOperation.RequestHash, requestedOperation.RequestHash, StringComparison.Ordinal))
+                    throw Conflict("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
+
+                var existingInstance = await dbContext.ElsaInstances.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.Id == existingOperation.InstanceId, cancellationToken);
+                var existingOutbox = await dbContext.ElsaInstanceLifecycleOutbox.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.OperationId == existingOperation.Id, cancellationToken);
+                if (existingInstance is null || existingOutbox is null)
+                    continue;
+
+                ValidateReplayEnvelope(existingInstance, existingOperation, existingOutbox);
+                if (existingInstance.OrganizationId != requestedInstance.OrganizationId)
+                    throw Conflict("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
+
+                return new ElsaInstanceLifecycleAcceptance(
+                    MapInstance(existingInstance),
+                    MapOperation(existingOperation),
+                    MapOutbox(existingOutbox),
+                    Replayed: true);
+            }
+            catch (ElsaInstanceLifecycleConflictException)
+            {
+                throw;
+            }
+            catch (Exception exception) when (
+                EfCoreDatabaseExceptionPolicy.IsSqlServerLifecycleReservationConflict(exception))
+            {
+                // The winner can still be committing or this lookup can itself be
+                // selected as a deadlock victim. Only known SQL Server reservation
+                // conflicts are eligible for another bounded authoritative read.
+            }
+            catch (Exception exception) when (exception is DbUpdateException or DbException)
+            {
+                throw Conflict("Lifecycle acceptance could not verify the persistence reservation.");
+            }
+        }
+
+        return null;
     }
 
     public async Task<ElsaInstanceLifecycleWorkItem?> TryClaimNextAsync(
@@ -1361,6 +1445,20 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
     {
         if (instance is null || outbox is null)
             throw Conflict("Lifecycle operation outbox record is missing.");
+        ValidateReplayEnvelope(instance, operation, outbox);
+        await transaction.CommitAsync(cancellationToken);
+        return new ElsaInstanceLifecycleAcceptance(
+            MapInstance(instance),
+            MapOperation(operation),
+            MapOutbox(outbox),
+            Replayed: true);
+    }
+
+    private static void ValidateReplayEnvelope(
+        ElsaInstanceEntity instance,
+        ElsaInstanceOperationEntity operation,
+        ElsaInstanceLifecycleOutboxEntity outbox)
+    {
         if (operation.InstanceId is null ||
             operation.InstanceId != instance.Id ||
             outbox.OperationId != operation.Id ||
@@ -1371,12 +1469,6 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             operation.OrganizationId != instance.OrganizationId ||
             operation.WorkspaceId != instance.WorkspaceId)
             throw Conflict("Lifecycle operation outbox record is inconsistent.");
-        await transaction.CommitAsync(cancellationToken);
-        return new ElsaInstanceLifecycleAcceptance(
-            MapInstance(instance),
-            MapOperation(operation),
-            MapOutbox(outbox),
-            Replayed: true);
     }
 
     private async Task<ElsaInstanceEntity?> LoadTrackedInstanceAsync(

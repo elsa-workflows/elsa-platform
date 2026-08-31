@@ -17,6 +17,18 @@ namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
 
 public sealed class ElsaInstanceLifecycleStoreTests
 {
+    [Theory]
+    [InlineData(1205)]
+    [InlineData(2601)]
+    [InlineData(2627)]
+    [InlineData(3960)]
+    public void SqlServer_create_reservation_conflicts_are_the_only_retryable_error_numbers(int number)
+    {
+        Assert.True(EfCoreDatabaseExceptionPolicy.IsSqlServerLifecycleReservationConflictNumber(number));
+        Assert.False(EfCoreDatabaseExceptionPolicy.IsSqlServerLifecycleReservationConflictNumber(547));
+        Assert.False(EfCoreDatabaseExceptionPolicy.IsSqlServerLifecycleReservationConflictNumber(-2));
+    }
+
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-08-30T10:00:00Z");
 
     [Fact]
