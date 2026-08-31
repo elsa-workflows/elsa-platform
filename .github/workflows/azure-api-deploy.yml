@@ -227,11 +227,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          default_host_name="$(az webapp show \
+          if ! default_host_name="$(az webapp show \
             --resource-group "$AZURE_RESOURCE_GROUP" \
             --name "$AZURE_WEBAPP_NAME" \
             --query defaultHostName \
-            --output tsv)"
+            --output tsv)"; then
+            echo "::error::Could not resolve the API host for the post-deployment health check."
+            exit 1
+          fi
+          if [ -z "$default_host_name" ]; then
+            echo "::error::Azure returned no API host for the post-deployment health check."
+            exit 1
+          fi
           health_url="https://$default_host_name/health"
 
           for attempt in $(seq 1 30); do
