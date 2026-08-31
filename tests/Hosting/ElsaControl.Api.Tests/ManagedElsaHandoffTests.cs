@@ -12,6 +12,7 @@ using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -139,6 +140,33 @@ public sealed class ManagedElsaHandoffTests
     }
 
     [Theory]
+    [InlineData("Bearer invalid-token")]
+    [InlineData(" Basic cookie,   Bearer invalid-token")]
+    public async Task Invalid_bearer_does_not_fall_back_to_an_authenticated_cookie_user(string authorization)
+    {
+        var cookieUser = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(JwtRegisteredClaimNames.Iss, ControlApiTestApplication.TestControlIdentityIssuer),
+            new Claim(JwtRegisteredClaimNames.Sub, "cookie-user")
+        ], CustomerAuthenticationDefaults.CookieScheme));
+        var context = new DefaultHttpContext
+        {
+            User = cookieUser,
+            RequestServices = new ServiceCollection()
+                .AddSingleton<IAuthenticationService>(new FailedAuthenticationService())
+                .BuildServiceProvider()
+        };
+        context.Request.Headers.Authorization = authorization;
+
+        var reader = new ControlIdentityReader(Options.Create(new ControlIdentityOptions
+        {
+            Issuer = ControlApiTestApplication.TestControlIdentityIssuer
+        }));
+
+        Assert.Null(await reader.ReadAsync(context));
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("not-a-date")]
@@ -185,7 +213,7 @@ public sealed class ManagedElsaHandoffTests
             const string deploymentId = "deployment-managed";
             const string endpointUri = "https://managed.example.test/runtime/health";
             await db.Database.ExecuteSqlInterpolatedAsync(
-                $"UPDATE ElsaInstances SET CurrentDeploymentId = {deploymentId}, CurrentDeploymentEndpointUri = {endpointUri} WHERE Id = {instanceId}");
+                $"UPDATE ElsaInstances SET CurrentDeploymentId = {deploymentId}, CurrentDeploymentEndpointUri = {endpointUri}, DesiredLifecycle = {ElsaDesiredLifecycle.Running.ToString()}, ObservedLifecycle = {ElsaObservedLifecycle.Ready.ToString()}, Health = {ElsaInstanceHealth.Healthy.ToString()} WHERE Id = {instanceId}");
             db.ChangeTracker.Clear();
         }
 
@@ -203,11 +231,81 @@ public sealed class ManagedElsaHandoffTests
             Assert.Null(await identities.FindAsync(organizationId, instanceId));
         }
 
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+            var identities = new EfCoreManagedElsaInstanceIdentityStore(db);
+            var binding = await identities.BindAsync(
+                organizationId,
+                workspaceId,
+                instanceId,
+                "https://managed.example.test",
+                expectedBindingVersion: null,
+                DateTimeOffset.UtcNow);
+            Assert.True(binding.Succeeded);
+        }
+
         var response = await client.PostControlJsonAsync(
             "/api/managed-elsa/handoff/issue",
             handoffRequest);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(ElsaDesiredLifecycle.Stopped, ElsaObservedLifecycle.Ready, ElsaInstanceHealth.Healthy, true)]
+    [InlineData(ElsaDesiredLifecycle.Running, ElsaObservedLifecycle.Ready, ElsaInstanceHealth.Degraded, true)]
+    [InlineData(ElsaDesiredLifecycle.Running, ElsaObservedLifecycle.Failed, ElsaInstanceHealth.Unreachable, true)]
+    [InlineData(ElsaDesiredLifecycle.Running, ElsaObservedLifecycle.Ready, ElsaInstanceHealth.Healthy, false)]
+    public async Task Direct_issue_requires_a_healthy_currently_running_bound_instance(
+        ElsaDesiredLifecycle desiredLifecycle,
+        ElsaObservedLifecycle observedLifecycle,
+        ElsaInstanceHealth health,
+        bool bind)
+    {
+        var setup = await SeedManagedInstanceAsync(desiredLifecycle, observedLifecycle, health, bind);
+        await using var app = setup.App;
+
+        var response = await setup.Client.PostControlJsonAsync(
+            "/api/managed-elsa/handoff/issue",
+            new ManagedElsaHandoffIssueRequest(
+                setup.OrganizationId,
+                setup.InstanceId,
+                setup.Audience,
+                setup.RedirectUri,
+                ManagedElsaHandoffIssuer.CreateCodeChallenge(CodeVerifier)));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Redemption_fails_closed_after_instance_health_transitions_away_from_healthy()
+    {
+        var setup = await SeedManagedInstanceAsync(
+            ElsaDesiredLifecycle.Running,
+            ElsaObservedLifecycle.Ready,
+            ElsaInstanceHealth.Healthy,
+            bind: true);
+        await using var app = setup.App;
+
+        var issue = await setup.Client.PostControlJsonAsync(
+            "/api/managed-elsa/handoff/issue",
+            new ManagedElsaHandoffIssueRequest(
+                setup.OrganizationId,
+                setup.InstanceId,
+                setup.Audience,
+                setup.RedirectUri,
+                ManagedElsaHandoffIssuer.CreateCodeChallenge(CodeVerifier)));
+        Assert.Equal(HttpStatusCode.OK, issue.StatusCode);
+        var issued = (await issue.Content.ReadControlJsonAsync<ManagedElsaHandoffIssueResponse>())!;
+
+        await SetInstanceStateAsync(app, setup.InstanceId, ElsaDesiredLifecycle.Running, ElsaObservedLifecycle.Degraded, ElsaInstanceHealth.Degraded);
+
+        var redeem = await app.CreateClient().PostControlJsonAsync(
+            "/api/managed-elsa/handoff/redeem",
+            new ManagedElsaHandoffRedeemRequest(issued.Token, setup.Audience, setup.RedirectUri, CodeVerifier));
+
+        Assert.Equal(HttpStatusCode.Forbidden, redeem.StatusCode);
     }
 
     private sealed class EmptyLifecycleResolutionInputSource : IElsaInstanceLifecycleResolutionInputSource
@@ -216,6 +314,24 @@ public sealed class ManagedElsaHandoffTests
             ElsaInstance instance,
             ElsaInstanceOperation operation,
             CancellationToken cancellationToken = default) => Task.FromResult<ElsaInstanceLifecycleResolutionInput?>(null);
+    }
+
+    private sealed class FailedAuthenticationService : IAuthenticationService
+    {
+        public Task<AuthenticateResult> AuthenticateAsync(HttpContext context, string? scheme) =>
+            Task.FromResult(AuthenticateResult.Fail("invalid bearer"));
+
+        public Task ChallengeAsync(HttpContext context, string? scheme, AuthenticationProperties? properties) =>
+            Task.CompletedTask;
+
+        public Task ForbidAsync(HttpContext context, string? scheme, AuthenticationProperties? properties) =>
+            Task.CompletedTask;
+
+        public Task SignInAsync(HttpContext context, string? scheme, ClaimsPrincipal principal, AuthenticationProperties? properties) =>
+            Task.CompletedTask;
+
+        public Task SignOutAsync(HttpContext context, string? scheme, AuthenticationProperties? properties) =>
+            Task.CompletedTask;
     }
 
     [Fact]
@@ -642,6 +758,93 @@ public sealed class ManagedElsaHandoffTests
             services.AddSingleton<IManagedElsaHandoffAuthorizer>(authorizer);
         });
     }
+
+    private static async Task<ManagedInstanceSetup> SeedManagedInstanceAsync(
+        ElsaDesiredLifecycle desiredLifecycle,
+        ElsaObservedLifecycle observedLifecycle,
+        ElsaInstanceHealth health,
+        bool bind)
+    {
+        var app = new ControlApiTestApplication(new Dictionary<string, string?>
+        {
+            [$"{ManagedElsaHandoffDefaults.ConfigurationSection}:Enabled"] = "true"
+        });
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateControlIdentityClient($"managed-health-{Guid.NewGuid():N}");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        var instanceId = Guid.NewGuid();
+        Guid organizationId;
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+            var workspace = await db.Workspaces.SingleAsync(x => x.Id == workspaceId);
+            organizationId = workspace.OrganizationId;
+            var lifecycle = new ElsaInstanceLifecycleService(
+                new EfCoreElsaInstanceLifecycleStore(db, new EmptyLifecycleResolutionInputSource()));
+            await lifecycle.CreateAsync(new ElsaInstanceCreateRequest(
+                organizationId,
+                workspaceId,
+                "Managed Elsa",
+                $"managed-elsa-{instanceId:N}",
+                new ElsaInstanceIntent(
+                    new ElsaReleaseIntent("server-studio", "3.10", "3.10.4"),
+                    new ElsaApplicationIntent("combined"),
+                    new ElsaPlacementIntent(
+                        "managed", "westeurope", "dedicated", "standard-small", "public", "managed")),
+                $"managed-health-{instanceId:N}",
+                instanceId));
+            await SetInstanceStateAsync(db, instanceId, desiredLifecycle, observedLifecycle, health);
+        }
+
+        var audience = ElsaInstanceIdentityBinding.AudienceFor(instanceId);
+        var redirectUri = ElsaInstanceIdentityBinding.CanonicalizeCallbackUri("https://managed.example.test");
+        if (bind)
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            var identities = scope.ServiceProvider.GetRequiredService<IManagedElsaInstanceIdentityStore>();
+            var result = await identities.BindAsync(
+                organizationId,
+                workspaceId,
+                instanceId,
+                "https://managed.example.test",
+                expectedBindingVersion: null,
+                DateTimeOffset.UtcNow);
+            if (!result.Succeeded)
+                throw new InvalidOperationException("Test instance binding could not be created.");
+        }
+
+        return new(app, client, organizationId, workspaceId, instanceId, audience, redirectUri);
+    }
+
+    private static async Task SetInstanceStateAsync(
+        ControlApiTestApplication app,
+        Guid instanceId,
+        ElsaDesiredLifecycle desiredLifecycle,
+        ElsaObservedLifecycle observedLifecycle,
+        ElsaInstanceHealth health)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        await SetInstanceStateAsync(db, instanceId, desiredLifecycle, observedLifecycle, health);
+    }
+
+    private static Task SetInstanceStateAsync(
+        CatalogDbContext db,
+        Guid instanceId,
+        ElsaDesiredLifecycle desiredLifecycle,
+        ElsaObservedLifecycle observedLifecycle,
+        ElsaInstanceHealth health) =>
+        db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE ElsaInstances SET DesiredLifecycle = {desiredLifecycle.ToString()}, ObservedLifecycle = {observedLifecycle.ToString()}, Health = {health.ToString()}, CurrentDeploymentEndpointUri = {"https://managed.example.test/runtime/health"} WHERE Id = {instanceId}");
+
+    private sealed record ManagedInstanceSetup(
+        ControlApiTestApplication App,
+        HttpClient Client,
+        Guid OrganizationId,
+        Guid WorkspaceId,
+        Guid InstanceId,
+        string Audience,
+        string RedirectUri);
 
     private static ManagedElsaHandoffIssueRequest IssueRequest(FakeHandoffAuthorizer authorizer) => new(
         authorizer.OrganizationId,

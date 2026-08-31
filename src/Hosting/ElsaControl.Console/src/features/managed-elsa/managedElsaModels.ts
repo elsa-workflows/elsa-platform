@@ -13,6 +13,8 @@ export type ManagedElsaObservedLifecycle =
   | "Deleted";
 export type ManagedElsaHealth = "Healthy" | "Degraded" | "Unreachable" | "Unknown";
 
+export const managedElsaHandoffTokenType = "elsa-handoff+jwt" as const;
+
 export type ManagedElsaInstance = {
   organizationId: string;
   instanceId: string;
@@ -42,5 +44,4 @@ export type ManagedElsaHandoffIssueResponse = {
   redirectUri: string;
   issuedAt: string;
   expiresAt: string;
-  sessionExpiresAt?: string;
 };

@@ -23,8 +23,12 @@ public sealed class ManagedElsaInstanceApiTests
                 ElsaDesiredLifecycle.Deleting,
                 ElsaObservedLifecycle.Deleting,
                 ElsaInstanceHealth.Unknown,
-                audience: null,
-                callbackUri: null)
+                bound: false),
+            Instance(
+                Guid.NewGuid(),
+                "Unbound healthy runtime",
+                "unbound-healthy-runtime",
+                bound: false)
         ]);
         await app.SeedAsync(_ => Task.CompletedTask);
 
@@ -33,6 +37,9 @@ public sealed class ManagedElsaInstanceApiTests
         var response = await client.GetAsync($"/api/workspaces/{workspaceId}/managed-elsa/instances");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("private", response.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
+        Assert.Contains("no-store", response.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
+        Assert.Contains("no-cache", response.Headers.Pragma.Select(x => x.Name), StringComparer.OrdinalIgnoreCase);
         var instances = await response.Content.ReadFromJsonAsync<List<ManagedElsaInstanceResponse>>(ControlApiTestApplication.JsonOptions);
         Assert.NotNull(instances);
         var openable = Assert.Single(instances!, x => x.InstanceId == healthy);
@@ -44,6 +51,11 @@ public sealed class ManagedElsaInstanceApiTests
         Assert.False(deleting.CanOpen);
         Assert.Null(deleting.Audience);
         Assert.Null(deleting.RedirectUri);
+
+        var unbound = Assert.Single(instances, x => x.Slug == "unbound-healthy-runtime");
+        Assert.False(unbound.CanOpen);
+        Assert.Null(unbound.Audience);
+        Assert.Null(unbound.RedirectUri);
     }
 
     [Fact]
@@ -58,6 +70,27 @@ public sealed class ManagedElsaInstanceApiTests
             .GetAsync($"/api/workspaces/{workspaceId}/managed-elsa/instances");
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Workspace_reader_without_open_permission_sees_redacted_binding()
+    {
+        var instanceId = Guid.NewGuid();
+        await using var app = CreateApplication([Instance(instanceId, "Claims runtime", "claims-runtime")]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("managed-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        await app.AddWorkspaceMemberAsync(workspaceId, "managed-reader", ElsaControl.PackageCatalog.Core.Accounts.WorkspaceRole.Reader);
+
+        var response = await app.CreateTrustedWorkspaceClient("managed-reader")
+            .GetAsync($"/api/workspaces/{workspaceId}/managed-elsa/instances");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var instances = await response.Content.ReadFromJsonAsync<List<ManagedElsaInstanceResponse>>(ControlApiTestApplication.JsonOptions);
+        var item = Assert.Single(instances!);
+        Assert.False(item.CanOpen);
+        Assert.Null(item.Audience);
+        Assert.Null(item.RedirectUri);
     }
 
     private static ControlApiTestApplication CreateApplication(IReadOnlyList<ManagedElsaInstanceSummary> instances)
@@ -77,6 +110,7 @@ public sealed class ManagedElsaInstanceApiTests
         ElsaDesiredLifecycle desiredLifecycle = ElsaDesiredLifecycle.Running,
         ElsaObservedLifecycle observedLifecycle = ElsaObservedLifecycle.Ready,
         ElsaInstanceHealth health = ElsaInstanceHealth.Healthy,
+        bool bound = true,
         string? audience = null,
         Uri? callbackUri = null) =>
         new(
@@ -88,9 +122,9 @@ public sealed class ManagedElsaInstanceApiTests
             desiredLifecycle,
             observedLifecycle,
             health,
-            audience ?? "urn:elsa:instance:" + instanceId.ToString("D"),
-            callbackUri ?? new Uri("https://managed.example.test/managed-elsa/handoff/callback"),
-            1);
+            bound ? audience ?? "urn:elsa:instance:" + instanceId.ToString("D") : null,
+            bound ? callbackUri ?? new Uri("https://managed.example.test/managed-elsa/handoff/callback") : null,
+            bound ? 1 : null);
 
     private sealed class FakeManagedElsaInstanceCatalog(IReadOnlyList<ManagedElsaInstanceSummary> instances) : IManagedElsaInstanceCatalog
     {

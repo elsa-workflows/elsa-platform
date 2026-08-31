@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, ExternalLink, LoaderCircle, RefreshCw, ShieldAlert, TriangleAlert } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Badge, Button, EmptyState, SecondaryButton, Table } from "@/components/ui";
 import { RequestStateView } from "@/components/states/RequestStateViews";
 import { useWorkspaceContext } from "@/app/WorkspaceContextProvider";
 import { issueManagedElsaHandoff, listManagedElsaInstances } from "@/features/managed-elsa/managedElsaApi";
-import type { ManagedElsaInstance } from "@/features/managed-elsa/managedElsaModels";
+import { managedElsaHandoffTokenType, type ManagedElsaInstance } from "@/features/managed-elsa/managedElsaModels";
 import { ApiError } from "@/lib/api/httpClient";
 import { queryKeys } from "@/lib/query/queryClient";
 import { cn } from "@/lib/utils";
@@ -19,10 +19,20 @@ export function ManagedElsaInstancesPage() {
     () => parseHandoffContinuation(searchParams),
     [searchParams]
   );
+  const [continuationScrubbed, setContinuationScrubbed] = useState(() => !handoffContinuation);
+  useLayoutEffect(() => {
+    if (!handoffContinuation)
+      return;
+    // Do this before enabling the authenticated list query. The state and
+    // challenge are safe correlation values, but should not survive in a URL
+    // that can be copied or placed in a referrer.
+    window.history.replaceState(window.history.state, document.title, window.location.pathname + window.location.hash);
+    setContinuationScrubbed(true);
+  }, [handoffContinuation]);
   const instances = useQuery({
     queryKey: queryKeys.managedElsaInstances(selectedWorkspaceId),
     queryFn: () => listManagedElsaInstances(selectedWorkspaceId),
-    enabled: Boolean(selectedWorkspaceId),
+    enabled: Boolean(selectedWorkspaceId) && continuationScrubbed,
     retry: false
   });
   const [openingInstanceId, setOpeningInstanceId] = useState<string | null>(null);
@@ -221,6 +231,11 @@ async function issueAndSubmitHandoff(instance: ManagedElsaInstance, state: strin
     redirectUri: callbackUri.toString(),
     codeChallenge
   });
+  // The API must echo the authoritative binding selected for this instance.
+  // Never post a code to a callback that disagrees with the row we opened.
+  if (!issue.token || issue.tokenType !== managedElsaHandoffTokenType ||
+      issue.audience !== instance.audience || issue.redirectUri !== callbackUri.toString())
+    throw new ManagedElsaOpenError("unavailable");
   submitHandoffForm(callbackUri, issue.token, state);
 }
 
@@ -228,19 +243,26 @@ function retryExpiredHandoff(instance: ManagedElsaInstance) {
   if (!instance.canOpen || !instance.redirectUri)
     return false;
 
-  const retryKey = `managed-elsa-handoff-retry:${instance.instanceId}`;
-  try {
-    if (window.sessionStorage.getItem(retryKey) === "1")
-      return false;
-    window.sessionStorage.setItem(retryKey, "1");
-  } catch {
+  if (!claimExpiredHandoffRetry(instance.instanceId))
     return false;
-  }
 
   const callbackUri = trustedCallbackUri(instance.redirectUri);
   const startUri = new URL("/managed-elsa/handoff/start", callbackUri.origin);
   window.location.assign(startUri.toString());
   return true;
+}
+
+/** Claims the single browser-session retry owned by Control for a 401 callback. */
+export function claimExpiredHandoffRetry(instanceId: string) {
+  const retryKey = `managed-elsa-handoff-retry:${instanceId}`;
+  try {
+    if (window.sessionStorage.getItem(retryKey) === "1")
+      return false;
+    window.sessionStorage.setItem(retryKey, "1");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function clearExpiredHandoffRetry(instanceId: string) {

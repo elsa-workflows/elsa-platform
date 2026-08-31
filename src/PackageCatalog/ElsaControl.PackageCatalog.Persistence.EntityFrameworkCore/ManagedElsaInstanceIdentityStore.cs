@@ -96,6 +96,29 @@ public sealed class EfCoreManagedElsaInstanceIdentityStore(CatalogDbContext dbCo
         return entity is null ? null : TryMap(entity);
     }
 
+    public async Task<ManagedElsaInstanceIdentity?> FindOpenableAsync(
+        Guid organizationId,
+        Guid instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (organizationId == Guid.Empty || instanceId == Guid.Empty)
+            return null;
+
+        dbContext.ChangeTracker.Clear();
+        var entity = await dbContext.ElsaInstances
+            .AsNoTracking()
+            .Include(x => x.IdentityBinding)
+            .SingleOrDefaultAsync(
+                x => x.OrganizationId == organizationId &&
+                     x.Id == instanceId &&
+                     x.DeletedAt == null &&
+                     x.DesiredLifecycle == ElsaDesiredLifecycle.Running &&
+                     x.ObservedLifecycle == ElsaObservedLifecycle.Ready &&
+                     x.Health == ElsaInstanceHealth.Healthy,
+                cancellationToken);
+        return entity is null ? null : TryMap(entity);
+    }
+
     /// <summary>
     /// Creates a binding when no expected version is supplied, or rotates the
     /// current binding when the supplied version matches. Both operations repeat
@@ -206,28 +229,9 @@ public sealed class EfCoreManagedElsaInstanceIdentityStore(CatalogDbContext dbCo
         if (IsUnavailable(entity) || entity.IdentityBinding is null)
             return null;
 
-        var persisted = entity.IdentityBinding;
-        try
-        {
-            var binding = ElsaInstanceIdentityBinding.Hydrate(
-                entity.Id,
-                persisted.VerifiedEndpointOrigin,
-                persisted.BindingVersion,
-                persisted.ChangedAt);
-            if (!string.Equals(persisted.Audience, binding.Audience, StringComparison.Ordinal) ||
-                !string.Equals(persisted.CanonicalCallbackUri, binding.CanonicalCallbackUri, StringComparison.Ordinal) ||
-                !Uri.TryCreate(binding.CanonicalCallbackUri, UriKind.Absolute, out var callbackUri) ||
-                !Uri.TryCreate(entity.CurrentDeploymentEndpointUri, UriKind.Absolute, out var currentEndpoint) ||
-                !string.Equals(currentEndpoint.GetLeftPart(UriPartial.Authority), binding.VerifiedEndpointOrigin,
-                    StringComparison.Ordinal))
-                return null;
-
-            return Map(entity, binding, callbackUri);
-        }
-        catch (ArgumentException)
-        {
-            return null;
-        }
+        return ManagedElsaIdentityBindingMapper.TryMapCurrent(entity, out var binding, out var callbackUri)
+            ? Map(entity, binding!, callbackUri!)
+            : null;
     }
 
     private static ManagedElsaInstanceIdentity Map(

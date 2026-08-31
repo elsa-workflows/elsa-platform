@@ -44,6 +44,11 @@ public interface IManagedElsaInstanceIdentityStore
         Guid instanceId,
         CancellationToken cancellationToken = default);
 
+    Task<ManagedElsaInstanceIdentity?> FindOpenableAsync(
+        Guid organizationId,
+        Guid instanceId,
+        CancellationToken cancellationToken = default);
+
     Task<ManagedElsaInstanceIdentityBindingWriteResult> BindAsync(
         Guid organizationId,
         Guid workspaceId,

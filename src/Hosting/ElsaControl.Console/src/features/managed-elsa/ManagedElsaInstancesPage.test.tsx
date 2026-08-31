@@ -6,8 +6,8 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceContextProvider } from "@/app/WorkspaceContextProvider";
 import { AuthProvider } from "@/lib/auth/AuthProvider";
-import { ManagedElsaInstancesPage } from "@/features/managed-elsa/ManagedElsaInstancesPage";
-import type { ManagedElsaInstance } from "@/features/managed-elsa/managedElsaModels";
+import { claimExpiredHandoffRetry, ManagedElsaInstancesPage } from "@/features/managed-elsa/ManagedElsaInstancesPage";
+import { managedElsaHandoffTokenType, type ManagedElsaInstance } from "@/features/managed-elsa/managedElsaModels";
 
 const organizationId = "00000000-0000-0000-0000-000000000001";
 const workspaceId = "00000000-0000-0000-0000-000000000010";
@@ -63,7 +63,7 @@ describe("ManagedElsaInstancesPage", () => {
   it("issues for the runtime challenge and posts only code and state to the exact callback", async () => {
     const issue = {
       token: "signed-handoff-token",
-      tokenType: "Bearer",
+      tokenType: managedElsaHandoffTokenType,
       audience: "urn:elsa:instance:00000000-0000-0000-0000-000000000101",
       redirectUri: callbackUri,
       issuedAt: "2026-08-31T12:00:00Z",
@@ -106,6 +106,49 @@ describe("ManagedElsaInstancesPage", () => {
     expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/api/managed-elsa/handoff/issue"))).toHaveLength(1);
   });
 
+  it("claims the expired handoff restart only once per browser session", () => {
+    expect(claimExpiredHandoffRetry(healthyInstanceId)).toBe(true);
+    expect(claimExpiredHandoffRetry(healthyInstanceId)).toBe(false);
+    expect(window.sessionStorage.getItem(`managed-elsa-handoff-retry:${healthyInstanceId}`)).toBe("1");
+  });
+
+  it("scrubs continuation parameters before fetching the authenticated instance list", async () => {
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    let listFetchedBeforeScrub = false;
+    installFetch({
+      instances: [instanceFixture()],
+      onInstancesRequest: () => {
+        listFetchedBeforeScrub = replaceState.mock.calls.length === 0;
+      }
+    });
+
+    renderPage(`?instance_id=${healthyInstanceId}&state=${state}&code_challenge=${codeChallenge}`);
+
+    expect(await screen.findByRole("button", { name: "Open" })).toBeInTheDocument();
+    expect(replaceState).toHaveBeenCalled();
+    expect(listFetchedBeforeScrub).toBe(false);
+  });
+
+  it("fails closed when the issue response binding differs from the selected instance", async () => {
+    const submit = vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => undefined);
+    installFetch({
+      instances: [instanceFixture()],
+      issue: {
+        token: "signed-handoff-token",
+        tokenType: managedElsaHandoffTokenType,
+        audience: "urn:elsa:instance:wrong",
+        redirectUri: callbackUri,
+        issuedAt: "2026-08-31T12:00:00Z",
+        expiresAt: "2026-08-31T12:01:00Z"
+      }
+    });
+
+    renderPage(`?instance_id=${healthyInstanceId}&state=${state}&code_challenge=${codeChallenge}`);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("This managed instance is no longer available. Refresh the page and try again.");
+    expect(submit).not.toHaveBeenCalled();
+  });
+
   it("maps a runtime 403 continuation to safe actionable copy", async () => {
     installFetch({ instances: [instanceFixture()] });
 
@@ -133,11 +176,13 @@ function renderPage(search = "") {
 function installFetch({
   instances,
   issue,
-  issueResponses = []
+  issueResponses = [],
+  onInstancesRequest
 }: {
   instances: ManagedElsaInstance[];
   issue?: Record<string, string>;
   issueResponses?: Response[];
+  onInstancesRequest?: () => void;
 }) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : input.toString();
@@ -149,15 +194,17 @@ function installFetch({
         organizations: [{ id: organizationId, name: "Acme Corp", role: "Owner" }],
         workspaces: [{ id: workspaceId, name: "Acme Insurance", kind: "Shared", role: "Owner", organizationId, organizationName: "Acme Corp", organizationRole: "Owner" }]
       });
-    if (url.endsWith(`/api/workspaces/${workspaceId}/managed-elsa/instances`))
+    if (url.endsWith(`/api/workspaces/${workspaceId}/managed-elsa/instances`)) {
+      onInstancesRequest?.();
       return Response.json(instances);
+    }
     if (url.endsWith("/api/managed-elsa/handoff/issue")) {
       const response = issueResponses.shift();
       if (response)
         return response;
       return Response.json(issue ?? {
         token: "signed-handoff-token",
-        tokenType: "Bearer",
+        tokenType: managedElsaHandoffTokenType,
         audience: instanceFixture().audience,
         redirectUri: callbackUri,
         issuedAt: "2026-08-31T12:00:00Z",

@@ -385,6 +385,14 @@ public sealed class ElsaInstancePersistenceTests
         Assert.Null(stale.Audience);
         Assert.Null(stale.CallbackUri);
         Assert.Null(stale.BindingVersion);
+
+        var deleted = await db.ElsaInstances.SingleAsync(x => x.Id == instance.Id);
+        deleted.DesiredLifecycle = ElsaDesiredLifecycle.Deleting;
+        deleted.ObservedLifecycle = ElsaObservedLifecycle.Deleted;
+        deleted.DeletedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
+
+        Assert.Empty(await catalog.ListAsync(workspace.Id));
     }
 
     [Fact]

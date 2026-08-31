@@ -18,6 +18,8 @@ public static class ManagedElsaInstanceEndpoints
             IManagedElsaInstanceCatalog instances,
             CancellationToken cancellationToken) =>
         {
+            context.Response.Headers.CacheControl = "private, no-store";
+            context.Response.Headers.Pragma = "no-cache";
             var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
             if (!access.Succeeded)
                 return access.ToHttpResult();

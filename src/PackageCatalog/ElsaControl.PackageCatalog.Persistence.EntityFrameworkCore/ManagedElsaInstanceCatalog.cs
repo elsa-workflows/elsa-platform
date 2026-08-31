@@ -22,7 +22,7 @@ public sealed class EfCoreManagedElsaInstanceCatalog(CatalogDbContext dbContext)
         var instances = await dbContext.ElsaInstances
             .AsNoTracking()
             .Include(x => x.IdentityBinding)
-            .Where(x => x.WorkspaceId == workspaceId)
+            .Where(x => x.WorkspaceId == workspaceId && x.DeletedAt == null)
             .OrderBy(x => x.Name)
             .ThenBy(x => x.Id)
             .ToListAsync(cancellationToken);
@@ -35,35 +35,10 @@ public sealed class EfCoreManagedElsaInstanceCatalog(CatalogDbContext dbContext)
         string? audience = null;
         Uri? callbackUri = null;
         int? bindingVersion = null;
-        var binding = entity.IdentityBinding;
-        if (binding is not null &&
-            Uri.TryCreate(entity.CurrentDeploymentEndpointUri, UriKind.Absolute, out var endpoint))
+        if (ManagedElsaIdentityBindingMapper.TryMapCurrent(entity, out var binding, out callbackUri))
         {
-            try
-            {
-                var current = ElsaInstanceIdentityBinding.Hydrate(
-                    entity.Id,
-                    endpoint.GetLeftPart(UriPartial.Authority),
-                    binding.BindingVersion,
-                    binding.ChangedAt);
-                if (string.Equals(binding.Audience, current.Audience, StringComparison.Ordinal) &&
-                    string.Equals(binding.CanonicalCallbackUri, current.CanonicalCallbackUri, StringComparison.Ordinal) &&
-                    string.Equals(binding.VerifiedEndpointOrigin, current.VerifiedEndpointOrigin, StringComparison.Ordinal) &&
-                    Uri.TryCreate(current.CanonicalCallbackUri, UriKind.Absolute, out callbackUri))
-                {
-                    audience = current.Audience;
-                    bindingVersion = current.BindingVersion;
-                }
-                else
-                {
-                    callbackUri = null;
-                }
-            }
-            catch (ArgumentException)
-            {
-                // Keep the status visible for diagnostics, but never expose a
-                // caller-controlled binding from malformed persistence.
-            }
+            audience = binding!.Audience;
+            bindingVersion = binding.BindingVersion;
         }
 
         return new ManagedElsaInstanceSummary(
