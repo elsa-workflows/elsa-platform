@@ -373,7 +373,7 @@ public static class ManagedElsaInstanceEndpoints
             new ElsaInstanceOperationSummary(accepted.Operation.Id, accepted.Operation.InstanceId,
                 accepted.Operation.Action, accepted.Operation.State, accepted.Operation.ExpectedVersion,
                 accepted.Operation.AttemptNumber, accepted.Operation.AcceptedAt, null, null,
-                accepted.Instance.DesiredStateRevisionId?.Value, accepted.Instance.ResolvedPlanReference?.PlanId,
+                null, null,
                 null, null, null, null);
         return Results.Accepted(location, new ManagedElsaInstanceAcceptedResponse(
             await ToResponseAsync(accepted.Instance,
