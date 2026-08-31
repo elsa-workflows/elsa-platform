@@ -692,7 +692,6 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             {
                 var assignments = await ExecuteAzAsync(command,
                     ["role", "assignment", "list", "--subscription", _scope.SubscriptionId, "--all",
-                        "--query", $"[?scope=='{vaultId}']",
                         "--output", "json", "--only-show-errors"],
                     ParseRoleAssignmentsAsync,
                     cancellationToken);
@@ -754,7 +753,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 ["role", "assignment", "delete", "--ids", roleAssignmentId, "--output", "none", "--only-show-errors"],
                 static _ => AzureCommandNoOutput.Instance,
                 cancellationToken);
-            if (!await RoleAssignmentAbsentAsync(command, roleAssignmentId, cancellationToken))
+            if (!await RoleAssignmentAbsentAsync(command, roleAssignmentId, resources.WorkloadIdentityPrincipalId, cancellationToken))
                 return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-uncertain", "The owned ACR role assignment could not be proven absent.");
         }
 
@@ -856,7 +855,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             var list = await ExecuteAzAsync(command,
                 ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
                     "--assignee-object-id", principalId, "--role", "AcrPull",
-                    "--query", $"[?id=='{expectedAssignmentId}']", "--output", "json", "--only-show-errors"],
+                    "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
             if (!list.Succeeded)
@@ -1124,13 +1123,18 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         return false;
     }
 
-    private async Task<bool> RoleAssignmentAbsentAsync(AzureProviderRunnerCommand command, string assignmentId, CancellationToken cancellationToken)
+    private async Task<bool> RoleAssignmentAbsentAsync(
+        AzureProviderRunnerCommand command,
+        string assignmentId,
+        string principalId,
+        CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
         {
             var list = await ExecuteAzAsync(command,
                 ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
-                    "--query", $"[?id=='{assignmentId}']", "--output", "json", "--only-show-errors"],
+                    "--assignee-object-id", principalId, "--role", "AcrPull",
+                    "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
             if (list.Succeeded && list.Value is not null && !list.Value.Value.Any(x => string.Equals(x.Id, assignmentId, StringComparison.OrdinalIgnoreCase)))
@@ -1150,7 +1154,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         var list = await ExecuteAzAsync(command,
             ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
                 "--assignee-object-id", principalId, "--role", "AcrPull",
-                "--query", $"[?scope=='{registryId}']", "--output", "json", "--only-show-errors"],
+                "--output", "json", "--only-show-errors"],
             ParseRoleAssignmentsAsync,
             cancellationToken);
         if (!list.Succeeded || list.Value is null)
@@ -1187,7 +1191,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             var list = await ExecuteAzAsync(command,
                 ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
                     "--assignee-object-id", principalId, "--role", "AcrPull",
-                    "--query", $"[?id=='{assignmentId}']", "--output", "json", "--only-show-errors"],
+                    "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
             if (list.Succeeded && list.Value is not null)
@@ -1490,7 +1494,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     {
         var vault = resources.KeyVaultResourceId ?? ResourceId("Microsoft.KeyVault", "vaults", $"{workload}-kv");
         var owned = assignments.Where(x => string.Equals(x.Scope, vault, StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (owned.Length != assignments.Count || owned.Length > 2)
+        if (owned.Length > 2)
             return false;
         var users = owned.Where(x => string.Equals(RoleDefinitionId(x.RoleDefinitionId), KeyVaultSecretsUserRoleDefinitionId, StringComparison.OrdinalIgnoreCase)).ToArray();
         var officers = owned.Where(x => string.Equals(RoleDefinitionId(x.RoleDefinitionId), KeyVaultSecretsOfficerRoleDefinitionId, StringComparison.OrdinalIgnoreCase)).ToArray();

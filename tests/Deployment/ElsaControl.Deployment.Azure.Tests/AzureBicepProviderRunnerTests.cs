@@ -679,7 +679,6 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.All(process.Calls.Where(call => call.Contains("role") && call.Contains("assignment") && call.Contains("list")), call =>
         {
             Assert.Contains("--all", call);
-            Assert.Contains("--query", call);
             Assert.DoesNotContain("--scope", call);
         });
         Assert.Equal(2, process.Calls.Count(call => call.Contains("list-deleted")));
@@ -705,6 +704,30 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
         Assert.Contains(process.Calls, call => call.Contains("role") && call.Contains("delete") && call.Contains(_fixture.RegistryRoleAssignmentId));
         Assert.Contains(process.Calls, call => call.Contains("deployment") && call.Contains("delete") && call.Contains(Path.GetFileName(_fixture.RegistryDeploymentId)));
+    }
+
+    [Fact]
+    public async Task Cleanup_does_not_misprove_role_absence_when_Azure_changes_resource_id_casing()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("group") && args.Contains("exists"), "false");
+        var assignment = "[{\"id\":\"" + _fixture.RegistryRoleAssignmentId + "\",\"scope\":\"" + _fixture.RegistryId + "\",\"principalId\":\"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\"roleDefinitionId\":\"/providers/Microsoft.Authorization/roleDefinitions/7f951dda-4ed3-4680-a7ca-43fe172d538d\"}]";
+        process.Success(args => args.Contains("role") && args.Contains("list"), assignment);
+        process.Success(args => args.Contains("role") && args.Contains("delete"));
+        var recasedAssignment = "[{\"id\":\"" + _fixture.RegistryRoleAssignmentId.ToUpperInvariant() + "\",\"scope\":\"" + _fixture.RegistryId.ToUpperInvariant() + "\",\"principalId\":\"BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB\",\"roleDefinitionId\":\"/PROVIDERS/MICROSOFT.AUTHORIZATION/ROLEDEFINITIONS/7F951DDA-4ED3-4680-A7CA-43FE172D538D\"}]";
+        process.Success(args => args.Contains("role") && args.Contains("list"), recasedAssignment);
+        var resources = _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
+        };
+
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.Cleanup, resources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.Equal("azure.cleanup.role-uncertain", result.Code);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("deployment") && call.Contains("delete"));
     }
 
     [Fact]
