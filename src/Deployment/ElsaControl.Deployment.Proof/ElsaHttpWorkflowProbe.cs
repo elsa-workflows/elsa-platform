@@ -1,6 +1,8 @@
+using System.Buffers;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ElsaControl.Deployment.Azure;
@@ -159,10 +161,10 @@ public sealed class ElsaHttpWorkflowProbe : IAzureProviderProofWorkflowProbe, ID
     private async Task<string> LoginAsync(Uri baseUri, CancellationToken cancellationToken)
     {
         await using var password = await credentialSource.ResolvePasswordAsync(cancellationToken);
-        using var request = CreateJsonRequest(
-            HttpMethod.Post,
-            new Uri(baseUri, $"{ApiPrefix}/identity/login"),
-            new { username = options.Username, password = new string(password.Value.Span) });
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(baseUri, $"{ApiPrefix}/identity/login"))
+        {
+            Content = new LoginJsonContent(options.Username, password)
+        };
         using var response = await SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
             throw Failure("azure.proof.workflow.loginFailed", "Elsa runtime authentication failed.");
@@ -341,6 +343,104 @@ public sealed class ElsaHttpWorkflowProbe : IAzureProviderProofWorkflowProbe, ID
         if (token is not null)
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return request;
+    }
+
+    private sealed class LoginJsonContent : HttpContent
+    {
+        private readonly string username;
+        private readonly AzureSecretLease password;
+
+        public LoginJsonContent(string username, AzureSecretLease password)
+        {
+            this.username = username;
+            this.password = password;
+            Headers.ContentType = new MediaTypeHeaderValue("application/json") { CharSet = "utf-8" };
+        }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            SerializeToStreamAsync(stream, context, CancellationToken.None);
+
+        protected override async Task SerializeToStreamAsync(
+            Stream stream,
+            TransportContext? context,
+            CancellationToken cancellationToken)
+        {
+            using var buffer = new ZeroingPooledBufferWriter();
+            using (var writer = new Utf8JsonWriter(buffer))
+            {
+                writer.WriteStartObject();
+                writer.WriteString("username", username);
+                writer.WriteString("password", password.Value.Span);
+                writer.WriteEndObject();
+            }
+
+            await stream.WriteAsync(buffer.WrittenMemory, cancellationToken);
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+
+    }
+
+    private sealed class ZeroingPooledBufferWriter : IBufferWriter<byte>, IDisposable
+    {
+        private byte[]? buffer = ArrayPool<byte>.Shared.Rent(256);
+        private int written;
+
+        public ReadOnlyMemory<byte> WrittenMemory =>
+            (buffer ?? throw new ObjectDisposedException(nameof(ZeroingPooledBufferWriter))).AsMemory(0, written);
+
+        public void Advance(int count)
+        {
+            var current = buffer ?? throw new ObjectDisposedException(nameof(ZeroingPooledBufferWriter));
+            if (count < 0 || written > current.Length - count)
+                throw new ArgumentOutOfRangeException(nameof(count));
+            written += count;
+        }
+
+        public Memory<byte> GetMemory(int sizeHint = 0)
+        {
+            EnsureCapacity(sizeHint);
+            return buffer!.AsMemory(written);
+        }
+
+        public Span<byte> GetSpan(int sizeHint = 0)
+        {
+            EnsureCapacity(sizeHint);
+            return buffer.AsSpan(written);
+        }
+
+        public void Dispose()
+        {
+            var rented = Interlocked.Exchange(ref buffer, null);
+            if (rented is null)
+                return;
+            CryptographicOperations.ZeroMemory(rented);
+            ArrayPool<byte>.Shared.Return(rented);
+            written = 0;
+        }
+
+        private void EnsureCapacity(int sizeHint)
+        {
+            if (sizeHint < 0)
+                throw new ArgumentOutOfRangeException(nameof(sizeHint));
+            if (sizeHint == 0)
+                sizeHint = 1;
+
+            var current = buffer ?? throw new ObjectDisposedException(nameof(ZeroingPooledBufferWriter));
+            if (sizeHint <= current.Length - written)
+                return;
+
+            var required = checked(written + sizeHint);
+            var replacement = ArrayPool<byte>.Shared.Rent(Math.Max(required, checked(current.Length * 2)));
+            current.AsSpan(0, written).CopyTo(replacement);
+            CryptographicOperations.ZeroMemory(current);
+            ArrayPool<byte>.Shared.Return(current);
+            buffer = replacement;
+        }
     }
 
     private static async Task<JsonDocument> ParseJsonAsync(HttpResponseMessage response, CancellationToken cancellationToken)

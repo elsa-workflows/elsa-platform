@@ -38,7 +38,7 @@ public sealed class ElsaHttpWorkflowProbeTests
                 requestTimeout: TimeSpan.FromSeconds(1),
                 workflowTimeout: TimeSpan.FromSeconds(1),
                 pollInterval: TimeSpan.FromMilliseconds(1)),
-            new StaticCredentialSource("proof-password"));
+            new StaticCredentialSource("proof-\"påss\\word"));
 
         var result = await probe.RunAsync("https://disposable-proof-app.hash.azurecontainerapps.io", Environment);
 
@@ -49,7 +49,7 @@ public sealed class ElsaHttpWorkflowProbeTests
         Assert.Equal("0", result.SafeMetadata["incidentCount"]);
         Assert.Equal("2026-08-31T12:00:00.0000000+00:00", result.SafeMetadata["finishedAt"]);
         Assert.DoesNotContain("bearer-secret", JsonSerializer.Serialize(result), StringComparison.Ordinal);
-        Assert.DoesNotContain("proof-password", JsonSerializer.Serialize(result), StringComparison.Ordinal);
+        Assert.DoesNotContain("proof-\"påss\\word", JsonSerializer.Serialize(result), StringComparison.Ordinal);
 
         Assert.Equal(9, handler.Requests.Count);
         Assert.Equal((HttpMethod.Get, "/alive"), (handler.Requests[0].Method, handler.Requests[0].Path));
@@ -63,6 +63,10 @@ public sealed class ElsaHttpWorkflowProbeTests
         Assert.Equal((HttpMethod.Get, "/elsa/api/workflow-instances/proof-instance_01"), (handler.Requests[8].Method, handler.Requests[8].Path));
         Assert.DoesNotContain(handler.Requests[0].Headers, header => header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase));
         Assert.Equal("Bearer bearer-secret", handler.Requests[5].Headers["Authorization"]);
+
+        using var loginBody = JsonDocument.Parse(handler.Requests[2].Body);
+        Assert.Equal("proof-user", loginBody.RootElement.GetProperty("username").GetString());
+        Assert.Equal("proof-\"påss\\word", loginBody.RootElement.GetProperty("password").GetString());
 
         using var createBody = JsonDocument.Parse(handler.Requests[3].Body);
         Assert.Equal("elsa-control-disposable-proof", createBody.RootElement.GetProperty("model").GetProperty("definitionId").GetString());
