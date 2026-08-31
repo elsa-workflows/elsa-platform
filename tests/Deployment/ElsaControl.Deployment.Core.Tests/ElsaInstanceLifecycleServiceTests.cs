@@ -9,6 +9,8 @@ public sealed class ElsaInstanceLifecycleServiceTests
     private static readonly Guid WorkspaceId = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid OtherWorkspaceId = Guid.Parse("10000000-0000-0000-0000-000000000002");
     private static readonly Guid OrganizationId = Guid.Parse("20000000-0000-0000-0000-000000000001");
+    private static readonly Guid DeleteConfirmationId = Guid.Parse("30000000-0000-0000-0000-000000000001");
+    private static readonly Guid ActorAccountId = Guid.Parse("40000000-0000-0000-0000-000000000001");
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-08-30T10:00:00Z");
 
     [Fact]
@@ -257,7 +259,8 @@ public sealed class ElsaInstanceLifecycleServiceTests
         }
 
         var deletion = await service.DeleteAsync(new ElsaInstanceLifecycleRequest(
-            WorkspaceId, created.Instance.Id, store.Instances.Single().Version, "delete-1"));
+            WorkspaceId, created.Instance.Id, store.Instances.Single().Version, "delete-1",
+            DeleteConfirmationId: DeleteConfirmationId, ActorAccountId: ActorAccountId));
         store.MarkRecoveryRequired(deletion.Operation.Id);
 
         var recovered = await service.RecoverAsync(new ElsaInstanceLifecycleRequest(
@@ -276,7 +279,8 @@ public sealed class ElsaInstanceLifecycleServiceTests
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
         var deletion = await service.DeleteAsync(new ElsaInstanceLifecycleRequest(
-            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1"));
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1",
+            DeleteConfirmationId: DeleteConfirmationId, ActorAccountId: ActorAccountId));
 
         Assert.Equal(ElsaInstanceOperationState.WaitingForPriorOperation, deletion.Operation.State);
         var active = await store.GetActiveOperationAsync(WorkspaceId, created.Instance.Id);
@@ -293,7 +297,8 @@ public sealed class ElsaInstanceLifecycleServiceTests
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
         var request = new ElsaInstanceLifecycleRequest(
-            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1");
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1",
+            DeleteConfirmationId: DeleteConfirmationId, ActorAccountId: ActorAccountId);
 
         var accepted = await service.DeleteAsync(request);
         var replay = await service.DeleteAsync(request);
@@ -301,6 +306,25 @@ public sealed class ElsaInstanceLifecycleServiceTests
         Assert.False(accepted.Replayed);
         Assert.True(replay.Replayed);
         Assert.Equal(accepted.Operation.Id, replay.Operation.Id);
+    }
+
+    [Fact]
+    public async Task Delete_requires_confirmation_and_actor_at_the_lifecycle_boundary()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore();
+        var service = new ElsaInstanceLifecycleService(store);
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-delete-boundary"));
+
+        var missingConfirmation = await Assert.ThrowsAsync<ArgumentException>(() => service.DeleteAsync(new(
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-missing-confirmation")));
+        var missingActor = await Assert.ThrowsAsync<ArgumentException>(() => service.DeleteAsync(new(
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-missing-actor",
+            DeleteConfirmationId: DeleteConfirmationId)));
+
+        Assert.Equal("DeleteConfirmationId", missingConfirmation.ParamName);
+        Assert.Equal("ActorAccountId", missingActor.ParamName);
+        Assert.DoesNotContain(store.Operations, operation => operation.Action == ElsaInstanceOperationAction.Delete);
     }
 
     [Fact]
@@ -343,7 +367,8 @@ public sealed class ElsaInstanceLifecycleServiceTests
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
         var request = new ElsaInstanceLifecycleRequest(
-            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1", "customer-requested");
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1", "customer-requested",
+            DeleteConfirmationId, ActorAccountId);
         await service.DeleteAsync(request);
 
         await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() => service.DeleteAsync(
@@ -383,7 +408,8 @@ public sealed class ElsaInstanceLifecycleServiceTests
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
         var deletion = await service.DeleteAsync(new ElsaInstanceLifecycleRequest(
-            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1"));
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1",
+            DeleteConfirmationId: DeleteConfirmationId, ActorAccountId: ActorAccountId));
 
         var priorWork = await store.TryClaimNextAsync("lifecycle-worker-1", Now);
         Assert.NotNull(priorWork);

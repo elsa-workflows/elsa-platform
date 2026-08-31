@@ -402,6 +402,15 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         }
     }
 
+    public Task<ElsaInstanceLifecycleAcceptance> CommitAcceptedWithContextAsync(
+        ElsaInstance? expectedInstance,
+        ElsaInstance instance,
+        ElsaInstanceOperation operation,
+        ElsaInstanceLifecycleOutboxMessage outbox,
+        ElsaInstanceAcceptanceContext context,
+        CancellationToken cancellationToken = default) =>
+        CommitAcceptedAsync(expectedInstance, instance, operation, outbox, cancellationToken);
+
     public Task<ElsaInstanceLifecycleWorkItem?> TryClaimNextAsync(
         string workerId,
         DateTimeOffset now,

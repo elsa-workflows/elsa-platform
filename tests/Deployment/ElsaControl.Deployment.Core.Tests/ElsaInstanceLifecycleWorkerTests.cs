@@ -254,7 +254,8 @@ public sealed class ElsaInstanceLifecycleWorkerTests
         await new ElsaInstanceLifecycleWorker(store, new RecordingResolver(SuccessfulResolution(WorkspaceId, created.Instance.Id)), new StaticTimeProvider(Now))
             .ProcessAvailableAsync("lifecycle-worker-1");
         var deletion = await service.DeleteAsync(new ElsaInstanceLifecycleRequest(
-            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1"));
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1",
+            DeleteConfirmationId: Guid.NewGuid(), ActorAccountId: Guid.NewGuid()));
         store.RegisterResolutionInput(deletion.Operation.Id, ResolutionInput(deletion.Instance));
 
         var result = await new ElsaInstanceLifecycleWorker(store, new RecordingResolver(SuccessfulResolution(WorkspaceId, created.Instance.Id)), new StaticTimeProvider(Now))

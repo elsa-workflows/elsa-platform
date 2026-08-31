@@ -345,7 +345,9 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
                 WorkspaceId,
                 instance.Id,
                 instance.Version,
-                "delete-reconciliation-test"));
+                "delete-reconciliation-test",
+                DeleteConfirmationId: Guid.NewGuid(),
+                ActorAccountId: Guid.NewGuid()));
             store.MarkRecoveryRequired(accepted.Operation.Id);
         }
         return (store, accepted);

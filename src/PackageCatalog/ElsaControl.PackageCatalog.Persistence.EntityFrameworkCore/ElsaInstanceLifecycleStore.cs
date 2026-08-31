@@ -321,6 +321,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         ArgumentNullException.ThrowIfNull(operation);
         ArgumentNullException.ThrowIfNull(outbox);
         ValidateEnvelope(instance, operation, outbox);
+        if (operation.Action == ElsaInstanceOperationAction.Delete && context?.DeleteConfirmation is null)
+            throw new ElsaInstanceDeleteConfirmationException();
 
         try
         {

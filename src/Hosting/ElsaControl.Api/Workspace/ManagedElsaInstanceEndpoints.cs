@@ -94,7 +94,7 @@ public static class ManagedElsaInstanceEndpoints
                     : StatusCodes.Status409Conflict;
                 return Problem(ConflictCode(exception), "The request conflicts with the current instance state.", statusCode);
             }
-            catch (ArgumentException exception)
+            catch (ArgumentException)
             {
                 return Problem("instance.shape-invalid", "The instance request is invalid.", StatusCodes.Status422UnprocessableEntity);
             }
@@ -164,7 +164,7 @@ public static class ManagedElsaInstanceEndpoints
             {
                 return Problem("instance.version-conflict", "The instance has been modified.", StatusCodes.Status412PreconditionFailed);
             }
-            catch (ArgumentException exception)
+            catch (ArgumentException)
             {
                 return Problem("instance.shape-invalid", "The instance request is invalid.", StatusCodes.Status422UnprocessableEntity);
             }
@@ -269,7 +269,7 @@ public static class ManagedElsaInstanceEndpoints
                     : "instance.operation-conflict";
                 return Problem(code, "The requested operation conflicts with the current instance state.", StatusCodes.Status409Conflict);
             }
-            catch (ArgumentException exception)
+            catch (ArgumentException)
             {
                 return Problem("instance.operation-invalid", "The requested operation is invalid.", StatusCodes.Status422UnprocessableEntity);
             }

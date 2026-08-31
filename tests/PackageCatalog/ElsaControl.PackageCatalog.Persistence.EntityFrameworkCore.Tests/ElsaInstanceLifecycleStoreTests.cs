@@ -307,6 +307,35 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
+    public async Task Delete_acceptance_without_confirmation_context_fails_closed_at_the_store_boundary()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Unconfirmed delete workspace");
+        var created = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId, workspace.Id, "Managed Elsa", "unconfirmed-delete", CreateIntent(), "create-unconfirmed-delete"));
+        await CompleteOperationAsync(db, created.Operation.Id);
+        db.ChangeTracker.Clear();
+        var store = CreateStore(db);
+        var current = await store.GetInstanceAsync(workspace.Id, created.Instance.Id);
+        Assert.NotNull(current);
+        var transition = ElsaInstanceStateMachine.Request(
+            current!, ElsaInstanceOperationAction.Delete,
+            expectedVersion: current.Version,
+            idempotencyKey: "delete-without-context",
+            requestHash: RequestHash("delete-without-context"));
+
+        await Assert.ThrowsAsync<ElsaInstanceDeleteConfirmationException>(() => store.CommitAcceptedAsync(
+            current, transition.Instance, transition.Operation, NewOutbox(transition)));
+
+        Assert.False(await db.ElsaInstanceOperations.AnyAsync(x => x.Id == transition.Operation.Id));
+        Assert.False(await db.ElsaInstanceLifecycleOutbox.AnyAsync(x => x.OperationId == transition.Operation.Id));
+    }
+
+    [Fact]
     public async Task Recover_persists_reconciled_instance_observation_with_the_operation_resume()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -568,8 +597,8 @@ public sealed class ElsaInstanceLifecycleStoreTests
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             workspace.OrganizationId, workspace.Id, "Worker Elsa", "waiting-delete-elsa", WorkerIntent(), "waiting-delete-create"));
         var (_, environmentId) = await AddManagedEnvironmentAsync(db, workspace, created.Instance.Id);
-        var deletion = await service.DeleteAsync(new ElsaInstanceLifecycleRequest(
-            workspace.Id, created.Instance.Id, created.Instance.Version, "waiting-delete"));
+        var deletion = await service.DeleteAsync(await CreateConfirmedDeleteRequestAsync(
+            db, workspace.Id, created.Instance.Id, created.Instance.Version, "waiting-delete"));
         await CompleteOperationAsync(db, created.Operation.Id);
 
         var result = await new ElsaInstanceDeletionWorker(
@@ -592,8 +621,10 @@ public sealed class ElsaInstanceLifecycleStoreTests
 
         db.ChangeTracker.Clear();
         var tombstone = await CreateStore(db).GetInstanceAsync(workspace.Id, deletion.Instance.Id);
+        var repeatedRequest = await CreateConfirmedDeleteRequestAsync(
+            db, workspace.Id, deletion.Instance.Id, tombstone!.Version, "delete-again", Now.AddMinutes(2));
         var repeated = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now.AddMinutes(2)))
-            .DeleteAsync(new(workspace.Id, deletion.Instance.Id, tombstone!.Version, "delete-again"));
+            .DeleteAsync(repeatedRequest);
         var afterReplay = await new ElsaInstanceDeletionWorker(
                 new EfCoreElsaInstanceLifecycleStore(db, EmptyResolutionInputSource.Instance,
                     new FixedTimeProvider(Now.AddMinutes(2))), new ThrowingCleanupPort(),
@@ -615,8 +646,10 @@ public sealed class ElsaInstanceLifecycleStoreTests
         var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Ambiguous deletion workspace");
         await CompleteManagedRunAsync(db, accepted.Operation.Id, accepted.Instance.Id);
         var current = await CreateStore(db).GetInstanceAsync(workspace.Id, accepted.Instance.Id);
+        var deleteRequest = await CreateConfirmedDeleteRequestAsync(
+            db, workspace.Id, accepted.Instance.Id, current!.Version, "ambiguous-delete", Now.AddMinutes(2));
         var deletion = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now.AddMinutes(2)))
-            .DeleteAsync(new(workspace.Id, accepted.Instance.Id, current!.Version, "ambiguous-delete"));
+            .DeleteAsync(deleteRequest);
         var port = new QueueCleanupPort(new ElsaInstanceCleanupObservation(
             ElsaInstanceCleanupObservationKind.Ambiguous, deletion.Operation.Id,
             deletion.Operation.AttemptNumber, "deletion.provider.ambiguous"));
@@ -654,8 +687,8 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
         var current = await CreateStore(db).GetInstanceAsync(workspace.Id, created.Instance.Id);
-        var deletion = await service.DeleteAsync(new(
-            workspace.Id, created.Instance.Id, current!.Version, "unknown-delete"));
+        var deletion = await service.DeleteAsync(await CreateConfirmedDeleteRequestAsync(
+            db, workspace.Id, created.Instance.Id, current!.Version, "unknown-delete"));
         var store = new EfCoreElsaInstanceLifecycleStore(db, EmptyResolutionInputSource.Instance,
             new FixedTimeProvider(Now.AddMinutes(1)));
         var item = await store.TryClaimNextDeletionAsync("deletion-worker", Now.AddMinutes(1));
@@ -685,8 +718,10 @@ public sealed class ElsaInstanceLifecycleStoreTests
         var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Deletion replay workspace");
         await CompleteManagedRunAsync(db, accepted.Operation.Id, accepted.Instance.Id);
         var current = await CreateStore(db).GetInstanceAsync(workspace.Id, accepted.Instance.Id);
+        var deleteRequest = await CreateConfirmedDeleteRequestAsync(
+            db, workspace.Id, accepted.Instance.Id, current!.Version, "replay-delete", Now.AddMinutes(2));
         var deletion = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now.AddMinutes(2)))
-            .DeleteAsync(new(workspace.Id, accepted.Instance.Id, current!.Version, "replay-delete"));
+            .DeleteAsync(deleteRequest);
         var store = new EfCoreElsaInstanceLifecycleStore(db, EmptyResolutionInputSource.Instance,
             new FixedTimeProvider(Now.AddMinutes(3)));
         var item = await store.TryClaimNextDeletionAsync("deletion-worker", Now.AddMinutes(3));
@@ -729,7 +764,8 @@ public sealed class ElsaInstanceLifecycleStoreTests
         var service = new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now));
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             workspace.OrganizationId, workspace.Id, "Lease Elsa", "lease-elsa", WorkerIntent(), "lease-create"));
-        var deletion = await service.DeleteAsync(new(workspace.Id, created.Instance.Id, created.Instance.Version, "lease-delete"));
+        var deletion = await service.DeleteAsync(await CreateConfirmedDeleteRequestAsync(
+            db, workspace.Id, created.Instance.Id, created.Instance.Version, "lease-delete"));
         await CompleteOperationAsync(db, created.Operation.Id);
         var store = new EfCoreElsaInstanceLifecycleStore(db, EmptyResolutionInputSource.Instance,
             new FixedTimeProvider(Now.AddMinutes(6)));
@@ -1237,6 +1273,32 @@ public sealed class ElsaInstanceLifecycleStoreTests
             $"https://control.example.test/api/workspaces/{instance.WorkspaceId:D}/instances/{instance.Id:D}/resolved-plans/plan_worker_01",
             instance.WorkspaceId),
         new(target.ApplicationId, target.EnvironmentId, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()));
+
+    private static async Task<ElsaInstanceLifecycleRequest> CreateConfirmedDeleteRequestAsync(
+        CatalogDbContext db,
+        Guid workspaceId,
+        Guid instanceId,
+        int expectedVersion,
+        string idempotencyKey,
+        DateTimeOffset? confirmedAt = null)
+    {
+        var actorAccountId = Guid.NewGuid();
+        var confirmation = await new DeploymentWorkspaceStore(db).CreateConfirmationAsync(
+            workspaceId,
+            new CreateActionConfirmationRequest(
+                ConfirmationActionType.DeleteManagedInstance,
+                instanceId.ToString("D"),
+                actorAccountId,
+                TimeSpan.FromDays(1)),
+            confirmedAt ?? Now);
+        return new ElsaInstanceLifecycleRequest(
+            workspaceId,
+            instanceId,
+            expectedVersion,
+            idempotencyKey,
+            DeleteConfirmationId: confirmation.Id,
+            ActorAccountId: actorAccountId);
+    }
 
     private static ReleaseManifestAdmissionResult AdmittedManifest() =>
         new(

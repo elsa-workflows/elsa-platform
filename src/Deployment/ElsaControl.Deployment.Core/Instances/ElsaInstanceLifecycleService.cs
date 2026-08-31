@@ -134,10 +134,17 @@ public sealed class ElsaInstanceLifecycleService(
 
     public Task<ElsaInstanceLifecycleAcceptance> DeleteAsync(
         ElsaInstanceLifecycleRequest request,
-        CancellationToken cancellationToken = default) =>
-        AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Delete,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.DeleteConfirmationId is null || request.DeleteConfirmationId == Guid.Empty)
+            throw new ArgumentException("Delete confirmation ID is required.", nameof(request.DeleteConfirmationId));
+        if (request.ActorAccountId is null || request.ActorAccountId == Guid.Empty)
+            throw new ArgumentException("Actor account ID is required for deletion.", nameof(request.ActorAccountId));
+        return AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Delete,
             request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken,
             confirmationId: request.DeleteConfirmationId, actorAccountId: request.ActorAccountId);
+    }
 
     public Task<ElsaInstanceLifecycleAcceptance> ApproveMinorUpgradeAsync(
         ElsaInstanceIntentUpdateRequest request,
