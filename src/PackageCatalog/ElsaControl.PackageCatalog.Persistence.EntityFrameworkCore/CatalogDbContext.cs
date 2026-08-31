@@ -43,6 +43,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.ElsaInstanceIntentRevisionEntity> ElsaInstanceIntentRevisions => Set<Models.ElsaInstanceIntentRevisionEntity>();
     internal DbSet<Models.ElsaInstanceLifecycleOutboxEntity> ElsaInstanceLifecycleOutbox => Set<Models.ElsaInstanceLifecycleOutboxEntity>();
     internal DbSet<Models.ElsaInstanceOperationEntity> ElsaInstanceOperations => Set<Models.ElsaInstanceOperationEntity>();
+    internal DbSet<Models.ElsaInstanceRecoveryRequestEntity> ElsaInstanceRecoveryRequests => Set<Models.ElsaInstanceRecoveryRequestEntity>();
     internal DbSet<Models.ElsaInstanceResolvedPlanEntity> ElsaInstanceResolvedPlans => Set<Models.ElsaInstanceResolvedPlanEntity>();
     internal DbSet<Models.ElsaInstanceAuditEventEntity> ElsaInstanceAuditEvents => Set<Models.ElsaInstanceAuditEventEntity>();
     internal DbSet<Models.ElsaInstanceIdentityBindingEntity> ElsaInstanceIdentityBindings => Set<Models.ElsaInstanceIdentityBindingEntity>();
@@ -109,6 +110,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceIntentRevisionConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceLifecycleOutboxConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceOperationConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.ElsaInstanceRecoveryRequestConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceResolvedPlanConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceAuditEventConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceIdentityBindingConfiguration());
@@ -176,6 +178,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         EnsureElsaInstanceIntentRevisionsAreAppendOnly();
         EnsureElsaInstanceLifecycleOutboxIsAppendOnly();
         EnsureElsaInstanceResolvedPlansAreAppendOnly();
+        EnsureElsaInstanceRecoveryRequestsAreAppendOnly();
         EnsureManagedElsaHandoffRowsAreAppendOnly();
         ValidateManagedElsaHandoffRows();
         ValidateElsaInstancePersistence();
@@ -257,6 +260,13 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         if (ChangeTracker.Entries<Models.ElsaInstanceResolvedPlanEntity>()
             .Any(x => x.State is EntityState.Modified or EntityState.Deleted))
             throw new InvalidOperationException("Elsa instance resolved plans are append-only.");
+    }
+
+    private void EnsureElsaInstanceRecoveryRequestsAreAppendOnly()
+    {
+        if (ChangeTracker.Entries<Models.ElsaInstanceRecoveryRequestEntity>()
+            .Any(x => x.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Elsa instance recovery requests are append-only.");
     }
 
     private void EnsureManagedElsaHandoffRowsAreAppendOnly()
@@ -499,19 +509,6 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                     EnsureUnchanged(entry, property, entry.Property(property).CurrentValue,
                         "Instance operation envelope fields are immutable.");
 
-                foreach (var property in new[]
-                         {
-                             nameof(Models.ElsaInstanceOperationEntity.RecoveryIdempotencyScope),
-                             nameof(Models.ElsaInstanceOperationEntity.RecoveryIdempotencyKey),
-                             nameof(Models.ElsaInstanceOperationEntity.RecoveryRequestHash)
-                         })
-                {
-                    var original = entry.Property(property).OriginalValue;
-                    var current = entry.Property(property).CurrentValue;
-                    if (original is not null && !Equals(original, current))
-                        throw new InvalidOperationException("Recovery request envelope fields are immutable once recorded.");
-                }
-
                 var originalState = (ElsaInstanceOperationState)entry.Property(nameof(Models.ElsaInstanceOperationEntity.State)).OriginalValue!;
                 EnsureDefined(originalState, nameof(Models.ElsaInstanceOperationEntity.State));
                 var isRecoveryResume = originalState == ElsaInstanceOperationState.RecoveryRequired &&
@@ -523,6 +520,24 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                 if (operation.AttemptNumber < originalAttemptNumber)
                     throw new InvalidOperationException("Instance operation attempt number cannot decrease.");
             }
+        }
+
+
+        foreach (var entry in ChangeTracker.Entries<Models.ElsaInstanceRecoveryRequestEntity>()
+                     .Where(x => x.State == EntityState.Added))
+        {
+            var recovery = entry.Entity;
+            if (recovery.Id == Guid.Empty || recovery.OrganizationId == Guid.Empty ||
+                recovery.WorkspaceId == Guid.Empty || recovery.InstanceId == Guid.Empty ||
+                recovery.OperationId == Guid.Empty || recovery.AttemptNumber < 2)
+                throw new InvalidOperationException("A recovery request requires stable ownership and attempt identifiers.");
+            recovery.IdempotencyScope = RequireSafeReference(recovery.IdempotencyScope, nameof(recovery.IdempotencyScope), 256);
+            recovery.IdempotencyKey = RequireSafeToken(recovery.IdempotencyKey, nameof(recovery.IdempotencyKey), 128);
+            recovery.RequestHash = RequireCanonicalHash(recovery.RequestHash, nameof(recovery.RequestHash));
+            recovery.AcceptedAt = recovery.AcceptedAt.ToUniversalTime();
+            recovery.CreatedAt = recovery.CreatedAt.ToUniversalTime();
+            if (recovery.AcceptedAt == default || recovery.CreatedAt == default || recovery.CreatedAt < recovery.AcceptedAt)
+                throw new InvalidOperationException("Recovery request timestamps are invalid.");
         }
 
         foreach (var entry in ChangeTracker.Entries<Models.ElsaInstanceIntentRevisionEntity>()
