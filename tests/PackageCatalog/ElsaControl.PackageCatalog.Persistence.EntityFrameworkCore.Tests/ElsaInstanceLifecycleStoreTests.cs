@@ -22,11 +22,69 @@ public sealed class ElsaInstanceLifecycleStoreTests
     [InlineData(2601)]
     [InlineData(2627)]
     [InlineData(3960)]
-    public void SqlServer_create_reservation_conflicts_are_the_only_retryable_error_numbers(int number)
+    public void SqlServer_lifecycle_reservation_conflicts_are_the_only_retryable_error_numbers(int number)
     {
         Assert.True(EfCoreDatabaseExceptionPolicy.IsSqlServerLifecycleReservationConflictNumber(number));
         Assert.False(EfCoreDatabaseExceptionPolicy.IsSqlServerLifecycleReservationConflictNumber(547));
         Assert.False(EfCoreDatabaseExceptionPolicy.IsSqlServerLifecycleReservationConflictNumber(-2));
+    }
+
+    [Theory]
+    [InlineData(ElsaInstanceOperationAction.UpdateIntent)]
+    [InlineData(ElsaInstanceOperationAction.Start)]
+    [InlineData(ElsaInstanceOperationAction.Stop)]
+    [InlineData(ElsaInstanceOperationAction.Delete)]
+    public async Task Authoritative_replay_policy_accepts_exact_non_create_envelope_only(
+        ElsaInstanceOperationAction action)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Replay policy workspace");
+        var service = new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now));
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            workspace.OrganizationId, workspace.Id, "Managed Elsa", "replay-policy-elsa",
+            CreateIntent(), "create-replay-policy"));
+        await CompleteOperationAsync(db, created.Operation.Id);
+        db.ChangeTracker.Clear();
+
+        var expected = await CreateStore(db).GetInstanceAsync(workspace.Id, created.Instance.Id);
+        Assert.NotNull(expected);
+        var operation = ElsaInstanceOperation.Create(
+            expected!.Id,
+            action,
+            $"instance/{expected.Id:D}/{action}",
+            "mutation-replay-policy",
+            RequestHash("mutation-replay-policy"),
+            expected.Version);
+        var existing = new ElsaInstanceOperationEntity
+        {
+            Id = Guid.NewGuid(),
+            InstanceId = operation.InstanceId,
+            OrganizationId = expected.OrganizationId,
+            WorkspaceId = expected.WorkspaceId,
+            Action = operation.Action,
+            IdempotencyScope = operation.IdempotencyScope,
+            IdempotencyKey = operation.IdempotencyKey,
+            RequestHash = operation.RequestHash
+        };
+
+        Assert.True(EfCoreElsaInstanceLifecycleStore.IsExactAuthoritativeReplay(
+            expected, expected, operation, existing));
+        existing.RequestHash = RequestHash("different");
+        Assert.False(EfCoreElsaInstanceLifecycleStore.IsExactAuthoritativeReplay(
+            expected, expected, operation, existing));
+        existing.RequestHash = operation.RequestHash;
+        existing.Action = action == ElsaInstanceOperationAction.Start
+            ? ElsaInstanceOperationAction.Stop
+            : ElsaInstanceOperationAction.Start;
+        Assert.False(EfCoreElsaInstanceLifecycleStore.IsExactAuthoritativeReplay(
+            expected, expected, operation, existing));
+        existing.Action = operation.Action;
+        existing.InstanceId = Guid.NewGuid();
+        Assert.False(EfCoreElsaInstanceLifecycleStore.IsExactAuthoritativeReplay(
+            expected, expected, operation, existing));
     }
 
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-08-30T10:00:00Z");

@@ -473,12 +473,14 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             throw Conflict("Lifecycle acceptance conflicted with a newer instance version.", ElsaInstanceLifecycleConflictReason.VersionConflict);
         }
         catch (Exception exception) when (
-            expectedInstance is null &&
-            operation.Action == ElsaInstanceOperationAction.Create &&
             EfCoreDatabaseExceptionPolicy.IsSqlServerLifecycleReservationConflict(exception))
         {
             dbContext.ChangeTracker.Clear();
-            var replay = await TryReplayCommittedCreateAsync(instance, operation, cancellationToken);
+            var replay = await TryReplayCommittedAcceptanceAsync(
+                expectedInstance,
+                instance,
+                operation,
+                cancellationToken);
             if (replay is not null)
                 return replay;
 
@@ -511,7 +513,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         }
     }
 
-    private async Task<ElsaInstanceLifecycleAcceptance?> TryReplayCommittedCreateAsync(
+    private async Task<ElsaInstanceLifecycleAcceptance?> TryReplayCommittedAcceptanceAsync(
+        ElsaInstance? expectedInstance,
         ElsaInstance requestedInstance,
         ElsaInstanceOperation requestedOperation,
         CancellationToken cancellationToken)
@@ -536,8 +539,11 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 if (existingOperation is null)
                     continue;
 
-                if (existingOperation.Action != requestedOperation.Action ||
-                    !string.Equals(existingOperation.RequestHash, requestedOperation.RequestHash, StringComparison.Ordinal))
+                if (!IsExactAuthoritativeReplay(
+                        expectedInstance,
+                        requestedInstance,
+                        requestedOperation,
+                        existingOperation))
                     throw Conflict("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
 
                 var existingInstance = await dbContext.ElsaInstances.AsNoTracking()
@@ -548,7 +554,11 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     continue;
 
                 ValidateReplayEnvelope(existingInstance, existingOperation, existingOutbox);
-                if (existingInstance.OrganizationId != requestedInstance.OrganizationId)
+                if (existingInstance.OrganizationId != requestedInstance.OrganizationId ||
+                    existingInstance.WorkspaceId != requestedInstance.WorkspaceId ||
+                    (expectedInstance is null
+                        ? !string.Equals(existingInstance.Slug, requestedInstance.Slug, StringComparison.Ordinal)
+                        : existingInstance.Id != requestedInstance.Id))
                     throw Conflict("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
 
                 return new ElsaInstanceLifecycleAcceptance(
@@ -576,6 +586,25 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
 
         return null;
     }
+
+    internal static bool IsExactAuthoritativeReplay(
+        ElsaInstance? expectedInstance,
+        ElsaInstance requestedInstance,
+        ElsaInstanceOperation requestedOperation,
+        ElsaInstanceOperationEntity existingOperation) =>
+        existingOperation.OrganizationId == requestedInstance.OrganizationId &&
+        existingOperation.WorkspaceId == requestedInstance.WorkspaceId &&
+        existingOperation.Action == requestedOperation.Action &&
+        string.Equals(existingOperation.IdempotencyScope, requestedOperation.IdempotencyScope, StringComparison.Ordinal) &&
+        string.Equals(existingOperation.IdempotencyKey, requestedOperation.IdempotencyKey, StringComparison.Ordinal) &&
+        string.Equals(existingOperation.RequestHash, requestedOperation.RequestHash, StringComparison.Ordinal) &&
+        (expectedInstance is null
+            ? requestedOperation.Action == ElsaInstanceOperationAction.Create
+            : existingOperation.InstanceId == requestedInstance.Id &&
+              requestedOperation.InstanceId == requestedInstance.Id &&
+              expectedInstance.Id == requestedInstance.Id &&
+              expectedInstance.OrganizationId == requestedInstance.OrganizationId &&
+              expectedInstance.WorkspaceId == requestedInstance.WorkspaceId);
 
     public async Task<ElsaInstanceLifecycleWorkItem?> TryClaimNextAsync(
         string workerId,
