@@ -290,6 +290,52 @@ public sealed class ElsaInstanceLifecycleServiceTests
         Assert.Equal("Provider reconciliation has not established that retry is safe.", error.Message);
     }
 
+    [Fact]
+    public async Task Recover_idempotency_key_cannot_collide_with_a_previously_used_normal_key()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore();
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+
+        await service.StopAsync(new ElsaInstanceLifecycleRequest(
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "shared-key"));
+
+        store.MarkRecoveryRequired(created.Operation.Id);
+        await new ElsaInstanceProviderReconciliationService(
+                store,
+                new StaticProviderPort(new(
+                    ElsaInstanceProviderObservationKind.Unknown,
+                    ElsaObservedLifecycle.Unknown,
+                    ElsaInstanceProviderHealthGate.Unknown,
+                    "retry-proof-observation",
+                    new ElsaInstanceProviderRetryEvidence(
+                        "https://evidence.example.test/recovery/retry-proof",
+                        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))),
+                new StaticTimeProvider(Now))
+            .ReconcileAsync(WorkspaceId, created.Operation.Id);
+
+        var exception = await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() =>
+            service.RecoverAsync(new ElsaInstanceLifecycleRequest(
+                WorkspaceId, created.Instance.Id, store.Instances.Single().Version, "shared-key")));
+
+        Assert.Equal("Idempotency key was already used for a different request.", exception.Message);
+        Assert.Equal(ElsaInstanceLifecycleConflictReason.IdempotencyConflict, exception.Reason);
+    }
+
+    [Fact]
+    public async Task InMemory_CommitAcceptedWithContextAsync_throws_when_delete_confirmation_provided()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore();
+        var context = new ElsaInstanceAcceptanceContext(
+            ActorAccountId, "reason", new ElsaInstanceDeleteConfirmationRequirement(DeleteConfirmationId, ActorAccountId));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.CommitAcceptedWithContextAsync(null, null!, null!, null!, context));
+
+        Assert.Equal("Atomic delete confirmation persistence is not configured.", exception.Message);
+    }
+
     [Theory]
     [InlineData(ElsaInstanceOperationAction.Start)]
     [InlineData(ElsaInstanceOperationAction.Retry)]

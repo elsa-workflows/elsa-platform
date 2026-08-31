@@ -209,6 +209,15 @@ public sealed class ElsaInstanceLifecycleService(
         var instance = await store.GetInstanceAsync(workspaceId, instanceId, cancellationToken)
             ?? throw new KeyNotFoundException("Elsa instance does not exist in the workspace.");
         var operationScope = OperationScope(instanceId, action);
+        if (action == ElsaInstanceOperationAction.Recover)
+        {
+            var normalOperation = await store.FindOperationByKeyAsync(
+                workspaceId, key, instanceId,
+                action: null,
+                idempotencyScope: operationScope, cancellationToken: cancellationToken);
+            if (normalOperation is not null)
+                throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
+        }
         var existingOperation = await store.FindOperationByKeyAsync(
             workspaceId, key, instanceId,
             action: action == ElsaInstanceOperationAction.Recover ? ElsaInstanceOperationAction.Recover : null,
