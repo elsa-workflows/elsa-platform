@@ -52,6 +52,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     [InlineData("0.0.0.0")]
     [InlineData("10.0.0.0/24")]
     [InlineData("not-an-ip")]
+    [InlineData(" 203.0.113.10 ")]
     public void Rejects_broad_or_invalid_sql_bootstrap_addresses(string address)
     {
         Assert.Throws<ArgumentException>(() => (ValidOptions() with { SqlBootstrapIp = address }).Validate());
@@ -168,6 +169,16 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
             request.Validate();
         else
             Assert.Throws<ArgumentException>(request.Validate);
+    }
+
+    [Theory]
+    [InlineData(" Database ")]
+    [InlineData("Database")]
+    [InlineData("database/name")]
+    public void Secret_resolution_request_rejects_noncanonical_names(string name)
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new AzureSecretResolutionRequest(Guid.NewGuid(), name, "secret://vault/database").Validate());
     }
 
     [Fact]

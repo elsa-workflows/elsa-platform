@@ -186,6 +186,24 @@ public sealed class AzureCommandProcessTests
         Assert.Throws<ArgumentException>(() => new AzureCommandProcessRequest(executable));
     }
 
+    [Theory]
+    [InlineData("BAD=NAME")]
+    [InlineData("BAD\nNAME")]
+    [InlineData("9BAD")]
+    public void Rejects_unsafe_environment_variable_names(string name)
+    {
+        Assert.Throws<ArgumentException>(() => new AzureCommandProcessRequest(
+            "/bin/echo",
+            environmentVariables: new Dictionary<string, string?> { [name] = "value" }));
+    }
+
+    [Fact]
+    public void Rejects_relative_or_control_bearing_working_directories()
+    {
+        Assert.Throws<ArgumentException>(() => new AzureCommandProcessRequest("/bin/echo", workingDirectory: "relative"));
+        Assert.Throws<ArgumentException>(() => new AzureCommandProcessRequest("/bin/echo", workingDirectory: "/tmp/forged\npath"));
+    }
+
     [Fact]
     public void Request_and_result_string_forms_do_not_include_secret_values()
     {

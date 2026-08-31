@@ -23,15 +23,25 @@ internal sealed record AzureCommandProcessRequest
         arguments ??= [];
         if (arguments.Any(argument => string.IsNullOrEmpty(argument.Value) || argument.Value.Length > 4096 || argument.Value.Any(char.IsControl)))
             throw new ArgumentException("Command arguments must be explicit safe values.", nameof(arguments));
-        if (environmentVariables is not null && environmentVariables.Keys.Any(string.IsNullOrWhiteSpace))
-            throw new ArgumentException("Command environment variable names cannot be blank.", nameof(environmentVariables));
+        if (environmentVariables is not null && environmentVariables.Keys.Any(name =>
+                string.IsNullOrWhiteSpace(name) ||
+                name.Length > 128 ||
+                !(char.IsAsciiLetter(name[0]) || name[0] == '_') ||
+                name.Any(character => !(char.IsAsciiLetterOrDigit(character) || character == '_'))))
+            throw new ArgumentException("Command environment variable names must be safe identifiers.", nameof(environmentVariables));
+        if (workingDirectory is not null &&
+            (string.IsNullOrWhiteSpace(workingDirectory) ||
+             workingDirectory.Length > 1024 ||
+             workingDirectory.Any(char.IsControl) ||
+             !Path.IsPathFullyQualified(workingDirectory)))
+            throw new ArgumentException("The command working directory is unsafe.", nameof(workingDirectory));
 
         FileName = fileName.Trim();
         Arguments = Array.AsReadOnly(arguments.ToArray());
         EnvironmentVariables = environmentVariables is null
             ? null
             : new Dictionary<string, string?>(environmentVariables, StringComparer.Ordinal);
-        WorkingDirectory = string.IsNullOrWhiteSpace(workingDirectory) ? null : workingDirectory;
+        WorkingDirectory = workingDirectory is null ? null : Path.GetFullPath(workingDirectory);
     }
 
     public string FileName { get; }

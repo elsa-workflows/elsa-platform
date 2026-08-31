@@ -9,7 +9,12 @@ public sealed record AzureSecretResolutionRequest(Guid WorkspaceId, string Name,
     {
         if (WorkspaceId == Guid.Empty)
             throw new ArgumentException("Workspace ID is required.", nameof(WorkspaceId));
-        if (string.IsNullOrWhiteSpace(Name) || Name.Length > 256 || Name.Any(char.IsControl))
+        if (string.IsNullOrWhiteSpace(Name) || Name.Length > 256 ||
+            !System.Text.RegularExpressions.Regex.IsMatch(
+                Name,
+                "^[a-z0-9][a-z0-9._-]{0,255}\\z",
+                System.Text.RegularExpressions.RegexOptions.CultureInvariant |
+                System.Text.RegularExpressions.RegexOptions.NonBacktracking))
             throw new ArgumentException("The secret name is unsafe.", nameof(Name));
         if (!AzureProviderOperationValidation.IsSafeSecretReference(Reference))
             throw new ArgumentException("The secret reference is unsafe.", nameof(Reference));

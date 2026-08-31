@@ -143,7 +143,10 @@ public sealed record AzureProviderRunnerOptions
             throw new ArgumentException("The SQL bootstrap object ID must be a canonical GUID.", nameof(SqlBootstrapObjectId));
         if (!Regex.IsMatch(SqlBootstrapLogin ?? "", "^[A-Za-z0-9._@-]{1,128}\\z", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
             throw new ArgumentException("The SQL bootstrap login is unsafe.", nameof(SqlBootstrapLogin));
-        if (!System.Net.IPAddress.TryParse(SqlBootstrapIp, out var ip) || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork || SqlBootstrapIp == "0.0.0.0")
+        if (!System.Net.IPAddress.TryParse(SqlBootstrapIp, out var ip) ||
+            ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
+            SqlBootstrapIp == "0.0.0.0" ||
+            !string.Equals(SqlBootstrapIp, ip.ToString(), StringComparison.Ordinal))
             throw new ArgumentException("The SQL bootstrap address must be one exact non-zero IPv4 address.", nameof(SqlBootstrapIp));
         if (!Regex.IsMatch(Owner ?? "", "^[a-z0-9][a-z0-9-]{0,62}\\z", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
             throw new ArgumentException("The Azure owner tag is unsafe.", nameof(Owner));
