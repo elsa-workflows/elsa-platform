@@ -80,10 +80,15 @@ public sealed class ElsaInstanceLifecycleService(
 
     public Task<ElsaInstanceLifecycleAcceptance> UpdateIntentAsync(
         ElsaInstanceIntentUpdateRequest request,
-        CancellationToken cancellationToken = default) =>
-        AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.UpdateIntent,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.Intent is null && request.Name is null)
+            throw new ArgumentException("An intent or name update is required.", nameof(request));
+        return AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.UpdateIntent,
             request.ExpectedVersion, request.IdempotencyKey, request.Intent, request.Name, request.Reason,
             cancellationToken);
+    }
 
     public Task<ElsaInstanceLifecycleAcceptance> UpdateAsync(
         ElsaInstanceIntentUpdateRequest request,
@@ -127,17 +132,25 @@ public sealed class ElsaInstanceLifecycleService(
 
     public Task<ElsaInstanceLifecycleAcceptance> ApproveMinorUpgradeAsync(
         ElsaInstanceIntentUpdateRequest request,
-        CancellationToken cancellationToken = default) =>
-        AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.ApproveMinorUpgrade,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Intent);
+        return AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.ApproveMinorUpgrade,
             request.ExpectedVersion, request.IdempotencyKey, request.Intent, request.Name, request.Reason,
             cancellationToken, minorApproved: true);
+    }
 
     public Task<ElsaInstanceLifecycleAcceptance> MajorMigrationAsync(
         ElsaInstanceIntentUpdateRequest request,
-        CancellationToken cancellationToken = default) =>
-        AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.MajorMigration,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Intent);
+        return AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.MajorMigration,
             request.ExpectedVersion, request.IdempotencyKey, request.Intent, request.Name, request.Reason,
             cancellationToken, minorApproved: true, migrationAuthorized: true);
+    }
 
     public Task<ElsaInstanceLifecycleAcceptance> RetryAsync(
         ElsaInstanceLifecycleRequest request,
@@ -207,6 +220,7 @@ public sealed class ElsaInstanceLifecycleService(
             requestedName,
             reason);
         var activeOperation = await store.GetActiveOperationAsync(workspaceId, instanceId, cancellationToken);
+        var effectiveIntent = EffectiveRequestedIntent(action, instance, requestedIntent);
         var transition = ElsaInstanceStateMachine.Request(
             instance,
             action,
@@ -214,13 +228,23 @@ public sealed class ElsaInstanceLifecycleService(
             expectedVersion,
             key,
             requestHash,
-            requestedIntent,
+            effectiveIntent,
             minorApproved,
             migrationAuthorized);
         if (requestedName is not null && !string.Equals(transition.Instance.Name, requestedName, StringComparison.Ordinal))
             transition = new ElsaInstanceTransitionResult(transition.Instance.Rename(requestedName), transition.Operation);
         return await CommitAsync(instance, transition, cancellationToken);
     }
+
+    private static ElsaInstanceIntent? EffectiveRequestedIntent(
+        ElsaInstanceOperationAction action,
+        ElsaInstance instance,
+        ElsaInstanceIntent? requestedIntent) =>
+        action is ElsaInstanceOperationAction.UpdateIntent or
+            ElsaInstanceOperationAction.ApproveMinorUpgrade or
+            ElsaInstanceOperationAction.MajorMigration
+            ? requestedIntent ?? instance.Intent
+            : requestedIntent;
 
     private Task<ElsaInstanceLifecycleAcceptance> CommitAsync(
         ElsaInstance? expectedInstance,

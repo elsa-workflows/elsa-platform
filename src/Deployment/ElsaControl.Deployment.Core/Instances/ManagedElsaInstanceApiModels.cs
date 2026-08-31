@@ -11,8 +11,15 @@ namespace ElsaControl.Deployment.Core.Instances;
 /// </summary>
 public interface IManagedElsaInstanceApiStore
 {
-    Task<IReadOnlyList<ElsaInstance>> ListInstancesAsync(
+    Task<ElsaInstancePage> ListInstancesAsync(
         Guid workspaceId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
+    Task<bool> SlugExistsAsync(
+        Guid workspaceId,
+        string slug,
         CancellationToken cancellationToken = default);
 
     Task<ElsaInstanceOperationSummary?> GetOperationAsync(
@@ -42,6 +49,8 @@ public interface IManagedElsaInstanceApiStore
         Guid instanceId,
         CancellationToken cancellationToken = default);
 }
+
+public sealed record ElsaInstancePage(IReadOnlyList<ElsaInstance> Items, int TotalCount);
 
 public sealed record ElsaInstanceOperationSummary(
     Guid Id,

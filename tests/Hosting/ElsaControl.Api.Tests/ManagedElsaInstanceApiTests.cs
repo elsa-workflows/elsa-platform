@@ -136,6 +136,33 @@ public sealed class ManagedElsaInstanceApiTests
     }
 
     [Fact]
+    public async Task Canonical_list_handles_large_page_numbers_without_overflowing_has_more()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient("managed-instance-api-pagination");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances")
+        {
+            Content = JsonContent.Create(
+                new ManagedElsaInstanceCreateRequest("Claims runtime", "claims-runtime", Intent()),
+                options: ControlApiTestApplication.JsonOptions)
+        };
+        request.Headers.Add("Idempotency-Key", "create-for-pagination");
+        var accepted = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+
+        var list = await client.GetControlJsonAsync<ManagedElsaInstanceListResponse>(
+            $"/api/workspaces/{workspaceId}/instances?page={int.MaxValue}&pageSize=100");
+
+        Assert.NotNull(list);
+        Assert.Empty(list!.Items);
+        Assert.Equal(1, list.TotalCount);
+        Assert.False(list.HasMore);
+    }
+
+    [Fact]
     public async Task Canonical_mutations_require_idempotency_and_strong_etags()
     {
         await using var app = CreateApplication([]);

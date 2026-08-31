@@ -13,25 +13,51 @@ namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 /// </summary>
 public sealed class EfCoreManagedElsaInstanceApiStore(CatalogDbContext dbContext) : IManagedElsaInstanceApiStore
 {
-    public async Task<IReadOnlyList<ElsaInstance>> ListInstancesAsync(
+    public async Task<ElsaInstancePage> ListInstancesAsync(
         Guid workspaceId,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken = default)
     {
         if (workspaceId == Guid.Empty)
-            return [];
+            return new ElsaInstancePage([], 0);
 
-        var entities = await dbContext.ElsaInstances
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var offset = (long)(page - 1) * pageSize;
+        var query = dbContext.ElsaInstances
             .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.DeletedAt == null);
+        var totalCount = await query.CountAsync(cancellationToken);
+        if (offset >= totalCount)
+            return new ElsaInstancePage([], totalCount);
+
+        var entities = await query
             .Include(x => x.IdentityBinding)
-            .Where(x => x.WorkspaceId == workspaceId && x.DeletedAt == null)
             .OrderBy(x => x.Name)
             .ThenBy(x => x.Id)
+            .Skip((int)offset)
+            .Take(pageSize)
             .ToListAsync(cancellationToken);
-        return entities
+        var items = entities
             .Select(TryMapInstance)
             .Where(x => x is not null)
             .Select(x => x!)
             .ToList();
+        return new ElsaInstancePage(items, totalCount);
+    }
+
+    public Task<bool> SlugExistsAsync(
+        Guid workspaceId,
+        string slug,
+        CancellationToken cancellationToken = default)
+    {
+        if (workspaceId == Guid.Empty || string.IsNullOrWhiteSpace(slug))
+            return Task.FromResult(false);
+
+        return dbContext.ElsaInstances
+            .AsNoTracking()
+            .AnyAsync(x => x.WorkspaceId == workspaceId && x.DeletedAt == null && x.Slug == slug, cancellationToken);
     }
 
     public async Task<ElsaInstanceOperationSummary?> GetOperationAsync(

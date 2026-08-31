@@ -31,16 +31,13 @@ public static class ManagedElsaInstanceEndpoints
             var access = context.GetWorkspaceAccess();
             var canOpen = (await permissions.GetEffectivePermissionsAsync(workspaceId, access.AccountId, cancellationToken))
                 .Has(ManagedElsaInstancePermissions.Open);
-            var all = await instances.ListInstancesAsync(workspaceId, cancellationToken);
             var currentPage = Math.Max(page ?? 1, 1);
             var currentPageSize = Math.Clamp(pageSize ?? 50, 1, 100);
             var offset = (long)(currentPage - 1) * currentPageSize;
-            var items = offset >= all.Count
-                ? new List<ManagedElsaInstanceResponse>()
-                : all.Skip((int)offset).Take(currentPageSize)
-                    .Select(x => ToResponse(x, canOpen, workspaceId)).ToList();
-            return Results.Ok(new ManagedElsaInstanceListResponse(items, currentPage, currentPageSize, all.Count,
-                currentPage * currentPageSize < all.Count));
+            var pageResult = await instances.ListInstancesAsync(workspaceId, currentPage, currentPageSize, cancellationToken);
+            var items = pageResult.Items.Select(x => ToResponse(x, canOpen, workspaceId)).ToList();
+            return Results.Ok(new ManagedElsaInstanceListResponse(items, currentPage, currentPageSize, pageResult.TotalCount,
+                offset + currentPageSize < pageResult.TotalCount));
         }).RequireWorkspaceAccess();
 
         group.MapPost("", async (
@@ -72,8 +69,7 @@ public static class ManagedElsaInstanceEndpoints
                 // commit made the slug visible.
                 var existingOperation = await lifecycleStore.FindOperationByKeyAsync(
                     workspaceId, key, action: ElsaInstanceOperationAction.Create, cancellationToken: cancellationToken);
-                if (existingOperation is null && (await queries.ListInstancesAsync(workspaceId, cancellationToken)).Any(x =>
-                        string.Equals(x.Slug, normalizedSlug, StringComparison.Ordinal)))
+                if (existingOperation is null && await queries.SlugExistsAsync(workspaceId, normalizedSlug, cancellationToken))
                     return Problem("instance.slug-conflict", "The instance slug is already in use in this workspace.", StatusCodes.Status409Conflict);
 
                 var accepted = await lifecycle.CreateAsync(new ElsaInstanceCreateRequest(
@@ -138,7 +134,7 @@ public static class ManagedElsaInstanceEndpoints
             try
             {
                 var accepted = await lifecycle.UpdateIntentAsync(new ElsaInstanceIntentUpdateRequest(
-                    workspaceId, instanceId, request.Intent ?? existing.Intent, precondition.Value, key, request.Name, request.Reason), cancellationToken);
+                    workspaceId, instanceId, request.Intent, precondition.Value, key, request.Name, request.Reason), cancellationToken);
                 return await AcceptedAsync(workspaceId, accepted, queries, cancellationToken);
             }
             catch (ElsaInstanceLifecycleConflictException exception)

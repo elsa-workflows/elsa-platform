@@ -286,6 +286,38 @@ public sealed class ElsaInstanceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task Rename_only_replay_does_not_depend_on_the_current_intent()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore();
+        var service = new ElsaInstanceLifecycleService(store);
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+        await store.CommitAcceptedAsync(created.Instance, created.Instance,
+            created.Operation.TransitionTo(ElsaInstanceOperationState.Succeeded),
+            new ElsaInstanceLifecycleOutboxMessage(Guid.NewGuid(), WorkspaceId, created.Instance.Id, created.Operation.Id,
+                created.Operation.Action, created.Operation.RequestHash, Now));
+        var renameRequest = new ElsaInstanceIntentUpdateRequest(
+            WorkspaceId, created.Instance.Id, null, created.Instance.Version, "rename-1", "Claims renamed");
+        var renamed = await service.UpdateIntentAsync(renameRequest);
+        await store.CommitAcceptedAsync(renamed.Instance, renamed.Instance,
+            renamed.Operation.TransitionTo(ElsaInstanceOperationState.Succeeded),
+            new ElsaInstanceLifecycleOutboxMessage(Guid.NewGuid(), WorkspaceId, renamed.Instance.Id, renamed.Operation.Id,
+                renamed.Operation.Action, renamed.Operation.RequestHash, Now));
+        var currentIntent = store.Instances.Single().Intent;
+        var changedIntent = currentIntent with
+        {
+            Application = currentIntent.Application with { PackagePolicy = "manual" }
+        };
+        await service.UpdateIntentAsync(new ElsaInstanceIntentUpdateRequest(
+            WorkspaceId, created.Instance.Id, changedIntent, store.Instances.Single().Version, "intent-1"));
+
+        var replay = await service.UpdateIntentAsync(renameRequest);
+
+        Assert.True(replay.Replayed);
+        Assert.Equal(renamed.Operation.Id, replay.Operation.Id);
+    }
+
+    [Fact]
     public async Task Replay_requires_the_original_etag_and_optional_payload()
     {
         var store = new InMemoryElsaInstanceLifecycleStore();

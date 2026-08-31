@@ -30,11 +30,11 @@ public sealed record ElsaInstanceLifecycleRequest(
     public int IfMatchVersion => ExpectedVersion;
 }
 
-/// <summary>Input for an immutable intent revision.</summary>
+/// <summary>Input for an immutable intent revision and optional instance metadata update.</summary>
 public sealed record ElsaInstanceIntentUpdateRequest(
     Guid WorkspaceId,
     Guid InstanceId,
-    ElsaInstanceIntent Intent,
+    ElsaInstanceIntent? Intent,
     int ExpectedVersion,
     string IdempotencyKey,
     string? Name = null,
