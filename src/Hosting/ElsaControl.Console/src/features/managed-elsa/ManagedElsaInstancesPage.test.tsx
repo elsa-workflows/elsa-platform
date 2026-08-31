@@ -115,10 +115,13 @@ describe("ManagedElsaInstancesPage", () => {
   it("scrubs continuation parameters before fetching the authenticated instance list", async () => {
     const replaceState = vi.spyOn(window.history, "replaceState");
     let listFetchedBeforeScrub = false;
+    let scrubbedUrlAtListFetch = "";
     installFetch({
       instances: [instanceFixture()],
       onInstancesRequest: () => {
         listFetchedBeforeScrub = replaceState.mock.calls.length === 0;
+        const lastReplace = replaceState.mock.calls[replaceState.mock.calls.length - 1];
+        scrubbedUrlAtListFetch = String(lastReplace?.[2] ?? "");
       }
     });
 
@@ -127,6 +130,8 @@ describe("ManagedElsaInstancesPage", () => {
     expect(await screen.findByRole("button", { name: "Open" })).toBeInTheDocument();
     expect(replaceState).toHaveBeenCalled();
     expect(listFetchedBeforeScrub).toBe(false);
+    expect(scrubbedUrlAtListFetch).not.toContain("state=");
+    expect(scrubbedUrlAtListFetch).not.toContain("code_challenge=");
   });
 
   it("fails closed when the issue response binding differs from the selected instance", async () => {
