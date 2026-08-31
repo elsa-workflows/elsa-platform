@@ -117,7 +117,7 @@ public sealed class AzureCommandProcessTests
     public async Task Stops_and_classifies_output_that_exceeds_the_configured_cap()
     {
         var result = await new AzureCommandProcess(TimeSpan.FromSeconds(5), 32)
-            .ExecuteAsync(Shell("printf '1234567890123456789012345678901234567890'"), ProjectNoOutput);
+            .ExecuteAsync(Shell("printf '1234567890123456789012345678901234567890'; sleep 1"), ProjectNoOutput);
 
         Assert.Equal(AzureCommandProcessStatus.OutputLimitExceeded, result.Status);
         Assert.Equal(AzureCommandProcessFailureKind.OutputLimitExceeded, result.FailureKind);

@@ -5,9 +5,11 @@ targetScope = 'resourceGroup'
 @maxLength(16)
 param proofName string
 
-@description('The proof is intentionally constrained to West Europe.')
+@description('The proof is intentionally constrained to governed Azure regions.')
 @allowed([
   'westeurope'
+  'northeurope'
+  'swedencentral'
 ])
 param location string = 'westeurope'
 

@@ -40,7 +40,7 @@ public sealed class ElsaHttpWorkflowProbeTests
                 pollInterval: TimeSpan.FromMilliseconds(1)),
             new StaticCredentialSource("proof-password"));
 
-        var result = await probe.RunAsync("https://runtime.example.test", Environment);
+        var result = await probe.RunAsync("https://disposable-proof-app.hash.azurecontainerapps.io", Environment);
 
         Assert.True(result.Succeeded);
         Assert.Equal("proof-instance_01", result.WorkflowId);
@@ -86,7 +86,7 @@ public sealed class ElsaHttpWorkflowProbeTests
         var probe = CreateProbe(client);
 
         var exception = await Assert.ThrowsAsync<DeploymentProofStageException>(() =>
-            probe.RunAsync("https://runtime.example.test", Environment));
+            probe.RunAsync("https://disposable-proof-app.hash.azurecontainerapps.io", Environment));
 
         Assert.Equal(DeploymentProofStage.Workflow, exception.Stage);
         Assert.Equal("azure.proof.workflow.instanceHeaderMissing", exception.Code);
@@ -101,7 +101,7 @@ public sealed class ElsaHttpWorkflowProbeTests
         using var client = new HttpClient(handler);
         var probe = CreateProbe(client);
 
-        var result = await probe.RunAsync("https://runtime.example.test", Environment);
+        var result = await probe.RunAsync("https://disposable-proof-app.hash.azurecontainerapps.io", Environment);
 
         Assert.False(result.Succeeded);
         Assert.Equal("FinishedWithIncidents", result.Result);
@@ -123,7 +123,7 @@ public sealed class ElsaHttpWorkflowProbeTests
             new StaticCredentialSource("proof-password"));
 
         var exception = await Assert.ThrowsAsync<DeploymentProofStageException>(() =>
-            probe.RunAsync("https://runtime.example.test", Environment));
+            probe.RunAsync("https://disposable-proof-app.hash.azurecontainerapps.io", Environment));
 
         Assert.Equal("azure.proof.workflow.timeout", exception.Code);
     }
@@ -153,11 +153,11 @@ public sealed class ElsaHttpWorkflowProbeTests
         var probe = CreateProbe(client);
 
         var exception = await Assert.ThrowsAsync<DeploymentProofStageException>(() =>
-            probe.RunAsync("https://runtime.example.test", Environment));
+            probe.RunAsync("https://disposable-proof-app.hash.azurecontainerapps.io", Environment));
 
         Assert.Equal("azure.proof.workflow.redirectRejected", exception.Code);
         Assert.Equal(3, handler.Requests.Count);
-        Assert.All(handler.Requests, request => Assert.Equal("runtime.example.test", request.Host));
+        Assert.All(handler.Requests, request => Assert.Equal("disposable-proof-app.hash.azurecontainerapps.io", request.Host));
     }
 
     [Fact]
@@ -172,7 +172,7 @@ public sealed class ElsaHttpWorkflowProbeTests
         var probe = CreateProbe(client);
 
         var exception = await Assert.ThrowsAsync<DeploymentProofStageException>(() =>
-            probe.RunAsync("https://runtime.example.test", Environment));
+            probe.RunAsync("https://disposable-proof-app.hash.azurecontainerapps.io", Environment));
 
         Assert.Equal("azure.proof.workflow.responseTooLarge", exception.Code);
     }
@@ -186,6 +186,25 @@ public sealed class ElsaHttpWorkflowProbeTests
 
         var exception = await Assert.ThrowsAsync<DeploymentProofStageException>(() =>
             probe.RunAsync("https://runtime.example.test/prefix", Environment));
+
+        Assert.Equal("azure.proof.workflow.endpointInvalid", exception.Code);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Theory]
+    [InlineData("https://localhost")]
+    [InlineData("https://127.0.0.1")]
+    [InlineData("https://169.254.169.254")]
+    [InlineData("https://runtime.example.test")]
+    [InlineData("https://other-app.hash.azurecontainerapps.io")]
+    public async Task Rejects_endpoint_outside_the_expected_container_app_identity(string endpoint)
+    {
+        var handler = new RecordingHandler(_ => []);
+        using var client = new HttpClient(handler);
+        var probe = CreateProbe(client);
+
+        var exception = await Assert.ThrowsAsync<DeploymentProofStageException>(() =>
+            probe.RunAsync(endpoint, Environment));
 
         Assert.Equal("azure.proof.workflow.endpointInvalid", exception.Code);
         Assert.Empty(handler.Requests);

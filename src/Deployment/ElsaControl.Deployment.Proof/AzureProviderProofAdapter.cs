@@ -39,7 +39,8 @@ public sealed class AzureProviderProofAdapter(
     IAzureProviderOperationService operationService,
     AzureProviderExecutor executor,
     IAzureProviderProofPlanFactory planFactory,
-    IAzureProviderProofWorkflowProbe? workflowProbe = null) : IDeploymentProofProvider
+    IAzureProviderProofWorkflowProbe? workflowProbe = null,
+    Func<CancellationToken, Task>? prepareCleanup = null) : IDeploymentProofProvider
 {
     private readonly Dictionary<string, AzureProviderOperationSubmission> _submissions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, AzureProviderOperation> _operations = new(StringComparer.Ordinal);
@@ -213,6 +214,8 @@ public sealed class AzureProviderProofAdapter(
         DeploymentProofEnvironment environment,
         CancellationToken cancellationToken = default)
     {
+        if (prepareCleanup is not null)
+            await prepareCleanup(cancellationToken);
         var submission = GetSubmission(plan, DeploymentProofStage.Cleanup);
         var operation = await operationService.SubmitDeleteAsync(workspaceId, submission, cancellationToken);
         var execution = await executor.DeleteAsync(
@@ -225,8 +228,6 @@ public sealed class AzureProviderProofAdapter(
             throw new DeploymentProofStageException(DeploymentProofStage.Cleanup, "azure.proof.cleanupFailed", "The Azure provider did not confirm cleanup.");
 
         var resourceId = deployment?.ResourceId ?? execution.Operation.Resources.WorkloadResourceId;
-        if (string.IsNullOrWhiteSpace(resourceId))
-            throw new DeploymentProofStageException(DeploymentProofStage.Cleanup, "azure.proof.resourceMissing", "The Azure provider did not retain an owned workload resource identity.");
         return new(true, resourceId, new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["operationId"] = execution.Operation.Id.ToString("N")

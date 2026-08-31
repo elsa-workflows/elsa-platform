@@ -20,6 +20,11 @@ public static class AzureWorkloadPlanTranslator
     };
 
     public const string SupportedLocation = "westeurope";
+    public static IReadOnlySet<string> SupportedLocations { get; } =
+        new HashSet<string>([SupportedLocation, "northeurope", "swedencentral"], StringComparer.OrdinalIgnoreCase);
+
+    public static bool IsSupportedLocation(string? location) =>
+        !string.IsNullOrWhiteSpace(location) && SupportedLocations.Contains(location.Trim());
     public const string SupportedTopology = "combined";
     public const string SupportedIsolation = "Dedicated";
     public const string SupportedReleaseLine = "3.8";
@@ -69,6 +74,7 @@ public static class AzureWorkloadPlanTranslator
             canonicalTarget.location,
             elsaVersion = normalized.Release.Version,
             releaseLine = normalized.Release.ReleaseLine,
+            sourceCommit = normalized.Release.SourceCommit.ToLowerInvariant(),
             topology = SupportedTopology,
             isolation = SupportedIsolation,
             imageRepository = component.Image.Repository,
@@ -125,7 +131,7 @@ public static class AzureWorkloadPlanTranslator
 
         if (string.IsNullOrWhiteSpace(target.Location))
             findings.Add(new("azure.location.required", "An Azure location is required.", "azure.target.location"));
-        else if (!string.Equals(target.Location.Trim(), SupportedLocation, StringComparison.OrdinalIgnoreCase))
+        else if (!IsSupportedLocation(target.Location))
             findings.Add(new("azure.location.unsupported", "The requested Azure location is not supported by the initial provider profile.", "azure.target.location"));
     }
 

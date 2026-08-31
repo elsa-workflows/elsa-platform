@@ -18,10 +18,12 @@ The tests are deliberately disposable and do not call Azure, create resources, o
 credentials. The fake provider exercises the same `IDeploymentProofProvider` seam that a real
 provider must implement.
 
-The Azure adapter is intentionally not enabled by this test command. A live proof host must
-register an admitted `IAzureProviderProofPlanFactory`, a concrete `IAzureProviderRunner`, and an
-`IAzureProviderProofWorkflowProbe`; the API worker remains disabled until that host has supplied
-those dependencies and the disposable Azure prerequisites below.
+The Azure adapter is intentionally not enabled by this test command. The isolated
+`ElsaControl.ProofHost` executable composes an admitted plan factory, the concrete
+Azure runner, the durable provider operation store, and the Elsa HTTP workflow probe for the
+provider-driven proof. It is not registered in the API or production worker. Its `validate` mode
+is offline; `run` and `cleanup` require the exact `DISPOSABLE_PROOF_APPLY=YES` gate. See the
+[proof-host runbook](../../src/Deployment/ElsaControl.Deployment.ProofHost/README.md).
 
 ## Inputs and prerequisites
 
@@ -42,8 +44,9 @@ or another approved provider) and returns only safe metadata.
 
 For the real Azure proof, the operator must additionally provide an enabled Azure subscription,
 permission to create and delete the disposable resource group, the approved West Europe region,
-the exact image digest and release metadata, and a documented cost ceiling. Those prerequisites
-belong to the real-provider run and are not hidden in this fake-provider test.
+the exact image digest, immutable manifest and retained signature references/digests, a source
+commit, a durable state path, and the narrow SQL bootstrap identity/IP. Those prerequisites belong
+to the real-provider run and are not hidden in this fake-provider test.
 
 ## Stage contract and evidence
 
@@ -79,3 +82,8 @@ fails before a plan exists, cleanup is recorded as skipped with a safe reason.
 
 The harness is not an Azure provider, an SLO definition, or a production lifecycle controller.
 It is the executable seam and evidence contract used to validate those implementations.
+
+For Azure recovery, preserve the proof host's SQLite state file. Because proof credentials are
+generated only inside one process, an interrupted run must not be resumed as another run. A
+separate `cleanup` invocation with the same bounded identifiers drives the durable delete operation and only passes
+after the provider has cleared all owned resource references and the endpoint.

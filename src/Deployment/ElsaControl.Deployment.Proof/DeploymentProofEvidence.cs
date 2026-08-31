@@ -23,7 +23,8 @@ public static partial class DeploymentProofEvidence
                 Topology = SanitizeScalar(report.Input.Topology),
                 Features = report.Input.Features.Select(SanitizeScalar).ToArray(),
                 ImageReference = SanitizeScalar(report.Input.ImageReference),
-                ImageDigest = SanitizeScalar(report.Input.ImageDigest)
+                ImageDigest = SanitizeScalar(report.Input.ImageDigest),
+                SourceCommit = SanitizeScalar(report.Input.SourceCommit)
             },
             Environment = new
             {

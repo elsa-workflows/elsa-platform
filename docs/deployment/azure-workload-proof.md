@@ -27,3 +27,19 @@ scripts/azure-workload-proof.sh what-if \
 Live apply is intentionally explicit and cost-bounded. It requires `DISPOSABLE_PROOF_APPLY=YES`, uses only the supplied disposable resource group, never accepts a mutable image tag, and must be followed by the cleanup command in the linked runbook.
 
 If the shared ACR is in another subscription, pass `--registry-subscription`; the runbook switches subscription context only for the narrowly scoped AcrPull role deployment and returns to the proof subscription afterward.
+
+## Provider-driven proof host
+
+The legacy script proves the checked-in Azure templates directly. The provider-driven Milestone B
+path is the isolated [`ElsaControl.ProofHost`](../../src/Deployment/ElsaControl.Deployment.ProofHost/README.md).
+It reconstructs the typed Elsa 3.8 Combined plan from retained immutable admission facts, submits
+it through the durable Azure provider operation service/executor, probes health and an actual Elsa
+workflow, repeats apply as a no-op check, and always attempts cleanup.
+
+Use `validate` first. Live `run` and recovery `cleanup` use the same exact mutation gate as the
+script, but also require an absolute SQLite state path. Preserve that file until cleanup reports
+`ownedResourcesAbsent: true`; interrupted or uncertain runs must be recovered by invoking
+`cleanup` (not another `run`) with the same proof name, workspace, target scope, immutable
+artifacts, and state path. Proof output contains safe
+identifiers and digests only, never raw manifests, signature payloads, CLI output, tokens, signer
+identity, connection strings, or generated credentials.

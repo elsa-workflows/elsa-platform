@@ -110,10 +110,10 @@ public sealed class ElsaHttpWorkflowProbe : IAzureProviderProofWorkflowProbe, ID
     {
         ArgumentNullException.ThrowIfNull(environment);
         if (!string.Equals(environment.Provider, "azure", StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(environment.Region, AzureWorkloadPlanTranslator.SupportedLocation, StringComparison.OrdinalIgnoreCase))
+            !AzureWorkloadPlanTranslator.IsSupportedLocation(environment.Region))
             throw Failure("azure.proof.workflow.environmentInvalid", "The workflow proof environment is invalid.");
 
-        var baseUri = ValidateEndpoint(endpoint);
+        var baseUri = ValidateEndpoint(endpoint, environment.Name);
         using var workflowTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         workflowTimeout.CancelAfter(options.WorkflowTimeout);
 
@@ -462,7 +462,7 @@ public sealed class ElsaHttpWorkflowProbe : IAzureProviderProofWorkflowProbe, ID
             : null;
     }
 
-    private static Uri ValidateEndpoint(string endpoint)
+    private static Uri ValidateEndpoint(string endpoint, string environmentName)
     {
         if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) ||
             !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
@@ -470,7 +470,9 @@ public sealed class ElsaHttpWorkflowProbe : IAzureProviderProofWorkflowProbe, ID
             !string.IsNullOrEmpty(uri.UserInfo) ||
             !string.IsNullOrEmpty(uri.Query) ||
             !string.IsNullOrEmpty(uri.Fragment) ||
-            uri.AbsolutePath is not "" and not "/")
+            uri.AbsolutePath is not "" and not "/" ||
+            !uri.Host.EndsWith(".azurecontainerapps.io", StringComparison.OrdinalIgnoreCase) ||
+            !uri.Host.StartsWith(environmentName + "-app.", StringComparison.OrdinalIgnoreCase))
             throw Failure("azure.proof.workflow.endpointInvalid", "The verified Elsa endpoint is invalid.");
 
         return new UriBuilder(uri) { Path = uri.AbsolutePath.TrimEnd('/') + "/" }.Uri;

@@ -38,7 +38,8 @@ public sealed record DeploymentProofInput
         string topology,
         IReadOnlyList<string> features,
         string imageReference,
-        string imageDigest)
+        string imageDigest,
+        string sourceCommit = "")
     {
         ElsaVersion = elsaVersion;
         Topology = topology;
@@ -47,6 +48,7 @@ public sealed record DeploymentProofInput
             : features.ToArray();
         ImageReference = imageReference;
         ImageDigest = imageDigest;
+        SourceCommit = sourceCommit;
     }
 
     public string ElsaVersion { get; }
@@ -58,6 +60,8 @@ public sealed record DeploymentProofInput
     public string ImageReference { get; }
 
     public string ImageDigest { get; }
+
+    public string SourceCommit { get; }
 }
 
 /// <summary>
@@ -134,7 +138,7 @@ public sealed record DeploymentProofApply(
 
 public sealed record DeploymentProofCleanup(
     bool Succeeded,
-    string ResourceId,
+    string? ResourceId,
     IReadOnlyDictionary<string, string> SafeMetadata);
 
 public sealed record DeploymentProofStageResult(

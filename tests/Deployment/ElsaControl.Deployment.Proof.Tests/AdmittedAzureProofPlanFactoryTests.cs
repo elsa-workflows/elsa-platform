@@ -14,7 +14,7 @@ public sealed class AdmittedAzureProofPlanFactoryTests
     public void Creates_deterministic_submission_from_admitted_plan()
     {
         var factory = new AdmittedAzureProofPlanFactory(
-            Resolution(), new("proof", "westeurope"), new string('c', 64), new string('d', 64));
+            Resolution(), new("proof", "westeurope"), new string('c', 64), new string('d', 64), ["studio", "server"]);
         var selection = Selection();
         var environment = new DeploymentProofEnvironment("proof", "westeurope", "azure", []);
 
@@ -30,18 +30,33 @@ public sealed class AdmittedAzureProofPlanFactoryTests
     }
 
     [Fact]
+    public void Creates_submission_for_governed_north_europe_fallback()
+    {
+        var factory = new AdmittedAzureProofPlanFactory(
+            Resolution(), new("proof", "northeurope"), new string('c', 64), new string('d', 64), ["studio", "server"]);
+
+        var submission = factory.Create(
+            Selection(), new DeploymentProofEnvironment("proof", "northeurope", "azure", []));
+
+        Assert.Equal("northeurope", submission.Plan.Location);
+    }
+
+    [Fact]
     public void Rejects_selection_or_environment_mismatch_with_value_free_error()
     {
         var factory = new AdmittedAzureProofPlanFactory(
-            Resolution(), new("proof", "westeurope"), new string('c', 64), new string('d', 64));
+            Resolution(), new("proof", "westeurope"), new string('c', 64), new string('d', 64), ["studio", "server"]);
 
         var environmentError = Assert.Throws<DeploymentProofStageException>(() => factory.Create(
             Selection(), new("secret-environment", "eastus", "azure", [])));
         var selectionError = Assert.Throws<DeploymentProofStageException>(() => factory.Create(
             Selection() with { ElsaVersion = "secret-version" }, new("proof", "westeurope", "azure", [])));
+        var featureError = Assert.Throws<DeploymentProofStageException>(() => factory.Create(
+            Selection() with { Features = ["unadmitted"] }, new("proof", "westeurope", "azure", [])));
 
         Assert.Equal("azure.proof.environmentMismatch", environmentError.Code);
         Assert.Equal("azure.proof.planMismatch", selectionError.Code);
+        Assert.Equal("azure.proof.authorityInvalid", featureError.Code);
         Assert.DoesNotContain("secret", environmentError.Message, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("secret", selectionError.Message, StringComparison.OrdinalIgnoreCase);
     }

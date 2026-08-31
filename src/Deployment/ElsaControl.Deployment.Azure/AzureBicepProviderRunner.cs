@@ -593,6 +593,10 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                     throw new FormatException();
                 var endpoint = host.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? host : $"https://{host}";
                 AzureProviderOperationValidation.ValidateEndpoint(endpoint);
+                if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) ||
+                    !uri.Host.EndsWith(".azurecontainerapps.io", StringComparison.OrdinalIgnoreCase) ||
+                    !uri.Host.StartsWith(AppName(command) + ".", StringComparison.OrdinalIgnoreCase))
+                    throw new FormatException();
                 return new SafeValue<string>(endpoint);
             },
             cancellationToken);
@@ -682,19 +686,25 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             }
 
             var vaultId = resources.KeyVaultResourceId ?? ResourceId("Microsoft.KeyVault", "vaults", $"{command.Plan.WorkloadName}-kv");
-            var assignments = await ExecuteAzAsync(command,
-                ["role", "assignment", "list", "--subscription", _scope.SubscriptionId, "--scope", vaultId,
-                    "--all", "--output", "json", "--only-show-errors"],
-                ParseRoleAssignmentsAsync,
-                cancellationToken);
-            if (!assignments.Succeeded || assignments.Value is null || !HasSafeVaultAssignmentsForCleanup(assignments.Value.Value, resources, command.Plan.WorkloadName))
-                return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.rbac-unverified", "The owned Key Vault role-assignment inventory is not exact.");
+            var vaultPresent = inventory.Value.Value.Any(resource =>
+                string.Equals(resource.Id, vaultId, StringComparison.OrdinalIgnoreCase));
+            if (vaultPresent)
+            {
+                var assignments = await ExecuteAzAsync(command,
+                    ["role", "assignment", "list", "--subscription", _scope.SubscriptionId, "--scope", vaultId,
+                        "--output", "json", "--only-show-errors"],
+                    ParseRoleAssignmentsAsync,
+                    cancellationToken);
+                if (!assignments.Succeeded || assignments.Value is null || !HasSafeVaultAssignmentsForCleanup(assignments.Value.Value, resources, command.Plan.WorkloadName))
+                    return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.rbac-unverified", "The owned Key Vault role-assignment inventory is not exact.");
+            }
         }
 
         var registryId = resources.RegistryResourceId ?? RegistryResourceId();
         var roleAssignmentId = resources.AcrPullRoleAssignmentId;
         var acrDeploymentId = resources.AcrPullDeploymentId;
-        if (resources.WorkloadIdentityPrincipalId is not null)
+        var registryGroupPresent = true;
+        if (registryGroupPresent && resources.WorkloadIdentityPrincipalId is not null)
         {
             acrDeploymentId ??= DeploymentId(
                 _scope.RegistrySubscriptionId,
@@ -706,23 +716,34 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                     command,
                     registryId,
                     resources.WorkloadIdentityPrincipalId,
-                    CancellationToken.None);
+                    cancellationToken);
                 if (discovered.Status == AcrRoleDiscoveryStatus.Uncertain)
-                    return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-observation-uncertain", "The owned ACR role assignment could not be observed before deletion.");
+                {
+                    var registryGroupExists = await ExecuteAzAsync(command,
+                        ["group", "exists", "--subscription", _scope.RegistrySubscriptionId, "--name", _scope.RegistryResourceGroupName,
+                            "--output", "tsv", "--only-show-errors"],
+                        ParseBooleanAsync,
+                        cancellationToken);
+                    if (!registryGroupExists.Succeeded || registryGroupExists.Value is null || registryGroupExists.Value.Value)
+                        return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-observation-uncertain", "The owned ACR role assignment could not be observed before deletion.");
+                    registryGroupPresent = false;
+                    acrDeploymentId = null;
+                }
                 if (discovered.Status == AcrRoleDiscoveryStatus.Ambiguous)
                     return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-provenance-invalid", "The ACR role-assignment inventory is not exact for the workload identity.");
-                roleAssignmentId = discovered.AssignmentId;
+                if (registryGroupPresent)
+                    roleAssignmentId = discovered.AssignmentId;
             }
         }
 
-        if (roleAssignmentId is not null)
+        if (registryGroupPresent && roleAssignmentId is not null)
         {
             try { ValidateExactRoleAssignmentId(roleAssignmentId, registryId); }
             catch (ArgumentException exception) { return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-scope-invalid", exception.Message); }
             if (resources.WorkloadIdentityPrincipalId is null)
                 return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-provenance-invalid", "The owned ACR role assignment lacks the exact registry and workload identity provenance required for deletion.");
             var roleProvenance = await ValidateAcrRoleAssignmentAsync(command, roleAssignmentId,
-                registryId, resources.WorkloadIdentityPrincipalId, CancellationToken.None);
+                registryId, resources.WorkloadIdentityPrincipalId, cancellationToken);
             if (roleProvenance is null)
                 return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-observation-uncertain", "The owned ACR role assignment could not be observed before deletion.");
             if (!roleProvenance.Value)
@@ -731,12 +752,12 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             await ExecuteAzAsync<AzureCommandNoOutput>(command,
                 ["role", "assignment", "delete", "--ids", roleAssignmentId, "--output", "none", "--only-show-errors"],
                 static _ => AzureCommandNoOutput.Instance,
-                CancellationToken.None);
-            if (!await RoleAssignmentAbsentAsync(command, roleAssignmentId, CancellationToken.None))
+                cancellationToken);
+            if (!await RoleAssignmentAbsentAsync(command, roleAssignmentId, cancellationToken))
                 return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-uncertain", "The owned ACR role assignment could not be proven absent.");
         }
 
-        if (acrDeploymentId is not null)
+        if (registryGroupPresent && acrDeploymentId is not null)
         {
             try
             {
@@ -754,8 +775,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 ["deployment", "group", "delete", "--subscription", _scope.RegistrySubscriptionId, "--resource-group", _scope.RegistryResourceGroupName,
                     "--name", deployment, "--output", "none", "--only-show-errors"],
                 static _ => AzureCommandNoOutput.Instance,
-                CancellationToken.None);
-            if (!await DeploymentAbsentAsync(command, deployment, CancellationToken.None))
+                cancellationToken);
+            if (!await DeploymentAbsentAsync(command, deployment, cancellationToken))
                 return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.deployment-uncertain", "The owned ACR deployment record could not be proven absent.");
         }
 
@@ -765,14 +786,14 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             await ExecuteAzAsync<AzureCommandNoOutput>(command,
                 ["group", "delete", "--subscription", _scope.SubscriptionId, "--name", _scope.ResourceGroupName, "--yes", "--no-wait", "--output", "none", "--only-show-errors"],
                 static _ => AzureCommandNoOutput.Instance,
-                CancellationToken.None);
-            if (!await ResourceGroupAbsentAsync(command, CancellationToken.None))
+                cancellationToken);
+            if (!await ResourceGroupAbsentAsync(command, cancellationToken))
                 return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.group-uncertain", "The owned resource group could not be proven absent.");
         }
 
         var vaultName = $"{command.Plan.WorkloadName}-kv";
         var exactVaultId = resources.KeyVaultResourceId ?? ResourceId("Microsoft.KeyVault", "vaults", vaultName);
-        if (!await PurgeAndVerifyVaultAsync(command, vaultName, exactVaultId, CancellationToken.None))
+        if (!await PurgeAndVerifyVaultAsync(command, vaultName, exactVaultId, cancellationToken))
             return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.vault-uncertain", "The owned Key Vault could not be proven absent.");
 
         return new AzureProviderRunnerResult(
@@ -833,7 +854,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         {
             var list = await ExecuteAzAsync(command,
                 ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--scope", registryId,
-                    "--all", "--assignee-object-id", principalId,
+                    "--assignee-object-id", principalId,
                     "--role", "AcrPull", "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
@@ -1108,7 +1129,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         {
             var list = await ExecuteAzAsync(command,
                 ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--scope", RegistryResourceId(),
-                    "--all", "--output", "json", "--only-show-errors"],
+                    "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
             if (list.Succeeded && list.Value is not null && !list.Value.Value.Any(x => string.Equals(x.Id, assignmentId, StringComparison.OrdinalIgnoreCase)))
@@ -1127,7 +1148,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     {
         var list = await ExecuteAzAsync(command,
             ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--scope", registryId,
-                "--all", "--output", "json", "--only-show-errors"],
+                "--output", "json", "--only-show-errors"],
             ParseRoleAssignmentsAsync,
             cancellationToken);
         if (!list.Succeeded || list.Value is null)
@@ -1163,7 +1184,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         {
             var list = await ExecuteAzAsync(command,
                 ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--scope", registryId,
-                    "--all", "--output", "json", "--only-show-errors"],
+                    "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
             if (list.Succeeded && list.Value is not null)
@@ -1274,7 +1295,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                     ["keyvault", "purge", "--subscription", _scope.SubscriptionId, "--name", vaultName, "--location", _scope.Location,
                         "--output", "none", "--only-show-errors"],
                     static _ => AzureCommandNoOutput.Instance,
-                    CancellationToken.None);
+                    cancellationToken);
                 purgeRequested = true;
             }
             if (attempt + 1 < observationAttempts)
@@ -1334,9 +1355,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         if (!string.Equals(command.Plan.Topology, AzureWorkloadPlanTranslator.SupportedTopology, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(command.Plan.Isolation, AzureWorkloadPlanTranslator.SupportedIsolation, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(command.Plan.ReleaseLine, AzureWorkloadPlanTranslator.SupportedReleaseLine, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(command.Plan.ElsaVersion, AzureWorkloadPlanTranslator.SupportedReleaseLine, StringComparison.Ordinal) ||
+            !BelongsToReleaseLine(command.Plan.ReleaseLine, command.Plan.ElsaVersion) ||
             !string.Equals(command.Plan.ImageRepository, SupportedImageRepository, StringComparison.Ordinal) ||
-            !string.Equals(command.Plan.Location, AzureWorkloadPlanTranslator.SupportedLocation, StringComparison.OrdinalIgnoreCase) ||
+            !AzureWorkloadPlanTranslator.IsSupportedLocation(command.Plan.Location) ||
             command.Plan.ImageDigest.Length != 64 || !command.Plan.ImageDigest.All(Uri.IsHexDigit) ||
             !AzureProviderOperationValidation.IsSafeImmutableEvidenceReference(command.Plan.ReleaseManifestReference, command.Plan.ReleaseManifestDigest) ||
             !AzureProviderOperationValidation.IsSafeImmutableEvidenceReference(command.Plan.ReleaseManifestSignatureReference, command.Plan.ReleaseManifestSignatureDigest) ||
@@ -1549,6 +1570,10 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                int.TryParse(ordinal, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) && parsed is >= 1 and < 1000;
     }
     private static bool IsFingerprint(string? value) => value is not null && value.Length == 64 && value.All(Uri.IsHexDigit);
+    private static bool BelongsToReleaseLine(string releaseLine, string version) =>
+        string.Equals(version, releaseLine, StringComparison.OrdinalIgnoreCase) ||
+        version.StartsWith(releaseLine + ".", StringComparison.OrdinalIgnoreCase) ||
+        version.StartsWith(releaseLine + "-", StringComparison.OrdinalIgnoreCase);
     private static bool IsSafeWorkloadName(string? value) => value is not null && value.Length is >= 3 and <= 16 &&
         char.IsAsciiLetterOrDigit(value[0]) && char.IsAsciiLetterOrDigit(value[^1]) &&
         value.All(character => char.IsAsciiLetterOrDigit(character) || character == '-');

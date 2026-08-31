@@ -175,6 +175,33 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         return entity is null ? null : ToModel(entity);
     }
 
+    /// <summary>
+    /// Finds the active reconcile reservation even when interruption happened before the first
+    /// resource checkpoint. This is used only by the explicit disposable proof cleanup recovery.
+    /// </summary>
+    public async Task<AzureProviderOperation?> GetLatestActiveReconcileAsync(
+        Guid workspaceId,
+        string targetKey,
+        string? providerScopeFingerprint,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(targetKey))
+            throw new ArgumentException("Target key is required.", nameof(targetKey));
+
+        var normalizedTargetKey = targetKey.Trim().ToLowerInvariant();
+        var entity = await db.AzureProviderOperations.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.TargetKey == normalizedTargetKey &&
+                        x.ProviderScopeFingerprint == providerScopeFingerprint &&
+                        x.Action == AzureProviderOperationAction.Reconcile &&
+                        (x.Status == AzureProviderOperationStatus.Running ||
+                         x.Status == AzureProviderOperationStatus.RecoveryRequired))
+            .OrderByDescending(x => x.UpdatedAt)
+            .ThenByDescending(x => x.CreatedAt)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        return entity is null ? null : ToModel(entity);
+    }
+
     public async Task<AzureProviderOperation?> MarkUnrestorableAsync(
         Guid workspaceId,
         Guid operationId,

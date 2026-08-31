@@ -9,7 +9,8 @@ public sealed class DeploymentProofHarnessTests
         "Combined",
         ["DefaultAuthentication", "Liquid", "StructuredLogs", "StructuredLogsDashboard", "ConsoleLogs", "ConsoleLogsDashboard", "OpenTelemetry"],
         "valenceruntimeimages.azurecr.io/runtime-combined",
-        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "d43865d8995f7ea6d6180a416f9322c904cbe9a4");
 
     private static readonly DeploymentProofEnvironment Environment = new(
         "proof-disposable",
@@ -46,6 +47,7 @@ public sealed class DeploymentProofHarnessTests
         Assert.Equal("false", report.Stages[5].Evidence["applied"]);
         Assert.Equal("true", report.Stages[5].Evidence["noOp"]);
         Assert.Contains("\"outcome\": \"passed\"", report.ToJson(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("d43865d8995f7ea6d6180a416f9322c904cbe9a4", report.ToJson(), StringComparison.Ordinal);
     }
 
     [Theory]
@@ -76,6 +78,22 @@ public sealed class DeploymentProofHarnessTests
             Assert.Equal(DeploymentProofStageStatus.Passed, report.Stages.Single(stage => stage.Stage == DeploymentProofStage.Cleanup).Status);
             Assert.Equal("fake-resource-3.8-combined", Assert.Single(provider.CleanupResourceIds));
         }
+    }
+
+    [Fact]
+    public async Task Verified_cleanup_after_partial_provision_does_not_require_a_workload_resource_identity()
+    {
+        var provider = new FakeDeploymentProofProvider(
+            new HashSet<DeploymentProofStage> { DeploymentProofStage.Provision },
+            cleanupWithoutResource: true);
+
+        var report = await new DeploymentProofHarness().RunAsync(Input, Environment, provider);
+
+        Assert.False(report.Passed);
+        var cleanup = report.Stages.Single(stage => stage.Stage == DeploymentProofStage.Cleanup);
+        Assert.Equal(DeploymentProofStageStatus.Passed, cleanup.Status);
+        Assert.Equal("true", cleanup.Evidence["succeeded"]);
+        Assert.DoesNotContain("resourceId", cleanup.Evidence.Keys);
     }
 
     [Fact]

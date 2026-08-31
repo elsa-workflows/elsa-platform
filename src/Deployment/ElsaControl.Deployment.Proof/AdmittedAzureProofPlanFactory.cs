@@ -14,6 +14,7 @@ public sealed class AdmittedAzureProofPlanFactory(
     AzureWorkloadTarget target,
     string templateFingerprint,
     string providerScopeFingerprint,
+    IReadOnlyList<string> admittedFeatures,
     string idempotencyPrefix = "azure-proof") : IAzureProviderProofPlanFactory
 {
     public AzureProviderOperationSubmission Create(
@@ -23,10 +24,14 @@ public sealed class AdmittedAzureProofPlanFactory(
         ArgumentNullException.ThrowIfNull(selection);
         ArgumentNullException.ThrowIfNull(environment);
         if (!string.Equals(environment.Provider, "azure", StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(environment.Region, AzureWorkloadPlanTranslator.SupportedLocation, StringComparison.OrdinalIgnoreCase) ||
+            !AzureWorkloadPlanTranslator.IsSupportedLocation(environment.Region) ||
+            !string.Equals(environment.Region, target.Location, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(environment.Name, target.WorkloadName, StringComparison.OrdinalIgnoreCase))
             throw PlanFailure("azure.proof.environmentMismatch");
         if (!IsSha256(templateFingerprint) || !IsSha256(providerScopeFingerprint) ||
+            admittedFeatures is null ||
+            !selection.Features.Order(StringComparer.Ordinal).SequenceEqual(
+                admittedFeatures.Order(StringComparer.Ordinal), StringComparer.Ordinal) ||
             string.IsNullOrWhiteSpace(idempotencyPrefix) || idempotencyPrefix.Length > 64 ||
             idempotencyPrefix.Any(character => !char.IsAsciiLetterOrDigit(character) && character is not '-' and not '_'))
             throw PlanFailure("azure.proof.authorityInvalid");
