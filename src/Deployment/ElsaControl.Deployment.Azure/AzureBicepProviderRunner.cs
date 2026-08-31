@@ -691,7 +691,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             if (vaultPresent)
             {
                 var assignments = await ExecuteAzAsync(command,
-                    ["role", "assignment", "list", "--subscription", _scope.SubscriptionId, "--scope", vaultId,
+                    ["role", "assignment", "list", "--subscription", _scope.SubscriptionId, "--all",
+                        "--query", $"[?scope=='{vaultId}']",
                         "--output", "json", "--only-show-errors"],
                     ParseRoleAssignmentsAsync,
                     cancellationToken);
@@ -853,9 +854,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
         {
             var list = await ExecuteAzAsync(command,
-                ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--scope", registryId,
-                    "--assignee-object-id", principalId,
-                    "--role", "AcrPull", "--output", "json", "--only-show-errors"],
+                ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
+                    "--assignee-object-id", principalId, "--role", "AcrPull",
+                    "--query", $"[?id=='{expectedAssignmentId}']", "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
             if (!list.Succeeded)
@@ -1128,8 +1129,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
         {
             var list = await ExecuteAzAsync(command,
-                ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--scope", RegistryResourceId(),
-                    "--output", "json", "--only-show-errors"],
+                ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
+                    "--query", $"[?id=='{assignmentId}']", "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
             if (list.Succeeded && list.Value is not null && !list.Value.Value.Any(x => string.Equals(x.Id, assignmentId, StringComparison.OrdinalIgnoreCase)))
@@ -1147,8 +1148,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         CancellationToken cancellationToken)
     {
         var list = await ExecuteAzAsync(command,
-            ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--scope", registryId,
-                "--output", "json", "--only-show-errors"],
+            ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
+                "--assignee-object-id", principalId, "--role", "AcrPull",
+                "--query", $"[?scope=='{registryId}']", "--output", "json", "--only-show-errors"],
             ParseRoleAssignmentsAsync,
             cancellationToken);
         if (!list.Succeeded || list.Value is null)
@@ -1183,8 +1185,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
         {
             var list = await ExecuteAzAsync(command,
-                ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--scope", registryId,
-                    "--output", "json", "--only-show-errors"],
+                ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
+                    "--assignee-object-id", principalId, "--role", "AcrPull",
+                    "--query", $"[?id=='{assignmentId}']", "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
             if (list.Succeeded && list.Value is not null)

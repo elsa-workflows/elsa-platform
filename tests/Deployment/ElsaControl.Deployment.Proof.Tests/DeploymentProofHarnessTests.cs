@@ -85,7 +85,7 @@ public sealed class DeploymentProofHarnessTests
     {
         var provider = new FakeDeploymentProofProvider(
             new HashSet<DeploymentProofStage> { DeploymentProofStage.Provision },
-            new Dictionary<string, string> { ["resourceId"] = "stale-resource-id" },
+            new Dictionary<string, string> { ["ResourceId"] = "stale-resource-id" },
             cleanupWithoutResource: true);
 
         var report = await new DeploymentProofHarness().RunAsync(Input, Environment, provider);

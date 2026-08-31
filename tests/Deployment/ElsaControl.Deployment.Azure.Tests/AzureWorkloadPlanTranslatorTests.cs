@@ -137,6 +137,18 @@ public sealed class AzureWorkloadPlanTranslatorTests
     }
 
     [Fact]
+    public void Equivalent_source_commit_whitespace_does_not_change_the_provider_plan_fingerprint()
+    {
+        var plan = CreatePlan();
+        var first = AzureWorkloadPlanTranslator.Translate(plan, new("workload-a", "westeurope"));
+        var second = AzureWorkloadPlanTranslator.Translate(
+            plan with { Release = plan.Release with { SourceCommit = $" {plan.Release.SourceCommit.ToUpperInvariant()} " } },
+            new("workload-a", "westeurope"));
+
+        Assert.Equal(first.Plan?.Fingerprint, second.Plan?.Fingerprint);
+    }
+
+    [Fact]
     public void Rejects_null_image_repository_without_throwing()
     {
         var plan = CreatePlan();

@@ -74,7 +74,7 @@ public static class AzureWorkloadPlanTranslator
             canonicalTarget.location,
             elsaVersion = normalized.Release.Version,
             releaseLine = normalized.Release.ReleaseLine,
-            sourceCommit = normalized.Release.SourceCommit.ToLowerInvariant(),
+            sourceCommit = normalized.Release.SourceCommit.Trim().ToLowerInvariant(),
             topology = SupportedTopology,
             isolation = SupportedIsolation,
             imageRepository = component.Image.Repository,

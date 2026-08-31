@@ -288,7 +288,7 @@ public sealed class DeploymentProofHarness(
 
     private static Dictionary<string, string> CleanupMetadata(DeploymentProofCleanup value)
     {
-        var metadata = new Dictionary<string, string>(value.SafeMetadata, StringComparer.Ordinal)
+        var metadata = new Dictionary<string, string>(value.SafeMetadata, StringComparer.OrdinalIgnoreCase)
         {
             ["succeeded"] = value.Succeeded.ToString().ToLowerInvariant()
         };
