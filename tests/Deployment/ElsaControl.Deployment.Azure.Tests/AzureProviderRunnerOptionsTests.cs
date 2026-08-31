@@ -49,6 +49,20 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     }
 
     [Fact]
+    public void Provider_scope_fingerprint_binds_bootstrap_authority_and_expiry()
+    {
+        var options = ValidOptions();
+        var scope = ValidScope();
+
+        Assert.NotEqual(
+            options.ComputeProviderScopeFingerprint(scope),
+            (options with { SqlBootstrapIp = "203.0.113.11" }).ComputeProviderScopeFingerprint(scope));
+        Assert.NotEqual(
+            options.ComputeProviderScopeFingerprint(scope),
+            (options with { ExpiryUtc = options.ExpiryUtc.AddDays(1) }).ComputeProviderScopeFingerprint(scope));
+    }
+
+    [Fact]
     public void Secret_lease_is_value_free_in_text_and_json_and_unavailable_after_disposal()
     {
         var lease = new AzureSecretLease("sensitive-value");

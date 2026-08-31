@@ -78,6 +78,27 @@ public sealed record AzureProviderRunnerOptions
     public int ObservationAttempts { get; init; } = 60;
     public TimeSpan ObservationDelay { get; init; } = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// Binds the durable operation to every safe configuration value that selects or authorizes
+    /// remote Azure mutation. Template contents are bound separately by TemplateFingerprint.
+    /// </summary>
+    public string ComputeProviderScopeFingerprint(AzureProviderTargetScope scope)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        Validate();
+        scope.Validate();
+        var canonical = JsonSerializer.Serialize(new
+        {
+            targetScopeFingerprint = scope.ComputeFingerprint(),
+            sqlBootstrapObjectId = SqlBootstrapObjectId.ToLowerInvariant(),
+            sqlBootstrapLogin = SqlBootstrapLogin,
+            sqlBootstrapIp = SqlBootstrapIp,
+            owner = Owner.ToLowerInvariant(),
+            expiryUtc = ExpiryUtc.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+        });
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+    }
+
     public void Validate()
     {
         if (!Enabled)
