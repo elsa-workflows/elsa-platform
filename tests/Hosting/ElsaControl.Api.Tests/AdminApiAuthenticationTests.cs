@@ -27,9 +27,8 @@ public sealed class AdminApiAuthenticationTests
         });
 
         var response = await app.CreateClient().GetAsync("/health");
-        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("ok", payload.RootElement.GetProperty("status").GetString());
         Assert.Equal("1786839398", payload.RootElement.GetProperty("buildNumber").GetString());
         Assert.Equal("abcdef0123456789", payload.RootElement.GetProperty("imageId").GetString());
@@ -45,9 +44,8 @@ public sealed class AdminApiAuthenticationTests
         });
 
         var response = await app.CreateClient().GetAsync("/health");
-        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("unknown", payload.RootElement.GetProperty("buildNumber").GetString());
         Assert.Equal("unknown", payload.RootElement.GetProperty("imageId").GetString());
     }
