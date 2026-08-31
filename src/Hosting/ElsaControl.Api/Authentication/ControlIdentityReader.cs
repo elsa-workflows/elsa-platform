@@ -14,14 +14,30 @@ public sealed class ControlIdentityReader(IOptions<ControlIdentityOptions> optio
 
     public static bool HasBearerToken(HttpContext context)
     {
-        var authorization = context.Request.Headers.Authorization.FirstOrDefault();
-        return authorization?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true;
+        foreach (var header in context.Request.Headers.Authorization)
+        {
+            if (header is null)
+                continue;
+
+            foreach (var value in header.Split(',', StringSplitOptions.TrimEntries))
+            {
+                var scheme = value.TrimStart();
+                var hasBearerScheme = scheme.Length == "Bearer".Length ||
+                                      (scheme.Length > "Bearer".Length && char.IsWhiteSpace(scheme["Bearer".Length]));
+                if (hasBearerScheme && scheme.StartsWith("Bearer", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     public async ValueTask<TrustedWorkspaceIdentity?> ReadAsync(HttpContext context)
     {
         var result = await context.AuthenticateAsync(ControlIdentityDefaults.Scheme);
-        var user = result.Succeeded ? result.Principal : context.User;
+        var user = result.Succeeded
+            ? result.Principal
+            : HasBearerToken(context) ? null : context.User;
         return ControlClaimsIdentityMapper.ToTrustedWorkspaceIdentity(user, _options);
     }
 

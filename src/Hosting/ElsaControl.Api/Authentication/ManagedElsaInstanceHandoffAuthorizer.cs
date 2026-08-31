@@ -26,7 +26,7 @@ public sealed class ManagedElsaInstanceHandoffAuthorizer(
         if (!effective.Has(ManagedElsaInstancePermissions.Open))
             return null;
 
-        var target = await identities.EnsureAsync(request.OrganizationId, request.InstanceId, cancellationToken);
+        var target = await identities.FindOpenableAsync(request.OrganizationId, request.InstanceId, cancellationToken);
         if (target is null ||
             !string.Equals(target.Audience, request.Audience, StringComparison.Ordinal) ||
             !ManagedElsaHandoffIssuer.HasExactRedirectBinding(target.CallbackUri, request.RedirectUri))
@@ -47,7 +47,7 @@ public sealed class ManagedElsaInstanceHandoffAuthorizer(
         ManagedElsaHandoffClaims claims,
         CancellationToken cancellationToken = default)
     {
-        var target = await identities.FindAsync(claims.OrganizationId, claims.InstanceId, cancellationToken);
+        var target = await identities.FindOpenableAsync(claims.OrganizationId, claims.InstanceId, cancellationToken);
         if (target is null || target.BindingVersion != claims.BindingVersion ||
             !string.Equals(target.Audience, claims.Audience, StringComparison.Ordinal) ||
             !ManagedElsaHandoffIssuer.HasExactRedirectBinding(target.CallbackUri, claims.RedirectUri))

@@ -352,6 +352,50 @@ public sealed class ElsaInstancePersistenceTests
     }
 
     [Fact]
+    public async Task Managed_instance_catalog_omits_stale_binding_values()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Managed catalog workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        instance.CurrentDeploymentEndpointUri = "https://control.example/runtime";
+        db.ElsaInstances.Add(instance);
+        db.ElsaInstanceIdentityBindings.Add(NewBinding(
+            instance.Id,
+            ElsaInstanceIdentityBinding.AudienceFor(instance.Id),
+            "https://control.example/managed-elsa/handoff/callback"));
+        await db.SaveChangesAsync();
+
+        var catalog = new EfCoreManagedElsaInstanceCatalog(db);
+        var current = Assert.Single(await catalog.ListAsync(workspace.Id));
+        Assert.Equal(ElsaInstanceIdentityBinding.AudienceFor(instance.Id), current.Audience);
+        Assert.Equal("https://control.example/managed-elsa/handoff/callback", current.CallbackUri?.OriginalString);
+        Assert.Equal(1, current.BindingVersion);
+
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE ElsaInstances SET CurrentDeploymentEndpointUri = {"https://different.example/runtime"} WHERE Id = {instance.Id}");
+        db.ChangeTracker.Clear();
+
+        var stale = Assert.Single(await catalog.ListAsync(workspace.Id));
+        Assert.Null(stale.Audience);
+        Assert.Null(stale.CallbackUri);
+        Assert.Null(stale.BindingVersion);
+
+        var deleted = await db.ElsaInstances.SingleAsync(x => x.Id == instance.Id);
+        deleted.DesiredLifecycle = ElsaDesiredLifecycle.Deleting;
+        deleted.ObservedLifecycle = ElsaObservedLifecycle.Deleted;
+        deleted.DeletedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
+
+        Assert.Empty(await catalog.ListAsync(workspace.Id));
+    }
+
+    [Fact]
     public async Task Instance_tenant_audience_must_be_derived_from_instance_id()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

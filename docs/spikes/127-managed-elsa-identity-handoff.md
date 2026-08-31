@@ -9,18 +9,26 @@ customer identity and organization authority. The managed Elsa runtime does not
 create a second customer account or accept a Control session cookie.
 
 1. The browser is already authenticated to Elsa Control through the existing
-   `IWorkspaceIdentityReader` seam (OIDC cookie or validated Control JWT).
-2. Control resolves the current organization and Elsa Instance authorization from
-   its own store. Browser-provided account IDs, roles, organization IDs and
-   instance IDs are never trusted as authority.
-3. Control signs a one-minute RS256 JWT for the exact managed instance audience and
-   exact callback URI. The token includes a PKCE S256 code challenge; the token is
-   returned only to the authenticated caller.
-4. The managed runtime posts the code to the Control redemption seam over TLS,
-   supplying its expected audience, callback URI and the verifier held by the
-   initiating browser/runtime. Control validates the signature, claims and
-   verifier, atomically consumes the `jti`, and checks current organization/instance
-   authorization again.
+   `IWorkspaceIdentityReader` seam (OIDC cookie or validated Control JWT). When a
+   customer selects Open, it navigates to the selected runtime's fixed
+   `/managed-elsa/handoff/start` endpoint. The runtime creates an unpredictable,
+   short-lived `state` and PKCE verifier, retaining both in protected browser-bound
+   correlation state (for example an HttpOnly/Secure/SameSite cookie or a server-side
+   record). The verifier never enters the Control browser flow.
+2. The runtime redirects to a fixed, configured Elsa Control continuation with only
+   the instance ID, `state`, and S256 `code_challenge` in the URL. Control resolves
+   the current organization and Elsa Instance authorization from its own store.
+   Browser-provided account IDs, roles, organization IDs, instance IDs, callback
+   URIs, and audiences are never trusted as authority.
+3. Control signs a one-minute RS256 JWT for the authoritative managed instance
+   audience and exact callback URI, including the runtime-supplied PKCE challenge.
+   It then form-POSTs only `code` and `state` to that exact callback. Control never
+   creates, receives, or posts the PKCE verifier.
+4. The runtime validates and atomically consumes the browser-bound `state`
+   correlation before redeeming the code server-to-server with its retained
+   verifier, expected audience, and callback URI. Control validates the signature,
+   claims and verifier, atomically consumes the `jti`, and checks current
+   organization/instance authorization again.
 5. The runtime creates its own short-lived HttpOnly/SameSite session. It never uses
    the handoff code as a long-lived bearer token. Runtime logout revokes that local
    session.
@@ -95,7 +103,7 @@ but must not be silently treated as a permanent instance identity.
 | Code replay/race | `IManagedElsaHandoffReplayStore.TryConsumeAsync` is the first state-changing redemption operation; `ConcurrentDictionary.TryAdd` gives the local prototype an atomic single-use check. Production must use a shared durable conditional insert with expiry. |
 | Wrong runtime receives a code | `aud` is instance-specific and is validated against the target's expected audience. |
 | Open redirect | Redirect URIs must be absolute HTTPS URIs (localhost HTTP is test-only), with no fragment or user-info. The target authorizer must return the canonical URI; the request is not an allowlist. |
-| Callback CSRF or mix-up | The console/runtime maintains a separate unpredictable callback `state` bound to the initiating browser session and validates it before posting the code. PKCE protects the code exchange even if a code is observed. |
+| Callback CSRF or mix-up | Runtime `/start` creates unpredictable `state` plus the PKCE verifier in protected, browser-bound correlation state. The runtime validates and consumes that state at the callback before redeeming; Control only posts `code` and `state`. PKCE protects the code exchange even if a code is observed. |
 | Revoked organization/instance membership | Current authorization is checked both at issue and redemption. A failed redemption consumes the code and returns a generic authorization failure. |
 | Cross-organization confusion | `org_id` and `instance_id` are issued only from an authorization result and are checked as a pair. |
 | Privilege escalation | The only prototype scope is `runtime:session`; requested scopes must be a subset of authorizer-granted scopes. Runtime API/admin permissions are not represented. |
@@ -116,9 +124,12 @@ The Control API should return stable, non-sensitive outcomes:
 * `503` when the handoff feature or production key configuration is unavailable.
 
 The console should preserve the Control session, show “This managed instance is
-no longer available” for `403`, “This link has expired; open Elsa again” for
-`401` expiry, and retry the normal issue flow once for an expired code. It must not
-display the token or disclose whether another organization or instance exists.
+no longer available” for `403`, and show “This link has expired; open Elsa again”
+for a `401` from the runtime continuation. Control restarts the runtime-owned
+`/managed-elsa/handoff/start` flow once for that expired callback; the runtime does
+not independently retry. Control must never blindly retry the issue request. It
+must not display the token or disclose whether another organization or instance
+exists.
 
 ## Key rotation and session policy
 
