@@ -85,7 +85,11 @@ internal sealed class AzureCommandProcess : IAzureCommandProcess
             captureCancellation.Token);
         var exitTask = process.WaitForExitAsync();
         var timeoutTask = Task.Delay(_timeout);
-        var cancellationTask = Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        var cancellationSignal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancellationRegistration = cancellationToken.Register(
+            static state => ((TaskCompletionSource<bool>)state!).TrySetResult(true),
+            cancellationSignal);
+        var cancellationTask = cancellationSignal.Task;
 
         var completedTask = await Task.WhenAny(
             exitTask,
