@@ -44,10 +44,17 @@ public sealed class SqlServerMigrationScriptTests
             fromMigration: "20260830171226_AddElsaInstanceDeletionEvidence",
             toMigration: "20260830191058_OperateElsaInstanceMigrations");
 
-        Assert.Contains(
-            "WHERE Phase <> 'RolledBack' AND Phase <> 'Released' AND Phase <> 'Failed'",
-            script,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("WHERE Phase NOT IN", script, StringComparison.Ordinal);
+        const string activeIndexMarker = "CREATE UNIQUE INDEX [IX_ElsaInstanceMigrations_InstanceId]";
+        var activeIndexStart = script.IndexOf(activeIndexMarker, StringComparison.Ordinal);
+        Assert.True(activeIndexStart >= 0, "The generated script did not contain the active migration index.");
+
+        var activeIndexEnd = script.IndexOf(';', activeIndexStart);
+        Assert.True(activeIndexEnd > activeIndexStart, "The generated active migration index statement was incomplete.");
+
+        var activeIndexSql = script[activeIndexStart..activeIndexEnd];
+        Assert.Matches(
+            @"WHERE\s+\[?Phase\]?\s*<>\s*N?'RolledBack'\s+AND\s+\[?Phase\]?\s*<>\s*N?'Released'\s+AND\s+\[?Phase\]?\s*<>\s*N?'Failed'",
+            activeIndexSql);
+        Assert.DoesNotMatch(@"\bNOT\s+IN\b", activeIndexSql);
     }
 }

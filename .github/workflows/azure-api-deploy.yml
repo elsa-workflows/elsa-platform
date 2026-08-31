@@ -153,9 +153,10 @@ jobs:
             exit 1
           fi
 
+          image_reference_pattern='([[:alnum:]][[:alnum:].-]*)(:[[:digit:]]+)?/[[:alnum:]][[:alnum:]._/-]*(:[[:alnum:]][[:alnum:]._+-]*)?(@sha256:[[:xdigit:]]{64})?'
           deployment_mode=""
           sitecontainer_image=""
-          if [[ "$linux_fx_version" =~ ^DOCKER\|[[:alnum:]][[:alnum:]._:/@=-]*$ ]]; then
+          if [[ "$linux_fx_version" =~ ^DOCKER\|$image_reference_pattern$ ]]; then
             deployment_mode=classic
           elif [ "$linux_fx_version" = "SITECONTAINERS" ]; then
             deployment_mode=sitecontainers
@@ -165,7 +166,7 @@ jobs:
               --container-name main \
               --query properties.image \
               --output tsv)"
-            if [[ ! "$sitecontainer_image" =~ ^[[:alnum:]][[:alnum:]._:/@=-]*$ ]]; then
+            if [[ ! "$sitecontainer_image" =~ ^$image_reference_pattern$ ]]; then
               echo "::error::The captured main sitecontainer image has an unexpected or unsafe format."
               exit 1
             fi

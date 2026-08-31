@@ -3,8 +3,12 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
+from textwrap import dedent
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,11 +21,19 @@ class AzureApiDeployWorkflowTests(unittest.TestCase):
         cls.source = WORKFLOW.read_text()
 
     def test_capture_supports_classic_and_sitecontainer_runtime_images(self) -> None:
-        self.assertIn(r"^DOCKER\|[[:alnum:]][[:alnum:]._:/@=-]*$", self.source)
+        self.assertIn("image_reference_pattern=", self.source)
+        self.assertIn("(@sha256:[[:xdigit:]]{64})?", self.source)
+        self.assertIn(
+            'if [[ "$linux_fx_version" =~ ^DOCKER\\|$image_reference_pattern$ ]]; then',
+            self.source,
+        )
         self.assertIn('elif [ "$linux_fx_version" = "SITECONTAINERS" ]', self.source)
         self.assertIn("az webapp sitecontainers show", self.source)
         self.assertIn("--query properties.image", self.source)
-        self.assertIn(r"^[[:alnum:]][[:alnum:]._:/@=-]*$", self.source)
+        self.assertIn(
+            'if [[ ! "$sitecontainer_image" =~ ^$image_reference_pattern$ ]]; then',
+            self.source,
+        )
         self.assertNotIn("--registry-password", self.source)
         self.assertNotIn("--registry-username", self.source)
 
@@ -41,6 +53,79 @@ class AzureApiDeployWorkflowTests(unittest.TestCase):
         self.assertGreaterEqual(
             self.source.count('if [ "$http_status" = "200" ]'), 2
         )
+
+    def test_capture_rejects_credential_bearing_and_scheme_based_images(self) -> None:
+        capture_start = self.source.index("        run: |\n", self.source.index("      - name: Capture current API deployment"))
+        capture_end = self.source.index("\n      - name:", capture_start)
+        capture_script = dedent(self.source[capture_start + len("        run: |\n") : capture_end])
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            fake_az = temp_path / "az"
+            fake_az.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  *"webapp config show"*) printf '%s\\n' "${LINUX_FX_VERSION}" ;;
+  *"webapp sitecontainers show"*)
+    if [ "${FAIL_SITECONTAINER_LOOKUP:-false}" = true ]; then exit 1; fi
+    printf '%s\\n' "${SITECONTAINER_IMAGE}"
+    ;;
+  *"webapp config appsettings list"*) printf '%s\\n' "${APPLICATION_BUILD_NUMBER}" ;;
+  *) exit 1 ;;
+esac
+"""
+            )
+            fake_az.chmod(0o755)
+
+            def run_capture(
+                linux_fx_version: str,
+                sitecontainer_image: str,
+                fail_sitecontainer_lookup: bool = False,
+            ) -> subprocess.CompletedProcess[str]:
+                output_file = temp_path / "github-output"
+                environment = os.environ.copy()
+                environment.update(
+                    {
+                        "PATH": f"{temp_path}:{environment['PATH']}",
+                        "GITHUB_OUTPUT": str(output_file),
+                        "LINUX_FX_VERSION": linux_fx_version,
+                        "SITECONTAINER_IMAGE": sitecontainer_image,
+                        "APPLICATION_BUILD_NUMBER": "1786839398",
+                        "FAIL_SITECONTAINER_LOOKUP": str(fail_sitecontainer_lookup).lower(),
+                        "AZURE_RESOURCE_GROUP": "test-rg",
+                        "AZURE_WEBAPP_NAME": "test-api",
+                    }
+                )
+                return subprocess.run(
+                    ["bash", "-c", capture_script],
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+            unsafe_images = (
+                "https://user:pass@acr.azurecr.io/elsa-control/api:latest",
+                "acr.azurecr.io/elsa-control/api?secret=1",
+                "acr.azurecr.io/elsa-control/api#fragment",
+            )
+            for image in unsafe_images:
+                for runtime, captured_image in (
+                    (f"DOCKER|{image}", ""),
+                    ("SITECONTAINERS", image),
+                ):
+                    result = run_capture(runtime, captured_image)
+                    self.assertNotEqual(result.returncode, 0, image)
+                    if runtime == "SITECONTAINERS":
+                        self.assertIn("unexpected or unsafe format", result.stdout + result.stderr)
+
+            lookup_failure = run_capture(
+                "SITECONTAINERS",
+                "acr.azurecr.io/elsa-control/api:latest",
+                fail_sitecontainer_lookup=True,
+            )
+            self.assertNotEqual(lookup_failure.returncode, 0)
 
 
 if __name__ == "__main__":
