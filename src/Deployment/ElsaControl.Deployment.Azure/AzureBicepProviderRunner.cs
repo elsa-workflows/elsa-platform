@@ -1200,9 +1200,14 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                     await Task.Delay(_options.ObservationDelay, cancellationToken);
                 continue;
             }
-            var matches = deleted.Value!.Value.Where(x => string.Equals(x.Name, vaultName, StringComparison.Ordinal) &&
-                                                    string.Equals(x.EffectiveVaultId, exactVaultId, StringComparison.OrdinalIgnoreCase) &&
-                                                    string.Equals(x.EffectiveLocation, _scope.Location, StringComparison.OrdinalIgnoreCase)).ToArray();
+            var candidates = deleted.Value!.Value.Where(x => string.Equals(x.Name, vaultName, StringComparison.Ordinal) &&
+                                                       string.Equals(x.EffectiveLocation, _scope.Location, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (candidates.Length == 0)
+                return true;
+            if (candidates.Any(candidate => string.IsNullOrWhiteSpace(candidate.EffectiveVaultId)))
+                return false;
+            var matches = candidates.Where(candidate =>
+                string.Equals(candidate.EffectiveVaultId, exactVaultId, StringComparison.OrdinalIgnoreCase)).ToArray();
             if (matches.Length == 0)
                 return true;
             if (matches.Length != 1)

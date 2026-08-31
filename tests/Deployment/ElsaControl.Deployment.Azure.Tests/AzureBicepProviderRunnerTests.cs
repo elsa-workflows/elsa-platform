@@ -589,6 +589,23 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.DoesNotContain(process.Calls, call => call.Contains("keyvault") && call.Contains("purge"));
     }
 
+    [Fact]
+    public async Task Cleanup_is_uncertain_when_a_matching_deleted_vault_omits_its_identity()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("group") && args.Contains("exists"), "false");
+        process.Success(args => args.Contains("role") && args.Contains("list"), "[]");
+        process.Success(args => args.Contains("deployment") && args.Contains("delete"));
+        process.Success(args => args.Contains("deployment") && args.Contains("list"), "[]");
+        process.Success(args => args.Contains("list-deleted"), "[{\"name\":\"proof-kv\",\"properties\":{\"location\":\"westeurope\"}}]");
+
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.Cleanup, _fixture.FoundationResources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.Equal("azure.cleanup.vault-uncertain", result.Code);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("keyvault") && call.Contains("purge"));
+    }
+
     public void Dispose() => _fixture.Dispose();
 
     private static string FoundationOutputs() => """
