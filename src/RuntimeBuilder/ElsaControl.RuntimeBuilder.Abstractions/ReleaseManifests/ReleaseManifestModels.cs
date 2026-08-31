@@ -173,7 +173,7 @@ public static class ReleaseManifestEvidenceContract
     public static bool IsSafe(string? kind, string? reference, string? digest, string? description)
     {
         if (string.IsNullOrWhiteSpace(kind) || kind.Any(char.IsControl) || kind.Length > 128 ||
-            !IsDigest(digest) || !IsSafeReference(reference!, digest!) ||
+            !IsDigest(digest) || string.IsNullOrWhiteSpace(reference) || !IsSafeReference(reference, digest!) ||
             string.IsNullOrWhiteSpace(description) || description.Any(char.IsControl))
             return false;
 
