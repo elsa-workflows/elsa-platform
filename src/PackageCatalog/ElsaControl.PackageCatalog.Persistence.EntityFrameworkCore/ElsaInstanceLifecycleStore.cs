@@ -732,7 +732,6 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         existingOperation.OrganizationId == requestedInstance.OrganizationId &&
         existingOperation.WorkspaceId == requestedInstance.WorkspaceId &&
         existingOperation.Action == requestedOperation.Action &&
-        existingOperation.State == requestedOperation.State &&
         existingOperation.AttemptNumber == requestedOperation.AttemptNumber &&
         string.Equals(existingOperation.IdempotencyScope, requestedOperation.IdempotencyScope, StringComparison.Ordinal) &&
         string.Equals(existingOperation.IdempotencyKey, requestedOperation.IdempotencyKey, StringComparison.Ordinal) &&
@@ -1525,6 +1524,14 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             existingOperation.AttemptNumber == requestedOperation.AttemptNumber)
             return await ReplayAsync(transaction, existingInstance, existingOperation, existingOutbox, cancellationToken);
 
+        // A recovery winner can be claimed and advance beyond Queued before a
+        // concurrent identical request reaches its authoritative replay read.
+        // Recovery identity and attempt are immutable; state is not. Return the
+        // current durable envelope instead of trying to move it backwards.
+        if (IsExactAuthoritativeRecoveryReplay(
+                expectedInstance, requestedInstance, requestedOperation, existingOperation))
+            return await ReplayAsync(transaction, existingInstance, existingOperation, existingOutbox, cancellationToken);
+
         if (expectedInstance is null)
             throw Conflict("Lifecycle operation state transition is not valid.");
         ValidateExpectedInstance(expectedInstance, requestedInstance, existingInstance);
@@ -2182,7 +2189,11 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             !string.Equals(existing.IdempotencyScope, operation.IdempotencyScope, StringComparison.Ordinal) ||
             !string.Equals(existing.IdempotencyKey, operation.IdempotencyKey, StringComparison.Ordinal) ||
             !string.Equals(existing.RequestHash, operation.RequestHash, StringComparison.Ordinal) ||
-            outbox.OperationId != existing.Id)
+            outbox.OperationId != existing.Id ||
+            outbox.WorkspaceId != existing.WorkspaceId ||
+            outbox.InstanceId != existing.InstanceId ||
+            outbox.Action != existing.Action ||
+            !string.Equals(outbox.RequestHash, existing.RequestHash, StringComparison.Ordinal))
             throw Conflict("Lifecycle operation identity is already in use.");
     }
 

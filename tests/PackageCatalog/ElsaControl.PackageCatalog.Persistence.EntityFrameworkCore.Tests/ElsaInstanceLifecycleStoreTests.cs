@@ -550,6 +550,41 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal(1, await db.ElsaInstanceLifecycleOutbox.CountAsync());
         Assert.Equal(2, await db.ElsaInstanceAuditEvents.CountAsync());
 
+        // Simulate the worker claiming the winner before a concurrent loser
+        // performs its authoritative lookup. The same recovery request must
+        // replay the current durable state, never attempt Running -> Queued.
+        db.ChangeTracker.Clear();
+        var claimed = await db.ElsaInstanceOperations.SingleAsync(x => x.Id == recovered.Operation.Id);
+        claimed.State = ElsaInstanceOperationState.Running;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var replayedAfterClaim = await service.RecoverAsync(new ElsaInstanceLifecycleRequest(
+            workspace.Id, created.Instance.Id, current.Version, "recover-recovery"));
+        Assert.True(replayedAfterClaim.Replayed);
+        Assert.Equal(ElsaInstanceOperationState.Running, replayedAfterClaim.Operation.State);
+        Assert.Equal(recovered.Operation.AttemptNumber, replayedAfterClaim.Operation.AttemptNumber);
+        Assert.Equal(recovered.Outbox.Id, replayedAfterClaim.Outbox.Id);
+        Assert.Equal(1, await db.ElsaInstanceOperations.CountAsync());
+        Assert.Equal(1, await db.ElsaInstanceLifecycleOutbox.CountAsync());
+        Assert.Equal(2, await db.ElsaInstanceAuditEvents.CountAsync());
+
+        db.ChangeTracker.Clear();
+        var completed = await db.ElsaInstanceOperations.SingleAsync(x => x.Id == recovered.Operation.Id);
+        completed.State = ElsaInstanceOperationState.Succeeded;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var replayedAfterCompletion = await service.RecoverAsync(new ElsaInstanceLifecycleRequest(
+            workspace.Id, created.Instance.Id, current.Version, "recover-recovery"));
+        Assert.True(replayedAfterCompletion.Replayed);
+        Assert.Equal(ElsaInstanceOperationState.Succeeded, replayedAfterCompletion.Operation.State);
+        Assert.Equal(recovered.Operation.AttemptNumber, replayedAfterCompletion.Operation.AttemptNumber);
+        Assert.Equal(recovered.Outbox.Id, replayedAfterCompletion.Outbox.Id);
+        Assert.Equal(1, await db.ElsaInstanceOperations.CountAsync());
+        Assert.Equal(1, await db.ElsaInstanceLifecycleOutbox.CountAsync());
+        Assert.Equal(2, await db.ElsaInstanceAuditEvents.CountAsync());
+
         var mismatch = await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() =>
             service.RecoverAsync(new ElsaInstanceLifecycleRequest(
                 workspace.Id, created.Instance.Id, current.Version, "recover-recovery",
@@ -680,6 +715,9 @@ public sealed class ElsaInstanceLifecycleStoreTests
             RecoveryRequestHash = requestedOperation.RecoveryRequestHash
         };
 
+        Assert.True(EfCoreElsaInstanceLifecycleStore.IsExactAuthoritativeRecoveryReplay(
+            expected, expected, requestedOperation, existing));
+        existing.State = ElsaInstanceOperationState.Running;
         Assert.True(EfCoreElsaInstanceLifecycleStore.IsExactAuthoritativeRecoveryReplay(
             expected, expected, requestedOperation, existing));
         existing.RecoveryRequestHash = RequestHash("different-recovery");
