@@ -728,7 +728,7 @@ public sealed record ElsaInstance
         return this with { IdentityBinding = binding };
     }
 
-    public ElsaInstance Rename(string name) => this with { Name = ElsaInstanceValue.Require(name, nameof(name)) };
+    public ElsaInstance Rename(string name) => this with { Name = ElsaInstanceValue.DisplayName(name, nameof(name)) };
 
     /// <summary>
     /// Projects the immutable plan selected by the asynchronous lifecycle worker.

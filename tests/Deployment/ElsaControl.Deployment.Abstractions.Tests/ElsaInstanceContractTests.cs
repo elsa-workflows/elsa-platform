@@ -157,6 +157,14 @@ public sealed class ElsaInstanceContractTests
             ElsaInstanceIdentityBinding.Create(Guid.NewGuid(), "https://other.example.test")));
     }
 
+    [Fact]
+    public void Rename_rejects_display_names_over_256_characters()
+    {
+        var instance = CreateInstance(ElsaObservedLifecycle.Pending);
+
+        Assert.Throws<ArgumentException>(() => instance.Rename(new string('n', 257)));
+    }
+
     [Theory]
     [InlineData("http://localhost:5000")]
     [InlineData("http://127.0.0.1:5000")]

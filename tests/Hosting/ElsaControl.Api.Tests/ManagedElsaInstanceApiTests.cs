@@ -117,6 +117,8 @@ public sealed class ManagedElsaInstanceApiTests
 
         Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
         Assert.NotNull(accepted.Headers.Location);
+        Assert.Contains("private", accepted.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
+        Assert.Contains("no-store", accepted.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
         var acceptedJson = await accepted.Content.ReadAsStringAsync();
         Assert.DoesNotContain("serializedPlan", acceptedJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("providerId", acceptedJson, StringComparison.OrdinalIgnoreCase);
@@ -124,6 +126,7 @@ public sealed class ManagedElsaInstanceApiTests
         Assert.NotNull(acceptedBody);
         Assert.Equal(ElsaInstanceOperationAction.Create, acceptedBody!.Operation.Action);
         Assert.Equal(accepted.Headers.Location!.ToString(), acceptedBody.Links["self"]);
+        Assert.Equal("instance-unavailable", acceptedBody.Instance.IdentityBindingState);
 
         var operation = await client.GetControlJsonAsync<ManagedElsaInstanceOperationResponse>(accepted.Headers.Location!.ToString());
         Assert.NotNull(operation);
