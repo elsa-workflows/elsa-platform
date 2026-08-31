@@ -549,6 +549,150 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal(2, replayed.Operation.AttemptNumber);
         Assert.Equal(1, await db.ElsaInstanceLifecycleOutbox.CountAsync());
         Assert.Equal(2, await db.ElsaInstanceAuditEvents.CountAsync());
+
+        var mismatch = await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() =>
+            service.RecoverAsync(new ElsaInstanceLifecycleRequest(
+                workspace.Id, created.Instance.Id, current.Version, "recover-recovery",
+                Reason: "different recovery request")));
+        Assert.Equal(ElsaInstanceLifecycleConflictReason.IdempotencyConflict, mismatch.Reason);
+    }
+
+    [Fact]
+    public async Task Concurrent_identical_recovery_requests_replay_one_authoritative_resume()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var setup = CreateMigratedContext(connection);
+        await setup.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(setup, "Concurrent recovery workspace");
+        var accepted = await new ElsaInstanceLifecycleService(CreateStore(setup), new FixedTimeProvider(Now))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId, workspace.Id, "Managed Elsa", "concurrent-recovery-elsa",
+                CreateIntent(), "create-concurrent-recovery"));
+
+        setup.ChangeTracker.Clear();
+        var persistedInstance = await setup.ElsaInstances.SingleAsync(x => x.Id == accepted.Instance.Id);
+        persistedInstance.ObservedLifecycle = ElsaObservedLifecycle.Unknown;
+        persistedInstance.Health = ElsaInstanceHealth.Unknown;
+        var persistedOperation = await setup.ElsaInstanceOperations.SingleAsync(x => x.Id == accepted.Operation.Id);
+        persistedOperation.State = ElsaInstanceOperationState.Queued;
+        await setup.SaveChangesAsync();
+        setup.ChangeTracker.Clear();
+        persistedOperation = await setup.ElsaInstanceOperations.SingleAsync(x => x.Id == accepted.Operation.Id);
+        persistedOperation.State = ElsaInstanceOperationState.Running;
+        await setup.SaveChangesAsync();
+        setup.ChangeTracker.Clear();
+        persistedOperation = await setup.ElsaInstanceOperations.SingleAsync(x => x.Id == accepted.Operation.Id);
+        persistedOperation.State = ElsaInstanceOperationState.RecoveryRequired;
+        persistedOperation.FailureCode = ElsaInstanceProviderReconciliationService.RetrySafeCode;
+        persistedOperation.ReconciliationRetryEvidenceReference = "https://evidence.example/retry/concurrent-recovery";
+        persistedOperation.ReconciliationRetryEvidenceDigest = "sha256:" + new string('a', 64);
+        await setup.SaveChangesAsync();
+        setup.ChangeTracker.Clear();
+
+        var options = new DbContextOptionsBuilder<CatalogDbContext>()
+            .UseSqlite(connection, sqlite => sqlite.MigrationsAssembly(CatalogDatabaseServiceCollectionExtensions.SqliteMigrationsAssembly))
+            .Options;
+        await using var firstDb = new CatalogDbContext(options);
+        await using var secondDb = new CatalogDbContext(options);
+        var firstStore = CreateStore(firstDb);
+        var secondStore = CreateStore(secondDb);
+        var firstExpected = await firstStore.GetInstanceAsync(workspace.Id, accepted.Instance.Id);
+        var secondExpected = await secondStore.GetInstanceAsync(workspace.Id, accepted.Instance.Id);
+        var firstActive = await firstStore.GetActiveOperationAsync(workspace.Id, accepted.Instance.Id);
+        var secondActive = await secondStore.GetActiveOperationAsync(workspace.Id, accepted.Instance.Id);
+        Assert.NotNull(firstExpected);
+        Assert.NotNull(secondExpected);
+        Assert.NotNull(firstActive);
+        Assert.NotNull(secondActive);
+        var recoveryHash = RequestHash("recover-concurrently");
+        var firstTransition = ElsaInstanceStateMachine.Request(
+            firstExpected!, ElsaInstanceOperationAction.Recover, firstActive, firstExpected.Version,
+            "recover-concurrently", recoveryHash);
+        var secondTransition = ElsaInstanceStateMachine.Request(
+            secondExpected!, ElsaInstanceOperationAction.Recover, secondActive, secondExpected.Version,
+            "recover-concurrently", recoveryHash);
+
+        var results = await Task.WhenAll(
+            firstStore.CommitAcceptedAsync(
+                firstExpected, firstTransition.Instance, firstTransition.Operation, NewOutbox(firstTransition)),
+            secondStore.CommitAcceptedAsync(
+                secondExpected, secondTransition.Instance, secondTransition.Operation, NewOutbox(secondTransition)));
+
+        Assert.Equal(2, results.Length);
+        Assert.Single(results, x => !x.Replayed);
+        Assert.Single(results, x => x.Replayed);
+        Assert.All(results, result =>
+        {
+            Assert.Equal(accepted.Operation.Id, result.Operation.Id);
+            Assert.Equal(ElsaInstanceOperationState.Queued, result.Operation.State);
+            Assert.Equal(2, result.Operation.AttemptNumber);
+            Assert.Equal(accepted.Outbox.Id, result.Outbox.Id);
+        });
+        await using var verify = new CatalogDbContext(options);
+        Assert.Equal(1, await verify.ElsaInstanceOperations.CountAsync());
+        Assert.Equal(1, await verify.ElsaInstanceLifecycleOutbox.CountAsync());
+        Assert.Equal(2, await verify.ElsaInstanceAuditEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Sql_server_recovery_replay_policy_requires_the_exact_recovery_and_durable_envelope()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Recovery replay policy workspace");
+        var accepted = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId, workspace.Id, "Managed Elsa", "recovery-policy-elsa",
+                CreateIntent(), "create-recovery-policy"));
+        var expected = accepted.Instance;
+        var recoveryHash = RequestHash("recover-policy");
+        var requestedOperation = ElsaInstanceOperation.Hydrate(
+            accepted.Operation.Id,
+            accepted.Instance.Id,
+            accepted.Operation.Action,
+            accepted.Operation.IdempotencyScope,
+            accepted.Operation.IdempotencyKey,
+            accepted.Operation.RequestHash,
+            accepted.Operation.ExpectedVersion,
+            ElsaInstanceOperationState.Queued,
+            2,
+            accepted.Operation.AcceptedAt,
+            $"instance/{accepted.Instance.Id:D}/Recover",
+            "recover-policy",
+            recoveryHash);
+        var existing = new ElsaInstanceOperationEntity
+        {
+            Id = requestedOperation.Id,
+            InstanceId = requestedOperation.InstanceId,
+            OrganizationId = expected.OrganizationId,
+            WorkspaceId = expected.WorkspaceId,
+            Action = requestedOperation.Action,
+            IdempotencyScope = requestedOperation.IdempotencyScope,
+            IdempotencyKey = requestedOperation.IdempotencyKey,
+            RequestHash = requestedOperation.RequestHash,
+            State = requestedOperation.State,
+            AttemptNumber = requestedOperation.AttemptNumber,
+            RecoveryIdempotencyScope = requestedOperation.RecoveryIdempotencyScope,
+            RecoveryIdempotencyKey = requestedOperation.RecoveryIdempotencyKey,
+            RecoveryRequestHash = requestedOperation.RecoveryRequestHash
+        };
+
+        Assert.True(EfCoreElsaInstanceLifecycleStore.IsExactAuthoritativeRecoveryReplay(
+            expected, expected, requestedOperation, existing));
+        existing.RecoveryRequestHash = RequestHash("different-recovery");
+        Assert.False(EfCoreElsaInstanceLifecycleStore.IsExactAuthoritativeRecoveryReplay(
+            expected, expected, requestedOperation, existing));
+        existing.RecoveryRequestHash = requestedOperation.RecoveryRequestHash;
+        existing.Id = Guid.NewGuid();
+        Assert.False(EfCoreElsaInstanceLifecycleStore.IsExactAuthoritativeRecoveryReplay(
+            expected, expected, requestedOperation, existing));
+        existing.Id = requestedOperation.Id;
+        existing.AttemptNumber++;
+        Assert.False(EfCoreElsaInstanceLifecycleStore.IsExactAuthoritativeRecoveryReplay(
+            expected, expected, requestedOperation, existing));
     }
 
     [Fact]
