@@ -18,10 +18,9 @@ public sealed class AzureCommandProcessTests
         {
             var result = await Process().ExecuteAsync(new AzureCommandProcessRequest(
                 EchoExecutable(),
-                [Arg($"$(touch {marker})")]), ProjectText);
+                [Arg($"$(touch {marker})")]), ProjectNoOutput);
 
             Assert.True(result.Succeeded);
-            Assert.Contains("$", result.Value, StringComparison.Ordinal);
             Assert.False(File.Exists(marker));
         }
         finally
@@ -33,12 +32,19 @@ public sealed class AzureCommandProcessTests
     [Fact]
     public async Task Returns_bounded_output_for_a_successful_command()
     {
-        var result = await Process().ExecuteAsync(Shell("printf 'output'; printf 'diagnostic' >&2"), ProjectText);
+        var observed = string.Empty;
+        var result = await Process().ExecuteAsync(
+            Shell("printf 'output'; printf 'diagnostic' >&2"),
+            output =>
+            {
+                observed = output.ToString();
+                return AzureCommandNoOutput.Instance;
+            });
 
         Assert.Equal(AzureCommandProcessStatus.Succeeded, result.Status);
         Assert.Equal(AzureCommandProcessFailureKind.None, result.FailureKind);
         Assert.Equal(0, result.ExitCode);
-        Assert.Equal("output", result.Value);
+        Assert.Equal("output", observed);
     }
 
     [Fact]
@@ -48,7 +54,7 @@ public sealed class AzureCommandProcessTests
             return;
 
         var stopwatch = Stopwatch.StartNew();
-        var result = await Process().ExecuteAsync(Shell("sleep 5 &"), ProjectText);
+        var result = await Process().ExecuteAsync(Shell("sleep 5 &"), ProjectNoOutput);
         stopwatch.Stop();
 
         Assert.True(result.Succeeded);
@@ -58,7 +64,7 @@ public sealed class AzureCommandProcessTests
     [Fact]
     public async Task Classifies_nonzero_exit_without_returning_process_output()
     {
-        var result = await Process().ExecuteAsync(Shell("printf 'secret-output'; printf 'secret-error' >&2; exit 23"), ProjectText);
+        var result = await Process().ExecuteAsync(Shell("printf 'secret-output'; printf 'secret-error' >&2; exit 23"), ProjectNoOutput);
 
         Assert.Equal(AzureCommandProcessStatus.Failed, result.Status);
         Assert.Equal(AzureCommandProcessFailureKind.NonZeroExitCode, result.FailureKind);
@@ -73,7 +79,7 @@ public sealed class AzureCommandProcessTests
     {
         var stopwatch = Stopwatch.StartNew();
         var result = await new AzureCommandProcess(TimeSpan.FromMilliseconds(100), 4096)
-            .ExecuteAsync(Shell(SleepScript(TimeSpan.FromSeconds(5))), ProjectText);
+            .ExecuteAsync(Shell(SleepScript(TimeSpan.FromSeconds(5))), ProjectNoOutput);
         stopwatch.Stop();
 
         Assert.Equal(AzureCommandProcessStatus.TimedOut, result.Status);
@@ -90,7 +96,7 @@ public sealed class AzureCommandProcessTests
         try
         {
             var command = Shell(SleepThenCreateScript(TimeSpan.FromSeconds(5), marker));
-            var running = Process().ExecuteAsync(command, ProjectText, cancellation.Token);
+            var running = Process().ExecuteAsync(command, ProjectNoOutput, cancellation.Token);
             await Task.Delay(100);
             cancellation.Cancel();
             var result = await running;
@@ -111,7 +117,7 @@ public sealed class AzureCommandProcessTests
     public async Task Stops_and_classifies_output_that_exceeds_the_configured_cap()
     {
         var result = await new AzureCommandProcess(TimeSpan.FromSeconds(5), 32)
-            .ExecuteAsync(Shell("printf '1234567890123456789012345678901234567890'"), ProjectText);
+            .ExecuteAsync(Shell("printf '1234567890123456789012345678901234567890'"), ProjectNoOutput);
 
         Assert.Equal(AzureCommandProcessStatus.OutputLimitExceeded, result.Status);
         Assert.Equal(AzureCommandProcessFailureKind.OutputLimitExceeded, result.FailureKind);
@@ -123,10 +129,9 @@ public sealed class AzureCommandProcessTests
     {
         var result = await Process().ExecuteAsync(
             Shell("printf 'secret-provider-payload'; printf 'secret-diagnostic' >&2"),
-            _ => "safe-typed-value");
+            _ => AzureCommandNoOutput.Instance);
 
         Assert.True(result.Succeeded);
-        Assert.Equal("safe-typed-value", result.Value);
         var serialized = JsonSerializer.Serialize(result);
         Assert.DoesNotContain("secret-provider-payload", serialized, StringComparison.Ordinal);
         Assert.DoesNotContain("secret-diagnostic", serialized, StringComparison.Ordinal);
@@ -137,7 +142,7 @@ public sealed class AzureCommandProcessTests
     {
         const string missingExecutable = "this-executable-does-not-exist-elsa-control";
 
-        var result = await Process().ExecuteAsync(new AzureCommandProcessRequest(missingExecutable), ProjectText);
+        var result = await Process().ExecuteAsync(new AzureCommandProcessRequest(missingExecutable), ProjectNoOutput);
 
         Assert.Equal(AzureCommandProcessStatus.Failed, result.Status);
         Assert.Equal(AzureCommandProcessFailureKind.ExecutableNotFound, result.FailureKind);
@@ -162,11 +167,11 @@ public sealed class AzureCommandProcessTests
             "az",
             [Arg("--token"), Arg("secret-token")],
             new Dictionary<string, string?> { ["AZURE_SECRET"] = "secret-value" });
-        var result = new AzureCommandProcessResult<string>(
+        var result = new AzureCommandProcessResult<AzureCommandNoOutput>(
             AzureCommandProcessStatus.Failed,
             AzureCommandProcessFailureKind.ExecutionFailed,
             null,
-            "safe-typed-value",
+            AzureCommandNoOutput.Instance,
             "azure.command.execution-failed",
             "The Azure command failed before a result could be observed.");
 
@@ -179,7 +184,7 @@ public sealed class AzureCommandProcessTests
 
     private static AzureCommandProcess Process() => new(TimeSpan.FromSeconds(5), 4096);
 
-    private static string ProjectText(ReadOnlyMemory<char> output) => output.ToString();
+    private static AzureCommandNoOutput ProjectNoOutput(ReadOnlyMemory<char> _) => AzureCommandNoOutput.Instance;
 
     private static AzureCommandArgument Arg(string value) => AzureCommandArgument.Safe(value);
 

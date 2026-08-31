@@ -21,6 +21,8 @@ public sealed record AzureCommandProcessRequest
             throw new ArgumentException("The command executable locator is unsafe.", nameof(fileName));
 
         arguments ??= [];
+        if (arguments.Any(argument => string.IsNullOrEmpty(argument.Value) || argument.Value.Length > 4096 || argument.Value.Any(char.IsControl)))
+            throw new ArgumentException("Command arguments must be explicit safe values.", nameof(arguments));
         if (environmentVariables is not null && environmentVariables.Keys.Any(string.IsNullOrWhiteSpace))
             throw new ArgumentException("Command environment variable names cannot be blank.", nameof(environmentVariables));
 
@@ -71,7 +73,7 @@ public readonly record struct AzureCommandArgument
     [JsonIgnore]
     public string Value { get; }
 
-    public static AzureCommandArgument Safe(string value)
+    internal static AzureCommandArgument Safe(string value)
     {
         ArgumentNullException.ThrowIfNull(value);
         return new AzureCommandArgument(value);
@@ -80,13 +82,34 @@ public readonly record struct AzureCommandArgument
     public override string ToString() => nameof(AzureCommandArgument);
 }
 
+/// <summary>
+/// Marker base for safe typed facts projected from transient command output. Only this assembly
+/// can define projections, preventing callers from returning raw strings or provider payloads.
+/// </summary>
+public abstract class AzureCommandSafeOutput
+{
+    private protected AzureCommandSafeOutput()
+    {
+    }
+}
+
+public sealed class AzureCommandNoOutput : AzureCommandSafeOutput
+{
+    public static AzureCommandNoOutput Instance { get; } = new();
+
+    private AzureCommandNoOutput()
+    {
+    }
+}
+
 public enum AzureCommandProcessStatus
 {
     Succeeded,
     Failed,
     TimedOut,
     Cancelled,
-    OutputLimitExceeded
+    OutputLimitExceeded,
+    TerminationUncertain
 }
 
 /// <summary>
@@ -102,6 +125,7 @@ public enum AzureCommandProcessFailureKind
     TimedOut,
     Cancelled,
     OutputLimitExceeded,
+    TerminationUncertain,
     InvalidOutput,
     ExecutionFailed
 }
@@ -114,9 +138,10 @@ public sealed record AzureCommandProcessResult<T>(
     AzureCommandProcessStatus Status,
     AzureCommandProcessFailureKind FailureKind,
     int? ExitCode,
-    T? Value,
+    [property: JsonIgnore] T? Value,
     string Code,
     string Message)
+    where T : AzureCommandSafeOutput
 {
     public bool Succeeded => Status == AzureCommandProcessStatus.Succeeded;
 

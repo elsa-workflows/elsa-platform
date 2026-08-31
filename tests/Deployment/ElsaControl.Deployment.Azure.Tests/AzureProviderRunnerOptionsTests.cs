@@ -13,12 +13,15 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
         File.WriteAllText(Path.Combine(_templateRoot, "main.bicep"), "targetScope = 'resourceGroup'");
         File.WriteAllText(Path.Combine(_templateRoot, "acr-pull-role.bicep"), "targetScope = 'resourceGroup'");
         File.WriteAllText(Path.Combine(_templateRoot, "sql-bootstrap.sql"), "SELECT 1;");
+        File.WriteAllText(Path.Combine(_templateRoot, "az"), "azure-cli");
+        File.WriteAllText(Path.Combine(_templateRoot, "sqlcmd"), "sqlcmd");
     }
 
     [Fact]
     public void Validates_explicit_governed_runner_options()
     {
         ValidOptions().Validate();
+        (ValidOptions() with { TemplateRoot = _templateRoot + Path.DirectorySeparatorChar }).Validate();
     }
 
     [Fact]
@@ -78,6 +81,42 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
         Assert.NotEqual(
             options.ComputeProviderScopeFingerprint(scope),
             (options with { ExpiryUtc = options.ExpiryUtc.AddDays(1) }).ComputeProviderScopeFingerprint(scope));
+        var original = options.ComputeProviderScopeFingerprint(scope);
+        File.AppendAllText(Path.Combine(_templateRoot, "main.bicep"), "\n// changed");
+        Assert.NotEqual(original, options.ComputeProviderScopeFingerprint(scope));
+        original = options.ComputeProviderScopeFingerprint(scope);
+        File.AppendAllText(Path.Combine(_templateRoot, "az"), "\nchanged");
+        Assert.NotEqual(original, options.ComputeProviderScopeFingerprint(scope));
+    }
+
+    [Fact]
+    public void Template_authority_fingerprint_binds_nested_sources_and_rejects_nested_symlinks()
+    {
+        var modules = Path.Combine(_templateRoot, "modules");
+        Directory.CreateDirectory(modules);
+        var module = Path.Combine(modules, "workload.bicep");
+        File.WriteAllText(module, "resource workload 'Microsoft.App/containerApps@2025-02-02-preview' = {};");
+        var options = ValidOptions();
+        var original = options.ComputeTemplateAuthorityFingerprint();
+        File.AppendAllText(module, "\n// changed");
+        Assert.NotEqual(original, options.ComputeTemplateAuthorityFingerprint());
+
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var external = Path.Combine(Path.GetTempPath(), $"elsa-external-{Guid.NewGuid():N}.bicep");
+        var link = Path.Combine(modules, "linked.bicep");
+        File.WriteAllText(external, "// external");
+        File.CreateSymbolicLink(link, external);
+        try
+        {
+            Assert.Throws<ArgumentException>(options.ComputeTemplateAuthorityFingerprint);
+        }
+        finally
+        {
+            File.Delete(link);
+            File.Delete(external);
+        }
     }
 
     [Fact]
@@ -119,8 +158,8 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     private AzureProviderRunnerOptions ValidOptions() => new()
     {
         Enabled = true,
-        AzureCliPath = "az",
-        SqlCmdPath = "sqlcmd",
+        AzureCliPath = Path.Combine(_templateRoot, "az"),
+        SqlCmdPath = Path.Combine(_templateRoot, "sqlcmd"),
         TemplateRoot = _templateRoot,
         SqlBootstrapObjectId = "11111111-1111-1111-1111-111111111111",
         SqlBootstrapLogin = "proof-bootstrap",

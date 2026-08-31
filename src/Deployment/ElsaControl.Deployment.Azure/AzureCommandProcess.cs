@@ -37,6 +37,7 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
         AzureCommandProcessRequest request,
         AzureCommandOutputProjector<T> outputProjector,
         CancellationToken cancellationToken = default)
+        where T : AzureCommandSafeOutput
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(outputProjector);
@@ -103,12 +104,14 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
 
         if (status != AzureCommandProcessStatus.Succeeded)
         {
-            KillProcessTree(process);
-            await WaitForExitAfterTerminationAsync(exitTask).ConfigureAwait(false);
+            var terminationRequested = KillProcessTree(process);
+            var terminated = await WaitForExitAfterTerminationAsync(exitTask).ConfigureAwait(false);
             await ObserveCaptureTasksAsync(
                 standardOutputTask,
                 standardErrorTask,
                 captureCancellation).ConfigureAwait(false);
+            if (!terminationRequested || !terminated)
+                return TerminationUncertainResult<T>();
             return status switch
             {
                 AzureCommandProcessStatus.Cancelled => CancelledResult<T>(),
@@ -159,7 +162,8 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
     public Task<AzureCommandProcessResult<T>> RunAsync<T>(
         AzureCommandProcessRequest request,
         AzureCommandOutputProjector<T> outputProjector,
-        CancellationToken cancellationToken = default) => ExecuteAsync(request, outputProjector, cancellationToken);
+        CancellationToken cancellationToken = default)
+        where T : AzureCommandSafeOutput => ExecuteAsync(request, outputProjector, cancellationToken);
 
     private static ProcessStartInfo CreateStartInfo(AzureCommandProcessRequest request)
     {
@@ -262,73 +266,86 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
         return new BoundedCaptures(standardOutput.Value, standardError.Value);
     }
 
-    private static async Task WaitForExitAfterTerminationAsync(Task exitTask)
+    private static async Task<bool> WaitForExitAfterTerminationAsync(Task exitTask)
     {
         try
         {
-            await Task.WhenAny(exitTask, Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
+            if (await Task.WhenAny(exitTask, Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false) != exitTask)
+                return false;
+            await exitTask.ConfigureAwait(false);
+            return true;
         }
         catch (Exception)
         {
             // Process termination is best effort. The result remains a safe classification even
             // when the platform reports an already-closed process handle.
+            return false;
         }
     }
 
-    private static void KillProcessTree(Process process)
+    private static bool KillProcessTree(Process process)
     {
         try
         {
             if (!process.HasExited)
                 process.Kill(entireProcessTree: true);
+            return true;
         }
         catch (Exception) when (process.HasExited)
         {
             // The process exited between HasExited and Kill. Nothing remains to terminate.
+            return true;
         }
         catch (Exception)
         {
             // There is no safe diagnostic value in a platform-specific kill exception.
+            return false;
         }
     }
 
-    private static AzureCommandProcessResult<T> CancelledResult<T>() => FailureResult<T>(
+    private static AzureCommandProcessResult<T> CancelledResult<T>() where T : AzureCommandSafeOutput => FailureResult<T>(
         AzureCommandProcessStatus.Cancelled,
         AzureCommandProcessFailureKind.Cancelled,
         "azure.command.cancelled",
         "The Azure command was cancelled.");
 
-    private static AzureCommandProcessResult<T> TimedOutResult<T>() => FailureResult<T>(
+    private static AzureCommandProcessResult<T> TimedOutResult<T>() where T : AzureCommandSafeOutput => FailureResult<T>(
         AzureCommandProcessStatus.TimedOut,
         AzureCommandProcessFailureKind.TimedOut,
         "azure.command.timed-out",
         "The Azure command exceeded its execution timeout.");
 
-    private static AzureCommandProcessResult<T> OutputLimitExceededResult<T>() => FailureResult<T>(
+    private static AzureCommandProcessResult<T> OutputLimitExceededResult<T>() where T : AzureCommandSafeOutput => FailureResult<T>(
         AzureCommandProcessStatus.OutputLimitExceeded,
         AzureCommandProcessFailureKind.OutputLimitExceeded,
         "azure.command.output-limit-exceeded",
         "The Azure command exceeded its output limit.");
 
-    private static AzureCommandProcessResult<T> ExecutableNotFoundResult<T>() => FailureResult<T>(
+    private static AzureCommandProcessResult<T> TerminationUncertainResult<T>() where T : AzureCommandSafeOutput => FailureResult<T>(
+        AzureCommandProcessStatus.TerminationUncertain,
+        AzureCommandProcessFailureKind.TerminationUncertain,
+        "azure.command.termination-uncertain",
+        "The Azure command termination outcome is uncertain.");
+
+    private static AzureCommandProcessResult<T> ExecutableNotFoundResult<T>() where T : AzureCommandSafeOutput => FailureResult<T>(
         AzureCommandProcessStatus.Failed,
         AzureCommandProcessFailureKind.ExecutableNotFound,
         "azure.command.executable-not-found",
         "The Azure command executable could not be found.");
 
-    private static AzureCommandProcessResult<T> StartFailedResult<T>() => FailureResult<T>(
+    private static AzureCommandProcessResult<T> StartFailedResult<T>() where T : AzureCommandSafeOutput => FailureResult<T>(
         AzureCommandProcessStatus.Failed,
         AzureCommandProcessFailureKind.StartFailed,
         "azure.command.start-failed",
         "The Azure command could not be started.");
 
-    private static AzureCommandProcessResult<T> ExecutionFailedResult<T>() => FailureResult<T>(
+    private static AzureCommandProcessResult<T> ExecutionFailedResult<T>() where T : AzureCommandSafeOutput => FailureResult<T>(
         AzureCommandProcessStatus.Failed,
         AzureCommandProcessFailureKind.ExecutionFailed,
         "azure.command.execution-failed",
         "The Azure command failed before a result could be observed.");
 
-    private static AzureCommandProcessResult<T> InvalidOutputResult<T>() => FailureResult<T>(
+    private static AzureCommandProcessResult<T> InvalidOutputResult<T>() where T : AzureCommandSafeOutput => FailureResult<T>(
         AzureCommandProcessStatus.Failed,
         AzureCommandProcessFailureKind.InvalidOutput,
         "azure.command.invalid-output",
@@ -338,7 +355,7 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
         AzureCommandProcessStatus status,
         AzureCommandProcessFailureKind failureKind,
         string code,
-        string message) => new(
+        string message) where T : AzureCommandSafeOutput => new(
         status,
         failureKind,
         null,

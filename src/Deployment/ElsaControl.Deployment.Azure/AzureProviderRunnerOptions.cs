@@ -90,6 +90,12 @@ public sealed record AzureProviderRunnerOptions
         var canonical = JsonSerializer.Serialize(new
         {
             targetScopeFingerprint = scope.ComputeFingerprint(),
+            azureCliPath = Path.GetFullPath(AzureCliPath),
+            azureCliDigest = ComputeFileDigest(AzureCliPath),
+            sqlCmdPath = Path.GetFullPath(SqlCmdPath),
+            sqlCmdDigest = ComputeFileDigest(SqlCmdPath),
+            templateRoot = NormalizeRoot(TemplateRoot),
+            templateAuthorityFingerprint = ComputeTemplateAuthorityFingerprint(),
             sqlBootstrapObjectId = SqlBootstrapObjectId.ToLowerInvariant(),
             sqlBootstrapLogin = SqlBootstrapLogin,
             sqlBootstrapIp = SqlBootstrapIp,
@@ -107,12 +113,13 @@ public sealed record AzureProviderRunnerOptions
         ValidateExecutable(SqlCmdPath, nameof(SqlCmdPath));
         if (string.IsNullOrWhiteSpace(TemplateRoot) || !Path.IsPathFullyQualified(TemplateRoot))
             throw new ArgumentException("The Azure template root must be an absolute path.", nameof(TemplateRoot));
-        var normalizedRoot = Path.GetFullPath(TemplateRoot);
+        var normalizedRoot = NormalizeRoot(TemplateRoot);
         if (!Directory.Exists(normalizedRoot) || IsSymbolicLink(normalizedRoot))
             throw new ArgumentException("The Azure template root must be a regular trusted directory.", nameof(TemplateRoot));
         RequireCheckedInFile(normalizedRoot, "main.bicep");
         RequireCheckedInFile(normalizedRoot, "acr-pull-role.bicep");
         RequireCheckedInFile(normalizedRoot, "sql-bootstrap.sql");
+        _ = ComputeTemplateAuthorityFingerprint(normalizedRoot);
         if (!Guid.TryParseExact(SqlBootstrapObjectId, "D", out _) ||
             !string.Equals(SqlBootstrapObjectId, SqlBootstrapObjectId.ToLowerInvariant(), StringComparison.Ordinal))
             throw new ArgumentException("The SQL bootstrap object ID must be a canonical GUID.", nameof(SqlBootstrapObjectId));
@@ -136,8 +143,44 @@ public sealed record AzureProviderRunnerOptions
 
     private static void ValidateExecutable(string? value, string name)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 1024 || value.Any(char.IsControl))
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 1024 || value.Any(char.IsControl) ||
+            !Path.IsPathFullyQualified(value) || !File.Exists(value) || IsSymbolicLink(value))
             throw new ArgumentException("The executable locator is unsafe.", name);
+    }
+
+    public string ComputeTemplateAuthorityFingerprint()
+    {
+        if (string.IsNullOrWhiteSpace(TemplateRoot) || !Path.IsPathFullyQualified(TemplateRoot))
+            throw new ArgumentException("The Azure template root must be an absolute path.", nameof(TemplateRoot));
+        return ComputeTemplateAuthorityFingerprint(NormalizeRoot(TemplateRoot));
+    }
+
+    private static string ComputeTemplateAuthorityFingerprint(string root)
+    {
+        if (!Directory.Exists(root) || IsSymbolicLink(root))
+            throw new ArgumentException("The Azure template root must be a regular trusted directory.", nameof(TemplateRoot));
+
+        var authorityFiles = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Where(path => string.Equals(Path.GetExtension(path), ".bicep", StringComparison.OrdinalIgnoreCase) ||
+                           string.Equals(Path.GetExtension(path), ".sql", StringComparison.OrdinalIgnoreCase))
+            .Select(Path.GetFullPath)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+        if (authorityFiles.Length == 0 || authorityFiles.Any(IsSymbolicLink))
+            throw new ArgumentException("The checked-in Azure provider authority is incomplete.", nameof(TemplateRoot));
+
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        foreach (var path in authorityFiles)
+        {
+            var relativePath = Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/');
+            if (relativePath.StartsWith("../", StringComparison.Ordinal))
+                throw new ArgumentException("The checked-in Azure provider authority is incomplete.", nameof(TemplateRoot));
+            hash.AppendData(Encoding.UTF8.GetBytes(relativePath));
+            hash.AppendData([0]);
+            hash.AppendData(File.ReadAllBytes(path));
+            hash.AppendData([0]);
+        }
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
     private static void RequireCheckedInFile(string root, string name)
@@ -151,4 +194,10 @@ public sealed record AzureProviderRunnerOptions
 
     private static bool IsSymbolicLink(string path) =>
         File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint);
+
+    private static string NormalizeRoot(string root) =>
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+
+    private static string ComputeFileDigest(string path) =>
+        Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path)));
 }
