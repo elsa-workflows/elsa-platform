@@ -152,6 +152,10 @@ jobs:
             echo "::error::Could not capture the current Linux runtime image; refusing an unprotected deployment."
             exit 1
           fi
+          if [[ ! "$linux_fx_version" =~ ^[[:alnum:]][[:alnum:]._:/@|=-]*$ ]]; then
+            echo "::error::The captured Linux runtime image has an unexpected or unsafe format."
+            exit 1
+          fi
 
           application_build_number="$(az webapp config appsettings list \
             --resource-group "$AZURE_RESOURCE_GROUP" \
@@ -159,12 +163,19 @@ jobs:
             --query "[?name=='Application__BuildNumber'] | [0].value" \
             --output tsv)"
 
-          echo "linux_fx_version=$linux_fx_version" >> "$GITHUB_OUTPUT"
           if [ -n "$application_build_number" ]; then
+            if [[ ! "$application_build_number" =~ ^(azd-deploy-[0-9]+|[0-9]+)$ ]]; then
+              echo "::error::The captured Application__BuildNumber has an unexpected or unsafe format."
+              exit 1
+            fi
+
             echo "application_build_number_present=true" >> "$GITHUB_OUTPUT"
-            echo "application_build_number=$application_build_number" >> "$GITHUB_OUTPUT"
           else
             echo "application_build_number_present=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "linux_fx_version=$linux_fx_version" >> "$GITHUB_OUTPUT"
+          if [ -n "$application_build_number" ]; then
+            echo "application_build_number=$application_build_number" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Deploy API app
@@ -223,12 +234,16 @@ jobs:
           health_url="https://$default_host_name/health"
 
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error --max-time 10 "$health_url" >/dev/null; then
-              echo "API health check passed on attempt $attempt."
-              exit 0
+            if http_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 "$health_url")"; then
+              if [ "$http_status" = "200" ]; then
+                echo "API health check passed with HTTP 200 on attempt $attempt."
+                exit 0
+              fi
+            else
+              http_status=000
             fi
 
-            echo "API health check is not ready (attempt $attempt/30); retrying."
+            echo "API health check returned HTTP $http_status (attempt $attempt/30); retrying."
             sleep 10
           done
 
@@ -245,28 +260,76 @@ jobs:
         run: |
           set -euo pipefail
 
-          az webapp config set \
-            --resource-group "$AZURE_RESOURCE_GROUP" \
-            --name "$AZURE_WEBAPP_NAME" \
-            --linux-fx-version "$PREVIOUS_LINUX_FX_VERSION" \
-            --output none
-
-          if [ "$PREVIOUS_BUILD_NUMBER_PRESENT" = true ]; then
-            az webapp config appsettings set \
+          if ! az webapp config set \
               --resource-group "$AZURE_RESOURCE_GROUP" \
               --name "$AZURE_WEBAPP_NAME" \
-              --settings "Application__BuildNumber=$PREVIOUS_BUILD_NUMBER" \
-              --output none
-          else
-            az webapp config appsettings delete \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --name "$AZURE_WEBAPP_NAME" \
-              --setting-names Application__BuildNumber \
-              --output none
+              --linux-fx-version "$PREVIOUS_LINUX_FX_VERSION" \
+              --output none; then
+            echo "::error::Rollback failed: could not restore the previous Linux runtime image."
+            exit 1
           fi
 
-          az webapp restart \
+          if [ "$PREVIOUS_BUILD_NUMBER_PRESENT" = true ]; then
+            if ! az webapp config appsettings set \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --name "$AZURE_WEBAPP_NAME" \
+                --settings "Application__BuildNumber=$PREVIOUS_BUILD_NUMBER" \
+                --output none; then
+              echo "::error::Rollback failed: could not restore the previous Application__BuildNumber."
+              exit 1
+            fi
+          else
+            if ! az webapp config appsettings delete \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --name "$AZURE_WEBAPP_NAME" \
+                --setting-names Application__BuildNumber \
+                --output none; then
+              echo "::error::Rollback failed: could not remove the previous Application__BuildNumber."
+              exit 1
+            fi
+          fi
+
+          if ! az webapp restart \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_WEBAPP_NAME" \
+              --output none; then
+            echo "::error::Rollback failed: could not restart the API after restoring the previous deployment."
+            exit 1
+          fi
+
+          if ! default_host_name="$(az webapp show \
             --resource-group "$AZURE_RESOURCE_GROUP" \
             --name "$AZURE_WEBAPP_NAME" \
-            --output none
+            --query defaultHostName \
+            --output tsv)"; then
+            echo "::error::Rollback failed: could not resolve the API host after restoring the previous deployment."
+            exit 1
+          fi
+          if [ -z "$default_host_name" ]; then
+            echo "::error::Rollback failed: Azure returned no API host after restoring the previous deployment."
+            exit 1
+          fi
+
+          rollback_health_url="https://$default_host_name/health"
+          rollback_health_succeeded=false
+          for attempt in $(seq 1 30); do
+            if http_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 "$rollback_health_url")"; then
+              if [ "$http_status" = "200" ]; then
+                rollback_health_succeeded=true
+                echo "Rollback health check passed with HTTP 200 on attempt $attempt."
+                break
+              fi
+            else
+              http_status=000
+            fi
+
+            echo "Rollback health check returned HTTP $http_status (attempt $attempt/30); retrying."
+            sleep 10
+          done
+
+          if [ "$rollback_health_succeeded" != true ]; then
+            echo "::error::Rollback failed: the previous API deployment did not return HTTP 200 at $rollback_health_url."
+            exit 1
+          fi
+
           echo "::error::API health gate failed; restored the previous Linux image and build metadata."
