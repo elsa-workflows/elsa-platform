@@ -185,12 +185,15 @@ jobs:
             deployment_mode=classic
           elif [ "$linux_fx_version" = "SITECONTAINERS" ]; then
             deployment_mode=sitecontainers
-            sitecontainer_image="$(az webapp sitecontainers show \
+            if ! sitecontainer_image="$(az webapp sitecontainers show \
               --resource-group "$AZURE_RESOURCE_GROUP" \
               --name "$AZURE_WEBAPP_NAME" \
               --container-name main \
               --query properties.image \
-              --output tsv)"
+              --output tsv)"; then
+              echo "::error::Could not capture the current main sitecontainer image; refusing an unprotected deployment."
+              exit 1
+            fi
             if [[ ! "$sitecontainer_image" =~ ^$image_reference_pattern$ ]]; then
               echo "::error::The captured main sitecontainer image has an unexpected or unsafe format."
               exit 1

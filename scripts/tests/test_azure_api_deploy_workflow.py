@@ -32,6 +32,10 @@ class AzureApiDeployWorkflowTests(unittest.TestCase):
         self.assertIn("az webapp sitecontainers show", self.source)
         self.assertIn("--query properties.image", self.source)
         self.assertIn(
+            "Could not capture the current main sitecontainer image; refusing an unprotected deployment.",
+            self.source,
+        )
+        self.assertIn(
             'if [[ ! "$sitecontainer_image" =~ ^$image_reference_pattern$ ]]; then',
             self.source,
         )
