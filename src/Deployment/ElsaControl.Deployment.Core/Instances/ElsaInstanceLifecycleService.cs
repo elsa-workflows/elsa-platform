@@ -50,7 +50,7 @@ public sealed class ElsaInstanceLifecycleService(
                 ?? throw new ElsaInstanceLifecycleConflictException("Lifecycle operation outbox record is orphaned.", ElsaInstanceLifecycleConflictReason.InvalidState);
             if (existing.OrganizationId != request.OrganizationId)
                 throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
-            var replayTransition = ElsaInstanceStateMachine.Request(
+            var replayTransition = RequestTransition(
                 existing,
                 ElsaInstanceOperationAction.Create,
                 existingOperation,
@@ -71,7 +71,7 @@ public sealed class ElsaInstanceLifecycleService(
             request.Name,
             request.Slug,
             request.Intent);
-        var transition = ElsaInstanceStateMachine.Request(
+        var transition = RequestTransition(
             instance,
             ElsaInstanceOperationAction.Create,
             idempotencyKey: key,
@@ -220,7 +220,7 @@ public sealed class ElsaInstanceLifecycleService(
             // Supplying the existing operation to the state machine makes an exact
             // replay independent of the caller's current If-Match value, including
             // replays after the operation has reached a terminal state.
-            var replayTransition = ElsaInstanceStateMachine.Request(
+            var replayTransition = RequestTransition(
                 instance,
                 action,
                 existingOperation,
@@ -245,7 +245,7 @@ public sealed class ElsaInstanceLifecycleService(
             confirmationId);
         var activeOperation = await store.GetActiveOperationAsync(workspaceId, instanceId, cancellationToken);
         var effectiveIntent = EffectiveRequestedIntent(action, instance, requestedIntent);
-        var transition = ElsaInstanceStateMachine.Request(
+        var transition = RequestTransition(
             instance,
             action,
             activeOperation,
@@ -259,6 +259,36 @@ public sealed class ElsaInstanceLifecycleService(
             transition = new ElsaInstanceTransitionResult(transition.Instance.Rename(requestedName), transition.Operation);
         return await CommitAsync(instance, transition,
             AcceptanceContext(action, confirmationId, actorAccountId, reason), cancellationToken);
+    }
+
+    private static ElsaInstanceTransitionResult RequestTransition(
+        ElsaInstance instance,
+        ElsaInstanceOperationAction action,
+        ElsaInstanceOperation? activeOperation = null,
+        int? expectedVersion = null,
+        string? idempotencyKey = null,
+        string? requestHash = null,
+        ElsaInstanceIntent? requestedIntent = null,
+        bool minorApproved = false,
+        bool migrationAuthorized = false)
+    {
+        try
+        {
+            return ElsaInstanceStateMachine.Request(instance, action, activeOperation, expectedVersion,
+                idempotencyKey, requestHash, requestedIntent, minorApproved, migrationAuthorized);
+        }
+        catch (ElsaInstanceStateConflictException exception)
+        {
+            throw new ElsaInstanceLifecycleConflictException(
+                "The request conflicts with the current instance state.",
+                exception.Reason switch
+                {
+                    ElsaInstanceStateConflictReason.VersionConflict => ElsaInstanceLifecycleConflictReason.VersionConflict,
+                    ElsaInstanceStateConflictReason.OperationActive => ElsaInstanceLifecycleConflictReason.OperationActive,
+                    ElsaInstanceStateConflictReason.ActiveOperationOwnershipMismatch => ElsaInstanceLifecycleConflictReason.InvalidState,
+                    _ => ElsaInstanceLifecycleConflictReason.InvalidState
+                });
+        }
     }
 
     private static ElsaInstanceIntent? EffectiveRequestedIntent(

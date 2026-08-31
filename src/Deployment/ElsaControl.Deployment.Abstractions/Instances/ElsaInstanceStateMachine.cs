@@ -292,7 +292,7 @@ public static class ElsaInstanceOperationGuard
     {
         ArgumentNullException.ThrowIfNull(instance);
         if (expectedVersion != instance.Version)
-            throw new InvalidOperationException("Instance version conflict.");
+            throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.VersionConflict);
     }
 
     public static void EnsureCanAccept(
@@ -315,12 +315,40 @@ public static class ElsaInstanceOperationGuard
     {
         EnsureExpectedVersion(instance, expectedVersion);
         if (activeOperation is not null && activeOperation.InstanceId != instance.Id)
-            throw new InvalidOperationException("The active operation belongs to a different instance.");
+            throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.ActiveOperationOwnershipMismatch);
         if (activeOperation is not null && (idempotencyScope is null
                 ? IsConflict(activeOperation, idempotencyKey, requestHash)
                 : IsConflict(activeOperation, idempotencyScope, idempotencyKey, requestHash)))
-            throw new InvalidOperationException("An instance operation is already active.");
+            throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.OperationActive);
     }
+}
+
+/// <summary>
+/// Stable state-machine conflict categories. Adapters must use <see cref="Reason"/>
+/// rather than the diagnostic message when translating a rejected transition.
+/// </summary>
+public enum ElsaInstanceStateConflictReason
+{
+    VersionConflict,
+    OperationActive,
+    ActiveOperationOwnershipMismatch,
+}
+
+public sealed class ElsaInstanceStateConflictException : InvalidOperationException
+{
+    public ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason reason)
+        : base(reason switch
+        {
+            ElsaInstanceStateConflictReason.VersionConflict => "Instance version conflict.",
+            ElsaInstanceStateConflictReason.OperationActive => "An instance operation is already active.",
+            ElsaInstanceStateConflictReason.ActiveOperationOwnershipMismatch => "The active operation belongs to a different instance.",
+            _ => "The instance state conflicts with the requested operation."
+        })
+    {
+        Reason = reason;
+    }
+
+    public ElsaInstanceStateConflictReason Reason { get; }
 }
 
 public sealed record ElsaInstanceTransitionResult
@@ -391,7 +419,7 @@ public static class ElsaInstanceStateMachine
 
         var operationScope = $"instance/{instance.Id:D}/{action}";
         if (activeOperation is not null && activeOperation.InstanceId != instance.Id)
-            throw new InvalidOperationException("The active operation belongs to a different instance.");
+            throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.ActiveOperationOwnershipMismatch);
 
         if (action == ElsaInstanceOperationAction.Recover)
         {
@@ -413,7 +441,7 @@ public static class ElsaInstanceStateMachine
         if (action == ElsaInstanceOperationAction.Delete && activeOperation?.Action == ElsaInstanceOperationAction.Delete &&
             instance.Intent.DesiredLifecycle == ElsaDesiredLifecycle.Deleting &&
             ElsaInstanceOperationGuard.IsBlocking(activeOperation.State))
-            throw new InvalidOperationException("A delete operation is already active for this instance.");
+            throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.OperationActive);
 
         var waitForPriorOperation = action == ElsaInstanceOperationAction.Delete &&
                                     activeOperation is not null &&

@@ -162,10 +162,6 @@ public static class ManagedElsaInstanceEndpoints
             {
                 return Problem(ConflictCode(exception), "The request conflicts with the current instance state.", ConflictStatusCode(exception));
             }
-            catch (InvalidOperationException exception) when (exception.Message.Contains("version", StringComparison.OrdinalIgnoreCase))
-            {
-                return Problem("instance.version-conflict", "The instance has been modified.", StatusCodes.Status412PreconditionFailed);
-            }
             catch (ArgumentException)
             {
                 return Problem("instance.shape-invalid", "The instance request is invalid.", StatusCodes.Status422UnprocessableEntity);
@@ -258,16 +254,9 @@ public static class ManagedElsaInstanceEndpoints
             {
                 return Results.NotFound();
             }
-            catch (InvalidOperationException exception) when (exception.Message.Contains("version", StringComparison.OrdinalIgnoreCase))
+            catch (InvalidOperationException)
             {
-                return Problem("instance.version-conflict", "The instance has been modified.", StatusCodes.Status412PreconditionFailed);
-            }
-            catch (InvalidOperationException exception)
-            {
-                var code = exception.Message.Contains("already active", StringComparison.OrdinalIgnoreCase)
-                    ? "instance.operation-active"
-                    : "instance.operation-conflict";
-                return Problem(code, "The requested operation conflicts with the current instance state.", StatusCodes.Status409Conflict);
+                return Problem("instance.operation-conflict", "The requested operation conflicts with the current instance state.", StatusCodes.Status409Conflict);
             }
             catch (ArgumentException)
             {

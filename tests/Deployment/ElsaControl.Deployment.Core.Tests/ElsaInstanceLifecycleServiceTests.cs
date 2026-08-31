@@ -105,8 +105,8 @@ public sealed class ElsaInstanceLifecycleServiceTests
             created.Instance.Version + 1,
             "stop-1"));
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
-        Assert.Equal("Instance version conflict.", exception.Message);
+        var exception = await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(act);
+        Assert.Equal(ElsaInstanceLifecycleConflictReason.VersionConflict, exception.Reason);
         Assert.Single(store.Operations);
         Assert.Single(store.Outbox);
     }

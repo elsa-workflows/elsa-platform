@@ -285,6 +285,40 @@ public sealed class ManagedElsaInstanceApiTests
     }
 
     [Fact]
+    public async Task Canonical_operation_maps_typed_version_conflict_to_precondition_failed()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient("managed-instance-version-conflict");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        var created = await CreateCanonicalInstanceAsync(client, workspaceId, "version-conflict-runtime");
+
+        var response = await SendOperationAsync(client, workspaceId, created.Instance.InstanceId,
+            "\"999\"", "version-conflict-start", new(ElsaInstanceOperationAction.Start));
+
+        Assert.Equal(HttpStatusCode.PreconditionFailed, response.StatusCode);
+        Assert.Contains("instance.version-conflict", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Canonical_operation_maps_typed_active_operation_conflict_to_conflict()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient("managed-instance-active-operation");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        var created = await CreateCanonicalInstanceAsync(client, workspaceId, "active-operation-runtime");
+
+        var response = await SendOperationAsync(client, workspaceId, created.Instance.InstanceId,
+            created.Instance.ETag, "active-operation-reconcile", new(ElsaInstanceOperationAction.Reconcile));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("instance.operation-active", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Canonical_delete_requires_matching_confirmation_and_replays_exact_request()
     {
         await using var app = CreateApplication([]);
