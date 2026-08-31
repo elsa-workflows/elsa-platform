@@ -43,9 +43,19 @@ public static class ManagedElsaInstanceEndpoints
             var currentPageSize = Math.Clamp(pageSize ?? 50, 1, 100);
             var offset = (long)(currentPage - 1) * currentPageSize;
             var pageResult = await instances.ListInstancesAsync(workspaceId, currentPage, currentPageSize, cancellationToken);
+            // Identity bindings are only ever surfaced when the caller can open
+            // instances, so skip the lookup entirely otherwise, and resolve the
+            // whole page's bindings in a single query rather than one per item.
+            var identityByInstanceId = canOpen
+                ? await identities.FindOpenableManyAsync(
+                    access.OrganizationId,
+                    pageResult.Items.Select(x => x.Id).ToArray(),
+                    cancellationToken)
+                : new Dictionary<Guid, ManagedElsaInstanceIdentity>();
             var items = new List<ManagedElsaInstanceResponse>(pageResult.Items.Count);
             foreach (var instance in pageResult.Items)
-                items.Add(await ToResponseAsync(instance, canOpen, workspaceId, identities, cancellationToken));
+                items.Add(ToResponse(instance, canOpen, workspaceId,
+                    identityByInstanceId.GetValueOrDefault(instance.Id)));
             return Results.Ok(new ManagedElsaInstanceListResponse(items, currentPage, currentPageSize, pageResult.TotalCount,
                 offset + currentPageSize < pageResult.TotalCount));
         }).RequireWorkspaceAccess();

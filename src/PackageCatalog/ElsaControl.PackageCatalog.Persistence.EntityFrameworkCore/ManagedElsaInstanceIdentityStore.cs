@@ -119,6 +119,37 @@ public sealed class EfCoreManagedElsaInstanceIdentityStore(CatalogDbContext dbCo
         return entity is null ? null : TryMap(entity);
     }
 
+    public async Task<IReadOnlyDictionary<Guid, ManagedElsaInstanceIdentity>> FindOpenableManyAsync(
+        Guid organizationId,
+        IReadOnlyCollection<Guid> instanceIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (organizationId == Guid.Empty || instanceIds.Count == 0)
+            return new Dictionary<Guid, ManagedElsaInstanceIdentity>();
+
+        dbContext.ChangeTracker.Clear();
+        var entities = await dbContext.ElsaInstances
+            .AsNoTracking()
+            .Include(x => x.IdentityBinding)
+            .Where(x => x.OrganizationId == organizationId &&
+                        instanceIds.Contains(x.Id) &&
+                        x.DeletedAt == null &&
+                        x.DesiredLifecycle == ElsaDesiredLifecycle.Running &&
+                        x.ObservedLifecycle == ElsaObservedLifecycle.Ready &&
+                        x.Health == ElsaInstanceHealth.Healthy)
+            .ToListAsync(cancellationToken);
+
+        var result = new Dictionary<Guid, ManagedElsaInstanceIdentity>();
+        foreach (var entity in entities)
+        {
+            var identity = TryMap(entity);
+            if (identity is not null)
+                result[entity.Id] = identity;
+        }
+
+        return result;
+    }
+
     /// <summary>
     /// Creates a binding when no expected version is supplied, or rotates the
     /// current binding when the supplied version matches. Both operations repeat
