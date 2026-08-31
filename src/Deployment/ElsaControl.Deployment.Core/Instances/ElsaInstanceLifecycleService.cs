@@ -210,13 +210,18 @@ public sealed class ElsaInstanceLifecycleService(
             ?? throw new KeyNotFoundException("Elsa instance does not exist in the workspace.");
         var operationScope = OperationScope(instanceId, action);
         var existingOperation = await store.FindOperationByKeyAsync(
-            workspaceId, key, instanceId, idempotencyScope: operationScope, cancellationToken: cancellationToken);
+            workspaceId, key, instanceId,
+            action: action == ElsaInstanceOperationAction.Recover ? ElsaInstanceOperationAction.Recover : null,
+            idempotencyScope: operationScope, cancellationToken: cancellationToken);
         if (existingOperation is not null)
         {
-            if (existingOperation.InstanceId != instanceId || existingOperation.Action != action)
+            if (existingOperation.InstanceId != instanceId ||
+                (existingOperation.Action != action && action != ElsaInstanceOperationAction.Recover))
                 throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
 
-            var existingRequestHash = existingOperation.RequestHash;
+            var existingRequestHash = action == ElsaInstanceOperationAction.Recover
+                ? existingOperation.RecoveryRequestHash ?? existingOperation.RequestHash
+                : existingOperation.RequestHash;
             var replayRequestHash = ComputeRequestHash(
                 action,
                 expectedVersion,
@@ -299,6 +304,7 @@ public sealed class ElsaInstanceLifecycleService(
                     ElsaInstanceStateConflictReason.VersionConflict => ElsaInstanceLifecycleConflictReason.VersionConflict,
                     ElsaInstanceStateConflictReason.OperationActive => ElsaInstanceLifecycleConflictReason.OperationActive,
                     ElsaInstanceStateConflictReason.ActiveOperationOwnershipMismatch => ElsaInstanceLifecycleConflictReason.InvalidState,
+                    ElsaInstanceStateConflictReason.InvalidState => ElsaInstanceLifecycleConflictReason.InvalidState,
                     _ => ElsaInstanceLifecycleConflictReason.InvalidState
                 });
         }

@@ -369,6 +369,28 @@ public sealed class ManagedElsaInstanceApiTests
         Assert.Contains("instance.operation-active", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(ElsaInstanceOperationAction.Start)]
+    [InlineData(ElsaInstanceOperationAction.Retry)]
+    [InlineData(ElsaInstanceOperationAction.Recover)]
+    public async Task Canonical_operation_maps_invalid_request_state_to_stable_conflict(
+        ElsaInstanceOperationAction action)
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient($"managed-instance-invalid-{action}");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        var created = await CreateCanonicalInstanceAsync(client, workspaceId, $"invalid-{action.ToString().ToLowerInvariant()}");
+        await MarkOperationSucceededAsync(app, created.Operation.Id);
+
+        var response = await SendOperationAsync(client, workspaceId, created.Instance.InstanceId,
+            created.Instance.ETag, $"invalid-{action}", new(action));
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("instance.invalid-state", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Canonical_operation_key_cannot_be_reused_for_a_different_terminal_action()
     {

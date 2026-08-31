@@ -415,6 +415,20 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             operation.IdempotencyScope = RequireSafeReference(operation.IdempotencyScope, nameof(operation.IdempotencyScope), 256);
             operation.IdempotencyKey = RequireSafeToken(operation.IdempotencyKey, nameof(operation.IdempotencyKey), 128);
             operation.RequestHash = RequireCanonicalHash(operation.RequestHash, nameof(operation.RequestHash));
+            var recoveryEnvelopeCount = new[]
+            {
+                operation.RecoveryIdempotencyScope,
+                operation.RecoveryIdempotencyKey,
+                operation.RecoveryRequestHash
+            }.Count(x => x is not null);
+            if (recoveryEnvelopeCount is not (0 or 3))
+                throw new InvalidOperationException("Recovery idempotency evidence must be complete.");
+            if (recoveryEnvelopeCount == 3)
+            {
+                operation.RecoveryIdempotencyScope = RequireSafeReference(operation.RecoveryIdempotencyScope!, nameof(operation.RecoveryIdempotencyScope), 256);
+                operation.RecoveryIdempotencyKey = RequireSafeToken(operation.RecoveryIdempotencyKey!, nameof(operation.RecoveryIdempotencyKey), 128);
+                operation.RecoveryRequestHash = RequireCanonicalHash(operation.RecoveryRequestHash!, nameof(operation.RecoveryRequestHash));
+            }
             operation.WorkerId = OptionalSafeToken(operation.WorkerId, nameof(operation.WorkerId), 256);
             operation.LeaseTokenHash = OptionalCanonicalHash(operation.LeaseTokenHash, nameof(operation.LeaseTokenHash));
             operation.DesiredStateRevisionId = OptionalSafeReference(operation.DesiredStateRevisionId, nameof(operation.DesiredStateRevisionId), 128);
@@ -484,6 +498,19 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                          })
                     EnsureUnchanged(entry, property, entry.Property(property).CurrentValue,
                         "Instance operation envelope fields are immutable.");
+
+                foreach (var property in new[]
+                         {
+                             nameof(Models.ElsaInstanceOperationEntity.RecoveryIdempotencyScope),
+                             nameof(Models.ElsaInstanceOperationEntity.RecoveryIdempotencyKey),
+                             nameof(Models.ElsaInstanceOperationEntity.RecoveryRequestHash)
+                         })
+                {
+                    var original = entry.Property(property).OriginalValue;
+                    var current = entry.Property(property).CurrentValue;
+                    if (original is not null && !Equals(original, current))
+                        throw new InvalidOperationException("Recovery request envelope fields are immutable once recorded.");
+                }
 
                 var originalState = (ElsaInstanceOperationState)entry.Property(nameof(Models.ElsaInstanceOperationEntity.State)).OriginalValue!;
                 EnsureDefined(originalState, nameof(Models.ElsaInstanceOperationEntity.State));

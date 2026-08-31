@@ -43,7 +43,10 @@ public sealed record ElsaInstanceOperation
         int expectedVersion,
         ElsaInstanceOperationState state,
         int attemptNumber,
-        DateTimeOffset acceptedAt)
+        DateTimeOffset acceptedAt,
+        string? recoveryIdempotencyScope = null,
+        string? recoveryIdempotencyKey = null,
+        string? recoveryRequestHash = null)
     {
         Id = id;
         InstanceId = instanceId;
@@ -55,6 +58,9 @@ public sealed record ElsaInstanceOperation
         State = state;
         AttemptNumber = attemptNumber;
         AcceptedAt = acceptedAt;
+        RecoveryIdempotencyScope = recoveryIdempotencyScope;
+        RecoveryIdempotencyKey = recoveryIdempotencyKey;
+        RecoveryRequestHash = recoveryRequestHash;
     }
 
     public Guid Id { get; }
@@ -76,6 +82,10 @@ public sealed record ElsaInstanceOperation
     public int AttemptNumber { get; private init; }
 
     public DateTimeOffset AcceptedAt { get; }
+
+    public string? RecoveryIdempotencyScope { get; private init; }
+    public string? RecoveryIdempotencyKey { get; private init; }
+    public string? RecoveryRequestHash { get; private init; }
 
     public bool HoldsReservation => ElsaInstanceOperationGuard.IsActive(State);
 
@@ -126,7 +136,10 @@ public sealed record ElsaInstanceOperation
         int expectedVersion,
         ElsaInstanceOperationState state,
         int attemptNumber,
-        DateTimeOffset acceptedAt)
+        DateTimeOffset acceptedAt,
+        string? recoveryIdempotencyScope = null,
+        string? recoveryIdempotencyKey = null,
+        string? recoveryRequestHash = null)
     {
         if (id == Guid.Empty)
             throw new ArgumentException("Operation ID is required.", nameof(id));
@@ -141,6 +154,8 @@ public sealed record ElsaInstanceOperation
         if (state == ElsaInstanceOperationState.WaitingForPriorOperation &&
             action != ElsaInstanceOperationAction.Delete)
             throw new ArgumentException("Only delete operations can wait for a prior operation.", nameof(state));
+        if (new[] { recoveryIdempotencyScope, recoveryIdempotencyKey, recoveryRequestHash }.Count(x => x is not null) is not (0 or 3))
+            throw new ArgumentException("Recovery request idempotency evidence must be complete.", nameof(recoveryIdempotencyKey));
 
         return new ElsaInstanceOperation(
             id,
@@ -152,7 +167,10 @@ public sealed record ElsaInstanceOperation
             expectedVersion,
             state,
             attemptNumber,
-            acceptedAt.ToUniversalTime());
+            acceptedAt.ToUniversalTime(),
+            recoveryIdempotencyScope is null ? null : ElsaInstanceReferenceValue.RequireOperationScope(recoveryIdempotencyScope, nameof(recoveryIdempotencyScope)),
+            recoveryIdempotencyKey is null ? null : ElsaInstanceReferenceValue.RequireOperationKey(recoveryIdempotencyKey, nameof(recoveryIdempotencyKey)),
+            recoveryRequestHash is null ? null : ElsaInstanceReferenceValue.RequireCanonicalHash(recoveryRequestHash, nameof(recoveryRequestHash)));
     }
 
     public ElsaInstanceOperation TransitionTo(ElsaInstanceOperationState next)
@@ -169,14 +187,17 @@ public sealed record ElsaInstanceOperation
     /// Recovery is explicit: an uncertain operation cannot be retried by directly
     /// inserting another queued operation.
     /// </summary>
-    public ElsaInstanceOperation Recover()
+    public ElsaInstanceOperation Recover(string idempotencyScope, string idempotencyKey, string requestHash)
     {
         if (State != ElsaInstanceOperationState.RecoveryRequired)
             throw new InvalidOperationException("Only a recovery-required operation can be recovered.");
         return this with
         {
             State = ElsaInstanceOperationState.Queued,
-            AttemptNumber = checked(AttemptNumber + 1)
+            AttemptNumber = checked(AttemptNumber + 1),
+            RecoveryIdempotencyScope = ElsaInstanceReferenceValue.RequireOperationScope(idempotencyScope, nameof(idempotencyScope)),
+            RecoveryIdempotencyKey = ElsaInstanceReferenceValue.RequireOperationKey(idempotencyKey, nameof(idempotencyKey)),
+            RecoveryRequestHash = ElsaInstanceReferenceValue.RequireCanonicalHash(requestHash, nameof(requestHash))
         };
     }
 
@@ -332,6 +353,7 @@ public enum ElsaInstanceStateConflictReason
     VersionConflict,
     OperationActive,
     ActiveOperationOwnershipMismatch,
+    InvalidState,
 }
 
 public sealed class ElsaInstanceStateConflictException : InvalidOperationException
@@ -342,6 +364,7 @@ public sealed class ElsaInstanceStateConflictException : InvalidOperationExcepti
             ElsaInstanceStateConflictReason.VersionConflict => "Instance version conflict.",
             ElsaInstanceStateConflictReason.OperationActive => "An instance operation is already active.",
             ElsaInstanceStateConflictReason.ActiveOperationOwnershipMismatch => "The active operation belongs to a different instance.",
+            ElsaInstanceStateConflictReason.InvalidState => "The requested operation is not valid for the current instance state.",
             _ => "The instance state conflicts with the requested operation."
         })
     {
@@ -424,8 +447,13 @@ public static class ElsaInstanceStateMachine
 
         if (action == ElsaInstanceOperationAction.Recover)
         {
+            if (activeOperation is not null &&
+                string.Equals(activeOperation.RecoveryIdempotencyScope, operationScope, StringComparison.Ordinal) &&
+                string.Equals(activeOperation.RecoveryIdempotencyKey, key, StringComparison.Ordinal) &&
+                string.Equals(activeOperation.RecoveryRequestHash, hash, StringComparison.Ordinal))
+                return new ElsaInstanceTransitionResult(instance, activeOperation);
             if (activeOperation is null || activeOperation.State != ElsaInstanceOperationState.RecoveryRequired)
-                throw new InvalidOperationException("Recovery must reuse a recovery-required operation.");
+                throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.InvalidState);
             ElsaInstanceOperationGuard.EnsureExpectedVersion(instance, expected);
             // A delete recovery resumes cleanup through the same operation. It
             // must not turn an unknown/deleting observation into provisioning.
@@ -433,7 +461,7 @@ public static class ElsaInstanceStateMachine
                                     instance.Intent.DesiredLifecycle == ElsaDesiredLifecycle.Deleting
                 ? instance
                 : RequestReconciliation(instance);
-            return new ElsaInstanceTransitionResult(recoveredInstance, activeOperation.Recover());
+            return new ElsaInstanceTransitionResult(recoveredInstance, activeOperation.Recover(operationScope, key, hash));
         }
 
         if (activeOperation is not null && ElsaInstanceOperationGuard.IsIdempotentReplay(activeOperation, operationScope, key, hash))
@@ -458,9 +486,9 @@ public static class ElsaInstanceStateMachine
             case ElsaInstanceOperationAction.Start:
                 EnsureNotDeleted(instance, action);
                 if (instance.ObservedLifecycle == ElsaObservedLifecycle.Failed && instance.Intent.DesiredLifecycle != ElsaDesiredLifecycle.Stopped)
-                    throw new InvalidOperationException("A failed instance can start only after a stopped request.");
+                    throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.InvalidState);
                 if (instance.ObservedLifecycle is not (ElsaObservedLifecycle.Stopped or ElsaObservedLifecycle.Failed))
-                    throw new InvalidOperationException("An instance can start only from Stopped or Failed.");
+                    throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.InvalidState);
                 next = instance with
                 {
                     Intent = instance.Intent with { DesiredLifecycle = ElsaDesiredLifecycle.Running },
@@ -509,7 +537,7 @@ public static class ElsaInstanceStateMachine
             case ElsaInstanceOperationAction.Retry:
                 EnsureNotDeleted(instance, action);
                 if (instance.ObservedLifecycle is not (ElsaObservedLifecycle.Failed or ElsaObservedLifecycle.Degraded))
-                    throw new InvalidOperationException("Retry is only valid for failed or degraded instances.");
+                    throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.InvalidState);
                 next = RequestReconciliation(instance);
                 break;
 
@@ -621,12 +649,11 @@ public static class ElsaInstanceStateMachine
         bool migrationAuthorized)
     {
         if (intent.DesiredLifecycle != instance.Intent.DesiredLifecycle)
-            throw new InvalidOperationException("Lifecycle intent changes require the Start, Stop or Delete operation.");
+            throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.InvalidState);
 
         var transition = ElsaReleaseTransitionRules.Classify(instance.Intent.Release.Selection, intent.Release.Selection);
         if (!transition.IsAllowed(minorApproved, migrationAuthorized))
-            throw new InvalidOperationException(
-                $"{transition.Kind} release intent changes require the corresponding explicit operation.");
+            throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.InvalidState);
 
         return instance with { Intent = intent, Version = checked(instance.Version + 1) };
     }
@@ -638,7 +665,7 @@ public static class ElsaInstanceStateMachine
             ElsaObservedLifecycle.Ready or ElsaObservedLifecycle.Degraded => ElsaObservedLifecycle.Stopping,
             ElsaObservedLifecycle.Stopped => ElsaObservedLifecycle.Stopped,
             ElsaObservedLifecycle.Pending or ElsaObservedLifecycle.Provisioning or ElsaObservedLifecycle.Failed or ElsaObservedLifecycle.Unknown or ElsaObservedLifecycle.Stopping => instance.ObservedLifecycle,
-            _ => throw new InvalidOperationException("An instance cannot stop from its current lifecycle state.")
+            _ => throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.InvalidState)
         };
         if (observed != instance.ObservedLifecycle)
             Transition(instance.ObservedLifecycle, observed);
@@ -653,7 +680,7 @@ public static class ElsaInstanceStateMachine
     private static ElsaInstance RequestRestart(ElsaInstance instance)
     {
         if (instance.ObservedLifecycle is not (ElsaObservedLifecycle.Ready or ElsaObservedLifecycle.Degraded or ElsaObservedLifecycle.Stopped))
-            throw new InvalidOperationException("An instance can restart only from Ready, Degraded or Stopped.");
+            throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.InvalidState);
         var observed = instance.ObservedLifecycle == ElsaObservedLifecycle.Stopped
             ? ElsaObservedLifecycle.Provisioning
             : ElsaObservedLifecycle.Updating;
@@ -684,7 +711,7 @@ public static class ElsaInstanceStateMachine
     private static void EnsureNotDeleted(ElsaInstance instance, ElsaInstanceOperationAction action)
     {
         if (instance.ObservedLifecycle == ElsaObservedLifecycle.Deleted || instance.Intent.DesiredLifecycle == ElsaDesiredLifecycle.Deleting)
-            throw new InvalidOperationException($"{action} is not valid for an instance being deleted.");
+            throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.InvalidState);
     }
 }
 

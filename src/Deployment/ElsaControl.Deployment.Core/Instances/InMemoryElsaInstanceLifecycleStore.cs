@@ -291,11 +291,13 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         idempotencyKey = RequireKey(idempotencyKey);
         lock (_gate)
         {
+            var isRecovery = action == ElsaInstanceOperationAction.Recover;
             var operation = _operations.Values
-                .Where(x => x.IdempotencyKey == idempotencyKey)
+                .Where(x => (isRecovery ? x.RecoveryIdempotencyKey : x.IdempotencyKey) == idempotencyKey)
                 .Where(x => instanceId is null || x.InstanceId == instanceId)
-                .Where(x => action is null || x.Action == action)
-                .Where(x => idempotencyScope is null || x.IdempotencyScope == idempotencyScope)
+                .Where(x => action is null || isRecovery || x.Action == action)
+                .Where(x => idempotencyScope is null ||
+                    (isRecovery ? x.RecoveryIdempotencyScope : x.IdempotencyScope) == idempotencyScope)
                 .Where(x => _instances.TryGetValue(x.InstanceId, out var instance) && instance.WorkspaceId == workspaceId)
                 .OrderByDescending(x => x.AcceptedAt)
                 .FirstOrDefault();
@@ -331,6 +333,15 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                     !string.Equals(storedOperation.IdempotencyKey, operation.IdempotencyKey, StringComparison.Ordinal) ||
                     !string.Equals(storedOperation.RequestHash, operation.RequestHash, StringComparison.Ordinal))
                     throw new ElsaInstanceLifecycleConflictException("Lifecycle operation identity is already in use.");
+
+                if (operation.RecoveryIdempotencyKey is not null &&
+                    storedOperation.RecoveryIdempotencyKey is not null &&
+                    (!string.Equals(storedOperation.RecoveryIdempotencyScope, operation.RecoveryIdempotencyScope, StringComparison.Ordinal) ||
+                     !string.Equals(storedOperation.RecoveryIdempotencyKey, operation.RecoveryIdempotencyKey, StringComparison.Ordinal) ||
+                     !string.Equals(storedOperation.RecoveryRequestHash, operation.RecoveryRequestHash, StringComparison.Ordinal)))
+                    throw new ElsaInstanceLifecycleConflictException(
+                        "Recovery request conflicts with the accepted recovery request.",
+                        ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
 
                 if (storedOperation.State == operation.State && storedOperation.AttemptNumber == operation.AttemptNumber)
                     return Task.FromResult(Replay(instance, storedOperation));

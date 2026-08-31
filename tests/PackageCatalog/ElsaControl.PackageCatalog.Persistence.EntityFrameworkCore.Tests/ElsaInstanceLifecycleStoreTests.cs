@@ -309,6 +309,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal(created.Instance.DesiredStateRevisionId!.Value.Value,
             (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == updated.Operation.Id)).DesiredStateRevisionId);
         Assert.Equal(2, await db.ElsaInstanceAuditEvents.CountAsync());
+
         var audit = await db.ElsaInstanceAuditEvents.SingleAsync(x => x.OperationId == updated.Operation.Id);
         Assert.Equal(actorAccountId, audit.ActorAccountId);
         Assert.StartsWith("reason.sha256.", audit.Summary, StringComparison.Ordinal);
@@ -538,6 +539,14 @@ public sealed class ElsaInstanceLifecycleStoreTests
             .GetInstanceAsync(workspace.Id, created.Instance.Id);
         Assert.Equal(ElsaObservedLifecycle.Provisioning, persisted!.ObservedLifecycle);
         Assert.Equal(3, persisted.Version);
+        Assert.Equal(1, await db.ElsaInstanceLifecycleOutbox.CountAsync());
+        Assert.Equal(2, await db.ElsaInstanceAuditEvents.CountAsync());
+
+        var replayed = await service.RecoverAsync(new ElsaInstanceLifecycleRequest(
+            workspace.Id, created.Instance.Id, current.Version, "recover-recovery"));
+        Assert.True(replayed.Replayed);
+        Assert.Equal(recovered.Operation.Id, replayed.Operation.Id);
+        Assert.Equal(2, replayed.Operation.AttemptNumber);
         Assert.Equal(1, await db.ElsaInstanceLifecycleOutbox.CountAsync());
         Assert.Equal(2, await db.ElsaInstanceAuditEvents.CountAsync());
     }

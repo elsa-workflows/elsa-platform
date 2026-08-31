@@ -928,6 +928,9 @@ internal sealed class ElsaInstanceOperationConfiguration : IEntityTypeConfigurat
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Action).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.IdempotencyScope).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.RecoveryIdempotencyScope).HasMaxLength(256);
+        builder.Property(x => x.RecoveryIdempotencyKey).HasMaxLength(128);
+        builder.Property(x => x.RecoveryRequestHash).HasMaxLength(71);
         builder.Property(x => x.IdempotencyKey).HasMaxLength(128).IsRequired();
         builder.Property(x => x.RequestHash).HasMaxLength(64).IsRequired();
         builder.Property(x => x.State).HasConversion<string>().HasMaxLength(64).IsRequired();
@@ -958,6 +961,9 @@ internal sealed class ElsaInstanceOperationConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.WorkspaceId, x.IdempotencyScope, x.IdempotencyKey }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.RecoveryIdempotencyScope, x.RecoveryIdempotencyKey })
+            .IsUnique()
+            .HasFilter("RecoveryIdempotencyKey IS NOT NULL");
         builder.HasIndex(x => x.InstanceId)
             .HasDatabaseName("IX_ElsaInstanceOperations_ActiveInstanceId")
             .IsUnique()

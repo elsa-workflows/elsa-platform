@@ -2710,6 +2710,18 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     b.Property<int>("ReconciliationVersion")
                         .HasColumnType("int");
 
+                    b.Property<string>("RecoveryIdempotencyKey")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("RecoveryIdempotencyScope")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("RecoveryRequestHash")
+                        .HasMaxLength(71)
+                        .HasColumnType("nvarchar(71)");
+
                     b.Property<string>("RequestHash")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -2753,6 +2765,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                     b.HasIndex("WorkspaceId", "IdempotencyScope", "IdempotencyKey")
                         .IsUnique();
+
+                    b.HasIndex("WorkspaceId", "RecoveryIdempotencyScope", "RecoveryIdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("RecoveryIdempotencyKey IS NOT NULL");
 
                     b.HasIndex("WorkspaceId", "State", "AcceptedAt");
 

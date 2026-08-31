@@ -191,6 +191,9 @@ internal sealed class ElsaInstanceOperationEntity
     public string IdempotencyScope { get; set; } = "";
     public string IdempotencyKey { get; set; } = "";
     public string RequestHash { get; set; } = "";
+    public string? RecoveryIdempotencyScope { get; set; }
+    public string? RecoveryIdempotencyKey { get; set; }
+    public string? RecoveryRequestHash { get; set; }
     public int ExpectedVersion { get; set; }
     public ElsaInstanceOperationState State { get; set; }
     public int AttemptNumber { get; set; }

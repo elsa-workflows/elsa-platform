@@ -255,6 +255,24 @@ public sealed class ElsaInstanceLifecycleServiceTests
         Assert.Equal(2, recovered.Operation.AttemptNumber);
         Assert.Equal(5, store.Outbox.Count);
         Assert.Single(store.Operations);
+
+        var conflict = await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() =>
+            service.RecoverAsync(new ElsaInstanceLifecycleRequest(
+                WorkspaceId, created.Instance.Id, recovered.Instance.Version, "recover-1", "changed")));
+        Assert.Equal(ElsaInstanceLifecycleConflictReason.IdempotencyConflict, conflict.Reason);
+        Assert.Equal(5, store.Outbox.Count);
+
+        var replayed = await service.RecoverAsync(new ElsaInstanceLifecycleRequest(
+            WorkspaceId,
+            created.Instance.Id,
+            recovered.Instance.Version,
+            "recover-1"));
+
+        Assert.True(replayed.Replayed);
+        Assert.Equal(recovered.Operation.Id, replayed.Operation.Id);
+        Assert.Equal(recovered.Operation.AttemptNumber, replayed.Operation.AttemptNumber);
+        Assert.Equal(5, store.Outbox.Count);
+        Assert.Single(store.Operations);
     }
 
     [Fact]
@@ -270,6 +288,31 @@ public sealed class ElsaInstanceLifecycleServiceTests
             WorkspaceId, created.Instance.Id, created.Instance.Version, "recover-without-proof")));
 
         Assert.Equal("Provider reconciliation has not established that retry is safe.", error.Message);
+    }
+
+    [Theory]
+    [InlineData(ElsaInstanceOperationAction.Start)]
+    [InlineData(ElsaInstanceOperationAction.Retry)]
+    [InlineData(ElsaInstanceOperationAction.Recover)]
+    public async Task Invalid_request_state_is_reported_as_a_stable_conflict(ElsaInstanceOperationAction action)
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore();
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+        await store.CommitAcceptedAsync(created.Instance, created.Instance,
+            created.Operation.TransitionTo(ElsaInstanceOperationState.Succeeded), created.Outbox);
+
+        var request = new ElsaInstanceLifecycleRequest(
+            WorkspaceId, created.Instance.Id, created.Instance.Version, $"invalid-{action}");
+        var error = await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() => action switch
+        {
+            ElsaInstanceOperationAction.Start => service.StartAsync(request),
+            ElsaInstanceOperationAction.Retry => service.RetryAsync(request),
+            _ => service.RecoverAsync(request)
+        });
+
+        Assert.Equal(ElsaInstanceLifecycleConflictReason.InvalidState, error.Reason);
     }
 
     [Fact]
