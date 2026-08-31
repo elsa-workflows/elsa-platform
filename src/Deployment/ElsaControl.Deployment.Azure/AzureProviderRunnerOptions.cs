@@ -214,8 +214,19 @@ public sealed record AzureProviderRunnerOptions
             throw new ArgumentException("The checked-in Azure provider authority is incomplete.", nameof(TemplateRoot));
     }
 
-    private static bool IsSymbolicLink(string path) =>
-        File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint);
+    private static bool IsSymbolicLink(string path)
+    {
+        try
+        {
+            return File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint);
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            // Attribute races, access failures and disappearing authority files are all unsafe.
+            return true;
+        }
+    }
 
     private static string NormalizeRoot(string root) =>
         Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
