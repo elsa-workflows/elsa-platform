@@ -51,6 +51,22 @@ public sealed class AdminApiAuthenticationTests
     }
 
     [Fact]
+    public async Task Health_endpoint_rejects_identifiers_that_do_not_start_with_a_letter_or_digit()
+    {
+        await using var app = new ControlApiTestApplication(new Dictionary<string, string?>
+        {
+            ["Application:BuildNumber"] = ".build-1786839398",
+            ["ELSA_CONTROL_IMAGE_ID"] = "-image-abcdef0123456789"
+        });
+
+        var response = await app.CreateClient().GetAsync("/health");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("unknown", payload.RootElement.GetProperty("buildNumber").GetString());
+        Assert.Equal("unknown", payload.RootElement.GetProperty("imageId").GetString());
+    }
+
+    [Fact]
     public async Task Admin_api_rejects_known_development_key_when_api_key_is_not_configured()
     {
         await using var app = new ControlApiTestApplication().WithWebHostBuilder(builder =>

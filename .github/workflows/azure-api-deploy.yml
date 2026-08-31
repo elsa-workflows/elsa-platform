@@ -165,11 +165,14 @@ jobs:
             exit 1
           fi
 
-          linux_fx_version="$(az webapp config show \
+          if ! linux_fx_version="$(az webapp config show \
             --resource-group "$AZURE_RESOURCE_GROUP" \
             --name "$AZURE_WEBAPP_NAME" \
             --query linuxFxVersion \
-            --output tsv)"
+            --output tsv)"; then
+            echo "::error::Could not capture the current Linux runtime image; refusing an unprotected deployment."
+            exit 1
+          fi
           if [ -z "$linux_fx_version" ]; then
             echo "::error::Could not capture the current Linux runtime image; refusing an unprotected deployment."
             exit 1

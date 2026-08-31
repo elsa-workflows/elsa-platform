@@ -517,6 +517,8 @@ static string SafeHealthIdentifier(string? value)
 {
     if (string.IsNullOrWhiteSpace(value) || value.Length > 128)
         return "unknown";
+    if (!char.IsAsciiLetterOrDigit(value[0]))
+        return "unknown";
 
     foreach (var character in value)
     {
