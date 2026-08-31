@@ -929,7 +929,7 @@ public sealed class AzureProviderExecutorTests
         public Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<AzureProviderOperation>>([]);
 
-        public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default) =>
+        public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, string? providerScopeFingerprint, CancellationToken cancellationToken = default) =>
             Task.FromResult<AzureProviderOperation?>(
                 LatestReconcileResources is not null && _operation is not null
                     ? _operation with { Action = AzureProviderOperationAction.Reconcile, Resources = LatestReconcileResources }

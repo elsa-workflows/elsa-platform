@@ -351,38 +351,64 @@ public static class AzureProviderOperationValidation
     public static string ComputeRequestHash(AzureProviderOperationRequest request)
     {
         var normalized = Normalize(request);
-        var canonical = JsonSerializer.Serialize(new
-        {
-            normalized.WorkspaceId,
-            normalized.TargetKey,
-            Action = normalized.Action.ToString(),
-            normalized.PlanFingerprint,
-            normalized.TemplateFingerprint,
-            normalized.ElsaVersion,
-            normalized.ReleaseLine,
-            normalized.Topology,
-            normalized.Isolation,
-            normalized.Location,
-            normalized.ImageRepository,
-            normalized.ImageDigest,
-            normalized.ReleaseManifestDigest,
-            normalized.ReleaseManifestSignatureDigest,
-            normalized.ReleaseManifestReference,
-            normalized.ReleaseManifestSignatureReference,
-            normalized.ProviderScopeFingerprint,
-            secretReferences = normalized.SecretReferences
-        });
+        var canonical = normalized.ProviderScopeFingerprint is null
+            ? SerializeLegacyRequest(normalized)
+            : JsonSerializer.Serialize(new
+            {
+                normalized.WorkspaceId,
+                normalized.TargetKey,
+                Action = normalized.Action.ToString(),
+                normalized.PlanFingerprint,
+                normalized.TemplateFingerprint,
+                normalized.ElsaVersion,
+                normalized.ReleaseLine,
+                normalized.Topology,
+                normalized.Isolation,
+                normalized.Location,
+                normalized.ImageRepository,
+                normalized.ImageDigest,
+                normalized.ReleaseManifestDigest,
+                normalized.ReleaseManifestSignatureDigest,
+                normalized.ReleaseManifestReference,
+                normalized.ReleaseManifestSignatureReference,
+                normalized.ProviderScopeFingerprint,
+                secretReferences = normalized.SecretReferences
+            });
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
     }
 
     public static string ComputeOperationIdentity(AzureProviderOperationRequest request)
     {
         var normalized = Normalize(request);
-        var value = string.Join('|', normalized.WorkspaceId.ToString("N"), normalized.TargetKey,
+        var legacyValue = string.Join('|', normalized.WorkspaceId.ToString("N"), normalized.TargetKey,
             normalized.Action, normalized.PlanFingerprint, normalized.TemplateFingerprint,
-            normalized.ProviderScopeFingerprint, normalized.ImageDigest, normalized.Location, normalized.Topology, normalized.Isolation);
+            normalized.ImageDigest, normalized.Location, normalized.Topology, normalized.Isolation);
+        var value = normalized.ProviderScopeFingerprint is null
+            ? legacyValue
+            : $"{legacyValue}|{normalized.ProviderScopeFingerprint}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
     }
+
+    private static string SerializeLegacyRequest(AzureProviderOperationRequest normalized) => JsonSerializer.Serialize(new
+    {
+        normalized.WorkspaceId,
+        normalized.TargetKey,
+        Action = normalized.Action.ToString(),
+        normalized.PlanFingerprint,
+        normalized.TemplateFingerprint,
+        normalized.ElsaVersion,
+        normalized.ReleaseLine,
+        normalized.Topology,
+        normalized.Isolation,
+        normalized.Location,
+        normalized.ImageRepository,
+        normalized.ImageDigest,
+        normalized.ReleaseManifestDigest,
+        normalized.ReleaseManifestSignatureDigest,
+        normalized.ReleaseManifestReference,
+        normalized.ReleaseManifestSignatureReference,
+        secretReferences = normalized.SecretReferences
+    });
 
     private static void BoundedSafe(string? value, int max, string name, ICollection<string> errors)
     {

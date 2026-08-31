@@ -341,6 +341,36 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task New_scope_never_inherits_resource_handles_from_an_old_scope()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var first = await store.CreateOrGetAsync(Request() with { ProviderScopeFingerprint = new string('a', 64) }, now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, first.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+        var checkpoint = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+            _workspaceId, first.Id, "lease",
+            new(AzureProviderOperationPhase.WorkloadReady, "workload.ready", "Ready.",
+                new(ResourceGroupName: "rg", WorkloadResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.App/containerApps/app"),
+                null, AzureProviderHealth.Unknown, []),
+            now, claimed.Version));
+        Assert.NotNull(await store.FinalizeAsync(
+            _workspaceId, first.Id, "lease", AzureProviderOperationStatus.Succeeded, "operation.succeeded", now, checkpoint.Version));
+
+        var next = await store.CreateOrGetAsync(
+            Request() with
+            {
+                IdempotencyKey = "new-scope",
+                PlanFingerprint = new string('f', 64),
+                ProviderScopeFingerprint = new string('b', 64)
+            },
+            now.AddMinutes(1));
+
+        Assert.Equal(new AzureProviderResourceReferences(), next.Resources);
+    }
+
+    [Fact]
     public async Task Resource_reference_snapshot_round_trips_all_provider_resources()
     {
         var now = DateTimeOffset.UtcNow;

@@ -129,6 +129,7 @@ public sealed class AzureProviderExecutor
             var latestReconcile = await _store.GetLatestReconcileAsync(
                 claimed.WorkspaceId,
                 claimed.TargetKey,
+                claimed.ProviderScopeFingerprint,
                 CancellationToken.None);
             if (latestReconcile is not null)
                 claimed = claimed with { Resources = latestReconcile.Resources };

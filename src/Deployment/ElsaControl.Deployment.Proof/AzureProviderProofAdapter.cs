@@ -126,7 +126,9 @@ public sealed class AzureProviderProofAdapter(
         var submission = GetSubmission(plan, DeploymentProofStage.Provision);
         var operation = await operationService.SubmitAsync(workspaceId, submission, cancellationToken);
         var execution = await executor.ApplyAsync(
-            AzureProviderOperationService.CreateOperationRequest(workspaceId, submission.IdempotencyKey, templateFingerprint, submission.Plan),
+            AzureProviderOperationService.CreateOperationRequest(
+                workspaceId, submission.IdempotencyKey, templateFingerprint, submission.Plan,
+                AzureProviderOperationAction.Reconcile, submission.ProviderScopeFingerprint),
             submission.Plan,
             cancellationToken);
         if (!execution.Succeeded)
@@ -189,7 +191,9 @@ public sealed class AzureProviderProofAdapter(
     {
         var submission = GetSubmission(plan, DeploymentProofStage.RepeatApply);
         var execution = await executor.ApplyAsync(
-            AzureProviderOperationService.CreateOperationRequest(workspaceId, submission.IdempotencyKey, templateFingerprint, submission.Plan),
+            AzureProviderOperationService.CreateOperationRequest(
+                workspaceId, submission.IdempotencyKey, templateFingerprint, submission.Plan,
+                AzureProviderOperationAction.Reconcile, submission.ProviderScopeFingerprint),
             submission.Plan,
             cancellationToken);
         _operations[plan.PlanId] = execution.Operation;
@@ -212,7 +216,9 @@ public sealed class AzureProviderProofAdapter(
         var submission = GetSubmission(plan, DeploymentProofStage.Cleanup);
         var operation = await operationService.SubmitDeleteAsync(workspaceId, submission, cancellationToken);
         var execution = await executor.DeleteAsync(
-            AzureProviderOperationService.CreateOperationRequest(workspaceId, operation.IdempotencyKey, templateFingerprint, submission.Plan, AzureProviderOperationAction.Delete),
+            AzureProviderOperationService.CreateOperationRequest(
+                workspaceId, operation.IdempotencyKey, templateFingerprint, submission.Plan,
+                AzureProviderOperationAction.Delete, submission.ProviderScopeFingerprint),
             submission.Plan,
             cancellationToken);
         if (!execution.Succeeded)

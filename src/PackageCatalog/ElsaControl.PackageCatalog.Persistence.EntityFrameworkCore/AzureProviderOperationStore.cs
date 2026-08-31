@@ -35,6 +35,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         var previousResources = await GetLatestReconcileAsync(
             normalized.WorkspaceId,
             normalized.TargetKey,
+            normalized.ProviderScopeFingerprint,
             cancellationToken);
 
         var entity = new AzureProviderOperationEntity
@@ -145,7 +146,11 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         return operations.Select(ToModel).ToList();
     }
 
-    public async Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default)
+    public async Task<AzureProviderOperation?> GetLatestReconcileAsync(
+        Guid workspaceId,
+        string targetKey,
+        string? providerScopeFingerprint,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(targetKey))
             throw new ArgumentException("Target key is required.", nameof(targetKey));
@@ -153,6 +158,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         var normalizedTargetKey = targetKey.Trim().ToLowerInvariant();
         var entity = await db.AzureProviderOperations.AsNoTracking()
             .Where(x => x.WorkspaceId == workspaceId && x.TargetKey == normalizedTargetKey &&
+                        x.ProviderScopeFingerprint == providerScopeFingerprint &&
                         x.Action == AzureProviderOperationAction.Reconcile &&
                         (x.ResourceGroupName != null || x.FoundationDeploymentId != null ||
                          x.WorkloadDeploymentId != null || x.WorkloadResourceId != null ||
