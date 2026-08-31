@@ -589,6 +589,19 @@ EF Core store and produce both SQLite and SQL Server migrations.
   idempotency/audit records and cannot be deleted; the EF save guard and both
   provider migrations enforce retention at the database boundary.
 
+`ElsaInstanceRecoveryRequest` (append-only recovery request envelope):
+
+- Each accepted recovery request keeps its own immutable operation ID, attempt,
+  route scope, idempotency key, request hash and acceptance timestamp. The
+  envelope is authoritative when an older recovery key is replayed, while the
+  operation projection reports the current state and attempt.
+- Recovery envelopes share the `(WorkspaceId, IdempotencyScope, IdempotencyKey)`
+  namespace with normal operation requests. A key may therefore be reused only
+  across distinct route scopes (for example `instances`,
+  `instance/{id}/operations`, and `instance/{id}/UpdateIntent`); within one scope
+  it is a conflict in either direction. Envelopes are unique by route scope/key
+  and by `(OperationId, AttemptNumber)` and are never updated or deleted.
+
 `DeploymentEnvironment` managed binding and `DeploymentRun` reservation constraints:
 
 - `DeploymentEnvironment.ElsaInstanceId` is nullable for legacy/customer-owned

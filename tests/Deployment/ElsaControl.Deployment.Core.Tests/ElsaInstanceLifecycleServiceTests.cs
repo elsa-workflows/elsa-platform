@@ -1,5 +1,6 @@
 using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Core.Instances;
+using ElsaControl.Deployment.Core.Workspace;
 using Xunit;
 
 namespace ElsaControl.Deployment.Core.Tests;
@@ -384,6 +385,101 @@ public sealed class ElsaInstanceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task Recovery_idempotency_key_cannot_later_start_normal_work_in_the_same_route_scope()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-recovery-namespace", Intent(), "create-recovery-namespace"));
+        store.MarkRecoveryRequired(created.Operation.Id);
+        await ReconcileRecoveryAsync(store, created.Operation.Id);
+
+        var recovered = await service.RecoverAsync(new ElsaInstanceLifecycleRequest(
+            WorkspaceId, created.Instance.Id, store.Instances.Single().Version, "shared-route-key"));
+
+        var exception = await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() =>
+            service.StopAsync(new ElsaInstanceLifecycleRequest(
+                WorkspaceId, created.Instance.Id, recovered.Instance.Version, "shared-route-key")));
+
+        Assert.Equal(ElsaInstanceLifecycleConflictReason.IdempotencyConflict, exception.Reason);
+        Assert.Single(store.RecoveryRequests);
+        Assert.Single(store.Operations);
+    }
+
+    [Fact]
+    public async Task Recovery_idempotency_key_can_be_reused_by_a_distinct_route_scope()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-recovery-scope", Intent(), "create-recovery-scope"));
+        store.MarkRecoveryRequired(created.Operation.Id);
+        await ReconcileRecoveryAsync(store, created.Operation.Id);
+        var recovered = await service.RecoverAsync(new ElsaInstanceLifecycleRequest(
+            WorkspaceId, created.Instance.Id, store.Instances.Single().Version, "shared-route-key"));
+
+        var second = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims second", "claims-recovery-scope-second", Intent(), "shared-route-key"));
+
+        Assert.False(second.Replayed);
+        Assert.NotEqual(recovered.Instance.Id, second.Instance.Id);
+        Assert.Equal(2, store.Operations.Count);
+        Assert.Single(store.RecoveryRequests);
+    }
+
+    [Fact]
+    public async Task In_memory_delete_acceptance_fails_closed_without_a_confirmation_authority()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-delete-fail-closed", Intent(), "create-delete-fail-closed"));
+
+        await Assert.ThrowsAsync<ElsaInstanceDeleteConfirmationException>(() => service.DeleteAsync(
+            new ElsaInstanceLifecycleRequest(
+                WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-fail-closed",
+                DeleteConfirmationId: DeleteConfirmationId, ActorAccountId: ActorAccountId)));
+
+        Assert.DoesNotContain(store.Operations, operation => operation.Action == ElsaInstanceOperationAction.Delete);
+        Assert.Single(store.Outbox);
+    }
+
+    [Fact]
+    public async Task In_memory_delete_confirmation_is_validated_and_consumed_once()
+    {
+        var authority = new InMemoryElsaInstanceDeleteConfirmationAuthority();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now), authority);
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-delete-confirmation", Intent(), "create-delete-confirmation"));
+        var invalidId = Guid.Parse("30000000-0000-0000-0000-000000000099");
+        authority.Add(new ActionConfirmation(
+            invalidId, WorkspaceId, ConfirmationActionType.DeleteManagedInstance,
+            Guid.NewGuid().ToString("D"), ActorAccountId, Now, Now.AddMinutes(5), null));
+
+        await Assert.ThrowsAsync<ElsaInstanceDeleteConfirmationException>(() => service.DeleteAsync(
+            new ElsaInstanceLifecycleRequest(
+                WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-invalid-confirmation",
+                DeleteConfirmationId: invalidId, ActorAccountId: ActorAccountId)));
+        Assert.Null(authority.Get(invalidId)!.UsedAt);
+
+        authority.Add(new ActionConfirmation(
+            DeleteConfirmationId, WorkspaceId, ConfirmationActionType.DeleteManagedInstance,
+            created.Instance.Id.ToString("D"), ActorAccountId, Now, Now.AddMinutes(5), null));
+        var request = new ElsaInstanceLifecycleRequest(
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-valid-confirmation",
+            DeleteConfirmationId: DeleteConfirmationId, ActorAccountId: ActorAccountId);
+        var accepted = await service.DeleteAsync(request);
+        var replay = await service.DeleteAsync(request);
+
+        Assert.False(accepted.Replayed);
+        Assert.True(replay.Replayed);
+        Assert.Equal(Now, authority.Get(DeleteConfirmationId)!.UsedAt);
+        Assert.Equal(2, store.Operations.Count);
+        Assert.Equal(2, store.Outbox.Count);
+    }
+
+    [Fact]
     public async Task Lifecycle_store_default_context_commit_fails_closed_when_delete_confirmation_is_provided()
     {
         IElsaInstanceLifecycleStore store = new DefaultContextLifecycleStore(new InMemoryElsaInstanceLifecycleStore());
@@ -424,10 +520,12 @@ public sealed class ElsaInstanceLifecycleServiceTests
     [Fact]
     public async Task Recover_delete_requeues_cleanup_without_provider_reconciliation_evidence()
     {
-        var store = new InMemoryElsaInstanceLifecycleStore();
+        var authority = new InMemoryElsaInstanceDeleteConfirmationAuthority();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now), authority);
         var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+        AddDeleteConfirmation(authority, created.Instance);
         var progressing = created.Operation;
         foreach (var state in new[]
                  {
@@ -467,10 +565,12 @@ public sealed class ElsaInstanceLifecycleServiceTests
     [Fact]
     public async Task Active_reservation_is_selected_before_a_waiting_delete_successor()
     {
-        var store = new InMemoryElsaInstanceLifecycleStore();
-        var service = new ElsaInstanceLifecycleService(store);
+        var authority = new InMemoryElsaInstanceDeleteConfirmationAuthority();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now), authority);
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+        AddDeleteConfirmation(authority, created.Instance);
         var deletion = await service.DeleteAsync(new ElsaInstanceLifecycleRequest(
             WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1",
             DeleteConfirmationId: DeleteConfirmationId, ActorAccountId: ActorAccountId));
@@ -485,10 +585,12 @@ public sealed class ElsaInstanceLifecycleServiceTests
     [Fact]
     public async Task Delete_replay_uses_the_original_operation_after_it_mutates_the_instance_intent()
     {
-        var store = new InMemoryElsaInstanceLifecycleStore();
-        var service = new ElsaInstanceLifecycleService(store);
+        var authority = new InMemoryElsaInstanceDeleteConfirmationAuthority();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now), authority);
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+        AddDeleteConfirmation(authority, created.Instance);
         var request = new ElsaInstanceLifecycleRequest(
             WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1",
             DeleteConfirmationId: DeleteConfirmationId, ActorAccountId: ActorAccountId);
@@ -556,10 +658,12 @@ public sealed class ElsaInstanceLifecycleServiceTests
     [Fact]
     public async Task Replay_requires_the_original_etag_and_optional_payload()
     {
-        var store = new InMemoryElsaInstanceLifecycleStore();
-        var service = new ElsaInstanceLifecycleService(store);
+        var authority = new InMemoryElsaInstanceDeleteConfirmationAuthority();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now), authority);
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+        AddDeleteConfirmation(authority, created.Instance);
         var request = new ElsaInstanceLifecycleRequest(
             WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1", "customer-requested",
             DeleteConfirmationId, ActorAccountId);
@@ -597,10 +701,12 @@ public sealed class ElsaInstanceLifecycleServiceTests
     [Fact]
     public async Task Waiting_delete_is_claimed_after_its_prior_operation_becomes_terminal()
     {
-        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
-        var service = new ElsaInstanceLifecycleService(store);
+        var authority = new InMemoryElsaInstanceDeleteConfirmationAuthority();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now), authority);
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+        AddDeleteConfirmation(authority, created.Instance);
         var deletion = await service.DeleteAsync(new ElsaInstanceLifecycleRequest(
             WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1",
             DeleteConfirmationId: DeleteConfirmationId, ActorAccountId: ActorAccountId));
@@ -633,6 +739,37 @@ public sealed class ElsaInstanceLifecycleServiceTests
         new ElsaApplicationIntent("combined", "starter", packagePolicy: "approved"),
         new ElsaPlacementIntent("managed", "westeurope", "dedicated", "standard-small", "public", "managed"),
         lifecycle);
+
+    private static Task ReconcileRecoveryAsync(InMemoryElsaInstanceLifecycleStore store, Guid operationId) =>
+        new ElsaInstanceProviderReconciliationService(
+                store,
+                new StaticProviderPort(new(
+                    ElsaInstanceProviderObservationKind.Unknown,
+                    ElsaObservedLifecycle.Unknown,
+                    ElsaInstanceProviderHealthGate.Unknown,
+                    "recovery-proof",
+                    new ElsaInstanceProviderRetryEvidence(
+                        "https://evidence.example.test/recovery/retry-proof",
+                        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))),
+                new StaticTimeProvider(Now))
+            .ReconcileAsync(WorkspaceId, operationId);
+
+    private static void AddDeleteConfirmation(
+        InMemoryElsaInstanceDeleteConfirmationAuthority authority,
+        ElsaInstance instance,
+        Guid confirmationId = default,
+        Guid accountId = default)
+    {
+        authority.Add(new ActionConfirmation(
+            confirmationId == Guid.Empty ? DeleteConfirmationId : confirmationId,
+            WorkspaceId,
+            ConfirmationActionType.DeleteManagedInstance,
+            instance.Id.ToString("D"),
+            accountId == Guid.Empty ? ActorAccountId : accountId,
+            Now,
+            Now.AddMinutes(5),
+            null));
+    }
 
     private sealed class StaticTimeProvider(DateTimeOffset now) : TimeProvider
     {

@@ -313,6 +313,24 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             .OrderByDescending(x => x.AcceptedAt)
             .ThenByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
+        var normalLookupRecoveryQuery = dbContext.ElsaInstanceRecoveryRequests
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.IdempotencyKey == idempotencyKey);
+        if (instanceId is not null)
+            normalLookupRecoveryQuery = normalLookupRecoveryQuery.Where(x => x.InstanceId == instanceId);
+        if (idempotencyScope is not null)
+            normalLookupRecoveryQuery = normalLookupRecoveryQuery.Where(x => x.IdempotencyScope == idempotencyScope);
+        var normalLookupRecovery = await normalLookupRecoveryQuery
+            .OrderByDescending(x => x.AcceptedAt)
+            .ThenByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (normalLookupRecovery is not null)
+        {
+            var recoveryOperation = await dbContext.ElsaInstanceOperations.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == normalLookupRecovery.OperationId, cancellationToken);
+            if (recoveryOperation is not null)
+                return MapOperation(recoveryOperation, normalLookupRecovery);
+        }
         return entity is null ? null : MapOperation(entity);
     }
 
@@ -364,6 +382,9 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 var existingOutbox = await dbContext.ElsaInstanceLifecycleOutbox
                     .SingleOrDefaultAsync(x => x.OperationId == existingOperation.Id, cancellationToken);
                 ValidateExistingOperation(existingOperation, instance, operation, outbox);
+                if (operation.RecoveryIdempotencyKey is null && existingOperation.RecoveryIdempotencyKey is not null)
+                    throw Conflict("Idempotency key was already used for a different request.",
+                        ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
                 return await CompleteExistingOperationAsync(
                     transaction,
                     expectedInstance,
@@ -380,6 +401,17 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             // two first requests can race between that read and this transaction.
             // Treat the workspace/key row as the idempotency authority even though
             // the operation route scope is also persisted for downstream consumers.
+            var existingRecoveryKey = await dbContext.ElsaInstanceRecoveryRequests
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    x => x.WorkspaceId == instance.WorkspaceId &&
+                         x.IdempotencyScope == operation.IdempotencyScope &&
+                         x.IdempotencyKey == operation.IdempotencyKey,
+                    cancellationToken);
+            if (existingRecoveryKey is not null)
+                throw Conflict("Idempotency key was already used for a different request.",
+                    ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
+
             var existingKeyOperation = await dbContext.ElsaInstanceOperations
                 .OrderByDescending(x => x.AcceptedAt)
                 .ThenByDescending(x => x.CreatedAt)
@@ -390,6 +422,10 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     cancellationToken);
             if (existingKeyOperation is not null)
             {
+                if (existingKeyOperation.RecoveryIdempotencyKey is not null &&
+                    operation.RecoveryIdempotencyKey is null)
+                    throw Conflict("Idempotency key was already used for a different request.",
+                        ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
                 if (existingKeyOperation.Action != operation.Action ||
                     !string.Equals(existingKeyOperation.RequestHash, operation.RequestHash, StringComparison.Ordinal))
                     throw Conflict("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);

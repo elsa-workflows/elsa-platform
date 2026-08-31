@@ -27,10 +27,14 @@ public sealed record ElsaInstanceRecoveryRequestEnvelope(
 /// models the atomic boundary required of the relational implementation without
 /// introducing persistence or provider concerns into the lifecycle service.
 /// </summary>
-public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvider = null) : IElsaInstanceLifecycleStore, IElsaInstanceLifecycleWorkerStore, IElsaInstanceProviderReconciliationStore, IElsaInstanceDeletionStore
+public sealed class InMemoryElsaInstanceLifecycleStore(
+    TimeProvider? timeProvider = null,
+    IElsaInstanceDeleteConfirmationAuthority? deleteConfirmationAuthority = null)
+    : IElsaInstanceLifecycleStore, IElsaInstanceLifecycleWorkerStore, IElsaInstanceProviderReconciliationStore, IElsaInstanceDeletionStore
 {
     private static readonly TimeSpan WorkerLeaseDuration = TimeSpan.FromMinutes(5);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly IElsaInstanceDeleteConfirmationAuthority? _deleteConfirmationAuthority = deleteConfirmationAuthority;
     private readonly object _gate = new();
     private readonly Dictionary<Guid, ElsaInstance> _instances = [];
     private readonly Dictionary<Guid, ElsaInstanceOperation> _operations = [];
@@ -345,6 +349,16 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                 .Where(x => _instances.TryGetValue(x.InstanceId, out var instance) && instance.WorkspaceId == workspaceId)
                 .OrderByDescending(x => x.AcceptedAt)
                 .FirstOrDefault();
+            var recoveryEnvelope = _recoveryRequests.Values
+                .Where(x => x.WorkspaceId == workspaceId && x.IdempotencyKey == idempotencyKey)
+                .Where(x => instanceId is null || x.InstanceId == instanceId)
+                .Where(x => idempotencyScope is null || x.IdempotencyScope == idempotencyScope)
+                .OrderByDescending(x => x.AcceptedAt)
+                .ThenByDescending(x => x.CreatedAt)
+                .FirstOrDefault();
+            if (recoveryEnvelope is not null &&
+                _operations.TryGetValue(recoveryEnvelope.OperationId, out var recoveryOperationForKey))
+                return Task.FromResult<ElsaInstanceOperation?>(WithRecoveryEnvelope(recoveryOperationForKey, recoveryEnvelope));
             return Task.FromResult<ElsaInstanceOperation?>(operation);
         }
     }
@@ -354,6 +368,15 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         ElsaInstance instance,
         ElsaInstanceOperation operation,
         ElsaInstanceLifecycleOutboxMessage outbox,
+        CancellationToken cancellationToken = default) =>
+        CommitAcceptedCoreAsync(expectedInstance, instance, operation, outbox, null, cancellationToken);
+
+    private Task<ElsaInstanceLifecycleAcceptance> CommitAcceptedCoreAsync(
+        ElsaInstance? expectedInstance,
+        ElsaInstance instance,
+        ElsaInstanceOperation operation,
+        ElsaInstanceLifecycleOutboxMessage outbox,
+        ElsaInstanceDeleteConfirmationRequirement? deleteConfirmation,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -363,6 +386,11 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
 
         lock (_gate)
         {
+            var isExistingOperation = _operations.ContainsKey(operation.Id);
+            if (!isExistingOperation &&
+                ((operation.Action == ElsaInstanceOperationAction.Delete) != (deleteConfirmation is not null)))
+                throw new ElsaInstanceDeleteConfirmationException();
+
             if (operation.InstanceId != instance.Id || outbox.InstanceId != instance.Id || outbox.OperationId != operation.Id)
                 throw new ElsaInstanceLifecycleConflictException("Lifecycle operation identity is inconsistent.");
             if (outbox.WorkspaceId != instance.WorkspaceId || outbox.Action != operation.Action ||
@@ -391,6 +419,10 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                     existingOutbox.Action != storedOperation.Action ||
                     !string.Equals(existingOutbox.RequestHash, storedOperation.RequestHash, StringComparison.Ordinal))
                     throw new ElsaInstanceLifecycleConflictException("Lifecycle operation outbox record is inconsistent.");
+                if (operation.RecoveryIdempotencyKey is null && storedOperation.RecoveryIdempotencyKey is not null)
+                    throw new ElsaInstanceLifecycleConflictException(
+                        "Idempotency key was already used for a different request.",
+                        ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
 
                 if (operation.RecoveryIdempotencyKey is not null)
                 {
@@ -439,6 +471,15 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                 return Task.FromResult(new ElsaInstanceLifecycleAcceptance(instance, operation, existingOutbox, false));
             }
 
+            var existingRecoveryKey = FindRecoveryRequest(
+                instance.WorkspaceId,
+                operation.IdempotencyScope,
+                operation.IdempotencyKey);
+            if (existingRecoveryKey is not null && existingRecoveryKey.OperationId != operation.Id)
+                throw new ElsaInstanceLifecycleConflictException(
+                    "Idempotency key was already used for a different request.",
+                    ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
+
             var sameIdentity = _operations.Values.FirstOrDefault(x =>
                 x.IdempotencyScope == operation.IdempotencyScope &&
                 x.IdempotencyKey == operation.IdempotencyKey &&
@@ -446,6 +487,10 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                 scopedInstance.WorkspaceId == instance.WorkspaceId);
             if (sameIdentity is not null)
             {
+                if (operation.RecoveryIdempotencyKey is null && sameIdentity.RecoveryIdempotencyKey is not null)
+                    throw new ElsaInstanceLifecycleConflictException(
+                        "Idempotency key was already used for a different request.",
+                        ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
                 if (sameIdentity.InstanceId != operation.InstanceId ||
                     !string.Equals(sameIdentity.RequestHash, operation.RequestHash, StringComparison.Ordinal))
                     throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
@@ -490,6 +535,11 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                     throw new ElsaInstanceLifecycleConflictException("An instance operation is already active.", ElsaInstanceLifecycleConflictReason.OperationActive);
             }
 
+            if (operation.Action == ElsaInstanceOperationAction.Delete &&
+                (_deleteConfirmationAuthority is null ||
+                 !_deleteConfirmationAuthority.TryConsume(instance, deleteConfirmation!, outbox.CreatedAt)))
+                throw new ElsaInstanceDeleteConfirmationException();
+
             _instances[instance.Id] = instance;
             _operations[operation.Id] = operation;
             _outbox[outbox.Id] = outbox;
@@ -504,7 +554,13 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         ElsaInstanceLifecycleOutboxMessage outbox,
         ElsaInstanceAcceptanceContext context,
         CancellationToken cancellationToken = default)
-        => CommitAcceptedAsync(expectedInstance, instance, operation, outbox, cancellationToken);
+        => CommitAcceptedCoreAsync(
+            expectedInstance,
+            instance,
+            operation,
+            outbox,
+            context?.DeleteConfirmation,
+            cancellationToken);
 
     public Task<ElsaInstanceLifecycleWorkItem?> TryClaimNextAsync(
         string workerId,
