@@ -1,0 +1,127 @@
+using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Core.Cockpit;
+using ElsaControl.Deployment.Core.Workspace;
+
+namespace ElsaControl.Deployment.Core.Instances;
+
+/// <summary>
+/// The read side of the managed-instance boundary. Implementations must scope every
+/// query by both workspace and instance identity; callers must not use the values in a
+/// request body to establish ownership.
+/// </summary>
+public interface IManagedElsaInstanceApiStore
+{
+    Task<IReadOnlyList<ElsaInstance>> ListInstancesAsync(
+        Guid workspaceId,
+        CancellationToken cancellationToken = default);
+
+    Task<ElsaInstanceOperationSummary?> GetOperationAsync(
+        Guid workspaceId,
+        Guid instanceId,
+        Guid operationId,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ElsaInstanceIntentRevisionSummary>> ListRevisionsAsync(
+        Guid workspaceId,
+        Guid instanceId,
+        CancellationToken cancellationToken = default);
+
+    Task<ElsaInstanceResolvedPlanSummary?> GetResolvedPlanAsync(
+        Guid workspaceId,
+        Guid instanceId,
+        string planId,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ElsaInstanceDeploymentSummary>> ListDeploymentsAsync(
+        Guid workspaceId,
+        Guid instanceId,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ElsaInstanceAuditEventSummary>> ListAuditAsync(
+        Guid workspaceId,
+        Guid instanceId,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record ElsaInstanceOperationSummary(
+    Guid Id,
+    Guid InstanceId,
+    ElsaInstanceOperationAction Action,
+    ElsaInstanceOperationState State,
+    int ExpectedVersion,
+    int AttemptNumber,
+    DateTimeOffset AcceptedAt,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? CompletedAt,
+    string? DesiredStateRevisionId,
+    string? ResolvedPlanId,
+    Guid? DeploymentRunId,
+    string? FailureCode,
+    ElsaObservedLifecycle? ReconciledObservedLifecycle,
+    ElsaInstanceHealth? ReconciledHealth);
+
+public sealed record ElsaInstanceIntentRevisionSummary(
+    Guid Id,
+    Guid InstanceId,
+    int RevisionNumber,
+    string ContentHash,
+    string DistributionId,
+    string ReleaseLine,
+    string? RequestedVersion,
+    string Channel,
+    string TopologyId,
+    string? FeaturePresetId,
+    string? PackagePolicy,
+    string? ConfigurationShapeRevisionId,
+    string TargetMode,
+    string RegionCode,
+    string IsolationProfile,
+    string CapacityProfile,
+    string NetworkOutcome,
+    string DomainOutcome,
+    ElsaDesiredLifecycle DesiredLifecycle,
+    DateTimeOffset AuthoredAt,
+    Guid? CreatedByAccountId);
+
+public sealed record ElsaInstancePlanEvidenceSummary(
+    string Kind,
+    string Reference,
+    string? Digest,
+    string Description);
+
+public sealed record ElsaInstanceResolvedPlanSummary(
+    ElsaResolvedPlanReference Reference,
+    ElsaCurrentResolvedRelease Release,
+    string TopologyId,
+    IReadOnlyList<string> ComponentIds,
+    IReadOnlyList<ElsaInstancePlanEvidenceSummary> Evidence);
+
+public sealed record ElsaInstanceDeploymentSummary(
+    Guid RunId,
+    Guid SourceRevisionId,
+    WorkspaceDeploymentRunStatus Status,
+    DeploymentValidationOutcome ValidationOutcome,
+    DateTimeOffset QueuedAt,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? CompletedAt,
+    int AttemptNumber,
+    string? RecoveryReason,
+    string? SafeFailureCode);
+
+public sealed record ElsaInstanceAuditEventSummary(
+    Guid Id,
+    long Sequence,
+    string EventType,
+    Guid? ActorAccountId,
+    string? OperatorSubject,
+    Guid? OperationId,
+    Guid? MigrationId,
+    Guid? DeploymentRunId,
+    string? PriorState,
+    string? NewState,
+    string? DesiredStateRevisionId,
+    string? PlanReference,
+    string? DiagnosticCode,
+    string? Summary,
+    string? RequestKeyHash,
+    DateTimeOffset OccurredAt);

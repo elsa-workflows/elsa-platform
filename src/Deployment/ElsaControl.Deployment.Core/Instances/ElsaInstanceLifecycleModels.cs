@@ -24,7 +24,8 @@ public sealed record ElsaInstanceLifecycleRequest(
     Guid WorkspaceId,
     Guid InstanceId,
     int ExpectedVersion,
-    string IdempotencyKey)
+    string IdempotencyKey,
+    string? Reason = null)
 {
     public int IfMatchVersion => ExpectedVersion;
 }
@@ -35,7 +36,9 @@ public sealed record ElsaInstanceIntentUpdateRequest(
     Guid InstanceId,
     ElsaInstanceIntent Intent,
     int ExpectedVersion,
-    string IdempotencyKey)
+    string IdempotencyKey,
+    string? Name = null,
+    string? Reason = null)
 {
     public int IfMatchVersion => ExpectedVersion;
 }

@@ -27,7 +27,7 @@ public sealed class ElsaInstanceLifecycleService(
         ValidateRequired(request.Name, nameof(request.Name), "Instance name is required.");
         ValidateRequired(request.Slug, nameof(request.Slug), "Instance slug is required.");
         var key = RequireKey(request.IdempotencyKey);
-        var requestHash = ComputeRequestHash(
+        var requestHash = ComputeCreateRequestHash(
             ElsaInstanceOperationAction.Create,
             expectedVersion: 1,
             request.Intent.ComputeCanonicalHash(),
@@ -81,7 +81,8 @@ public sealed class ElsaInstanceLifecycleService(
         ElsaInstanceIntentUpdateRequest request,
         CancellationToken cancellationToken = default) =>
         AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.UpdateIntent,
-            request.ExpectedVersion, request.IdempotencyKey, request.Intent, cancellationToken);
+            request.ExpectedVersion, request.IdempotencyKey, request.Intent, request.Name, request.Reason,
+            cancellationToken);
 
     public Task<ElsaInstanceLifecycleAcceptance> UpdateAsync(
         ElsaInstanceIntentUpdateRequest request,
@@ -91,37 +92,57 @@ public sealed class ElsaInstanceLifecycleService(
         ElsaInstanceLifecycleRequest request,
         CancellationToken cancellationToken = default) =>
         AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Start,
-            request.ExpectedVersion, request.IdempotencyKey, null, cancellationToken);
+            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken);
 
     public Task<ElsaInstanceLifecycleAcceptance> StopAsync(
         ElsaInstanceLifecycleRequest request,
         CancellationToken cancellationToken = default) =>
         AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Stop,
-            request.ExpectedVersion, request.IdempotencyKey, null, cancellationToken);
+            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken);
 
     public Task<ElsaInstanceLifecycleAcceptance> RestartAsync(
         ElsaInstanceLifecycleRequest request,
         CancellationToken cancellationToken = default) =>
         AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Restart,
-            request.ExpectedVersion, request.IdempotencyKey, null, cancellationToken);
+            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken);
 
     public Task<ElsaInstanceLifecycleAcceptance> ReconcileAsync(
         ElsaInstanceLifecycleRequest request,
         CancellationToken cancellationToken = default) =>
         AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Reconcile,
-            request.ExpectedVersion, request.IdempotencyKey, null, cancellationToken);
+            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken);
 
     public Task<ElsaInstanceLifecycleAcceptance> RecoverAsync(
         ElsaInstanceLifecycleRequest request,
         CancellationToken cancellationToken = default) =>
         AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Recover,
-            request.ExpectedVersion, request.IdempotencyKey, null, cancellationToken);
+            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken);
 
     public Task<ElsaInstanceLifecycleAcceptance> DeleteAsync(
         ElsaInstanceLifecycleRequest request,
         CancellationToken cancellationToken = default) =>
         AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Delete,
-            request.ExpectedVersion, request.IdempotencyKey, null, cancellationToken);
+            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken);
+
+    public Task<ElsaInstanceLifecycleAcceptance> ApproveMinorUpgradeAsync(
+        ElsaInstanceIntentUpdateRequest request,
+        CancellationToken cancellationToken = default) =>
+        AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.ApproveMinorUpgrade,
+            request.ExpectedVersion, request.IdempotencyKey, request.Intent, request.Name, request.Reason,
+            cancellationToken, minorApproved: true);
+
+    public Task<ElsaInstanceLifecycleAcceptance> MajorMigrationAsync(
+        ElsaInstanceIntentUpdateRequest request,
+        CancellationToken cancellationToken = default) =>
+        AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.MajorMigration,
+            request.ExpectedVersion, request.IdempotencyKey, request.Intent, request.Name, request.Reason,
+            cancellationToken, minorApproved: true, migrationAuthorized: true);
+
+    public Task<ElsaInstanceLifecycleAcceptance> RetryAsync(
+        ElsaInstanceLifecycleRequest request,
+        CancellationToken cancellationToken = default) =>
+        AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Retry,
+            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken);
 
     private async Task<ElsaInstanceLifecycleAcceptance> AcceptAsync(
         Guid workspaceId,
@@ -130,7 +151,11 @@ public sealed class ElsaInstanceLifecycleService(
         int expectedVersion,
         string idempotencyKey,
         ElsaInstanceIntent? requestedIntent,
-        CancellationToken cancellationToken)
+        string? requestedName,
+        string? reason,
+        CancellationToken cancellationToken,
+        bool minorApproved = false,
+        bool migrationAuthorized = false)
     {
         ValidateWorkspace(workspaceId);
         if (instanceId == Guid.Empty)
@@ -147,12 +172,22 @@ public sealed class ElsaInstanceLifecycleService(
                 throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
 
             var existingRequestHash = existingOperation.RequestHash;
-            if (requestedIntent is not null &&
-                !string.Equals(
-                    existingRequestHash,
-                    ComputeRequestHash(action, existingOperation.ExpectedVersion, requestedIntent.ComputeCanonicalHash()),
-                    StringComparison.Ordinal))
-                throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
+            // Actions without an explicit intent/name/reason intentionally do
+            // not re-hash the current aggregate. The aggregate may have changed
+            // as a consequence of the first accepted operation (for example a
+            // delete changes the desired lifecycle), while the original request
+            // remains an exact idempotent replay.
+            if (requestedIntent is not null || requestedName is not null || reason is not null)
+            {
+                var replayRequestHash = ComputeRequestHash(
+                    action,
+                    existingOperation.ExpectedVersion,
+                    requestedIntent?.ComputeCanonicalHash() ?? instance.ComputeCanonicalIntentHash(),
+                    requestedName,
+                    reason);
+                if (!string.Equals(existingRequestHash, replayRequestHash, StringComparison.Ordinal))
+                    throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
+            }
 
             // Supplying the existing operation to the state machine makes an exact
             // replay independent of the caller's current If-Match value, including
@@ -164,14 +199,20 @@ public sealed class ElsaInstanceLifecycleService(
                 existingOperation.ExpectedVersion,
                 key,
                 existingRequestHash,
-                requestedIntent);
+                requestedIntent,
+                minorApproved,
+                migrationAuthorized);
+            if (requestedName is not null && !string.Equals(replayTransition.Instance.Name, requestedName, StringComparison.Ordinal))
+                replayTransition = new ElsaInstanceTransitionResult(replayTransition.Instance.Rename(requestedName), replayTransition.Operation);
             return await CommitAsync(instance, replayTransition, cancellationToken);
         }
 
         var requestHash = ComputeRequestHash(
             action,
             expectedVersion,
-            requestedIntent?.ComputeCanonicalHash() ?? instance.ComputeCanonicalIntentHash());
+            requestedIntent?.ComputeCanonicalHash() ?? instance.ComputeCanonicalIntentHash(),
+            requestedName,
+            reason);
         var activeOperation = await store.GetActiveOperationAsync(workspaceId, instanceId, cancellationToken);
         var transition = ElsaInstanceStateMachine.Request(
             instance,
@@ -180,7 +221,11 @@ public sealed class ElsaInstanceLifecycleService(
             expectedVersion,
             key,
             requestHash,
-            requestedIntent);
+            requestedIntent,
+            minorApproved,
+            migrationAuthorized);
+        if (requestedName is not null && !string.Equals(transition.Instance.Name, requestedName, StringComparison.Ordinal))
+            transition = new ElsaInstanceTransitionResult(transition.Instance.Rename(requestedName), transition.Operation);
         return await CommitAsync(instance, transition, cancellationToken);
     }
 
@@ -214,6 +259,24 @@ public sealed class ElsaInstanceLifecycleService(
     }
 
     private static string ComputeRequestHash(
+        ElsaInstanceOperationAction action,
+        int expectedVersion,
+        string intentHash,
+        string? requestedName = null,
+        string? reason = null)
+    {
+        var canonical = new StringBuilder()
+            .Append(action).Append('\n')
+            .Append(expectedVersion.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        canonical.Append(intentHash.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(intentHash).Append('\n');
+        if (requestedName is not null)
+            canonical.Append(requestedName.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(requestedName).Append('\n');
+        if (reason is not null)
+            canonical.Append(reason.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(reason).Append('\n');
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+    }
+
+    private static string ComputeCreateRequestHash(
         ElsaInstanceOperationAction action,
         int expectedVersion,
         params string[] values)

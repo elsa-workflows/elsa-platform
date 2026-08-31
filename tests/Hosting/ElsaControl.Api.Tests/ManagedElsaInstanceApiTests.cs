@@ -93,6 +93,67 @@ public sealed class ManagedElsaInstanceApiTests
         Assert.Null(item.RedirectUri);
     }
 
+    [Fact]
+    public async Task Canonical_create_returns_an_async_operation_and_safe_detail_projection()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient("managed-instance-api-owner");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances")
+        {
+            Content = JsonContent.Create(
+                new ManagedElsaInstanceCreateRequest("Claims runtime", "Claims Runtime", Intent()),
+                options: ControlApiTestApplication.JsonOptions)
+        };
+        request.Headers.Add("Idempotency-Key", "create-claims-runtime");
+
+        var accepted = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+        Assert.NotNull(accepted.Headers.Location);
+        var acceptedJson = await accepted.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("serializedPlan", acceptedJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("providerId", acceptedJson, StringComparison.OrdinalIgnoreCase);
+        var acceptedBody = System.Text.Json.JsonSerializer.Deserialize<ManagedElsaInstanceAcceptedResponse>(acceptedJson, ControlApiTestApplication.JsonOptions);
+        Assert.NotNull(acceptedBody);
+        Assert.Equal(ElsaInstanceOperationAction.Create, acceptedBody!.Operation.Action);
+        Assert.Equal(accepted.Headers.Location!.ToString(), acceptedBody.Links["self"]);
+
+        var operation = await client.GetControlJsonAsync<ManagedElsaInstanceOperationResponse>(accepted.Headers.Location!.ToString());
+        Assert.NotNull(operation);
+        Assert.Equal(acceptedBody.Operation.Id, operation!.Id);
+
+        var detail = await client.GetControlJsonAsync<ManagedElsaInstanceResponse>(
+            $"/api/workspaces/{workspaceId}/instances/{acceptedBody.Instance.InstanceId}");
+        Assert.NotNull(detail);
+        Assert.Equal("claims-runtime", detail!.Slug);
+        Assert.Equal(detail.ETag, acceptedBody.Instance.ETag);
+    }
+
+    [Fact]
+    public async Task Canonical_mutations_require_idempotency_and_strong_etags()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient("managed-instance-api-preconditions");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        var instanceId = Guid.NewGuid();
+
+        var missingKey = await client.PostControlJsonAsync(
+            $"/api/workspaces/{workspaceId}/instances/{instanceId}/operations",
+            new ManagedElsaInstanceOperationRequest(ElsaInstanceOperationAction.Start, 1));
+        Assert.Equal(HttpStatusCode.BadRequest, missingKey.StatusCode);
+
+        var missingMatch = new HttpRequestMessage(HttpMethod.Patch, $"/api/workspaces/{workspaceId}/instances/{instanceId}")
+        {
+            Content = JsonContent.Create(new ManagedElsaInstancePatchRequest(Name: "Renamed"), options: ControlApiTestApplication.JsonOptions)
+        };
+        missingMatch.Headers.Add("Idempotency-Key", "rename-claims-runtime");
+        var response = await client.SendAsync(missingMatch);
+        Assert.Equal((HttpStatusCode)428, response.StatusCode);
+    }
+
     private static ControlApiTestApplication CreateApplication(IReadOnlyList<ManagedElsaInstanceSummary> instances)
     {
         return new ControlApiTestApplication(
@@ -125,6 +186,13 @@ public sealed class ManagedElsaInstanceApiTests
             bound ? audience ?? "urn:elsa:instance:" + instanceId.ToString("D") : null,
             bound ? callbackUri ?? new Uri("https://managed.example.test/managed-elsa/handoff/callback") : null,
             bound ? 1 : null);
+
+    private static ElsaInstanceIntent Intent() => new(
+        new ElsaReleaseIntent("valence-runtime", "3.8", channel: "stable"),
+        new ElsaApplicationIntent("combined", "starter",
+            new Dictionary<string, ElsaFeatureOverride> { ["replicas"] = ElsaFeatureOverride.FromNumber(3) },
+            "approved"),
+        new ElsaPlacementIntent("managed", "westeurope", "dedicated", "standard-small", "public", "managed"));
 
     private sealed class FakeManagedElsaInstanceCatalog(IReadOnlyList<ManagedElsaInstanceSummary> instances) : IManagedElsaInstanceCatalog
     {

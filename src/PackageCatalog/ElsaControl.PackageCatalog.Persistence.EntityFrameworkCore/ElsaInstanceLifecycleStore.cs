@@ -2017,7 +2017,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             entity.RequestHash, entity.CreatedAt);
     }
 
-    private static ElsaInstanceOperation MapOperation(ElsaInstanceOperationEntity entity)
+    internal static ElsaInstanceOperation MapOperation(ElsaInstanceOperationEntity entity)
     {
         try
         {
@@ -2041,7 +2041,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         }
     }
 
-    private static ElsaInstance MapInstance(ElsaInstanceEntity entity)
+    internal static ElsaInstance MapInstance(ElsaInstanceEntity entity)
     {
         try
         {

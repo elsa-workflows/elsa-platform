@@ -126,6 +126,7 @@ public enum ElsaFeatureOverrideKind
 /// </summary>
 public sealed record ElsaFeatureOverride
 {
+    [JsonConstructor]
     private ElsaFeatureOverride(ElsaFeatureOverrideKind kind, string value)
     {
         Kind = ElsaInstanceValue.RequireEnum(kind, nameof(kind));
@@ -158,10 +159,11 @@ public sealed record ElsaFeatureOverride
 /// <summary>Topology, feature and package choices expressed as governed catalog values.</summary>
 public sealed record ElsaApplicationIntent
 {
+    [JsonConstructor]
     public ElsaApplicationIntent(
         string topologyId,
         string? featurePresetId = null,
-        IEnumerable<KeyValuePair<string, ElsaFeatureOverride>>? featureOverrides = null,
+        IReadOnlyDictionary<string, ElsaFeatureOverride>? featureOverrides = null,
         string? packagePolicy = null,
         string? configurationShapeRevisionId = null)
     {
@@ -173,6 +175,21 @@ public sealed record ElsaApplicationIntent
         FeatureOverrides = featureOverrides is null
             ? new Dictionary<string, ElsaFeatureOverride>()
             : featureOverrides.ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
+    }
+
+    public ElsaApplicationIntent(
+        string topologyId,
+        string? featurePresetId,
+        IEnumerable<KeyValuePair<string, ElsaFeatureOverride>>? featureOverrides,
+        string? packagePolicy = null,
+        string? configurationShapeRevisionId = null)
+        : this(
+            topologyId,
+            featurePresetId,
+            featureOverrides?.ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal),
+            packagePolicy,
+            configurationShapeRevisionId)
+    {
     }
 
     private string _topologyId = null!;
@@ -710,6 +727,8 @@ public sealed record ElsaInstance
             throw new ArgumentException("Identity binding belongs to a different instance.", nameof(binding));
         return this with { IdentityBinding = binding };
     }
+
+    public ElsaInstance Rename(string name) => this with { Name = ElsaInstanceValue.Require(name, nameof(name)) };
 
     /// <summary>
     /// Projects the immutable plan selected by the asynchronous lifecycle worker.
