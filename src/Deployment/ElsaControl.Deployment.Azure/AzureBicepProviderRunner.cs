@@ -854,7 +854,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         {
             var list = await ExecuteAzAsync(command,
                 ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
-                    "--assignee-object-id", principalId, "--role", "AcrPull",
+                    "--assignee-object-id", principalId,
                     "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
@@ -1133,7 +1133,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         {
             var list = await ExecuteAzAsync(command,
                 ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
-                    "--assignee-object-id", principalId, "--role", "AcrPull",
+                    "--assignee-object-id", principalId,
                     "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
@@ -1153,7 +1153,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     {
         var list = await ExecuteAzAsync(command,
             ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
-                "--assignee-object-id", principalId, "--role", "AcrPull",
+                "--assignee-object-id", principalId,
                 "--output", "json", "--only-show-errors"],
             ParseRoleAssignmentsAsync,
             cancellationToken);
@@ -1190,7 +1190,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         {
             var list = await ExecuteAzAsync(command,
                 ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
-                    "--assignee-object-id", principalId, "--role", "AcrPull",
+                    "--assignee-object-id", principalId,
                     "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
