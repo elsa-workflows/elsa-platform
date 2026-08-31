@@ -247,7 +247,8 @@ echo "Building $IMAGE."
 az acr login --name "$ACR_NAME"
 docker build \
   --platform "$DOCKER_PLATFORM" \
-  --file src/ElsaControl.Api/Dockerfile \
+  --build-arg ELSA_CONTROL_IMAGE_ID="$IMAGE_TAG" \
+  --file src/Hosting/ElsaControl.Api/Dockerfile \
   --tag "$IMAGE" \
   .
 docker push "$IMAGE"

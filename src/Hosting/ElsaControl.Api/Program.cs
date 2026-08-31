@@ -461,7 +461,12 @@ app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapOpenApi();
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/health", (IConfiguration configuration) =>
+{
+    var buildNumber = SafeHealthIdentifier(configuration["Application:BuildNumber"]);
+    var imageId = SafeHealthIdentifier(configuration["ELSA_CONTROL_IMAGE_ID"]);
+    return Results.Ok(new { status = "ok", buildNumber, imageId });
+});
 app.MapGet("/", () => "Elsa Control API");
 if (adminConsoleDevelopmentUrl is not null)
 {
@@ -507,6 +512,22 @@ if (adminConsoleAssetsExist)
     app.MapFallbackToFile("/admin/{*path:nonfile}", "admin/index.html");
 
 app.Run();
+
+static string SafeHealthIdentifier(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value) || value.Length > 128)
+        return "unknown";
+    if (!char.IsAsciiLetterOrDigit(value[0]))
+        return "unknown";
+
+    foreach (var character in value)
+    {
+        if (!char.IsAsciiLetterOrDigit(character) && character is not ('.' or '_' or '+' or '-'))
+            return "unknown";
+    }
+
+    return value;
+}
 
 static bool AdminConsoleAssetsExist(IWebHostEnvironment environment) =>
     !string.IsNullOrWhiteSpace(environment.WebRootPath) &&

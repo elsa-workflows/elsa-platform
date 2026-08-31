@@ -1155,7 +1155,7 @@ internal sealed class ElsaInstanceMigrationConfiguration : IEntityTypeConfigurat
         builder.HasIndex(x => new { x.InstanceId, x.StartRequestHash }).IsUnique();
         builder.HasIndex(x => x.OperationId).IsUnique();
         builder.HasIndex(x => x.InstanceId).IsUnique()
-            .HasFilter("Phase NOT IN ('RolledBack', 'Released', 'Failed')");
+            .HasFilter("Phase <> 'RolledBack' AND Phase <> 'Released' AND Phase <> 'Failed'");
         builder.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Workspace>().WithMany()
             .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId })
