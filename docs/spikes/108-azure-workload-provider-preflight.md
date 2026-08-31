@@ -26,7 +26,7 @@ This conclusion does not make the disposable proof production infrastructure. Th
 | Readiness and liveness express the required failure boundary | Passed | Healthy SQL-backed Combined returned `/alive` 200 and `/health` 200. An invalid-SQL revision returned direct-revision `/alive` 200 and `/health` 503. |
 | Multiple revisions can protect public traffic | Passed after hardening | Stable traffic remained at 100% while a candidate warmed at zero traffic. Failed or uncertain promotion restores the stable revision. The accepted rollout produced 360 probe pairs with zero public failures. |
 | Identical desired state is safe to reapply | Passed | Unchanged apply reused the immutable healthy revision; 240 probe pairs had zero failures. The final exact-head reapply also completed with 480/480 successful probes. |
-| Bootstrap access is temporary and fail-closed | Passed after hardening | The exact-IP SQL firewall rule and exact temporary Entra administrator were removed and verified absent. Cleanup refuses unrelated administrators and assignments. |
+| Bootstrap access is fail-closed | Historical proof passed; administrator lifecycle superseded | The exact-IP SQL firewall rule and exact Entra administrator were removed and verified absent in the original proof. The production provider now retains and verifies the exact governed administrator for the disposable SQL server lifetime because Azure SQL requires an administrator to keep Entra authentication available; verified resource-group cleanup removes it with the server. |
 | All disposable and external proof resources can be removed | Passed; future convergence hardened | The live run eventually reached verified absence: resource group absent, external ACR deployment count zero, proof AcrPull count zero, and deleted-vault count zero. Because Container Apps environment deletion exceeded five minutes, #150/#151 subsequently extended the bounded convergence and added offline-tested authoritative absence checks for future runs. |
 | The proof has bounded cost | Passed with reporting limitation | Consumption Container Apps, serverless SQL, and one disposable group bounded the run. Same-day Azure usage data had not posted when queried, so no reliable actual charge was available; no resource survived cleanup. |
 
@@ -36,7 +36,7 @@ The retained, secret-safe live evidence is recorded on issue #147. Issue #150 an
 
 - **Compute:** Azure Container Apps, multiple-revision mode, consumption workload profile for the initial proof and vertical slice.
 - **Data:** Azure SQL database per Dedicated instance for the initial paid isolation profile.
-- **Identity and secrets:** user-assigned managed identity, contained SQL user, and Key Vault references. Bootstrap administrator and firewall access are temporary.
+- **Identity and secrets:** user-assigned managed identity, contained SQL user, and Key Vault references. Exact-IP bootstrap firewall access is temporary; the exact governed Entra administrator remains configured for the disposable SQL server lifetime and is removed with verified resource-group cleanup.
 - **Ingress:** direct Container Apps HTTPS ingress for the provider slice. Front Door, custom domains, and managed edge routing remain issue #121 concerns.
 - **IaC:** checked-in Bicep modules are the production resource-realization authority; the provider supplies parameters and lifecycle orchestration.
 - **Desired-state boundary:** version, topology, features, release channel, isolation, and immutable artifact identity remain provider-neutral data. Azure resource names, revisions, stamps, identity IDs, and deployment checkpoints remain provider-owned facts.
@@ -55,7 +55,7 @@ The retained, secret-safe live evidence is recorded on issue #147. Issue #150 an
 - Container Apps managed-environment deletion can remain `ScheduledForDelete` for more than five minutes; cleanup uses a 20-minute bounded convergence window and authoritative postconditions.
 - Azure role assignment and ingress operations are eventually consistent; uncertain command results require independent state verification.
 - The proof intentionally used public service endpoints. Private networking, custom domains, Front Door, zone redundancy, backup/restore, production observability, and HA remain separate acceptance gates.
-- The runbook briefly recreates the exact bootstrap Entra administrator during an existing-server reapply because ARM requires it to reconcile the SQL declaration. Successful and failure paths remove it and verify absence.
+- The runbook fail-closed verifies or re-establishes only the exact governed bootstrap Entra administrator during an existing-server reapply. It remains configured for the disposable SQL server lifetime so managed-identity SQL authentication remains available, and verified resource-group cleanup removes it with the server.
 - Azure Container Apps acceptance does not accept Shared multi-tenancy or arbitrary customer packages. The first paid profile remains Dedicated; isolation expansion remains evidence-gated.
 
 ## Delivery consequences
