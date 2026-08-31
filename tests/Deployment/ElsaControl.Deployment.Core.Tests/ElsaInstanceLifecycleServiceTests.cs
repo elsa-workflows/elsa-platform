@@ -353,10 +353,15 @@ public sealed class ElsaInstanceLifecycleServiceTests
         var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
             OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
 
-        await service.StopAsync(new ElsaInstanceLifecycleRequest(
+        await store.CommitAcceptedAsync(
+            created.Instance,
+            created.Instance,
+            created.Operation.TransitionTo(ElsaInstanceOperationState.Succeeded),
+            created.Outbox);
+        var stopped = await service.StopAsync(new ElsaInstanceLifecycleRequest(
             WorkspaceId, created.Instance.Id, created.Instance.Version, "shared-key"));
 
-        store.MarkRecoveryRequired(created.Operation.Id);
+        store.MarkRecoveryRequired(stopped.Operation.Id);
         await new ElsaInstanceProviderReconciliationService(
                 store,
                 new StaticProviderPort(new(
@@ -368,7 +373,7 @@ public sealed class ElsaInstanceLifecycleServiceTests
                         "https://evidence.example.test/recovery/retry-proof",
                         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))),
                 new StaticTimeProvider(Now))
-            .ReconcileAsync(WorkspaceId, created.Operation.Id);
+            .ReconcileAsync(WorkspaceId, stopped.Operation.Id);
 
         var exception = await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() =>
             service.RecoverAsync(new ElsaInstanceLifecycleRequest(
@@ -379,9 +384,9 @@ public sealed class ElsaInstanceLifecycleServiceTests
     }
 
     [Fact]
-    public async Task InMemory_CommitAcceptedWithContextAsync_throws_when_delete_confirmation_provided()
+    public async Task Lifecycle_store_default_context_commit_fails_closed_when_delete_confirmation_is_provided()
     {
-        var store = new InMemoryElsaInstanceLifecycleStore();
+        IElsaInstanceLifecycleStore store = new DefaultContextLifecycleStore(new InMemoryElsaInstanceLifecycleStore());
         var context = new ElsaInstanceAcceptanceContext(
             ActorAccountId, "reason", new ElsaInstanceDeleteConfirmationRequirement(DeleteConfirmationId, ActorAccountId));
 
@@ -640,5 +645,38 @@ public sealed class ElsaInstanceLifecycleServiceTests
         public Task<ElsaInstanceProviderObservation> ObserveAsync(
             ElsaInstanceProviderReconciliationRequest request,
             CancellationToken cancellationToken = default) => Task.FromResult(observation.Correlate(request));
+    }
+
+    private sealed class DefaultContextLifecycleStore(InMemoryElsaInstanceLifecycleStore inner)
+        : IElsaInstanceLifecycleStore
+    {
+        public Task<ElsaInstance?> GetInstanceAsync(
+            Guid workspaceId,
+            Guid instanceId,
+            CancellationToken cancellationToken = default) =>
+            inner.GetInstanceAsync(workspaceId, instanceId, cancellationToken);
+
+        public Task<ElsaInstanceOperation?> GetActiveOperationAsync(
+            Guid workspaceId,
+            Guid instanceId,
+            CancellationToken cancellationToken = default) =>
+            inner.GetActiveOperationAsync(workspaceId, instanceId, cancellationToken);
+
+        public Task<ElsaInstanceOperation?> FindOperationByKeyAsync(
+            Guid workspaceId,
+            string idempotencyKey,
+            Guid? instanceId = null,
+            ElsaInstanceOperationAction? action = null,
+            string? idempotencyScope = null,
+            CancellationToken cancellationToken = default) =>
+            inner.FindOperationByKeyAsync(workspaceId, idempotencyKey, instanceId, action, idempotencyScope, cancellationToken);
+
+        public Task<ElsaInstanceLifecycleAcceptance> CommitAcceptedAsync(
+            ElsaInstance? expectedInstance,
+            ElsaInstance instance,
+            ElsaInstanceOperation operation,
+            ElsaInstanceLifecycleOutboxMessage outbox,
+            CancellationToken cancellationToken = default) =>
+            inner.CommitAcceptedAsync(expectedInstance, instance, operation, outbox, cancellationToken);
     }
 }

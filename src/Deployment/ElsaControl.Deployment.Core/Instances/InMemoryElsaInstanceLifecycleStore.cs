@@ -504,11 +504,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         ElsaInstanceLifecycleOutboxMessage outbox,
         ElsaInstanceAcceptanceContext context,
         CancellationToken cancellationToken = default)
-    {
-        if (context.DeleteConfirmation is not null)
-            throw new InvalidOperationException("Atomic delete confirmation persistence is not configured.");
-        return CommitAcceptedAsync(expectedInstance, instance, operation, outbox, cancellationToken);
-    }
+        => CommitAcceptedAsync(expectedInstance, instance, operation, outbox, cancellationToken);
 
     public Task<ElsaInstanceLifecycleWorkItem?> TryClaimNextAsync(
         string workerId,
