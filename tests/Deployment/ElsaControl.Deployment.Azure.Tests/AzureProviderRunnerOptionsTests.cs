@@ -27,6 +27,24 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
         Assert.Throws<InvalidOperationException>(() => new AzureProviderRunnerOptions().Validate());
     }
 
+    [Fact]
+    public void Rejects_a_symbolic_link_as_template_authority()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var link = _templateRoot + "-link";
+        Directory.CreateSymbolicLink(link, _templateRoot);
+        try
+        {
+            Assert.Throws<ArgumentException>(() => (ValidOptions() with { TemplateRoot = link }).Validate());
+        }
+        finally
+        {
+            Directory.Delete(link);
+        }
+    }
+
     [Theory]
     [InlineData("0.0.0.0")]
     [InlineData("10.0.0.0/24")]

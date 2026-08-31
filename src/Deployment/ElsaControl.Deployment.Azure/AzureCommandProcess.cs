@@ -12,6 +12,7 @@ namespace ElsaControl.Deployment.Azure;
 public sealed class AzureCommandProcess : IAzureCommandProcess
 {
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan CaptureDrainTimeout = TimeSpan.FromMilliseconds(250);
     public const int DefaultOutputLimit = 64 * 1024;
 
     private readonly TimeSpan _timeout;
@@ -32,14 +33,16 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
     }
 
     /// <inheritdoc />
-    public async Task<AzureCommandProcessResult> ExecuteAsync(
+    public async Task<AzureCommandProcessResult<T>> ExecuteAsync<T>(
         AzureCommandProcessRequest request,
+        AzureCommandOutputProjector<T> outputProjector,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(outputProjector);
 
         if (cancellationToken.IsCancellationRequested)
-            return CancelledResult();
+            return CancelledResult<T>();
 
         using var process = new Process
         {
@@ -50,22 +53,31 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
         {
             process.StartInfo = CreateStartInfo(request);
             if (!process.Start())
-                return StartFailedResult();
+                return StartFailedResult<T>();
         }
         catch (Win32Exception exception)
         {
             return exception.NativeErrorCode is 2 or 3
-                ? ExecutableNotFoundResult()
-                : StartFailedResult();
+                ? ExecutableNotFoundResult<T>()
+                : StartFailedResult<T>();
         }
         catch (Exception)
         {
-            return StartFailedResult();
+            return StartFailedResult<T>();
         }
 
+        using var captureCancellation = new CancellationTokenSource();
         var outputLimitReached = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var standardOutputTask = ReadBoundedAsync(process.StandardOutput, _outputCharacterLimit, outputLimitReached);
-        var standardErrorTask = ReadBoundedAsync(process.StandardError, _outputCharacterLimit, outputLimitReached);
+        var standardOutputTask = ReadBoundedAsync(
+            process.StandardOutput,
+            _outputCharacterLimit,
+            outputLimitReached,
+            captureCancellation.Token);
+        var standardErrorTask = ReadBoundedAsync(
+            process.StandardError,
+            _outputCharacterLimit,
+            outputLimitReached,
+            captureCancellation.Token);
         var exitTask = process.WaitForExitAsync();
         var timeoutTask = Task.Delay(_timeout);
         var cancellationTask = Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
@@ -93,48 +105,61 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
         {
             KillProcessTree(process);
             await WaitForExitAfterTerminationAsync(exitTask).ConfigureAwait(false);
-            await ObserveCaptureTasksAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
+            await ObserveCaptureTasksAsync(
+                standardOutputTask,
+                standardErrorTask,
+                captureCancellation).ConfigureAwait(false);
             return status switch
             {
-                AzureCommandProcessStatus.Cancelled => CancelledResult(),
-                AzureCommandProcessStatus.TimedOut => TimedOutResult(),
-                AzureCommandProcessStatus.OutputLimitExceeded => OutputLimitExceededResult(),
-                _ => ExecutionFailedResult()
+                AzureCommandProcessStatus.Cancelled => CancelledResult<T>(),
+                AzureCommandProcessStatus.TimedOut => TimedOutResult<T>(),
+                AzureCommandProcessStatus.OutputLimitExceeded => OutputLimitExceededResult<T>(),
+                _ => ExecutionFailedResult<T>()
             };
         }
 
-        var captures = await ObserveCaptureTasksAsync(standardOutputTask, standardErrorTask).ConfigureAwait(false);
+        var captures = await ObserveCaptureTasksAsync(
+            standardOutputTask,
+            standardErrorTask,
+            captureCancellation).ConfigureAwait(false);
         if (outputLimitReached.Task.IsCompleted)
-            return OutputLimitExceededResult();
+            return OutputLimitExceededResult<T>();
 
         if (process.ExitCode == 0)
         {
-            return new AzureCommandProcessResult(
-                AzureCommandProcessStatus.Succeeded,
-                AzureCommandProcessFailureKind.None,
-                process.ExitCode,
-                captures.StandardOutput,
-                captures.StandardError,
-                "azure.command.succeeded",
-                "The Azure command completed successfully.");
+            try
+            {
+                var value = outputProjector(captures.StandardOutput.AsMemory());
+                return new AzureCommandProcessResult<T>(
+                    AzureCommandProcessStatus.Succeeded,
+                    AzureCommandProcessFailureKind.None,
+                    process.ExitCode,
+                    value,
+                    "azure.command.succeeded",
+                    "The Azure command completed successfully.");
+            }
+            catch (Exception)
+            {
+                return InvalidOutputResult<T>();
+            }
         }
 
         // Exit code is safe typed metadata. Captured output is intentionally discarded because
         // command providers may write credentials, tokens or other sensitive values to stderr.
-        return new AzureCommandProcessResult(
+        return new AzureCommandProcessResult<T>(
             AzureCommandProcessStatus.Failed,
             AzureCommandProcessFailureKind.NonZeroExitCode,
             process.ExitCode,
-            string.Empty,
-            string.Empty,
+            default,
             "azure.command.non-zero-exit",
             "The Azure command exited with a non-zero status.");
     }
 
     /// <summary>Convenience alias for callers that describe a process invocation as a run.</summary>
-    public Task<AzureCommandProcessResult> RunAsync(
+    public Task<AzureCommandProcessResult<T>> RunAsync<T>(
         AzureCommandProcessRequest request,
-        CancellationToken cancellationToken = default) => ExecuteAsync(request, cancellationToken);
+        AzureCommandOutputProjector<T> outputProjector,
+        CancellationToken cancellationToken = default) => ExecuteAsync(request, outputProjector, cancellationToken);
 
     private static ProcessStartInfo CreateStartInfo(AzureCommandProcessRequest request)
     {
@@ -148,7 +173,7 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
         };
 
         foreach (var argument in request.Arguments)
-            startInfo.ArgumentList.Add(argument);
+            startInfo.ArgumentList.Add(argument.Value);
 
         if (request.WorkingDirectory is not null)
             startInfo.WorkingDirectory = request.WorkingDirectory;
@@ -165,7 +190,8 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
     private static async Task<BoundedCapture> ReadBoundedAsync(
         StreamReader reader,
         int outputCharacterLimit,
-        TaskCompletionSource<bool> outputLimitReached)
+        TaskCompletionSource<bool> outputLimitReached,
+        CancellationToken cancellationToken)
     {
         var builder = new StringBuilder(Math.Min(outputCharacterLimit, 4096));
         var buffer = new char[4096];
@@ -174,7 +200,7 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
         {
             while (true)
             {
-                var read = await reader.ReadAsync(buffer).ConfigureAwait(false);
+                var read = await reader.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
                 if (read == 0)
                     return new BoundedCapture(builder.ToString());
 
@@ -198,15 +224,28 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
         {
             return new BoundedCapture(builder.ToString());
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new BoundedCapture(builder.ToString());
+        }
     }
 
     private static async Task<BoundedCaptures> ObserveCaptureTasksAsync(
         Task<BoundedCapture> standardOutputTask,
-        Task<BoundedCapture> standardErrorTask)
+        Task<BoundedCapture> standardErrorTask,
+        CancellationTokenSource captureCancellation)
     {
+        var capturesTask = Task.WhenAll(standardOutputTask, standardErrorTask);
         try
         {
-            await Task.WhenAll(standardOutputTask, standardErrorTask).ConfigureAwait(false);
+            if (await Task.WhenAny(capturesTask, Task.Delay(CaptureDrainTimeout)).ConfigureAwait(false) != capturesTask)
+            {
+                // A descendant can inherit redirected handles after the direct child exits.
+                // Cancel the reads so those inherited handles cannot hold this invocation open.
+                captureCancellation.Cancel();
+            }
+
+            await capturesTask.ConfigureAwait(false);
         }
         catch (Exception)
         {
@@ -253,43 +292,49 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
         }
     }
 
-    private static AzureCommandProcessResult CancelledResult() => FailureResult(
+    private static AzureCommandProcessResult<T> CancelledResult<T>() => FailureResult<T>(
         AzureCommandProcessStatus.Cancelled,
         AzureCommandProcessFailureKind.Cancelled,
         "azure.command.cancelled",
         "The Azure command was cancelled.");
 
-    private static AzureCommandProcessResult TimedOutResult() => FailureResult(
+    private static AzureCommandProcessResult<T> TimedOutResult<T>() => FailureResult<T>(
         AzureCommandProcessStatus.TimedOut,
         AzureCommandProcessFailureKind.TimedOut,
         "azure.command.timed-out",
         "The Azure command exceeded its execution timeout.");
 
-    private static AzureCommandProcessResult OutputLimitExceededResult() => FailureResult(
+    private static AzureCommandProcessResult<T> OutputLimitExceededResult<T>() => FailureResult<T>(
         AzureCommandProcessStatus.OutputLimitExceeded,
         AzureCommandProcessFailureKind.OutputLimitExceeded,
         "azure.command.output-limit-exceeded",
         "The Azure command exceeded its output limit.");
 
-    private static AzureCommandProcessResult ExecutableNotFoundResult() => FailureResult(
+    private static AzureCommandProcessResult<T> ExecutableNotFoundResult<T>() => FailureResult<T>(
         AzureCommandProcessStatus.Failed,
         AzureCommandProcessFailureKind.ExecutableNotFound,
         "azure.command.executable-not-found",
         "The Azure command executable could not be found.");
 
-    private static AzureCommandProcessResult StartFailedResult() => FailureResult(
+    private static AzureCommandProcessResult<T> StartFailedResult<T>() => FailureResult<T>(
         AzureCommandProcessStatus.Failed,
         AzureCommandProcessFailureKind.StartFailed,
         "azure.command.start-failed",
         "The Azure command could not be started.");
 
-    private static AzureCommandProcessResult ExecutionFailedResult() => FailureResult(
+    private static AzureCommandProcessResult<T> ExecutionFailedResult<T>() => FailureResult<T>(
         AzureCommandProcessStatus.Failed,
         AzureCommandProcessFailureKind.ExecutionFailed,
         "azure.command.execution-failed",
         "The Azure command failed before a result could be observed.");
 
-    private static AzureCommandProcessResult FailureResult(
+    private static AzureCommandProcessResult<T> InvalidOutputResult<T>() => FailureResult<T>(
+        AzureCommandProcessStatus.Failed,
+        AzureCommandProcessFailureKind.InvalidOutput,
+        "azure.command.invalid-output",
+        "The Azure command returned an invalid result.");
+
+    private static AzureCommandProcessResult<T> FailureResult<T>(
         AzureCommandProcessStatus status,
         AzureCommandProcessFailureKind failureKind,
         string code,
@@ -297,8 +342,7 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
         status,
         failureKind,
         null,
-        string.Empty,
-        string.Empty,
+        default,
         code,
         message);
 

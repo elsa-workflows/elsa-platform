@@ -5,13 +5,15 @@ namespace ElsaControl.Deployment.Azure;
 /// <summary>
 /// A process invocation expressed as typed executable and argument values. Arguments are
 /// appended to <see cref="System.Diagnostics.ProcessStartInfo.ArgumentList"/> one at a time;
-/// they are never assembled into a shell command line.
+/// they are never assembled into a shell command line. Arguments must contain safe locators and
+/// identifiers only. Secret material must never be placed in argv because operating systems can
+/// expose it through process inspection.
 /// </summary>
 public sealed record AzureCommandProcessRequest
 {
     public AzureCommandProcessRequest(
         string fileName,
-        IReadOnlyList<string>? arguments = null,
+        IReadOnlyList<AzureCommandArgument>? arguments = null,
         IReadOnlyDictionary<string, string?>? environmentVariables = null,
         string? workingDirectory = null)
     {
@@ -19,9 +21,6 @@ public sealed record AzureCommandProcessRequest
             throw new ArgumentException("The command executable is required.", nameof(fileName));
 
         arguments ??= [];
-        if (arguments.Any(argument => argument is null))
-            throw new ArgumentException("Command arguments cannot be null.", nameof(arguments));
-
         if (environmentVariables is not null && environmentVariables.Keys.Any(string.IsNullOrWhiteSpace))
             throw new ArgumentException("Command environment variable names cannot be blank.", nameof(environmentVariables));
 
@@ -35,7 +34,12 @@ public sealed record AzureCommandProcessRequest
 
     public string FileName { get; }
 
-    public IReadOnlyList<string> Arguments { get; }
+    /// <summary>
+    /// Safe, non-secret argument values. Omitted from JSON so accidental request serialization
+    /// cannot disclose invocation details.
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlyList<AzureCommandArgument> Arguments { get; }
 
     /// <summary>
     /// Environment entries to add or remove for this process. Values are transient invocation
@@ -54,6 +58,26 @@ public sealed record AzureCommandProcessRequest
 
     public override string ToString() =>
         $"{nameof(AzureCommandProcessRequest)}(Executable={FileName}, ArgumentCount={Arguments.Count})";
+}
+
+/// <summary>
+/// An explicitly classified non-secret command argument. Secret leases deliberately have no
+/// conversion to this type and must be transported through a provider-specific protected seam.
+/// </summary>
+public readonly record struct AzureCommandArgument
+{
+    private AzureCommandArgument(string value) => Value = value;
+
+    [JsonIgnore]
+    public string Value { get; }
+
+    public static AzureCommandArgument Safe(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return new AzureCommandArgument(value);
+    }
+
+    public override string ToString() => nameof(AzureCommandArgument);
 }
 
 public enum AzureCommandProcessStatus
@@ -78,6 +102,7 @@ public enum AzureCommandProcessFailureKind
     TimedOut,
     Cancelled,
     OutputLimitExceeded,
+    InvalidOutput,
     ExecutionFailed
 }
 
@@ -85,12 +110,11 @@ public enum AzureCommandProcessFailureKind
 /// Safe outcome of one command process invocation. Standard output and error are populated only
 /// when <see cref="Status"/> is <see cref="AzureCommandProcessStatus.Succeeded"/>.
 /// </summary>
-public sealed record AzureCommandProcessResult(
+public sealed record AzureCommandProcessResult<T>(
     AzureCommandProcessStatus Status,
     AzureCommandProcessFailureKind FailureKind,
     int? ExitCode,
-    string StandardOutput,
-    string StandardError,
+    T? Value,
     string Code,
     string Message)
 {
@@ -100,10 +124,6 @@ public sealed record AzureCommandProcessResult(
 
     public AzureCommandProcessFailureKind Failure => FailureKind;
 
-    public string Stdout => StandardOutput;
-
-    public string Stderr => StandardError;
-
     public override string ToString() =>
-        $"{nameof(AzureCommandProcessResult)}(Status={Status}, FailureKind={FailureKind}, ExitCode={ExitCode}, Code={Code})";
+        $"AzureCommandProcessResult(Status={Status}, FailureKind={FailureKind}, ExitCode={ExitCode}, Code={Code})";
 }

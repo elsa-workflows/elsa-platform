@@ -108,6 +108,8 @@ public sealed record AzureProviderRunnerOptions
         if (string.IsNullOrWhiteSpace(TemplateRoot) || !Path.IsPathFullyQualified(TemplateRoot))
             throw new ArgumentException("The Azure template root must be an absolute path.", nameof(TemplateRoot));
         var normalizedRoot = Path.GetFullPath(TemplateRoot);
+        if (!Directory.Exists(normalizedRoot) || IsSymbolicLink(normalizedRoot))
+            throw new ArgumentException("The Azure template root must be a regular trusted directory.", nameof(TemplateRoot));
         RequireCheckedInFile(normalizedRoot, "main.bicep");
         RequireCheckedInFile(normalizedRoot, "acr-pull-role.bicep");
         RequireCheckedInFile(normalizedRoot, "sql-bootstrap.sql");
@@ -141,7 +143,12 @@ public sealed record AzureProviderRunnerOptions
     private static void RequireCheckedInFile(string root, string name)
     {
         var path = Path.GetFullPath(Path.Combine(root, name));
-        if (!path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal) || !File.Exists(path))
+        if (!path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
+            !File.Exists(path) ||
+            IsSymbolicLink(path))
             throw new ArgumentException("The checked-in Azure provider authority is incomplete.", nameof(TemplateRoot));
     }
+
+    private static bool IsSymbolicLink(string path) =>
+        File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint);
 }
