@@ -691,7 +691,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             if (vaultPresent)
             {
                 var assignments = await ExecuteAzAsync(command,
-                    ["role", "assignment", "list", "--subscription", _scope.SubscriptionId, "--all",
+                    ["role", "assignment", "list", "--subscription", _scope.SubscriptionId, "--scope", vaultId,
                         "--output", "json", "--only-show-errors"],
                     ParseRoleAssignmentsAsync,
                     cancellationToken);

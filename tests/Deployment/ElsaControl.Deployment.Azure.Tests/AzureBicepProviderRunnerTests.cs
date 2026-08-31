@@ -676,11 +676,13 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
         Assert.True(result.OwnedResourcesAbsent);
         Assert.DoesNotContain(result.Resources.GetType().GetProperties(), property => property.GetValue(result.Resources) is not null);
-        Assert.All(process.Calls.Where(call => call.Contains("role") && call.Contains("assignment") && call.Contains("list")), call =>
-        {
-            Assert.Contains("--all", call);
-            Assert.DoesNotContain("--scope", call);
-        });
+        var roleLists = process.Calls.Where(call => call.Contains("role") && call.Contains("assignment") && call.Contains("list")).ToArray();
+        Assert.Equal(3, roleLists.Length);
+        Assert.Single(roleLists, call =>
+            call.Contains("--scope") &&
+            call.Contains(_fixture.FoundationResources.KeyVaultResourceId!) &&
+            !call.Contains("--all"));
+        Assert.All(roleLists.Where(call => !call.Contains("--scope")), call => Assert.Contains("--all", call));
         Assert.Equal(2, process.Calls.Count(call => call.Contains("list-deleted")));
     }
 
