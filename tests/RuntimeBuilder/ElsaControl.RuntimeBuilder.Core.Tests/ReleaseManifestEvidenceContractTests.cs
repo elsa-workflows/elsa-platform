@@ -15,4 +15,12 @@ public sealed class ReleaseManifestEvidenceContractTests
 
         Assert.False(safe);
     }
+
+    [Fact]
+    public void DescriptionFor_returns_generic_description_for_unknown_kind()
+    {
+        var description = ReleaseManifestEvidenceContract.DescriptionFor("unknown-evidence-kind");
+
+        Assert.Equal(ReleaseManifestEvidenceContract.GenericDescription, description);
+    }
 }

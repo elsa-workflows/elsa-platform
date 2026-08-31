@@ -27,8 +27,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
             migrationBuilder.AddColumn<string>(
                 name: "RecoveryRequestHash",
                 table: "ElsaInstanceOperations",
-                type: "nvarchar(71)",
-                maxLength: 71,
+                type: "nvarchar(64)",
+                maxLength: 64,
                 nullable: true);
 
             migrationBuilder.CreateIndex(

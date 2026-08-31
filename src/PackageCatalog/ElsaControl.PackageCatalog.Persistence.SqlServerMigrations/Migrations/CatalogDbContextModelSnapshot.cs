@@ -2719,8 +2719,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasColumnType("nvarchar(256)");
 
                     b.Property<string>("RecoveryRequestHash")
-                        .HasMaxLength(71)
-                        .HasColumnType("nvarchar(71)");
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("RequestHash")
                         .IsRequired()

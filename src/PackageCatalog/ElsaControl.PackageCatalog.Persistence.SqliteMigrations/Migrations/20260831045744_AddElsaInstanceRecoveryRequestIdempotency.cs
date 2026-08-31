@@ -28,7 +28,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 name: "RecoveryRequestHash",
                 table: "ElsaInstanceOperations",
                 type: "TEXT",
-                maxLength: 71,
+                maxLength: 64,
                 nullable: true);
 
             migrationBuilder.CreateIndex(

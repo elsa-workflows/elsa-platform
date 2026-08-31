@@ -608,6 +608,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 // The winner can still be committing or this lookup can itself be
                 // selected as a deadlock victim. Only known SQL Server reservation
                 // conflicts are eligible for another bounded authoritative read.
+                continue;
             }
             catch (Exception exception) when (exception is DbUpdateException or DbException)
             {
@@ -686,6 +687,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             {
                 // The recovery winner may still be committing, or this bounded
                 // authoritative read can itself be selected as a deadlock victim.
+                continue;
             }
             catch (Exception exception) when (exception is DbUpdateException or DbException)
             {

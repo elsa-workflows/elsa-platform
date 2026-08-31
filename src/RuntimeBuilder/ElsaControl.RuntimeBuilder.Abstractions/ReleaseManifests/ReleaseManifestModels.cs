@@ -168,7 +168,8 @@ public static class ReleaseManifestEvidenceContract
             [ReleaseManifestEvidenceKinds.VulnerabilityScan] = "Producer-retained release vulnerability-scan evidence."
         };
 
-    public static string DescriptionFor(string kind) => FixedDescriptions[kind];
+    public static string DescriptionFor(string kind) =>
+        FixedDescriptions.TryGetValue(kind, out var description) ? description : GenericDescription;
 
     public static bool IsSafe(string? kind, string? reference, string? digest, string? description)
     {

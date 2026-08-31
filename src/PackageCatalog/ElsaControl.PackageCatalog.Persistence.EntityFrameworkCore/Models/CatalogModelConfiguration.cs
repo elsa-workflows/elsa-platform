@@ -930,7 +930,7 @@ internal sealed class ElsaInstanceOperationConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.IdempotencyScope).HasMaxLength(256).IsRequired();
         builder.Property(x => x.RecoveryIdempotencyScope).HasMaxLength(256);
         builder.Property(x => x.RecoveryIdempotencyKey).HasMaxLength(128);
-        builder.Property(x => x.RecoveryRequestHash).HasMaxLength(71);
+        builder.Property(x => x.RecoveryRequestHash).HasMaxLength(64);
         builder.Property(x => x.IdempotencyKey).HasMaxLength(128).IsRequired();
         builder.Property(x => x.RequestHash).HasMaxLength(64).IsRequired();
         builder.Property(x => x.State).HasConversion<string>().HasMaxLength(64).IsRequired();
