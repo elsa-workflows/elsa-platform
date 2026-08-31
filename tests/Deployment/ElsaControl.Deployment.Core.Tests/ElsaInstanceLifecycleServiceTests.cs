@@ -36,6 +36,21 @@ public sealed class ElsaInstanceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task Create_replay_uses_canonical_name_and_slug_values()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore();
+        var service = new ElsaInstanceLifecycleService(store);
+        var first = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, " Claims ", "CLAIMS-PROD", Intent(), "create-1"));
+
+        var replay = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+
+        Assert.True(replay.Replayed);
+        Assert.Equal(first.Operation.Id, replay.Operation.Id);
+    }
+
+    [Fact]
     public async Task Reusing_an_idempotency_key_for_a_different_intent_is_rejected()
     {
         var store = new InMemoryElsaInstanceLifecycleStore();
@@ -368,7 +383,7 @@ public sealed class ElsaInstanceLifecycleServiceTests
             new ElsaInstanceLifecycleOutboxMessage(Guid.NewGuid(), WorkspaceId, created.Instance.Id, created.Operation.Id,
                 created.Operation.Action, created.Operation.RequestHash, Now));
         var renameRequest = new ElsaInstanceIntentUpdateRequest(
-            WorkspaceId, created.Instance.Id, null, created.Instance.Version, "rename-1", "Claims renamed");
+            WorkspaceId, created.Instance.Id, null, created.Instance.Version, "rename-1", " Claims renamed ");
         var renamed = await service.UpdateIntentAsync(renameRequest);
         await store.CommitAcceptedAsync(renamed.Instance, renamed.Instance,
             renamed.Operation.TransitionTo(ElsaInstanceOperationState.Succeeded),
@@ -382,7 +397,8 @@ public sealed class ElsaInstanceLifecycleServiceTests
         await service.UpdateIntentAsync(new ElsaInstanceIntentUpdateRequest(
             WorkspaceId, created.Instance.Id, changedIntent, store.Instances.Single().Version, "intent-1"));
 
-        var replay = await service.UpdateIntentAsync(renameRequest);
+        var replay = await service.UpdateIntentAsync(new ElsaInstanceIntentUpdateRequest(
+            WorkspaceId, created.Instance.Id, null, created.Instance.Version, "rename-1", "Claims renamed"));
 
         Assert.True(replay.Replayed);
         Assert.Equal(renamed.Operation.Id, replay.Operation.Id);

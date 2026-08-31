@@ -397,9 +397,12 @@ public static class ManagedElsaInstanceEndpoints
         IManagedElsaInstanceIdentityStore identities,
         CancellationToken cancellationToken)
     {
-        var identity = canOpen
+        var healthy = instance.DesiredLifecycle == ElsaDesiredLifecycle.Running &&
+                      instance.ObservedLifecycle == ElsaObservedLifecycle.Ready &&
+                      instance.Health == ElsaInstanceHealth.Healthy;
+        var identity = canOpen && healthy
             ? await identities.FindOpenableAsync(instance.OrganizationId, instance.Id, cancellationToken)
-            : await identities.FindAsync(instance.OrganizationId, instance.Id, cancellationToken);
+            : null;
         return ToResponse(instance, canOpen, workspaceId, identity);
     }
 

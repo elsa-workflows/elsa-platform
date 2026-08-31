@@ -28,14 +28,16 @@ public sealed class ElsaInstanceLifecycleService(
         ValidateRequired(request.Slug, nameof(request.Slug), "Instance slug is required.");
         ValidateActor(request.ActorAccountId);
         var key = RequireKey(request.IdempotencyKey);
+        var name = ElsaInstanceValue.DisplayName(request.Name, nameof(request.Name));
+        var slug = ElsaInstanceSlug.Normalize(request.Slug);
         var requestHash = ComputeCreateRequestHash(
             ElsaInstanceOperationAction.Create,
             expectedVersion: 1,
             request.Intent.ComputeCanonicalHash(),
             request.OrganizationId.ToString("D"),
             request.WorkspaceId.ToString("D"),
-            request.Name,
-            request.Slug,
+            name,
+            slug,
             request.InstanceId?.ToString("D") ?? "generated");
 
         var existingOperation = await store.FindOperationByKeyAsync(
@@ -68,8 +70,8 @@ public sealed class ElsaInstanceLifecycleService(
             instanceId,
             request.OrganizationId,
             request.WorkspaceId,
-            request.Name,
-            request.Slug,
+            name,
+            slug,
             request.Intent);
         var transition = RequestTransition(
             instance,
@@ -197,6 +199,8 @@ public sealed class ElsaInstanceLifecycleService(
             throw new ArgumentOutOfRangeException(nameof(expectedVersion), "Expected version must be positive.");
         ValidateActor(actorAccountId);
         reason = NormalizeReason(reason);
+        if (requestedName is not null)
+            requestedName = ElsaInstanceValue.DisplayName(requestedName, nameof(requestedName));
         var key = RequireKey(idempotencyKey);
         var instance = await store.GetInstanceAsync(workspaceId, instanceId, cancellationToken)
             ?? throw new KeyNotFoundException("Elsa instance does not exist in the workspace.");
