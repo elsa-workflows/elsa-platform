@@ -5,6 +5,24 @@ using ElsaControl.Deployment.Core.Workspace;
 namespace ElsaControl.Deployment.Core.Instances;
 
 /// <summary>
+/// Append-only recovery request envelope used by the in-memory lifecycle store.
+/// The operation keeps a compatibility projection of the latest envelope, while
+/// this record remains authoritative for replaying an older recovery key.
+/// </summary>
+public sealed record ElsaInstanceRecoveryRequestEnvelope(
+    Guid Id,
+    Guid OrganizationId,
+    Guid WorkspaceId,
+    Guid InstanceId,
+    Guid OperationId,
+    int AttemptNumber,
+    string IdempotencyScope,
+    string IdempotencyKey,
+    string RequestHash,
+    DateTimeOffset AcceptedAt,
+    DateTimeOffset CreatedAt);
+
+/// <summary>
 /// Deterministic recording store for core tests and local composition. Its lock
 /// models the atomic boundary required of the relational implementation without
 /// introducing persistence or provider concerns into the lifecycle service.
@@ -24,6 +42,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
     private readonly Dictionary<Guid, ElsaInstanceLifecycleRecordedFailure> _failures = [];
     private readonly Dictionary<Guid, StoredReconciliationResult> _reconciliationResults = [];
     private readonly Dictionary<Guid, StoredDeletionResult> _deletionResults = [];
+    private readonly Dictionary<Guid, ElsaInstanceRecoveryRequestEnvelope> _recoveryRequests = [];
 
     public IReadOnlyCollection<ElsaInstance> Instances
     {
@@ -76,6 +95,18 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         {
             lock (_gate)
                 return _failures.Values.ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Gets the immutable recovery request envelopes accepted by this store.
+    /// </summary>
+    public IReadOnlyCollection<ElsaInstanceRecoveryRequestEnvelope> RecoveryRequests
+    {
+        get
+        {
+            lock (_gate)
+                return _recoveryRequests.Values.ToArray();
         }
     }
 
@@ -292,12 +323,25 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         lock (_gate)
         {
             var isRecovery = action == ElsaInstanceOperationAction.Recover;
+            if (isRecovery)
+            {
+                var recovery = _recoveryRequests.Values
+                    .Where(x => x.WorkspaceId == workspaceId && x.IdempotencyKey == idempotencyKey)
+                    .Where(x => instanceId is null || x.InstanceId == instanceId)
+                    .Where(x => idempotencyScope is null || x.IdempotencyScope == idempotencyScope)
+                    .OrderByDescending(x => x.AcceptedAt)
+                    .ThenByDescending(x => x.CreatedAt)
+                    .FirstOrDefault();
+                if (recovery is null || !_operations.TryGetValue(recovery.OperationId, out var recoveryOperation))
+                    return Task.FromResult<ElsaInstanceOperation?>(null);
+                return Task.FromResult<ElsaInstanceOperation?>(WithRecoveryEnvelope(recoveryOperation, recovery));
+            }
+
             var operation = _operations.Values
-                .Where(x => (isRecovery ? x.RecoveryIdempotencyKey : x.IdempotencyKey) == idempotencyKey)
+                .Where(x => x.IdempotencyKey == idempotencyKey)
                 .Where(x => instanceId is null || x.InstanceId == instanceId)
-                .Where(x => action is null || isRecovery || x.Action == action)
-                .Where(x => idempotencyScope is null ||
-                    (isRecovery ? x.RecoveryIdempotencyScope : x.IdempotencyScope) == idempotencyScope)
+                .Where(x => action is null || x.Action == action)
+                .Where(x => idempotencyScope is null || x.IdempotencyScope == idempotencyScope)
                 .Where(x => _instances.TryGetValue(x.InstanceId, out var instance) && instance.WorkspaceId == workspaceId)
                 .OrderByDescending(x => x.AcceptedAt)
                 .FirstOrDefault();
@@ -321,12 +365,17 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         {
             if (operation.InstanceId != instance.Id || outbox.InstanceId != instance.Id || outbox.OperationId != operation.Id)
                 throw new ElsaInstanceLifecycleConflictException("Lifecycle operation identity is inconsistent.");
-            if (outbox.WorkspaceId != instance.WorkspaceId || operation.IdempotencyKey.Length == 0)
+            if (outbox.WorkspaceId != instance.WorkspaceId || outbox.Action != operation.Action ||
+                !string.Equals(outbox.RequestHash, operation.RequestHash, StringComparison.Ordinal) ||
+                operation.IdempotencyKey.Length == 0)
                 throw new ElsaInstanceLifecycleConflictException("Lifecycle operation scope is invalid.");
 
             if (_operations.TryGetValue(operation.Id, out var storedOperation))
             {
                 if (storedOperation.InstanceId != operation.InstanceId ||
+                    !_instances.TryGetValue(storedOperation.InstanceId, out var storedInstance) ||
+                    storedInstance.OrganizationId != instance.OrganizationId ||
+                    storedInstance.WorkspaceId != instance.WorkspaceId ||
                     storedOperation.Action != operation.Action ||
                     storedOperation.ExpectedVersion != operation.ExpectedVersion ||
                     !string.Equals(storedOperation.IdempotencyScope, operation.IdempotencyScope, StringComparison.Ordinal) ||
@@ -334,17 +383,36 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                     !string.Equals(storedOperation.RequestHash, operation.RequestHash, StringComparison.Ordinal))
                     throw new ElsaInstanceLifecycleConflictException("Lifecycle operation identity is already in use.");
 
-                if (operation.RecoveryIdempotencyKey is not null &&
-                    storedOperation.RecoveryIdempotencyKey is not null &&
-                    (!string.Equals(storedOperation.RecoveryIdempotencyScope, operation.RecoveryIdempotencyScope, StringComparison.Ordinal) ||
-                     !string.Equals(storedOperation.RecoveryIdempotencyKey, operation.RecoveryIdempotencyKey, StringComparison.Ordinal) ||
-                     !string.Equals(storedOperation.RecoveryRequestHash, operation.RecoveryRequestHash, StringComparison.Ordinal)))
-                    throw new ElsaInstanceLifecycleConflictException(
-                        "Recovery request conflicts with the accepted recovery request.",
-                        ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
+                var existingOutbox = _outbox.Values.SingleOrDefault(x => x.OperationId == storedOperation.Id);
+                if (existingOutbox is null)
+                    throw new ElsaInstanceLifecycleConflictException("Lifecycle operation outbox record is missing.");
+                if (existingOutbox.WorkspaceId != storedInstance.WorkspaceId ||
+                    existingOutbox.InstanceId != storedInstance.Id ||
+                    existingOutbox.Action != storedOperation.Action ||
+                    !string.Equals(existingOutbox.RequestHash, storedOperation.RequestHash, StringComparison.Ordinal))
+                    throw new ElsaInstanceLifecycleConflictException("Lifecycle operation outbox record is inconsistent.");
+
+                if (operation.RecoveryIdempotencyKey is not null)
+                {
+                    var recovery = FindRecoveryRequest(
+                        instance.WorkspaceId,
+                        operation.RecoveryIdempotencyScope!,
+                        operation.RecoveryIdempotencyKey);
+                    if (recovery is not null)
+                    {
+                        if (!IsExactAuthoritativeRecoveryReplay(
+                                expectedInstance, instance, operation, storedOperation, recovery))
+                            throw RecoveryConflict();
+                        return Task.FromResult(Replay(instance, storedOperation, recovery));
+                    }
+                }
 
                 if (storedOperation.State == operation.State && storedOperation.AttemptNumber == operation.AttemptNumber)
+                {
+                    if (operation.RecoveryIdempotencyKey is not null)
+                        throw RecoveryConflict();
                     return Task.FromResult(Replay(instance, storedOperation));
+                }
 
                 var isRecoveryResume = storedOperation.State == ElsaInstanceOperationState.RecoveryRequired &&
                     operation.State == ElsaInstanceOperationState.Queued &&
@@ -364,10 +432,11 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                 if (expectedInstance is not null && existingForUpdate.Version != expectedInstance.Version)
                     throw new ElsaInstanceLifecycleConflictException("Instance version conflict.", ElsaInstanceLifecycleConflictReason.VersionConflict);
 
+                if (isRecoveryResume)
+                    AppendRecoveryRequest(instance, operation, outbox.CreatedAt);
                 _instances[instance.Id] = instance;
                 _operations[operation.Id] = operation;
-                _outbox[outbox.Id] = outbox;
-                return Task.FromResult(new ElsaInstanceLifecycleAcceptance(instance, operation, outbox, false));
+                return Task.FromResult(new ElsaInstanceLifecycleAcceptance(instance, operation, existingOutbox, false));
             }
 
             var sameIdentity = _operations.Values.FirstOrDefault(x =>
@@ -380,6 +449,17 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
                 if (sameIdentity.InstanceId != operation.InstanceId ||
                     !string.Equals(sameIdentity.RequestHash, operation.RequestHash, StringComparison.Ordinal))
                     throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
+                if (operation.RecoveryIdempotencyKey is not null)
+                {
+                    var recovery = FindRecoveryRequest(
+                        instance.WorkspaceId,
+                        operation.RecoveryIdempotencyScope!,
+                        operation.RecoveryIdempotencyKey);
+                    if (recovery is null || !IsExactAuthoritativeRecoveryReplay(
+                            expectedInstance, instance, operation, sameIdentity, recovery))
+                        throw RecoveryConflict();
+                    return Task.FromResult(Replay(instance, sameIdentity, recovery));
+                }
                 return Task.FromResult(Replay(instance, sameIdentity));
             }
 
@@ -808,15 +888,113 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         }
     }
 
-    private ElsaInstanceLifecycleAcceptance Replay(ElsaInstance requestedInstance, ElsaInstanceOperation operation)
+    private ElsaInstanceLifecycleAcceptance Replay(
+        ElsaInstance requestedInstance,
+        ElsaInstanceOperation operation,
+        ElsaInstanceRecoveryRequestEnvelope? recovery = null)
     {
         var instance = _instances.TryGetValue(operation.InstanceId, out var storedInstance)
             ? storedInstance
             : requestedInstance;
         if (_outbox.Values.Where(x => x.OperationId == operation.Id).OrderByDescending(x => x.CreatedAt).FirstOrDefault() is not { } outbox)
             throw new ElsaInstanceLifecycleConflictException("Lifecycle operation outbox record is missing.");
-        return new ElsaInstanceLifecycleAcceptance(instance, operation, outbox, true);
+        return new ElsaInstanceLifecycleAcceptance(
+            instance,
+            recovery is null ? operation : WithRecoveryEnvelope(operation, recovery),
+            outbox,
+            true);
     }
+
+    private ElsaInstanceRecoveryRequestEnvelope? FindRecoveryRequest(
+        Guid workspaceId,
+        string idempotencyScope,
+        string idempotencyKey) =>
+        _recoveryRequests.Values.SingleOrDefault(x =>
+            x.WorkspaceId == workspaceId &&
+            x.IdempotencyScope == idempotencyScope &&
+            x.IdempotencyKey == idempotencyKey);
+
+    private void AppendRecoveryRequest(
+        ElsaInstance instance,
+        ElsaInstanceOperation operation,
+        DateTimeOffset acceptedAt)
+    {
+        if (operation.RecoveryIdempotencyScope is null ||
+            operation.RecoveryIdempotencyKey is null ||
+            operation.RecoveryRequestHash is null ||
+            operation.AttemptNumber < 2)
+            throw RecoveryConflict();
+
+        if (FindRecoveryRequest(
+                instance.WorkspaceId,
+                operation.RecoveryIdempotencyScope,
+                operation.RecoveryIdempotencyKey) is not null ||
+            _recoveryRequests.Values.Any(x =>
+                x.OperationId == operation.Id && x.AttemptNumber == operation.AttemptNumber))
+            throw RecoveryConflict();
+
+        var envelope = new ElsaInstanceRecoveryRequestEnvelope(
+            Guid.NewGuid(),
+            instance.OrganizationId,
+            instance.WorkspaceId,
+            instance.Id,
+            operation.Id,
+            operation.AttemptNumber,
+            operation.RecoveryIdempotencyScope,
+            operation.RecoveryIdempotencyKey,
+            operation.RecoveryRequestHash,
+            acceptedAt.ToUniversalTime(),
+            acceptedAt.ToUniversalTime());
+        _recoveryRequests.Add(envelope.Id, envelope);
+    }
+
+    private static bool IsExactAuthoritativeRecoveryReplay(
+        ElsaInstance? expectedInstance,
+        ElsaInstance requestedInstance,
+        ElsaInstanceOperation requestedOperation,
+        ElsaInstanceOperation existingOperation,
+        ElsaInstanceRecoveryRequestEnvelope recovery) =>
+        expectedInstance is not null &&
+        expectedInstance.Id == requestedInstance.Id &&
+        expectedInstance.OrganizationId == requestedInstance.OrganizationId &&
+        expectedInstance.WorkspaceId == requestedInstance.WorkspaceId &&
+        requestedOperation.InstanceId == requestedInstance.Id &&
+        existingOperation.Id == requestedOperation.Id &&
+        existingOperation.InstanceId == requestedInstance.Id &&
+        existingOperation.Action == requestedOperation.Action &&
+        existingOperation.IdempotencyScope == requestedOperation.IdempotencyScope &&
+        existingOperation.IdempotencyKey == requestedOperation.IdempotencyKey &&
+        existingOperation.RequestHash == requestedOperation.RequestHash &&
+        recovery.OperationId == existingOperation.Id &&
+        recovery.InstanceId == requestedInstance.Id &&
+        recovery.OrganizationId == requestedInstance.OrganizationId &&
+        recovery.WorkspaceId == requestedInstance.WorkspaceId &&
+        recovery.IdempotencyScope == requestedOperation.RecoveryIdempotencyScope &&
+        recovery.IdempotencyKey == requestedOperation.RecoveryIdempotencyKey &&
+        recovery.RequestHash == requestedOperation.RecoveryRequestHash;
+
+    private static ElsaInstanceOperation WithRecoveryEnvelope(
+        ElsaInstanceOperation operation,
+        ElsaInstanceRecoveryRequestEnvelope recovery) =>
+        ElsaInstanceOperation.Hydrate(
+            operation.Id,
+            operation.InstanceId,
+            operation.Action,
+            operation.IdempotencyScope,
+            operation.IdempotencyKey,
+            operation.RequestHash,
+            operation.ExpectedVersion,
+            operation.State,
+            operation.AttemptNumber,
+            operation.AcceptedAt,
+            recovery.IdempotencyScope,
+            recovery.IdempotencyKey,
+            recovery.RequestHash);
+
+    private static ElsaInstanceLifecycleConflictException RecoveryConflict() =>
+        new(
+            "Recovery request conflicts with the accepted recovery request.",
+            ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
 
     private static string PlanKey(Guid workspaceId, Guid instanceId, string planId) =>
         $"{workspaceId:N}:{instanceId:N}:{planId}";

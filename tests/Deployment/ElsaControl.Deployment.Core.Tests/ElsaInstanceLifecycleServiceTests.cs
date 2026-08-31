@@ -253,14 +253,16 @@ public sealed class ElsaInstanceLifecycleServiceTests
         Assert.Equal(accepted.Id, recovered.Operation.Id);
         Assert.Equal(ElsaInstanceOperationState.Queued, recovered.Operation.State);
         Assert.Equal(2, recovered.Operation.AttemptNumber);
-        Assert.Equal(5, store.Outbox.Count);
+        Assert.Single(store.Outbox);
+        Assert.Single(store.RecoveryRequests);
         Assert.Single(store.Operations);
 
         var conflict = await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() =>
             service.RecoverAsync(new ElsaInstanceLifecycleRequest(
                 WorkspaceId, created.Instance.Id, recovered.Instance.Version, "recover-1", "changed")));
         Assert.Equal(ElsaInstanceLifecycleConflictReason.IdempotencyConflict, conflict.Reason);
-        Assert.Equal(5, store.Outbox.Count);
+        Assert.Single(store.Outbox);
+        Assert.Single(store.RecoveryRequests);
 
         var replayed = await service.RecoverAsync(new ElsaInstanceLifecycleRequest(
             WorkspaceId,
@@ -271,8 +273,61 @@ public sealed class ElsaInstanceLifecycleServiceTests
         Assert.True(replayed.Replayed);
         Assert.Equal(recovered.Operation.Id, replayed.Operation.Id);
         Assert.Equal(recovered.Operation.AttemptNumber, replayed.Operation.AttemptNumber);
-        Assert.Equal(5, store.Outbox.Count);
+        Assert.Single(store.Outbox);
+        Assert.Single(store.RecoveryRequests);
         Assert.Single(store.Operations);
+    }
+
+    [Fact]
+    public async Task Recover_replays_historical_keys_after_later_attempts_without_new_operations_or_outbox()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-recovery-ledger", Intent(), "create-recovery-ledger"));
+        var reconciliation = new ElsaInstanceProviderReconciliationService(
+            store,
+            new StaticProviderPort(new(
+                ElsaInstanceProviderObservationKind.Unknown,
+                ElsaObservedLifecycle.Unknown,
+                ElsaInstanceProviderHealthGate.Unknown,
+                "recovery-proof",
+                new ElsaInstanceProviderRetryEvidence(
+                    "https://evidence.example.test/recovery/retry-proof",
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))),
+            new StaticTimeProvider(Now));
+
+        store.MarkRecoveryRequired(created.Operation.Id);
+        await reconciliation.ReconcileAsync(WorkspaceId, created.Operation.Id);
+        var beforeA = store.Instances.Single();
+        var recoveredA = await service.RecoverAsync(new(
+            WorkspaceId, created.Instance.Id, beforeA.Version, "recovery-key-a"));
+
+        store.MarkRecoveryRequired(created.Operation.Id);
+        await reconciliation.ReconcileAsync(WorkspaceId, created.Operation.Id);
+        var beforeB = store.Instances.Single();
+        var recoveredB = await service.RecoverAsync(new(
+            WorkspaceId, created.Instance.Id, beforeB.Version, "recovery-key-b"));
+
+        var replayA = await service.RecoverAsync(new(
+            WorkspaceId, created.Instance.Id, beforeA.Version, "recovery-key-a"));
+
+        Assert.Equal(2, recoveredA.Operation.AttemptNumber);
+        Assert.Equal(3, recoveredB.Operation.AttemptNumber);
+        Assert.True(replayA.Replayed);
+        Assert.Equal(recoveredB.Operation.Id, replayA.Operation.Id);
+        Assert.Equal(ElsaInstanceOperationState.Queued, replayA.Operation.State);
+        Assert.Equal(3, replayA.Operation.AttemptNumber);
+        Assert.Equal("recovery-key-a", replayA.Operation.RecoveryIdempotencyKey);
+        Assert.Single(store.Operations);
+        Assert.Single(store.Outbox);
+        Assert.Equal(2, store.RecoveryRequests.Count);
+        Assert.Equal(new[] { 2, 3 }, store.RecoveryRequests.OrderBy(x => x.AttemptNumber).Select(x => x.AttemptNumber));
+
+        var changed = await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() => service.RecoverAsync(new(
+            WorkspaceId, created.Instance.Id, beforeA.Version, "recovery-key-a", Reason: "different request")));
+        Assert.Equal(ElsaInstanceLifecycleConflictReason.IdempotencyConflict, changed.Reason);
+        Assert.Equal(2, store.RecoveryRequests.Count);
     }
 
     [Fact]
