@@ -362,11 +362,11 @@ function parseHandoffContinuation(params: URLSearchParams): HandoffContinuation 
   const codeChallenge = params.get("code_challenge") ?? params.get("codeChallenge");
   const rawStatus = params.get("handoff_status") ?? params.get("handoff_error") ?? params.get("error") ?? params.get("status");
   const failureStatus = rawStatus && /^(401|403|409|503)$/.test(rawStatus) ? Number(rawStatus) : null;
-  if (!instanceId && !state && !codeChallenge && !failureStatus)
+  if (!instanceId || (!state && !codeChallenge && !failureStatus))
     return null;
   return {
     key: [instanceId, state, codeChallenge, failureStatus].join("|"),
-    instanceId: instanceId ?? "",
+    instanceId,
     state: state && /^[A-Za-z0-9_-]{16,256}$/.test(state) ? state : null,
     codeChallenge: codeChallenge && /^[A-Za-z0-9_-]{43}$/.test(codeChallenge) ? codeChallenge : null,
     failureStatus

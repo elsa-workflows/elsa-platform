@@ -134,6 +134,17 @@ describe("ManagedElsaInstancesPage", () => {
     expect(scrubbedUrlAtListFetch).not.toContain("code_challenge=");
   });
 
+  it("ignores unrelated state parameters without an instance identifier", async () => {
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    installFetch({ instances: [instanceFixture()] });
+
+    renderPage(`?state=${state}`);
+
+    expect(await screen.findByRole("button", { name: "Open" })).toBeInTheDocument();
+    expect(replaceState).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("fails closed when the issue response binding differs from the selected instance", async () => {
     const submit = vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => undefined);
     installFetch({

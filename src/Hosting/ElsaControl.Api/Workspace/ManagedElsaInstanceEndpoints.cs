@@ -13,27 +13,23 @@ public static class ManagedElsaInstanceEndpoints
         endpoints.MapGet("/api/workspaces/{workspaceId:guid}/managed-elsa/instances", async (
             Guid workspaceId,
             HttpContext context,
-            WorkspaceAccessResolver accessResolver,
             WorkspacePermissionService permissions,
             IManagedElsaInstanceCatalog instances,
             CancellationToken cancellationToken) =>
         {
             context.Response.Headers.CacheControl = "private, no-store";
             context.Response.Headers.Pragma = "no-cache";
-            var access = await accessResolver.ResolveAsync(context, workspaceId, WorkspaceOperation.Read, cancellationToken);
-            if (!access.Succeeded)
-                return access.ToHttpResult();
-
             var canOpen = (await permissions.GetEffectivePermissionsAsync(
                     workspaceId,
-                    access.Access!.AccountId,
+                    context.GetWorkspaceAccess().AccountId,
                     cancellationToken))
                 .Has(ManagedElsaInstancePermissions.Open);
             var summaries = await instances.ListAsync(workspaceId, cancellationToken);
 
             return Results.Ok(summaries.Select(summary => ToResponse(summary, canOpen)).ToList());
         })
-        .WithTags("Managed Elsa Instances");
+        .WithTags("Managed Elsa Instances")
+        .RequireWorkspaceAccess();
 
         return endpoints;
     }
