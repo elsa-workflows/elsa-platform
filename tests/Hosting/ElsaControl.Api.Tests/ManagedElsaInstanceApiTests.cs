@@ -3,6 +3,9 @@ using System.Net.Http.Json;
 using ElsaControl.Api.Workspace;
 using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Core.Instances;
+using ElsaControl.PackageCatalog.Core.Accounts;
+using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -100,6 +103,7 @@ public sealed class ManagedElsaInstanceApiTests
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-api-owner");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
         var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances")
         {
             Content = JsonContent.Create(
@@ -152,6 +156,138 @@ public sealed class ManagedElsaInstanceApiTests
         missingMatch.Headers.Add("Idempotency-Key", "rename-claims-runtime");
         var response = await client.SendAsync(missingMatch);
         Assert.Equal((HttpStatusCode)428, response.StatusCode);
+
+        var operationWithoutMatch = new HttpRequestMessage(HttpMethod.Post,
+            $"/api/workspaces/{workspaceId}/instances/{instanceId}/operations")
+        {
+            Content = JsonContent.Create(
+                new ManagedElsaInstanceOperationRequest(ElsaInstanceOperationAction.Start, 1),
+                options: ControlApiTestApplication.JsonOptions)
+        };
+        operationWithoutMatch.Headers.Add("Idempotency-Key", "start-claims-runtime");
+        response = await client.SendAsync(operationWithoutMatch);
+        Assert.Equal((HttpStatusCode)428, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Canonical_create_fails_closed_when_managed_hosting_entitlement_is_missing()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient("managed-instance-api-no-entitlement");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances")
+        {
+            Content = JsonContent.Create(
+                new ManagedElsaInstanceCreateRequest("Claims runtime", "claims-runtime", Intent()),
+                options: ControlApiTestApplication.JsonOptions)
+        };
+        request.Headers.Add("Idempotency-Key", "create-without-entitlement");
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Contains("instance.entitlement-required", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Canonical_create_rejects_display_names_over_256_characters_as_unprocessable()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient("managed-instance-api-long-name");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances")
+        {
+            Content = JsonContent.Create(
+                new ManagedElsaInstanceCreateRequest(new string('n', 257), "claims-runtime", Intent()),
+                options: ControlApiTestApplication.JsonOptions)
+        };
+        request.Headers.Add("Idempotency-Key", "create-long-name");
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Contains("instance.shape-invalid", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Canonical_projection_hides_binding_unless_instance_is_running_ready_and_healthy()
+    {
+        var instanceId = Guid.NewGuid();
+        var binding = ElsaInstanceIdentityBinding.Create(instanceId, "https://managed.example.test");
+        var instance = ElsaInstance.Hydrate(instanceId, Guid.NewGuid(), Guid.NewGuid(), "Claims runtime", "claims-runtime",
+            Intent(), ElsaObservedLifecycle.Ready, ElsaInstanceHealth.Degraded, 2, binding);
+
+        var response = ManagedElsaInstanceEndpoints.ToResponse(instance, canOpen: true, instance.WorkspaceId);
+
+        Assert.False(response.CanOpen);
+        Assert.Null(response.Audience);
+        Assert.Null(response.RedirectUri);
+        Assert.Null(response.IdentityBinding);
+        Assert.Equal("instance-unavailable", response.IdentityBindingState);
+        Assert.Equal("This instance is not currently available.", response.UnavailableReason);
+    }
+
+    [Fact]
+    public void Customer_audit_projection_redacts_operator_subject()
+    {
+        var audit = new ElsaInstanceAuditEventSummary(Guid.NewGuid(), 1, "instance.updated", Guid.NewGuid(),
+            "sha256:sensitive-operator-fingerprint", null, null, null, null, null, null, null, null, null, null,
+            DateTimeOffset.UtcNow);
+
+        var response = ManagedElsaInstanceEndpoints.RedactAudit(audit);
+
+        Assert.Null(response.OperatorSubject);
+        Assert.Equal(audit.Id, response.Id);
+    }
+
+    [Fact]
+    public void Lifecycle_worker_poll_interval_is_clamped_to_one_second()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(1), ElsaInstanceLifecycleHostedService.NormalizePollInterval(TimeSpan.Zero));
+        Assert.Equal(TimeSpan.FromSeconds(1), ElsaInstanceLifecycleHostedService.NormalizePollInterval(TimeSpan.FromMilliseconds(50)));
+        Assert.Equal(TimeSpan.FromSeconds(3), ElsaInstanceLifecycleHostedService.NormalizePollInterval(TimeSpan.FromSeconds(3)));
+    }
+
+    [Fact]
+    public void Lifecycle_worker_identity_is_safe_bounded_and_unique_per_hosted_service()
+    {
+        var first = ElsaInstanceLifecycleHostedService.CreateWorkerId();
+        var second = ElsaInstanceLifecycleHostedService.CreateWorkerId();
+
+        Assert.NotEqual(first, second);
+        Assert.StartsWith($"api-instance-lifecycle-{Environment.ProcessId}-", first, StringComparison.Ordinal);
+        Assert.InRange(first.Length, 1, 256);
+        Assert.DoesNotContain(first, char.IsControl);
+    }
+
+    [Fact]
+    public async Task Instance_from_another_workspace_and_unknown_instance_are_indistinguishable()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var first = app.CreateTrustedWorkspaceClient("managed-instance-owner-a");
+        var firstWorkspaceId = await first.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, firstWorkspaceId);
+        var create = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{firstWorkspaceId}/instances")
+        {
+            Content = JsonContent.Create(new ManagedElsaInstanceCreateRequest("Claims runtime", "claims-runtime", Intent()),
+                options: ControlApiTestApplication.JsonOptions)
+        };
+        create.Headers.Add("Idempotency-Key", "create-workspace-a-runtime");
+        var accepted = await first.SendAsync(create);
+        var body = await accepted.Content.ReadControlJsonAsync<ManagedElsaInstanceAcceptedResponse>();
+        Assert.NotNull(body);
+
+        var second = app.CreateTrustedWorkspaceClient("managed-instance-owner-b");
+        var secondWorkspaceId = await second.GetDefaultWorkspaceIdAsync();
+        var otherWorkspace = await second.GetAsync($"/api/workspaces/{secondWorkspaceId}/instances/{body!.Instance.InstanceId}");
+        var unknown = await second.GetAsync($"/api/workspaces/{secondWorkspaceId}/instances/{Guid.NewGuid()}");
+
+        Assert.Equal(HttpStatusCode.NotFound, otherWorkspace.StatusCode);
+        Assert.Equal(unknown.StatusCode, otherWorkspace.StatusCode);
     }
 
     private static ControlApiTestApplication CreateApplication(IReadOnlyList<ManagedElsaInstanceSummary> instances)
@@ -193,6 +329,21 @@ public sealed class ManagedElsaInstanceApiTests
             new Dictionary<string, ElsaFeatureOverride> { ["replicas"] = ElsaFeatureOverride.FromNumber(3) },
             "approved"),
         new ElsaPlacementIntent("managed", "westeurope", "dedicated", "standard-small", "public", "managed"));
+
+    private static async Task EnableManagedHostingAsync(ControlApiTestApplication app, Guid workspaceId)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        var organizationId = await db.Workspaces.Where(x => x.Id == workspaceId).Select(x => x.OrganizationId).SingleAsync();
+        db.OrganizationEntitlementSnapshots.Add(new OrganizationEntitlementSnapshot
+        {
+            OrganizationId = organizationId,
+            ManagedHostingEnabled = true,
+            MaxSources = 5,
+            MaxWorkspaces = 5
+        });
+        await db.SaveChangesAsync();
+    }
 
     private sealed class FakeManagedElsaInstanceCatalog(IReadOnlyList<ManagedElsaInstanceSummary> instances) : IManagedElsaInstanceCatalog
     {

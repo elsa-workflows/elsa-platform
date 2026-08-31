@@ -61,7 +61,7 @@ public static class ManagedElsaInstanceEndpoints
 
             var access = context.GetWorkspaceAccess();
             var entitlement = await accountStore.GetLatestOrganizationEntitlementAsync(access.OrganizationId, cancellationToken);
-            if (entitlement is { ManagedHostingEnabled: false })
+            if (entitlement is not { ManagedHostingEnabled: true })
                 return Problem("instance.entitlement-required", "Managed hosting is not enabled for this organization.", StatusCodes.Status422UnprocessableEntity);
 
             try
@@ -70,14 +70,15 @@ public static class ManagedElsaInstanceEndpoints
                 // Let the lifecycle service own idempotent replay. A slug preflight
                 // must not reject a retry of the original request after its first
                 // commit made the slug visible.
-                var existingOperation = await lifecycleStore.FindOperationByKeyAsync(workspaceId, key, cancellationToken);
+                var existingOperation = await lifecycleStore.FindOperationByKeyAsync(
+                    workspaceId, key, action: ElsaInstanceOperationAction.Create, cancellationToken: cancellationToken);
                 if (existingOperation is null && (await queries.ListInstancesAsync(workspaceId, cancellationToken)).Any(x =>
                         string.Equals(x.Slug, normalizedSlug, StringComparison.Ordinal)))
                     return Problem("instance.slug-conflict", "The instance slug is already in use in this workspace.", StatusCodes.Status409Conflict);
 
                 var accepted = await lifecycle.CreateAsync(new ElsaInstanceCreateRequest(
                     access.OrganizationId, workspaceId, request.Name, normalizedSlug, request.Intent, key, request.InstanceId), cancellationToken);
-                return Accepted(workspaceId, accepted);
+                return await AcceptedAsync(workspaceId, accepted, queries, cancellationToken);
             }
             catch (ElsaInstanceLifecycleConflictException exception)
             {
@@ -115,8 +116,10 @@ public static class ManagedElsaInstanceEndpoints
             Guid instanceId,
             ManagedElsaInstancePatchRequest request,
             HttpContext context,
+            IAccountWorkspaceStore accountStore,
             IElsaInstanceLifecycleStore store,
             ElsaInstanceLifecycleService lifecycle,
+            IManagedElsaInstanceApiStore queries,
             CancellationToken cancellationToken) =>
         {
             var precondition = ReadIfMatch(context.Request);
@@ -130,11 +133,13 @@ public static class ManagedElsaInstanceEndpoints
                 return Results.NotFound();
             if (request.Intent is null && request.Name is null)
                 return Problem("instance.shape-invalid", "At least one mutable instance field is required.", StatusCodes.Status422UnprocessableEntity);
+            if (!await HasManagedHostingEntitlementAsync(accountStore, context.GetWorkspaceAccess().OrganizationId, cancellationToken))
+                return Problem("instance.entitlement-required", "Managed hosting is not enabled for this organization.", StatusCodes.Status422UnprocessableEntity);
             try
             {
                 var accepted = await lifecycle.UpdateIntentAsync(new ElsaInstanceIntentUpdateRequest(
                     workspaceId, instanceId, request.Intent ?? existing.Intent, precondition.Value, key, request.Name, request.Reason), cancellationToken);
-                return Accepted(workspaceId, accepted);
+                return await AcceptedAsync(workspaceId, accepted, queries, cancellationToken);
             }
             catch (ElsaInstanceLifecycleConflictException exception)
             {
@@ -157,7 +162,9 @@ public static class ManagedElsaInstanceEndpoints
             Guid instanceId,
             ManagedElsaInstanceOperationRequest request,
             HttpContext context,
+            IAccountWorkspaceStore accountStore,
             ElsaInstanceLifecycleService lifecycle,
+            IManagedElsaInstanceApiStore queries,
             CancellationToken cancellationToken) =>
         {
             var key = RequireIdempotencyKey(context);
@@ -165,12 +172,13 @@ public static class ManagedElsaInstanceEndpoints
                 return Problem("instance.idempotency-key-required", "Idempotency-Key is required for instance operations.", StatusCodes.Status400BadRequest);
             if (!Enum.IsDefined(request.Action) || request.Action is ElsaInstanceOperationAction.Create or ElsaInstanceOperationAction.UpdateIntent)
                 return Problem("instance.operation-invalid", "The requested operation is not supported on this route.", StatusCodes.Status422UnprocessableEntity);
-            var ifMatch = ReadIfMatch(context.Request);
-            var expectedVersion = ifMatch ?? request.ExpectedVersion;
+            var expectedVersion = ReadIfMatch(context.Request);
             if (expectedVersion is null)
-                return Problem("instance.if-match-required", "If-Match or expectedVersion is required for instance operations.", StatusCodes.Status428PreconditionRequired);
-            if (ifMatch is { } ifMatchValue && request.ExpectedVersion is { } bodyVersion && ifMatchValue != bodyVersion)
+                return Problem("instance.if-match-required", "A strong If-Match header is required for instance operations.", StatusCodes.Status428PreconditionRequired);
+            if (request.ExpectedVersion is { } bodyVersion && expectedVersion.Value != bodyVersion)
                 return Problem("instance.version-conflict", "If-Match and expectedVersion do not agree.", StatusCodes.Status412PreconditionFailed);
+            if (!await HasManagedHostingEntitlementAsync(accountStore, context.GetWorkspaceAccess().OrganizationId, cancellationToken))
+                return Problem("instance.entitlement-required", "Managed hosting is not enabled for this organization.", StatusCodes.Status422UnprocessableEntity);
 
             try
             {
@@ -200,11 +208,14 @@ public static class ManagedElsaInstanceEndpoints
                         _ => throw new ArgumentOutOfRangeException(nameof(request.Action))
                     };
                 }
-                return Accepted(workspaceId, accepted);
+                return await AcceptedAsync(workspaceId, accepted, queries, cancellationToken);
             }
             catch (ElsaInstanceLifecycleConflictException exception)
             {
-                return Problem(ConflictCode(exception), exception.Message, StatusCodes.Status409Conflict);
+                var status = exception.Message.Contains("version", StringComparison.OrdinalIgnoreCase)
+                    ? StatusCodes.Status412PreconditionFailed
+                    : StatusCodes.Status409Conflict;
+                return Problem(ConflictCode(exception), exception.Message, status);
             }
             catch (KeyNotFoundException)
             {
@@ -288,7 +299,8 @@ public static class ManagedElsaInstanceEndpoints
         {
             if (await lifecycle.GetInstanceAsync(workspaceId, instanceId, cancellationToken) is null)
                 return Results.NotFound();
-            return Results.Ok(new ManagedElsaInstanceAuditResponse(await queries.ListAuditAsync(workspaceId, instanceId, cancellationToken)));
+            var events = await queries.ListAuditAsync(workspaceId, instanceId, cancellationToken);
+            return Results.Ok(new ManagedElsaInstanceAuditResponse(events.Select(RedactAudit).ToList()));
         }).RequireWorkspaceAccess();
 
         return endpoints;
@@ -309,14 +321,20 @@ public static class ManagedElsaInstanceEndpoints
         }).WithTags("Managed Elsa Instances").RequireWorkspaceAccess();
     }
 
-    private static IResult Accepted(Guid workspaceId, ElsaInstanceLifecycleAcceptance accepted)
+    private static async Task<IResult> AcceptedAsync(
+        Guid workspaceId,
+        ElsaInstanceLifecycleAcceptance accepted,
+        IManagedElsaInstanceApiStore queries,
+        CancellationToken cancellationToken)
     {
         var location = $"/api/workspaces/{workspaceId:D}/instances/{accepted.Instance.Id:D}/operations/{accepted.Operation.Id:D}";
-        var operation = new ElsaInstanceOperationSummary(accepted.Operation.Id, accepted.Operation.InstanceId,
-            accepted.Operation.Action, accepted.Operation.State, accepted.Operation.ExpectedVersion,
-            accepted.Operation.AttemptNumber, accepted.Operation.AcceptedAt, null, null,
-            accepted.Instance.DesiredStateRevisionId?.Value, accepted.Instance.ResolvedPlanReference?.PlanId,
-            null, null, null, null);
+        var operation = await queries.GetOperationAsync(
+            workspaceId, accepted.Instance.Id, accepted.Operation.Id, cancellationToken) ??
+            new ElsaInstanceOperationSummary(accepted.Operation.Id, accepted.Operation.InstanceId,
+                accepted.Operation.Action, accepted.Operation.State, accepted.Operation.ExpectedVersion,
+                accepted.Operation.AttemptNumber, accepted.Operation.AcceptedAt, null, null,
+                accepted.Instance.DesiredStateRevisionId?.Value, accepted.Instance.ResolvedPlanReference?.PlanId,
+                null, null, null, null);
         return Results.Accepted(location, new ManagedElsaInstanceAcceptedResponse(
             // Mutations may be accepted after an open grant is revoked. The
             // operation response remains useful while the instance projection is
@@ -326,14 +344,25 @@ public static class ManagedElsaInstanceEndpoints
             new Dictionary<string, string> { ["self"] = location }));
     }
 
-    private static ManagedElsaInstanceResponse ToResponse(ElsaInstance instance, bool canOpen, Guid workspaceId)
+    private static async Task<bool> HasManagedHostingEntitlementAsync(
+        IAccountWorkspaceStore accountStore,
+        Guid organizationId,
+        CancellationToken cancellationToken) =>
+        await accountStore.GetLatestOrganizationEntitlementAsync(organizationId, cancellationToken) is
+            { ManagedHostingEnabled: true };
+
+    internal static ManagedElsaInstanceResponse ToResponse(ElsaInstance instance, bool canOpen, Guid workspaceId)
     {
-        var binding = canOpen ? instance.IdentityBinding : null;
+        var healthy = instance.DesiredLifecycle == ElsaDesiredLifecycle.Running &&
+                      instance.ObservedLifecycle == ElsaObservedLifecycle.Ready &&
+                      instance.Health == ElsaInstanceHealth.Healthy;
+        var openable = canOpen && healthy && instance.IdentityBinding is not null;
+        var binding = openable ? instance.IdentityBinding : null;
         return new ManagedElsaInstanceResponse(instance.OrganizationId, instance.Id, instance.Name, instance.Slug,
-            instance.DesiredLifecycle, instance.ObservedLifecycle, instance.Health, canOpen && binding is not null,
-            canOpen && binding is not null ? binding.Audience : null,
-            canOpen && binding is not null ? binding.CanonicalCallbackUri : null,
-            !canOpen ? "Not authorized to open this instance." : binding is null ? "The current identity binding is unavailable." : null)
+            instance.DesiredLifecycle, instance.ObservedLifecycle, instance.Health, openable,
+            binding?.Audience,
+            binding?.CanonicalCallbackUri,
+            !canOpen ? "Not authorized to open this instance." : !healthy ? "This instance is not currently available." : binding is null ? "The current identity binding is unavailable." : null)
         {
             Version = instance.Version,
             ETag = ETag(instance.Version),
@@ -343,7 +372,7 @@ public static class ManagedElsaInstanceEndpoints
             CurrentDeployment = instance.CurrentDeploymentReference,
             IdentityBinding = binding is null ? null : new ManagedElsaInstanceIdentityBindingResponse(
                 binding.Audience, binding.CanonicalCallbackUri, binding.VerifiedEndpointOrigin, binding.BindingVersion, binding.ChangedAt),
-            IdentityBindingState = !canOpen ? "not-authorized" : binding is null ? "identity-unavailable" : "available",
+            IdentityBindingState = !canOpen ? "not-authorized" : !healthy ? "instance-unavailable" : binding is null ? "identity-unavailable" : "available",
             Intent = instance.Intent,
             Links = new Dictionary<string, string>
             {
@@ -365,6 +394,9 @@ public static class ManagedElsaInstanceEndpoints
                 ["self"] = $"/api/workspaces/{workspaceId:D}/instances/{instanceId:D}/operations/{operation.Id:D}",
                 ["instance"] = $"/api/workspaces/{workspaceId:D}/instances/{instanceId:D}"
             });
+
+    internal static ElsaInstanceAuditEventSummary RedactAudit(ElsaInstanceAuditEventSummary audit) =>
+        audit with { OperatorSubject = null };
 
     private static ManagedElsaInstanceResponse ToLegacyResponse(ManagedElsaInstanceSummary summary, bool canOpen)
     {

@@ -27,6 +27,8 @@ public interface IElsaInstanceLifecycleStore
     Task<ElsaInstanceOperation?> FindOperationByKeyAsync(
         Guid workspaceId,
         string idempotencyKey,
+        Guid? instanceId = null,
+        ElsaInstanceOperationAction? action = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

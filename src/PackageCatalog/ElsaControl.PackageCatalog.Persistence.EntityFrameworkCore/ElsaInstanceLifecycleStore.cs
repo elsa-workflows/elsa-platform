@@ -269,15 +269,22 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
     public async Task<ElsaInstanceOperation?> FindOperationByKeyAsync(
         Guid workspaceId,
         string idempotencyKey,
+        Guid? instanceId = null,
+        ElsaInstanceOperationAction? action = null,
         CancellationToken cancellationToken = default)
     {
         if (workspaceId == Guid.Empty)
             return null;
         idempotencyKey = RequireIdempotencyKey(idempotencyKey);
 
-        var entity = await dbContext.ElsaInstanceOperations
+        var query = dbContext.ElsaInstanceOperations
             .AsNoTracking()
-            .Where(x => x.WorkspaceId == workspaceId && x.IdempotencyKey == idempotencyKey)
+            .Where(x => x.WorkspaceId == workspaceId && x.IdempotencyKey == idempotencyKey);
+        if (instanceId is not null)
+            query = query.Where(x => x.InstanceId == instanceId);
+        if (action is not null)
+            query = query.Where(x => x.Action == action);
+        var entity = await query
             .OrderByDescending(x => x.AcceptedAt)
             .ThenByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);

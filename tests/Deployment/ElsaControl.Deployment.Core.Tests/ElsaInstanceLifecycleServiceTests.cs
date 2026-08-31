@@ -286,6 +286,46 @@ public sealed class ElsaInstanceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task Replay_requires_the_original_etag_and_optional_payload()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore();
+        var service = new ElsaInstanceLifecycleService(store);
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+        var request = new ElsaInstanceLifecycleRequest(
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1", "customer-requested");
+        await service.DeleteAsync(request);
+
+        await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() => service.DeleteAsync(
+            request with { ExpectedVersion = request.ExpectedVersion + 1 }));
+        await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() => service.DeleteAsync(
+            request with { Reason = null }));
+    }
+
+    [Fact]
+    public async Task Replay_preserves_the_original_terminal_operation_state()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore();
+        var service = new ElsaInstanceLifecycleService(store);
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+        var operation = created.Operation
+            .TransitionTo(ElsaInstanceOperationState.Queued)
+            .TransitionTo(ElsaInstanceOperationState.Running)
+            .TransitionTo(ElsaInstanceOperationState.Succeeded);
+        await store.CommitAcceptedAsync(created.Instance, created.Instance, operation,
+            new ElsaInstanceLifecycleOutboxMessage(Guid.NewGuid(), WorkspaceId, created.Instance.Id, operation.Id,
+                operation.Action, operation.RequestHash, Now));
+
+        var replay = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-1"));
+
+        Assert.True(replay.Replayed);
+        Assert.Equal(ElsaInstanceOperationState.Succeeded, replay.Operation.State);
+        Assert.Equal(operation.AttemptNumber, replay.Operation.AttemptNumber);
+    }
+
+    [Fact]
     public async Task Waiting_delete_is_claimed_after_its_prior_operation_becomes_terminal()
     {
         var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));

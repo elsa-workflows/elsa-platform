@@ -16,19 +16,22 @@ public sealed class ElsaInstanceLifecycleHostedService(
     IOptions<ElsaInstanceLifecycleWorkerOptions> options,
     ILogger<ElsaInstanceLifecycleHostedService> logger) : BackgroundService
 {
+    private static readonly TimeSpan MinimumPollInterval = TimeSpan.FromSeconds(1);
+    private readonly string _workerId = CreateWorkerId();
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var configured = options.Value;
         if (!configured.Enabled)
             return;
-        using var timer = new PeriodicTimer(configured.PollInterval > TimeSpan.Zero ? configured.PollInterval : TimeSpan.FromSeconds(5));
+        using var timer = new PeriodicTimer(NormalizePollInterval(configured.PollInterval));
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 await using var scope = scopeFactory.CreateAsyncScope();
                 var worker = scope.ServiceProvider.GetRequiredService<ElsaInstanceLifecycleWorker>();
-                await worker.ProcessAvailableAsync("api-instance-lifecycle-worker", stoppingToken);
+                await worker.ProcessAvailableAsync(_workerId, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -50,4 +53,10 @@ public sealed class ElsaInstanceLifecycleHostedService(
             }
         }
     }
+
+    internal static TimeSpan NormalizePollInterval(TimeSpan configured) =>
+        configured < MinimumPollInterval ? MinimumPollInterval : configured;
+
+    internal static string CreateWorkerId() =>
+        $"api-instance-lifecycle-{Environment.ProcessId}-{Guid.NewGuid():N}";
 }

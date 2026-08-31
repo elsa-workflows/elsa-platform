@@ -282,6 +282,8 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
     public Task<ElsaInstanceOperation?> FindOperationByKeyAsync(
         Guid workspaceId,
         string idempotencyKey,
+        Guid? instanceId = null,
+        ElsaInstanceOperationAction? action = null,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -290,6 +292,8 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
         {
             var operation = _operations.Values
                 .Where(x => x.IdempotencyKey == idempotencyKey)
+                .Where(x => instanceId is null || x.InstanceId == instanceId)
+                .Where(x => action is null || x.Action == action)
                 .Where(x => _instances.TryGetValue(x.InstanceId, out var instance) && instance.WorkspaceId == workspaceId)
                 .OrderByDescending(x => x.AcceptedAt)
                 .FirstOrDefault();

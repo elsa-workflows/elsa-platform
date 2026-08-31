@@ -82,15 +82,23 @@ public sealed class ElsaInstanceContractTests
     public void Feature_overrides_are_typed_and_canonical_hash_preserves_type()
     {
         var boolean = InstanceIntent(application: new ElsaApplicationIntent(
-            "combined", featureOverrides: [new("flag", ElsaFeatureOverride.FromBoolean(true))]));
+            "combined", featureOverrides: new Dictionary<string, ElsaFeatureOverride> { ["flag"] = ElsaFeatureOverride.FromBoolean(true) }));
         var catalog = InstanceIntent(application: new ElsaApplicationIntent(
-            "combined", featureOverrides: [new("flag", ElsaFeatureOverride.FromCatalog("true"))]));
+            "combined", featureOverrides: new Dictionary<string, ElsaFeatureOverride> { ["flag"] = ElsaFeatureOverride.FromCatalog("true") }));
         var number = InstanceIntent(application: new ElsaApplicationIntent(
-            "combined", featureOverrides: [new("limit", ElsaFeatureOverride.FromNumber("1.0"))]));
+            "combined", featureOverrides: new Dictionary<string, ElsaFeatureOverride> { ["limit"] = ElsaFeatureOverride.FromNumber("1.0") }));
         var reordered = InstanceIntent(application: new ElsaApplicationIntent(
-            "combined", featureOverrides: [new("zeta", ElsaFeatureOverride.FromNumber(2)), new("alpha", ElsaFeatureOverride.FromBoolean(false))]));
+            "combined", featureOverrides: new Dictionary<string, ElsaFeatureOverride>
+            {
+                ["zeta"] = ElsaFeatureOverride.FromNumber(2),
+                ["alpha"] = ElsaFeatureOverride.FromBoolean(false)
+            }));
         var ordered = InstanceIntent(application: new ElsaApplicationIntent(
-            "combined", featureOverrides: [new("alpha", ElsaFeatureOverride.FromBoolean(false)), new("zeta", ElsaFeatureOverride.FromNumber(2))]));
+            "combined", featureOverrides: new Dictionary<string, ElsaFeatureOverride>
+            {
+                ["alpha"] = ElsaFeatureOverride.FromBoolean(false),
+                ["zeta"] = ElsaFeatureOverride.FromNumber(2)
+            }));
 
         Assert.NotEqual(boolean.ComputeCanonicalHash(), catalog.ComputeCanonicalHash());
         Assert.Equal(ElsaFeatureOverrideKind.Number, number.Application.FeatureOverrides["limit"].Kind);

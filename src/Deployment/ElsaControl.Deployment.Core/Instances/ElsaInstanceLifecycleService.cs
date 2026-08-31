@@ -37,7 +37,8 @@ public sealed class ElsaInstanceLifecycleService(
             request.Slug,
             request.InstanceId?.ToString("D") ?? "generated");
 
-        var existingOperation = await store.FindOperationByKeyAsync(request.WorkspaceId, key, cancellationToken);
+        var existingOperation = await store.FindOperationByKeyAsync(
+            request.WorkspaceId, key, action: ElsaInstanceOperationAction.Create, cancellationToken: cancellationToken);
         if (existingOperation is not null)
         {
             if (existingOperation.Action != ElsaInstanceOperationAction.Create)
@@ -165,29 +166,21 @@ public sealed class ElsaInstanceLifecycleService(
         var key = RequireKey(idempotencyKey);
         var instance = await store.GetInstanceAsync(workspaceId, instanceId, cancellationToken)
             ?? throw new KeyNotFoundException("Elsa instance does not exist in the workspace.");
-        var existingOperation = await store.FindOperationByKeyAsync(workspaceId, key, cancellationToken);
+        var existingOperation = await store.FindOperationByKeyAsync(workspaceId, key, instanceId, action, cancellationToken);
         if (existingOperation is not null)
         {
             if (existingOperation.InstanceId != instanceId || existingOperation.Action != action)
                 throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
 
             var existingRequestHash = existingOperation.RequestHash;
-            // Actions without an explicit intent/name/reason intentionally do
-            // not re-hash the current aggregate. The aggregate may have changed
-            // as a consequence of the first accepted operation (for example a
-            // delete changes the desired lifecycle), while the original request
-            // remains an exact idempotent replay.
-            if (requestedIntent is not null || requestedName is not null || reason is not null)
-            {
-                var replayRequestHash = ComputeRequestHash(
-                    action,
-                    existingOperation.ExpectedVersion,
-                    requestedIntent?.ComputeCanonicalHash() ?? instance.ComputeCanonicalIntentHash(),
-                    requestedName,
-                    reason);
-                if (!string.Equals(existingRequestHash, replayRequestHash, StringComparison.Ordinal))
-                    throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
-            }
+            var replayRequestHash = ComputeRequestHash(
+                action,
+                expectedVersion,
+                requestedIntent?.ComputeCanonicalHash(),
+                requestedName,
+                reason);
+            if (!string.Equals(existingRequestHash, replayRequestHash, StringComparison.Ordinal))
+                throw new ElsaInstanceLifecycleConflictException("Idempotency key was already used for a different request.");
 
             // Supplying the existing operation to the state machine makes an exact
             // replay independent of the caller's current If-Match value, including
@@ -210,7 +203,7 @@ public sealed class ElsaInstanceLifecycleService(
         var requestHash = ComputeRequestHash(
             action,
             expectedVersion,
-            requestedIntent?.ComputeCanonicalHash() ?? instance.ComputeCanonicalIntentHash(),
+            requestedIntent?.ComputeCanonicalHash(),
             requestedName,
             reason);
         var activeOperation = await store.GetActiveOperationAsync(workspaceId, instanceId, cancellationToken);
@@ -261,19 +254,27 @@ public sealed class ElsaInstanceLifecycleService(
     private static string ComputeRequestHash(
         ElsaInstanceOperationAction action,
         int expectedVersion,
-        string intentHash,
+        string? intentHash,
         string? requestedName = null,
         string? reason = null)
     {
         var canonical = new StringBuilder()
             .Append(action).Append('\n')
             .Append(expectedVersion.ToString(CultureInfo.InvariantCulture)).Append('\n');
-        canonical.Append(intentHash.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(intentHash).Append('\n');
-        if (requestedName is not null)
-            canonical.Append(requestedName.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(requestedName).Append('\n');
-        if (reason is not null)
-            canonical.Append(reason.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(reason).Append('\n');
+        AppendOptional(canonical, intentHash);
+        AppendOptional(canonical, requestedName);
+        AppendOptional(canonical, reason);
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+    }
+
+    private static void AppendOptional(StringBuilder canonical, string? value)
+    {
+        if (value is null)
+        {
+            canonical.Append("null\n");
+            return;
+        }
+        canonical.Append(value.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(value).Append('\n');
     }
 
     private static string ComputeCreateRequestHash(

@@ -443,7 +443,7 @@ public sealed record ElsaInstance
         Id = id;
         OrganizationId = organizationId;
         WorkspaceId = workspaceId;
-        _name = ElsaInstanceValue.Require(name, nameof(name));
+        _name = ElsaInstanceValue.DisplayName(name, nameof(name));
         Slug = ElsaInstanceSlug.Normalize(slug);
         _intent = intent;
     }
@@ -592,7 +592,7 @@ public sealed record ElsaInstance
     public string Name
     {
         get => _name;
-        internal init => _name = ElsaInstanceValue.Require(value, nameof(Name));
+        internal init => _name = ElsaInstanceValue.DisplayName(value, nameof(Name));
     }
 
     public string Slug { get; }
@@ -779,6 +779,14 @@ public sealed record ElsaInstance
 
 public static class ElsaInstanceValue
 {
+    public static string DisplayName(string value, string parameterName)
+    {
+        var normalized = Require(value, parameterName);
+        if (normalized.Length > 256)
+            throw new ArgumentException("Display name cannot exceed 256 characters.", parameterName);
+        return normalized;
+    }
+
     public static string Require(string value, string parameterName)
     {
         if (value is null)
