@@ -32,6 +32,25 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Foundation_uncertainty_preserves_deterministic_partial_cleanup_handles()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args is ["group", "exists", ..], "false");
+        process.Success(args => args is ["group", "create", ..]);
+        process.Status(args => args.Contains("deployment") && args.Contains("create"),
+            AzureCommandProcessStatus.TerminationUncertain,
+            AzureCommandProcessFailureKind.TerminationUncertain);
+
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.Foundation));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.Equal("proof-rg", result.Resources.ResourceGroupName);
+        Assert.Equal(_fixture.FoundationResources.KeyVaultResourceId, result.Resources.KeyVaultResourceId);
+        Assert.Equal(_fixture.FoundationResources.WorkloadIdentityResourceId, result.Resources.WorkloadIdentityResourceId);
+        Assert.NotNull(result.Resources.FoundationDeploymentId);
+    }
+
+    [Fact]
     public async Task Rejects_a_durable_command_bound_to_a_different_provider_scope_before_execution()
     {
         var process = new FakeCommandProcess();
@@ -330,6 +349,56 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Sql_bootstrap_treats_a_termination_uncertain_failure_kind_as_non_retryable()
+    {
+        using var fixture = new RunnerFixture(observationAttempts: 3);
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("-?"), "Microsoft sqlcmd --authentication-method ActiveDirectoryDefault");
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("create"));
+        process.Status(args => args.Contains("--authentication-method"), AzureCommandProcessStatus.Failed,
+            AzureCommandProcessFailureKind.TerminationUncertain);
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
+        var resources = fixture.FoundationResources with
+        {
+            RegistryResourceId = fixture.RegistryId,
+            AcrPullDeploymentId = fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = fixture.RegistryRoleAssignmentId
+        };
+
+        var result = await fixture.Runner(process).RunAsync(fixture.Command(AzureProviderRunnerStep.SqlBootstrap, resources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.Single(process.Calls, call => call.Contains("--authentication-method"));
+    }
+
+    [Fact]
+    public async Task Sql_bootstrap_attempts_firewall_cleanup_when_temp_directory_cleanup_fails()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("-?"), "Microsoft sqlcmd --authentication-method ActiveDirectoryDefault");
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("create"));
+        process.Success(args => args.Contains("--authentication-method"), after: () =>
+        {
+            var script = process.Calls.Last()[Array.IndexOf(process.Calls.Last(), "-i") + 1];
+            File.WriteAllText(Path.Combine(Path.GetDirectoryName(script)!, "cleanup-blocker"), "block");
+        });
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
+        var resources = _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
+        };
+
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.SqlBootstrap, resources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
+    }
+
+    [Fact]
     public async Task Foundation_reapply_restores_and_verifies_the_exact_sql_bootstrap_admin_before_deployment()
     {
         var process = new FakeCommandProcess();
@@ -502,6 +571,22 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
         Assert.Contains(process.Calls, call => call.Contains("role") && call.Contains("delete") && call.Contains(_fixture.RegistryRoleAssignmentId));
         Assert.Contains(process.Calls, call => call.Contains("deployment") && call.Contains("delete") && call.Contains(Path.GetFileName(_fixture.RegistryDeploymentId)));
+    }
+
+    [Fact]
+    public async Task Cleanup_never_purges_a_deleted_vault_without_the_exact_vault_identity()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("group") && args.Contains("exists"), "false");
+        process.Success(args => args.Contains("role") && args.Contains("list"), "[]");
+        process.Success(args => args.Contains("deployment") && args.Contains("delete"));
+        process.Success(args => args.Contains("deployment") && args.Contains("list"), "[]");
+        process.Success(args => args.Contains("list-deleted"), "[{\"name\":\"proof-kv\",\"properties\":{\"location\":\"westeurope\",\"vaultId\":\"/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/other/providers/Microsoft.KeyVault/vaults/proof-kv\"}}]");
+
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.Cleanup, _fixture.FoundationResources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("keyvault") && call.Contains("purge"));
     }
 
     public void Dispose() => _fixture.Dispose();

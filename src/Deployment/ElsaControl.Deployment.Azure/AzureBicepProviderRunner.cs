@@ -108,7 +108,17 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         AzureProviderRunnerCommand command,
         CancellationToken cancellationToken)
     {
-        var resources = command.Resources with { ResourceGroupName = _scope.ResourceGroupName };
+        var resources = command.Resources with
+        {
+            ResourceGroupName = _scope.ResourceGroupName,
+            FoundationDeploymentId = DeploymentId(_scope.SubscriptionId, _scope.ResourceGroupName, FoundationDeploymentName(command)),
+            WorkloadIdentityResourceId = ResourceId("Microsoft.ManagedIdentity", "userAssignedIdentities", $"{command.Plan.WorkloadName}-identity"),
+            KeyVaultResourceId = ResourceId("Microsoft.KeyVault", "vaults", $"{command.Plan.WorkloadName}-kv"),
+            KeyVaultUri = $"https://{command.Plan.WorkloadName}-kv.vault.azure.net/",
+            SqlServerResourceId = ResourceId("Microsoft.Sql", "servers", $"{command.Plan.WorkloadName}-sql"),
+            SqlServerFqdn = $"{command.Plan.WorkloadName}-sql.database.windows.net",
+            ContainerAppsEnvironmentResourceId = ResourceId("Microsoft.App", "managedEnvironments", $"{command.Plan.WorkloadName}-aca")
+        };
         var groupId = ResourceGroupId();
         var exists = await ExecuteAzAsync(command,
             ["group", "exists", "--subscription", _scope.SubscriptionId, "--name", _scope.ResourceGroupName, "--output", "tsv", "--only-show-errors"],
@@ -176,7 +186,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         }
         catch (ArgumentException exception)
         {
-            return Failed(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.foundation.output-invalid", exception.Message);
+            return Failed(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.foundation.output-invalid", exception.Message, resources);
         }
     }
 
@@ -389,7 +399,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 }
                 if (bootstrap.Status == AzureCommandProcessStatus.Cancelled || cancellationToken.IsCancellationRequested)
                     break;
-                if (bootstrap.Status == AzureCommandProcessStatus.TerminationUncertain)
+                if (bootstrap.Status == AzureCommandProcessStatus.TerminationUncertain ||
+                    bootstrap.FailureKind == AzureCommandProcessFailureKind.TerminationUncertain)
                     break;
                 if (attempt + 1 < _options.ObservationAttempts)
                     await Task.Delay(_options.ObservationDelay, cancellationToken);
@@ -408,12 +419,26 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         }
         finally
         {
-            DeleteTransientSecretFile(temporaryDirectory, scriptPath);
-            if (!firewallCleaned)
+            Exception? cleanupFailure = null;
+            try
             {
-                if (!await DeleteAndVerifyFirewallAsync(command, SqlServerName(command), CancellationToken.None))
+                DeleteTransientSecretFile(temporaryDirectory, scriptPath);
+            }
+            catch (Exception exception)
+            {
+                cleanupFailure = exception;
+            }
+            try
+            {
+                if (!firewallCleaned && !await DeleteAndVerifyFirewallAsync(command, SqlServerName(command), CancellationToken.None))
                     throw new InvalidOperationException("The temporary SQL firewall rule could not be proven absent.");
             }
+            catch (Exception exception)
+            {
+                cleanupFailure ??= exception;
+            }
+            if (cleanupFailure is not null)
+                throw new InvalidOperationException("SQL bootstrap cleanup could not be proven complete.", cleanupFailure);
         }
     }
 
@@ -635,7 +660,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 ["role", "assignment", "list", "--subscription", _scope.SubscriptionId, "--all", "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
-            if (!assignments.Succeeded || assignments.Value is null || !HasExactVaultAssignments(assignments.Value.Value, resources, command.Plan.WorkloadName))
+            if (!assignments.Succeeded || assignments.Value is null || !HasSafeVaultAssignmentsForCleanup(assignments.Value.Value, resources, command.Plan.WorkloadName))
                 return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.rbac-unverified", "The owned Key Vault role-assignment inventory is not exact.");
         }
 
@@ -719,7 +744,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         }
 
         var vaultName = $"{command.Plan.WorkloadName}-kv";
-        if (!await PurgeAndVerifyVaultAsync(command, vaultName, CancellationToken.None))
+        var exactVaultId = resources.KeyVaultResourceId ?? ResourceId("Microsoft.KeyVault", "vaults", vaultName);
+        if (!await PurgeAndVerifyVaultAsync(command, vaultName, exactVaultId, CancellationToken.None))
             return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.vault-uncertain", "The owned Key Vault could not be proven absent.");
 
         return new AzureProviderRunnerResult(
@@ -1155,7 +1181,11 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         return false;
     }
 
-    private async Task<bool> PurgeAndVerifyVaultAsync(AzureProviderRunnerCommand command, string vaultName, CancellationToken cancellationToken)
+    private async Task<bool> PurgeAndVerifyVaultAsync(
+        AzureProviderRunnerCommand command,
+        string vaultName,
+        string exactVaultId,
+        CancellationToken cancellationToken)
     {
         var purgeRequested = false;
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
@@ -1171,6 +1201,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 continue;
             }
             var matches = deleted.Value!.Value.Where(x => string.Equals(x.Name, vaultName, StringComparison.Ordinal) &&
+                                                    string.Equals(x.EffectiveVaultId, exactVaultId, StringComparison.OrdinalIgnoreCase) &&
                                                     string.Equals(x.EffectiveLocation, _scope.Location, StringComparison.OrdinalIgnoreCase)).ToArray();
             if (matches.Length == 0)
                 return true;
@@ -1370,18 +1401,20 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         return true;
     }
 
-    private bool HasExactVaultAssignments(IReadOnlyList<RoleAssignment> assignments, AzureProviderResourceReferences resources, string workload)
+    private bool HasSafeVaultAssignmentsForCleanup(IReadOnlyList<RoleAssignment> assignments, AzureProviderResourceReferences resources, string workload)
     {
-        var vault = resources.KeyVaultResourceId;
-        if (vault is null || resources.WorkloadIdentityPrincipalId is null)
-            return false;
+        var vault = resources.KeyVaultResourceId ?? ResourceId("Microsoft.KeyVault", "vaults", $"{workload}-kv");
         var owned = assignments.Where(x => string.Equals(x.Scope, vault, StringComparison.OrdinalIgnoreCase)).ToArray();
-        return owned.Length == 2 && owned.All(x => string.Equals(x.Scope, vault, StringComparison.OrdinalIgnoreCase)) &&
-               owned.Any(x => string.Equals(x.PrincipalId, resources.WorkloadIdentityPrincipalId, StringComparison.OrdinalIgnoreCase) &&
-                              string.Equals(RoleDefinitionId(x.RoleDefinitionId), KeyVaultSecretsUserRoleDefinitionId, StringComparison.OrdinalIgnoreCase)) &&
-               owned.Any(x => string.Equals(x.PrincipalId, _options.SqlBootstrapObjectId, StringComparison.OrdinalIgnoreCase) &&
-                              string.Equals(RoleDefinitionId(x.RoleDefinitionId), KeyVaultSecretsOfficerRoleDefinitionId, StringComparison.OrdinalIgnoreCase)) &&
-               !assignments.Any(x => string.Equals(x.Scope, ResourceGroupId(), StringComparison.OrdinalIgnoreCase));
+        if (owned.Length > 2 || assignments.Any(x => string.Equals(x.Scope, ResourceGroupId(), StringComparison.OrdinalIgnoreCase)))
+            return false;
+        var users = owned.Where(x => string.Equals(RoleDefinitionId(x.RoleDefinitionId), KeyVaultSecretsUserRoleDefinitionId, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var officers = owned.Where(x => string.Equals(RoleDefinitionId(x.RoleDefinitionId), KeyVaultSecretsOfficerRoleDefinitionId, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (users.Length + officers.Length != owned.Length || users.Length > 1 || officers.Length > 1)
+            return false;
+        if (users.Length == 1 && (string.IsNullOrWhiteSpace(users[0].PrincipalId) ||
+            resources.WorkloadIdentityPrincipalId is not null && !string.Equals(users[0].PrincipalId, resources.WorkloadIdentityPrincipalId, StringComparison.OrdinalIgnoreCase)))
+            return false;
+        return officers.Length == 0 || string.Equals(officers[0].PrincipalId, _options.SqlBootstrapObjectId, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? RequireFoundation(AzureProviderResourceReferences resources) =>
@@ -1428,6 +1461,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     };
 
     private string ResourceGroupId() => $"/subscriptions/{_scope.SubscriptionId}/resourceGroups/{_scope.ResourceGroupName}";
+
+    private string ResourceId(string provider, string type, string name) =>
+        $"{ResourceGroupId()}/providers/{provider}/{type}/{name}";
 
     private string RegistryResourceId() =>
         $"/subscriptions/{_scope.RegistrySubscriptionId}/resourceGroups/{_scope.RegistryResourceGroupName}/providers/Microsoft.ContainerRegistry/registries/{_scope.RegistryName}";
@@ -1625,10 +1661,12 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     {
         public string? Name { get; set; }
         public string? Location { get; set; }
+        public string? VaultId { get; set; }
         [JsonPropertyName("properties")] public DeletedVaultProperties? Properties { get; set; }
         [JsonIgnore] public string? EffectiveLocation => Properties?.Location ?? Location;
+        [JsonIgnore] public string? EffectiveVaultId => Properties?.VaultId ?? VaultId;
     }
-    private sealed class DeletedVaultProperties { public string? Location { get; set; } }
+    private sealed class DeletedVaultProperties { public string? Location { get; set; } public string? VaultId { get; set; } }
     private sealed class AdminRecord { public string? Login { get; set; } public string? Sid { get; set; } }
     private sealed class TrafficEntry { public string? RevisionName { get; set; } public int Weight { get; set; } }
     private sealed class RevisionState { public bool Active { get; set; } public string? Health { get; set; } }
