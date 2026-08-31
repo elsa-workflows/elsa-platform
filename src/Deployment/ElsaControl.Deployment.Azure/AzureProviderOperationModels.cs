@@ -60,7 +60,8 @@ public sealed record AzureProviderOperationRequest(
     string? ReleaseManifestSignatureDigest = null,
     string? ReleaseManifestReference = null,
     string? ReleaseManifestSignatureReference = null,
-    IReadOnlyDictionary<string, string>? SecretReferences = null);
+    IReadOnlyDictionary<string, string>? SecretReferences = null,
+    string? ProviderScopeFingerprint = null);
 
 public sealed record AzureProviderResourceReferences(
     string? ResourceGroupName = null,
@@ -68,7 +69,18 @@ public sealed record AzureProviderResourceReferences(
     string? WorkloadDeploymentId = null,
     string? WorkloadResourceId = null,
     string? WorkloadRevisionName = null,
-    string? StableTrafficRevisionName = null);
+    string? StableTrafficRevisionName = null,
+    string? WorkloadIdentityResourceId = null,
+    string? WorkloadIdentityClientId = null,
+    string? WorkloadIdentityPrincipalId = null,
+    string? KeyVaultResourceId = null,
+    string? KeyVaultUri = null,
+    string? SqlServerResourceId = null,
+    string? SqlServerFqdn = null,
+    string? ContainerAppsEnvironmentResourceId = null,
+    string? RegistryResourceId = null,
+    string? AcrPullDeploymentId = null,
+    string? AcrPullRoleAssignmentId = null);
 
 public sealed record AzureProviderDiagnostic(string Code, string Message);
 
@@ -109,7 +121,8 @@ public sealed record AzureProviderOperation(
     string? ReleaseManifestReference = null,
     string? ReleaseManifestSignatureReference = null,
     [property: JsonIgnore] IReadOnlyDictionary<string, string>? SecretReferences = null,
-    [property: JsonIgnore] bool PersistedMetadataInvalid = false)
+    [property: JsonIgnore] bool PersistedMetadataInvalid = false,
+    string? ProviderScopeFingerprint = null)
 {
     [JsonIgnore]
     public IReadOnlyDictionary<string, string> SafeSecretReferences => SecretReferences ?? EmptySecretReferences;

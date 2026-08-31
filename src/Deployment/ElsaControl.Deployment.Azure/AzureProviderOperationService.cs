@@ -12,7 +12,8 @@ namespace ElsaControl.Deployment.Azure;
 public sealed record AzureProviderOperationSubmission(
     string IdempotencyKey,
     string TemplateFingerprint,
-    AzureWorkloadPlan Plan);
+    AzureWorkloadPlan Plan,
+    string? ProviderScopeFingerprint = null);
 
 public sealed record AzureProviderOperationStatusResponse(
     AzureProviderOperation Operation,
@@ -126,7 +127,8 @@ public sealed class AzureProviderOperationService(
             submission.IdempotencyKey,
             submission.TemplateFingerprint,
             plan,
-            action);
+            action,
+            submission.ProviderScopeFingerprint);
         return await store.CreateOrGetAsync(operationRequest, _timeProvider.GetUtcNow(), cancellationToken);
     }
 
@@ -135,7 +137,8 @@ public sealed class AzureProviderOperationService(
         string idempotencyKey,
         string templateFingerprint,
         AzureWorkloadPlan plan,
-        AzureProviderOperationAction action = AzureProviderOperationAction.Reconcile) =>
+        AzureProviderOperationAction action = AzureProviderOperationAction.Reconcile,
+        string? providerScopeFingerprint = null) =>
         new(
             workspaceId,
             plan.WorkloadName,
@@ -157,7 +160,8 @@ public sealed class AzureProviderOperationService(
             new ReadOnlyDictionary<string, string>((plan.SecretReferences ?? new Dictionary<string, string>()).ToDictionary(
                 pair => pair.Key,
                 pair => pair.Value,
-                StringComparer.OrdinalIgnoreCase)));
+                StringComparer.OrdinalIgnoreCase)),
+            providerScopeFingerprint);
 
     internal static AzureProviderOperationRequest CreateOperationRequest(AzureProviderOperation operation) =>
         new(
@@ -178,7 +182,8 @@ public sealed class AzureProviderOperationService(
             operation.ReleaseManifestSignatureDigest,
             operation.ReleaseManifestReference,
             operation.ReleaseManifestSignatureReference,
-            operation.SafeSecretReferences);
+            operation.SafeSecretReferences,
+            operation.ProviderScopeFingerprint);
 
     internal static AzureWorkloadPlan? TryRestorePlan(AzureProviderOperation operation)
     {

@@ -20,6 +20,11 @@ public enum AzureProviderRunnerStep
 public enum AzureProviderRunnerOutcome
 {
     Completed,
+    /// <summary>
+    /// The runner observed the same postcondition required for <see cref="Completed"/> without
+    /// issuing a new mutation. A no-op must return the same complete safe resource observations
+    /// as a completed step; absence of evidence is not convergence.
+    /// </summary>
     NoOp,
     Failed,
     Uncertain
@@ -36,7 +41,23 @@ public sealed record AzureProviderRunnerCommand(
     AzureProviderResourceReferences Resources,
     string? StableTrafficRevisionName,
     bool IsResume,
-    int AttemptNumber);
+    int AttemptNumber,
+    AzureProviderExecutionContext Context);
+
+/// <summary>
+/// Safe durable correlation supplied to every runner step. Target Azure scope remains explicit
+/// runner configuration, while this context binds every mutation and observation to the exact
+/// accepted operation and immutable plan/template identities.
+/// </summary>
+public sealed record AzureProviderExecutionContext(
+    Guid WorkspaceId,
+    Guid OperationId,
+    string OperationIdentity,
+    string IdempotencyKey,
+    string TargetKey,
+    string PlanFingerprint,
+    string TemplateFingerprint,
+    string? ProviderScopeFingerprint);
 
 /// <summary>
 /// Safe result returned by a provider step. A failed result means the provider knows the step

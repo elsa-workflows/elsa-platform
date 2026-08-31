@@ -15,6 +15,7 @@ internal sealed class AzureProviderOperationEntity
     public string OperationIdentity { get; set; } = "";
     public string PlanFingerprint { get; set; } = "";
     public string TemplateFingerprint { get; set; } = "";
+    public string? ProviderScopeFingerprint { get; set; }
     public string ElsaVersion { get; set; } = "";
     public string ReleaseLine { get; set; } = "";
     public string Topology { get; set; } = "";
@@ -38,6 +39,17 @@ internal sealed class AzureProviderOperationEntity
     public string? WorkloadResourceId { get; set; }
     public string? WorkloadRevisionName { get; set; }
     public string? StableTrafficRevisionName { get; set; }
+    public string? WorkloadIdentityResourceId { get; set; }
+    public string? WorkloadIdentityClientId { get; set; }
+    public string? WorkloadIdentityPrincipalId { get; set; }
+    public string? KeyVaultResourceId { get; set; }
+    public string? KeyVaultUri { get; set; }
+    public string? SqlServerResourceId { get; set; }
+    public string? SqlServerFqdn { get; set; }
+    public string? ContainerAppsEnvironmentResourceId { get; set; }
+    public string? RegistryResourceId { get; set; }
+    public string? AcrPullDeploymentId { get; set; }
+    public string? AcrPullRoleAssignmentId { get; set; }
     public string? Endpoint { get; set; }
     public AzureProviderHealth Health { get; set; }
     public string DiagnosticsJson { get; set; } = "[]";

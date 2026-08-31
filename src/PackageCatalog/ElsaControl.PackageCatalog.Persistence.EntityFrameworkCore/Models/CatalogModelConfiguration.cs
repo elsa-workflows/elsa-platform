@@ -734,6 +734,7 @@ internal sealed class AzureProviderOperationConfiguration : IEntityTypeConfigura
         builder.Property(x => x.OperationIdentity).HasMaxLength(64).IsRequired();
         builder.Property(x => x.PlanFingerprint).HasMaxLength(64).IsRequired();
         builder.Property(x => x.TemplateFingerprint).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.ProviderScopeFingerprint).HasMaxLength(64);
         builder.Property(x => x.ElsaVersion).HasMaxLength(128).IsRequired();
         builder.Property(x => x.ReleaseLine).HasMaxLength(64).IsRequired();
         builder.Property(x => x.Topology).HasMaxLength(64).IsRequired();
@@ -752,6 +753,17 @@ internal sealed class AzureProviderOperationConfiguration : IEntityTypeConfigura
         builder.Property(x => x.WorkloadResourceId).HasMaxLength(1024);
         builder.Property(x => x.WorkloadRevisionName).HasMaxLength(128);
         builder.Property(x => x.StableTrafficRevisionName).HasMaxLength(128);
+        builder.Property(x => x.WorkloadIdentityResourceId).HasMaxLength(1024);
+        builder.Property(x => x.WorkloadIdentityClientId).HasMaxLength(128);
+        builder.Property(x => x.WorkloadIdentityPrincipalId).HasMaxLength(128);
+        builder.Property(x => x.KeyVaultResourceId).HasMaxLength(1024);
+        builder.Property(x => x.KeyVaultUri).HasMaxLength(2048);
+        builder.Property(x => x.SqlServerResourceId).HasMaxLength(1024);
+        builder.Property(x => x.SqlServerFqdn).HasMaxLength(512);
+        builder.Property(x => x.ContainerAppsEnvironmentResourceId).HasMaxLength(1024);
+        builder.Property(x => x.RegistryResourceId).HasMaxLength(1024);
+        builder.Property(x => x.AcrPullDeploymentId).HasMaxLength(512);
+        builder.Property(x => x.AcrPullRoleAssignmentId).HasMaxLength(1024);
         builder.Property(x => x.Endpoint).HasMaxLength(2048);
         builder.Property(x => x.DiagnosticsJson).HasMaxLength(10000).IsRequired();
         builder.Property(x => x.Version).IsConcurrencyToken().ValueGeneratedNever();

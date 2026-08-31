@@ -888,6 +888,14 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<string>("AcrPullDeploymentId")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("AcrPullRoleAssignmentId")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
                     b.Property<int>("AttemptNumber")
                         .HasColumnType("int");
 
@@ -904,6 +912,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     b.Property<string>("CompletionLeaseTokenHash")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ContainerAppsEnvironmentResourceId")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
 
                     b.Property<long>("CreatedAt")
                         .HasColumnType("bigint");
@@ -954,6 +966,14 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("KeyVaultResourceId")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<string>("KeyVaultUri")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
                     b.Property<long?>("LeaseExpiresAt")
                         .HasColumnType("bigint");
 
@@ -981,6 +1001,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("ProviderScopeFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("ReleaseLine")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -1002,6 +1026,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("nvarchar(2048)");
 
+                    b.Property<string>("RegistryResourceId")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
                     b.Property<string>("RequestHash")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -1015,6 +1043,14 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .IsRequired()
                         .HasMaxLength(10000)
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SqlServerFqdn")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("SqlServerResourceId")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
 
                     b.Property<string>("StableTrafficRevisionName")
                         .HasMaxLength(128)
@@ -1054,6 +1090,18 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     b.Property<string>("WorkloadDeploymentId")
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("WorkloadIdentityClientId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("WorkloadIdentityPrincipalId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("WorkloadIdentityResourceId")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
 
                     b.Property<string>("WorkloadResourceId")
                         .HasMaxLength(1024)

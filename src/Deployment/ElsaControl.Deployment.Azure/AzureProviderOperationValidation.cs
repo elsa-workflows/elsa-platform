@@ -138,6 +138,18 @@ public static class AzureProviderOperationValidation
         ValidateAzureReference(references.WorkloadResourceId, 1024, "workloadResourceId");
         ValidateAzureName(references.WorkloadRevisionName, 128, "workloadRevisionName");
         ValidateAzureName(references.StableTrafficRevisionName, 128, "stableTrafficRevisionName");
+        ValidateAzureReference(references.WorkloadIdentityResourceId, 1024, "workloadIdentityResourceId");
+        ValidateGuid(references.WorkloadIdentityClientId, "workloadIdentityClientId");
+        ValidateGuid(references.WorkloadIdentityPrincipalId, "workloadIdentityPrincipalId");
+        ValidateAzureReference(references.KeyVaultResourceId, 1024, "keyVaultResourceId");
+        ValidateHttpsOrigin(references.KeyVaultUri, "keyVaultUri");
+        ValidateAzureReference(references.SqlServerResourceId, 1024, "sqlServerResourceId");
+        ValidateDnsName(references.SqlServerFqdn, 253, "sqlServerFqdn");
+        ValidateAzureReference(references.ContainerAppsEnvironmentResourceId, 1024, "containerAppsEnvironmentResourceId");
+        ValidateAzureReference(references.RegistryResourceId, 1024, "registryResourceId");
+        ValidateAzureReference(references.AcrPullDeploymentId, 1024, "acrPullDeploymentId");
+        ValidateAzureReference(references.AcrPullRoleAssignmentId, 1024, "acrPullRoleAssignmentId");
+        ValidateReferenceRelationships(references);
     }
 
     public static void ValidateWorkerId(string workerId)
@@ -161,6 +173,93 @@ public static class AzureProviderOperationValidation
             value.Contains("@", StringComparison.Ordinal) || value.Contains("://", StringComparison.Ordinal) ||
             ContainsSensitiveMarker(value) || !Regex.IsMatch(value, "^[A-Za-z0-9._:/()\\-]+\\z"))
             throw new ArgumentException("Azure resource reference is unsafe.", name);
+    }
+
+    private static void ValidateGuid(string? value, string name)
+    {
+        if (value is null) return;
+        if (!Guid.TryParseExact(value, "D", out _) || !string.Equals(value, value.ToLowerInvariant(), StringComparison.Ordinal))
+            throw new ArgumentException("Azure identity reference is unsafe.", name);
+    }
+
+    private static void ValidateHttpsOrigin(string? value, string name)
+    {
+        if (value is null) return;
+        if (value.Length > 512 || !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps || string.IsNullOrWhiteSpace(uri.Host) || !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) || uri.AbsolutePath != "/" ||
+            !uri.IsDefaultPort || !uri.Host.EndsWith(".vault.azure.net", StringComparison.Ordinal))
+            throw new ArgumentException("Azure HTTPS origin is unsafe.", name);
+    }
+
+    private static void ValidateReferenceRelationships(AzureProviderResourceReferences references)
+    {
+        var foundation = ParseArmId(references.FoundationDeploymentId, "Microsoft.Resources", "deployments", "foundationDeploymentId");
+        var workloadDeployment = ParseArmId(references.WorkloadDeploymentId, "Microsoft.Resources", "deployments", "workloadDeploymentId");
+        var workload = ParseArmId(references.WorkloadResourceId, "Microsoft.App", "containerApps", "workloadResourceId");
+        var identity = ParseArmId(references.WorkloadIdentityResourceId, "Microsoft.ManagedIdentity", "userAssignedIdentities", "workloadIdentityResourceId");
+        var vault = ParseArmId(references.KeyVaultResourceId, "Microsoft.KeyVault", "vaults", "keyVaultResourceId");
+        var sql = ParseArmId(references.SqlServerResourceId, "Microsoft.Sql", "servers", "sqlServerResourceId");
+        var environment = ParseArmId(references.ContainerAppsEnvironmentResourceId, "Microsoft.App", "managedEnvironments", "containerAppsEnvironmentResourceId");
+        var registry = ParseArmId(references.RegistryResourceId, "Microsoft.ContainerRegistry", "registries", "registryResourceId");
+        var acrDeployment = ParseArmId(references.AcrPullDeploymentId, "Microsoft.Resources", "deployments", "acrPullDeploymentId");
+
+        var groupFacts = new[] { foundation, workloadDeployment, workload, identity, vault, sql, environment }
+            .Where(x => x is not null)
+            .Cast<ArmResourceId>()
+            .ToArray();
+        if (groupFacts.Length > 0)
+        {
+            var first = groupFacts[0];
+            if (references.ResourceGroupName is null ||
+                groupFacts.Any(x => !string.Equals(x.SubscriptionId, first.SubscriptionId, StringComparison.OrdinalIgnoreCase) ||
+                                    !string.Equals(x.ResourceGroupName, references.ResourceGroupName, StringComparison.OrdinalIgnoreCase)))
+                throw new ArgumentException("Azure resource references do not belong to the owned target scope.", nameof(references));
+        }
+
+        if (registry is not null && acrDeployment is not null &&
+            (!string.Equals(registry.SubscriptionId, acrDeployment.SubscriptionId, StringComparison.OrdinalIgnoreCase) ||
+             !string.Equals(registry.ResourceGroupName, acrDeployment.ResourceGroupName, StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("Azure registry references do not share the configured registry scope.", nameof(references));
+
+        if (references.AcrPullRoleAssignmentId is not null)
+        {
+            if (registry is null || !Regex.IsMatch(
+                    references.AcrPullRoleAssignmentId,
+                    $"^{Regex.Escape(references.RegistryResourceId!)}/providers/Microsoft\\.Authorization/roleAssignments/[0-9a-f]{{8}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{12}}\\z",
+                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
+                throw new ArgumentException("The ACR role assignment is outside the exact registry scope.", nameof(references));
+        }
+
+        if (vault is not null && references.KeyVaultUri is not null &&
+            !string.Equals(new Uri(references.KeyVaultUri).Host, $"{vault.Name}.vault.azure.net", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("The Key Vault URI does not match its resource identity.", nameof(references));
+        if (sql is not null && references.SqlServerFqdn is not null &&
+            !string.Equals(references.SqlServerFqdn, $"{sql.Name}.database.windows.net", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("The SQL endpoint does not match its resource identity.", nameof(references));
+    }
+
+    private static ArmResourceId? ParseArmId(string? value, string provider, string type, string name)
+    {
+        if (value is null) return null;
+        var match = Regex.Match(
+            value,
+            "^/subscriptions/(?<subscription>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/resourceGroups/(?<group>[A-Za-z0-9._()\\-]+)/providers/(?<provider>[A-Za-z0-9.]+)/(?<type>[A-Za-z0-9.]+)/(?<name>[A-Za-z0-9._()\\-]+)\\z",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+        if (!match.Success || !string.Equals(match.Groups["provider"].Value, provider, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(match.Groups["type"].Value, type, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Azure resource reference has an unexpected type or scope.", name);
+        return new(match.Groups["subscription"].Value, match.Groups["group"].Value, match.Groups["name"].Value);
+    }
+
+    private sealed record ArmResourceId(string SubscriptionId, string ResourceGroupName, string Name);
+
+    private static void ValidateDnsName(string? value, int maxLength, string name)
+    {
+        if (value is null) return;
+        if (value.Length > maxLength || value.Any(char.IsControl) || value.Any(char.IsWhiteSpace) ||
+            !Regex.IsMatch(value, "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+\\z"))
+            throw new ArgumentException("Azure DNS name is unsafe.", name);
     }
 
     private static bool IsSafeCode(string? value) => value is not null && value.Length <= 128 && Regex.IsMatch(value, "^[a-z0-9]+(?:[._-][a-z0-9]+)*\\z");
@@ -195,7 +294,10 @@ public static class AzureProviderOperationValidation
             IdempotencyKey = request.IdempotencyKey.Trim(),
             ReleaseManifestReference = NormalizeOptionalReference(request.ReleaseManifestReference),
             ReleaseManifestSignatureReference = NormalizeOptionalReference(request.ReleaseManifestSignatureReference),
-            SecretReferences = NormalizeSecretReferences(request.SecretReferences)
+            SecretReferences = NormalizeSecretReferences(request.SecretReferences),
+            ProviderScopeFingerprint = request.ProviderScopeFingerprint is null
+                ? null
+                : NormalizeFingerprint(request.ProviderScopeFingerprint)
         };
     }
 
@@ -218,6 +320,7 @@ public static class AzureProviderOperationValidation
 
         if (!IsFingerprint(request.PlanFingerprint)) errors.Add("planFingerprint.invalid");
         if (!IsFingerprint(request.TemplateFingerprint)) errors.Add("templateFingerprint.invalid");
+        if (request.ProviderScopeFingerprint is not null && !IsFingerprint(request.ProviderScopeFingerprint)) errors.Add("providerScopeFingerprint.invalid");
         if (!IsDigest(request.ImageDigest)) errors.Add("imageDigest.invalid");
         if (request.ReleaseManifestDigest is not null && !IsDigest(request.ReleaseManifestDigest)) errors.Add("releaseManifestDigest.invalid");
         if (request.ReleaseManifestSignatureDigest is not null && !IsDigest(request.ReleaseManifestSignatureDigest)) errors.Add("releaseManifestSignatureDigest.invalid");
@@ -266,6 +369,7 @@ public static class AzureProviderOperationValidation
             normalized.ReleaseManifestSignatureDigest,
             normalized.ReleaseManifestReference,
             normalized.ReleaseManifestSignatureReference,
+            normalized.ProviderScopeFingerprint,
             secretReferences = normalized.SecretReferences
         });
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
@@ -276,7 +380,7 @@ public static class AzureProviderOperationValidation
         var normalized = Normalize(request);
         var value = string.Join('|', normalized.WorkspaceId.ToString("N"), normalized.TargetKey,
             normalized.Action, normalized.PlanFingerprint, normalized.TemplateFingerprint,
-            normalized.ImageDigest, normalized.Location, normalized.Topology, normalized.Isolation);
+            normalized.ProviderScopeFingerprint, normalized.ImageDigest, normalized.Location, normalized.Topology, normalized.Isolation);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
     }
 

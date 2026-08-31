@@ -114,14 +114,14 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
 
         var checkpoint = await store.CheckpointAsync(_workspaceId, operation.Id, "lease-1", new(
             AzureProviderOperationPhase.FoundationReady, "foundation.ready", "hunter2",
-            new(ResourceGroupName: "rg-safe", FoundationDeploymentId: "deployment-1"), null, AzureProviderHealth.Unknown,
+            new(ResourceGroupName: "rg-safe", FoundationDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.Resources/deployments/deployment-1"), null, AzureProviderHealth.Unknown,
             [new("foundation.note", "even-more-sensitive")]), now);
         var savedCheckpoint = Assert.IsType<AzureProviderOperation>(checkpoint);
         Assert.Equal(AzureProviderOperationPhase.FoundationReady, savedCheckpoint.Phase);
         Assert.Equal("foundation.note", Assert.Single(savedCheckpoint.Diagnostics).Message);
         var replay = await store.CheckpointAsync(_workspaceId, operation.Id, "lease-1", new(
             AzureProviderOperationPhase.FoundationReady, "foundation.ready", "hunter2",
-            new(ResourceGroupName: "rg-safe", FoundationDeploymentId: "deployment-1"), null, AzureProviderHealth.Unknown,
+            new(ResourceGroupName: "rg-safe", FoundationDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.Resources/deployments/deployment-1"), null, AzureProviderHealth.Unknown,
             [new("foundation.note", "different-unpersisted-detail")]), now);
         Assert.Equal(savedCheckpoint.Version, replay?.Version);
         var completed = await store.FinalizeAsync(_workspaceId, operation.Id, "lease-1", AzureProviderOperationStatus.Succeeded, "operation.succeeded", now, savedCheckpoint.Version);
@@ -326,7 +326,7 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         var checkpoint = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
             _workspaceId, first.Id, "lease",
             new(AzureProviderOperationPhase.WorkloadReady, "workload.ready", "Ready.",
-                new(ResourceGroupName: "rg-safe", WorkloadResourceId: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app"),
+                new(ResourceGroupName: "rg", WorkloadResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.App/containerApps/app"),
                 "https://workload.example.test", AzureProviderHealth.Healthy, []),
             now, claimed.Version));
         Assert.NotNull(await store.FinalizeAsync(
@@ -336,8 +336,84 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
             Request() with { IdempotencyKey = "next-reconcile", PlanFingerprint = new('f', 64) },
             now.AddMinutes(1));
 
-        Assert.Equal("rg-safe", next.Resources.ResourceGroupName);
-        Assert.Equal("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app", next.Resources.WorkloadResourceId);
+        Assert.Equal("rg", next.Resources.ResourceGroupName);
+        Assert.Equal("/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.App/containerApps/app", next.Resources.WorkloadResourceId);
+    }
+
+    [Fact]
+    public async Task Resource_reference_snapshot_round_trips_all_provider_resources()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+        var resources = new AzureProviderResourceReferences(
+            ResourceGroupName: "rg",
+            FoundationDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Resources/deployments/foundation",
+            WorkloadDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Resources/deployments/workload",
+            WorkloadResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.App/containerApps/workload",
+            WorkloadRevisionName: "workload--000001",
+            StableTrafficRevisionName: "workload--000001",
+            WorkloadIdentityResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/workload",
+            WorkloadIdentityClientId: "11111111-1111-1111-1111-111111111111",
+            WorkloadIdentityPrincipalId: "22222222-2222-2222-2222-222222222222",
+            KeyVaultResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/workload",
+            KeyVaultUri: "https://workload.vault.azure.net/",
+            SqlServerResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Sql/servers/workload",
+            SqlServerFqdn: "workload.database.windows.net",
+            ContainerAppsEnvironmentResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.App/managedEnvironments/workload",
+            RegistryResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/workload",
+            AcrPullDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Resources/deployments/acr-pull",
+            AcrPullRoleAssignmentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/workload/providers/Microsoft.Authorization/roleAssignments/33333333-3333-3333-3333-333333333333");
+
+        var saved = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+            _workspaceId, operation.Id, "lease",
+            new(AzureProviderOperationPhase.WorkloadReady, "workload.ready", "Ready.", resources, null,
+                AzureProviderHealth.Healthy, []), now, claimed.Version));
+
+        Assert.Equal(resources, saved.Resources);
+        var reloaded = Assert.IsType<AzureProviderOperation>(await store.GetAsync(_workspaceId, operation.Id));
+        Assert.Equal(resources, reloaded.Resources);
+    }
+
+    [Fact]
+    public async Task Legacy_rows_with_null_provider_resource_columns_remain_readable()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            UPDATE AzureProviderOperations
+            SET WorkloadIdentityResourceId = NULL,
+                WorkloadIdentityClientId = NULL,
+                WorkloadIdentityPrincipalId = NULL,
+                KeyVaultResourceId = NULL,
+                KeyVaultUri = NULL,
+                SqlServerResourceId = NULL,
+                SqlServerFqdn = NULL,
+                ContainerAppsEnvironmentResourceId = NULL,
+                RegistryResourceId = NULL,
+                AcrPullDeploymentId = NULL,
+                AcrPullRoleAssignmentId = NULL
+            WHERE Id = {operation.Id}
+            """);
+
+        var reloaded = Assert.IsType<AzureProviderOperation>(await store.GetAsync(_workspaceId, operation.Id));
+        Assert.Null(reloaded.Resources.WorkloadIdentityResourceId);
+        Assert.Null(reloaded.Resources.WorkloadIdentityClientId);
+        Assert.Null(reloaded.Resources.WorkloadIdentityPrincipalId);
+        Assert.Null(reloaded.Resources.KeyVaultResourceId);
+        Assert.Null(reloaded.Resources.KeyVaultUri);
+        Assert.Null(reloaded.Resources.SqlServerResourceId);
+        Assert.Null(reloaded.Resources.SqlServerFqdn);
+        Assert.Null(reloaded.Resources.ContainerAppsEnvironmentResourceId);
+        Assert.Null(reloaded.Resources.RegistryResourceId);
+        Assert.Null(reloaded.Resources.AcrPullDeploymentId);
+        Assert.Null(reloaded.Resources.AcrPullRoleAssignmentId);
     }
 
     [Fact]

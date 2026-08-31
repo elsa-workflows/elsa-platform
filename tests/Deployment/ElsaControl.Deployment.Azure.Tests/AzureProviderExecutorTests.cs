@@ -35,6 +35,16 @@ public sealed class AzureProviderExecutorTests
         Assert.All(result.Operation.Diagnostics, diagnostic => Assert.Equal(diagnostic.Code, diagnostic.Message));
         Assert.DoesNotContain(result.Operation.Diagnostics, diagnostic => diagnostic.Message.Contains("secret", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain("internal payload", result.Message, StringComparison.Ordinal);
+        Assert.All(runner.Commands, command =>
+        {
+            Assert.Equal(WorkspaceId, command.Context.WorkspaceId);
+            Assert.Equal(result.Operation.Id, command.Context.OperationId);
+            Assert.Equal(result.Operation.OperationIdentity, command.Context.OperationIdentity);
+            Assert.Equal("request-1", command.Context.IdempotencyKey);
+            Assert.Equal("workload-a", command.Context.TargetKey);
+            Assert.Equal(new string('a', 64), command.Context.PlanFingerprint);
+            Assert.Equal(new string('b', 64), command.Context.TemplateFingerprint);
+        });
     }
 
     [Fact]
@@ -53,6 +63,26 @@ public sealed class AzureProviderExecutorTests
         Assert.Equal(AzureProviderExecutionOutcome.NoOp, second.Outcome);
         Assert.Equal(first.Operation.Id, second.Operation.Id);
         Assert.Equal(7, runner.Steps.Count);
+    }
+
+    [Theory]
+    [InlineData(AzureProviderRunnerStep.Foundation)]
+    [InlineData(AzureProviderRunnerStep.AcrPull)]
+    [InlineData(AzureProviderRunnerStep.SeedSecrets)]
+    [InlineData(AzureProviderRunnerStep.SqlBootstrap)]
+    [InlineData(AzureProviderRunnerStep.Workload)]
+    [InlineData(AzureProviderRunnerStep.Health)]
+    [InlineData(AzureProviderRunnerStep.Promotion)]
+    public async Task No_op_steps_must_return_the_complete_step_postcondition(AzureProviderRunnerStep step)
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner { IncompleteNoOpStep = step };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal(step, runner.Steps[^1]);
     }
 
     [Fact]
@@ -134,7 +164,7 @@ public sealed class AzureProviderExecutorTests
 
         Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, result.Outcome);
         Assert.Equal("proof-rg", result.Operation.Resources.ResourceGroupName);
-        Assert.Equal("foundation-1", result.Operation.Resources.FoundationDeploymentId);
+        Assert.EndsWith("/providers/Microsoft.Resources/deployments/foundation", result.Operation.Resources.FoundationDeploymentId, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -518,9 +548,9 @@ public sealed class AzureProviderExecutorTests
         {
             LatestReconcileResources = new(
                 ResourceGroupName: "proof-rg",
-                FoundationDeploymentId: "foundation-1",
-                WorkloadDeploymentId: "workload-1",
-                WorkloadResourceId: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app",
+                FoundationDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/foundation",
+                WorkloadDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/workload",
+                WorkloadResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.App/containerApps/app",
                 WorkloadRevisionName: "app--candidate",
                 StableTrafficRevisionName: "stable-revision")
         };
@@ -701,6 +731,7 @@ public sealed class AzureProviderExecutorTests
         public TaskCompletionSource CancellationObserved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public CancellationTokenSource? CancelSource { get; init; }
         public AzureProviderRunnerStep? CancelAfterStep { get; init; }
+        public AzureProviderRunnerStep? IncompleteNoOpStep { get; init; }
 
         public Task<AzureProviderRunnerResult> RunAsync(AzureProviderRunnerCommand command, CancellationToken cancellationToken = default)
         {
@@ -749,6 +780,19 @@ public sealed class AzureProviderExecutorTests
 
         private AzureProviderRunnerResult CreateResult(AzureProviderRunnerCommand command)
         {
+            if (command.Step == IncompleteNoOpStep)
+                return Result(
+                    AzureProviderRunnerOutcome.NoOp,
+                    command.Step switch
+                    {
+                        AzureProviderRunnerStep.Foundation or AzureProviderRunnerStep.AcrPull or AzureProviderRunnerStep.SeedSecrets => AzureProviderOperationPhase.FoundationSubmitted,
+                        AzureProviderRunnerStep.SqlBootstrap => AzureProviderOperationPhase.FoundationReady,
+                        AzureProviderRunnerStep.Workload => AzureProviderOperationPhase.WorkloadReady,
+                        AzureProviderRunnerStep.Health => AzureProviderOperationPhase.HealthVerified,
+                        AzureProviderRunnerStep.Promotion => AzureProviderOperationPhase.TrafficPromoted,
+                        _ => throw new InvalidOperationException()
+                    },
+                    new AzureProviderResourceReferences());
             if (command.Step == AzureProviderRunnerStep.Promotion)
                 return Result(PromotionOutcome, AzureProviderOperationPhase.TrafficPromoted);
             if (command.Step == AzureProviderRunnerStep.RestoreStableTraffic)
@@ -778,7 +822,7 @@ public sealed class AzureProviderExecutorTests
             bool stableTrafficRestored = false) => new(
             outcome,
             phase,
-            resources ?? ResourcesOverride ?? new(ResourceGroupName: "proof-rg", FoundationDeploymentId: "foundation-1", WorkloadDeploymentId: "workload-1", WorkloadResourceId: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/app", WorkloadRevisionName: "app--candidate", StableTrafficRevisionName: StableTrafficRevisionName),
+            resources ?? ResourcesOverride ?? CompleteResources(),
             OmitPromotionObservations && phase == AzureProviderOperationPhase.TrafficPromoted
                 ? AzureProviderHealth.Unknown
                 : health == AzureProviderHealth.Unknown && (phase is AzureProviderOperationPhase.HealthVerified or AzureProviderOperationPhase.TrafficPromoted)
@@ -794,6 +838,25 @@ public sealed class AzureProviderExecutorTests
             RunnerMessage,
             ownedResourcesAbsent,
             stableTrafficRestored);
+
+        private AzureProviderResourceReferences CompleteResources() => new(
+            ResourceGroupName: "proof-rg",
+            FoundationDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/foundation",
+            WorkloadDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/workload",
+            WorkloadResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.App/containerApps/app",
+            WorkloadRevisionName: "app--candidate",
+            StableTrafficRevisionName: StableTrafficRevisionName,
+            WorkloadIdentityResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/identity",
+            WorkloadIdentityClientId: "22222222-2222-2222-2222-222222222222",
+            WorkloadIdentityPrincipalId: "33333333-3333-3333-3333-333333333333",
+            KeyVaultResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.KeyVault/vaults/vault",
+            KeyVaultUri: "https://vault.vault.azure.net/",
+            SqlServerResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Sql/servers/sql",
+            SqlServerFqdn: "sql.database.windows.net",
+            ContainerAppsEnvironmentResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.App/managedEnvironments/environment",
+            RegistryResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/registry",
+            AcrPullDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry-rg/providers/Microsoft.Resources/deployments/acr-pull",
+            AcrPullRoleAssignmentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/registry/providers/Microsoft.Authorization/roleAssignments/44444444-4444-4444-4444-444444444444");
 
     }
 

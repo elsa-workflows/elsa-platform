@@ -177,14 +177,15 @@ public sealed class AzureProviderExecutor
                     operation.Resources,
                     operation.Resources.StableTrafficRevisionName,
                     operation.AttemptNumber > 1,
-                    operation.AttemptNumber);
+                    operation.AttemptNumber,
+                    CreateExecutionContext(operation));
                 AzureProviderRunnerResult runnerResult;
                 try
                 {
                     var run = await RunRunnerAsync(command, operation, leaseToken, cancellationToken);
                     runnerResult = run.Result;
                     operation = run.Operation;
-                    ValidateRunnerResult(runnerResult, phase, requiresHealthyEndpoint: step == AzureProviderRunnerStep.Promotion);
+                    ValidateRunnerResult(runnerResult, step, phase, requiresHealthyEndpoint: step == AzureProviderRunnerStep.Promotion);
                 }
                 catch (RunnerExecutionException exception) when (exception.Cause is OperationCanceledException || cancellationToken.IsCancellationRequested)
                 {
@@ -335,11 +336,12 @@ public sealed class AzureProviderExecutor
                 operation.Resources,
                 operation.Resources.StableTrafficRevisionName,
                 operation.AttemptNumber > 1,
-                operation.AttemptNumber);
+                operation.AttemptNumber,
+                CreateExecutionContext(operation));
             var run = await RunRunnerAsync(command, operation, leaseToken, cancellationToken);
             runnerResult = run.Result;
             operation = run.Operation;
-            ValidateRunnerResult(runnerResult, AzureProviderOperationPhase.CleanupVerified, requiresHealthyEndpoint: false);
+            ValidateRunnerResult(runnerResult, AzureProviderRunnerStep.Cleanup, AzureProviderOperationPhase.CleanupVerified, requiresHealthyEndpoint: false);
         }
         catch (RunnerExecutionException exception) when (exception.Cause is OperationCanceledException || cancellationToken.IsCancellationRequested)
         {
@@ -448,13 +450,14 @@ public sealed class AzureProviderExecutor
             operation.Resources,
             operation.Resources.StableTrafficRevisionName,
             operation.AttemptNumber > 1,
-            operation.AttemptNumber);
+            operation.AttemptNumber,
+            CreateExecutionContext(operation));
         try
         {
             var run = await RunRunnerAsync(rollbackCommand, operation, leaseToken, cancellationToken);
             var rollback = run.Result;
             operation = run.Operation;
-            ValidateRunnerResult(rollback, AzureProviderOperationPhase.HealthVerified, requiresHealthyEndpoint: false);
+            ValidateRunnerResult(rollback, AzureProviderRunnerStep.RestoreStableTraffic, AzureProviderOperationPhase.HealthVerified, requiresHealthyEndpoint: false);
             if ((rollback.Outcome == AzureProviderRunnerOutcome.Completed || rollback.Outcome == AzureProviderRunnerOutcome.NoOp) &&
                 rollback.StableTrafficRestored &&
                 string.Equals(rollback.Resources.StableTrafficRevisionName, operation.Resources.StableTrafficRevisionName, StringComparison.Ordinal))
@@ -686,7 +689,11 @@ public sealed class AzureProviderExecutor
             _ => throw new InvalidOperationException("The reconcile operation has an invalid lifecycle phase.")
         };
 
-    private static void ValidateRunnerResult(AzureProviderRunnerResult result, AzureProviderOperationPhase expectedPhase, bool requiresHealthyEndpoint)
+    private static void ValidateRunnerResult(
+        AzureProviderRunnerResult result,
+        AzureProviderRunnerStep step,
+        AzureProviderOperationPhase expectedPhase,
+        bool requiresHealthyEndpoint)
     {
         if (result is null)
             throw new ArgumentException("The provider runner returned no result.", nameof(result));
@@ -711,9 +718,47 @@ public sealed class AzureProviderExecutor
         {
             if (result.Phase != expectedPhase)
                 throw new ArgumentException("The provider runner completed a different lifecycle phase.", nameof(result));
+            ValidateStepPostcondition(step, result);
             if (requiresHealthyEndpoint && (result.Health != AzureProviderHealth.Healthy || string.IsNullOrWhiteSpace(result.Endpoint)))
                 throw new ArgumentException("A successful promotion step must return a healthy HTTPS endpoint.", nameof(result));
         }
+    }
+
+    private static void ValidateStepPostcondition(AzureProviderRunnerStep step, AzureProviderRunnerResult result)
+    {
+        var resources = result.Resources;
+        var foundationComplete =
+            Has(resources.ResourceGroupName) && Has(resources.FoundationDeploymentId) &&
+            Has(resources.WorkloadIdentityResourceId) && Has(resources.WorkloadIdentityClientId) &&
+            Has(resources.WorkloadIdentityPrincipalId) && Has(resources.KeyVaultResourceId) &&
+            Has(resources.KeyVaultUri) && Has(resources.SqlServerResourceId) && Has(resources.SqlServerFqdn) &&
+            Has(resources.ContainerAppsEnvironmentResourceId);
+        var registryComplete =
+            Has(resources.RegistryResourceId) && Has(resources.AcrPullDeploymentId) &&
+            Has(resources.AcrPullRoleAssignmentId);
+        var workloadComplete =
+            Has(resources.WorkloadDeploymentId) && Has(resources.WorkloadResourceId) &&
+            Has(resources.WorkloadRevisionName);
+
+        var valid = step switch
+        {
+            AzureProviderRunnerStep.Foundation => foundationComplete,
+            AzureProviderRunnerStep.AcrPull => foundationComplete && registryComplete,
+            AzureProviderRunnerStep.SeedSecrets or AzureProviderRunnerStep.SqlBootstrap => foundationComplete && registryComplete,
+            AzureProviderRunnerStep.Workload or AzureProviderRunnerStep.Health or AzureProviderRunnerStep.Promotion =>
+                foundationComplete && registryComplete && workloadComplete,
+            AzureProviderRunnerStep.RestoreStableTraffic =>
+                foundationComplete && registryComplete && workloadComplete &&
+                Has(resources.StableTrafficRevisionName) && result.StableTrafficRestored,
+            // Cleanup has a dedicated exact-absence classifier after result validation so a
+            // confirmed-but-incomplete cleanup becomes Failed rather than uncertain recovery.
+            AzureProviderRunnerStep.Cleanup => true,
+            _ => false
+        };
+        if (!valid)
+            throw new ArgumentException("The provider runner did not prove the lifecycle step postcondition.", nameof(result));
+
+        static bool Has(string? value) => !string.IsNullOrWhiteSpace(value);
     }
 
     private static string SafeStepMessage(AzureProviderRunnerStep step, AzureProviderRunnerOutcome outcome) =>
@@ -753,6 +798,16 @@ public sealed class AzureProviderExecutor
 
     private static IReadOnlyList<AzureProviderDiagnostic> SafeDiagnostics(IReadOnlyList<AzureProviderDiagnostic> diagnostics) =>
         diagnostics.Select(diagnostic => new AzureProviderDiagnostic(diagnostic.Code, diagnostic.Code)).ToArray();
+
+    private static AzureProviderExecutionContext CreateExecutionContext(AzureProviderOperation operation) => new(
+        operation.WorkspaceId,
+        operation.Id,
+        operation.OperationIdentity,
+        operation.IdempotencyKey,
+        operation.TargetKey,
+        operation.PlanFingerprint,
+        operation.TemplateFingerprint,
+        operation.ProviderScopeFingerprint);
 
     private sealed class LeaseLostException : Exception;
 
