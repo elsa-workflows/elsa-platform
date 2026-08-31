@@ -225,7 +225,8 @@ public sealed class ProofHostOptions
             errors.Add("topology.unsupported");
 
         ValidateFeatures(Features, errors);
-        if (!Features.Order(StringComparer.Ordinal).SequenceEqual(SupportedFeatures.Order(StringComparer.Ordinal), StringComparer.Ordinal))
+        if (Features is null ||
+            !Features.Order(StringComparer.Ordinal).SequenceEqual(SupportedFeatures.Order(StringComparer.Ordinal), StringComparer.Ordinal))
             errors.Add("features.unsupported");
 
         if (!IsSupportedImageRepository(ImageRepository))

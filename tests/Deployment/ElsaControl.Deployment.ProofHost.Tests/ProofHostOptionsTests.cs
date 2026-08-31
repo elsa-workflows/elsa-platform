@@ -88,6 +88,17 @@ public sealed class ProofHostOptionsTests
     }
 
     [Fact]
+    public void Rejects_null_features_without_throwing()
+    {
+        var options = new ProofHostOptions { Features = null! };
+
+        var errors = options.Validate();
+
+        Assert.Contains("features.invalid", errors);
+        Assert.Contains("features.unsupported", errors);
+    }
+
+    [Fact]
     public void Cli_values_override_known_environment_values_but_duplicate_cli_options_fail()
     {
         using var fixture = new ProofHostFixture();
