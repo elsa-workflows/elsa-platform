@@ -8,6 +8,7 @@ public sealed class AzureProviderOperationValidationTests
     [InlineData("foundation", 513)]
     [InlineData("workloadDeployment", 513)]
     [InlineData("workloadResource", 1025)]
+    [InlineData("acrPullDeployment", 513)]
     [InlineData("resourceGroup", 91)]
     public void Rejects_each_reference_longer_than_its_persistence_contract(string referenceKind, int length)
     {
@@ -17,6 +18,7 @@ public sealed class AzureProviderOperationValidationTests
             "foundation" => new AzureProviderResourceReferences(FoundationDeploymentId: value),
             "workloadDeployment" => new AzureProviderResourceReferences(WorkloadDeploymentId: value),
             "workloadResource" => new AzureProviderResourceReferences(WorkloadResourceId: value),
+            "acrPullDeployment" => new AzureProviderResourceReferences(AcrPullDeploymentId: value),
             "resourceGroup" => new AzureProviderResourceReferences(ResourceGroupName: value),
             _ => throw new ArgumentOutOfRangeException(nameof(referenceKind))
         };

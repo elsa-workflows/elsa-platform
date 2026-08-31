@@ -147,7 +147,7 @@ public static class AzureProviderOperationValidation
         ValidateDnsName(references.SqlServerFqdn, 253, "sqlServerFqdn");
         ValidateAzureReference(references.ContainerAppsEnvironmentResourceId, 1024, "containerAppsEnvironmentResourceId");
         ValidateAzureReference(references.RegistryResourceId, 1024, "registryResourceId");
-        ValidateAzureReference(references.AcrPullDeploymentId, 1024, "acrPullDeploymentId");
+        ValidateAzureReference(references.AcrPullDeploymentId, 512, "acrPullDeploymentId");
         ValidateAzureReference(references.AcrPullRoleAssignmentId, 1024, "acrPullRoleAssignmentId");
         ValidateReferenceRelationships(references);
     }
