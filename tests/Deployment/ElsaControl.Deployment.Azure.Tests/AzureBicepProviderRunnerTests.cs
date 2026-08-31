@@ -226,6 +226,24 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Cleanup_does_not_reject_owned_child_resources_under_governed_roots()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("group") && args.Contains("exists"), "true");
+        process.Success(args => args.Contains("group") && args.Contains("exists"), "false");
+        process.Success(args => args.Contains("group") && args.Contains("show"), "{\"proof\":\"108\",\"owner\":\"elsa-control\",\"proof-name\":\"proof\",\"expiry\":\"2026-09-02\",\"sqlBootstrapObjectId\":\"11111111-1111-1111-1111-111111111111\"}");
+        process.Success(args => args.Contains("resource") && args.Contains("list"),
+            "[{\"id\":\"" + _fixture.FoundationResources.SqlServerResourceId + "/databases/elsa\",\"type\":\"Microsoft.Sql/servers/databases\"}]");
+        process.Success(args => args.Contains("role") && args.Contains("assignment") && args.Contains("list"), "[]");
+        process.Success(args => args.Contains("deployment") && args.Contains("group") && args.Contains("delete"));
+        process.Success(args => args.Contains("group") && args.Contains("delete"));
+
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.Cleanup));
+
+        Assert.NotEqual("azure.cleanup.ownership-unverified", result.Code);
+    }
+
+    [Fact]
     public async Task Cleanup_refuses_a_vault_user_assignment_without_a_proven_workload_principal()
     {
         var process = new FakeCommandProcess();

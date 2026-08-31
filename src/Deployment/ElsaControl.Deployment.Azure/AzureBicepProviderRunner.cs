@@ -1431,15 +1431,16 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
 
     private bool IsExactInventory(IReadOnlyList<AzureResource> resources, string workload)
     {
-        var resourceGroupPrefix = ResourceGroupId() + "/providers/";
+        var resourceGroupId = ResourceGroupId();
+        var resourceGroupPrefix = resourceGroupId + "/providers/";
         var roots = new[]
         {
-            $"/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{workload}-identity",
-            $"/providers/Microsoft.KeyVault/vaults/{workload}-kv",
-            $"/providers/Microsoft.Sql/servers/{workload}-sql",
-            $"/providers/Microsoft.OperationalInsights/workspaces/{workload}-logs",
-            $"/providers/Microsoft.App/managedEnvironments/{workload}-aca",
-            $"/providers/Microsoft.App/containerApps/{workload}-app"
+            $"{resourceGroupId}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{workload}-identity",
+            $"{resourceGroupId}/providers/Microsoft.KeyVault/vaults/{workload}-kv",
+            $"{resourceGroupId}/providers/Microsoft.Sql/servers/{workload}-sql",
+            $"{resourceGroupId}/providers/Microsoft.OperationalInsights/workspaces/{workload}-logs",
+            $"{resourceGroupId}/providers/Microsoft.App/managedEnvironments/{workload}-aca",
+            $"{resourceGroupId}/providers/Microsoft.App/containerApps/{workload}-app"
         };
         foreach (var resource in resources)
         {
@@ -1455,7 +1456,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 continue;
             }
             if (!id.StartsWith(resourceGroupPrefix.ToLowerInvariant(), StringComparison.Ordinal) ||
-                !roots.Any(root => id.EndsWith(root.ToLowerInvariant(), StringComparison.Ordinal) || id.StartsWith(root.ToLowerInvariant() + "/", StringComparison.Ordinal)))
+                !roots.Any(root => id.Equals(root.ToLowerInvariant(), StringComparison.Ordinal) || id.StartsWith(root.ToLowerInvariant() + "/", StringComparison.Ordinal)))
                 return false;
         }
         return true;
