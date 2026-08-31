@@ -27,7 +27,7 @@ public sealed record AzureProviderTargetScope(
             registrySubscriptionId = RegistrySubscriptionId.ToLowerInvariant(),
             registryResourceGroupName = RegistryResourceGroupName.ToLowerInvariant(),
             registryName = RegistryName.ToLowerInvariant(),
-            location = Location.ToLowerInvariant()
+            location = Location.Trim().ToLowerInvariant()
         });
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
@@ -40,7 +40,7 @@ public sealed record AzureProviderTargetScope(
         ValidateResourceGroup(RegistryResourceGroupName, nameof(RegistryResourceGroupName));
         if (!Regex.IsMatch(RegistryName ?? "", "^[a-z0-9]{5,50}\\z", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
             throw new ArgumentException("The Azure registry name is unsafe.", nameof(RegistryName));
-        if (!string.Equals(Location, AzureWorkloadPlanTranslator.SupportedLocation, StringComparison.Ordinal))
+        if (!string.Equals(Location?.Trim(), AzureWorkloadPlanTranslator.SupportedLocation, StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("The Azure location is outside the governed provider profile.", nameof(Location));
     }
 
@@ -105,6 +105,24 @@ public sealed record AzureProviderRunnerOptions
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 
+    /// <summary>
+    /// Recomputes every local and remote mutation authority immediately before execution.
+    /// Legacy durable rows may omit a scope fingerprint; the concrete runner never may.
+    /// </summary>
+    public void ValidateExecutionAuthority(
+        AzureProviderExecutionContext context,
+        AzureProviderTargetScope scope)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var actual = context.ProviderScopeFingerprint;
+        var expected = ComputeProviderScopeFingerprint(scope);
+        if (actual is null || actual.Length != expected.Length ||
+            !CryptographicOperations.FixedTimeEquals(
+                Encoding.ASCII.GetBytes(actual),
+                Encoding.ASCII.GetBytes(expected)))
+            throw new InvalidOperationException("The Azure runner authority does not match the durable operation.");
+    }
+
     public void Validate()
     {
         if (!Enabled)
@@ -157,7 +175,8 @@ public sealed record AzureProviderRunnerOptions
 
     private static string ComputeTemplateAuthorityFingerprint(string root)
     {
-        if (!Directory.Exists(root) || IsSymbolicLink(root))
+        if (!Directory.Exists(root) || IsSymbolicLink(root) ||
+            Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories).Any(IsSymbolicLink))
             throw new ArgumentException("The Azure template root must be a regular trusted directory.", nameof(TemplateRoot));
 
         var authorityFiles = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)

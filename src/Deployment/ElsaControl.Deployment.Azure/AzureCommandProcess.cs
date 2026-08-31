@@ -9,7 +9,7 @@ namespace ElsaControl.Deployment.Azure;
 /// process lifetime. This is intentionally only a process boundary; command selection,
 /// provider policy, credentials and Azure lifecycle semantics belong to higher layers.
 /// </summary>
-public sealed class AzureCommandProcess : IAzureCommandProcess
+internal sealed class AzureCommandProcess : IAzureCommandProcess
 {
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan CaptureDrainTimeout = TimeSpan.FromMilliseconds(250);
@@ -69,14 +69,15 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
 
         using var captureCancellation = new CancellationTokenSource();
         var outputLimitReached = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var outputBudget = new OutputBudget(_outputCharacterLimit);
         var standardOutputTask = ReadBoundedAsync(
             process.StandardOutput,
-            _outputCharacterLimit,
+            outputBudget,
             outputLimitReached,
             captureCancellation.Token);
         var standardErrorTask = ReadBoundedAsync(
             process.StandardError,
-            _outputCharacterLimit,
+            outputBudget,
             outputLimitReached,
             captureCancellation.Token);
         var exitTask = process.WaitForExitAsync();
@@ -125,6 +126,8 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
             standardOutputTask,
             standardErrorTask,
             captureCancellation).ConfigureAwait(false);
+        if (!captures.Complete)
+            return InvalidOutputResult<T>();
         if (outputLimitReached.Task.IsCompleted)
             return OutputLimitExceededResult<T>();
 
@@ -193,11 +196,11 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
 
     private static async Task<BoundedCapture> ReadBoundedAsync(
         StreamReader reader,
-        int outputCharacterLimit,
+        OutputBudget outputBudget,
         TaskCompletionSource<bool> outputLimitReached,
         CancellationToken cancellationToken)
     {
-        var builder = new StringBuilder(Math.Min(outputCharacterLimit, 4096));
+        var builder = new StringBuilder(Math.Min(outputBudget.Capacity, 4096));
         var buffer = new char[4096];
 
         try
@@ -208,11 +211,11 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
                 if (read == 0)
                     return new BoundedCapture(builder.ToString());
 
-                var remaining = outputCharacterLimit - builder.Length;
-                if (read > remaining)
+                var accepted = outputBudget.Take(read);
+                if (accepted < read)
                 {
-                    if (remaining > 0)
-                        builder.Append(buffer, 0, remaining);
+                    if (accepted > 0)
+                        builder.Append(buffer, 0, accepted);
                     outputLimitReached.TrySetResult(true);
                     return new BoundedCapture(builder.ToString());
                 }
@@ -249,6 +252,16 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
                 captureCancellation.Cancel();
             }
 
+            if (await Task.WhenAny(capturesTask, Task.Delay(CaptureDrainTimeout)).ConfigureAwait(false) != capturesTask)
+            {
+                _ = capturesTask.ContinueWith(
+                    static task => _ = task.Exception,
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+                return new BoundedCaptures(string.Empty, string.Empty, Complete: false);
+            }
+
             await capturesTask.ConfigureAwait(false);
         }
         catch (Exception)
@@ -263,7 +276,7 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
         var standardError = standardErrorTask.Status == TaskStatus.RanToCompletion
             ? standardErrorTask.Result
             : new BoundedCapture(string.Empty);
-        return new BoundedCaptures(standardOutput.Value, standardError.Value);
+        return new BoundedCaptures(standardOutput.Value, standardError.Value, Complete: true);
     }
 
     private static async Task<bool> WaitForExitAfterTerminationAsync(Task exitTask)
@@ -365,5 +378,25 @@ public sealed class AzureCommandProcess : IAzureCommandProcess
 
     private readonly record struct BoundedCapture(string Value);
 
-    private readonly record struct BoundedCaptures(string StandardOutput, string StandardError);
+    private readonly record struct BoundedCaptures(string StandardOutput, string StandardError, bool Complete);
+
+    private sealed class OutputBudget(int capacity)
+    {
+        private int _remaining = capacity;
+
+        public int Capacity { get; } = capacity;
+
+        public int Take(int requested)
+        {
+            while (true)
+            {
+                var remaining = Volatile.Read(ref _remaining);
+                if (remaining == 0)
+                    return 0;
+                var accepted = Math.Min(remaining, requested);
+                if (Interlocked.CompareExchange(ref _remaining, remaining - accepted, remaining) == remaining)
+                    return accepted;
+            }
+        }
+    }
 }

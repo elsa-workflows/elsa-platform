@@ -125,6 +125,17 @@ public sealed class AzureCommandProcessTests
     }
 
     [Fact]
+    public async Task Enforces_one_combined_output_cap_across_stdout_and_stderr()
+    {
+        var result = await new AzureCommandProcess(TimeSpan.FromSeconds(5), 32)
+            .ExecuteAsync(
+                Shell("printf '12345678901234567890'; printf '12345678901234567890' >&2"),
+                ProjectNoOutput);
+
+        Assert.Equal(AzureCommandProcessStatus.OutputLimitExceeded, result.Status);
+    }
+
+    [Fact]
     public async Task Projects_success_output_before_returning_a_serializable_result()
     {
         var result = await Process().ExecuteAsync(

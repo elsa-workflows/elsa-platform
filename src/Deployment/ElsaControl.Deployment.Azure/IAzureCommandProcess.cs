@@ -5,7 +5,7 @@ namespace ElsaControl.Deployment.Azure;
 /// Implementations must return only the safe process result contract; command output is
 /// never included in a failed result or exception.
 /// </summary>
-public interface IAzureCommandProcess
+internal interface IAzureCommandProcess
 {
     Task<AzureCommandProcessResult<T>> ExecuteAsync<T>(
         AzureCommandProcessRequest request,
@@ -25,5 +25,5 @@ public interface IAzureCommandProcess
 /// Converts transient stdout into a safe typed value before it crosses the process boundary.
 /// Implementations must not return raw provider payloads or secret material.
 /// </summary>
-public delegate T AzureCommandOutputProjector<out T>(ReadOnlyMemory<char> standardOutput)
+internal delegate T AzureCommandOutputProjector<out T>(ReadOnlyMemory<char> standardOutput)
     where T : AzureCommandSafeOutput;

@@ -67,6 +67,9 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
         Assert.Equal(scope.ComputeFingerprint(), same.ComputeFingerprint());
         Assert.NotEqual(scope.ComputeFingerprint(), changed.ComputeFingerprint());
         Assert.Equal(64, scope.ComputeFingerprint().Length);
+        Assert.Equal(
+            scope.ComputeFingerprint(),
+            (scope with { Location = $" {scope.Location.ToUpperInvariant()} " }).ComputeFingerprint());
     }
 
     [Fact]
@@ -87,6 +90,28 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
         original = options.ComputeProviderScopeFingerprint(scope);
         File.AppendAllText(Path.Combine(_templateRoot, "az"), "\nchanged");
         Assert.NotEqual(original, options.ComputeProviderScopeFingerprint(scope));
+    }
+
+    [Fact]
+    public void Concrete_execution_requires_the_exact_durable_authority_fingerprint()
+    {
+        var options = ValidOptions();
+        var scope = ValidScope();
+        var context = new AzureProviderExecutionContext(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "operation-identity",
+            "idempotency-key",
+            "target-key",
+            new string('a', 64),
+            new string('b', 64),
+            options.ComputeProviderScopeFingerprint(scope));
+
+        options.ValidateExecutionAuthority(context, scope);
+        Assert.Throws<InvalidOperationException>(() =>
+            options.ValidateExecutionAuthority(context with { ProviderScopeFingerprint = null }, scope));
+        Assert.Throws<InvalidOperationException>(() =>
+            options.ValidateExecutionAuthority(context with { ProviderScopeFingerprint = new string('c', 64) }, scope));
     }
 
     [Fact]

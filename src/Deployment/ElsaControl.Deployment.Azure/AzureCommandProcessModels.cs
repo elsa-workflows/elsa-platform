@@ -9,7 +9,7 @@ namespace ElsaControl.Deployment.Azure;
 /// identifiers only. Secret material must never be placed in argv because operating systems can
 /// expose it through process inspection.
 /// </summary>
-public sealed record AzureCommandProcessRequest
+internal sealed record AzureCommandProcessRequest
 {
     public AzureCommandProcessRequest(
         string fileName,
@@ -66,7 +66,7 @@ public sealed record AzureCommandProcessRequest
 /// An explicitly classified non-secret command argument. Secret leases deliberately have no
 /// conversion to this type and must be transported through a provider-specific protected seam.
 /// </summary>
-public readonly record struct AzureCommandArgument
+internal readonly record struct AzureCommandArgument
 {
     private AzureCommandArgument(string value) => Value = value;
 
@@ -86,14 +86,14 @@ public readonly record struct AzureCommandArgument
 /// Marker base for safe typed facts projected from transient command output. Only this assembly
 /// can define projections, preventing callers from returning raw strings or provider payloads.
 /// </summary>
-public abstract class AzureCommandSafeOutput
+internal abstract class AzureCommandSafeOutput
 {
     private protected AzureCommandSafeOutput()
     {
     }
 }
 
-public sealed class AzureCommandNoOutput : AzureCommandSafeOutput
+internal sealed class AzureCommandNoOutput : AzureCommandSafeOutput
 {
     public static AzureCommandNoOutput Instance { get; } = new();
 
@@ -102,7 +102,7 @@ public sealed class AzureCommandNoOutput : AzureCommandSafeOutput
     }
 }
 
-public enum AzureCommandProcessStatus
+internal enum AzureCommandProcessStatus
 {
     Succeeded,
     Failed,
@@ -116,7 +116,7 @@ public enum AzureCommandProcessStatus
 /// Stable, value-free classification for a command failure. Process output and exception text
 /// are deliberately not part of this classification.
 /// </summary>
-public enum AzureCommandProcessFailureKind
+internal enum AzureCommandProcessFailureKind
 {
     None,
     NonZeroExitCode,
@@ -134,7 +134,7 @@ public enum AzureCommandProcessFailureKind
 /// Safe outcome of one command process invocation. Standard output and error are populated only
 /// when <see cref="Status"/> is <see cref="AzureCommandProcessStatus.Succeeded"/>.
 /// </summary>
-public sealed record AzureCommandProcessResult<T>(
+internal sealed record AzureCommandProcessResult<T>(
     AzureCommandProcessStatus Status,
     AzureCommandProcessFailureKind FailureKind,
     int? ExitCode,
