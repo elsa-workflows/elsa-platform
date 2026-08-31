@@ -770,8 +770,9 @@ public sealed class ManagedElsaInstanceApiTests
     {
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        var completedAtTicks = DateTimeOffset.UtcNow.UtcTicks;
         await db.Database.ExecuteSqlInterpolatedAsync(
-            $"UPDATE ElsaInstanceOperations SET State = {ElsaInstanceOperationState.Succeeded.ToString()}, CompletedAt = {DateTimeOffset.UtcNow} WHERE Id = {operationId}");
+            $"UPDATE ElsaInstanceOperations SET State = {ElsaInstanceOperationState.Succeeded.ToString()}, CompletedAt = {completedAtTicks} WHERE Id = {operationId}");
     }
 
     private static async Task<int> CountOperationsAsync(ControlApiTestApplication app)
