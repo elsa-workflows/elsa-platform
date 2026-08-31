@@ -657,6 +657,30 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             if (!IsExactInventory(inventory.Value!.Value, command.Plan.WorkloadName))
                 return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.ownership-unverified", "The resource inventory contains an unowned resource.");
 
+            var identityId = ResourceId("Microsoft.ManagedIdentity", "userAssignedIdentities", $"{command.Plan.WorkloadName}-identity");
+            var identityPresent = inventory.Value.Value.Any(resource => string.Equals(resource.Id, identityId, StringComparison.OrdinalIgnoreCase));
+            if (resources.WorkloadIdentityPrincipalId is null && identityPresent)
+            {
+                var principal = await ExecuteAzAsync(command,
+                    ["identity", "show", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+                        "--name", $"{command.Plan.WorkloadName}-identity", "--query", "principalId", "--output", "tsv", "--only-show-errors"],
+                    ParseStringAsync,
+                    cancellationToken);
+                if (!principal.Succeeded || string.IsNullOrWhiteSpace(principal.Value?.Value))
+                    return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.identity-observation-uncertain", "The owned workload identity principal could not be confirmed before cleanup.");
+                try
+                {
+                    resources = resources with
+                    {
+                        WorkloadIdentityPrincipalId = NormalizeGuid(principal.Value.Value, "workloadIdentityPrincipalId")
+                    };
+                }
+                catch (ArgumentException)
+                {
+                    return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.identity-invalid", "The owned workload identity principal is invalid.");
+                }
+            }
+
             var assignments = await ExecuteAzAsync(command,
                 ["role", "assignment", "list", "--subscription", _scope.SubscriptionId, "--all", "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
@@ -1423,8 +1447,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         var officers = owned.Where(x => string.Equals(RoleDefinitionId(x.RoleDefinitionId), KeyVaultSecretsOfficerRoleDefinitionId, StringComparison.OrdinalIgnoreCase)).ToArray();
         if (users.Length + officers.Length != owned.Length || users.Length > 1 || officers.Length > 1)
             return false;
-        if (users.Length == 1 && (string.IsNullOrWhiteSpace(users[0].PrincipalId) ||
-            resources.WorkloadIdentityPrincipalId is not null && !string.Equals(users[0].PrincipalId, resources.WorkloadIdentityPrincipalId, StringComparison.OrdinalIgnoreCase)))
+        if (users.Length == 1 && (resources.WorkloadIdentityPrincipalId is null ||
+            !string.Equals(users[0].PrincipalId, resources.WorkloadIdentityPrincipalId, StringComparison.OrdinalIgnoreCase)))
             return false;
         return officers.Length == 0 || string.Equals(officers[0].PrincipalId, _options.SqlBootstrapObjectId, StringComparison.OrdinalIgnoreCase);
     }

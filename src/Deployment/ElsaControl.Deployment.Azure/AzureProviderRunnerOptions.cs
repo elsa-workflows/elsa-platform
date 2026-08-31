@@ -65,8 +65,10 @@ public sealed record AzureProviderTargetScope(
 public sealed record AzureProviderRunnerOptions
 {
     public bool Enabled { get; init; }
-    public string AzureCliPath { get; init; } = "az";
-    public string SqlCmdPath { get; init; } = "sqlcmd";
+    /// <summary>Absolute Azure CLI executable bound into provider authority.</summary>
+    public string AzureCliPath { get; init; } = "";
+    /// <summary>Absolute sqlcmd executable bound into provider authority.</summary>
+    public string SqlCmdPath { get; init; } = "";
     /// <summary>Absolute curl executable used for the post-promotion health probe.</summary>
     public string CurlPath { get; init; } = "";
     public string TemplateRoot { get; init; } = "";

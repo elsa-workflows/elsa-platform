@@ -226,6 +226,49 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Cleanup_refuses_a_vault_user_assignment_without_a_proven_workload_principal()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("group") && args.Contains("exists"), "true");
+        process.Success(args => args.Contains("group") && args.Contains("show"), "{\"proof\":\"108\",\"owner\":\"elsa-control\",\"proof-name\":\"proof\",\"expiry\":\"2026-09-02\",\"sqlBootstrapObjectId\":\"11111111-1111-1111-1111-111111111111\"}");
+        process.Success(args => args.Contains("resource") && args.Contains("list"), "[]");
+        process.Success(args => args.Contains("role") && args.Contains("assignment") && args.Contains("list"),
+            "[{\"scope\":\"" + _fixture.FoundationResources.KeyVaultResourceId + "\",\"principalId\":\"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\"roleDefinitionId\":\"/providers/Microsoft.Authorization/roleDefinitions/4633458b-17de-408a-b874-0445c86b69e6\"}]");
+        var partial = _fixture.FoundationResources with { WorkloadIdentityPrincipalId = null };
+
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.Cleanup, partial));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Equal("azure.cleanup.rbac-unverified", result.Code);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("delete"));
+    }
+
+    [Fact]
+    public async Task Cleanup_recovers_the_exact_owned_identity_principal_before_rbac_validation()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("group") && args.Contains("exists"), "true");
+        process.Success(args => args.Contains("group") && args.Contains("show"), "{\"proof\":\"108\",\"owner\":\"elsa-control\",\"proof-name\":\"proof\",\"expiry\":\"2026-09-02\",\"sqlBootstrapObjectId\":\"11111111-1111-1111-1111-111111111111\"}");
+        process.Success(args => args.Contains("resource") && args.Contains("list"),
+            "[{\"id\":\"" + _fixture.FoundationResources.WorkloadIdentityResourceId + "\",\"type\":\"Microsoft.ManagedIdentity/userAssignedIdentities\"}]");
+        process.Success(args => args.Contains("identity") && args.Contains("show"), "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        process.Success(args => args.Contains("role") && args.Contains("assignment") && args.Contains("list"),
+            "[{\"scope\":\"" + _fixture.FoundationResources.KeyVaultResourceId + "\",\"principalId\":\"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\"roleDefinitionId\":\"/providers/Microsoft.Authorization/roleDefinitions/4633458b-17de-408a-b874-0445c86b69e6\"}]");
+        process.Success(args => args.Contains("role") && args.Contains("list"), "[]");
+        process.Success(args => args.Contains("deployment") && args.Contains("delete"));
+        process.Success(args => args.Contains("deployment") && args.Contains("list"), "[]");
+        process.Success(args => args.Contains("group") && args.Contains("delete"));
+        process.Success(args => args.Contains("group") && args.Contains("exists"), "false");
+        process.Success(args => args.Contains("list-deleted"), "[]");
+        var partial = _fixture.FoundationResources with { WorkloadIdentityPrincipalId = null };
+
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.Cleanup, partial));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
+        Assert.Contains(process.Calls, call => call.Contains("identity") && call.Contains("show"));
+    }
+
+    [Fact]
     public async Task Acr_pull_binds_the_role_to_the_exact_registry_scope()
     {
         var process = new FakeCommandProcess();
