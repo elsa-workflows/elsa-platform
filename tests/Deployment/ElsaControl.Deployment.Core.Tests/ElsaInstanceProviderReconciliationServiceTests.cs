@@ -1,5 +1,6 @@
 using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Core.Instances;
+using ElsaControl.Deployment.Core.Workspace;
 using Xunit;
 
 namespace ElsaControl.Deployment.Core.Tests;
@@ -319,7 +320,8 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
     private static async Task<(InMemoryElsaInstanceLifecycleStore Store, ElsaInstanceLifecycleAcceptance Accepted)> RecoveryTargetAsync(
         ElsaDesiredLifecycle desiredLifecycle = ElsaDesiredLifecycle.Running)
     {
-        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var authority = new InMemoryElsaInstanceDeleteConfirmationAuthority();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now), authority);
         var lifecycle = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
         var accepted = await lifecycle.CreateAsync(new(
             OrganizationId,
@@ -341,11 +343,24 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
                 "observation-ready");
             await Service(store, new RecordingPort(ready)).ReconcileAsync(WorkspaceId, accepted.Operation.Id);
             var instance = store.Instances.Single();
+            var confirmationId = Guid.NewGuid();
+            var actorAccountId = Guid.NewGuid();
+            authority.Add(new ActionConfirmation(
+                confirmationId,
+                WorkspaceId,
+                ConfirmationActionType.DeleteManagedInstance,
+                instance.Id.ToString("D"),
+                actorAccountId,
+                Now,
+                Now.AddMinutes(5),
+                null));
             accepted = await lifecycle.DeleteAsync(new(
                 WorkspaceId,
                 instance.Id,
                 instance.Version,
-                "delete-reconciliation-test"));
+                "delete-reconciliation-test",
+                DeleteConfirmationId: confirmationId,
+                ActorAccountId: actorAccountId));
             store.MarkRecoveryRequired(accepted.Operation.Id);
         }
         return (store, accepted);

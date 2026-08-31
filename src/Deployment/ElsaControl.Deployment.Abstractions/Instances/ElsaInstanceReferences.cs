@@ -329,3 +329,10 @@ internal static partial class ElsaInstanceReferenceValue
         path.Contains("//", StringComparison.Ordinal) ||
         path.Split('/').Any(segment => segment is "." or "..");
 }
+
+/// <summary>Canonical validation for customer-supplied lifecycle idempotency keys.</summary>
+public static class ElsaInstanceIdempotencyKey
+{
+    public static string Normalize(string? value) =>
+        ElsaInstanceReferenceValue.RequireOperationKey(value, nameof(value));
+}

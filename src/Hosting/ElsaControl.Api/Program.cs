@@ -39,6 +39,8 @@ using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using Elsa.Specifications.PackageManifests.Validation;
 using ElsaControl.RuntimeBuilder.Core.Builder;
 using ElsaControl.RuntimeBuilder.Core.Builder.Planner;
+using ElsaControl.RuntimeBuilder.Core.Plans;
+using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 using ElsaControl.RuntimeBuilder.Core.RuntimeConfigurations;
 using ElsaControl.Weaver.Core.Configuration;
 using ElsaControl.Weaver.Core.Plans;
@@ -227,6 +229,17 @@ builder.Services.AddScoped<ManagedElsaHandoffService>();
 builder.Services.AddHostedService<ManagedElsaHandoffConfigurationValidator>();
 builder.Services.AddSingleton<IWorkspacePermissionContribution, ManagedElsaInstancePermissionContribution>();
 builder.Services.AddCatalogDbContext(builder.Configuration);
+builder.Services.AddScoped<EfCoreElsaInstanceLifecycleStore>();
+builder.Services.AddScoped<IElsaInstanceLifecycleStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
+builder.Services.AddScoped<IElsaInstanceLifecycleWorkerStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
+builder.Services.AddScoped<IElsaInstanceProviderReconciliationStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
+builder.Services.AddScoped<IElsaInstanceDeletionStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
+builder.Services.AddScoped<IElsaInstanceLifecycleResolutionInputSource, UnavailableElsaInstanceLifecycleResolutionInputSource>();
+builder.Services.AddScoped<IElsaInstancePlanResolver, ElsaInstancePlanResolver>();
+builder.Services.AddScoped<ElsaInstanceLifecycleService>();
+builder.Services.AddScoped<ElsaInstanceLifecycleWorker>();
+builder.Services.AddScoped<IManagedElsaInstanceApiStore, EfCoreManagedElsaInstanceApiStore>();
+builder.Services.Configure<ElsaInstanceLifecycleWorkerOptions>(builder.Configuration.GetSection(ElsaInstanceLifecycleWorkerOptions.ConfigurationSection));
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
 builder.Services.AddScoped<IPublicCatalogQueries, PublicCatalogQueries>();
 builder.Services.AddScoped<PublicCatalogQueryService>();
@@ -356,6 +369,9 @@ builder.Services.AddHostedService<WeaverConfigurationHostedService>();
 var deploymentQueueWorkerEnabled = builder.Configuration.GetValue("Deployment:QueueWorker:Enabled", false);
 if (deploymentQueueWorkerEnabled && !builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<DeploymentQueueHostedService>();
+var instanceLifecycleWorkerEnabled = builder.Configuration.GetValue(ElsaInstanceLifecycleWorkerOptions.ConfigurationSection + ":Enabled", false);
+if (instanceLifecycleWorkerEnabled && !builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddHostedService<ElsaInstanceLifecycleHostedService>();
 var azureProviderWorkerEnabled = builder.Configuration.GetValue("Deployment:AzureProvider:WorkerEnabled", false);
 if (azureProviderWorkerEnabled && !builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<AzureProviderOperationHostedService>();

@@ -645,6 +645,7 @@ public static class WorkspaceDeploymentEndpoints
             ConfirmationActionType.Deploy => WorkspaceDeploymentPermissions.ExecuteDeployment,
             ConfirmationActionType.Rollback => WorkspaceDeploymentPermissions.ExecuteRollback,
             ConfirmationActionType.RuntimeControl => WorkspaceDeploymentPermissions.ExecuteControls,
+            ConfirmationActionType.DeleteManagedInstance => ManagedElsaInstancePermissions.Delete,
             _ => WorkspaceDeploymentPermissions.Read
         };
 }

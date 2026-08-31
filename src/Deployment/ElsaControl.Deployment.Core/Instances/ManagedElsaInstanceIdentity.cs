@@ -6,7 +6,8 @@ public sealed record ManagedElsaInstanceIdentity(
     Guid InstanceId,
     string Audience,
     Uri CallbackUri,
-    int BindingVersion);
+    int BindingVersion,
+    DateTimeOffset ChangedAt);
 
 public sealed record ManagedElsaInstanceScope(Guid OrganizationId, Guid WorkspaceId, Guid InstanceId);
 
@@ -47,6 +48,16 @@ public interface IManagedElsaInstanceIdentityStore
     Task<ManagedElsaInstanceIdentity?> FindOpenableAsync(
         Guid organizationId,
         Guid instanceId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves the current openable identity bindings for many instances in a
+    /// single query, keyed by instance id. Instances that are missing, deleted,
+    /// unhealthy or unbound are simply absent from the result.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, ManagedElsaInstanceIdentity>> FindOpenableManyAsync(
+        Guid organizationId,
+        IReadOnlyCollection<Guid> instanceIds,
         CancellationToken cancellationToken = default);
 
     Task<ManagedElsaInstanceIdentityBindingWriteResult> BindAsync(

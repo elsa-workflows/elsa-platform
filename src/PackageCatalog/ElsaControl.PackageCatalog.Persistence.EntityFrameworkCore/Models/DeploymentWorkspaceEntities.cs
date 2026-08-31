@@ -191,6 +191,11 @@ internal sealed class ElsaInstanceOperationEntity
     public string IdempotencyScope { get; set; } = "";
     public string IdempotencyKey { get; set; } = "";
     public string RequestHash { get; set; } = "";
+    // Compatibility projection of the latest recovery request. The append-only
+    // recovery-request ledger, not these mutable fields, is authoritative.
+    public string? RecoveryIdempotencyScope { get; set; }
+    public string? RecoveryIdempotencyKey { get; set; }
+    public string? RecoveryRequestHash { get; set; }
     public int ExpectedVersion { get; set; }
     public ElsaInstanceOperationState State { get; set; }
     public int AttemptNumber { get; set; }
@@ -223,6 +228,27 @@ internal sealed class ElsaInstanceOperationEntity
     public string? DeletionDiagnosticCode { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// Append-only authority for a recovery request. An operation can enter recovery
+/// more than once, so recovery idempotency cannot live on the mutable operation
+/// row without making an older key reusable.
+/// </summary>
+internal sealed class ElsaInstanceRecoveryRequestEntity
+{
+    public Guid Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid InstanceId { get; set; }
+    public Guid OperationId { get; set; }
+    public ElsaInstanceOperationEntity? Operation { get; set; }
+    public int AttemptNumber { get; set; }
+    public string IdempotencyScope { get; set; } = "";
+    public string IdempotencyKey { get; set; } = "";
+    public string RequestHash { get; set; } = "";
+    public DateTimeOffset AcceptedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 /// <summary>

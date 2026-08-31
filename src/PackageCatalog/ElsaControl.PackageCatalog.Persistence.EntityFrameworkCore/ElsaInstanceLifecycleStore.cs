@@ -34,6 +34,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         resolutionInputSource ?? throw new ArgumentNullException(nameof(resolutionInputSource));
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private static readonly TimeSpan WorkerLeaseDuration = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan[] IdempotencyReplayLookupDelays =
+        [TimeSpan.Zero, TimeSpan.FromMilliseconds(25), TimeSpan.FromMilliseconds(75)];
     private static readonly JsonDocumentOptions SafeJsonOptions = new()
     {
         MaxDepth = 16,
@@ -269,33 +271,101 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
     public async Task<ElsaInstanceOperation?> FindOperationByKeyAsync(
         Guid workspaceId,
         string idempotencyKey,
+        Guid? instanceId = null,
+        ElsaInstanceOperationAction? action = null,
+        string? idempotencyScope = null,
         CancellationToken cancellationToken = default)
     {
         if (workspaceId == Guid.Empty)
             return null;
         idempotencyKey = RequireIdempotencyKey(idempotencyKey);
 
-        var entity = await dbContext.ElsaInstanceOperations
+        var isRecovery = action == ElsaInstanceOperationAction.Recover;
+        if (isRecovery)
+        {
+            var recoveryQuery = dbContext.ElsaInstanceRecoveryRequests
+                .AsNoTracking()
+                .Where(x => x.WorkspaceId == workspaceId && x.IdempotencyKey == idempotencyKey);
+            if (instanceId is not null)
+                recoveryQuery = recoveryQuery.Where(x => x.InstanceId == instanceId);
+            if (idempotencyScope is not null)
+                recoveryQuery = recoveryQuery.Where(x => x.IdempotencyScope == idempotencyScope);
+            var recovery = await recoveryQuery
+                .OrderByDescending(x => x.AcceptedAt)
+                .ThenByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (recovery is null)
+                return null;
+            var recoveryOperation = await dbContext.ElsaInstanceOperations.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == recovery.OperationId, cancellationToken);
+            return recoveryOperation is null ? null : MapOperation(recoveryOperation, recovery);
+        }
+        var query = dbContext.ElsaInstanceOperations
             .AsNoTracking()
-            .Where(x => x.WorkspaceId == workspaceId && x.IdempotencyKey == idempotencyKey)
+            .Where(x => x.WorkspaceId == workspaceId && x.IdempotencyKey == idempotencyKey);
+        if (instanceId is not null)
+            query = query.Where(x => x.InstanceId == instanceId);
+        if (action is not null)
+            query = query.Where(x => x.Action == action);
+        if (idempotencyScope is not null)
+            query = query.Where(x => x.IdempotencyScope == idempotencyScope);
+        var entity = await query
             .OrderByDescending(x => x.AcceptedAt)
             .ThenByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
+        var normalLookupRecoveryQuery = dbContext.ElsaInstanceRecoveryRequests
+            .AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.IdempotencyKey == idempotencyKey);
+        if (instanceId is not null)
+            normalLookupRecoveryQuery = normalLookupRecoveryQuery.Where(x => x.InstanceId == instanceId);
+        if (idempotencyScope is not null)
+            normalLookupRecoveryQuery = normalLookupRecoveryQuery.Where(x => x.IdempotencyScope == idempotencyScope);
+        var normalLookupRecovery = await normalLookupRecoveryQuery
+            .OrderByDescending(x => x.AcceptedAt)
+            .ThenByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (normalLookupRecovery is not null)
+        {
+            var recoveryOperation = await dbContext.ElsaInstanceOperations.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == normalLookupRecovery.OperationId, cancellationToken);
+            if (recoveryOperation is not null)
+                return MapOperation(recoveryOperation, normalLookupRecovery);
+        }
         return entity is null ? null : MapOperation(entity);
     }
 
-    public async Task<ElsaInstanceLifecycleAcceptance> CommitAcceptedAsync(
+    public Task<ElsaInstanceLifecycleAcceptance> CommitAcceptedAsync(
         ElsaInstance? expectedInstance,
         ElsaInstance instance,
         ElsaInstanceOperation operation,
         ElsaInstanceLifecycleOutboxMessage outbox,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        CommitAcceptedCoreAsync(expectedInstance, instance, operation, outbox, null, cancellationToken);
+
+    public Task<ElsaInstanceLifecycleAcceptance> CommitAcceptedWithContextAsync(
+        ElsaInstance? expectedInstance,
+        ElsaInstance instance,
+        ElsaInstanceOperation operation,
+        ElsaInstanceLifecycleOutboxMessage outbox,
+        ElsaInstanceAcceptanceContext context,
+        CancellationToken cancellationToken = default) =>
+        CommitAcceptedCoreAsync(expectedInstance, instance, operation, outbox, context, cancellationToken);
+
+    private async Task<ElsaInstanceLifecycleAcceptance> CommitAcceptedCoreAsync(
+        ElsaInstance? expectedInstance,
+        ElsaInstance instance,
+        ElsaInstanceOperation operation,
+        ElsaInstanceLifecycleOutboxMessage outbox,
+        ElsaInstanceAcceptanceContext? context,
+        CancellationToken cancellationToken)
     {
         dbContext.ChangeTracker.Clear();
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(operation);
         ArgumentNullException.ThrowIfNull(outbox);
         ValidateEnvelope(instance, operation, outbox);
+        if (operation.Action == ElsaInstanceOperationAction.Delete && context?.DeleteConfirmation is null)
+            throw new ElsaInstanceDeleteConfirmationException();
 
         try
         {
@@ -312,6 +382,9 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 var existingOutbox = await dbContext.ElsaInstanceLifecycleOutbox
                     .SingleOrDefaultAsync(x => x.OperationId == existingOperation.Id, cancellationToken);
                 ValidateExistingOperation(existingOperation, instance, operation, outbox);
+                if (operation.RecoveryIdempotencyKey is null && existingOperation.RecoveryIdempotencyKey is not null)
+                    throw Conflict("Idempotency key was already used for a different request.",
+                        ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
                 return await CompleteExistingOperationAsync(
                     transaction,
                     expectedInstance,
@@ -328,6 +401,17 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             // two first requests can race between that read and this transaction.
             // Treat the workspace/key row as the idempotency authority even though
             // the operation route scope is also persisted for downstream consumers.
+            var existingRecoveryKey = await dbContext.ElsaInstanceRecoveryRequests
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    x => x.WorkspaceId == instance.WorkspaceId &&
+                         x.IdempotencyScope == operation.IdempotencyScope &&
+                         x.IdempotencyKey == operation.IdempotencyKey,
+                    cancellationToken);
+            if (existingRecoveryKey is not null)
+                throw Conflict("Idempotency key was already used for a different request.",
+                    ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
+
             var existingKeyOperation = await dbContext.ElsaInstanceOperations
                 .OrderByDescending(x => x.AcceptedAt)
                 .ThenByDescending(x => x.CreatedAt)
@@ -338,15 +422,22 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     cancellationToken);
             if (existingKeyOperation is not null)
             {
+                if (existingKeyOperation.RecoveryIdempotencyKey is not null &&
+                    operation.RecoveryIdempotencyKey is null)
+                    throw Conflict("Idempotency key was already used for a different request.",
+                        ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
                 if (existingKeyOperation.Action != operation.Action ||
                     !string.Equals(existingKeyOperation.RequestHash, operation.RequestHash, StringComparison.Ordinal))
-                    throw Conflict("Idempotency key was already used for a different request.");
+                    throw Conflict("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
 
                 var keyInstance = await LoadTrackedInstanceAsync(existingKeyOperation.InstanceId, cancellationToken);
                 var keyOutbox = await dbContext.ElsaInstanceLifecycleOutbox
                     .SingleOrDefaultAsync(x => x.OperationId == existingKeyOperation.Id, cancellationToken);
                 return await ReplayAsync(transaction, keyInstance, existingKeyOperation, keyOutbox, cancellationToken);
             }
+
+            await ValidateAndStageDeleteConfirmationAsync(
+                context?.DeleteConfirmation, instance, operation, outbox.CreatedAt, cancellationToken);
 
             var storedInstance = await LoadTrackedInstanceAsync(instance.Id, cancellationToken);
             if (expectedInstance is null)
@@ -380,7 +471,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     operation.State == ElsaInstanceOperationState.WaitingForPriorOperation &&
                     activeOperation.Action != ElsaInstanceOperationAction.Delete;
                 if (!isDeleteSuccessor)
-                    throw Conflict("An instance operation is already active.");
+                    throw Conflict("An instance operation is already active.", ElsaInstanceLifecycleConflictReason.OperationActive);
             }
 
             var priorObservedLifecycle = storedInstance?.ObservedLifecycle;
@@ -414,7 +505,9 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     operationEntity,
                     priorObservedLifecycle,
                     occurredAt: outbox.CreatedAt,
-                    cancellationToken: cancellationToken),
+                    cancellationToken: cancellationToken,
+                    actorAccountId: context?.ActorAccountId,
+                    summary: HashReason(context?.Reason)),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -433,7 +526,58 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         catch (DbUpdateConcurrencyException)
         {
             dbContext.ChangeTracker.Clear();
-            throw Conflict("Lifecycle acceptance conflicted with a newer instance version.");
+            var recoveryReplay = await TryReplayCommittedRecoveryAsync(
+                expectedInstance,
+                instance,
+                operation,
+                cancellationToken);
+            if (recoveryReplay is not null)
+                return recoveryReplay;
+
+            throw Conflict("Lifecycle acceptance conflicted with a newer instance version.", ElsaInstanceLifecycleConflictReason.VersionConflict);
+        }
+        catch (Exception exception) when (
+            EfCoreDatabaseExceptionPolicy.IsSqlServerLifecycleReservationConflict(exception))
+        {
+            dbContext.ChangeTracker.Clear();
+            var recoveryReplay = await TryReplayCommittedRecoveryAsync(
+                expectedInstance,
+                instance,
+                operation,
+                cancellationToken);
+            if (recoveryReplay is not null)
+                return recoveryReplay;
+
+            var replay = await TryReplayCommittedAcceptanceAsync(
+                expectedInstance,
+                instance,
+                operation,
+                cancellationToken);
+            if (replay is not null)
+                return replay;
+
+            if (exception is DbUpdateException updateException &&
+                EfCoreDatabaseExceptionPolicy.IsElsaInstanceSlugUniqueViolation(updateException))
+                throw Conflict("Instance slug is already in use in this workspace.", ElsaInstanceLifecycleConflictReason.SlugConflict);
+
+            throw Conflict("Lifecycle acceptance conflicted with another request.");
+        }
+        catch (DbUpdateException exception) when (
+            EfCoreDatabaseExceptionPolicy.IsUniqueViolation(exception))
+        {
+            dbContext.ChangeTracker.Clear();
+            var recoveryReplay = await TryReplayCommittedRecoveryAsync(
+                expectedInstance,
+                instance,
+                operation,
+                cancellationToken);
+            if (recoveryReplay is not null)
+                return recoveryReplay;
+
+            if (EfCoreDatabaseExceptionPolicy.IsElsaInstanceSlugUniqueViolation(exception))
+                throw Conflict("Instance slug is already in use in this workspace.", ElsaInstanceLifecycleConflictReason.SlugConflict);
+
+            throw Conflict("Lifecycle acceptance conflicted with another request.");
         }
         catch (DbUpdateException)
         {
@@ -451,6 +595,211 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             throw;
         }
     }
+
+    private async Task<ElsaInstanceLifecycleAcceptance?> TryReplayCommittedAcceptanceAsync(
+        ElsaInstance? expectedInstance,
+        ElsaInstance requestedInstance,
+        ElsaInstanceOperation requestedOperation,
+        CancellationToken cancellationToken)
+    {
+        foreach (var delay in IdempotencyReplayLookupDelays)
+        {
+            if (delay > TimeSpan.Zero)
+                await Task.Delay(delay, cancellationToken);
+
+            dbContext.ChangeTracker.Clear();
+            try
+            {
+                var existingOperation = await dbContext.ElsaInstanceOperations
+                    .AsNoTracking()
+                    .OrderByDescending(x => x.AcceptedAt)
+                    .ThenByDescending(x => x.CreatedAt)
+                    .FirstOrDefaultAsync(
+                        x => x.WorkspaceId == requestedInstance.WorkspaceId &&
+                             x.IdempotencyScope == requestedOperation.IdempotencyScope &&
+                             x.IdempotencyKey == requestedOperation.IdempotencyKey,
+                        cancellationToken);
+                if (existingOperation is null)
+                    continue;
+
+                if (!IsExactAuthoritativeReplay(
+                        expectedInstance,
+                        requestedInstance,
+                        requestedOperation,
+                        existingOperation))
+                    throw Conflict("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
+
+                var existingInstance = await dbContext.ElsaInstances.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.Id == existingOperation.InstanceId, cancellationToken);
+                var existingOutbox = await dbContext.ElsaInstanceLifecycleOutbox.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.OperationId == existingOperation.Id, cancellationToken);
+                if (existingInstance is null || existingOutbox is null)
+                    continue;
+
+                ValidateReplayEnvelope(existingInstance, existingOperation, existingOutbox);
+                if (existingInstance.OrganizationId != requestedInstance.OrganizationId ||
+                    existingInstance.WorkspaceId != requestedInstance.WorkspaceId ||
+                    (expectedInstance is null
+                        ? !string.Equals(existingInstance.Slug, requestedInstance.Slug, StringComparison.Ordinal)
+                        : existingInstance.Id != requestedInstance.Id))
+                    throw Conflict("Idempotency key was already used for a different request.", ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
+
+                return new ElsaInstanceLifecycleAcceptance(
+                    MapInstance(existingInstance),
+                    MapOperation(existingOperation),
+                    MapOutbox(existingOutbox),
+                    Replayed: true);
+            }
+            catch (ElsaInstanceLifecycleConflictException)
+            {
+                throw;
+            }
+            catch (Exception exception) when (
+                EfCoreDatabaseExceptionPolicy.IsSqlServerLifecycleReservationConflict(exception))
+            {
+                // The winner can still be committing or this lookup can itself be
+                // selected as a deadlock victim. Only known SQL Server reservation
+                // conflicts are eligible for another bounded authoritative read.
+                continue;
+            }
+            catch (Exception exception) when (exception is DbUpdateException or DbException)
+            {
+                throw Conflict("Lifecycle acceptance could not verify the persistence reservation.");
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<ElsaInstanceLifecycleAcceptance?> TryReplayCommittedRecoveryAsync(
+        ElsaInstance? expectedInstance,
+        ElsaInstance requestedInstance,
+        ElsaInstanceOperation requestedOperation,
+        CancellationToken cancellationToken)
+    {
+        if (requestedOperation.RecoveryIdempotencyScope is null ||
+            requestedOperation.RecoveryIdempotencyKey is null ||
+            requestedOperation.RecoveryRequestHash is null)
+            return null;
+
+        foreach (var delay in IdempotencyReplayLookupDelays)
+        {
+            if (delay > TimeSpan.Zero)
+                await Task.Delay(delay, cancellationToken);
+
+            dbContext.ChangeTracker.Clear();
+            try
+            {
+                var recovery = await dbContext.ElsaInstanceRecoveryRequests
+                    .AsNoTracking()
+                    .OrderByDescending(x => x.AcceptedAt)
+                    .ThenByDescending(x => x.CreatedAt)
+                    .FirstOrDefaultAsync(
+                        x => x.WorkspaceId == requestedInstance.WorkspaceId &&
+                             x.IdempotencyScope == requestedOperation.RecoveryIdempotencyScope &&
+                             x.IdempotencyKey == requestedOperation.RecoveryIdempotencyKey,
+                        cancellationToken);
+                if (recovery is null)
+                    continue;
+                var existingOperation = await dbContext.ElsaInstanceOperations.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.Id == recovery.OperationId, cancellationToken);
+                if (existingOperation is null)
+                    continue;
+
+                if (!IsExactAuthoritativeRecoveryReplay(
+                        expectedInstance,
+                        requestedInstance,
+                        requestedOperation,
+                        existingOperation,
+                        recovery))
+                    throw Conflict("Recovery request conflicts with the accepted recovery request.",
+                        ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
+
+                var existingInstance = await dbContext.ElsaInstances.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.Id == existingOperation.InstanceId, cancellationToken);
+                var existingOutbox = await dbContext.ElsaInstanceLifecycleOutbox.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.OperationId == existingOperation.Id, cancellationToken);
+                if (existingInstance is null || existingOutbox is null)
+                    continue;
+
+                ValidateReplayEnvelope(existingInstance, existingOperation, existingOutbox);
+                if (existingInstance.Id != requestedInstance.Id ||
+                    existingInstance.OrganizationId != requestedInstance.OrganizationId ||
+                    existingInstance.WorkspaceId != requestedInstance.WorkspaceId)
+                    throw Conflict("Recovery request conflicts with the accepted recovery request.",
+                        ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
+
+                return new ElsaInstanceLifecycleAcceptance(
+                    MapInstance(existingInstance),
+                    MapOperation(existingOperation, recovery),
+                    MapOutbox(existingOutbox),
+                    Replayed: true);
+            }
+            catch (ElsaInstanceLifecycleConflictException)
+            {
+                throw;
+            }
+            catch (Exception exception) when (
+                EfCoreDatabaseExceptionPolicy.IsSqlServerLifecycleReservationConflict(exception))
+            {
+                // The recovery winner may still be committing, or this bounded
+                // authoritative read can itself be selected as a deadlock victim.
+                continue;
+            }
+            catch (Exception exception) when (exception is DbUpdateException or DbException)
+            {
+                throw Conflict("Lifecycle recovery could not verify the persistence reservation.");
+            }
+        }
+
+        return null;
+    }
+
+    internal static bool IsExactAuthoritativeReplay(
+        ElsaInstance? expectedInstance,
+        ElsaInstance requestedInstance,
+        ElsaInstanceOperation requestedOperation,
+        ElsaInstanceOperationEntity existingOperation) =>
+        existingOperation.OrganizationId == requestedInstance.OrganizationId &&
+        existingOperation.WorkspaceId == requestedInstance.WorkspaceId &&
+        existingOperation.Action == requestedOperation.Action &&
+        string.Equals(existingOperation.IdempotencyScope, requestedOperation.IdempotencyScope, StringComparison.Ordinal) &&
+        string.Equals(existingOperation.IdempotencyKey, requestedOperation.IdempotencyKey, StringComparison.Ordinal) &&
+        string.Equals(existingOperation.RequestHash, requestedOperation.RequestHash, StringComparison.Ordinal) &&
+        (expectedInstance is null
+            ? requestedOperation.Action == ElsaInstanceOperationAction.Create
+            : existingOperation.InstanceId == requestedInstance.Id &&
+              requestedOperation.InstanceId == requestedInstance.Id &&
+              expectedInstance.Id == requestedInstance.Id &&
+              expectedInstance.OrganizationId == requestedInstance.OrganizationId &&
+              expectedInstance.WorkspaceId == requestedInstance.WorkspaceId);
+
+    internal static bool IsExactAuthoritativeRecoveryReplay(
+        ElsaInstance? expectedInstance,
+        ElsaInstance requestedInstance,
+        ElsaInstanceOperation requestedOperation,
+        ElsaInstanceOperationEntity existingOperation,
+        ElsaInstanceRecoveryRequestEntity recovery) =>
+        expectedInstance is not null &&
+        expectedInstance.Id == requestedInstance.Id &&
+        expectedInstance.OrganizationId == requestedInstance.OrganizationId &&
+        expectedInstance.WorkspaceId == requestedInstance.WorkspaceId &&
+        requestedOperation.InstanceId == requestedInstance.Id &&
+        existingOperation.Id == requestedOperation.Id &&
+        existingOperation.InstanceId == requestedInstance.Id &&
+        existingOperation.OrganizationId == requestedInstance.OrganizationId &&
+        existingOperation.WorkspaceId == requestedInstance.WorkspaceId &&
+        existingOperation.Action == requestedOperation.Action &&
+        string.Equals(existingOperation.IdempotencyScope, requestedOperation.IdempotencyScope, StringComparison.Ordinal) &&
+        string.Equals(existingOperation.IdempotencyKey, requestedOperation.IdempotencyKey, StringComparison.Ordinal) &&
+        string.Equals(existingOperation.RequestHash, requestedOperation.RequestHash, StringComparison.Ordinal) &&
+        recovery.OperationId == existingOperation.Id &&
+        recovery.InstanceId == requestedInstance.Id &&
+        recovery.OrganizationId == requestedInstance.OrganizationId &&
+        recovery.WorkspaceId == requestedInstance.WorkspaceId &&
+        string.Equals(recovery.IdempotencyScope, requestedOperation.RecoveryIdempotencyScope, StringComparison.Ordinal) &&
+        string.Equals(recovery.IdempotencyKey, requestedOperation.RecoveryIdempotencyKey, StringComparison.Ordinal) &&
+        string.Equals(recovery.RequestHash, requestedOperation.RecoveryRequestHash, StringComparison.Ordinal);
 
     public async Task<ElsaInstanceLifecycleWorkItem?> TryClaimNextAsync(
         string workerId,
@@ -1224,9 +1573,33 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         if (existingInstance is null || existingOutbox is null)
             throw Conflict("Lifecycle operation outbox record is missing.");
 
+        ElsaInstanceRecoveryRequestEntity? recovery = null;
+        if (requestedOperation.RecoveryIdempotencyKey is not null)
+        {
+            recovery = await dbContext.ElsaInstanceRecoveryRequests.SingleOrDefaultAsync(
+                x => x.WorkspaceId == requestedInstance.WorkspaceId &&
+                     x.IdempotencyScope == requestedOperation.RecoveryIdempotencyScope &&
+                     x.IdempotencyKey == requestedOperation.RecoveryIdempotencyKey,
+                cancellationToken);
+            if (recovery is not null)
+            {
+                if (!IsExactAuthoritativeRecoveryReplay(
+                        expectedInstance, requestedInstance, requestedOperation, existingOperation, recovery))
+                    throw Conflict("Recovery request conflicts with the accepted recovery request.",
+                        ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
+                return await ReplayAsync(transaction, existingInstance, existingOperation, existingOutbox,
+                    cancellationToken, recovery);
+            }
+        }
+
         if (existingOperation.State == requestedOperation.State &&
             existingOperation.AttemptNumber == requestedOperation.AttemptNumber)
+        {
+            if (requestedOperation.RecoveryIdempotencyKey is not null)
+                throw Conflict("Recovery request conflicts with the accepted recovery request.",
+                    ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
             return await ReplayAsync(transaction, existingInstance, existingOperation, existingOutbox, cancellationToken);
+        }
 
         if (expectedInstance is null)
             throw Conflict("Lifecycle operation state transition is not valid.");
@@ -1252,8 +1625,26 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         existingInstance.UpdatedAt = requestedAt.ToUniversalTime();
         existingOperation.State = requestedOperation.State;
         existingOperation.AttemptNumber = requestedOperation.AttemptNumber;
+        existingOperation.RecoveryIdempotencyScope = requestedOperation.RecoveryIdempotencyScope;
+        existingOperation.RecoveryIdempotencyKey = requestedOperation.RecoveryIdempotencyKey;
+        existingOperation.RecoveryRequestHash = requestedOperation.RecoveryRequestHash;
         if (isRecoveryResume)
         {
+            recovery = new ElsaInstanceRecoveryRequestEntity
+            {
+                Id = Guid.NewGuid(),
+                OrganizationId = existingOperation.OrganizationId,
+                WorkspaceId = existingOperation.WorkspaceId,
+                InstanceId = existingInstance.Id,
+                OperationId = existingOperation.Id,
+                AttemptNumber = requestedOperation.AttemptNumber,
+                IdempotencyScope = requestedOperation.RecoveryIdempotencyScope!,
+                IdempotencyKey = requestedOperation.RecoveryIdempotencyKey!,
+                RequestHash = requestedOperation.RecoveryRequestHash!,
+                AcceptedAt = requestedAt.ToUniversalTime(),
+                CreatedAt = requestedAt.ToUniversalTime()
+            };
+            await dbContext.ElsaInstanceRecoveryRequests.AddAsync(recovery, cancellationToken);
             existingOperation.FailureCode = null;
             existingOperation.FailureSummary = null;
             if (existingOperation.DeploymentRunId is { } deploymentRunId)
@@ -1306,7 +1697,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
 
         return new ElsaInstanceLifecycleAcceptance(
             MapInstance(existingInstance),
-            MapOperation(existingOperation),
+            recovery is null ? MapOperation(existingOperation) : MapOperation(existingOperation, recovery),
             MapOutbox(existingOutbox),
             Replayed: false);
     }
@@ -1316,10 +1707,25 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         ElsaInstanceEntity? instance,
         ElsaInstanceOperationEntity operation,
         ElsaInstanceLifecycleOutboxEntity? outbox,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ElsaInstanceRecoveryRequestEntity? recovery = null)
     {
         if (instance is null || outbox is null)
             throw Conflict("Lifecycle operation outbox record is missing.");
+        ValidateReplayEnvelope(instance, operation, outbox);
+        await transaction.CommitAsync(cancellationToken);
+        return new ElsaInstanceLifecycleAcceptance(
+            MapInstance(instance),
+            recovery is null ? MapOperation(operation) : MapOperation(operation, recovery),
+            MapOutbox(outbox),
+            Replayed: true);
+    }
+
+    private static void ValidateReplayEnvelope(
+        ElsaInstanceEntity instance,
+        ElsaInstanceOperationEntity operation,
+        ElsaInstanceLifecycleOutboxEntity outbox)
+    {
         if (operation.InstanceId is null ||
             operation.InstanceId != instance.Id ||
             outbox.OperationId != operation.Id ||
@@ -1330,12 +1736,6 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             operation.OrganizationId != instance.OrganizationId ||
             operation.WorkspaceId != instance.WorkspaceId)
             throw Conflict("Lifecycle operation outbox record is inconsistent.");
-        await transaction.CommitAsync(cancellationToken);
-        return new ElsaInstanceLifecycleAcceptance(
-            MapInstance(instance),
-            MapOperation(operation),
-            MapOutbox(outbox),
-            Replayed: true);
     }
 
     private async Task<ElsaInstanceEntity?> LoadTrackedInstanceAsync(
@@ -1408,6 +1808,35 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         entity.DesiredStateRevisionId = revision.Id.ToString("D");
     }
 
+    private async Task ValidateAndStageDeleteConfirmationAsync(
+        ElsaInstanceDeleteConfirmationRequirement? requirement,
+        ElsaInstance instance,
+        ElsaInstanceOperation operation,
+        DateTimeOffset consumedAt,
+        CancellationToken cancellationToken)
+    {
+        if (requirement is null)
+            return;
+        if (operation.Action != ElsaInstanceOperationAction.Delete ||
+            requirement.ConfirmationId == Guid.Empty || requirement.AccountId == Guid.Empty)
+            throw new ElsaInstanceDeleteConfirmationException();
+
+        var consumedAtUtc = consumedAt.ToUniversalTime();
+        var affected = await dbContext.ActionConfirmations
+            .Where(x => x.WorkspaceId == instance.WorkspaceId &&
+                        x.Id == requirement.ConfirmationId &&
+                        x.ActionType == ConfirmationActionType.DeleteManagedInstance &&
+                        x.ConfirmedByAccountId == requirement.AccountId &&
+                        x.UsedAt == null &&
+                        x.ExpiresAt > consumedAt &&
+                        x.TargetId == instance.Id.ToString("D"))
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(x => x.UsedAt, consumedAtUtc),
+                cancellationToken);
+        if (affected == 0)
+            throw new ElsaInstanceDeleteConfirmationException();
+    }
+
     private async Task<ElsaInstanceAuditEventEntity> CreateAuditEventAsync(
         ElsaInstanceEntity instance,
         ElsaInstanceOperationEntity operation,
@@ -1418,7 +1847,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         Guid? deploymentRunId = null,
         string? planReference = null,
         string? diagnosticCode = null,
-        string? summary = null)
+        string? summary = null,
+        Guid? actorAccountId = null)
     {
         var lastSequence = await dbContext.ElsaInstanceAuditEvents
             .Where(x => x.InstanceId == instance.Id)
@@ -1432,6 +1862,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             InstanceId = instance.Id,
             Sequence = checked(lastSequence + 1),
             EventType = eventType,
+            ActorAccountId = actorAccountId,
             OperationId = operation.Id,
             DeploymentRunId = deploymentRunId,
             PriorState = priorObservedLifecycle?.ToString(),
@@ -1476,6 +1907,11 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             operation.ReconciliationRetryEvidenceDigest is not null,
             replayed, operation.ReconciledAt.Value.ToUniversalTime());
     }
+
+    private static string? HashReason(string? reason) =>
+        reason is null
+            ? null
+            : "reason.sha256." + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(reason)));
 
     private static void ValidateEnvelope(
         ElsaInstance instance,
@@ -1838,7 +2274,11 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             !string.Equals(existing.IdempotencyScope, operation.IdempotencyScope, StringComparison.Ordinal) ||
             !string.Equals(existing.IdempotencyKey, operation.IdempotencyKey, StringComparison.Ordinal) ||
             !string.Equals(existing.RequestHash, operation.RequestHash, StringComparison.Ordinal) ||
-            outbox.OperationId != existing.Id)
+            outbox.OperationId != existing.Id ||
+            outbox.WorkspaceId != existing.WorkspaceId ||
+            outbox.InstanceId != existing.InstanceId ||
+            outbox.Action != existing.Action ||
+            !string.Equals(outbox.RequestHash, existing.RequestHash, StringComparison.Ordinal))
             throw Conflict("Lifecycle operation identity is already in use.");
     }
 
@@ -1851,9 +2291,9 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             expected.WorkspaceId != requested.WorkspaceId || stored.OrganizationId != expected.OrganizationId ||
             stored.WorkspaceId != expected.WorkspaceId || stored.Version != expected.Version ||
             !string.Equals(stored.Slug, expected.Slug, StringComparison.Ordinal))
-            throw Conflict(stored is null || stored.Version != expected.Version
-                ? "Instance version conflict."
-                : "Elsa instance does not exist in the workspace.");
+            throw stored is null || stored.Version != expected.Version
+                ? Conflict("Instance version conflict.", ElsaInstanceLifecycleConflictReason.VersionConflict)
+                : Conflict("Elsa instance does not exist in the workspace.", ElsaInstanceLifecycleConflictReason.InvalidState);
     }
 
     private static ElsaInstanceEntity ToEntity(ElsaInstance instance, DateTimeOffset now)
@@ -2017,7 +2457,12 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             entity.RequestHash, entity.CreatedAt);
     }
 
-    private static ElsaInstanceOperation MapOperation(ElsaInstanceOperationEntity entity)
+    internal static ElsaInstanceOperation MapOperation(ElsaInstanceOperationEntity entity)
+        => MapOperation(entity, null);
+
+    private static ElsaInstanceOperation MapOperation(
+        ElsaInstanceOperationEntity entity,
+        ElsaInstanceRecoveryRequestEntity? recovery)
     {
         try
         {
@@ -2033,7 +2478,10 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 entity.ExpectedVersion,
                 entity.State,
                 entity.AttemptNumber,
-                entity.AcceptedAt);
+                entity.AcceptedAt,
+                recovery?.IdempotencyScope ?? entity.RecoveryIdempotencyScope,
+                recovery?.IdempotencyKey ?? entity.RecoveryIdempotencyKey,
+                recovery?.RequestHash ?? entity.RecoveryRequestHash);
         }
         catch (Exception exception) when (exception is ArgumentException or ArgumentOutOfRangeException or InvalidOperationException)
         {
@@ -2041,7 +2489,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         }
     }
 
-    private static ElsaInstance MapInstance(ElsaInstanceEntity entity)
+    internal static ElsaInstance MapInstance(ElsaInstanceEntity entity)
     {
         try
         {
@@ -2300,6 +2748,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         value.Contains("connectionstring", StringComparison.OrdinalIgnoreCase) ||
         value.Contains("workflow", StringComparison.OrdinalIgnoreCase);
 
-    private static ElsaInstanceLifecycleConflictException Conflict(string message) =>
-        new(message);
+    private static ElsaInstanceLifecycleConflictException Conflict(
+        string message, ElsaInstanceLifecycleConflictReason reason = ElsaInstanceLifecycleConflictReason.InvalidState) =>
+        new(message, reason);
 }

@@ -311,7 +311,7 @@ export type PromotionResult = {
   comparison: PromotionComparison;
 };
 
-export type ConfirmationActionType = "Deploy" | "Rollback" | "RuntimeControl";
+export type ConfirmationActionType = "Deploy" | "Rollback" | "RuntimeControl" | "DeleteManagedInstance";
 export type RuntimeControlExecutionStatus = "Succeeded" | "Failed";
 
 export type ActionConfirmation = {

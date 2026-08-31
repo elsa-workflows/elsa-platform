@@ -443,7 +443,9 @@ prevents a delete/retry race from causing duplicate remote applies.
   and hash returns the original operation/result. Reuse with a different hash
   returns `409`.
 - Create idempotency is scoped to workspace plus route because no instance ID exists
-  yet. Once the instance exists, operations are scoped to instance plus route.
+  yet. The server always allocates the instance ID; the public create contract does
+  not accept caller-selected identity. Once the instance exists, operations are
+  scoped to instance plus route.
 - An accepted intent mutation increments `Version` exactly once. Retries that find
   the same idempotency record do not increment it or append duplicate audit events.
 - The instance operation has a durable state (`Accepted`, `WaitingForPriorOperation`,
@@ -587,6 +589,19 @@ EF Core store and produce both SQLite and SQL Server migrations.
   idempotency/audit records and cannot be deleted; the EF save guard and both
   provider migrations enforce retention at the database boundary.
 
+`ElsaInstanceRecoveryRequest` (append-only recovery request envelope):
+
+- Each accepted recovery request keeps its own immutable operation ID, attempt,
+  route scope, idempotency key, request hash and acceptance timestamp. The
+  envelope is authoritative when an older recovery key is replayed, while the
+  operation projection reports the current state and attempt.
+- Recovery envelopes share the `(WorkspaceId, IdempotencyScope, IdempotencyKey)`
+  namespace with normal operation requests. A key may therefore be reused only
+  across distinct route scopes (for example `instances`,
+  `instance/{id}/operations`, and `instance/{id}/UpdateIntent`); within one scope
+  it is a conflict in either direction. Envelopes are unique by route scope/key
+  and by `(OperationId, AttemptNumber)` and are never updated or deleted.
+
 `DeploymentEnvironment` managed binding and `DeploymentRun` reservation constraints:
 
 - `DeploymentEnvironment.ElsaInstanceId` is nullable for legacy/customer-owned
@@ -677,7 +692,15 @@ values never appear in customer DTOs. Display `Name` is not a uniqueness key;
 
 `DELETE` is intentionally represented as an explicit operation so confirmation,
 retention and asynchronous provider cleanup cannot be mistaken for an immediate row
-delete. `POST /operations` should accept an action-specific body, for example:
+delete. A delete body carries `deleteConfirmationId`, created for the
+`DeleteManagedInstance` confirmation action and canonical instance-ID target. The
+caller must also hold `instances.delete`; exact replays bind the same confirmation
+ID into the idempotency fingerprint without consuming it twice. First-use
+confirmation consumption and durable delete acceptance commit in the same database
+transaction, so a concurrency or persistence failure leaves the confirmation
+unused. Fields that do not apply to the selected action are rejected rather than
+ignored. `POST /operations`
+should accept an action-specific body, for example:
 
 ```json
 {
@@ -708,7 +731,8 @@ appends a separate lifecycle event. The minimum event set is:
 
 Events contain actor type/account or operator subject, organization/workspace/instance
 IDs, operation/run/revision/plan references, prior/new safe state, diagnostic code,
-reason and timestamp. They do not contain the request body, authorization token,
+a one-way SHA-256 reason fingerprint and timestamp. Reasons are bounded safe summaries
+at the API boundary but are not retained as raw customer text. Events do not contain the request body, authorization token,
 secret value, workflow definition, package payload, provider command body, or provider
 resource ID.
 

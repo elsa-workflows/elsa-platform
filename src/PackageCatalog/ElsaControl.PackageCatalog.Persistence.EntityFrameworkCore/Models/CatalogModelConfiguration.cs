@@ -928,6 +928,9 @@ internal sealed class ElsaInstanceOperationConfiguration : IEntityTypeConfigurat
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Action).HasConversion<string>().HasMaxLength(64).IsRequired();
         builder.Property(x => x.IdempotencyScope).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.RecoveryIdempotencyScope).HasMaxLength(256);
+        builder.Property(x => x.RecoveryIdempotencyKey).HasMaxLength(128);
+        builder.Property(x => x.RecoveryRequestHash).HasMaxLength(64);
         builder.Property(x => x.IdempotencyKey).HasMaxLength(128).IsRequired();
         builder.Property(x => x.RequestHash).HasMaxLength(64).IsRequired();
         builder.Property(x => x.State).HasConversion<string>().HasMaxLength(64).IsRequired();
@@ -975,6 +978,27 @@ internal sealed class ElsaInstanceOperationConfiguration : IEntityTypeConfigurat
             .HasPrincipalKey(x => new { x.OrganizationId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+internal sealed class ElsaInstanceRecoveryRequestConfiguration : IEntityTypeConfiguration<ElsaInstanceRecoveryRequestEntity>
+{
+    public void Configure(EntityTypeBuilder<ElsaInstanceRecoveryRequestEntity> builder)
+    {
+        builder.ToTable("ElsaInstanceRecoveryRequests");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.IdempotencyScope).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.IdempotencyKey).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.RequestHash).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.AcceptedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => new { x.WorkspaceId, x.IdempotencyScope, x.IdempotencyKey }).IsUnique();
+        builder.HasIndex(x => new { x.OperationId, x.AttemptNumber }).IsUnique();
+        builder.HasOne(x => x.Operation).WithMany().HasForeignKey(x => x.OperationId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Workspace>().WithMany()
+            .HasForeignKey(x => new { x.OrganizationId, x.WorkspaceId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 

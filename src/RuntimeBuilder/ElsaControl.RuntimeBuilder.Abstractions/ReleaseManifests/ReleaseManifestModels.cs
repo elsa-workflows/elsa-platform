@@ -149,3 +149,72 @@ public static class ReleaseManifestEvidenceKinds
     public const string Provenance = "release-manifest-provenance";
     public const string VulnerabilityScan = "release-manifest-vulnerability-scan";
 }
+
+/// <summary>
+/// Shared trust-boundary contract for evidence that may leave the immutable
+/// resolved-plan store through customer-facing projections.
+/// </summary>
+public static class ReleaseManifestEvidenceContract
+{
+    public const string GenericDescription = "Retained immutable evidence.";
+
+    private static readonly IReadOnlyDictionary<string, string> FixedDescriptions =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [ReleaseManifestEvidenceKinds.Manifest] = "Verified producer release manifest.",
+            [ReleaseManifestEvidenceKinds.Signature] = "Verified release-manifest signature evidence.",
+            [ReleaseManifestEvidenceKinds.Sbom] = "Verified release SBOM evidence.",
+            [ReleaseManifestEvidenceKinds.Provenance] = "Verified release provenance evidence.",
+            [ReleaseManifestEvidenceKinds.VulnerabilityScan] = "Producer-retained release vulnerability-scan evidence."
+        };
+
+    public static string DescriptionFor(string kind) =>
+        FixedDescriptions.TryGetValue(kind, out var description) ? description : GenericDescription;
+
+    public static bool IsSafe(string? kind, string? reference, string? digest, string? description)
+    {
+        if (string.IsNullOrWhiteSpace(kind) || kind.Any(char.IsControl) || kind.Length > 128 ||
+            !IsDigest(digest) || string.IsNullOrWhiteSpace(reference) || !IsSafeReference(reference, digest!) ||
+            string.IsNullOrWhiteSpace(description) || description.Any(char.IsControl))
+            return false;
+
+        return FixedDescriptions.TryGetValue(kind, out var expected)
+            ? string.Equals(description, expected, StringComparison.Ordinal)
+            : string.Equals(description, GenericDescription, StringComparison.Ordinal);
+    }
+
+    public static bool IsDigest(string? value) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Length == "sha256:".Length + 64 &&
+        value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) &&
+        value["sha256:".Length..].All(Uri.IsHexDigit);
+
+    public static bool IsSafeReference(string reference, string digest)
+    {
+        if (string.IsNullOrWhiteSpace(reference) || reference.Any(char.IsWhiteSpace) ||
+            reference.Any(char.IsControl) || reference.Contains('%', StringComparison.Ordinal) ||
+            reference.Contains('\\', StringComparison.Ordinal) || reference.Contains('?', StringComparison.Ordinal) ||
+            reference.Contains('#', StringComparison.Ordinal) ||
+            !Uri.TryCreate(reference, UriKind.Absolute, out var uri) ||
+            string.IsNullOrWhiteSpace(uri.Host) || string.IsNullOrEmpty(uri.AbsolutePath) || uri.AbsolutePath == "/" ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            !(uri.Scheme.Equals("oci", StringComparison.OrdinalIgnoreCase) || uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)))
+            return false;
+
+        var segments = uri.AbsolutePath[1..].Split('/');
+        if (segments.Any(segment => string.IsNullOrWhiteSpace(segment) || segment is "." or ".."))
+            return false;
+
+        var marker = reference.IndexOf("@sha256:", StringComparison.OrdinalIgnoreCase);
+        if (reference.Contains('@', StringComparison.Ordinal))
+        {
+            if (marker < 0 || reference.IndexOf('@', marker + 1) >= 0)
+                return false;
+            var embedded = reference[(marker + 1)..];
+            if (!IsDigest(embedded) || !string.Equals(embedded, digest, StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+
+        return true;
+    }
+}

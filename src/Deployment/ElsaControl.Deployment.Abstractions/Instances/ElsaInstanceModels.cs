@@ -126,6 +126,7 @@ public enum ElsaFeatureOverrideKind
 /// </summary>
 public sealed record ElsaFeatureOverride
 {
+    [JsonConstructor]
     private ElsaFeatureOverride(ElsaFeatureOverrideKind kind, string value)
     {
         Kind = ElsaInstanceValue.RequireEnum(kind, nameof(kind));
@@ -158,10 +159,11 @@ public sealed record ElsaFeatureOverride
 /// <summary>Topology, feature and package choices expressed as governed catalog values.</summary>
 public sealed record ElsaApplicationIntent
 {
+    [JsonConstructor]
     public ElsaApplicationIntent(
         string topologyId,
         string? featurePresetId = null,
-        IEnumerable<KeyValuePair<string, ElsaFeatureOverride>>? featureOverrides = null,
+        IReadOnlyDictionary<string, ElsaFeatureOverride>? featureOverrides = null,
         string? packagePolicy = null,
         string? configurationShapeRevisionId = null)
     {
@@ -173,6 +175,21 @@ public sealed record ElsaApplicationIntent
         FeatureOverrides = featureOverrides is null
             ? new Dictionary<string, ElsaFeatureOverride>()
             : featureOverrides.ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
+    }
+
+    public ElsaApplicationIntent(
+        string topologyId,
+        string? featurePresetId,
+        IEnumerable<KeyValuePair<string, ElsaFeatureOverride>>? featureOverrides,
+        string? packagePolicy = null,
+        string? configurationShapeRevisionId = null)
+        : this(
+            topologyId,
+            featurePresetId,
+            featureOverrides?.ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal),
+            packagePolicy,
+            configurationShapeRevisionId)
+    {
     }
 
     private string _topologyId = null!;
@@ -426,7 +443,7 @@ public sealed record ElsaInstance
         Id = id;
         OrganizationId = organizationId;
         WorkspaceId = workspaceId;
-        _name = ElsaInstanceValue.Require(name, nameof(name));
+        _name = ElsaInstanceValue.DisplayName(name, nameof(name));
         Slug = ElsaInstanceSlug.Normalize(slug);
         _intent = intent;
     }
@@ -575,7 +592,7 @@ public sealed record ElsaInstance
     public string Name
     {
         get => _name;
-        internal init => _name = ElsaInstanceValue.Require(value, nameof(Name));
+        internal init => _name = ElsaInstanceValue.DisplayName(value, nameof(Name));
     }
 
     public string Slug { get; }
@@ -711,6 +728,8 @@ public sealed record ElsaInstance
         return this with { IdentityBinding = binding };
     }
 
+    public ElsaInstance Rename(string name) => this with { Name = ElsaInstanceValue.DisplayName(name, nameof(name)) };
+
     /// <summary>
     /// Projects the immutable plan selected by the asynchronous lifecycle worker.
     /// The plan reference and current release are accepted together so they cannot
@@ -760,6 +779,14 @@ public sealed record ElsaInstance
 
 public static class ElsaInstanceValue
 {
+    public static string DisplayName(string value, string parameterName)
+    {
+        var normalized = Require(value, parameterName);
+        if (normalized.Length > 256)
+            throw new ArgumentException("Display name cannot exceed 256 characters.", parameterName);
+        return normalized;
+    }
+
     public static string Require(string value, string parameterName)
     {
         if (value is null)

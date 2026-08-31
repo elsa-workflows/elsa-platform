@@ -1,5 +1,6 @@
 using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Core.Instances;
+using ElsaControl.Deployment.Core.Workspace;
 using ElsaControl.RuntimeBuilder.Abstractions;
 using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 using ElsaControl.RuntimeBuilder.Abstractions.ReleaseManifests;
@@ -247,14 +248,27 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     [Fact]
     public async Task Waiting_delete_is_not_claimed_or_resolved()
     {
-        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var authority = new InMemoryElsaInstanceDeleteConfirmationAuthority();
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now), authority);
         var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
         var created = await service.CreateAsync(CreateRequest("claims-delete", "create-delete"));
         store.RegisterResolutionInput(created.Operation.Id, ResolutionInput(created.Instance));
         await new ElsaInstanceLifecycleWorker(store, new RecordingResolver(SuccessfulResolution(WorkspaceId, created.Instance.Id)), new StaticTimeProvider(Now))
             .ProcessAvailableAsync("lifecycle-worker-1");
+        var confirmationId = Guid.NewGuid();
+        var actorAccountId = Guid.NewGuid();
+        authority.Add(new ActionConfirmation(
+            confirmationId,
+            WorkspaceId,
+            ConfirmationActionType.DeleteManagedInstance,
+            created.Instance.Id.ToString("D"),
+            actorAccountId,
+            Now,
+            Now.AddMinutes(5),
+            null));
         var deletion = await service.DeleteAsync(new ElsaInstanceLifecycleRequest(
-            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1"));
+            WorkspaceId, created.Instance.Id, created.Instance.Version, "delete-1",
+            DeleteConfirmationId: confirmationId, ActorAccountId: actorAccountId));
         store.RegisterResolutionInput(deletion.Operation.Id, ResolutionInput(deletion.Instance));
 
         var result = await new ElsaInstanceLifecycleWorker(store, new RecordingResolver(SuccessfulResolution(WorkspaceId, created.Instance.Id)), new StaticTimeProvider(Now))

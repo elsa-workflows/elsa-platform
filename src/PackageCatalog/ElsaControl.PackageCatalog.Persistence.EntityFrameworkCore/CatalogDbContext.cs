@@ -43,6 +43,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.ElsaInstanceIntentRevisionEntity> ElsaInstanceIntentRevisions => Set<Models.ElsaInstanceIntentRevisionEntity>();
     internal DbSet<Models.ElsaInstanceLifecycleOutboxEntity> ElsaInstanceLifecycleOutbox => Set<Models.ElsaInstanceLifecycleOutboxEntity>();
     internal DbSet<Models.ElsaInstanceOperationEntity> ElsaInstanceOperations => Set<Models.ElsaInstanceOperationEntity>();
+    internal DbSet<Models.ElsaInstanceRecoveryRequestEntity> ElsaInstanceRecoveryRequests => Set<Models.ElsaInstanceRecoveryRequestEntity>();
     internal DbSet<Models.ElsaInstanceResolvedPlanEntity> ElsaInstanceResolvedPlans => Set<Models.ElsaInstanceResolvedPlanEntity>();
     internal DbSet<Models.ElsaInstanceAuditEventEntity> ElsaInstanceAuditEvents => Set<Models.ElsaInstanceAuditEventEntity>();
     internal DbSet<Models.ElsaInstanceIdentityBindingEntity> ElsaInstanceIdentityBindings => Set<Models.ElsaInstanceIdentityBindingEntity>();
@@ -109,6 +110,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceIntentRevisionConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceLifecycleOutboxConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceOperationConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.ElsaInstanceRecoveryRequestConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceResolvedPlanConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceAuditEventConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ElsaInstanceIdentityBindingConfiguration());
@@ -176,6 +178,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         EnsureElsaInstanceIntentRevisionsAreAppendOnly();
         EnsureElsaInstanceLifecycleOutboxIsAppendOnly();
         EnsureElsaInstanceResolvedPlansAreAppendOnly();
+        EnsureElsaInstanceRecoveryRequestsAreAppendOnly();
         EnsureManagedElsaHandoffRowsAreAppendOnly();
         ValidateManagedElsaHandoffRows();
         ValidateElsaInstancePersistence();
@@ -257,6 +260,13 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         if (ChangeTracker.Entries<Models.ElsaInstanceResolvedPlanEntity>()
             .Any(x => x.State is EntityState.Modified or EntityState.Deleted))
             throw new InvalidOperationException("Elsa instance resolved plans are append-only.");
+    }
+
+    private void EnsureElsaInstanceRecoveryRequestsAreAppendOnly()
+    {
+        if (ChangeTracker.Entries<Models.ElsaInstanceRecoveryRequestEntity>()
+            .Any(x => x.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Elsa instance recovery requests are append-only.");
     }
 
     private void EnsureManagedElsaHandoffRowsAreAppendOnly()
@@ -415,6 +425,20 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             operation.IdempotencyScope = RequireSafeReference(operation.IdempotencyScope, nameof(operation.IdempotencyScope), 256);
             operation.IdempotencyKey = RequireSafeToken(operation.IdempotencyKey, nameof(operation.IdempotencyKey), 128);
             operation.RequestHash = RequireCanonicalHash(operation.RequestHash, nameof(operation.RequestHash));
+            var recoveryEnvelopeCount = new[]
+            {
+                operation.RecoveryIdempotencyScope,
+                operation.RecoveryIdempotencyKey,
+                operation.RecoveryRequestHash
+            }.Count(x => x is not null);
+            if (recoveryEnvelopeCount is not (0 or 3))
+                throw new InvalidOperationException("Recovery idempotency evidence must be complete.");
+            if (recoveryEnvelopeCount == 3)
+            {
+                operation.RecoveryIdempotencyScope = RequireSafeReference(operation.RecoveryIdempotencyScope!, nameof(operation.RecoveryIdempotencyScope), 256);
+                operation.RecoveryIdempotencyKey = RequireSafeToken(operation.RecoveryIdempotencyKey!, nameof(operation.RecoveryIdempotencyKey), 128);
+                operation.RecoveryRequestHash = RequireCanonicalHash(operation.RecoveryRequestHash!, nameof(operation.RecoveryRequestHash));
+            }
             operation.WorkerId = OptionalSafeToken(operation.WorkerId, nameof(operation.WorkerId), 256);
             operation.LeaseTokenHash = OptionalCanonicalHash(operation.LeaseTokenHash, nameof(operation.LeaseTokenHash));
             operation.DesiredStateRevisionId = OptionalSafeReference(operation.DesiredStateRevisionId, nameof(operation.DesiredStateRevisionId), 128);
@@ -496,6 +520,24 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                 if (operation.AttemptNumber < originalAttemptNumber)
                     throw new InvalidOperationException("Instance operation attempt number cannot decrease.");
             }
+        }
+
+
+        foreach (var entry in ChangeTracker.Entries<Models.ElsaInstanceRecoveryRequestEntity>()
+                     .Where(x => x.State == EntityState.Added))
+        {
+            var recovery = entry.Entity;
+            if (recovery.Id == Guid.Empty || recovery.OrganizationId == Guid.Empty ||
+                recovery.WorkspaceId == Guid.Empty || recovery.InstanceId == Guid.Empty ||
+                recovery.OperationId == Guid.Empty || recovery.AttemptNumber < 2)
+                throw new InvalidOperationException("A recovery request requires stable ownership and attempt identifiers.");
+            recovery.IdempotencyScope = RequireSafeReference(recovery.IdempotencyScope, nameof(recovery.IdempotencyScope), 256);
+            recovery.IdempotencyKey = RequireSafeToken(recovery.IdempotencyKey, nameof(recovery.IdempotencyKey), 128);
+            recovery.RequestHash = RequireCanonicalHash(recovery.RequestHash, nameof(recovery.RequestHash));
+            recovery.AcceptedAt = recovery.AcceptedAt.ToUniversalTime();
+            recovery.CreatedAt = recovery.CreatedAt.ToUniversalTime();
+            if (recovery.AcceptedAt == default || recovery.CreatedAt == default || recovery.CreatedAt < recovery.AcceptedAt)
+                throw new InvalidOperationException("Recovery request timestamps are invalid.");
         }
 
         foreach (var entry in ChangeTracker.Entries<Models.ElsaInstanceIntentRevisionEntity>()
@@ -652,7 +694,11 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             // Human-readable summaries and operator subjects are not durable
             // payload channels. Keep only a stable code and a one-way subject
             // fingerprint at the persistence boundary.
-            audit.Summary = audit.DiagnosticCode ?? audit.EventType;
+            audit.Summary = audit.Summary is { Length: 78 } reasonHash &&
+                            reasonHash.StartsWith("reason.sha256.", StringComparison.Ordinal) &&
+                            reasonHash[14..].All(Uri.IsHexDigit)
+                ? reasonHash.ToLowerInvariant()
+                : audit.DiagnosticCode ?? audit.EventType;
             if (!string.IsNullOrWhiteSpace(audit.OperatorSubject))
             {
                 if (audit.OperatorSubject.Length > 512)

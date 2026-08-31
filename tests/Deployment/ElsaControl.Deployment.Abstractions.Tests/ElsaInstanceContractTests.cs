@@ -82,15 +82,23 @@ public sealed class ElsaInstanceContractTests
     public void Feature_overrides_are_typed_and_canonical_hash_preserves_type()
     {
         var boolean = InstanceIntent(application: new ElsaApplicationIntent(
-            "combined", featureOverrides: [new("flag", ElsaFeatureOverride.FromBoolean(true))]));
+            "combined", featureOverrides: new Dictionary<string, ElsaFeatureOverride> { ["flag"] = ElsaFeatureOverride.FromBoolean(true) }));
         var catalog = InstanceIntent(application: new ElsaApplicationIntent(
-            "combined", featureOverrides: [new("flag", ElsaFeatureOverride.FromCatalog("true"))]));
+            "combined", featureOverrides: new Dictionary<string, ElsaFeatureOverride> { ["flag"] = ElsaFeatureOverride.FromCatalog("true") }));
         var number = InstanceIntent(application: new ElsaApplicationIntent(
-            "combined", featureOverrides: [new("limit", ElsaFeatureOverride.FromNumber("1.0"))]));
+            "combined", featureOverrides: new Dictionary<string, ElsaFeatureOverride> { ["limit"] = ElsaFeatureOverride.FromNumber("1.0") }));
         var reordered = InstanceIntent(application: new ElsaApplicationIntent(
-            "combined", featureOverrides: [new("zeta", ElsaFeatureOverride.FromNumber(2)), new("alpha", ElsaFeatureOverride.FromBoolean(false))]));
+            "combined", featureOverrides: new Dictionary<string, ElsaFeatureOverride>
+            {
+                ["zeta"] = ElsaFeatureOverride.FromNumber(2),
+                ["alpha"] = ElsaFeatureOverride.FromBoolean(false)
+            }));
         var ordered = InstanceIntent(application: new ElsaApplicationIntent(
-            "combined", featureOverrides: [new("alpha", ElsaFeatureOverride.FromBoolean(false)), new("zeta", ElsaFeatureOverride.FromNumber(2))]));
+            "combined", featureOverrides: new Dictionary<string, ElsaFeatureOverride>
+            {
+                ["alpha"] = ElsaFeatureOverride.FromBoolean(false),
+                ["zeta"] = ElsaFeatureOverride.FromNumber(2)
+            }));
 
         Assert.NotEqual(boolean.ComputeCanonicalHash(), catalog.ComputeCanonicalHash());
         Assert.Equal(ElsaFeatureOverrideKind.Number, number.Application.FeatureOverrides["limit"].Kind);
@@ -149,6 +157,14 @@ public sealed class ElsaInstanceContractTests
             ElsaInstanceIdentityBinding.Create(Guid.NewGuid(), "https://other.example.test")));
     }
 
+    [Fact]
+    public void Rename_rejects_display_names_over_256_characters()
+    {
+        var instance = CreateInstance(ElsaObservedLifecycle.Pending);
+
+        Assert.Throws<ArgumentException>(() => instance.Rename(new string('n', 257)));
+    }
+
     [Theory]
     [InlineData("http://localhost:5000")]
     [InlineData("http://127.0.0.1:5000")]
@@ -199,7 +215,7 @@ public sealed class ElsaInstanceContractTests
         var deleted = ElsaInstanceStateMachine.FinalizeDeletion(requested.Instance, DateTimeOffset.UtcNow);
 
         Assert.Equal(ElsaObservedLifecycle.Deleted, deleted.ObservedLifecycle);
-        Assert.Throws<InvalidOperationException>(() => ElsaInstanceStateMachine.Request(
+        Assert.Throws<ElsaInstanceStateConflictException>(() => ElsaInstanceStateMachine.Request(
             deleted, ElsaInstanceOperationAction.Start));
     }
 
@@ -230,7 +246,7 @@ public sealed class ElsaInstanceContractTests
 
         Assert.False(waiting.Operation.HoldsReservation);
         Assert.True(ElsaInstanceOperationGuard.IsBlocking(waiting.Operation.State));
-        Assert.Throws<InvalidOperationException>(() => ElsaInstanceStateMachine.Request(
+        Assert.Throws<ElsaInstanceStateConflictException>(() => ElsaInstanceStateMachine.Request(
             waiting.Instance, ElsaInstanceOperationAction.Delete, waiting.Operation));
     }
 
@@ -254,7 +270,7 @@ public sealed class ElsaInstanceContractTests
         var instance = CreateInstance(ElsaObservedLifecycle.Ready);
         var first = ElsaInstanceStateMachine.Request(instance, ElsaInstanceOperationAction.Delete);
 
-        Assert.Throws<InvalidOperationException>(() => ElsaInstanceStateMachine.Request(
+        Assert.Throws<ElsaInstanceStateConflictException>(() => ElsaInstanceStateMachine.Request(
             first.Instance, ElsaInstanceOperationAction.Delete, first.Operation));
     }
 
@@ -326,7 +342,7 @@ public sealed class ElsaInstanceContractTests
     [Fact]
     public void Retry_is_state_gated_to_failed_or_degraded_observations()
     {
-        Assert.Throws<InvalidOperationException>(() => ElsaInstanceStateMachine.Request(
+        Assert.Throws<ElsaInstanceStateConflictException>(() => ElsaInstanceStateMachine.Request(
             CreateInstance(ElsaObservedLifecycle.Ready), ElsaInstanceOperationAction.Retry));
         Assert.Equal(ElsaObservedLifecycle.Provisioning,
             ElsaInstanceStateMachine.Request(CreateInstance(ElsaObservedLifecycle.Failed), ElsaInstanceOperationAction.Retry)
@@ -419,7 +435,7 @@ public sealed class ElsaInstanceContractTests
     {
         var instance = CreateInstance(ElsaObservedLifecycle.Ready);
 
-        Assert.Throws<InvalidOperationException>(() => ElsaInstanceStateMachine.WithIntent(
+        Assert.Throws<ElsaInstanceStateConflictException>(() => ElsaInstanceStateMachine.WithIntent(
             instance,
             InstanceIntent(application: new ElsaApplicationIntent("server-studio")),
             expectedVersion: instance.Version + 1));
@@ -433,13 +449,13 @@ public sealed class ElsaInstanceContractTests
         var minorIntent = InstanceIntent("3.9", "3.9.0");
         var majorIntent = InstanceIntent("4.0", "4.0.0");
 
-        Assert.Throws<InvalidOperationException>(() => ElsaInstanceStateMachine.WithIntent(
+        Assert.Throws<ElsaInstanceStateConflictException>(() => ElsaInstanceStateMachine.WithIntent(
             instance, instance.Intent with { DesiredLifecycle = ElsaDesiredLifecycle.Stopped }, instance.Version));
-        Assert.Throws<InvalidOperationException>(() => ElsaInstanceStateMachine.WithIntent(instance, minorIntent, instance.Version));
-        Assert.Throws<InvalidOperationException>(() => ElsaInstanceStateMachine.WithIntent(instance, majorIntent, instance.Version));
+        Assert.Throws<ElsaInstanceStateConflictException>(() => ElsaInstanceStateMachine.WithIntent(instance, minorIntent, instance.Version));
+        Assert.Throws<ElsaInstanceStateConflictException>(() => ElsaInstanceStateMachine.WithIntent(instance, majorIntent, instance.Version));
 
         var active = ElsaInstanceStateMachine.Request(instance, ElsaInstanceOperationAction.Stop);
-        Assert.Throws<InvalidOperationException>(() => ElsaInstanceStateMachine.WithIntent(
+        Assert.Throws<ElsaInstanceStateConflictException>(() => ElsaInstanceStateMachine.WithIntent(
             instance, patchIntent, instance.Version, active.Operation));
 
         var patched = ElsaInstanceStateMachine.Request(
@@ -451,7 +467,7 @@ public sealed class ElsaInstanceContractTests
             instance, ElsaInstanceOperationAction.ApproveMinorUpgrade, requestedIntent: minorIntent);
         Assert.Equal("3.9", approvedMinor.Instance.Intent.Release.ReleaseLine);
 
-        Assert.Throws<InvalidOperationException>(() => ElsaInstanceStateMachine.Request(
+        Assert.Throws<ElsaInstanceStateConflictException>(() => ElsaInstanceStateMachine.Request(
             instance, ElsaInstanceOperationAction.MajorMigration, requestedIntent: majorIntent));
         var migrated = ElsaInstanceStateMachine.Request(
             instance, ElsaInstanceOperationAction.MajorMigration, requestedIntent: majorIntent, migrationAuthorized: true);
@@ -499,7 +515,7 @@ public sealed class ElsaInstanceContractTests
         var foreign = OperationFor(new ElsaInstance(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
             "Other", "other", InstanceIntent()), ElsaInstanceOperationState.Running);
 
-        Assert.Throws<InvalidOperationException>(() => ElsaInstanceStateMachine.Request(
+        Assert.Throws<ElsaInstanceStateConflictException>(() => ElsaInstanceStateMachine.Request(
             instance, ElsaInstanceOperationAction.Reconcile, foreign));
     }
 
