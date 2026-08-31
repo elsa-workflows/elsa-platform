@@ -180,6 +180,9 @@ jobs:
             --name "$AZURE_WEBAPP_NAME" \
             --query "[?name=='Application__BuildNumber'] | [0].value" \
             --output tsv)"
+          if [ "$application_build_number" = "None" ]; then
+            application_build_number=""
+          fi
 
           if [ -n "$application_build_number" ]; then
             if [[ ! "$application_build_number" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$ ]]; then
