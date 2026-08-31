@@ -152,8 +152,25 @@ jobs:
             echo "::error::Could not capture the current Linux runtime image; refusing an unprotected deployment."
             exit 1
           fi
-          if [[ ! "$linux_fx_version" =~ ^DOCKER\|[[:alnum:]][[:alnum:]._:/@=-]*$ ]]; then
-            echo "::error::The captured Docker runtime image has an unexpected or unsafe format."
+
+          deployment_mode=""
+          sitecontainer_image=""
+          if [[ "$linux_fx_version" =~ ^DOCKER\|[[:alnum:]][[:alnum:]._:/@=-]*$ ]]; then
+            deployment_mode=classic
+          elif [ "$linux_fx_version" = "SITECONTAINERS" ]; then
+            deployment_mode=sitecontainers
+            sitecontainer_image="$(az webapp sitecontainers show \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_WEBAPP_NAME" \
+              --container-name main \
+              --query properties.image \
+              --output tsv)"
+            if [[ ! "$sitecontainer_image" =~ ^[[:alnum:]][[:alnum:]._:/@=-]*$ ]]; then
+              echo "::error::The captured main sitecontainer image has an unexpected or unsafe format."
+              exit 1
+            fi
+          else
+            echo "::error::The captured Linux runtime has an unsupported format; expected DOCKER|... or SITECONTAINERS."
             exit 1
           fi
 
@@ -173,7 +190,11 @@ jobs:
           else
             echo "application_build_number_present=false" >> "$GITHUB_OUTPUT"
           fi
+          echo "deployment_mode=$deployment_mode" >> "$GITHUB_OUTPUT"
           echo "linux_fx_version=$linux_fx_version" >> "$GITHUB_OUTPUT"
+          if [ -n "$sitecontainer_image" ]; then
+            echo "sitecontainer_image=$sitecontainer_image" >> "$GITHUB_OUTPUT"
+          fi
           if [ -n "$application_build_number" ]; then
             echo "application_build_number=$application_build_number" >> "$GITHUB_OUTPUT"
           fi
@@ -195,6 +216,7 @@ jobs:
           else
             image="$AZURE_CONTAINER_REGISTRY_ENDPOINT/elsa-control/api:${GITHUB_SHA}"
             acr_name="${AZURE_CONTAINER_REGISTRY_ENDPOINT%%.azurecr.io}"
+            current_deployment_mode="${{ steps.current-deployment.outputs.deployment_mode }}"
 
             az acr login --name "$acr_name"
             docker build --file src/Hosting/ElsaControl.Api/Dockerfile --tag "$image" .
@@ -206,12 +228,25 @@ jobs:
               --settings AZURE_TOKEN_CREDENTIALS=prod Application__BuildNumber="$GITHUB_RUN_NUMBER" \
               --output none
 
-            az webapp config container set \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --name "$AZURE_WEBAPP_NAME" \
-              --container-image-name "$image" \
-              --container-registry-url "https://$AZURE_CONTAINER_REGISTRY_ENDPOINT" \
-              --output none
+            if [ "$current_deployment_mode" = "sitecontainers" ]; then
+              az webapp sitecontainers update \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --name "$AZURE_WEBAPP_NAME" \
+                --container-name main \
+                --image "$image" \
+                --is-main true \
+                --output none
+            elif [ "$current_deployment_mode" = "classic" ]; then
+              az webapp config container set \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --name "$AZURE_WEBAPP_NAME" \
+                --container-image-name "$image" \
+                --container-registry-url "https://$AZURE_CONTAINER_REGISTRY_ENDPOINT" \
+                --output none
+            else
+              echo "::error::The captured deployment mode is unsupported; refusing an unprotected deployment."
+              exit 1
+            fi
 
           fi
 
@@ -262,18 +297,48 @@ jobs:
         if: ${{ failure() && steps.current-deployment.outcome == 'success' && (steps.deploy-api.outcome == 'failure' || steps.health-gate.outcome == 'failure') }}
         env:
           PREVIOUS_LINUX_FX_VERSION: ${{ steps.current-deployment.outputs.linux_fx_version }}
+          PREVIOUS_DEPLOYMENT_MODE: ${{ steps.current-deployment.outputs.deployment_mode }}
+          PREVIOUS_SITECONTAINER_IMAGE: ${{ steps.current-deployment.outputs.sitecontainer_image }}
           PREVIOUS_BUILD_NUMBER: ${{ steps.current-deployment.outputs.application_build_number }}
           PREVIOUS_BUILD_NUMBER_PRESENT: ${{ steps.current-deployment.outputs.application_build_number_present }}
         shell: bash
         run: |
           set -euo pipefail
 
-          if ! az webapp config set \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --name "$AZURE_WEBAPP_NAME" \
-              --linux-fx-version "$PREVIOUS_LINUX_FX_VERSION" \
-              --output none; then
-            echo "::error::Rollback failed: could not restore the previous Linux runtime image."
+          if [ "$PREVIOUS_DEPLOYMENT_MODE" = "classic" ]; then
+            if ! az webapp config set \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --name "$AZURE_WEBAPP_NAME" \
+                --linux-fx-version "$PREVIOUS_LINUX_FX_VERSION" \
+                --output none; then
+              echo "::error::Rollback failed: could not restore the previous Docker runtime image."
+              exit 1
+            fi
+          elif [ "$PREVIOUS_DEPLOYMENT_MODE" = "sitecontainers" ]; then
+            if [ -z "$PREVIOUS_SITECONTAINER_IMAGE" ]; then
+              echo "::error::Rollback failed: the previous main sitecontainer image was not captured."
+              exit 1
+            fi
+            if ! az webapp config set \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --name "$AZURE_WEBAPP_NAME" \
+                --linux-fx-version "$PREVIOUS_LINUX_FX_VERSION" \
+                --output none; then
+              echo "::error::Rollback failed: could not restore the SITECONTAINERS runtime."
+              exit 1
+            fi
+            if ! az webapp sitecontainers update \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --name "$AZURE_WEBAPP_NAME" \
+                --container-name main \
+                --image "$PREVIOUS_SITECONTAINER_IMAGE" \
+                --is-main true \
+                --output none; then
+              echo "::error::Rollback failed: could not restore the previous main sitecontainer image."
+              exit 1
+            fi
+          else
+            echo "::error::Rollback failed: the captured deployment mode is unsupported."
             exit 1
           fi
 
@@ -340,4 +405,4 @@ jobs:
             exit 1
           fi
 
-          echo "::error::API health gate failed; restored the previous Linux image and build metadata."
+          echo "::error::API health gate failed; restored the previous deployment image and build metadata."
