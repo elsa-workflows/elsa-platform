@@ -206,8 +206,9 @@ jobs:
             application_build_number=""
           fi
 
+          safe_identifier_pattern='^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$'
           if [ -n "$application_build_number" ]; then
-            if [[ ! "$application_build_number" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$ ]]; then
+            if [[ ! "$application_build_number" =~ $safe_identifier_pattern ]]; then
               echo "::error::The captured Application__BuildNumber has an unexpected or unsafe format."
               exit 1
             fi
@@ -216,6 +217,52 @@ jobs:
           else
             echo "application_build_number_present=false" >> "$GITHUB_OUTPUT"
           fi
+
+          if ! default_host_name="$(az webapp show \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_WEBAPP_NAME" \
+            --query defaultHostName \
+            --output tsv)"; then
+            echo "::error::Could not resolve the current API host for deployment identity capture; refusing an unprotected deployment."
+            exit 1
+          fi
+          if [ -z "$default_host_name" ]; then
+            echo "::error::Azure returned no current API host for deployment identity capture; refusing an unprotected deployment."
+            exit 1
+          fi
+          health_response_file="$(mktemp)"
+          trap 'rm -f "$webapp_probe_file" "$health_response_file"' EXIT
+          health_url="https://$default_host_name/health"
+          previous_health_build_number=""
+          previous_health_image_id=""
+          if http_status="$(curl --silent --show-error --output "$health_response_file" --write-out '%{http_code}' --max-time 10 "$health_url")"; then
+            if jq -e 'type == "object"' "$health_response_file" >/dev/null 2>&1; then
+              previous_health_build_number="$(jq -r '.buildNumber // empty' "$health_response_file")"
+              previous_health_image_id="$(jq -r '.imageId // empty' "$health_response_file")"
+            fi
+          else
+            http_status=000
+          fi
+          if [ "$previous_health_build_number" = "unknown" ]; then
+            previous_health_build_number=""
+          fi
+          if [ "$previous_health_image_id" = "unknown" ]; then
+            previous_health_image_id=""
+          fi
+          for identifier in previous_health_build_number previous_health_image_id; do
+            value="${!identifier}"
+            if [ -n "$value" ] && [[ ! "$value" =~ $safe_identifier_pattern ]]; then
+              echo "::error::The current API health response contains an unexpected or unsafe $identifier; refusing an unprotected deployment."
+              exit 1
+            fi
+          done
+          if [ "$http_status" = "200" ] && jq -e '.status == "ok"' "$health_response_file" >/dev/null 2>&1; then
+            echo "Captured safe current API build/image identity for rollback verification."
+          else
+            previous_health_build_number=""
+            previous_health_image_id=""
+            echo "::notice::Current API health was unavailable or not healthy at $health_url (HTTP ${http_status:-000}); retaining Azure image/build metadata and using rollback compatibility verification."
+          fi
           echo "deployment_mode=$deployment_mode" >> "$GITHUB_OUTPUT"
           echo "linux_fx_version=$linux_fx_version" >> "$GITHUB_OUTPUT"
           if [ -n "$sitecontainer_image" ]; then
@@ -223,6 +270,12 @@ jobs:
           fi
           if [ -n "$application_build_number" ]; then
             echo "application_build_number=$application_build_number" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "$previous_health_build_number" ]; then
+            echo "previous_health_build_number=$previous_health_build_number" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "$previous_health_image_id" ]; then
+            echo "previous_health_image_id=$previous_health_image_id" >> "$GITHUB_OUTPUT"
           fi
           echo "capture_succeeded=true" >> "$GITHUB_OUTPUT"
 
@@ -353,12 +406,13 @@ jobs:
           PREVIOUS_SITECONTAINER_IMAGE: ${{ steps.current-deployment.outputs.sitecontainer_image }}
           PREVIOUS_BUILD_NUMBER: ${{ steps.current-deployment.outputs.application_build_number }}
           PREVIOUS_BUILD_NUMBER_PRESENT: ${{ steps.current-deployment.outputs.application_build_number_present }}
+          PREVIOUS_HEALTH_BUILD_NUMBER: ${{ steps.current-deployment.outputs.previous_health_build_number }}
+          PREVIOUS_HEALTH_IMAGE_ID: ${{ steps.current-deployment.outputs.previous_health_image_id }}
         shell: bash
         run: |
           set -euo pipefail
 
           if [ "$PREVIOUS_DEPLOYMENT_MODE" = "classic" ]; then
-            previous_image_reference="${PREVIOUS_LINUX_FX_VERSION#DOCKER|}"
             if ! az webapp config set \
                 --resource-group "$AZURE_RESOURCE_GROUP" \
                 --name "$AZURE_WEBAPP_NAME" \
@@ -372,7 +426,6 @@ jobs:
               echo "::error::Rollback failed: the previous main sitecontainer image was not captured."
               exit 1
             fi
-            previous_image_reference="$PREVIOUS_SITECONTAINER_IMAGE"
             if ! az webapp config set \
                 --resource-group "$AZURE_RESOURCE_GROUP" \
                 --name "$AZURE_WEBAPP_NAME" \
@@ -454,19 +507,15 @@ jobs:
             exit 1
           fi
 
-          expected_previous_image_id=""
-          if [[ "$previous_image_reference" =~ @sha256:([[:xdigit:]]{64})$ ]]; then
-            expected_previous_image_id="sha256:${BASH_REMATCH[1]}"
-          elif [[ "$previous_image_reference" =~ :([[:xdigit:]]{40,64})$ ]]; then
-            expected_previous_image_id="${BASH_REMATCH[1]}"
-          fi
+          expected_previous_build_number="${PREVIOUS_HEALTH_BUILD_NUMBER:-${PREVIOUS_BUILD_NUMBER:-unknown}}"
+          expected_previous_image_id="${PREVIOUS_HEALTH_IMAGE_ID:-}"
           # shellcheck disable=SC2016 # The jq variables intentionally expand inside jq, not Bash.
           if [ -n "$expected_previous_image_id" ]; then
-            expected_previous_health_query='.status == "ok" and ((.buildNumber // $expected_build_number) == $expected_build_number) and .imageId == $expected_image_id'
-            echo "Rollback health will require the captured image identity $expected_previous_image_id."
+            expected_previous_health_query='.status == "ok" and .buildNumber == $expected_build_number and .imageId == $expected_image_id'
+            echo "Rollback health will require the captured previous build and image identity."
           else
             expected_previous_health_query='.status == "ok" and ((.buildNumber // $expected_build_number) == $expected_build_number)'
-            echo "::notice::Rollback health is using the explicit legacy-image compatibility path because the captured image has no safe embedded identity; Azure image configuration was matched to the captured reference."
+            echo "::notice::Rollback health is using the explicit legacy-image compatibility path because the pre-deploy health response had no safe embedded image identity; Azure image configuration was matched to the captured reference."
           fi
 
           if ! default_host_name="$(az webapp show \
@@ -485,7 +534,6 @@ jobs:
           rollback_health_url="https://$default_host_name/health"
           rollback_health_response_file="$(mktemp)"
           trap 'rm -f "$rollback_health_response_file"' EXIT
-          expected_previous_build_number="${PREVIOUS_BUILD_NUMBER:-unknown}"
           rollback_health_succeeded=false
           stable_rollback_health_probes=0
           for attempt in $(seq 1 30); do

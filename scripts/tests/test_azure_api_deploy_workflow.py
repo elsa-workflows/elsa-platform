@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import tempfile
@@ -68,10 +69,13 @@ class AzureApiDeployWorkflowTests(unittest.TestCase):
         )
         self.assertIn('.buildNumber == $expected_build_number', self.source)
         self.assertIn('.imageId == $expected_image_id', self.source)
-        self.assertIn('expected_previous_image_id=""', self.source)
+        self.assertIn('expected_previous_image_id="${PREVIOUS_HEALTH_IMAGE_ID:-}"', self.source)
+        self.assertIn("PREVIOUS_HEALTH_IMAGE_ID", self.source)
+        self.assertIn("PREVIOUS_HEALTH_BUILD_NUMBER", self.source)
+        self.assertIn("previous_health_image_id=\"$(jq -r '.imageId // empty'", self.source)
         self.assertIn('restored_runtime_image=', self.source)
         self.assertIn(
-            "expected_previous_health_query='.status == \"ok\" and ((.buildNumber // $expected_build_number) == $expected_build_number) and .imageId == $expected_image_id'",
+            "expected_previous_health_query='.status == \"ok\" and .buildNumber == $expected_build_number and .imageId == $expected_image_id'",
             self.source,
         )
         self.assertIn('legacy-image compatibility path', self.source)
@@ -121,6 +125,28 @@ esac
 """
             )
             fake_az.chmod(0o755)
+            fake_curl = temp_path / "curl"
+            fake_curl.write_text(
+                '''#!/usr/bin/env bash
+set -euo pipefail
+output_file=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then
+    output_file="$2"
+    shift 2
+  else
+    shift
+  fi
+done
+if [ -n "${HEALTH_RESPONSE:-}" ]; then
+  printf '%s' "$HEALTH_RESPONSE" > "$output_file"
+else
+  printf '%s' '{"status":"ok","buildNumber":"1786839398","imageId":"abcdef0123456789"}' > "$output_file"
+fi
+printf '%s' "${HEALTH_STATUS:-200}"
+'''
+            )
+            fake_curl.chmod(0o755)
 
             def run_capture(
                 linux_fx_version: str,
@@ -128,8 +154,11 @@ esac
                 fail_sitecontainer_lookup: bool = False,
                 webapp_missing: bool = False,
                 deploy_mode: str = "app",
+                health_response: str = '{"status":"ok","buildNumber":"1786839398","imageId":"abcdef0123456789"}',
+                health_status: str = "200",
             ) -> subprocess.CompletedProcess[str]:
                 output_file = temp_path / "github-output"
+                output_file.unlink(missing_ok=True)
                 environment = os.environ.copy()
                 environment.update(
                     {
@@ -143,6 +172,8 @@ esac
                         "DEPLOY_MODE": deploy_mode,
                         "AZURE_RESOURCE_GROUP": "test-rg",
                         "AZURE_WEBAPP_NAME": "test-api",
+                        "HEALTH_RESPONSE": health_response,
+                        "HEALTH_STATUS": health_status,
                     }
                 )
                 return subprocess.run(
@@ -178,6 +209,48 @@ esac
             )
             self.assertNotEqual(lookup_failure.returncode, 0)
 
+            valid_health_capture = run_capture(
+                "DOCKER|acr.azurecr.io/elsa-control/api:latest",
+                "",
+            )
+            self.assertEqual(
+                valid_health_capture.returncode,
+                0,
+                valid_health_capture.stderr,
+            )
+            valid_output = (temp_path / "github-output").read_text()
+            self.assertIn("previous_health_build_number=1786839398", valid_output)
+            self.assertIn("previous_health_image_id=abcdef0123456789", valid_output)
+
+            unsafe_health_capture = run_capture(
+                "DOCKER|acr.azurecr.io/elsa-control/api:latest",
+                "",
+                health_response='{"status":"ok","buildNumber":"1786839398","imageId":"https://user:pass@example.test/image"}',
+            )
+            self.assertNotEqual(unsafe_health_capture.returncode, 0)
+            self.assertIn(
+                "unexpected or unsafe previous_health_image_id",
+                unsafe_health_capture.stdout + unsafe_health_capture.stderr,
+            )
+
+            unhealthy_current = run_capture(
+                "DOCKER|acr.azurecr.io/elsa-control/api:latest",
+                "",
+                health_response=(
+                    '{"status":"degraded","buildNumber":"1786839398",'
+                    '"imageId":"abcdef0123456789"}'
+                ),
+                health_status="503",
+            )
+            self.assertEqual(
+                unhealthy_current.returncode,
+                0,
+                unhealthy_current.stderr,
+            )
+            unhealthy_output = (temp_path / "github-output").read_text()
+            self.assertIn("capture_succeeded=true", unhealthy_output)
+            self.assertNotIn("previous_health_image_id=", unhealthy_output)
+
             fresh_infra = run_capture(
                 "SITECONTAINERS",
                 "",
@@ -197,6 +270,67 @@ esac
                 deploy_mode="app",
             )
             self.assertNotEqual(fresh_app.returncode, 0)
+
+    def test_rollback_identity_query_rejects_a_different_image(self) -> None:
+        exact_query = (
+            '.status == "ok" and .buildNumber == $expected_build_number '
+            'and .imageId == $expected_image_id'
+        )
+        legacy_query = (
+            '.status == "ok" and ((.buildNumber // $expected_build_number) '
+            '== $expected_build_number)'
+        )
+
+        def evaluate(
+            query: str,
+            payload: dict[str, str],
+            image_id: str = "",
+        ) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                [
+                    "jq",
+                    "-e",
+                    "--arg",
+                    "expected_build_number",
+                    "1786839398",
+                    "--arg",
+                    "expected_image_id",
+                    image_id,
+                    query,
+                ],
+                input=json.dumps(payload),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(
+            evaluate(
+                exact_query,
+                {
+                    "status": "ok",
+                    "buildNumber": "1786839398",
+                    "imageId": "abcdef0123456789",
+                },
+                "abcdef0123456789",
+            ).returncode,
+            0,
+        )
+        self.assertNotEqual(
+            evaluate(
+                exact_query,
+                {"status": "ok", "buildNumber": "1786839398", "imageId": "failed-image"},
+                "abcdef0123456789",
+            ).returncode,
+            0,
+        )
+        self.assertEqual(
+            evaluate(
+                legacy_query,
+                {"status": "ok", "buildNumber": "1786839398"},
+            ).returncode,
+            0,
+        )
 
 
 if __name__ == "__main__":
