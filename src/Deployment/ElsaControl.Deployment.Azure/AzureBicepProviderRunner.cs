@@ -703,19 +703,20 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         var registryId = resources.RegistryResourceId ?? RegistryResourceId();
         var roleAssignmentId = resources.AcrPullRoleAssignmentId;
         var acrDeploymentId = resources.AcrPullDeploymentId;
+        var workloadIdentityPrincipalId = resources.WorkloadIdentityPrincipalId;
         var registryGroupPresent = true;
-        if (registryGroupPresent && resources.WorkloadIdentityPrincipalId is not null)
+        if (registryGroupPresent && workloadIdentityPrincipalId is not null)
         {
             acrDeploymentId ??= DeploymentId(
                 _scope.RegistrySubscriptionId,
                 _scope.RegistryResourceGroupName,
-                AcrDeploymentName(command, resources.WorkloadIdentityPrincipalId));
+                AcrDeploymentName(command, workloadIdentityPrincipalId));
             if (roleAssignmentId is null)
             {
                 var discovered = await DiscoverAcrRoleAssignmentAsync(
                     command,
                     registryId,
-                    resources.WorkloadIdentityPrincipalId,
+                    workloadIdentityPrincipalId,
                     cancellationToken);
                 if (discovered.Status == AcrRoleDiscoveryStatus.Uncertain)
                 {
@@ -740,10 +741,10 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         {
             try { ValidateExactRoleAssignmentId(roleAssignmentId, registryId); }
             catch (ArgumentException exception) { return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-scope-invalid", exception.Message); }
-            if (resources.WorkloadIdentityPrincipalId is null)
+            if (workloadIdentityPrincipalId is null)
                 return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-provenance-invalid", "The owned ACR role assignment lacks the exact registry and workload identity provenance required for deletion.");
             var roleProvenance = await ValidateAcrRoleAssignmentAsync(command, roleAssignmentId,
-                registryId, resources.WorkloadIdentityPrincipalId, cancellationToken);
+                registryId, workloadIdentityPrincipalId, cancellationToken);
             if (roleProvenance is null)
                 return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-observation-uncertain", "The owned ACR role assignment could not be observed before deletion.");
             if (!roleProvenance.Value)
@@ -753,7 +754,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 ["role", "assignment", "delete", "--ids", roleAssignmentId, "--output", "none", "--only-show-errors"],
                 static _ => AzureCommandNoOutput.Instance,
                 cancellationToken);
-            if (!await RoleAssignmentAbsentAsync(command, roleAssignmentId, resources.WorkloadIdentityPrincipalId, cancellationToken))
+            if (!await RoleAssignmentAbsentAsync(command, roleAssignmentId, workloadIdentityPrincipalId, cancellationToken))
                 return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-uncertain", "The owned ACR role assignment could not be proven absent.");
         }
 
@@ -761,7 +762,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         {
             try
             {
-                ValidateExactAcrDeploymentId(acrDeploymentId, command, resources.WorkloadIdentityPrincipalId);
+                ValidateExactAcrDeploymentId(acrDeploymentId, command, workloadIdentityPrincipalId);
             }
             catch (ArgumentException exception)
             {
