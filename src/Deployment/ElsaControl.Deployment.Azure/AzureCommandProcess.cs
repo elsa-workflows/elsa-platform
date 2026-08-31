@@ -17,10 +17,12 @@ internal sealed class AzureCommandProcess : IAzureCommandProcess
 
     private readonly TimeSpan _timeout;
     private readonly int _outputCharacterLimit;
+    private readonly Func<Process, bool> _terminateProcessTree;
 
     public AzureCommandProcess(
         TimeSpan? timeout = null,
-        int outputCharacterLimit = DefaultOutputLimit)
+        int outputCharacterLimit = DefaultOutputLimit,
+        Func<Process, bool>? terminateProcessTree = null)
     {
         _timeout = timeout ?? DefaultTimeout;
         if (_timeout <= TimeSpan.Zero || _timeout == Timeout.InfiniteTimeSpan)
@@ -30,6 +32,7 @@ internal sealed class AzureCommandProcess : IAzureCommandProcess
             throw new ArgumentOutOfRangeException(nameof(outputCharacterLimit), "The command output limit must be positive.");
 
         _outputCharacterLimit = outputCharacterLimit;
+        _terminateProcessTree = terminateProcessTree ?? KillProcessTree;
     }
 
     /// <inheritdoc />
@@ -105,7 +108,7 @@ internal sealed class AzureCommandProcess : IAzureCommandProcess
 
         if (status != AzureCommandProcessStatus.Succeeded)
         {
-            var terminationRequested = KillProcessTree(process);
+            var terminationRequested = _terminateProcessTree(process);
             var terminated = await WaitForExitAfterTerminationAsync(exitTask).ConfigureAwait(false);
             await ObserveCaptureTasksAsync(
                 standardOutputTask,
@@ -300,14 +303,16 @@ internal sealed class AzureCommandProcess : IAzureCommandProcess
     {
         try
         {
-            if (!process.HasExited)
-                process.Kill(entireProcessTree: true);
+            if (process.HasExited)
+                return false;
+            process.Kill(entireProcessTree: true);
             return true;
         }
         catch (Exception) when (process.HasExited)
         {
-            // The process exited between HasExited and Kill. Nothing remains to terminate.
-            return true;
+            // Once the direct process exits the platform handle cannot prove that descendants
+            // were terminated. The durable caller must recover this as an uncertain outcome.
+            return false;
         }
         catch (Exception)
         {

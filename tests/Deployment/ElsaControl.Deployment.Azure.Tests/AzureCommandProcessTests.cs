@@ -129,10 +129,25 @@ public sealed class AzureCommandProcessTests
     {
         var result = await new AzureCommandProcess(TimeSpan.FromSeconds(5), 32)
             .ExecuteAsync(
-                Shell("printf '12345678901234567890'; printf '12345678901234567890' >&2"),
+                Shell("printf '12345678901234567890'; printf '12345678901234567890' >&2; sleep 1"),
                 ProjectNoOutput);
 
         Assert.Equal(AzureCommandProcessStatus.OutputLimitExceeded, result.Status);
+    }
+
+    [Fact]
+    public async Task Reports_uncertain_when_process_tree_termination_cannot_be_proven()
+    {
+        var result = await new AzureCommandProcess(
+                TimeSpan.FromSeconds(5),
+                32,
+                terminateProcessTree: _ => false)
+            .ExecuteAsync(
+                Shell("printf '1234567890123456789012345678901234567890'; sleep 1"),
+                ProjectNoOutput);
+
+        Assert.Equal(AzureCommandProcessStatus.TerminationUncertain, result.Status);
+        Assert.Equal(AzureCommandProcessFailureKind.TerminationUncertain, result.FailureKind);
     }
 
     [Fact]
