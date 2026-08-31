@@ -8,6 +8,7 @@ public sealed class AzureProviderOperationValidationTests
     [InlineData("foundation", 513)]
     [InlineData("workloadDeployment", 513)]
     [InlineData("workloadResource", 1025)]
+    [InlineData("acrPullDeployment", 513)]
     [InlineData("resourceGroup", 91)]
     public void Rejects_each_reference_longer_than_its_persistence_contract(string referenceKind, int length)
     {
@@ -17,11 +18,90 @@ public sealed class AzureProviderOperationValidationTests
             "foundation" => new AzureProviderResourceReferences(FoundationDeploymentId: value),
             "workloadDeployment" => new AzureProviderResourceReferences(WorkloadDeploymentId: value),
             "workloadResource" => new AzureProviderResourceReferences(WorkloadResourceId: value),
+            "acrPullDeployment" => new AzureProviderResourceReferences(AcrPullDeploymentId: value),
             "resourceGroup" => new AzureProviderResourceReferences(ResourceGroupName: value),
             _ => throw new ArgumentOutOfRangeException(nameof(referenceKind))
         };
 
         Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateReferences(references));
+    }
+
+    [Fact]
+    public void Accepts_the_complete_safe_restartable_resource_contract()
+    {
+        var references = new AzureProviderResourceReferences(
+            ResourceGroupName: "proof-rg",
+            FoundationDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/foundation",
+            WorkloadDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/workload",
+            WorkloadResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.App/containerApps/app",
+            WorkloadRevisionName: "app--candidate",
+            StableTrafficRevisionName: "app--stable",
+            WorkloadIdentityResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/identity",
+            WorkloadIdentityClientId: "11111111-1111-1111-1111-111111111111",
+            WorkloadIdentityPrincipalId: "22222222-2222-2222-2222-222222222222",
+            KeyVaultResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.KeyVault/vaults/vault",
+            KeyVaultUri: "https://vault.vault.azure.net/",
+            SqlServerResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Sql/servers/sql",
+            SqlServerFqdn: "sql.database.windows.net",
+            ContainerAppsEnvironmentResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.App/managedEnvironments/env",
+            RegistryResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/registry",
+            AcrPullDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry-rg/providers/Microsoft.Resources/deployments/acr-pull",
+            AcrPullRoleAssignmentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/registry/providers/Microsoft.Authorization/roleAssignments/33333333-3333-3333-3333-333333333333");
+
+        AzureProviderOperationValidation.ValidateReferences(references);
+    }
+
+    [Theory]
+    [InlineData("https://user:secret@vault.vault.azure.net/")]
+    [InlineData("https://vault.vault.azure.net/?token=secret")]
+    [InlineData("http://vault.vault.azure.net/")]
+    [InlineData("https://vault.vault.azure.net/secrets/value")]
+    public void Rejects_unsafe_key_vault_origins(string value)
+    {
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateReferences(
+            new AzureProviderResourceReferences(KeyVaultUri: value)));
+    }
+
+    [Theory]
+    [InlineData("NOT-A-GUID")]
+    [InlineData("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")]
+    public void Rejects_noncanonical_identity_ids(string value)
+    {
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateReferences(
+            new AzureProviderResourceReferences(WorkloadIdentityClientId: value)));
+    }
+
+    [Fact]
+    public void Rejects_resource_ids_outside_the_owned_resource_group()
+    {
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateReferences(
+            new AzureProviderResourceReferences(
+                ResourceGroupName: "proof-rg",
+                WorkloadResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/other-rg/providers/Microsoft.App/containerApps/app")));
+    }
+
+    [Fact]
+    public void Rejects_registry_role_assignments_outside_the_exact_registry_resource()
+    {
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateReferences(
+            new AzureProviderResourceReferences(
+                RegistryResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/registry",
+                AcrPullRoleAssignmentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry-rg/providers/Microsoft.Authorization/roleAssignments/33333333-3333-3333-3333-333333333333")));
+    }
+
+    [Fact]
+    public void Rejects_key_vault_and_sql_endpoints_that_do_not_match_their_resource_ids()
+    {
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateReferences(
+            new AzureProviderResourceReferences(
+                ResourceGroupName: "proof-rg",
+                KeyVaultResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.KeyVault/vaults/expected",
+                KeyVaultUri: "https://different.vault.azure.net/")));
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateReferences(
+            new AzureProviderResourceReferences(
+                ResourceGroupName: "proof-rg",
+                SqlServerResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Sql/servers/expected",
+                SqlServerFqdn: "different.database.windows.net")));
     }
 
     [Fact]
@@ -177,6 +257,20 @@ public sealed class AzureProviderOperationValidationTests
 
         Assert.Equal(AzureProviderOperationValidation.ComputeRequestHash(first), AzureProviderOperationValidation.ComputeRequestHash(second));
         Assert.Equal(AzureProviderOperationValidation.ComputeOperationIdentity(first), AzureProviderOperationValidation.ComputeOperationIdentity(second));
+    }
+
+    [Fact]
+    public void Provider_scope_fingerprint_is_normalized_and_bound_to_request_and_operation_identity()
+    {
+        var first = ValidRequest() with { ProviderScopeFingerprint = new string('A', 64) };
+        var same = first with { ProviderScopeFingerprint = new string('a', 64) };
+        var different = first with { ProviderScopeFingerprint = new string('b', 64) };
+
+        Assert.Equal(new string('a', 64), AzureProviderOperationValidation.Normalize(first).ProviderScopeFingerprint);
+        Assert.Equal(AzureProviderOperationValidation.ComputeRequestHash(first), AzureProviderOperationValidation.ComputeRequestHash(same));
+        Assert.Equal(AzureProviderOperationValidation.ComputeOperationIdentity(first), AzureProviderOperationValidation.ComputeOperationIdentity(same));
+        Assert.NotEqual(AzureProviderOperationValidation.ComputeRequestHash(first), AzureProviderOperationValidation.ComputeRequestHash(different));
+        Assert.NotEqual(AzureProviderOperationValidation.ComputeOperationIdentity(first), AzureProviderOperationValidation.ComputeOperationIdentity(different));
     }
 
     private static AzureProviderOperationRequest ValidRequest() => new(

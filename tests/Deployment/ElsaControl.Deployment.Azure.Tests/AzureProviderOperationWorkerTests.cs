@@ -248,9 +248,7 @@ public sealed class AzureProviderOperationWorkerTests
                 _ => AzureProviderOperationPhase.CleanupVerified
             };
             var hasEndpoint = command.Step is AzureProviderRunnerStep.Health or AzureProviderRunnerStep.Promotion;
-            var resources = command.Step == AzureProviderRunnerStep.Workload
-                ? new AzureProviderResourceReferences(WorkloadResourceId: "/subscriptions/test/resourceGroups/test/providers/Microsoft.App/containerApps/workload-a")
-                : new AzureProviderResourceReferences();
+            var resources = CompleteResources();
             return Task.FromResult(new AzureProviderRunnerResult(
                 AzureProviderRunnerOutcome.Completed,
                 phase,
@@ -261,6 +259,25 @@ public sealed class AzureProviderOperationWorkerTests
                 "azure.step.completed",
                 "Completed."));
         }
+
+        private static AzureProviderResourceReferences CompleteResources() => new(
+            ResourceGroupName: "test",
+            FoundationDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/test/providers/Microsoft.Resources/deployments/foundation",
+            WorkloadDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/test/providers/Microsoft.Resources/deployments/workload",
+            WorkloadResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/test/providers/Microsoft.App/containerApps/workload-a",
+            WorkloadRevisionName: "workload-a--candidate",
+            StableTrafficRevisionName: "workload-a--stable",
+            WorkloadIdentityResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/test/providers/Microsoft.ManagedIdentity/userAssignedIdentities/workload-a",
+            WorkloadIdentityClientId: "22222222-2222-2222-2222-222222222222",
+            WorkloadIdentityPrincipalId: "33333333-3333-3333-3333-333333333333",
+            KeyVaultResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/test/providers/Microsoft.KeyVault/vaults/workload-a",
+            KeyVaultUri: "https://workload-a.vault.azure.net/",
+            SqlServerResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/test/providers/Microsoft.Sql/servers/workload-a",
+            SqlServerFqdn: "workload-a.database.windows.net",
+            ContainerAppsEnvironmentResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/test/providers/Microsoft.App/managedEnvironments/workload-a",
+            RegistryResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry/providers/Microsoft.ContainerRegistry/registries/registry",
+            AcrPullDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry/providers/Microsoft.Resources/deployments/acr-pull",
+            AcrPullRoleAssignmentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry/providers/Microsoft.ContainerRegistry/registries/registry/providers/Microsoft.Authorization/roleAssignments/44444444-4444-4444-4444-444444444444");
     }
 
     private sealed class WorkerStore(AzureProviderOperation operation, bool failAfterClaim = false) : IAzureProviderOperationStore
@@ -278,7 +295,7 @@ public sealed class AzureProviderOperationWorkerTests
         public Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<AzureProviderOperation>>(Operation.Status is AzureProviderOperationStatus.Accepted or AzureProviderOperationStatus.Queued ? [Operation] : []);
 
-        public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default) =>
+        public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, string? providerScopeFingerprint, CancellationToken cancellationToken = default) =>
             Task.FromResult<AzureProviderOperation?>(null);
 
         public Task<AzureProviderOperation?> MarkUnrestorableAsync(Guid workspaceId, Guid operationId, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
@@ -333,7 +350,7 @@ public sealed class AzureProviderOperationWorkerTests
         public Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<AzureProviderOperation>>(Operations.Where(operation => operation.Status is AzureProviderOperationStatus.Accepted or AzureProviderOperationStatus.Queued).ToList());
 
-        public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default) =>
+        public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, string? providerScopeFingerprint, CancellationToken cancellationToken = default) =>
             Task.FromResult<AzureProviderOperation?>(null);
 
         public Task<AzureProviderOperation?> MarkUnrestorableAsync(Guid workspaceId, Guid operationId, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)

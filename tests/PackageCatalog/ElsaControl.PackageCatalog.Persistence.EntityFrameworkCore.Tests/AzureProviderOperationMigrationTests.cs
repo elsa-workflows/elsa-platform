@@ -26,6 +26,20 @@ public sealed class AzureProviderOperationMigrationTests
         Assert.Contains("IX_AzureProviderOperations_WorkspaceId_TargetKey", indexes);
         Assert.Contains("IX_AzureProviderOperations_Status_LeaseExpiresAt_UpdatedAt_Id", indexes);
         Assert.DoesNotContain("IX_AzureProviderOperations_WorkspaceId_Status_LeaseExpiresAt_UpdatedAt", indexes);
+        var columns = await db.Database.SqlQueryRaw<string>(
+            "SELECT name AS Value FROM pragma_table_info('AzureProviderOperations')").ToListAsync();
+        Assert.Contains("WorkloadIdentityResourceId", columns);
+        Assert.Contains("WorkloadIdentityClientId", columns);
+        Assert.Contains("WorkloadIdentityPrincipalId", columns);
+        Assert.Contains("KeyVaultResourceId", columns);
+        Assert.Contains("KeyVaultUri", columns);
+        Assert.Contains("SqlServerResourceId", columns);
+        Assert.Contains("SqlServerFqdn", columns);
+        Assert.Contains("ContainerAppsEnvironmentResourceId", columns);
+        Assert.Contains("RegistryResourceId", columns);
+        Assert.Contains("AcrPullDeploymentId", columns);
+        Assert.Contains("AcrPullRoleAssignmentId", columns);
+        Assert.Contains("ProviderScopeFingerprint", columns);
         Assert.Empty(await db.Database.GetPendingMigrationsAsync());
     }
 }

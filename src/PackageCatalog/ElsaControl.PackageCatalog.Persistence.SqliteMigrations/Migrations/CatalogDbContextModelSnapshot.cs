@@ -883,6 +883,14 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AcrPullDeploymentId")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AcrPullRoleAssignmentId")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("AttemptNumber")
                         .HasColumnType("INTEGER");
 
@@ -898,6 +906,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.Property<string>("CompletionLeaseTokenHash")
                         .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContainerAppsEnvironmentResourceId")
+                        .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
                     b.Property<long>("CreatedAt")
@@ -949,6 +961,14 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("KeyVaultResourceId")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("KeyVaultUri")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
                     b.Property<long?>("LeaseExpiresAt")
                         .HasColumnType("INTEGER");
 
@@ -976,6 +996,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ProviderScopeFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ReleaseLine")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -997,6 +1021,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("RegistryResourceId")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("RequestHash")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -1009,6 +1037,14 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Property<string>("SecretReferencesJson")
                         .IsRequired()
                         .HasMaxLength(10000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SqlServerFqdn")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SqlServerResourceId")
+                        .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("StableTrafficRevisionName")
@@ -1048,6 +1084,18 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.Property<string>("WorkloadDeploymentId")
                         .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WorkloadIdentityClientId")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WorkloadIdentityPrincipalId")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WorkloadIdentityResourceId")
+                        .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("WorkloadResourceId")

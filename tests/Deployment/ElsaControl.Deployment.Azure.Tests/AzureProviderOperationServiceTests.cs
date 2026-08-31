@@ -28,6 +28,19 @@ public sealed class AzureProviderOperationServiceTests
         Assert.Null(store.Request.GetType().GetProperty("RawPayload"));
     }
 
+    [Fact]
+    public async Task Submit_binds_the_operation_to_the_validated_provider_scope_fingerprint()
+    {
+        var store = new CapturingStore();
+        var service = new AzureProviderOperationService(store, new FixedTimeProvider(Now));
+
+        await service.SubmitAsync(
+            WorkspaceId,
+            new AzureProviderOperationSubmission("request-1", new('b', 64), CreatePlan(), new string('C', 64)));
+
+        Assert.Equal(new string('c', 64), store.Request!.ProviderScopeFingerprint);
+    }
+
     [Theory]
     [InlineData("secret://vault/../database")]
     [InlineData("secret://vault/database%2Fconnection")]
@@ -257,7 +270,7 @@ public sealed class AzureProviderOperationServiceTests
         public Task<AzureProviderOperation?> GetAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_operation is { WorkspaceId: var currentWorkspace, Id: var currentId } && currentWorkspace == workspaceId && currentId == operationId ? _operation : null);
 
-        public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
+        public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, string? providerScopeFingerprint, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
         public Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<AzureProviderOperation>>([]);
         public Task<AzureProviderOperation?> MarkUnrestorableAsync(Guid workspaceId, Guid operationId, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);

@@ -35,6 +35,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         var previousResources = await GetLatestReconcileAsync(
             normalized.WorkspaceId,
             normalized.TargetKey,
+            normalized.ProviderScopeFingerprint,
             cancellationToken);
 
         var entity = new AzureProviderOperationEntity
@@ -48,6 +49,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             OperationIdentity = identity,
             PlanFingerprint = normalized.PlanFingerprint,
             TemplateFingerprint = normalized.TemplateFingerprint,
+            ProviderScopeFingerprint = normalized.ProviderScopeFingerprint,
             ElsaVersion = normalized.ElsaVersion,
             ReleaseLine = normalized.ReleaseLine,
             Topology = normalized.Topology,
@@ -73,7 +75,18 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             WorkloadDeploymentId = previousResources?.Resources.WorkloadDeploymentId,
             WorkloadResourceId = previousResources?.Resources.WorkloadResourceId,
             WorkloadRevisionName = previousResources?.Resources.WorkloadRevisionName,
-            StableTrafficRevisionName = previousResources?.Resources.StableTrafficRevisionName
+            StableTrafficRevisionName = previousResources?.Resources.StableTrafficRevisionName,
+            WorkloadIdentityResourceId = previousResources?.Resources.WorkloadIdentityResourceId,
+            WorkloadIdentityClientId = previousResources?.Resources.WorkloadIdentityClientId,
+            WorkloadIdentityPrincipalId = previousResources?.Resources.WorkloadIdentityPrincipalId,
+            KeyVaultResourceId = previousResources?.Resources.KeyVaultResourceId,
+            KeyVaultUri = previousResources?.Resources.KeyVaultUri,
+            SqlServerResourceId = previousResources?.Resources.SqlServerResourceId,
+            SqlServerFqdn = previousResources?.Resources.SqlServerFqdn,
+            ContainerAppsEnvironmentResourceId = previousResources?.Resources.ContainerAppsEnvironmentResourceId,
+            RegistryResourceId = previousResources?.Resources.RegistryResourceId,
+            AcrPullDeploymentId = previousResources?.Resources.AcrPullDeploymentId,
+            AcrPullRoleAssignmentId = previousResources?.Resources.AcrPullRoleAssignmentId
         };
         entity.Transitions.Add(new AzureProviderOperationTransitionEntity
         {
@@ -133,7 +146,11 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         return operations.Select(ToModel).ToList();
     }
 
-    public async Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, CancellationToken cancellationToken = default)
+    public async Task<AzureProviderOperation?> GetLatestReconcileAsync(
+        Guid workspaceId,
+        string targetKey,
+        string? providerScopeFingerprint,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(targetKey))
             throw new ArgumentException("Target key is required.", nameof(targetKey));
@@ -141,10 +158,16 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         var normalizedTargetKey = targetKey.Trim().ToLowerInvariant();
         var entity = await db.AzureProviderOperations.AsNoTracking()
             .Where(x => x.WorkspaceId == workspaceId && x.TargetKey == normalizedTargetKey &&
+                        x.ProviderScopeFingerprint == providerScopeFingerprint &&
                         x.Action == AzureProviderOperationAction.Reconcile &&
                         (x.ResourceGroupName != null || x.FoundationDeploymentId != null ||
                          x.WorkloadDeploymentId != null || x.WorkloadResourceId != null ||
-                         x.WorkloadRevisionName != null || x.StableTrafficRevisionName != null))
+                         x.WorkloadRevisionName != null || x.StableTrafficRevisionName != null ||
+                         x.WorkloadIdentityResourceId != null || x.WorkloadIdentityClientId != null ||
+                         x.WorkloadIdentityPrincipalId != null || x.KeyVaultResourceId != null ||
+                         x.KeyVaultUri != null || x.SqlServerResourceId != null || x.SqlServerFqdn != null ||
+                         x.ContainerAppsEnvironmentResourceId != null || x.RegistryResourceId != null ||
+                         x.AcrPullDeploymentId != null || x.AcrPullRoleAssignmentId != null))
             .OrderByDescending(x => x.UpdatedAt)
             .ThenByDescending(x => x.CreatedAt)
             .ThenByDescending(x => x.Id)
@@ -297,6 +320,15 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         entity.ResourceGroupName = resources.ResourceGroupName; entity.FoundationDeploymentId = resources.FoundationDeploymentId;
         entity.WorkloadDeploymentId = resources.WorkloadDeploymentId; entity.WorkloadResourceId = resources.WorkloadResourceId;
         entity.WorkloadRevisionName = resources.WorkloadRevisionName; entity.StableTrafficRevisionName = resources.StableTrafficRevisionName;
+        entity.WorkloadIdentityResourceId = resources.WorkloadIdentityResourceId;
+        entity.WorkloadIdentityClientId = resources.WorkloadIdentityClientId;
+        entity.WorkloadIdentityPrincipalId = resources.WorkloadIdentityPrincipalId;
+        entity.KeyVaultResourceId = resources.KeyVaultResourceId; entity.KeyVaultUri = resources.KeyVaultUri;
+        entity.SqlServerResourceId = resources.SqlServerResourceId; entity.SqlServerFqdn = resources.SqlServerFqdn;
+        entity.ContainerAppsEnvironmentResourceId = resources.ContainerAppsEnvironmentResourceId;
+        entity.RegistryResourceId = resources.RegistryResourceId;
+        entity.AcrPullDeploymentId = resources.AcrPullDeploymentId;
+        entity.AcrPullRoleAssignmentId = resources.AcrPullRoleAssignmentId;
         entity.Endpoint = endpoint; entity.Health = health;
         entity.DiagnosticsJson = diagnosticsJson;
         AddTransition(entity, checkpoint.Code, checkpoint.Code, now);
@@ -410,7 +442,15 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
     private static bool ResourcesEqual(AzureProviderOperationEntity entity, AzureProviderResourceReferences resources) =>
         entity.ResourceGroupName == resources.ResourceGroupName && entity.FoundationDeploymentId == resources.FoundationDeploymentId &&
         entity.WorkloadDeploymentId == resources.WorkloadDeploymentId && entity.WorkloadResourceId == resources.WorkloadResourceId &&
-        entity.WorkloadRevisionName == resources.WorkloadRevisionName && entity.StableTrafficRevisionName == resources.StableTrafficRevisionName;
+        entity.WorkloadRevisionName == resources.WorkloadRevisionName && entity.StableTrafficRevisionName == resources.StableTrafficRevisionName &&
+        entity.WorkloadIdentityResourceId == resources.WorkloadIdentityResourceId &&
+        entity.WorkloadIdentityClientId == resources.WorkloadIdentityClientId &&
+        entity.WorkloadIdentityPrincipalId == resources.WorkloadIdentityPrincipalId &&
+        entity.KeyVaultResourceId == resources.KeyVaultResourceId && entity.KeyVaultUri == resources.KeyVaultUri &&
+        entity.SqlServerResourceId == resources.SqlServerResourceId && entity.SqlServerFqdn == resources.SqlServerFqdn &&
+        entity.ContainerAppsEnvironmentResourceId == resources.ContainerAppsEnvironmentResourceId &&
+        entity.RegistryResourceId == resources.RegistryResourceId && entity.AcrPullDeploymentId == resources.AcrPullDeploymentId &&
+        entity.AcrPullRoleAssignmentId == resources.AcrPullRoleAssignmentId;
 
     private static AzureProviderResourceReferences MergeResources(
         AzureProviderOperationEntity entity,
@@ -421,7 +461,18 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             incoming.WorkloadDeploymentId ?? entity.WorkloadDeploymentId,
             incoming.WorkloadResourceId ?? entity.WorkloadResourceId,
             incoming.WorkloadRevisionName ?? entity.WorkloadRevisionName,
-            incoming.StableTrafficRevisionName ?? entity.StableTrafficRevisionName);
+            incoming.StableTrafficRevisionName ?? entity.StableTrafficRevisionName,
+            incoming.WorkloadIdentityResourceId ?? entity.WorkloadIdentityResourceId,
+            incoming.WorkloadIdentityClientId ?? entity.WorkloadIdentityClientId,
+            incoming.WorkloadIdentityPrincipalId ?? entity.WorkloadIdentityPrincipalId,
+            incoming.KeyVaultResourceId ?? entity.KeyVaultResourceId,
+            incoming.KeyVaultUri ?? entity.KeyVaultUri,
+            incoming.SqlServerResourceId ?? entity.SqlServerResourceId,
+            incoming.SqlServerFqdn ?? entity.SqlServerFqdn,
+            incoming.ContainerAppsEnvironmentResourceId ?? entity.ContainerAppsEnvironmentResourceId,
+            incoming.RegistryResourceId ?? entity.RegistryResourceId,
+            incoming.AcrPullDeploymentId ?? entity.AcrPullDeploymentId,
+            incoming.AcrPullRoleAssignmentId ?? entity.AcrPullRoleAssignmentId);
 
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
@@ -434,12 +485,16 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             x.PlanFingerprint, x.TemplateFingerprint, x.ElsaVersion, x.ReleaseLine, x.Topology, x.Isolation,
             x.Location, x.ImageRepository, x.ImageDigest, x.ReleaseManifestDigest, x.ReleaseManifestSignatureDigest,
             x.Status, x.Phase, x.CheckpointSequence, x.AttemptNumber, x.Version,
-            new(x.ResourceGroupName, x.FoundationDeploymentId, x.WorkloadDeploymentId, x.WorkloadResourceId, x.WorkloadRevisionName, x.StableTrafficRevisionName),
+            new(x.ResourceGroupName, x.FoundationDeploymentId, x.WorkloadDeploymentId, x.WorkloadResourceId, x.WorkloadRevisionName,
+                x.StableTrafficRevisionName, x.WorkloadIdentityResourceId, x.WorkloadIdentityClientId, x.WorkloadIdentityPrincipalId,
+                x.KeyVaultResourceId, x.KeyVaultUri, x.SqlServerResourceId, x.SqlServerFqdn,
+                x.ContainerAppsEnvironmentResourceId, x.RegistryResourceId, x.AcrPullDeploymentId, x.AcrPullRoleAssignmentId),
             x.Endpoint, x.Health, diagnostics,
             x.WorkerId, x.LeaseExpiresAt, x.HeartbeatAt, x.CreatedAt, x.UpdatedAt, x.CompletedAt,
             x.ReleaseManifestReference, x.ReleaseManifestSignatureReference,
             secretReferences,
-            diagnosticsInvalid || secretReferencesInvalid);
+            diagnosticsInvalid || secretReferencesInvalid,
+            x.ProviderScopeFingerprint);
     }
 
     private static (IReadOnlyList<AzureProviderDiagnostic> Diagnostics, bool Invalid) ReadDiagnostics(string? json)
