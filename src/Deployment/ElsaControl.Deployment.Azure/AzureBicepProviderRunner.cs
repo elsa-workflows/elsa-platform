@@ -681,8 +681,10 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 }
             }
 
+            var vaultId = resources.KeyVaultResourceId ?? ResourceId("Microsoft.KeyVault", "vaults", $"{command.Plan.WorkloadName}-kv");
             var assignments = await ExecuteAzAsync(command,
-                ["role", "assignment", "list", "--subscription", _scope.SubscriptionId, "--all", "--output", "json", "--only-show-errors"],
+                ["role", "assignment", "list", "--subscription", _scope.SubscriptionId, "--scope", vaultId,
+                    "--all", "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
             if (!assignments.Succeeded || assignments.Value is null || !HasSafeVaultAssignmentsForCleanup(assignments.Value.Value, resources, command.Plan.WorkloadName))
@@ -830,7 +832,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
         {
             var list = await ExecuteAzAsync(command,
-                ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all", "--assignee-object-id", principalId,
+                ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--scope", registryId,
+                    "--all", "--assignee-object-id", principalId,
                     "--role", "AcrPull", "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
@@ -1104,7 +1107,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
         {
             var list = await ExecuteAzAsync(command,
-                ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all", "--output", "json", "--only-show-errors"],
+                ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--scope", RegistryResourceId(),
+                    "--all", "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
             if (list.Succeeded && list.Value is not null && !list.Value.Value.Any(x => string.Equals(x.Id, assignmentId, StringComparison.OrdinalIgnoreCase)))
@@ -1122,7 +1126,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         CancellationToken cancellationToken)
     {
         var list = await ExecuteAzAsync(command,
-            ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all", "--output", "json", "--only-show-errors"],
+            ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--scope", registryId,
+                "--all", "--output", "json", "--only-show-errors"],
             ParseRoleAssignmentsAsync,
             cancellationToken);
         if (!list.Succeeded || list.Value is null)
@@ -1157,7 +1162,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
         {
             var list = await ExecuteAzAsync(command,
-                ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all", "--output", "json", "--only-show-errors"],
+                ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--scope", registryId,
+                    "--all", "--output", "json", "--only-show-errors"],
                 ParseRoleAssignmentsAsync,
                 cancellationToken);
             if (list.Succeeded && list.Value is not null)
@@ -1219,7 +1225,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         CancellationToken cancellationToken)
     {
         var purgeRequested = false;
-        for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
+        var consecutiveAbsenceObservations = 0;
+        var observationAttempts = Math.Max(2, _options.ObservationAttempts);
+        for (var attempt = 0; attempt < observationAttempts; attempt++)
         {
             var deleted = await ExecuteAzAsync(command,
                 ["keyvault", "list-deleted", "--subscription", _scope.SubscriptionId, "--resource-type", "vault", "--output", "json", "--only-show-errors"],
@@ -1227,22 +1235,37 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 cancellationToken);
             if (!deleted.Succeeded || deleted.Value is null)
             {
-                if (attempt + 1 < _options.ObservationAttempts)
+                if (attempt + 1 < observationAttempts)
                     await Task.Delay(_options.ObservationDelay, cancellationToken);
                 continue;
             }
             var candidates = deleted.Value!.Value.Where(x => string.Equals(x.Name, vaultName, StringComparison.Ordinal) &&
                                                        string.Equals(x.EffectiveLocation, _scope.Location, StringComparison.OrdinalIgnoreCase)).ToArray();
             if (candidates.Length == 0)
-                return true;
+            {
+                consecutiveAbsenceObservations++;
+                if (consecutiveAbsenceObservations >= 2)
+                    return true;
+                if (attempt + 1 < observationAttempts)
+                    await Task.Delay(_options.ObservationDelay, cancellationToken);
+                continue;
+            }
             if (candidates.Any(candidate => string.IsNullOrWhiteSpace(candidate.EffectiveVaultId)))
                 return false;
             var matches = candidates.Where(candidate =>
                 string.Equals(candidate.EffectiveVaultId, exactVaultId, StringComparison.OrdinalIgnoreCase)).ToArray();
             if (matches.Length == 0)
-                return true;
+            {
+                consecutiveAbsenceObservations++;
+                if (consecutiveAbsenceObservations >= 2)
+                    return true;
+                if (attempt + 1 < observationAttempts)
+                    await Task.Delay(_options.ObservationDelay, cancellationToken);
+                continue;
+            }
             if (matches.Length != 1)
                 return false;
+            consecutiveAbsenceObservations = 0;
             if (!purgeRequested)
             {
                 EnsureMutationAuthority(command);
@@ -1253,7 +1276,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                     CancellationToken.None);
                 purgeRequested = true;
             }
-            if (attempt + 1 < _options.ObservationAttempts)
+            if (attempt + 1 < observationAttempts)
                 await Task.Delay(_options.ObservationDelay, cancellationToken);
         }
         return false;
@@ -1441,7 +1464,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     {
         var vault = resources.KeyVaultResourceId ?? ResourceId("Microsoft.KeyVault", "vaults", $"{workload}-kv");
         var owned = assignments.Where(x => string.Equals(x.Scope, vault, StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (owned.Length > 2 || assignments.Any(x => string.Equals(x.Scope, ResourceGroupId(), StringComparison.OrdinalIgnoreCase)))
+        if (owned.Length != assignments.Count || owned.Length > 2)
             return false;
         var users = owned.Where(x => string.Equals(RoleDefinitionId(x.RoleDefinitionId), KeyVaultSecretsUserRoleDefinitionId, StringComparison.OrdinalIgnoreCase)).ToArray();
         var officers = owned.Where(x => string.Equals(RoleDefinitionId(x.RoleDefinitionId), KeyVaultSecretsOfficerRoleDefinitionId, StringComparison.OrdinalIgnoreCase)).ToArray();
