@@ -168,6 +168,11 @@ public sealed class ElsaInstancePersistenceTests
         var run = db.Model.FindEntityType(typeof(DeploymentRunEntity))!;
         Assert.Contains(run.GetIndexes().Select(x => x.GetFilter()), x => x == "Status IN ('Queued', 'Running', 'RecoveryRequired')");
 
+        var migration = db.Model.FindEntityType(typeof(ElsaInstanceMigrationEntity))!;
+        var activeMigrationIndex = Assert.Single(migration.GetIndexes(), index =>
+            index.IsUnique && index.Properties.Count == 1 && index.Properties[0].Name == nameof(ElsaInstanceMigrationEntity.InstanceId));
+        Assert.Equal("Phase <> 'RolledBack' AND Phase <> 'Released' AND Phase <> 'Failed'", activeMigrationIndex.GetFilter());
+
         var identityBinding = db.Model.FindEntityType(typeof(ElsaInstanceIdentityBindingEntity))!;
         var callbackIndex = Assert.Single(identityBinding.GetIndexes(), index =>
             index.Properties.Count == 1 && index.Properties[0].Name == nameof(ElsaInstanceIdentityBindingEntity.CanonicalCallbackUri));

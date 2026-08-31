@@ -29,4 +29,25 @@ public sealed class SqlServerMigrationScriptTests
         var normalizedScript = script.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
         Assert.DoesNotContain("BEGIN\n    UPDATE [SyncRuns]\n    SET [CompletedAtTicks]", normalizedScript, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Elsa_instance_migration_uses_sql_server_supported_filtered_index_predicate()
+    {
+        var options = new DbContextOptionsBuilder<CatalogDbContext>()
+            .UseSqlServer(
+                @"Server=(localdb)\MSSQLLocalDB;Initial Catalog=ElsaControlMigrationScriptTests;Integrated Security=True;Encrypt=False",
+                sqlServer => sqlServer.MigrationsAssembly(CatalogDatabaseServiceCollectionExtensions.SqlServerMigrationsAssembly))
+            .Options;
+        using var db = new CatalogDbContext(options);
+
+        var script = db.GetService<IMigrator>().GenerateScript(
+            fromMigration: "20260830171226_AddElsaInstanceDeletionEvidence",
+            toMigration: "20260830191058_OperateElsaInstanceMigrations");
+
+        Assert.Contains(
+            "WHERE Phase <> 'RolledBack' AND Phase <> 'Released' AND Phase <> 'Failed'",
+            script,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("WHERE Phase NOT IN", script, StringComparison.Ordinal);
+    }
 }

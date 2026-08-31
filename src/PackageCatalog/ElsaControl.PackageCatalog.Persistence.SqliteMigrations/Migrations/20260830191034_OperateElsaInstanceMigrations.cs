@@ -71,7 +71,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     SELECT MigrationId,
                            row_number() OVER (PARTITION BY InstanceId ORDER BY UpdatedAt DESC, MigrationId DESC) AS Position
                     FROM ElsaInstanceMigrations
-                    WHERE Phase NOT IN ('RolledBack', 'Released', 'Failed')
+                    WHERE Phase <> 'RolledBack' AND Phase <> 'Released' AND Phase <> 'Failed'
                 )
                 UPDATE ElsaInstanceMigrations
                 SET Phase = 'Failed'
@@ -105,7 +105,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                 table: "ElsaInstanceMigrations",
                 column: "InstanceId",
                 unique: true,
-                filter: "Phase NOT IN ('RolledBack', 'Released', 'Failed')");
+                filter: "Phase <> 'RolledBack' AND Phase <> 'Released' AND Phase <> 'Failed'");
 
             migrationBuilder.CreateIndex(
                 name: "IX_ElsaInstanceMigrations_InstanceId_StartRequestHash",

@@ -136,6 +136,37 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Capture current API deployment
+        id: current-deployment
+        if: steps.deployment-config.outputs.deploy_configured == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          linux_fx_version="$(az webapp config show \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_WEBAPP_NAME" \
+            --query linuxFxVersion \
+            --output tsv)"
+          if [ -z "$linux_fx_version" ]; then
+            echo "::error::Could not capture the current Linux runtime image; refusing an unprotected deployment."
+            exit 1
+          fi
+
+          application_build_number="$(az webapp config appsettings list \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_WEBAPP_NAME" \
+            --query "[?name=='Application__BuildNumber'] | [0].value" \
+            --output tsv)"
+
+          echo "linux_fx_version=$linux_fx_version" >> "$GITHUB_OUTPUT"
+          if [ -n "$application_build_number" ]; then
+            echo "application_build_number_present=true" >> "$GITHUB_OUTPUT"
+            echo "application_build_number=$application_build_number" >> "$GITHUB_OUTPUT"
+          else
+            echo "application_build_number_present=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Deploy API app
         if: steps.deployment-config.outputs.deploy_configured == 'true'
         shell: bash
@@ -170,8 +201,72 @@ jobs:
               --container-registry-url "https://$AZURE_CONTAINER_REGISTRY_ENDPOINT" \
               --output none
 
-            az webapp restart \
+          fi
+
+          az webapp restart \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_WEBAPP_NAME" \
+            --output none
+
+      - name: Verify deployed API health
+        id: health-gate
+        if: steps.deployment-config.outputs.deploy_configured == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          default_host_name="$(az webapp show \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_WEBAPP_NAME" \
+            --query defaultHostName \
+            --output tsv)"
+          health_url="https://$default_host_name/health"
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --max-time 10 "$health_url" >/dev/null; then
+              echo "API health check passed on attempt $attempt."
+              exit 0
+            fi
+
+            echo "API health check is not ready (attempt $attempt/30); retrying."
+            sleep 10
+          done
+
+          echo "::error::API health check failed after deployment: $health_url"
+          exit 1
+
+      - name: Restore previous API deployment after health failure
+        if: ${{ failure() && steps.health-gate.outcome == 'failure' }}
+        env:
+          PREVIOUS_LINUX_FX_VERSION: ${{ steps.current-deployment.outputs.linux_fx_version }}
+          PREVIOUS_BUILD_NUMBER: ${{ steps.current-deployment.outputs.application_build_number }}
+          PREVIOUS_BUILD_NUMBER_PRESENT: ${{ steps.current-deployment.outputs.application_build_number_present }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          az webapp config set \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_WEBAPP_NAME" \
+            --linux-fx-version "$PREVIOUS_LINUX_FX_VERSION" \
+            --output none
+
+          if [ "$PREVIOUS_BUILD_NUMBER_PRESENT" = true ]; then
+            az webapp config appsettings set \
               --resource-group "$AZURE_RESOURCE_GROUP" \
               --name "$AZURE_WEBAPP_NAME" \
+              --settings "Application__BuildNumber=$PREVIOUS_BUILD_NUMBER" \
+              --output none
+          else
+            az webapp config appsettings delete \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_WEBAPP_NAME" \
+              --setting-names Application__BuildNumber \
               --output none
           fi
+
+          az webapp restart \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$AZURE_WEBAPP_NAME" \
+            --output none
+          echo "::error::API health gate failed; restored the previous Linux image and build metadata."

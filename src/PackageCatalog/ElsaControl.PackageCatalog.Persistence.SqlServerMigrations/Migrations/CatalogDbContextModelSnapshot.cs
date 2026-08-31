@@ -2572,7 +2572,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                     b.HasIndex("InstanceId")
                         .IsUnique()
-                        .HasFilter("Phase NOT IN ('RolledBack', 'Released', 'Failed')");
+                        .HasFilter("Phase <> 'RolledBack' AND Phase <> 'Released' AND Phase <> 'Failed'");
 
                     b.HasIndex("OperationId")
                         .IsUnique();
