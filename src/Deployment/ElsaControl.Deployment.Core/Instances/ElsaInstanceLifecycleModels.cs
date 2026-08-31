@@ -14,7 +14,8 @@ public sealed record ElsaInstanceCreateRequest(
     string Slug,
     ElsaInstanceIntent Intent,
     string IdempotencyKey,
-    Guid? InstanceId = null);
+    Guid? InstanceId = null,
+    Guid? ActorAccountId = null);
 
 /// <summary>
 /// Input shared by lifecycle actions. HTTP adapters should map a strong If-Match
@@ -26,7 +27,8 @@ public sealed record ElsaInstanceLifecycleRequest(
     int ExpectedVersion,
     string IdempotencyKey,
     string? Reason = null,
-    Guid? DeleteConfirmationId = null)
+    Guid? DeleteConfirmationId = null,
+    Guid? ActorAccountId = null)
 {
     public int IfMatchVersion => ExpectedVersion;
 }
@@ -39,7 +41,8 @@ public sealed record ElsaInstanceIntentUpdateRequest(
     int ExpectedVersion,
     string IdempotencyKey,
     string? Name = null,
-    string? Reason = null)
+    string? Reason = null,
+    Guid? ActorAccountId = null)
 {
     public int IfMatchVersion => ExpectedVersion;
 }
@@ -64,6 +67,18 @@ public sealed record ElsaInstanceLifecycleAcceptance(
     ElsaInstanceOperation Operation,
     ElsaInstanceLifecycleOutboxMessage Outbox,
     bool Replayed);
+
+public sealed record ElsaInstanceDeleteConfirmationRequirement(Guid ConfirmationId, Guid AccountId);
+
+public sealed record ElsaInstanceAcceptanceContext(
+    Guid? ActorAccountId,
+    string? Reason,
+    ElsaInstanceDeleteConfirmationRequirement? DeleteConfirmation = null);
+
+public sealed class ElsaInstanceDeleteConfirmationException : InvalidOperationException
+{
+    public ElsaInstanceDeleteConfirmationException() : base("Delete confirmation is invalid or unavailable.") { }
+}
 
 /// <summary>
 /// Indicates that a request cannot be accepted because an idempotency or optimistic

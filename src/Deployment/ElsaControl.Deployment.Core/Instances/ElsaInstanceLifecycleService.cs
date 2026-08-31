@@ -26,6 +26,7 @@ public sealed class ElsaInstanceLifecycleService(
         ArgumentNullException.ThrowIfNull(request.Intent);
         ValidateRequired(request.Name, nameof(request.Name), "Instance name is required.");
         ValidateRequired(request.Slug, nameof(request.Slug), "Instance slug is required.");
+        ValidateActor(request.ActorAccountId);
         var key = RequireKey(request.IdempotencyKey);
         var requestHash = ComputeCreateRequestHash(
             ElsaInstanceOperationAction.Create,
@@ -56,7 +57,8 @@ public sealed class ElsaInstanceLifecycleService(
                 existing.Version,
                 key,
                 requestHash);
-            return await CommitAsync(existing, replayTransition, cancellationToken);
+            return await CommitAsync(existing, replayTransition,
+                new ElsaInstanceAcceptanceContext(request.ActorAccountId, null), cancellationToken);
         }
 
         var instanceId = request.InstanceId ?? Guid.NewGuid();
@@ -75,7 +77,8 @@ public sealed class ElsaInstanceLifecycleService(
             idempotencyKey: key,
             requestHash: requestHash,
             expectedVersion: instance.Version);
-        return await CommitAsync(null, transition, cancellationToken);
+        return await CommitAsync(null, transition,
+            new ElsaInstanceAcceptanceContext(request.ActorAccountId, null), cancellationToken);
     }
 
     public Task<ElsaInstanceLifecycleAcceptance> UpdateIntentAsync(
@@ -87,7 +90,7 @@ public sealed class ElsaInstanceLifecycleService(
             throw new ArgumentException("An intent or name update is required.", nameof(request));
         return AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.UpdateIntent,
             request.ExpectedVersion, request.IdempotencyKey, request.Intent, request.Name, request.Reason,
-            cancellationToken);
+            cancellationToken, actorAccountId: request.ActorAccountId);
     }
 
     public Task<ElsaInstanceLifecycleAcceptance> UpdateAsync(
@@ -98,38 +101,43 @@ public sealed class ElsaInstanceLifecycleService(
         ElsaInstanceLifecycleRequest request,
         CancellationToken cancellationToken = default) =>
         AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Start,
-            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken);
+            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken,
+            actorAccountId: request.ActorAccountId);
 
     public Task<ElsaInstanceLifecycleAcceptance> StopAsync(
         ElsaInstanceLifecycleRequest request,
         CancellationToken cancellationToken = default) =>
         AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Stop,
-            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken);
+            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken,
+            actorAccountId: request.ActorAccountId);
 
     public Task<ElsaInstanceLifecycleAcceptance> RestartAsync(
         ElsaInstanceLifecycleRequest request,
         CancellationToken cancellationToken = default) =>
         AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Restart,
-            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken);
+            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken,
+            actorAccountId: request.ActorAccountId);
 
     public Task<ElsaInstanceLifecycleAcceptance> ReconcileAsync(
         ElsaInstanceLifecycleRequest request,
         CancellationToken cancellationToken = default) =>
         AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Reconcile,
-            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken);
+            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken,
+            actorAccountId: request.ActorAccountId);
 
     public Task<ElsaInstanceLifecycleAcceptance> RecoverAsync(
         ElsaInstanceLifecycleRequest request,
         CancellationToken cancellationToken = default) =>
         AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Recover,
-            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken);
+            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken,
+            actorAccountId: request.ActorAccountId);
 
     public Task<ElsaInstanceLifecycleAcceptance> DeleteAsync(
         ElsaInstanceLifecycleRequest request,
         CancellationToken cancellationToken = default) =>
         AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Delete,
             request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken,
-            confirmationId: request.DeleteConfirmationId);
+            confirmationId: request.DeleteConfirmationId, actorAccountId: request.ActorAccountId);
 
     public Task<ElsaInstanceLifecycleAcceptance> ApproveMinorUpgradeAsync(
         ElsaInstanceIntentUpdateRequest request,
@@ -139,7 +147,7 @@ public sealed class ElsaInstanceLifecycleService(
         ArgumentNullException.ThrowIfNull(request.Intent);
         return AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.ApproveMinorUpgrade,
             request.ExpectedVersion, request.IdempotencyKey, request.Intent, request.Name, request.Reason,
-            cancellationToken, minorApproved: true);
+            cancellationToken, minorApproved: true, actorAccountId: request.ActorAccountId);
     }
 
     public Task<ElsaInstanceLifecycleAcceptance> MajorMigrationAsync(
@@ -150,14 +158,15 @@ public sealed class ElsaInstanceLifecycleService(
         ArgumentNullException.ThrowIfNull(request.Intent);
         return AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.MajorMigration,
             request.ExpectedVersion, request.IdempotencyKey, request.Intent, request.Name, request.Reason,
-            cancellationToken, minorApproved: true, migrationAuthorized: true);
+            cancellationToken, minorApproved: true, migrationAuthorized: true, actorAccountId: request.ActorAccountId);
     }
 
     public Task<ElsaInstanceLifecycleAcceptance> RetryAsync(
         ElsaInstanceLifecycleRequest request,
         CancellationToken cancellationToken = default) =>
         AcceptAsync(request.WorkspaceId, request.InstanceId, ElsaInstanceOperationAction.Retry,
-            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken);
+            request.ExpectedVersion, request.IdempotencyKey, null, null, request.Reason, cancellationToken,
+            actorAccountId: request.ActorAccountId);
 
     private async Task<ElsaInstanceLifecycleAcceptance> AcceptAsync(
         Guid workspaceId,
@@ -171,13 +180,16 @@ public sealed class ElsaInstanceLifecycleService(
         CancellationToken cancellationToken,
         bool minorApproved = false,
         bool migrationAuthorized = false,
-        Guid? confirmationId = null)
+        Guid? confirmationId = null,
+        Guid? actorAccountId = null)
     {
         ValidateWorkspace(workspaceId);
         if (instanceId == Guid.Empty)
             throw new ArgumentException("Instance ID is required.", nameof(instanceId));
         if (expectedVersion < 1)
             throw new ArgumentOutOfRangeException(nameof(expectedVersion), "Expected version must be positive.");
+        ValidateActor(actorAccountId);
+        reason = NormalizeReason(reason);
         var key = RequireKey(idempotencyKey);
         var instance = await store.GetInstanceAsync(workspaceId, instanceId, cancellationToken)
             ?? throw new KeyNotFoundException("Elsa instance does not exist in the workspace.");
@@ -213,7 +225,8 @@ public sealed class ElsaInstanceLifecycleService(
                 migrationAuthorized);
             if (requestedName is not null && !string.Equals(replayTransition.Instance.Name, requestedName, StringComparison.Ordinal))
                 replayTransition = new ElsaInstanceTransitionResult(replayTransition.Instance.Rename(requestedName), replayTransition.Operation);
-            return await CommitAsync(instance, replayTransition, cancellationToken);
+            return await CommitAsync(instance, replayTransition,
+                AcceptanceContext(action, confirmationId, actorAccountId, reason), cancellationToken);
         }
 
         var requestHash = ComputeRequestHash(
@@ -237,7 +250,8 @@ public sealed class ElsaInstanceLifecycleService(
             migrationAuthorized);
         if (requestedName is not null && !string.Equals(transition.Instance.Name, requestedName, StringComparison.Ordinal))
             transition = new ElsaInstanceTransitionResult(transition.Instance.Rename(requestedName), transition.Operation);
-        return await CommitAsync(instance, transition, cancellationToken);
+        return await CommitAsync(instance, transition,
+            AcceptanceContext(action, confirmationId, actorAccountId, reason), cancellationToken);
     }
 
     private static ElsaInstanceIntent? EffectiveRequestedIntent(
@@ -253,6 +267,7 @@ public sealed class ElsaInstanceLifecycleService(
     private Task<ElsaInstanceLifecycleAcceptance> CommitAsync(
         ElsaInstance? expectedInstance,
         ElsaInstanceTransitionResult transition,
+        ElsaInstanceAcceptanceContext context,
         CancellationToken cancellationToken)
     {
         var outbox = new ElsaInstanceLifecycleOutboxMessage(
@@ -263,7 +278,36 @@ public sealed class ElsaInstanceLifecycleService(
             transition.Operation.Action,
             transition.Operation.RequestHash,
             _timeProvider.GetUtcNow());
-        return store.CommitAcceptedAsync(expectedInstance, transition.Instance, transition.Operation, outbox, cancellationToken);
+        return store.CommitAcceptedWithContextAsync(
+            expectedInstance, transition.Instance, transition.Operation, outbox, context, cancellationToken);
+    }
+
+    private static ElsaInstanceAcceptanceContext AcceptanceContext(
+        ElsaInstanceOperationAction action,
+        Guid? confirmationId,
+        Guid? actorAccountId,
+        string? reason) =>
+        new(actorAccountId, reason,
+            action == ElsaInstanceOperationAction.Delete && confirmationId is not null && actorAccountId is not null
+                ? new ElsaInstanceDeleteConfirmationRequirement(confirmationId.Value, actorAccountId.Value)
+                : null);
+
+    private static void ValidateActor(Guid? actorAccountId)
+    {
+        if (actorAccountId == Guid.Empty)
+            throw new ArgumentException("Actor account ID cannot be empty.", nameof(actorAccountId));
+    }
+
+    private static string? NormalizeReason(string? reason)
+    {
+        if (reason is null)
+            return null;
+        var normalized = reason.Trim();
+        if (normalized.Length == 0)
+            return null;
+        if (normalized.Length > 128 || normalized.Any(char.IsControl))
+            throw new ArgumentException("Reason must be a safe summary of at most 128 characters.", nameof(reason));
+        return normalized;
     }
 
     private static string RequireKey(string value) => ElsaInstanceIdempotencyKey.Normalize(value);

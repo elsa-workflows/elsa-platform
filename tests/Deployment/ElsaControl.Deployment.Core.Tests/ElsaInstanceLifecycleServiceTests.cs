@@ -109,6 +109,24 @@ public sealed class ElsaInstanceLifecycleServiceTests
         Assert.Single(store.Outbox);
     }
 
+    [Theory]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("unsafe\nreason")]
+    public async Task Lifecycle_reason_rejects_oversize_or_control_characters(string reason)
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore();
+        var service = new ElsaInstanceLifecycleService(store);
+        var created = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            OrganizationId, WorkspaceId, "Claims", "claims-prod", Intent(), "create-reason"));
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() => service.StopAsync(
+            new ElsaInstanceLifecycleRequest(
+                WorkspaceId, created.Instance.Id, created.Instance.Version, "stop-reason", Reason: reason)));
+
+        Assert.Equal("reason", exception.ParamName);
+        Assert.Single(store.Operations);
+    }
+
     [Fact]
     public async Task Instance_lookup_and_idempotency_are_workspace_scoped()
     {

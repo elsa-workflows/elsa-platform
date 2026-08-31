@@ -291,12 +291,30 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         return entity is null ? null : MapOperation(entity);
     }
 
-    public async Task<ElsaInstanceLifecycleAcceptance> CommitAcceptedAsync(
+    public Task<ElsaInstanceLifecycleAcceptance> CommitAcceptedAsync(
         ElsaInstance? expectedInstance,
         ElsaInstance instance,
         ElsaInstanceOperation operation,
         ElsaInstanceLifecycleOutboxMessage outbox,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        CommitAcceptedCoreAsync(expectedInstance, instance, operation, outbox, null, cancellationToken);
+
+    public Task<ElsaInstanceLifecycleAcceptance> CommitAcceptedWithContextAsync(
+        ElsaInstance? expectedInstance,
+        ElsaInstance instance,
+        ElsaInstanceOperation operation,
+        ElsaInstanceLifecycleOutboxMessage outbox,
+        ElsaInstanceAcceptanceContext context,
+        CancellationToken cancellationToken = default) =>
+        CommitAcceptedCoreAsync(expectedInstance, instance, operation, outbox, context, cancellationToken);
+
+    private async Task<ElsaInstanceLifecycleAcceptance> CommitAcceptedCoreAsync(
+        ElsaInstance? expectedInstance,
+        ElsaInstance instance,
+        ElsaInstanceOperation operation,
+        ElsaInstanceLifecycleOutboxMessage outbox,
+        ElsaInstanceAcceptanceContext? context,
+        CancellationToken cancellationToken)
     {
         dbContext.ChangeTracker.Clear();
         ArgumentNullException.ThrowIfNull(instance);
@@ -354,6 +372,9 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     .SingleOrDefaultAsync(x => x.OperationId == existingKeyOperation.Id, cancellationToken);
                 return await ReplayAsync(transaction, keyInstance, existingKeyOperation, keyOutbox, cancellationToken);
             }
+
+            await ValidateAndStageDeleteConfirmationAsync(
+                context?.DeleteConfirmation, instance, operation, outbox.CreatedAt, cancellationToken);
 
             var storedInstance = await LoadTrackedInstanceAsync(instance.Id, cancellationToken);
             if (expectedInstance is null)
@@ -421,7 +442,9 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     operationEntity,
                     priorObservedLifecycle,
                     occurredAt: outbox.CreatedAt,
-                    cancellationToken: cancellationToken),
+                    cancellationToken: cancellationToken,
+                    actorAccountId: context?.ActorAccountId,
+                    summary: HashReason(context?.Reason)),
                 cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -1415,6 +1438,31 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         entity.DesiredStateRevisionId = revision.Id.ToString("D");
     }
 
+    private async Task ValidateAndStageDeleteConfirmationAsync(
+        ElsaInstanceDeleteConfirmationRequirement? requirement,
+        ElsaInstance instance,
+        ElsaInstanceOperation operation,
+        DateTimeOffset consumedAt,
+        CancellationToken cancellationToken)
+    {
+        if (requirement is null)
+            return;
+        if (operation.Action != ElsaInstanceOperationAction.Delete ||
+            requirement.ConfirmationId == Guid.Empty || requirement.AccountId == Guid.Empty)
+            throw new ElsaInstanceDeleteConfirmationException();
+
+        var confirmation = await dbContext.ActionConfirmations.SingleOrDefaultAsync(
+            x => x.WorkspaceId == instance.WorkspaceId && x.Id == requirement.ConfirmationId,
+            cancellationToken);
+        if (confirmation is null || confirmation.ActionType != ConfirmationActionType.DeleteManagedInstance ||
+            confirmation.ConfirmedByAccountId != requirement.AccountId || confirmation.UsedAt is not null ||
+            confirmation.ExpiresAt <= consumedAt ||
+            !string.Equals(confirmation.TargetId, instance.Id.ToString("D"), StringComparison.Ordinal))
+            throw new ElsaInstanceDeleteConfirmationException();
+
+        confirmation.UsedAt = consumedAt.ToUniversalTime();
+    }
+
     private async Task<ElsaInstanceAuditEventEntity> CreateAuditEventAsync(
         ElsaInstanceEntity instance,
         ElsaInstanceOperationEntity operation,
@@ -1425,7 +1473,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         Guid? deploymentRunId = null,
         string? planReference = null,
         string? diagnosticCode = null,
-        string? summary = null)
+        string? summary = null,
+        Guid? actorAccountId = null)
     {
         var lastSequence = await dbContext.ElsaInstanceAuditEvents
             .Where(x => x.InstanceId == instance.Id)
@@ -1439,6 +1488,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             InstanceId = instance.Id,
             Sequence = checked(lastSequence + 1),
             EventType = eventType,
+            ActorAccountId = actorAccountId,
             OperationId = operation.Id,
             DeploymentRunId = deploymentRunId,
             PriorState = priorObservedLifecycle?.ToString(),
@@ -1483,6 +1533,11 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             operation.ReconciliationRetryEvidenceDigest is not null,
             replayed, operation.ReconciledAt.Value.ToUniversalTime());
     }
+
+    private static string? HashReason(string? reason) =>
+        reason is null
+            ? null
+            : "reason.sha256." + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(reason)));
 
     private static void ValidateEnvelope(
         ElsaInstance instance,

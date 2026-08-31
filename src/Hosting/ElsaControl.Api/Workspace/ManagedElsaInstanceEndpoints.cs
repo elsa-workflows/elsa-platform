@@ -83,7 +83,8 @@ public static class ManagedElsaInstanceEndpoints
                     return Problem("instance.slug-conflict", "The instance slug is already in use in this workspace.", StatusCodes.Status409Conflict);
 
                 var accepted = await lifecycle.CreateAsync(new ElsaInstanceCreateRequest(
-                    access.OrganizationId, workspaceId, request.Name, normalizedSlug, request.Intent, key, request.InstanceId), cancellationToken);
+                    access.OrganizationId, workspaceId, request.Name, normalizedSlug, request.Intent, key,
+                    ActorAccountId: access.AccountId), cancellationToken);
                 return await AcceptedAsync(workspaceId, accepted, queries, permissions, access.AccountId, cancellationToken);
             }
             catch (ElsaInstanceLifecycleConflictException exception)
@@ -149,7 +150,8 @@ public static class ManagedElsaInstanceEndpoints
             try
             {
                 var accepted = await lifecycle.UpdateIntentAsync(new ElsaInstanceIntentUpdateRequest(
-                    workspaceId, instanceId, request.Intent, precondition.Value, key, request.Name, request.Reason), cancellationToken);
+                    workspaceId, instanceId, request.Intent, precondition.Value, key, request.Name, request.Reason,
+                    access.AccountId), cancellationToken);
                 return await AcceptedAsync(workspaceId, accepted, queries, permissions, access.AccountId, cancellationToken);
             }
             catch (ElsaInstanceLifecycleConflictException exception)
@@ -175,8 +177,6 @@ public static class ManagedElsaInstanceEndpoints
             HttpContext context,
             IAccountWorkspaceStore accountStore,
             WorkspacePermissionService permissions,
-            ConfirmationService confirmations,
-            IElsaInstanceLifecycleStore lifecycleStore,
             ElsaInstanceLifecycleService lifecycle,
             IManagedElsaInstanceApiStore queries,
             CancellationToken cancellationToken) =>
@@ -189,6 +189,8 @@ public static class ManagedElsaInstanceEndpoints
             var key = keyResult.Value!;
             if (!Enum.IsDefined(request.Action) || request.Action is ElsaInstanceOperationAction.Create or ElsaInstanceOperationAction.UpdateIntent)
                 return Problem("instance.operation-invalid", "The requested operation is not supported on this route.", StatusCodes.Status422UnprocessableEntity);
+            if (!HasValidOperationShape(request))
+                return Problem("instance.operation-shape-invalid", "The operation body contains fields that do not apply to this action.", StatusCodes.Status422UnprocessableEntity);
             var expectedVersion = ReadIfMatch(context.Request);
             if (expectedVersion is null)
                 return Problem("instance.if-match-required", "A strong If-Match header is required for instance operations.", StatusCodes.Status428PreconditionRequired);
@@ -206,38 +208,21 @@ public static class ManagedElsaInstanceEndpoints
                 if (request.DeleteConfirmationId is null || request.DeleteConfirmationId == Guid.Empty)
                     return Problem("instance.delete-confirmation-required", "A delete confirmation is required.", StatusCodes.Status400BadRequest);
 
-                var existing = await lifecycleStore.FindOperationByKeyAsync(
-                    workspaceId, key, instanceId, ElsaInstanceOperationAction.Delete, cancellationToken);
-                if (existing is null)
-                {
-                    var instance = await lifecycleStore.GetInstanceAsync(workspaceId, instanceId, cancellationToken);
-                    if (instance is null)
-                        return Results.NotFound();
-                    if (instance.Version != expectedVersion.Value)
-                        return Problem("instance.version-conflict", "Instance version conflict.", StatusCodes.Status412PreconditionFailed);
-                    var consumption = await confirmations.ConsumeConfirmationAsync(
-                        workspaceId,
-                        request.DeleteConfirmationId.Value,
-                        access.AccountId,
-                        ConfirmationActionType.DeleteManagedInstance,
-                        instanceId.ToString("D"),
-                        cancellationToken);
-                    if (consumption.Validation.Severity != ElsaControl.Deployment.Core.Cockpit.ValidationSeverity.Pass)
-                        return Problem("instance.delete-confirmation-invalid", "The delete confirmation is invalid or unavailable.", StatusCodes.Status409Conflict);
-                }
             }
 
             try
             {
+                var actorAccountId = context.GetWorkspaceAccess().AccountId;
                 var operationRequest = new ElsaInstanceLifecycleRequest(
-                    workspaceId, instanceId, expectedVersion.Value, key, request.Reason, request.DeleteConfirmationId);
+                    workspaceId, instanceId, expectedVersion.Value, key, request.Reason,
+                    request.DeleteConfirmationId, actorAccountId);
                 ElsaInstanceLifecycleAcceptance accepted;
                 if (request.Action is ElsaInstanceOperationAction.ApproveMinorUpgrade or ElsaInstanceOperationAction.MajorMigration)
                 {
                     if (request.Intent is null)
                         return Problem("instance.intent-required", "This operation requires a new intent.", StatusCodes.Status422UnprocessableEntity);
                     var intentRequest = new ElsaInstanceIntentUpdateRequest(workspaceId, instanceId, request.Intent,
-                        expectedVersion.Value, key, request.Name, request.Reason);
+                        expectedVersion.Value, key, request.Name, request.Reason, actorAccountId);
                     accepted = request.Action == ElsaInstanceOperationAction.ApproveMinorUpgrade
                         ? await lifecycle.ApproveMinorUpgradeAsync(intentRequest, cancellationToken)
                         : await lifecycle.MajorMigrationAsync(intentRequest, cancellationToken);
@@ -264,6 +249,10 @@ public static class ManagedElsaInstanceEndpoints
                     ? StatusCodes.Status412PreconditionFailed
                     : StatusCodes.Status409Conflict;
                 return Problem(ConflictCode(exception), exception.Message, status);
+            }
+            catch (ElsaInstanceDeleteConfirmationException)
+            {
+                return Problem("instance.delete-confirmation-invalid", "The delete confirmation is invalid or unavailable.", StatusCodes.Status409Conflict);
             }
             catch (KeyNotFoundException)
             {
@@ -478,6 +467,13 @@ public static class ManagedElsaInstanceEndpoints
     private static IResult InvalidIdempotencyKey() =>
         Problem("instance.idempotency-key-invalid", "Idempotency-Key must be a safe token of at most 128 characters.", StatusCodes.Status400BadRequest);
 
+    private static bool HasValidOperationShape(ManagedElsaInstanceOperationRequest request)
+    {
+        var isUpgrade = request.Action is ElsaInstanceOperationAction.ApproveMinorUpgrade or ElsaInstanceOperationAction.MajorMigration;
+        return (isUpgrade || request.Intent is null && request.Name is null) &&
+               (request.Action == ElsaInstanceOperationAction.Delete || request.DeleteConfirmationId is null);
+    }
+
     private static int? ReadIfMatch(HttpRequest request)
     {
         var value = request.Headers.IfMatch.FirstOrDefault()?.Trim();
@@ -500,7 +496,7 @@ public static class ManagedElsaInstanceEndpoints
         extensions: new Dictionary<string, object?> { ["code"] = code });
 }
 
-public sealed record ManagedElsaInstanceCreateRequest(string? Name, string? Slug, ElsaInstanceIntent? Intent, Guid? InstanceId = null);
+public sealed record ManagedElsaInstanceCreateRequest(string? Name, string? Slug, ElsaInstanceIntent? Intent);
 public sealed record ManagedElsaInstancePatchRequest(ElsaInstanceIntent? Intent = null, string? Name = null, string? Reason = null);
 public sealed record ManagedElsaInstanceOperationRequest(ElsaInstanceOperationAction Action, int? ExpectedVersion = null, string? Reason = null, ElsaInstanceIntent? Intent = null, string? Name = null, Guid? DeleteConfirmationId = null);
 public sealed record ManagedElsaInstanceListResponse(IReadOnlyList<ManagedElsaInstanceResponse> Items, int Page, int PageSize, int TotalCount, bool HasMore);

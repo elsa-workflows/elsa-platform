@@ -137,6 +137,12 @@ public sealed class ManagedElsaInstanceApiTests
         Assert.NotNull(detail);
         Assert.Equal("claims-runtime", detail!.Slug);
         Assert.Equal(detail.ETag, acceptedBody.Instance.ETag);
+
+        var audit = await client.GetControlJsonAsync<ManagedElsaInstanceAuditResponse>(
+            $"/api/workspaces/{workspaceId}/instances/{acceptedBody.Instance.InstanceId}/audit");
+        var acceptedAudit = Assert.Single(audit!.Items);
+        Assert.NotNull(acceptedAudit.ActorAccountId);
+        Assert.Null(acceptedAudit.OperatorSubject);
     }
 
     [Fact]
@@ -243,6 +249,59 @@ public sealed class ManagedElsaInstanceApiTests
             new(ElsaInstanceOperationAction.Delete, DeleteConfirmationId: replacementConfirmation.Id));
         Assert.Equal(HttpStatusCode.Conflict, mismatchedReplay.StatusCode);
         Assert.Contains("instance.idempotency-conflict", await mismatchedReplay.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Canonical_operation_rejects_fields_that_do_not_apply_to_action()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient("managed-instance-operation-shape");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        var instanceId = Guid.NewGuid();
+
+        var startWithIntent = await SendOperationAsync(client, workspaceId, instanceId, "\"1\"", "start-with-intent",
+            new(ElsaInstanceOperationAction.Start, Intent: Intent()));
+        var startWithDeleteConfirmation = await SendOperationAsync(client, workspaceId, instanceId, "\"1\"", "start-with-delete-confirmation",
+            new(ElsaInstanceOperationAction.Start, DeleteConfirmationId: Guid.NewGuid()));
+        var deleteWithName = await SendOperationAsync(client, workspaceId, instanceId, "\"1\"", "delete-with-name",
+            new(ElsaInstanceOperationAction.Delete, Name: "ignored", DeleteConfirmationId: Guid.NewGuid()));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, startWithIntent.StatusCode);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, startWithDeleteConfirmation.StatusCode);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, deleteWithName.StatusCode);
+        Assert.All([startWithIntent, startWithDeleteConfirmation, deleteWithName], response =>
+            Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType));
+    }
+
+    [Fact]
+    public async Task Canonical_create_ignores_caller_supplied_instance_id_without_identity_oracle()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient("managed-instance-server-identity");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        var suppliedId = Guid.NewGuid();
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances")
+        {
+            Content = JsonContent.Create(new
+            {
+                name = "Server identity runtime",
+                slug = "server-identity-runtime",
+                intent = Intent(),
+                instanceId = suppliedId
+            }, options: ControlApiTestApplication.JsonOptions)
+        };
+        request.Headers.Add("Idempotency-Key", "create-server-identity-runtime");
+
+        var response = await client.SendAsync(request);
+        var body = await response.Content.ReadControlJsonAsync<ManagedElsaInstanceAcceptedResponse>();
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.NotNull(body);
+        Assert.NotEqual(suppliedId, body!.Instance.InstanceId);
     }
 
     [Fact]

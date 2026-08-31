@@ -146,8 +146,10 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await CompleteOperationAsync(db, created.Operation.Id);
 
         db.ChangeTracker.Clear();
+        var actorAccountId = Guid.NewGuid();
         var updated = await service.UpdateIntentAsync(new ElsaInstanceIntentUpdateRequest(
-            workspace.Id, created.Instance.Id, CreateIntent(), created.Instance.Version, "update-revision-link"));
+            workspace.Id, created.Instance.Id, CreateIntent(), created.Instance.Version, "update-revision-link",
+            Reason: "approved customer change", ActorAccountId: actorAccountId));
 
         Assert.False(updated.Replayed);
         Assert.Equal(created.Instance.Version + 1, updated.Instance.Version);
@@ -155,6 +157,10 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal(created.Instance.DesiredStateRevisionId!.Value.Value,
             (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == updated.Operation.Id)).DesiredStateRevisionId);
         Assert.Equal(2, await db.ElsaInstanceAuditEvents.CountAsync());
+        var audit = await db.ElsaInstanceAuditEvents.SingleAsync(x => x.OperationId == updated.Operation.Id);
+        Assert.Equal(actorAccountId, audit.ActorAccountId);
+        Assert.StartsWith("reason.sha256.", audit.Summary, StringComparison.Ordinal);
+        Assert.DoesNotContain("approved customer change", audit.Summary, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -248,6 +254,56 @@ public sealed class ElsaInstanceLifecycleStoreTests
             secondStore.CommitAcceptedAsync(secondExpected, secondTransition.Instance, secondTransition.Operation, secondOutbox));
 
         Assert.Equal("Instance version conflict.", error.Message);
+    }
+
+    [Fact]
+    public async Task Failed_delete_acceptance_rolls_back_confirmation_consumption()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var setup = CreateMigratedContext(connection);
+        await setup.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(setup, "Atomic delete workspace");
+        var created = await new ElsaInstanceLifecycleService(CreateStore(setup), new FixedTimeProvider(Now))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId, workspace.Id, "Managed Elsa", "atomic-delete", CreateIntent(), "create-atomic-delete"));
+        await CompleteOperationAsync(setup, created.Operation.Id);
+        var options = new DbContextOptionsBuilder<CatalogDbContext>()
+            .UseSqlite(connection, sqlite => sqlite.MigrationsAssembly(CatalogDatabaseServiceCollectionExtensions.SqliteMigrationsAssembly))
+            .Options;
+        await using var staleDb = new CatalogDbContext(options);
+        var store = CreateStore(staleDb);
+        var stale = await store.GetInstanceAsync(workspace.Id, created.Instance.Id);
+        Assert.NotNull(stale);
+        var transition = ElsaInstanceStateMachine.Request(
+            stale!, ElsaInstanceOperationAction.Delete, expectedVersion: stale.Version,
+            idempotencyKey: "delete-atomic-failure", requestHash: RequestHash("delete-atomic-failure"));
+        var outbox = NewOutbox(transition);
+        var actorAccountId = Guid.NewGuid();
+        var confirmation = await new DeploymentWorkspaceStore(setup).CreateConfirmationAsync(
+            workspace.Id,
+            new CreateActionConfirmationRequest(
+                ConfirmationActionType.DeleteManagedInstance,
+                created.Instance.Id.ToString("D"),
+                actorAccountId),
+            outbox.CreatedAt);
+        setup.ChangeTracker.Clear();
+
+        await setup.ElsaInstances.Where(x => x.Id == created.Instance.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Version, x => x.Version + 1));
+
+        await Assert.ThrowsAsync<ElsaInstanceLifecycleConflictException>(() =>
+            store.CommitAcceptedWithContextAsync(
+                stale, transition.Instance, transition.Operation, outbox,
+                new ElsaInstanceAcceptanceContext(
+                    actorAccountId,
+                    "requested deletion",
+                    new ElsaInstanceDeleteConfirmationRequirement(confirmation.Id, actorAccountId))));
+
+        await using var verify = new CatalogDbContext(options);
+        Assert.Null((await verify.ActionConfirmations.SingleAsync(x => x.Id == confirmation.Id)).UsedAt);
+        Assert.False(await verify.ElsaInstanceOperations.AnyAsync(x => x.Id == transition.Operation.Id));
+        Assert.False(await verify.ElsaInstanceLifecycleOutbox.AnyAsync(x => x.OperationId == transition.Operation.Id));
     }
 
     [Fact]

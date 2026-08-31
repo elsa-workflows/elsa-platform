@@ -652,7 +652,11 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             // Human-readable summaries and operator subjects are not durable
             // payload channels. Keep only a stable code and a one-way subject
             // fingerprint at the persistence boundary.
-            audit.Summary = audit.DiagnosticCode ?? audit.EventType;
+            audit.Summary = audit.Summary is { Length: 78 } reasonHash &&
+                            reasonHash.StartsWith("reason.sha256.", StringComparison.Ordinal) &&
+                            reasonHash[14..].All(Uri.IsHexDigit)
+                ? reasonHash.ToLowerInvariant()
+                : audit.DiagnosticCode ?? audit.EventType;
             if (!string.IsNullOrWhiteSpace(audit.OperatorSubject))
             {
                 if (audit.OperatorSubject.Length > 512)

@@ -42,4 +42,17 @@ public interface IElsaInstanceLifecycleStore
         ElsaInstanceOperation operation,
         ElsaInstanceLifecycleOutboxMessage outbox,
         CancellationToken cancellationToken = default);
+
+    async Task<ElsaInstanceLifecycleAcceptance> CommitAcceptedWithContextAsync(
+        ElsaInstance? expectedInstance,
+        ElsaInstance instance,
+        ElsaInstanceOperation operation,
+        ElsaInstanceLifecycleOutboxMessage outbox,
+        ElsaInstanceAcceptanceContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (context.DeleteConfirmation is not null)
+            throw new InvalidOperationException("Atomic delete confirmation persistence is not configured.");
+        return await CommitAcceptedAsync(expectedInstance, instance, operation, outbox, cancellationToken);
+    }
 }
