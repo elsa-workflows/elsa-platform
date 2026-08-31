@@ -15,6 +15,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
         File.WriteAllText(Path.Combine(_templateRoot, "sql-bootstrap.sql"), "SELECT 1;");
         File.WriteAllText(Path.Combine(_templateRoot, "az"), "azure-cli");
         File.WriteAllText(Path.Combine(_templateRoot, "sqlcmd"), "sqlcmd");
+        File.WriteAllText(Path.Combine(_templateRoot, "curl"), "curl");
     }
 
     [Fact]
@@ -196,6 +197,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
         Enabled = true,
         AzureCliPath = Path.Combine(_templateRoot, "az"),
         SqlCmdPath = Path.Combine(_templateRoot, "sqlcmd"),
+        CurlPath = Path.Combine(_templateRoot, "curl"),
         TemplateRoot = _templateRoot,
         SqlBootstrapObjectId = "11111111-1111-1111-1111-111111111111",
         SqlBootstrapLogin = "proof-bootstrap",
