@@ -523,6 +523,31 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Stable_traffic_restore_is_uncertain_when_candidate_zero_entry_is_missing()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("traffic") && args.Contains("set"));
+        process.Success(args => args.Contains("show") && args.Any(x => x.Contains("traffic", StringComparison.Ordinal)), "[{\"revisionName\":\"proof-app--stable\",\"weight\":100}]");
+        var resources = _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId,
+            WorkloadResourceId = _fixture.AppId,
+            WorkloadDeploymentId = _fixture.WorkloadDeploymentId,
+            WorkloadRevisionName = "proof-app--candidate"
+        };
+
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.RestoreStableTraffic, resources) with
+        {
+            StableTrafficRevisionName = "proof-app--stable"
+        });
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.Equal("azure.rollback.uncertain", result.Code);
+    }
+
+    [Fact]
     public async Task Cleanup_requires_exact_rbac_and_positive_absence_for_every_owned_locator()
     {
         var process = new FakeCommandProcess();

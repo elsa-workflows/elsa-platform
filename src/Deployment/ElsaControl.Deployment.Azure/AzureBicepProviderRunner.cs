@@ -562,7 +562,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         if (!promoted.Succeeded)
             return ProcessFailure(command, AzureProviderOperationPhase.TrafficPromoted, promoted, command.Resources, mutation: true);
 
-        var traffic = await WaitForTrafficAsync(command, command.Resources.WorkloadRevisionName, candidateZero: false, cancellationToken);
+        var traffic = await WaitForTrafficAsync(command, command.Resources.WorkloadRevisionName, requiredZeroRevision: null, cancellationToken);
         if (traffic is not true)
             return traffic is null
                 ? Uncertain(command, AzureProviderOperationPhase.TrafficPromoted, "azure.promotion.traffic-uncertain", "Candidate traffic promotion could not be confirmed.")
@@ -617,7 +617,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         if (!restored.Succeeded)
             return Uncertain(command, AzureProviderOperationPhase.HealthVerified, "azure.rollback.uncertain", "Stable traffic restoration was not confirmed.", command.Resources);
 
-        var traffic = await WaitForTrafficAsync(command, stable, candidateZero: true, cancellationToken);
+        var requiredZeroRevision = candidate is null || string.Equals(candidate, stable, StringComparison.Ordinal) ? null : candidate;
+        var traffic = await WaitForTrafficAsync(command, stable, requiredZeroRevision, cancellationToken);
         if (traffic is not true)
             return Uncertain(command, AzureProviderOperationPhase.HealthVerified, "azure.rollback.uncertain", "Stable traffic restoration was not confirmed.", command.Resources);
         return Completed(command, AzureProviderOperationPhase.HealthVerified, command.Resources with { StableTrafficRevisionName = stable },
@@ -909,7 +910,11 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         return (null, Failed(command, AzureProviderOperationPhase.WorkloadReady, "azure.revision.exhausted", "No deterministic workload revision suffix was available."));
     }
 
-    private async Task<bool?> WaitForTrafficAsync(AzureProviderRunnerCommand command, string desiredRevision, bool candidateZero, CancellationToken cancellationToken)
+    private async Task<bool?> WaitForTrafficAsync(
+        AzureProviderRunnerCommand command,
+        string desiredRevision,
+        string? requiredZeroRevision,
+        CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
         {
@@ -920,9 +925,11 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 cancellationToken);
             if (traffic.Succeeded && traffic.Value is not null && traffic.Value.Value.Sum(x => x.Weight) == 100)
             {
-                var desired = traffic.Value.Value.Count(x => string.Equals(x.RevisionName, desiredRevision, StringComparison.OrdinalIgnoreCase) && x.Weight == 100);
+                var desiredEntries = traffic.Value.Value.Where(x => string.Equals(x.RevisionName, desiredRevision, StringComparison.OrdinalIgnoreCase)).ToArray();
                 var nonDesired = traffic.Value.Value.Any(x => !string.Equals(x.RevisionName, desiredRevision, StringComparison.OrdinalIgnoreCase) && x.Weight != 0);
-                if ((candidateZero && desired == 1 && !nonDesired) || (!candidateZero && desired == 1 && !nonDesired))
+                var requiredZero = requiredZeroRevision is null ||
+                    traffic.Value.Value.Count(x => string.Equals(x.RevisionName, requiredZeroRevision, StringComparison.OrdinalIgnoreCase) && x.Weight == 0) == 1;
+                if (desiredEntries.Length == 1 && desiredEntries[0].Weight == 100 && !nonDesired && requiredZero)
                     return true;
             }
             if (traffic.Status == AzureCommandProcessStatus.Cancelled || cancellationToken.IsCancellationRequested)
