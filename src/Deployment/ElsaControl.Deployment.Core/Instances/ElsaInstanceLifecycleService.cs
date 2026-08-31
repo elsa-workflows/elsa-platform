@@ -14,6 +14,7 @@ public sealed class ElsaInstanceLifecycleService(
     IElsaInstanceLifecycleStore store,
     TimeProvider? timeProvider = null)
 {
+    public const string CreateIdempotencyScope = "instances";
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     public async Task<ElsaInstanceLifecycleAcceptance> CreateAsync(
@@ -41,7 +42,8 @@ public sealed class ElsaInstanceLifecycleService(
             request.InstanceId?.ToString("D") ?? "generated");
 
         var existingOperation = await store.FindOperationByKeyAsync(
-            request.WorkspaceId, key, action: ElsaInstanceOperationAction.Create, cancellationToken: cancellationToken);
+            request.WorkspaceId, key, action: ElsaInstanceOperationAction.Create,
+            idempotencyScope: CreateIdempotencyScope, cancellationToken: cancellationToken);
         if (existingOperation is not null)
         {
             if (existingOperation.Action != ElsaInstanceOperationAction.Create)
@@ -58,7 +60,8 @@ public sealed class ElsaInstanceLifecycleService(
                 existingOperation,
                 existing.Version,
                 key,
-                requestHash);
+                requestHash,
+                idempotencyScope: CreateIdempotencyScope);
             return await CommitAsync(existing, replayTransition,
                 new ElsaInstanceAcceptanceContext(request.ActorAccountId, null), cancellationToken);
         }
@@ -78,7 +81,8 @@ public sealed class ElsaInstanceLifecycleService(
             ElsaInstanceOperationAction.Create,
             idempotencyKey: key,
             requestHash: requestHash,
-            expectedVersion: instance.Version);
+            expectedVersion: instance.Version,
+            idempotencyScope: CreateIdempotencyScope);
         return await CommitAsync(null, transition,
             new ElsaInstanceAcceptanceContext(request.ActorAccountId, null), cancellationToken);
     }

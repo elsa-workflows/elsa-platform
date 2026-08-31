@@ -156,6 +156,57 @@ public sealed class ManagedElsaInstanceApiTests
     }
 
     [Fact]
+    public async Task Concurrent_canonical_create_reserves_one_collection_idempotency_key_and_replays_exactly()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient("managed-instance-concurrent-create");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        const string key = "concurrent-create-runtime";
+
+        Task<HttpResponseMessage> SendAsync(string name, string slug)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances")
+            {
+                Content = JsonContent.Create(new ManagedElsaInstanceCreateRequest(name, slug, Intent()),
+                    options: ControlApiTestApplication.JsonOptions)
+            };
+            request.Headers.Add("Idempotency-Key", key);
+            return client.SendAsync(request);
+        }
+
+        var responses = await Task.WhenAll(
+            SendAsync("Concurrent runtime", "concurrent-runtime"),
+            SendAsync("Concurrent runtime", "concurrent-runtime"));
+
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.Accepted, response.StatusCode));
+        var accepted = await Task.WhenAll(responses.Select(response =>
+            response.Content.ReadControlJsonAsync<ManagedElsaInstanceAcceptedResponse>()));
+        Assert.All(accepted, response => Assert.NotNull(response));
+        Assert.Single(accepted.Select(response => response!.Instance.InstanceId).Distinct());
+        Assert.Single(accepted.Select(response => response!.Operation.Id).Distinct());
+
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+            Assert.Equal(1, await CountRowsAsync(db, "ElsaInstances"));
+            Assert.Equal(1, await CountRowsAsync(db, "ElsaInstanceOperations"));
+            Assert.Equal(1, await CountRowsAsync(db, "ElsaInstanceLifecycleOutbox"));
+        }
+
+        var replay = await SendAsync("Concurrent runtime", "concurrent-runtime");
+        Assert.Equal(HttpStatusCode.Accepted, replay.StatusCode);
+        var replayBody = await replay.Content.ReadControlJsonAsync<ManagedElsaInstanceAcceptedResponse>();
+        Assert.Equal(accepted[0]!.Instance.InstanceId, replayBody!.Instance.InstanceId);
+        Assert.Equal(accepted[0]!.Operation.Id, replayBody.Operation.Id);
+
+        var conflict = await SendAsync("Changed runtime", "changed-runtime");
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        Assert.Contains("instance.idempotency-conflict", await conflict.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Canonical_detail_uses_current_identity_seam_for_callback_rotation_and_rejects_stale_binding()
     {
         await using var app = CreateApplication([]);
@@ -708,6 +759,14 @@ public sealed class ManagedElsaInstanceApiTests
         await db.Database.OpenConnectionAsync();
         await using var command = db.Database.GetDbConnection().CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM ElsaInstanceOperations";
+        return Convert.ToInt32(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<int> CountRowsAsync(CatalogDbContext db, string table)
+    {
+        await db.Database.OpenConnectionAsync();
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = $"SELECT COUNT(*) FROM {table}";
         return Convert.ToInt32(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
     }
 

@@ -77,6 +77,56 @@ public sealed class ElsaInstanceLifecycleStoreTests
         await Assert.ThrowsAsync<ArgumentException>(() => db.SaveChangesAsync());
     }
 
+    [Theory]
+    [InlineData("https://user:secret@evidence.example/proof", "Verified producer release manifest.")]
+    [InlineData("https://evidence.example/proof?token=secret", "Verified producer release manifest.")]
+    [InlineData("https://evidence.example/proof#secret", "Verified producer release manifest.")]
+    [InlineData("https://evidence.example/proof", "legacy free-form description")]
+    public async Task Resolved_plan_projection_fails_closed_for_unsafe_evidence(
+        string evidenceReference,
+        string evidenceDescription)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Unsafe plan evidence workspace");
+        var accepted = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId, workspace.Id, "Unsafe evidence Elsa", "unsafe-plan-evidence-elsa",
+                WorkerIntent(), "unsafe-plan-evidence-create"));
+        var resolved = SuccessfulResolution(workspace.Id, accepted.Instance.Id);
+        var plan = resolved.Plan! with
+        {
+            Evidence =
+            [
+                new(ReleaseManifestEvidenceKinds.Manifest, evidenceReference, Digest('c'), evidenceDescription)
+            ]
+        };
+        var serialized = ResolvedElsaApplicationPlanSerialization.Serialize(plan);
+        var contentHash = ResolvedElsaApplicationPlanSerialization.ComputeContentHash(plan);
+        db.Set<ElsaInstanceResolvedPlanEntity>().Add(new()
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = workspace.OrganizationId,
+            WorkspaceId = workspace.Id,
+            InstanceId = accepted.Instance.Id,
+            PlanId = "unsafe_plan",
+            SchemaVersion = 1,
+            ContentHash = contentHash,
+            PlanUri = $"https://control.example.test/api/workspaces/{workspace.Id:D}/instances/{accepted.Instance.Id:D}/resolved-plans/unsafe_plan",
+            SerializedPlan = serialized,
+            CreatedAt = Now
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var projected = await new EfCoreManagedElsaInstanceApiStore(db)
+            .GetResolvedPlanAsync(workspace.Id, accepted.Instance.Id, "unsafe_plan");
+
+        Assert.Null(projected);
+    }
+
     [Fact]
     public async Task Create_commits_instance_revision_operation_and_outbox_and_replays_exactly()
     {
@@ -1398,7 +1448,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
             "dedicated",
             new("preview", "preview", "stable", "automatic-within-minor", "explicit-approval", "explicit-migration"),
             [],
-            [new("release-manifest", "https://example.test/manifests/5.0.0-preview.1.json", "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "Verified release manifest.")]);
+            [new(ReleaseManifestEvidenceKinds.Manifest, "https://example.test/manifests/5.0.0-preview.1.json", "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", ReleaseManifestEvidenceContract.DescriptionFor(ReleaseManifestEvidenceKinds.Manifest))]);
         var reference = new ElsaResolvedPlanReference(
             provisionalReference.PlanId,
             provisionalReference.SchemaVersion,

@@ -2,6 +2,7 @@ using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.Deployment.Core.Workspace;
 using ElsaControl.RuntimeBuilder.Abstractions.Plans;
+using ElsaControl.RuntimeBuilder.Abstractions.ReleaseManifests;
 using Microsoft.EntityFrameworkCore;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
@@ -150,7 +151,9 @@ public sealed class EfCoreManagedElsaInstanceApiStore(CatalogDbContext dbContext
         {
             var plan = ResolvedElsaApplicationPlanSerialization.Deserialize(entity.SerializedPlan).Normalize();
             if (ResolvedElsaApplicationPlanValidator.Validate(plan).Count != 0 ||
-                !string.Equals(ResolvedElsaApplicationPlanSerialization.ComputeContentHash(plan), entity.ContentHash, StringComparison.Ordinal))
+                !string.Equals(ResolvedElsaApplicationPlanSerialization.ComputeContentHash(plan), entity.ContentHash, StringComparison.Ordinal) ||
+                plan.Evidence.Any(x => x is null ||
+                    !ReleaseManifestEvidenceContract.IsSafe(x.Kind, x.Reference, x.Digest, x.Description)))
                 return null;
 
             var reference = new ElsaResolvedPlanReference(entity.PlanId, entity.SchemaVersion, entity.ContentHash, entity.PlanUri);

@@ -93,7 +93,9 @@ public static class ManagedElsaInstanceEndpoints
                 // must not reject a retry of the original request after its first
                 // commit made the slug visible.
                 var existingOperation = await lifecycleStore.FindOperationByKeyAsync(
-                    workspaceId, key, action: ElsaInstanceOperationAction.Create, cancellationToken: cancellationToken);
+                    workspaceId, key, action: ElsaInstanceOperationAction.Create,
+                    idempotencyScope: ElsaInstanceLifecycleService.CreateIdempotencyScope,
+                    cancellationToken: cancellationToken);
                 if (existingOperation is null && await queries.SlugExistsAsync(workspaceId, normalizedSlug, cancellationToken))
                     return Problem("instance.slug-conflict", "The instance slug is already in use in this workspace.", StatusCodes.Status409Conflict);
 

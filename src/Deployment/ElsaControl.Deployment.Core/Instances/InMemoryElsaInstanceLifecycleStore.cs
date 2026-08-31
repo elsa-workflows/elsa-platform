@@ -361,7 +361,9 @@ public sealed class InMemoryElsaInstanceLifecycleStore(TimeProvider? timeProvide
 
             var sameIdentity = _operations.Values.FirstOrDefault(x =>
                 x.IdempotencyScope == operation.IdempotencyScope &&
-                x.IdempotencyKey == operation.IdempotencyKey);
+                x.IdempotencyKey == operation.IdempotencyKey &&
+                _instances.TryGetValue(x.InstanceId, out var scopedInstance) &&
+                scopedInstance.WorkspaceId == instance.WorkspaceId);
             if (sameIdentity is not null)
             {
                 if (sameIdentity.InstanceId != operation.InstanceId ||
