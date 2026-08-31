@@ -68,7 +68,10 @@ class AzureApiDeployWorkflowTests(unittest.TestCase):
         self.assertNotIn("--file src/ElsaControl.Api/Dockerfile", deploy_script)
 
     def test_capture_rejects_credential_bearing_and_scheme_based_images(self) -> None:
-        capture_start = self.source.index("        run: |\n", self.source.index("      - name: Capture current API deployment"))
+        capture_start = self.source.index(
+            "        run: |\n",
+            self.source.index("      - name: Capture current API deployment"),
+        )
         capture_end = self.source.index("\n      - name:", capture_start)
         capture_script = dedent(self.source[capture_start + len("        run: |\n") : capture_end])
 
@@ -142,7 +145,10 @@ esac
                     result = run_capture(runtime, captured_image)
                     self.assertNotEqual(result.returncode, 0, image)
                     if runtime == "SITECONTAINERS":
-                        self.assertIn("unexpected or unsafe format", result.stdout + result.stderr)
+                        self.assertIn(
+                            "unexpected or unsafe format",
+                            result.stdout + result.stderr,
+                        )
 
             lookup_failure = run_capture(
                 "SITECONTAINERS",
@@ -158,7 +164,10 @@ esac
                 deploy_mode="infra",
             )
             self.assertEqual(fresh_infra.returncode, 0, fresh_infra.stderr)
-            self.assertIn("capture_succeeded=false", (temp_path / "github-output").read_text())
+            self.assertIn(
+                "capture_succeeded=false",
+                (temp_path / "github-output").read_text(),
+            )
 
             fresh_app = run_capture(
                 "SITECONTAINERS",
