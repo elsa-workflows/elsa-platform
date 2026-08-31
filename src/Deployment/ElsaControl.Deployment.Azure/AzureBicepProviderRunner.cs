@@ -152,6 +152,12 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 cancellationToken);
             if (!updated.Succeeded)
                 return ProcessFailure(command, AzureProviderOperationPhase.FoundationSubmitted, updated, resources, mutation: true);
+
+            var adminReady = await EnsureSqlBootstrapAdminForReapplyAsync(command, cancellationToken);
+            if (adminReady is null)
+                return Uncertain(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.foundation.sql-admin-uncertain", "The SQL bootstrap administrator could not be confirmed for reconciliation.", resources);
+            if (!adminReady.Value)
+                return Failed(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.foundation.sql-admin-invalid", "The existing SQL administrator does not match the governed bootstrap identity.");
         }
 
         var deploymentName = FoundationDeploymentName(command);
@@ -201,24 +207,29 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         }
 
         var deploymentName = AcrDeploymentName(command, command.Resources.WorkloadIdentityPrincipalId!);
+        var resources = command.Resources with
+        {
+            RegistryResourceId = registryIdResult.Value!.Value,
+            AcrPullDeploymentId = DeploymentId(_scope.RegistrySubscriptionId, _scope.RegistryResourceGroupName, deploymentName)
+        };
         EnsureMutationAuthority(command);
         var deployment = await ExecuteAzAsync(command,
             AcrDeploymentArguments(command, command.Resources.WorkloadIdentityResourceId!, command.Resources.WorkloadIdentityPrincipalId!, deploymentName),
             ParseDeploymentOutputsAsync,
             cancellationToken);
         if (!deployment.Succeeded || deployment.Value is null)
-            return ProcessFailure(command, AzureProviderOperationPhase.FoundationSubmitted, deployment, command.Resources, mutation: true);
+            return ProcessFailure(command, AzureProviderOperationPhase.FoundationSubmitted, deployment, resources, mutation: true);
 
         var roleAssignmentId = deployment.Value!.Value.String("roleAssignmentId");
         if (roleAssignmentId is null)
-            return Failed(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.acr.output-invalid", "The ACR role assignment identity was not returned.");
+            return Uncertain(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.acr.output-invalid", "The ACR role assignment identity was not returned.", resources);
         try
         {
             ValidateExactRoleAssignmentId(roleAssignmentId, registryIdResult.Value!.Value);
         }
         catch (ArgumentException exception)
         {
-            return Failed(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.acr.role-scope-invalid", exception.Message);
+            return Uncertain(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.acr.role-scope-invalid", exception.Message, resources);
         }
 
         var assignment = await WaitForRoleAssignmentAsync(command,
@@ -227,11 +238,11 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             roleAssignmentId,
             cancellationToken);
         if (assignment is null)
-            return Uncertain(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.acr.role-observation-uncertain", "The ACR role assignment could not be confirmed.");
+            return Uncertain(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.acr.role-observation-uncertain", "The ACR role assignment could not be confirmed.", resources with { AcrPullRoleAssignmentId = roleAssignmentId });
         if (assignment is false)
             return Failed(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.acr.role-invalid", "The ACR role assignment did not match the governed registry scope.");
 
-        var resources = command.Resources with
+        resources = resources with
         {
             RegistryResourceId = registryIdResult.Value!.Value,
             AcrPullDeploymentId = DeploymentId(_scope.RegistrySubscriptionId, _scope.RegistryResourceGroupName, deploymentName),
@@ -268,15 +279,17 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         foreach (var (key, reference, secretName) in secretReferences)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var existing = await ExecuteAzAsync<AzureCommandNoOutput>(command,
-                ["keyvault", "secret", "show", "--subscription", _scope.SubscriptionId, "--vault-name", vaultName,
-                    "--name", secretName, "--output", "none", "--only-show-errors"],
-                static _ => AzureCommandNoOutput.Instance,
+            var existing = await ExecuteAzAsync(command,
+                ["keyvault", "secret", "list", "--subscription", _scope.SubscriptionId, "--vault-name", vaultName,
+                    "--query", $"[?name=='{secretName}'] | length(@)", "--output", "tsv", "--only-show-errors"],
+                ParseIntegerAsync,
                 cancellationToken);
-            if (existing.Succeeded)
+            if (!existing.Succeeded || existing.Value is null)
+                return ProcessFailure(command, AzureProviderOperationPhase.FoundationSubmitted, existing, command.Resources, mutation: false);
+            if (existing.Value.Value == 1)
                 continue;
-            if (existing.Status == AzureCommandProcessStatus.Cancelled || cancellationToken.IsCancellationRequested)
-                return Uncertain(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.secrets.cancelled", "Secret reference seeding was interrupted before completion.");
+            if (existing.Value.Value != 0)
+                return Failed(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.secrets.inventory-invalid", "The secret inventory is ambiguous.");
 
             AzureSecretLease lease;
             try
@@ -375,6 +388,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                     break;
                 }
                 if (bootstrap.Status == AzureCommandProcessStatus.Cancelled || cancellationToken.IsCancellationRequested)
+                    break;
+                if (bootstrap.Status == AzureCommandProcessStatus.TerminationUncertain)
                     break;
                 if (attempt + 1 < _options.ObservationAttempts)
                     await Task.Delay(_options.ObservationDelay, cancellationToken);
@@ -624,38 +639,62 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.rbac-unverified", "The owned Key Vault role-assignment inventory is not exact.");
         }
 
-        if (resources.AcrPullRoleAssignmentId is not null)
+        var registryId = resources.RegistryResourceId ?? RegistryResourceId();
+        var roleAssignmentId = resources.AcrPullRoleAssignmentId;
+        var acrDeploymentId = resources.AcrPullDeploymentId;
+        if (resources.WorkloadIdentityPrincipalId is not null)
         {
-            try { ValidateExactRoleAssignmentId(resources.AcrPullRoleAssignmentId, resources.RegistryResourceId); }
+            acrDeploymentId ??= DeploymentId(
+                _scope.RegistrySubscriptionId,
+                _scope.RegistryResourceGroupName,
+                AcrDeploymentName(command, resources.WorkloadIdentityPrincipalId));
+            if (roleAssignmentId is null)
+            {
+                var discovered = await DiscoverAcrRoleAssignmentAsync(
+                    command,
+                    registryId,
+                    resources.WorkloadIdentityPrincipalId,
+                    CancellationToken.None);
+                if (discovered.Status == AcrRoleDiscoveryStatus.Uncertain)
+                    return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-observation-uncertain", "The owned ACR role assignment could not be observed before deletion.");
+                if (discovered.Status == AcrRoleDiscoveryStatus.Ambiguous)
+                    return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-provenance-invalid", "The ACR role-assignment inventory is not exact for the workload identity.");
+                roleAssignmentId = discovered.AssignmentId;
+            }
+        }
+
+        if (roleAssignmentId is not null)
+        {
+            try { ValidateExactRoleAssignmentId(roleAssignmentId, registryId); }
             catch (ArgumentException exception) { return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-scope-invalid", exception.Message); }
-            if (resources.RegistryResourceId is null || resources.WorkloadIdentityPrincipalId is null)
+            if (resources.WorkloadIdentityPrincipalId is null)
                 return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-provenance-invalid", "The owned ACR role assignment lacks the exact registry and workload identity provenance required for deletion.");
-            var roleProvenance = await ValidateAcrRoleAssignmentAsync(command, resources.AcrPullRoleAssignmentId,
-                resources.RegistryResourceId, resources.WorkloadIdentityPrincipalId, CancellationToken.None);
+            var roleProvenance = await ValidateAcrRoleAssignmentAsync(command, roleAssignmentId,
+                registryId, resources.WorkloadIdentityPrincipalId, CancellationToken.None);
             if (roleProvenance is null)
                 return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-observation-uncertain", "The owned ACR role assignment could not be observed before deletion.");
             if (!roleProvenance.Value)
                 return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-provenance-invalid", "The ACR role assignment does not match the exact registry, workload identity, and AcrPull role.");
             EnsureMutationAuthority(command);
             await ExecuteAzAsync<AzureCommandNoOutput>(command,
-                ["role", "assignment", "delete", "--ids", resources.AcrPullRoleAssignmentId, "--output", "none", "--only-show-errors"],
+                ["role", "assignment", "delete", "--ids", roleAssignmentId, "--output", "none", "--only-show-errors"],
                 static _ => AzureCommandNoOutput.Instance,
                 CancellationToken.None);
-            if (!await RoleAssignmentAbsentAsync(command, resources.AcrPullRoleAssignmentId, CancellationToken.None))
+            if (!await RoleAssignmentAbsentAsync(command, roleAssignmentId, CancellationToken.None))
                 return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-uncertain", "The owned ACR role assignment could not be proven absent.");
         }
 
-        if (resources.AcrPullDeploymentId is not null)
+        if (acrDeploymentId is not null)
         {
             try
             {
-                ValidateExactAcrDeploymentId(resources.AcrPullDeploymentId, command, resources.WorkloadIdentityPrincipalId);
+                ValidateExactAcrDeploymentId(acrDeploymentId, command, resources.WorkloadIdentityPrincipalId);
             }
             catch (ArgumentException exception)
             {
                 return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.deployment-scope-invalid", exception.Message);
             }
-            var deployment = ResourceName(resources.AcrPullDeploymentId);
+            var deployment = ResourceName(acrDeploymentId);
             if (deployment is null)
                 return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.deployment-invalid", "The owned ACR deployment identity is invalid.");
             EnsureMutationAuthority(command);
@@ -891,6 +930,66 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         return false;
     }
 
+    private async Task<bool?> EnsureSqlBootstrapAdminForReapplyAsync(
+        AzureProviderRunnerCommand command,
+        CancellationToken cancellationToken)
+    {
+        var server = $"{command.Plan.WorkloadName}-sql";
+        var count = await ExecuteAzAsync(command,
+            ["sql", "server", "list", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+                "--query", $"[?name=='{server}'] | length(@)", "--output", "tsv", "--only-show-errors"],
+            ParseIntegerAsync,
+            cancellationToken);
+        if (!count.Succeeded || count.Value is null)
+            return null;
+        if (count.Value.Value == 0)
+            return true;
+        if (count.Value.Value != 1)
+            return false;
+
+        var admins = await ExecuteAzAsync(command,
+            ["sql", "server", "ad-admin", "list", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+                "--server", server, "--output", "json", "--only-show-errors"],
+            ParseAdminsAsync,
+            cancellationToken);
+        if (!admins.Succeeded || admins.Value is null)
+            return null;
+        if (admins.Value.Value.Count > 1)
+            return false;
+        if (admins.Value.Value.Count == 0)
+        {
+            EnsureMutationAuthority(command);
+            var created = await ExecuteAzAsync<AzureCommandNoOutput>(command,
+                ["sql", "server", "ad-admin", "create", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+                    "--server", server, "--display-name", _options.SqlBootstrapLogin, "--object-id", _options.SqlBootstrapObjectId,
+                    "--output", "none", "--only-show-errors"],
+                static _ => AzureCommandNoOutput.Instance,
+                cancellationToken);
+            if (!created.Succeeded)
+                return null;
+            admins = await ExecuteAzAsync(command,
+                ["sql", "server", "ad-admin", "list", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+                    "--server", server, "--output", "json", "--only-show-errors"],
+                ParseAdminsAsync,
+                cancellationToken);
+            if (!admins.Succeeded || admins.Value is null)
+                return null;
+        }
+
+        if (admins.Value.Value.Count != 1 ||
+            !string.Equals(admins.Value.Value[0].Login, _options.SqlBootstrapLogin, StringComparison.Ordinal) ||
+            !string.Equals(admins.Value.Value[0].Sid, _options.SqlBootstrapObjectId, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        EnsureMutationAuthority(command);
+        var enabled = await ExecuteAzAsync<AzureCommandNoOutput>(command,
+            ["sql", "server", "ad-only-auth", "enable", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+                "--name", server, "--output", "none", "--only-show-errors"],
+            static _ => AzureCommandNoOutput.Instance,
+            cancellationToken);
+        return enabled.Succeeded ? true : null;
+    }
+
     private async Task<bool> RemoveSqlBootstrapAdminAsync(AzureProviderRunnerCommand command, CancellationToken cancellationToken)
     {
         var workloadName = command.Plan.WorkloadName;
@@ -957,6 +1056,38 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 await Task.Delay(_options.ObservationDelay, cancellationToken);
         }
         return false;
+    }
+
+    private async Task<AcrRoleDiscovery> DiscoverAcrRoleAssignmentAsync(
+        AzureProviderRunnerCommand command,
+        string registryId,
+        string principalId,
+        CancellationToken cancellationToken)
+    {
+        var list = await ExecuteAzAsync(command,
+            ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all", "--output", "json", "--only-show-errors"],
+            ParseRoleAssignmentsAsync,
+            cancellationToken);
+        if (!list.Succeeded || list.Value is null)
+            return new(AcrRoleDiscoveryStatus.Uncertain, null);
+
+        var exact = list.Value.Value.Where(assignment =>
+            string.Equals(assignment.Scope, registryId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(assignment.PrincipalId, principalId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(RoleDefinitionId(assignment.RoleDefinitionId), AcrPullRoleDefinitionId, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (exact.Length == 0)
+            return new(AcrRoleDiscoveryStatus.Absent, null);
+        if (exact.Length != 1 || string.IsNullOrWhiteSpace(exact[0].Id))
+            return new(AcrRoleDiscoveryStatus.Ambiguous, null);
+        try
+        {
+            ValidateExactRoleAssignmentId(exact[0].Id!, registryId);
+            return new(AcrRoleDiscoveryStatus.Exact, exact[0].Id);
+        }
+        catch (ArgumentException)
+        {
+            return new(AcrRoleDiscoveryStatus.Ambiguous, null);
+        }
     }
 
     private async Task<bool?> ValidateAcrRoleAssignmentAsync(
@@ -1297,6 +1428,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     };
 
     private string ResourceGroupId() => $"/subscriptions/{_scope.SubscriptionId}/resourceGroups/{_scope.ResourceGroupName}";
+
+    private string RegistryResourceId() =>
+        $"/subscriptions/{_scope.RegistrySubscriptionId}/resourceGroups/{_scope.RegistryResourceGroupName}/providers/Microsoft.ContainerRegistry/registries/{_scope.RegistryName}";
     private static string AppName(AzureProviderRunnerCommand command) => $"{command.Plan.WorkloadName}-app";
     private static string SqlServerName(AzureProviderRunnerCommand command) => $"{command.Plan.WorkloadName}-sql";
     private static string FoundationDeploymentName(AzureProviderRunnerCommand command) => $"elsa108-{command.Plan.WorkloadName}-{command.Plan.Fingerprint[..12]}-foundation";
@@ -1450,8 +1584,12 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
 
     private static void DeleteTransientSecretFile(string directory, string file)
     {
-        try { if (!string.IsNullOrEmpty(file) && File.Exists(file)) File.Delete(file); } catch { }
-        try { if (!string.IsNullOrEmpty(directory) && Directory.Exists(directory)) Directory.Delete(directory, recursive: false); } catch { }
+        // Cleanup failure is not best-effort: a secret-bearing file that cannot be proven absent
+        // makes the provider outcome uncertain and must reach durable recovery via RunAsync.
+        if (!string.IsNullOrEmpty(file) && File.Exists(file))
+            File.Delete(file);
+        if (!string.IsNullOrEmpty(directory) && Directory.Exists(directory))
+            Directory.Delete(directory, recursive: false);
     }
 
     private sealed class DeploymentOutputs : Dictionary<string, OutputValue>
@@ -1471,6 +1609,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         public string? PrincipalId { get; set; }
         public string? RoleDefinitionId { get; set; }
     }
+
+    private enum AcrRoleDiscoveryStatus { Absent, Exact, Ambiguous, Uncertain }
+    private sealed record AcrRoleDiscovery(AcrRoleDiscoveryStatus Status, string? AssignmentId);
 
     private sealed class AzureResource
     {

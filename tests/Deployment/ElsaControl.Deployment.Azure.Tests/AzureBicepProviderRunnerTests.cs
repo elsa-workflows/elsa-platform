@@ -83,7 +83,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         var process = new FakeCommandProcess();
         string? transientFile = null;
         string? observedSecret = null;
-        process.Failure(args => args.Contains("secret") && args.Contains("show"));
+        process.Success(args => args.Contains("secret") && args.Contains("list"), "0");
         process.Success(args =>
         {
             transientFile = args[Array.IndexOf(args, "--file") + 1];
@@ -115,6 +115,32 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Single(resolver.Requests);
         Assert.DoesNotContain("database-password", JsonSerializer.Serialize(result), StringComparison.Ordinal);
         Assert.DoesNotContain("database-password", string.Join(" ", process.Calls.SelectMany(x => x)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Secret_observation_failure_does_not_resolve_or_seed_a_secret()
+    {
+        var process = new FakeCommandProcess();
+        process.Failure(args => args.Contains("secret") && args.Contains("list"));
+        var resolver = new RecordingSecretResolver("database-password");
+        var command = _fixture.Command(AzureProviderRunnerStep.SeedSecrets, _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
+        }) with
+        {
+            Plan = _fixture.Plan with { SecretReferences = new Dictionary<string, string>
+            {
+                ["database:connectionstring"] = "secret://vault/database"
+            }}
+        };
+
+        var result = await _fixture.Runner(process, resolver).RunAsync(command);
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Empty(resolver.Requests);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("set"));
     }
 
     [Fact]
@@ -196,6 +222,20 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Acr_pull_uncertainty_preserves_deterministic_cleanup_handles()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("acr") && args.Contains("show"), _fixture.RegistryId);
+        process.Failure(args => args.Contains("deployment") && args.Contains("create"));
+
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.AcrPull, _fixture.FoundationResources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.Equal(_fixture.RegistryId, result.Resources.RegistryResourceId);
+        Assert.Equal(_fixture.RegistryDeploymentId, result.Resources.AcrPullDeploymentId);
+    }
+
+    [Fact]
     public async Task Cleanup_refuses_an_acr_assignment_that_does_not_match_its_durable_provenance()
     {
         var process = new FakeCommandProcess();
@@ -263,6 +303,52 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
         Assert.NotNull(scriptPath);
         Assert.False(File.Exists(scriptPath));
+    }
+
+    [Fact]
+    public async Task Sql_bootstrap_does_not_retry_when_process_termination_is_uncertain()
+    {
+        using var fixture = new RunnerFixture(observationAttempts: 3);
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("-?"), "Microsoft sqlcmd --authentication-method ActiveDirectoryDefault");
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("create"));
+        process.Status(args => args.Contains("--authentication-method"), AzureCommandProcessStatus.TerminationUncertain,
+            AzureCommandProcessFailureKind.TerminationUncertain);
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
+        var resources = fixture.FoundationResources with
+        {
+            RegistryResourceId = fixture.RegistryId,
+            AcrPullDeploymentId = fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = fixture.RegistryRoleAssignmentId
+        };
+
+        var result = await fixture.Runner(process).RunAsync(fixture.Command(AzureProviderRunnerStep.SqlBootstrap, resources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.Single(process.Calls, call => call.Contains("--authentication-method"));
+    }
+
+    [Fact]
+    public async Task Foundation_reapply_restores_and_verifies_the_exact_sql_bootstrap_admin_before_deployment()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args is ["group", "exists", ..], "true");
+        process.Success(args => args is ["group", "show", ..], "{\"proof\":\"108\",\"owner\":\"elsa-control\",\"proof-name\":\"proof\",\"expiry\":\"2026-09-02\",\"sqlBootstrapObjectId\":\"11111111-1111-1111-1111-111111111111\"}");
+        process.Success(args => args is ["tag", "update", ..]);
+        process.Success(args => args.Contains("sql") && args.Contains("server") && args.Contains("list"), "1");
+        process.Success(args => args.Contains("ad-admin") && args.Contains("list"), "[]");
+        process.Success(args => args.Contains("ad-admin") && args.Contains("create"));
+        process.Success(args => args.Contains("ad-admin") && args.Contains("list"), "[{\"login\":\"proof-bootstrap\",\"sid\":\"11111111-1111-1111-1111-111111111111\"}]");
+        process.Success(args => args.Contains("ad-only-auth") && args.Contains("enable"));
+        process.Success(args => args.Contains("deployment") && args.Contains("create"), FoundationOutputs());
+
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.Foundation));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
+        var adminCreate = process.Calls.FindIndex(call => call.Contains("ad-admin") && call.Contains("create"));
+        var deploymentCreate = process.Calls.FindIndex(call => call.Contains("deployment") && call.Contains("create"));
+        Assert.True(adminCreate >= 0 && adminCreate < deploymentCreate);
     }
 
     [Fact]
@@ -397,6 +483,27 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.DoesNotContain(result.Resources.GetType().GetProperties(), property => property.GetValue(result.Resources) is not null);
     }
 
+    [Fact]
+    public async Task Cleanup_discovers_exact_acr_artifacts_when_uncertainty_prevented_handle_persistence()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("group") && args.Contains("exists"), "false");
+        var exactRole = "[{\"id\":\"" + _fixture.RegistryRoleAssignmentId + "\",\"scope\":\"" + _fixture.RegistryId + "\",\"principalId\":\"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\"roleDefinitionId\":\"/providers/Microsoft.Authorization/roleDefinitions/7f951dda-4ed3-4680-a7ca-43fe172d538d\"}]";
+        process.Success(args => args.Contains("role") && args.Contains("list"), exactRole);
+        process.Success(args => args.Contains("role") && args.Contains("list"), exactRole);
+        process.Success(args => args.Contains("role") && args.Contains("delete"));
+        process.Success(args => args.Contains("role") && args.Contains("list"), "[]");
+        process.Success(args => args.Contains("deployment") && args.Contains("delete"));
+        process.Success(args => args.Contains("deployment") && args.Contains("list"), "[]");
+        process.Success(args => args.Contains("list-deleted"), "[]");
+
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.Cleanup, _fixture.FoundationResources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
+        Assert.Contains(process.Calls, call => call.Contains("role") && call.Contains("delete") && call.Contains(_fixture.RegistryRoleAssignmentId));
+        Assert.Contains(process.Calls, call => call.Contains("deployment") && call.Contains("delete") && call.Contains(Path.GetFileName(_fixture.RegistryDeploymentId)));
+    }
+
     public void Dispose() => _fixture.Dispose();
 
     private static string FoundationOutputs() => """
@@ -427,7 +534,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         private readonly string _root = Path.Combine(Path.GetTempPath(), $"elsa-runner-{Guid.NewGuid():N}");
         private readonly string _tool;
 
-        public RunnerFixture()
+        public RunnerFixture(int observationAttempts = 1)
         {
             Directory.CreateDirectory(_root);
             File.WriteAllText(Path.Combine(_root, "main.bicep"), "targetScope = 'resourceGroup'");
@@ -445,7 +552,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
                 SqlBootstrapLogin = "proof-bootstrap",
                 SqlBootstrapIp = "203.0.113.10",
                 ExpiryUtc = new DateOnly(2026, 9, 2),
-                ObservationAttempts = 1,
+                ObservationAttempts = observationAttempts,
                 ObservationDelay = TimeSpan.Zero
             };
         }
@@ -492,6 +599,8 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
 
         public void Success(Func<string[], bool> matcher, string output = "", Action? after = null) => _responses.Enqueue(new(matcher, AzureCommandProcessStatus.Succeeded, output, after));
         public void Failure(Func<string[], bool> matcher, string output = "") => _responses.Enqueue(new(matcher, AzureCommandProcessStatus.Failed, output, null));
+        public void Status(Func<string[], bool> matcher, AzureCommandProcessStatus status, AzureCommandProcessFailureKind failureKind) =>
+            _responses.Enqueue(new(matcher, status, string.Empty, null, failureKind));
 
         public Task<AzureCommandProcessResult<T>> ExecuteAsync<T>(AzureCommandProcessRequest request, AzureCommandOutputProjector<T> outputProjector, CancellationToken cancellationToken = default)
             where T : AzureCommandSafeOutput
@@ -501,13 +610,18 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
             var response = _responses.Count > 0 ? _responses.Dequeue() : throw new InvalidOperationException("Unexpected Azure command.");
             Assert.True(response.Matcher(args), $"Unexpected command: {string.Join(' ', args)}");
             if (response.Status != AzureCommandProcessStatus.Succeeded)
-                return Task.FromResult(new AzureCommandProcessResult<T>(response.Status, AzureCommandProcessFailureKind.NonZeroExitCode, 1, null, "test.command.failed", "The test command failed."));
+                return Task.FromResult(new AzureCommandProcessResult<T>(response.Status, response.FailureKind, 1, null, "test.command.failed", "The test command failed."));
             var result = new AzureCommandProcessResult<T>(response.Status, AzureCommandProcessFailureKind.None, 0, outputProjector(response.Output.AsMemory()), "test.command.succeeded", "The test command completed.");
             response.After?.Invoke();
             return Task.FromResult(result);
         }
 
-        private sealed record Response(Func<string[], bool> Matcher, AzureCommandProcessStatus Status, string Output, Action? After);
+        private sealed record Response(
+            Func<string[], bool> Matcher,
+            AzureCommandProcessStatus Status,
+            string Output,
+            Action? After,
+            AzureCommandProcessFailureKind FailureKind = AzureCommandProcessFailureKind.NonZeroExitCode);
     }
 
     private sealed class RecordingSecretResolver(string value) : IAzureSecretResolver
