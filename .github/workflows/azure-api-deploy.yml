@@ -358,6 +358,7 @@ jobs:
           set -euo pipefail
 
           if [ "$PREVIOUS_DEPLOYMENT_MODE" = "classic" ]; then
+            previous_image_reference="${PREVIOUS_LINUX_FX_VERSION#DOCKER|}"
             if ! az webapp config set \
                 --resource-group "$AZURE_RESOURCE_GROUP" \
                 --name "$AZURE_WEBAPP_NAME" \
@@ -371,6 +372,7 @@ jobs:
               echo "::error::Rollback failed: the previous main sitecontainer image was not captured."
               exit 1
             fi
+            previous_image_reference="$PREVIOUS_SITECONTAINER_IMAGE"
             if ! az webapp config set \
                 --resource-group "$AZURE_RESOURCE_GROUP" \
                 --name "$AZURE_WEBAPP_NAME" \
@@ -422,6 +424,51 @@ jobs:
             exit 1
           fi
 
+          if [ "$PREVIOUS_DEPLOYMENT_MODE" = "classic" ]; then
+            if ! restored_runtime_image="$(az webapp config show \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_WEBAPP_NAME" \
+              --query linuxFxVersion \
+              --output tsv)"; then
+              echo "::error::Rollback failed: could not verify the restored Docker runtime image."
+              exit 1
+            fi
+          else
+            if ! restored_runtime_image="$(az webapp sitecontainers show \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_WEBAPP_NAME" \
+              --container-name main \
+              --query properties.image \
+              --output tsv)"; then
+              echo "::error::Rollback failed: could not verify the restored main sitecontainer image."
+              exit 1
+            fi
+          fi
+          if [ "$PREVIOUS_DEPLOYMENT_MODE" = "classic" ]; then
+            if [ "$restored_runtime_image" != "$PREVIOUS_LINUX_FX_VERSION" ]; then
+              echo "::error::Rollback failed: Azure is not configured with the captured previous Docker runtime image."
+              exit 1
+            fi
+          elif [ "$restored_runtime_image" != "$PREVIOUS_SITECONTAINER_IMAGE" ]; then
+            echo "::error::Rollback failed: Azure is not configured with the captured previous main sitecontainer image."
+            exit 1
+          fi
+
+          expected_previous_image_id=""
+          if [[ "$previous_image_reference" =~ @sha256:([[:xdigit:]]{64})$ ]]; then
+            expected_previous_image_id="sha256:${BASH_REMATCH[1]}"
+          elif [[ "$previous_image_reference" =~ :([[:xdigit:]]{40,64})$ ]]; then
+            expected_previous_image_id="${BASH_REMATCH[1]}"
+          fi
+          # shellcheck disable=SC2016 # The jq variables intentionally expand inside jq, not Bash.
+          if [ -n "$expected_previous_image_id" ]; then
+            expected_previous_health_query='.status == "ok" and ((.buildNumber // $expected_build_number) == $expected_build_number) and .imageId == $expected_image_id'
+            echo "Rollback health will require the captured image identity $expected_previous_image_id."
+          else
+            expected_previous_health_query='.status == "ok" and ((.buildNumber // $expected_build_number) == $expected_build_number)'
+            echo "::notice::Rollback health is using the explicit legacy-image compatibility path because the captured image has no safe embedded identity; Azure image configuration was matched to the captured reference."
+          fi
+
           if ! default_host_name="$(az webapp show \
             --resource-group "$AZURE_RESOURCE_GROUP" \
             --name "$AZURE_WEBAPP_NAME" \
@@ -445,7 +492,8 @@ jobs:
             if http_status="$(curl --silent --show-error --output "$rollback_health_response_file" --write-out '%{http_code}' --max-time 10 "$rollback_health_url")"; then
               if [ "$http_status" = "200" ] && jq -e \
                 --arg expected_build_number "$expected_previous_build_number" \
-                '.status == "ok" and ((.buildNumber // $expected_build_number) == $expected_build_number)' \
+                --arg expected_image_id "$expected_previous_image_id" \
+                "$expected_previous_health_query" \
                 "$rollback_health_response_file" >/dev/null 2>&1; then
                 stable_rollback_health_probes=$((stable_rollback_health_probes + 1))
                 if [ "$stable_rollback_health_probes" -ge 2 ]; then

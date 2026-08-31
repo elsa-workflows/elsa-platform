@@ -58,6 +58,17 @@ class AzureApiDeployWorkflowTests(unittest.TestCase):
         )
         self.assertIn('.buildNumber == $expected_build_number', self.source)
         self.assertIn('.imageId == $expected_image_id', self.source)
+        self.assertIn('expected_previous_image_id=""', self.source)
+        self.assertIn('restored_runtime_image=', self.source)
+        self.assertIn(
+            "expected_previous_health_query='.status == \"ok\" and ((.buildNumber // $expected_build_number) == $expected_build_number) and .imageId == $expected_image_id'",
+            self.source,
+        )
+        self.assertIn('legacy-image compatibility path', self.source)
+        self.assertIn(
+            'Azure is not configured with the captured previous main sitecontainer image',
+            self.source,
+        )
         self.assertIn('if [ "$stable_health_probes" -ge 2 ]; then', self.source)
         self.assertIn('if [ "$stable_rollback_health_probes" -ge 2 ]; then', self.source)
 
